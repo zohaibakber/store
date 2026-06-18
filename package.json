@@ -1,0 +1,20 @@
+{
+  "name": "store",
+  "private": true,
+  "packageManager": "bun@1.1.42",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "format": "bunx prettier . --write",
+    "check-types": "turbo run check-types"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.14",
+    "prettier": "^3.3.3"
+  }
+}

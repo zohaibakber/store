@@ -1,0 +1,10 @@
+{
+  "name": "web",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Add your app here\"",
+    "build": "echo \"Add your build here\"",
+    "lint": "echo \"Add your lint here\"",
+    "check-types": "echo \"Add your typecheck here\""
+  }
+}
