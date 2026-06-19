@@ -1,6 +1,15 @@
-# Ignore common build artifacts
 node_modules
-.dist
-.next
-coverage
-bun.lockb
+.DS_Store
+dist
+dist-ssr
+*.local
+.env*
+.tanstack
+.wrangler
+.output
+.vinxi
+__unconfig*
+todos.json
+
+# typescript
+*.tsbuildinfo

@@ -1,23 +1,21 @@
-# Bun-only Turborepo
+# TanStack Start + shadcn/ui
 
-This repository is configured to use **Bun only** for package management and scripts.
+This is a template for a new TanStack Start project with React, TypeScript, and shadcn/ui.
 
-## Getting started
+## Adding components
+
+To add components to your app, run the following command:
 
 ```bash
-bun install
-bun run dev
+npx shadcn@latest add button
 ```
 
-## Workspace layout
+This will place the ui components in the `components` directory.
 
-- `apps/*` for applications
-- `packages/*` for shared packages
+## Using components
 
-## Commands
+To use the components in your app, import them as follows:
 
-- `bun run dev` — start all dev tasks through Turborepo
-- `bun run build` — build all packages/apps
-- `bun run lint` — lint all packages/apps
-- `bun run check-types` — run type checks across the monorepo
-- `bun run format` — format files with Prettier
+```tsx
+import { Button } from "@/components/ui/button";
+```

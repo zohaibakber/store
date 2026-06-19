@@ -1,3 +1,0 @@
-# Bun configuration (bunfig.toml)
-# Workspaces and dependencies are declared in package.json.
-# This file intentionally holds no overrides so Bun uses its defaults.
