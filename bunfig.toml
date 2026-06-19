@@ -1,13 +1,3 @@
-{
-  "name": "store-monorepo",
-  "private": true,
-  "packageManager": "bun@1.1.42",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "devDependencies": {
-    "turbo": "^2.0.14",
-    "prettier": "^3.3.3"
-  }
-}
+# Bun configuration (bunfig.toml)
+# Workspaces and dependencies are declared in package.json.
+# This file intentionally holds no overrides so Bun uses its defaults.
