@@ -1,0 +1,22 @@
+{
+  "name": "@store/persistence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@store/contracts": "workspace:*",
+    "@tursodatabase/sync": "0.6.1",
+    "drizzle-orm": "1.0.0-rc.4",
+    "effect": "4.0.0-beta.83"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
