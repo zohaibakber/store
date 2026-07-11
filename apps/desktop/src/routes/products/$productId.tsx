@@ -11,6 +11,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  PageAction,
+  PageContent,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
 import { formatDate, formatPrice } from "@/lib/format";
 
 export const Route = createFileRoute("/products/$productId")({
@@ -21,16 +28,18 @@ export const Route = createFileRoute("/products/$productId")({
 
 function ProductDetailError({ error }: { error: Error }) {
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <PageLayout contentClassName="max-w-3xl">
+      <PageHeader>
         <BackToProducts />
+      </PageHeader>
+      <PageContent>
         <Alert variant="destructive">
           <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
           <AlertTitle>Could not load product</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
         </Alert>
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }
 
@@ -58,27 +67,27 @@ function ProductDetailPage() {
   ];
 
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <BackToProducts />
-            <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
-            <h1 className="text-lg font-medium tracking-tight">{product.name}</h1>
-          </div>
-          <div>
-            <Button variant="ghost" size="icon">
-              <HugeiconsIcon icon={ChevronUp} />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <HugeiconsIcon icon={ChevronDown} />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <HugeiconsIcon icon={Trash2} />
-            </Button>
-          </div>
-        </header>
+    <PageLayout contentClassName="max-w-3xl">
+      <PageHeader>
+        <div className="flex items-center gap-1">
+          <BackToProducts />
+          <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
+          <PageHeading>{product.name}</PageHeading>
+        </div>
+        <PageAction>
+          <Button variant="ghost" size="icon">
+            <HugeiconsIcon icon={ChevronUp} />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <HugeiconsIcon icon={ChevronDown} />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <HugeiconsIcon icon={Trash2} />
+          </Button>
+        </PageAction>
+      </PageHeader>
 
+      <PageContent>
         <Card>
           <CardHeader>
             <CardTitle>Details</CardTitle>
@@ -94,7 +103,7 @@ function ProductDetailPage() {
             </dl>
           </CardContent>
         </Card>
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }

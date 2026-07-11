@@ -1,19 +1,26 @@
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  PageContent,
+  PageDescription,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 
 export function SettingsPage() {
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <header className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-primary">Preferences</p>
-          <h1 className="text-lg font-medium tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">
-            This route is ready for your persistent Electron settings.
-          </p>
-        </header>
+    <PageLayout contentClassName="max-w-3xl">
+      <PageHeader className="gap-2">
+        <p className="text-sm font-medium text-primary">Preferences</p>
+        <PageHeading>Settings</PageHeading>
+        <PageDescription>
+          This route is ready for your persistent Electron settings.
+        </PageDescription>
+      </PageHeader>
 
+      <PageContent>
         <Card>
           <CardHeader>
             <CardTitle>Application</CardTitle>
@@ -42,7 +49,7 @@ export function SettingsPage() {
             <Switch aria-label="Launch on startup" />
           </label>
         </Card>
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }

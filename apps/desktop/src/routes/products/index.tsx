@@ -1,6 +1,13 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
+import {
+  PageAction,
+  PageContent,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ProductsTable } from "@/components/product-table";
 
@@ -13,17 +20,19 @@ function ProductsPage() {
   const products = Route.useLoaderData();
 
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4">
-        <header className="flex items-end justify-between">
-          <h1 className="text-lg font-medium tracking-tight">Products</h1>
+    <PageLayout>
+      <PageHeader>
+        <PageHeading>Products</PageHeading>
+        <PageAction>
           <Button render={<Link to="/products/new" />}>
             <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
             Add product
           </Button>
-        </header>
+        </PageAction>
+      </PageHeader>
+      <PageContent>
         <ProductsTable products={products} />
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }

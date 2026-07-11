@@ -23,6 +23,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  PageContent,
+  PageDescription,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
 
 const optionalPrice = z
   .string()
@@ -93,15 +100,15 @@ function NewProductPage() {
   });
 
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-lg font-medium tracking-tight">Add product</h1>
-          <p className="text-muted-foreground">
-            Add an item to the local catalog. Prices are entered in Pakistani rupees.
-          </p>
-        </header>
+    <PageLayout contentClassName="max-w-3xl">
+      <PageHeader>
+        <PageHeading>Add product</PageHeading>
+        <PageDescription>
+          Add an item to the local catalog. Prices are entered in Pakistani rupees.
+        </PageDescription>
+      </PageHeader>
 
+      <PageContent>
         <Card>
           <CardHeader>
             <CardTitle>Product details</CardTitle>
@@ -330,7 +337,7 @@ function NewProductPage() {
             The product is available offline immediately and will be included in the next sync.
           </AlertDescription>
         </Alert>
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }

@@ -7,6 +7,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
+  PageContent,
+  PageDescription,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
+import {
   Card,
   CardAction,
   CardContent,
@@ -67,17 +74,17 @@ export function HomePage() {
   const badge = phaseBadge[status.phase];
 
   return (
-    <main className="p-4">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4">
-        <header className="flex flex-col gap-2">
-          <p className="font-medium text-primary text-sm">Offline-first store</p>
-          <h1 className="text-lg font-medium tracking-tight">Welcome back</h1>
-          <p className="max-w-2xl text-muted-foreground">
-            Every edit is written to the on-device Turso database first. Cloud sync is explicit and
-            never blocks local work.
-          </p>
-        </header>
+    <PageLayout>
+      <PageHeader>
+        <p className="font-medium text-primary text-sm">Offline-first store</p>
+        <PageHeading>Welcome back</PageHeading>
+        <PageDescription className="max-w-2xl">
+          Every edit is written to the on-device Turso database first. Cloud sync is explicit and
+          never blocks local work.
+        </PageDescription>
+      </PageHeader>
 
+      <PageContent>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -131,7 +138,7 @@ export function HomePage() {
             </CardAction>
           </CardHeader>
         </Card>
-      </div>
-    </main>
+      </PageContent>
+    </PageLayout>
   );
 }
