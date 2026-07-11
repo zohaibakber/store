@@ -1,24 +1,20 @@
-"use client";
-
-import { Label } from "@/components/ui/label";
-import { SidebarInput } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchIcon } from "@hugeicons/core-free-icons";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
+import { Kbd } from "./ui/kbd";
 
 export function SearchForm({ ...props }: React.ComponentProps<"form">) {
   return (
     <form {...props}>
-      <div className="relative">
-        <Label htmlFor="search" className="sr-only">
-          Search
-        </Label>
-        <SidebarInput id="search" placeholder="Type to search..." className="h-7 pl-7" />
-        <HugeiconsIcon
-          icon={SearchIcon}
-          strokeWidth={2}
-          className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 opacity-50 select-none"
-        />
-      </div>
+      <InputGroup>
+        <InputGroupAddon>
+          <HugeiconsIcon icon={SearchIcon} />
+        </InputGroupAddon>
+        <InputGroupInput placeholder="Search" />
+        <InputGroupAddon align={"inline-end"}>
+          <Kbd>/</Kbd>
+        </InputGroupAddon>
+      </InputGroup>
     </form>
   );
 }

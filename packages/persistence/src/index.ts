@@ -76,6 +76,39 @@ const make = (config: PersistenceConfig) =>
         )
       `),
     );
+    yield* attempt("initialize products table", () =>
+      db.run(sql`
+        CREATE TABLE IF NOT EXISTS products (
+          id TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL DEFAULT 'general',
+          barcode TEXT,
+          composition TEXT,
+          strength TEXT,
+          units_per_pack INTEGER NOT NULL DEFAULT 1,
+          cost_price INTEGER,
+          pack_price INTEGER,
+          unit_price INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        )
+      `),
+    );
+    yield* attempt("initialize batches table", () =>
+      db.run(sql`
+        CREATE TABLE IF NOT EXISTS batches (
+          id TEXT PRIMARY KEY NOT NULL,
+          product_id TEXT NOT NULL REFERENCES products(id),
+          batch_number TEXT,
+          expires_at INTEGER,
+          quantity INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        )
+      `),
+    );
 
     const status = yield* Ref.make<SyncStatus>({
       phase: configured ? "idle" : "local-only",

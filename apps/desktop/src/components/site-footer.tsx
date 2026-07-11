@@ -1,13 +1,16 @@
 import type { SyncStatus } from "@store/contracts";
+import { MoonIcon, SunIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { CloudSyncIcon, Loading03Icon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
+import { CloudSyncIcon, ReloadIcon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 export function SiteFooter() {
   const { toggleSidebar } = useSidebar();
+  const { setTheme, theme } = useTheme();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -45,6 +48,15 @@ export function SiteFooter() {
         >
           <HugeiconsIcon icon={SidebarLeftIcon} />
         </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? <SunIcon aria-hidden="true" /> : <MoonIcon aria-hidden="true" />}
+        </Button>
         <Tooltip>
           <TooltipTrigger render={<span className="ml-auto inline-flex" />}>
             <Button
@@ -56,7 +68,7 @@ export function SiteFooter() {
               onClick={sync}
             >
               <HugeiconsIcon
-                icon={isSyncing ? Loading03Icon : CloudSyncIcon}
+                icon={isSyncing ? ReloadIcon : CloudSyncIcon}
                 className={isSyncing ? "animate-spin" : undefined}
               />
             </Button>

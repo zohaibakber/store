@@ -12,7 +12,7 @@ type ThemeContextValue = {
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
-function useTheme() {
+export function useTheme() {
   const context = React.useContext(ThemeContext);
   if (!context) throw new Error("ThemeToggle must be used inside ThemeProvider.");
   return context;
