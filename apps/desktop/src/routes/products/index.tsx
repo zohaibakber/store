@@ -20,7 +20,7 @@ function ProductsPage() {
   const products = Route.useLoaderData();
 
   return (
-    <PageLayout>
+    <PageLayout contentClassName="gap-0">
       <PageHeader>
         <PageHeading>Products</PageHeading>
         <PageAction>

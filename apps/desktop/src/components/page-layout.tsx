@@ -8,8 +8,11 @@ function PageLayout({
   ...props
 }: ComponentProps<"main"> & { children: ReactNode; contentClassName?: string }) {
   return (
-    <main className={cn("p-4", className)} {...props}>
-      <div className={cn("mx-auto flex w-full flex-col gap-2 max-w-5xl", contentClassName)}>
+    <main data-slot="page-layout" className={cn("p-4", className)} {...props}>
+      <div
+        data-slot="page-layout-content"
+        className={cn("mx-auto flex w-full flex-col gap-2 max-w-5xl", contentClassName)}
+      >
         {children}
       </div>
     </main>
@@ -17,7 +20,9 @@ function PageLayout({
 }
 
 function PageContent({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("flex flex-col gap-4", className)} {...props} />;
+  return (
+    <div data-slot="page-content" className={cn("flex flex-col gap-4", className)} {...props} />
+  );
 }
 
 function PageHeader({ className, ...props }: ComponentProps<"header">) {
@@ -25,7 +30,7 @@ function PageHeader({ className, ...props }: ComponentProps<"header">) {
     <header
       data-slot="page-header"
       className={cn(
-        "grid auto-rows-min items-start gap-1 has-data-[slot=page-action]:grid-cols-[1fr_auto]",
+        "grid auto-rows-min items-start has-data-[slot=page-action]:grid-cols-[1fr_auto]",
         className,
       )}
       {...props}
@@ -34,11 +39,19 @@ function PageHeader({ className, ...props }: ComponentProps<"header">) {
 }
 
 function PageHeading({ className, ...props }: ComponentProps<"h1">) {
-  return <h1 className={cn("text-lg font-medium tracking-tight", className)} {...props} />;
+  return (
+    <h1
+      data-slot="page-heading"
+      className={cn("text-lg font-medium tracking-tight", className)}
+      {...props}
+    />
+  );
 }
 
 function PageDescription({ className, ...props }: ComponentProps<"p">) {
-  return <p className={cn("text-muted-foreground", className)} {...props} />;
+  return (
+    <p data-slot="page-description" className={cn("text-muted-foreground", className)} {...props} />
+  );
 }
 
 function PageAction({ className, ...props }: ComponentProps<"div">) {

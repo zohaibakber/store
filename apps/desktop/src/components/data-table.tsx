@@ -206,7 +206,7 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button className={cn("ml-auto", className)} size="sm" variant="outline" {...props}>
+          <Button className={cn("ml-auto", className)} size="icon" variant="ghost" {...props}>
             <HugeiconsIcon aria-hidden="true" icon={ColumnsThreeCogIcon} />
           </Button>
         }
