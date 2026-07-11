@@ -67,16 +67,16 @@ export function HomePage() {
   const badge = phaseBadge[status.phase];
 
   return (
-    <main className="p-6 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div>
+    <main className="p-4">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4">
+        <header className="flex flex-col gap-2">
           <p className="font-medium text-primary text-sm">Offline-first store</p>
-          <h1 className="mt-2 text-2xl font-medium tracking-tight">Welcome back</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">
+          <h1 className="text-lg font-medium tracking-tight">Welcome back</h1>
+          <p className="max-w-2xl text-muted-foreground">
             Every edit is written to the on-device Turso database first. Cloud sync is explicit and
             never blocks local work.
           </p>
-        </div>
+        </header>
 
         <Card>
           <CardHeader>

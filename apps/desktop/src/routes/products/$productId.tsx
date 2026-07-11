@@ -1,9 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert02Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons";
+import {
+  Alert02Icon,
+  ArrowRightFreeIcons,
+  ChevronDown,
+  ChevronUp,
+  Tag01Icon,
+  Trash2,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, formatPrice } from "@/lib/format";
 
@@ -15,8 +21,8 @@ export const Route = createFileRoute("/products/$productId")({
 
 function ProductDetailError({ error }: { error: Error }) {
   return (
-    <main className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-4">
+    <main className="p-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
         <BackToProducts />
         <Alert variant="destructive">
           <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
@@ -30,10 +36,9 @@ function ProductDetailError({ error }: { error: Error }) {
 
 function BackToProducts() {
   return (
-    <Link className={buttonVariants({ size: "sm", variant: "ghost" })} to="/products">
-      <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
-      Products
-    </Link>
+    <Button render={<Link to="/products" />} className={"-ml-1"} variant={"ghost"} size={"sm"}>
+      <HugeiconsIcon aria-hidden="true" icon={Tag01Icon} />
+    </Button>
   );
 }
 
@@ -53,15 +58,26 @@ function ProductDetailPage() {
   ];
 
   return (
-    <main className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-4">
-        <BackToProducts />
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-medium tracking-tight">{product.name}</h1>
-          <Badge className="capitalize" variant="outline">
-            {product.category.name}
-          </Badge>
-        </div>
+    <main className="p-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            <BackToProducts />
+            <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
+            <h1 className="text-lg font-medium tracking-tight">{product.name}</h1>
+          </div>
+          <div>
+            <Button variant="ghost" size="icon">
+              <HugeiconsIcon icon={ChevronUp} />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <HugeiconsIcon icon={ChevronDown} />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <HugeiconsIcon icon={Trash2} />
+            </Button>
+          </div>
+        </header>
 
         <Card>
           <CardHeader>

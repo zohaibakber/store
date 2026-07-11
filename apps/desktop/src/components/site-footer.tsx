@@ -1,10 +1,10 @@
 import type { SyncStatus } from "@store/contracts";
 import {
   CloudSyncIcon,
-  Moon01Icon,
+  Moon02Icon,
   ReloadIcon,
   SidebarLeftIcon,
-  Sun01Icon,
+  Sun02Icon,
 } from "@hugeicons/core-free-icons";
 import { useEffect, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
@@ -61,9 +61,9 @@ export function SiteFooter() {
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
           {theme === "dark" ? (
-            <HugeiconsIcon aria-hidden="true" icon={Sun01Icon} />
+            <HugeiconsIcon aria-hidden="true" icon={Sun02Icon} />
           ) : (
-            <HugeiconsIcon aria-hidden="true" icon={Moon01Icon} />
+            <HugeiconsIcon aria-hidden="true" icon={Moon02Icon} />
           )}
         </Button>
         <Tooltip>

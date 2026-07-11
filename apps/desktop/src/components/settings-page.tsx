@@ -4,15 +4,17 @@ import { Switch } from "@/components/ui/switch";
 
 export function SettingsPage() {
   return (
-    <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        <p className="text-sm font-medium text-primary">Preferences</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-3 text-muted-foreground">
-          This route is ready for your persistent Electron settings.
-        </p>
+    <main className="p-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <header className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-primary">Preferences</p>
+          <h1 className="text-lg font-medium tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">
+            This route is ready for your persistent Electron settings.
+          </p>
+        </header>
 
-        <Card className="mt-8">
+        <Card>
           <CardHeader>
             <CardTitle>Application</CardTitle>
             <CardDescription>Choose how the desktop application behaves.</CardDescription>
@@ -41,6 +43,6 @@ export function SettingsPage() {
           </label>
         </Card>
       </div>
-    </div>
+    </main>
   );
 }

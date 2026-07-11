@@ -2,9 +2,7 @@ import type { ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-ta
 import {
   ArrowDown01Icon,
   ArrowLeft01Icon,
-  ArrowLeftDoubleIcon,
   ArrowRight01Icon,
-  ArrowRightDoubleIcon,
   ArrowUp01Icon,
   Cancel01Icon,
   ColumnsThreeCogIcon,
@@ -32,6 +30,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -51,10 +50,14 @@ import { cn } from "@/lib/utils";
 // pages compose only the pieces they need:
 //
 //   <DataTable table={table} onRowClick={(row) => …}>
-//     <DataTableFilter columnId="name" placeholder="Filter…" />
-//     <DataTableViewOptions />
+//     <DataTableHeader>
+//       <DataTableFilter columnId="name" placeholder="Filter…" />
+//       <DataTableViewOptions />
+//     </DataTableHeader>
 //     <DataTableContent />
-//     <DataTablePagination />
+//     <DataTableFooter>
+//       <DataTablePagination />
+//     </DataTableFooter>
 //   </DataTable>
 //
 // The context exposes a structural interface covering only what the
@@ -86,7 +89,7 @@ interface DataTableRow {
   getVisibleCells(): ReadonlyArray<DataTableCell>;
 }
 
-interface DataTableHeader {
+interface DataTableHeaderCell {
   readonly id: string;
   readonly colSpan: number;
   readonly isPlaceholder: boolean;
@@ -98,7 +101,7 @@ interface DataTableInstance {
   getColumn(id: string): DataTableColumn | undefined;
   getAllColumns(): ReadonlyArray<DataTableColumn>;
   getAllLeafColumns(): ReadonlyArray<DataTableColumn>;
-  getHeaderGroups(): ReadonlyArray<{ id: string; headers: ReadonlyArray<DataTableHeader> }>;
+  getHeaderGroups(): ReadonlyArray<{ id: string; headers: ReadonlyArray<DataTableHeaderCell> }>;
   getRowModel(): { rows: ReadonlyArray<DataTableRow> };
   getPageCount(): number;
   getRowCount(): number;
@@ -142,13 +145,23 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
     <DataTableContext
       value={{ table, onRowClick: onRowClick as DataTableContextValue["onRowClick"] }}
     >
-      <div
-        className={cn("flex w-full flex-col gap-3", className)}
-        data-slot="data-table"
-        {...props}
-      />
+      <div className={cn("flex w-full flex-col", className)} data-slot="data-table" {...props} />
     </DataTableContext>
   );
+}
+
+function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("flex flex-wrap items-center gap-2 py-2", className)}
+      data-slot="data-table-header"
+      {...props}
+    />
+  );
+}
+
+function DataTableFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return <div className={cn("py-2", className)} data-slot="data-table-footer" {...props} />;
 }
 
 interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInput> {
@@ -195,7 +208,6 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
         render={
           <Button className={cn("ml-auto", className)} size="sm" variant="outline" {...props}>
             <HugeiconsIcon aria-hidden="true" icon={ColumnsThreeCogIcon} />
-            View
           </Button>
         }
       />
@@ -258,7 +270,7 @@ function DataTableContent({ className, ...props }: React.ComponentProps<"div">) 
   const { table, onRowClick } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
-    <div className={cn("overflow-hidden rounded-md border", className)} {...props}>
+    <div className={cn("overflow-hidden border rounded-lg", className)} {...props}>
       <Table>
         <TableHeader className="bg-muted">
           {table.getHeaderGroups().map((headerGroup) => (
@@ -307,76 +319,55 @@ const pageSizes = [10, 20, 30, 50];
 function DataTablePagination({ className, ...props }: React.ComponentProps<"div">) {
   const { table } = useDataTable();
   const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 10 };
-  const pageCount = Math.max(table.getPageCount(), 1);
+  const rowCount = table.getRowCount();
+  const firstResult = rowCount === 0 ? 0 : pageIndex * pageSize + 1;
+  const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
+  const resultRange = `${firstResult}–${lastResult}`;
+
   return (
-    <div className={cn("flex items-center justify-between gap-4", className)} {...props}>
-      <p className="text-xs text-muted-foreground">
-        {table.getRowCount()} row{table.getRowCount() === 1 ? "" : "s"}
-      </p>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Rows per page</span>
-          <Select
-            onValueChange={(value) => table.setPageSize(Number(value))}
-            value={String(pageSize)}
-          >
-            <SelectTrigger aria-label="Rows per page" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+    <div className={cn("flex items-center justify-between", className)} {...props}>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span>Showing</span>
+        <Select
+          onValueChange={(value) => table.setPageSize(Number(value))}
+          value={String(pageSize)}
+        >
+          <SelectTrigger aria-label="Displayed result range" size="sm">
+            <SelectValue>{() => resultRange}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
               {pageSizes.map((size) => (
                 <SelectItem key={size} value={String(size)}>
-                  {size}
+                  {size} per page
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          Page {pageIndex + 1} of {pageCount}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label="First page"
-            disabled={!table.getCanPreviousPage()}
-            onClick={() => table.firstPage()}
-            size="icon-sm"
-            type="button"
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={ArrowLeftDoubleIcon} />
-          </Button>
-          <Button
-            aria-label="Previous page"
-            disabled={!table.getCanPreviousPage()}
-            onClick={() => table.previousPage()}
-            size="icon-sm"
-            type="button"
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
-          </Button>
-          <Button
-            aria-label="Next page"
-            disabled={!table.getCanNextPage()}
-            onClick={() => table.nextPage()}
-            size="icon-sm"
-            type="button"
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
-          </Button>
-          <Button
-            aria-label="Last page"
-            disabled={!table.getCanNextPage()}
-            onClick={() => table.lastPage()}
-            size="icon-sm"
-            type="button"
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={ArrowRightDoubleIcon} />
-          </Button>
-        </div>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <span>of {rowCount} results</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          aria-label="Previous page"
+          disabled={!table.getCanPreviousPage()}
+          onClick={() => table.previousPage()}
+          size="icon-sm"
+          type="button"
+          variant="outline"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
+        </Button>
+        <Button
+          aria-label="Next page"
+          disabled={!table.getCanNextPage()}
+          onClick={() => table.nextPage()}
+          size="icon-sm"
+          type="button"
+          variant="outline"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
+        </Button>
       </div>
     </div>
   );
@@ -386,7 +377,9 @@ export {
   DataTable,
   DataTableColumnHeader,
   DataTableContent,
+  DataTableFooter,
   DataTableFilter,
+  DataTableHeader,
   DataTablePagination,
   DataTableViewOptions,
   useDataTable,

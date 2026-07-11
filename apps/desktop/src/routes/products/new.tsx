@@ -93,14 +93,14 @@ function NewProductPage() {
   });
 
   return (
-    <main className="p-6 md:p-8">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-medium tracking-tight">Add product</h1>
-          <p className="mt-1 text-muted-foreground">
+    <main className="p-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-lg font-medium tracking-tight">Add product</h1>
+          <p className="text-muted-foreground">
             Add an item to the local catalog. Prices are entered in Pakistani rupees.
           </p>
-        </div>
+        </header>
 
         <Card>
           <CardHeader>
