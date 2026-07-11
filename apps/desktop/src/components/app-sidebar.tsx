@@ -13,11 +13,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ComputerTerminalIcon,
-  MedicineBottle01Icon,
-  Settings05Icon,
-} from "@hugeicons/core-free-icons";
+import { HomeIcon, MedicineBottle01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
 
 const data = {
   user: {
@@ -27,19 +23,19 @@ const data = {
   },
   navMain: [
     {
-      title: "Dashboard",
+      title: "Home",
       url: "/",
-      icon: <HugeiconsIcon icon={ComputerTerminalIcon} />,
+      icon: <HugeiconsIcon icon={HomeIcon} />,
     },
     {
       title: "Products",
       url: "/products",
-      icon: <HugeiconsIcon icon={MedicineBottle01Icon} />,
+      icon: <HugeiconsIcon icon={TagIcon} />,
     },
     {
       title: "Settings",
       url: "/settings",
-      icon: <HugeiconsIcon icon={Settings05Icon} />,
+      icon: <HugeiconsIcon icon={SettingsIcon} />,
     },
   ] satisfies NavMainItem[],
 };

@@ -1,32 +1,54 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { nanoid } from "nanoid";
 
-export const productCategories = ["medicine", "cosmetics", "general"] as const;
+const timestamps = {
+  createdAt: integer().notNull(),
+  updatedAt: integer().notNull(),
+  deletedAt: integer(),
+};
 
-export const products = sqliteTable("products", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  category: text("category", { enum: productCategories }).notNull().default("general"),
-  barcode: text("barcode"),
-  composition: text("composition"),
-  strength: text("strength"),
-  unitsPerPack: integer("units_per_pack").notNull().default(1),
-  costPrice: integer("cost_price"),
-  packPrice: integer("pack_price"),
-  unitPrice: integer("unit_price"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-  deletedAt: integer("deleted_at"),
-});
+const primaryId = text()
+  .primaryKey()
+  .$defaultFn(() => nanoid());
+
+export const categories = sqliteTable(
+  "categories",
+  {
+    id: primaryId,
+    name: text().notNull(),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("categories_name_idx").on(table.name)],
+);
+
+export const products = sqliteTable(
+  "products",
+  {
+    id: primaryId,
+    name: text().notNull(),
+    categoryId: text()
+      .notNull()
+      .default("general")
+      .references(() => categories.id),
+    barcode: text(),
+    composition: text(),
+    strength: text(),
+    unitsPerPack: integer().notNull().default(1),
+    costPrice: integer(),
+    packPrice: integer(),
+    unitPrice: integer(),
+    ...timestamps,
+  },
+  (table) => [index("products_category_id_idx").on(table.categoryId)],
+);
 
 export const batches = sqliteTable("batches", {
-  id: text("id").primaryKey(),
-  productId: text("product_id")
+  id: primaryId,
+  productId: text()
     .notNull()
     .references(() => products.id),
-  batchNumber: text("batch_number"),
-  expiresAt: integer("expires_at"),
-  quantity: integer("quantity").notNull().default(0),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-  deletedAt: integer("deleted_at"),
+  batchNumber: text(),
+  expiresAt: integer(),
+  quantity: integer().notNull().default(0),
+  ...timestamps,
 });

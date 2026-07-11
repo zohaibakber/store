@@ -1,5 +1,5 @@
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/effect-schema";
-import { batches, products } from "@store/database/schema";
+import { batches, categories, products } from "@store/database/schema";
 import * as Schema from "effect/Schema";
 
 // Wire schemas are derived from the drizzle tables so the database schema stays
@@ -9,12 +9,15 @@ import * as Schema from "effect/Schema";
 
 const productRow = createSelectSchema(products);
 const productInsert = createInsertSchema(products);
+const categoryRow = createSelectSchema(categories);
+
+const { deletedAt: _categoryDeletedAt, ...categoryFields } = categoryRow.fields;
+export const Category = Schema.Struct(categoryFields);
+export type Category = typeof Category.Type;
 
 const { deletedAt: _productDeletedAt, ...productFields } = productRow.fields;
-export const Product = Schema.Struct(productFields);
+export const Product = Schema.Struct({ ...productFields, category: Category });
 export type Product = typeof Product.Type;
-
-export type ProductCategory = Product["category"];
 
 const {
   id: _productId,
@@ -62,6 +65,7 @@ export interface SyncStatus {
 }
 
 export interface OfflineStoreApi {
+  readonly listCategories: () => Promise<ReadonlyArray<Category>>;
   readonly listProducts: () => Promise<ReadonlyArray<Product>>;
   readonly getProduct: (input: ProductIdInput) => Promise<Product>;
   readonly createProduct: (input: CreateProductInput) => Promise<Product>;

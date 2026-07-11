@@ -1,6 +1,13 @@
-import type { CreateProductInput, Product, SyncStatus, UpdateProductInput } from "@store/contracts";
-import { products } from "@store/database/schema";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import type {
+  Category,
+  CreateProductInput,
+  Product,
+  SyncStatus,
+  UpdateProductInput,
+} from "@store/contracts";
+import { relations } from "@store/database/relations";
+import { categories, products } from "@store/database/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/tursodatabase-sync";
 import { migrate } from "drizzle-orm/tursodatabase-sync/migrator";
 import type { DatabaseOpts } from "@tursodatabase/sync";
@@ -32,6 +39,7 @@ type StoreError = PersistenceError | ProductNotFoundError;
 export class OfflineStore extends Context.Service<
   OfflineStore,
   {
+    readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
     readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
     readonly getProduct: (id: string) => Effect.Effect<Product, StoreError>;
     readonly createProduct: (input: CreateProductInput) => Effect.Effect<Product, PersistenceError>;
@@ -51,8 +59,19 @@ const attempt = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
   });
 
 type ProductRow = typeof products.$inferSelect;
+type CategoryRow = typeof categories.$inferSelect;
+type ProductWithCategory = ProductRow & { category: CategoryRow };
 
-const toProduct = ({ deletedAt: _deletedAt, ...product }: ProductRow): Product => product;
+const toCategory = ({ deletedAt: _deletedAt, ...category }: CategoryRow): Category => category;
+
+const toProduct = ({
+  deletedAt: _deletedAt,
+  category,
+  ...product
+}: ProductWithCategory): Product => ({
+  ...product,
+  category: toCategory(category),
+});
 
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
@@ -68,6 +87,7 @@ const make = (config: PersistenceConfig) =>
       : { path: config.path };
     const db = drizzle({
       connection,
+      relations,
     });
 
     yield* attempt("connect database", () => db.$client.connect());
@@ -86,23 +106,29 @@ const make = (config: PersistenceConfig) =>
       attempt("close database", () => db.$client.close()).pipe(Effect.orDie),
     );
 
+    const listCategories = attempt("list categories", () =>
+      db.query.categories.findMany({
+        orderBy: { name: "asc" },
+        where: { deletedAt: { isNull: true } },
+      }),
+    ).pipe(Effect.map((rows) => rows.map(toCategory)));
+
+    const findProduct = (id: string) =>
+      db.query.products.findFirst({
+        where: { id, deletedAt: { isNull: true } },
+        with: { category: true },
+      });
+
     const listProducts = attempt("list products", () =>
-      db
-        .select()
-        .from(products)
-        .where(isNull(products.deletedAt))
-        .orderBy(asc(products.name))
-        .all(),
+      db.query.products.findMany({
+        orderBy: { name: "asc" },
+        where: { deletedAt: { isNull: true } },
+        with: { category: true },
+      }),
     ).pipe(Effect.map((rows) => rows.map(toProduct)));
 
     const getProduct = Effect.fn("OfflineStore.getProduct")(function* (id: string) {
-      const row = yield* attempt("find product", () =>
-        db
-          .select()
-          .from(products)
-          .where(and(eq(products.id, id), isNull(products.deletedAt)))
-          .get(),
-      );
+      const row = yield* attempt("find product", () => findProduct(id));
       if (!row) return yield* new ProductNotFoundError({ id });
       return toProduct(row);
     });
@@ -111,19 +137,22 @@ const make = (config: PersistenceConfig) =>
       input: CreateProductInput,
     ) {
       const now = Date.now();
-      const row = yield* attempt("create product", () =>
-        db
+      const row = yield* attempt("create product", async () => {
+        const id = crypto.randomUUID();
+        await db
           .insert(products)
           .values({
             ...input,
-            id: crypto.randomUUID(),
+            id,
             name: input.name.trim(),
             createdAt: now,
             updatedAt: now,
           })
-          .returning()
-          .get(),
-      );
+          .run();
+        const created = await findProduct(id);
+        if (!created) throw new Error("Created product could not be loaded");
+        return created;
+      });
       return toProduct(row);
     });
 
@@ -131,14 +160,16 @@ const make = (config: PersistenceConfig) =>
       input: UpdateProductInput,
     ) {
       const { id, ...changes } = input;
-      const row = yield* attempt("update product", () =>
-        db
+      const row = yield* attempt("update product", async () => {
+        const updated = await db
           .update(products)
           .set({ ...changes, name: changes.name.trim(), updatedAt: Date.now() })
           .where(and(eq(products.id, id), isNull(products.deletedAt)))
-          .returning()
-          .get(),
-      );
+          .returning({ id: products.id })
+          .get();
+        if (!updated) return undefined;
+        return findProduct(id);
+      });
       if (!row) return yield* new ProductNotFoundError({ id });
       return toProduct(row);
     });
@@ -186,6 +217,7 @@ const make = (config: PersistenceConfig) =>
     });
 
     return OfflineStore.of({
+      listCategories,
       listProducts,
       getProduct,
       createProduct,
@@ -199,6 +231,7 @@ const make = (config: PersistenceConfig) =>
 export const layer = (config: PersistenceConfig) => Layer.effect(OfflineStore, make(config));
 
 export const program = {
+  listCategories: Effect.flatMap(OfflineStore, (store) => store.listCategories),
   listProducts: Effect.flatMap(OfflineStore, (store) => store.listProducts),
   getProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.getProduct(id)),
   createProduct: (input: CreateProductInput) =>

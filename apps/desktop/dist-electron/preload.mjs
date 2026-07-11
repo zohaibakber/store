@@ -1,1 +1,55 @@
-let e=require("electron");e.contextBridge.exposeInMainWorld(`ipcRenderer`,{on(...t){let[n,r]=t;return e.ipcRenderer.on(n,(e,...t)=>r(e,...t))},off(...t){let[n,...r]=t;return e.ipcRenderer.off(n,...r)},send(...t){let[n,...r]=t;return e.ipcRenderer.send(n,...r)},invoke(...t){let[n,...r]=t;return e.ipcRenderer.invoke(n,...r)}}),e.contextBridge.exposeInMainWorld(`windowControls`,{minimize(){e.ipcRenderer.send(`window-controls:minimize`)},toggleMaximize(){return e.ipcRenderer.invoke(`window-controls:toggle-maximize`)},isMaximized(){return e.ipcRenderer.invoke(`window-controls:is-maximized`)},isFullScreen(){return e.ipcRenderer.invoke(`window-controls:is-full-screen`)},onFullScreenChange(t){let n=(e,n)=>{t(n)};return e.ipcRenderer.on(`window-controls:full-screen-changed`,n),()=>e.ipcRenderer.off(`window-controls:full-screen-changed`,n)},close(){e.ipcRenderer.send(`window-controls:close`)}}),e.contextBridge.exposeInMainWorld(`offlineStore`,{listProducts:()=>e.ipcRenderer.invoke(`store:products:list`),getProduct:t=>e.ipcRenderer.invoke(`store:products:get`,t),createProduct:t=>e.ipcRenderer.invoke(`store:products:create`,t),updateProduct:t=>e.ipcRenderer.invoke(`store:products:update`,t),deleteProduct:t=>e.ipcRenderer.invoke(`store:products:delete`,t),getSyncStatus:()=>e.ipcRenderer.invoke(`store:sync:status`),sync:()=>e.ipcRenderer.invoke(`store:sync:run`)});
+let electron = require("electron");
+//#region electron/preload.ts
+electron.contextBridge.exposeInMainWorld("ipcRenderer", {
+	on(...args) {
+		const [channel, listener] = args;
+		return electron.ipcRenderer.on(channel, (event, ...args) => listener(event, ...args));
+	},
+	off(...args) {
+		const [channel, ...omit] = args;
+		return electron.ipcRenderer.off(channel, ...omit);
+	},
+	send(...args) {
+		const [channel, ...omit] = args;
+		return electron.ipcRenderer.send(channel, ...omit);
+	},
+	invoke(...args) {
+		const [channel, ...omit] = args;
+		return electron.ipcRenderer.invoke(channel, ...omit);
+	}
+});
+electron.contextBridge.exposeInMainWorld("windowControls", {
+	minimize() {
+		electron.ipcRenderer.send("window-controls:minimize");
+	},
+	toggleMaximize() {
+		return electron.ipcRenderer.invoke("window-controls:toggle-maximize");
+	},
+	isMaximized() {
+		return electron.ipcRenderer.invoke("window-controls:is-maximized");
+	},
+	isFullScreen() {
+		return electron.ipcRenderer.invoke("window-controls:is-full-screen");
+	},
+	onFullScreenChange(callback) {
+		const listener = (_event, isFullScreen) => {
+			callback(isFullScreen);
+		};
+		electron.ipcRenderer.on("window-controls:full-screen-changed", listener);
+		return () => electron.ipcRenderer.off("window-controls:full-screen-changed", listener);
+	},
+	close() {
+		electron.ipcRenderer.send("window-controls:close");
+	}
+});
+electron.contextBridge.exposeInMainWorld("offlineStore", {
+	listCategories: () => electron.ipcRenderer.invoke("store:categories:list"),
+	listProducts: () => electron.ipcRenderer.invoke("store:products:list"),
+	getProduct: (input) => electron.ipcRenderer.invoke("store:products:get", input),
+	createProduct: (input) => electron.ipcRenderer.invoke("store:products:create", input),
+	updateProduct: (input) => electron.ipcRenderer.invoke("store:products:update", input),
+	deleteProduct: (input) => electron.ipcRenderer.invoke("store:products:delete", input),
+	getSyncStatus: () => electron.ipcRenderer.invoke("store:sync:status"),
+	sync: () => electron.ipcRenderer.invoke("store:sync:run")
+});
+//#endregion

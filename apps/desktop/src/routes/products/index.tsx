@@ -62,13 +62,10 @@ const columns = columnHelper.columns([
     filterFn: "includesString",
     meta: { label: "Name" },
   }),
-  columnHelper.accessor("category", {
+  columnHelper.accessor((product) => product.category.name, {
+    id: "category",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-    cell: ({ getValue }) => (
-      <Badge className="capitalize" variant="outline">
-        {getValue()}
-      </Badge>
-    ),
+    cell: ({ getValue }) => <Badge variant="outline">{getValue()}</Badge>,
     meta: { label: "Category" },
   }),
   columnHelper.accessor("barcode", {

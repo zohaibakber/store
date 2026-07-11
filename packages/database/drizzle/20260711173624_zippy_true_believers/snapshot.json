@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "2c377400-3917-4a58-a7c8-2d328de8f480",
+  "id": "bd326012-9a82-4f7b-88b5-ad3dea184696",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
       "name": "batches",
+      "entityType": "tables"
+    },
+    {
+      "name": "categories",
       "entityType": "tables"
     },
     {
@@ -28,7 +32,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "product_id",
+      "name": "productId",
       "entityType": "columns",
       "table": "batches"
     },
@@ -38,7 +42,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "batch_number",
+      "name": "batchNumber",
       "entityType": "columns",
       "table": "batches"
     },
@@ -48,7 +52,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expires_at",
+      "name": "expiresAt",
       "entityType": "columns",
       "table": "batches"
     },
@@ -68,7 +72,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "batches"
     },
@@ -78,7 +82,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "batches"
     },
@@ -88,9 +92,59 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "deleted_at",
+      "name": "deletedAt",
       "entityType": "columns",
       "table": "batches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "categories"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "categories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "table": "categories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "table": "categories"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedAt",
+      "entityType": "columns",
+      "table": "categories"
     },
     {
       "type": "text",
@@ -118,7 +172,7 @@
       "autoincrement": false,
       "default": "'general'",
       "generated": null,
-      "name": "category",
+      "name": "categoryId",
       "entityType": "columns",
       "table": "products"
     },
@@ -158,7 +212,7 @@
       "autoincrement": false,
       "default": "1",
       "generated": null,
-      "name": "units_per_pack",
+      "name": "unitsPerPack",
       "entityType": "columns",
       "table": "products"
     },
@@ -168,7 +222,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "cost_price",
+      "name": "costPrice",
       "entityType": "columns",
       "table": "products"
     },
@@ -178,7 +232,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "pack_price",
+      "name": "packPrice",
       "entityType": "columns",
       "table": "products"
     },
@@ -188,7 +242,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "unit_price",
+      "name": "unitPrice",
       "entityType": "columns",
       "table": "products"
     },
@@ -198,7 +252,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "products"
     },
@@ -208,7 +262,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "products"
     },
@@ -218,20 +272,31 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "deleted_at",
+      "name": "deletedAt",
       "entityType": "columns",
       "table": "products"
     },
     {
-      "columns": ["product_id"],
+      "columns": ["productId"],
       "tableTo": "products",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_batches_product_id_products_id_fk",
+      "name": "fk_batches_productId_products_id_fk",
       "entityType": "fks",
       "table": "batches"
+    },
+    {
+      "columns": ["categoryId"],
+      "tableTo": "categories",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_products_categoryId_categories_id_fk",
+      "entityType": "fks",
+      "table": "products"
     },
     {
       "columns": ["id"],
@@ -243,9 +308,44 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "categories_pk",
+      "table": "categories",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "products_pk",
       "table": "products",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "categories_name_idx",
+      "entityType": "indexes",
+      "table": "categories"
+    },
+    {
+      "columns": [
+        {
+          "value": "categoryId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "products_category_id_idx",
+      "entityType": "indexes",
+      "table": "products"
     }
   ],
   "renames": []

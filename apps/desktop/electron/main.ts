@@ -64,6 +64,7 @@ const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
 };
 
 function registerStoreIpc() {
+  ipcMain.handle("store:categories:list", () => runStore(program.listCategories));
   ipcMain.handle("store:products:list", () => runStore(program.listProducts));
   ipcMain.handle("store:products:get", (_event, input: unknown) =>
     runStore(
@@ -179,7 +180,9 @@ app.on("before-quit", () => {
 });
 
 void app.whenReady().then(() => {
-  const databasePath = path.join(app.getPath("userData"), "store-v2.db");
+  // Earlier replicas use explicitly named columns. A new replica starts from
+  // the inferred-column schema and matching sync log.
+  const databasePath = path.join(app.getPath("userData"), "store-v5.db");
   const migrationsFolder = app.isPackaged
     ? path.join(process.resourcesPath, "database-migrations")
     : path.join(process.env.APP_ROOT, "..", "..", "packages", "database", "drizzle");

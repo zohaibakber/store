@@ -32,7 +32,7 @@ const optionalPrice = z
 
 const productFormSchema = z.object({
   name: z.string().trim().min(1, "Product name is required.").max(120),
-  category: z.enum(["medicine", "cosmetics", "general"]),
+  categoryId: z.string().min(1, "Category is required."),
   barcode: z.string().trim().max(64),
   composition: z.string().trim().max(160),
   strength: z.string().trim().max(80),
@@ -50,15 +50,18 @@ const nullableText = (value: string) => value.trim() || null;
 const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
 
 export const Route = createFileRoute("/products/new")({
+  loader: () => window.offlineStore.listCategories(),
   component: NewProductPage,
 });
 
 function NewProductPage() {
+  const categories = Route.useLoaderData();
   const navigate = useNavigate();
   const form = useForm({
     defaultValues: {
       name: "",
-      category: "general" as "medicine" | "cosmetics" | "general",
+      categoryId:
+        categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "",
       barcode: "",
       composition: "",
       strength: "",
@@ -72,7 +75,7 @@ function NewProductPage() {
       try {
         const product = await window.offlineStore.createProduct({
           name: value.name.trim(),
-          category: value.category,
+          categoryId: value.categoryId,
           barcode: nullableText(value.barcode),
           composition: nullableText(value.composition),
           strength: nullableText(value.strength),
@@ -140,7 +143,7 @@ function NewProductPage() {
 
                 <FieldGroup className="grid gap-4 sm:grid-cols-2">
                   <form.Field
-                    name="category"
+                    name="categoryId"
                     children={(field) => {
                       const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
                       return (
@@ -160,9 +163,11 @@ function NewProductPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectGroup>
-                                <SelectItem value="general">General</SelectItem>
-                                <SelectItem value="medicine">Medicine</SelectItem>
-                                <SelectItem value="cosmetics">Cosmetics</SelectItem>
+                                {categories.map((category) => (
+                                  <SelectItem key={category.id} value={category.id}>
+                                    {category.name}
+                                  </SelectItem>
+                                ))}
                               </SelectGroup>
                             </SelectContent>
                           </Select>

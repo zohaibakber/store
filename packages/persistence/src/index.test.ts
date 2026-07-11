@@ -17,7 +17,7 @@ test("product CRUD remains available without sync configuration", async () => {
     const created = await runtime.runPromise(
       program.createProduct({
         name: "  Panadol  ",
-        category: "medicine",
+        categoryId: "medicine",
         barcode: null,
         composition: "Paracetamol",
         strength: "500mg",
@@ -28,7 +28,8 @@ test("product CRUD remains available without sync configuration", async () => {
       }),
     );
     expect(created.name).toBe("Panadol");
-    expect(created.category).toBe("medicine");
+    expect(created.category).toMatchObject({ id: "medicine", name: "Medicine" });
+    expect(await runtime.runPromise(program.listCategories)).toHaveLength(3);
     expect(await runtime.runPromise(program.listProducts)).toEqual([created]);
     expect(await runtime.runPromise(program.getProduct(created.id))).toEqual(created);
 
@@ -36,7 +37,7 @@ test("product CRUD remains available without sync configuration", async () => {
       program.updateProduct({
         id: created.id,
         name: "Panadol Extra",
-        category: "medicine",
+        categoryId: "medicine",
         barcode: "123456",
         composition: "Paracetamol + Caffeine",
         strength: "500mg",
@@ -80,7 +81,7 @@ test("category and units default when omitted", async () => {
         unitPrice: null,
       }),
     );
-    expect(created.category).toBe("general");
+    expect(created.category).toMatchObject({ id: "general", name: "General" });
     expect(created.unitsPerPack).toBe(1);
   } finally {
     await runtime.dispose();
