@@ -1,5 +1,6 @@
 "use client";
 
+import { Link } from "@tanstack/react-router";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   SidebarGroup,
@@ -15,27 +16,30 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 
-export function NavMain({
-  items,
-}: {
-  items: {
+type AppRoute = "/" | "/products" | "/settings";
+
+export type NavMainItem = {
+  title: string;
+  url: AppRoute;
+  icon: React.ReactNode;
+  isActive?: boolean;
+  items?: {
     title: string;
-    url: string;
-    icon: React.ReactNode;
-    isActive?: boolean;
-    items?: {
-      title: string;
-      url: string;
-    }[];
+    url: AppRoute;
   }[];
-}) {
+};
+
+export function NavMain({ items }: { items: NavMainItem[] }) {
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Platform</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <Collapsible key={item.title} defaultOpen={item.isActive} render={<SidebarMenuItem />}>
-            <SidebarMenuButton tooltip={item.title} render={<a href={item.url} />}>
+            <SidebarMenuButton
+              tooltip={item.title}
+              render={<Link activeProps={{ "data-active": true }} to={item.url} />}
+            >
               {item.icon}
               <span>{item.title}</span>
             </SidebarMenuButton>

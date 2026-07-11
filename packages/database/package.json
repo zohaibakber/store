@@ -1,0 +1,22 @@
+{
+  "name": "@store/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit && drizzle-kit check",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "1.0.0-rc.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "1.0.0-rc.4",
+    "typescript": "^7.0.2"
+  }
+}

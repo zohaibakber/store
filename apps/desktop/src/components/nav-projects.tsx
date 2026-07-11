@@ -1,6 +1,7 @@
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -54,31 +55,35 @@ export function NavProjects({
                 side={isMobile ? "bottom" : "right"}
                 align={isMobile ? "end" : "start"}
               >
-                <DropdownMenuItem>
-                  <HugeiconsIcon
-                    icon={FolderIcon}
-                    strokeWidth={2}
-                    className="text-muted-foreground"
-                  />
-                  <span>View Project</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <HugeiconsIcon
-                    icon={Share03Icon}
-                    strokeWidth={2}
-                    className="text-muted-foreground"
-                  />
-                  <span>Share Project</span>
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem>
+                    <HugeiconsIcon
+                      icon={FolderIcon}
+                      strokeWidth={2}
+                      className="text-muted-foreground"
+                    />
+                    <span>View Project</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <HugeiconsIcon
+                      icon={Share03Icon}
+                      strokeWidth={2}
+                      className="text-muted-foreground"
+                    />
+                    <span>Share Project</span>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <HugeiconsIcon
-                    icon={Delete02Icon}
-                    strokeWidth={2}
-                    className="text-muted-foreground"
-                  />
-                  <span>Delete Project</span>
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem>
+                    <HugeiconsIcon
+                      icon={Delete02Icon}
+                      strokeWidth={2}
+                      className="text-muted-foreground"
+                    />
+                    <span>Delete Project</span>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

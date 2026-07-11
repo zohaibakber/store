@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { HomeIcon, RouteOffIcon } from "lucide-react";
+import { Home01Icon, RouteBlockIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -15,7 +16,7 @@ export function NotFound() {
     <Empty className="min-h-[calc(100svh-4rem)]">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <RouteOffIcon aria-hidden="true" />
+          <HugeiconsIcon aria-hidden="true" icon={RouteBlockIcon} />
         </EmptyMedia>
         <EmptyTitle>Page not found</EmptyTitle>
         <EmptyDescription>
@@ -25,7 +26,7 @@ export function NotFound() {
       <EmptyContent>
         <Button size="sm">
           <Link to="/">
-            <HomeIcon aria-hidden="true" />
+            <HugeiconsIcon aria-hidden="true" icon={Home01Icon} />
             Return home
           </Link>
         </Button>

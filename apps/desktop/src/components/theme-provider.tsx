@@ -1,4 +1,5 @@
-import { MoonIcon } from "lucide-react";
+import { Moon01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import * as React from "react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -59,7 +60,7 @@ export function ThemeToggle() {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-2">
       <Label htmlFor={id} className="min-w-0 gap-2 text-sidebar-foreground">
-        <MoonIcon aria-hidden="true" />
+        <HugeiconsIcon aria-hidden="true" icon={Moon01Icon} />
         <span className="truncate">Dark mode</span>
       </Label>
       <Switch

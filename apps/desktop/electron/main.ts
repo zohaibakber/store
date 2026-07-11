@@ -1,4 +1,4 @@
-import { CreateNoteInput, DeleteNoteInput, UpdateNoteInput } from "@store/contracts";
+import { CreateProductInput, ProductIdInput, UpdateProductInput } from "@store/contracts";
 import {
   OfflineStore,
   PersistenceError,
@@ -64,21 +64,32 @@ const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
 };
 
 function registerStoreIpc() {
-  ipcMain.handle("store:notes:list", () => runStore(program.listNotes));
-  ipcMain.handle("store:notes:create", (_event, input: unknown) =>
+  ipcMain.handle("store:products:list", () => runStore(program.listProducts));
+  ipcMain.handle("store:products:get", (_event, input: unknown) =>
     runStore(
-      Schema.decodeUnknownEffect(CreateNoteInput)(input).pipe(Effect.flatMap(program.createNote)),
+      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
+        Effect.flatMap(({ id }) => program.getProduct(id)),
+      ),
     ),
   );
-  ipcMain.handle("store:notes:update", (_event, input: unknown) =>
+  ipcMain.handle("store:products:create", (_event, input: unknown) =>
     runStore(
-      Schema.decodeUnknownEffect(UpdateNoteInput)(input).pipe(Effect.flatMap(program.updateNote)),
+      Schema.decodeUnknownEffect(CreateProductInput)(input).pipe(
+        Effect.flatMap(program.createProduct),
+      ),
     ),
   );
-  ipcMain.handle("store:notes:delete", (_event, input: unknown) =>
+  ipcMain.handle("store:products:update", (_event, input: unknown) =>
     runStore(
-      Schema.decodeUnknownEffect(DeleteNoteInput)(input).pipe(
-        Effect.flatMap(({ id }) => program.deleteNote(id)),
+      Schema.decodeUnknownEffect(UpdateProductInput)(input).pipe(
+        Effect.flatMap(program.updateProduct),
+      ),
+    ),
+  );
+  ipcMain.handle("store:products:delete", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
+        Effect.flatMap(({ id }) => program.deleteProduct(id)),
       ),
     ),
   );
@@ -168,10 +179,14 @@ app.on("before-quit", () => {
 });
 
 void app.whenReady().then(() => {
-  const databasePath = path.join(app.getPath("userData"), "offline-store.db");
+  const databasePath = path.join(app.getPath("userData"), "store-v2.db");
+  const migrationsFolder = app.isPackaged
+    ? path.join(process.resourcesPath, "database-migrations")
+    : path.join(process.env.APP_ROOT, "..", "..", "packages", "database", "drizzle");
   runtime = ManagedRuntime.make(
     persistenceLayer({
       path: databasePath,
+      migrationsFolder,
       syncUrl: process.env["TURSO_SYNC_URL"] ?? process.env["TURSO_DATABASE_URL"],
       authToken: process.env["TURSO_AUTH_TOKEN"],
     }),

@@ -1,11 +1,16 @@
 import type { SyncStatus } from "@store/contracts";
-import { MoonIcon, SunIcon } from "lucide-react";
+import {
+  CloudSyncIcon,
+  Moon01Icon,
+  ReloadIcon,
+  SidebarLeftIcon,
+  Sun01Icon,
+} from "@hugeicons/core-free-icons";
 import { useEffect, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { CloudSyncIcon, ReloadIcon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 export function SiteFooter() {
@@ -55,7 +60,11 @@ export function SiteFooter() {
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
-          {theme === "dark" ? <SunIcon aria-hidden="true" /> : <MoonIcon aria-hidden="true" />}
+          {theme === "dark" ? (
+            <HugeiconsIcon aria-hidden="true" icon={Sun01Icon} />
+          ) : (
+            <HugeiconsIcon aria-hidden="true" icon={Moon01Icon} />
+          )}
         </Button>
         <Tooltip>
           <TooltipTrigger render={<span className="ml-auto inline-flex" />}>

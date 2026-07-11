@@ -11,6 +11,8 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "@store/database": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.83"
   },
   "devDependencies": {

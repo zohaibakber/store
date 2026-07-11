@@ -1,16 +1,18 @@
-import type { CreateNoteInput, Note, SyncStatus, UpdateNoteInput } from "@store/contracts";
-import { desc, eq, isNull, sql } from "drizzle-orm";
+import type { CreateProductInput, Product, SyncStatus, UpdateProductInput } from "@store/contracts";
+import { products } from "@store/database/schema";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/tursodatabase-sync";
+import { migrate } from "drizzle-orm/tursodatabase-sync/migrator";
 import type { DatabaseOpts } from "@tursodatabase/sync";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import { notes } from "./schema";
 
 export interface PersistenceConfig {
   readonly path: string;
+  readonly migrationsFolder: string;
   readonly syncUrl?: string;
   readonly authToken?: string;
 }
@@ -20,20 +22,21 @@ export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>(
   { operation: Schema.String, message: Schema.String },
 ) {}
 
-export class NoteNotFoundError extends Schema.TaggedErrorClass<NoteNotFoundError>()(
-  "NoteNotFoundError",
+export class ProductNotFoundError extends Schema.TaggedErrorClass<ProductNotFoundError>()(
+  "ProductNotFoundError",
   { id: Schema.String },
 ) {}
 
-type StoreError = PersistenceError | NoteNotFoundError;
+type StoreError = PersistenceError | ProductNotFoundError;
 
 export class OfflineStore extends Context.Service<
   OfflineStore,
   {
-    readonly listNotes: Effect.Effect<ReadonlyArray<Note>, PersistenceError>;
-    readonly createNote: (input: CreateNoteInput) => Effect.Effect<Note, PersistenceError>;
-    readonly updateNote: (input: UpdateNoteInput) => Effect.Effect<Note, StoreError>;
-    readonly deleteNote: (id: string) => Effect.Effect<void, StoreError>;
+    readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
+    readonly getProduct: (id: string) => Effect.Effect<Product, StoreError>;
+    readonly createProduct: (input: CreateProductInput) => Effect.Effect<Product, PersistenceError>;
+    readonly updateProduct: (input: UpdateProductInput) => Effect.Effect<Product, StoreError>;
+    readonly deleteProduct: (id: string) => Effect.Effect<void, StoreError>;
     readonly getSyncStatus: Effect.Effect<SyncStatus>;
     readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
   }
@@ -46,6 +49,10 @@ const attempt = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
     try: () => Promise.resolve(evaluate()),
     catch: (cause) => new PersistenceError({ operation, message: messageOf(cause) }),
   });
+
+type ProductRow = typeof products.$inferSelect;
+
+const toProduct = ({ deletedAt: _deletedAt, ...product }: ProductRow): Product => product;
 
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
@@ -64,50 +71,8 @@ const make = (config: PersistenceConfig) =>
     });
 
     yield* attempt("connect database", () => db.$client.connect());
-    yield* attempt("initialize database", () =>
-      db.run(sql`
-        CREATE TABLE IF NOT EXISTS notes (
-          id TEXT PRIMARY KEY NOT NULL,
-          title TEXT NOT NULL,
-          body TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `),
-    );
-    yield* attempt("initialize products table", () =>
-      db.run(sql`
-        CREATE TABLE IF NOT EXISTS products (
-          id TEXT PRIMARY KEY NOT NULL,
-          name TEXT NOT NULL,
-          category TEXT NOT NULL DEFAULT 'general',
-          barcode TEXT,
-          composition TEXT,
-          strength TEXT,
-          units_per_pack INTEGER NOT NULL DEFAULT 1,
-          cost_price INTEGER,
-          pack_price INTEGER,
-          unit_price INTEGER,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `),
-    );
-    yield* attempt("initialize batches table", () =>
-      db.run(sql`
-        CREATE TABLE IF NOT EXISTS batches (
-          id TEXT PRIMARY KEY NOT NULL,
-          product_id TEXT NOT NULL REFERENCES products(id),
-          batch_number TEXT,
-          expires_at INTEGER,
-          quantity INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `),
+    yield* attempt("migrate database", () =>
+      migrate(db, { migrationsFolder: config.migrationsFolder }),
     );
 
     const status = yield* Ref.make<SyncStatus>({
@@ -121,70 +86,73 @@ const make = (config: PersistenceConfig) =>
       attempt("close database", () => db.$client.close()).pipe(Effect.orDie),
     );
 
-    const listNotes = attempt("list notes", () =>
+    const listProducts = attempt("list products", () =>
       db
-        .select({
-          id: notes.id,
-          title: notes.title,
-          body: notes.body,
-          createdAt: notes.createdAt,
-          updatedAt: notes.updatedAt,
-        })
-        .from(notes)
-        .where(isNull(notes.deletedAt))
-        .orderBy(desc(notes.updatedAt))
+        .select()
+        .from(products)
+        .where(isNull(products.deletedAt))
+        .orderBy(asc(products.name))
         .all(),
-    );
+    ).pipe(Effect.map((rows) => rows.map(toProduct)));
 
-    const createNote = Effect.fn("OfflineStore.createNote")(function* (input: CreateNoteInput) {
+    const getProduct = Effect.fn("OfflineStore.getProduct")(function* (id: string) {
+      const row = yield* attempt("find product", () =>
+        db
+          .select()
+          .from(products)
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
+          .get(),
+      );
+      if (!row) return yield* new ProductNotFoundError({ id });
+      return toProduct(row);
+    });
+
+    const createProduct = Effect.fn("OfflineStore.createProduct")(function* (
+      input: CreateProductInput,
+    ) {
       const now = Date.now();
-      const note: Note = {
-        id: crypto.randomUUID(),
-        title: input.title.trim(),
-        body: input.body.trim(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      yield* attempt("create note", () => db.insert(notes).values(note).run());
-      return note;
+      const row = yield* attempt("create product", () =>
+        db
+          .insert(products)
+          .values({
+            ...input,
+            id: crypto.randomUUID(),
+            name: input.name.trim(),
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning()
+          .get(),
+      );
+      return toProduct(row);
     });
 
-    const updateNote = Effect.fn("OfflineStore.updateNote")(function* (input: UpdateNoteInput) {
-      const existing = yield* attempt("find note", () =>
-        db.select().from(notes).where(eq(notes.id, input.id)).get(),
-      );
-      if (!existing || existing.deletedAt !== null) {
-        return yield* new NoteNotFoundError({ id: input.id });
-      }
-      const note: Note = {
-        id: existing.id,
-        title: input.title.trim(),
-        body: input.body.trim(),
-        createdAt: existing.createdAt,
-        updatedAt: Date.now(),
-      };
-      yield* attempt("update note", () =>
+    const updateProduct = Effect.fn("OfflineStore.updateProduct")(function* (
+      input: UpdateProductInput,
+    ) {
+      const { id, ...changes } = input;
+      const row = yield* attempt("update product", () =>
         db
-          .update(notes)
-          .set({ title: note.title, body: note.body, updatedAt: note.updatedAt })
-          .where(eq(notes.id, note.id))
-          .run(),
+          .update(products)
+          .set({ ...changes, name: changes.name.trim(), updatedAt: Date.now() })
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
+          .returning()
+          .get(),
       );
-      return note;
+      if (!row) return yield* new ProductNotFoundError({ id });
+      return toProduct(row);
     });
 
-    const deleteNote = Effect.fn("OfflineStore.deleteNote")(function* (id: string) {
-      const existing = yield* attempt("find note", () =>
-        db.select({ id: notes.id }).from(notes).where(eq(notes.id, id)).get(),
-      );
-      if (!existing) return yield* new NoteNotFoundError({ id });
-      yield* attempt("delete note", () =>
+    const deleteProduct = Effect.fn("OfflineStore.deleteProduct")(function* (id: string) {
+      const row = yield* attempt("delete product", () =>
         db
-          .update(notes)
+          .update(products)
           .set({ deletedAt: Date.now(), updatedAt: Date.now() })
-          .where(eq(notes.id, id))
-          .run(),
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
+          .returning({ id: products.id })
+          .get(),
       );
+      if (!row) return yield* new ProductNotFoundError({ id });
     });
 
     const sync = Effect.fn("OfflineStore.sync")(function* () {
@@ -218,10 +186,11 @@ const make = (config: PersistenceConfig) =>
     });
 
     return OfflineStore.of({
-      listNotes,
-      createNote,
-      updateNote,
-      deleteNote,
+      listProducts,
+      getProduct,
+      createProduct,
+      updateProduct,
+      deleteProduct,
       getSyncStatus: Ref.get(status),
       sync: sync(),
     });
@@ -230,14 +199,13 @@ const make = (config: PersistenceConfig) =>
 export const layer = (config: PersistenceConfig) => Layer.effect(OfflineStore, make(config));
 
 export const program = {
-  listNotes: Effect.flatMap(OfflineStore, (store) => store.listNotes),
-  createNote: (input: CreateNoteInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.createNote(input)),
-  updateNote: (input: UpdateNoteInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.updateNote(input)),
-  deleteNote: (id: string) => Effect.flatMap(OfflineStore, (store) => store.deleteNote(id)),
+  listProducts: Effect.flatMap(OfflineStore, (store) => store.listProducts),
+  getProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.getProduct(id)),
+  createProduct: (input: CreateProductInput) =>
+    Effect.flatMap(OfflineStore, (store) => store.createProduct(input)),
+  updateProduct: (input: UpdateProductInput) =>
+    Effect.flatMap(OfflineStore, (store) => store.updateProduct(input)),
+  deleteProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.deleteProduct(id)),
   getSyncStatus: Effect.flatMap(OfflineStore, (store) => store.getSyncStatus),
   sync: Effect.flatMap(OfflineStore, (store) => store.sync),
 } as const;
-
-export * from "./schema";

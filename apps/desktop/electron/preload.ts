@@ -51,10 +51,11 @@ contextBridge.exposeInMainWorld("windowControls", {
 });
 
 const offlineStore: OfflineStoreApi = {
-  listNotes: () => ipcRenderer.invoke("store:notes:list"),
-  createNote: (input) => ipcRenderer.invoke("store:notes:create", input),
-  updateNote: (input) => ipcRenderer.invoke("store:notes:update", input),
-  deleteNote: (input) => ipcRenderer.invoke("store:notes:delete", input),
+  listProducts: () => ipcRenderer.invoke("store:products:list"),
+  getProduct: (input) => ipcRenderer.invoke("store:products:get", input),
+  createProduct: (input) => ipcRenderer.invoke("store:products:create", input),
+  updateProduct: (input) => ipcRenderer.invoke("store:products:update", input),
+  deleteProduct: (input) => ipcRenderer.invoke("store:products:delete", input),
   getSyncStatus: () => ipcRenderer.invoke("store:sync:status"),
   sync: () => ipcRenderer.invoke("store:sync:run"),
 };

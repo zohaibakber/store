@@ -1,1975 +1,1211 @@
-import { Database } from "@tursodatabase/sync";
-import { BrowserWindow, app, ipcMain } from "electron";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Pipeable.js
-/**
-* The `Pipeable` module defines the shared interface and implementation helpers
-* for values that support Effect-style method chaining with `.pipe(...)`.
-*
-* A `Pipeable` value can pass itself through a sequence of unary functions from
-* left to right, so code can be written as `value.pipe(f, g, h)` instead of
-* deeply nesting calls. This is the method form used by many Effect data types
-* to compose transformations, validations, and effectful operations while
-* keeping the original value as the starting point of the pipeline.
-*
-* @since 2.0.0
-*/
-/**
-* Applies a `pipe` method's variadic arguments to an initial value from left
-* to right.
-*
-* **When to use**
-*
-* Use to implement a custom `.pipe(...)` method from JavaScript's `arguments`
-* object.
-*
-* **Details**
-*
-* This helper is intended for implementing `Pipeable.pipe` methods that
-* receive JavaScript's `arguments` object. With no functions it returns the
-* original value; otherwise it feeds each result into the next function.
-*
-* **Example** (Implementing a pipe method)
-*
-* ```ts
-* import { Pipeable } from "effect"
-*
-* class NumberBox {
-*   constructor(readonly value: number) {}
-*
-*   pipe(..._fns: ReadonlyArray<(value: number) => number>): number {
-*     return Pipeable.pipeArguments(this.value, arguments) as number
-*   }
-* }
-*
-* const result = new NumberBox(5).pipe(
-*   (n) => n + 2,
-*   (n) => n * 3
-* )
-* console.log(result) // 21
-* ```
-*
-* @category combinators
-* @since 2.0.0
-*/
-var pipeArguments = (self, args) => {
-	switch (args.length) {
-		case 0: return self;
-		case 1: return args[0](self);
-		case 2: return args[1](args[0](self));
-		case 3: return args[2](args[1](args[0](self)));
-		case 4: return args[3](args[2](args[1](args[0](self))));
-		case 5: return args[4](args[3](args[2](args[1](args[0](self)))));
-		case 6: return args[5](args[4](args[3](args[2](args[1](args[0](self))))));
-		case 7: return args[6](args[5](args[4](args[3](args[2](args[1](args[0](self)))))));
-		case 8: return args[7](args[6](args[5](args[4](args[3](args[2](args[1](args[0](self))))))));
-		case 9: return args[8](args[7](args[6](args[5](args[4](args[3](args[2](args[1](args[0](self)))))))));
-		default: {
-			let ret = self;
-			for (let i = 0, len = args.length; i < len; i++) ret = args[i](ret);
-			return ret;
-		}
+import { Database as e } from "@tursodatabase/sync";
+import t from "node:crypto";
+import n, { existsSync as r, readdirSync as i } from "node:fs";
+import a, { join as o } from "node:path";
+import { BrowserWindow as s, app as c, ipcMain as l } from "electron";
+import { fileURLToPath as u } from "node:url";
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/entity.js
+var d = Symbol.for("drizzle:entityKind");
+function f(e, t) {
+	if (!e || typeof e != "object") return !1;
+	if (e instanceof t) return !0;
+	if (!Object.prototype.hasOwnProperty.call(t, d)) throw Error(`Class "${t.name ?? "<unknown>"}" doesn't look like a Drizzle entity. If this is incorrect and the class is provided by Drizzle, please report this as a bug.`);
+	let n = Object.getPrototypeOf(e)?.constructor;
+	if (n) for (; n;) {
+		if (d in n && n[d] === t[d]) return !0;
+		n = Object.getPrototypeOf(n);
+	}
+	return !1;
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/column-common.js
+var p = Symbol.for("drizzle:OriginalColumn"), m = (e) => e;
+m.isNoop = !0;
+var h = class {
+	static [d] = "Column";
+	codec;
+	name;
+	keyAsName;
+	primary;
+	notNull;
+	default;
+	defaultFn;
+	onUpdateFn;
+	hasDefault;
+	isUnique;
+	uniqueName;
+	uniqueType;
+	dataType;
+	columnType;
+	enumValues = void 0;
+	generated = void 0;
+	generatedIdentity = void 0;
+	length;
+	isLengthExact;
+	isAlias;
+	config;
+	table;
+	onInit() {}
+	constructor(e, t) {
+		this.config = t, this.onInit(), this.table = e, this.name = t.name, this.isAlias = !1, this.keyAsName = t.keyAsName, this.notNull = t.notNull, this.default = t.default, this.defaultFn = t.defaultFn, this.onUpdateFn = t.onUpdateFn, this.hasDefault = t.hasDefault, this.primary = t.primaryKey, this.isUnique = t.isUnique, this.uniqueName = t.uniqueName, this.uniqueType = t.uniqueType, this.dataType = t.dataType, this.columnType = t.columnType, this.generated = t.generated, this.generatedIdentity = t.generatedIdentity, this.length = t.length, this.isLengthExact = t.isLengthExact;
+	}
+	mapFromDriverValue = m;
+	mapToDriverValue = m;
+	postBuild() {
+		return this;
+	}
+	shouldDisableInsert() {
+		return this.config.generated !== void 0 && this.config.generated.type !== "byDefault";
+	}
+	[p]() {
+		return this;
 	}
 };
-/**
-* Reusable prototype that implements `Pipeable.pipe`.
-*
-* **When to use**
-*
-* Use when classes or object prototypes can reuse this value when they need the
-* standard pipe implementation backed by `pipeArguments`.
-*
-* @category prototypes
-* @since 3.15.0
-*/
-var Prototype$1 = { pipe() {
-	return pipeArguments(this, arguments);
-} };
-/**
-* Provides a base constructor whose instances implement the standard `Pipeable.pipe`
-* method.
-*
-* **When to use**
-*
-* Use when you need to define a class that supports Effect-style method
-* chaining through `.pipe(...)`.
-*
-* @category constructors
-* @since 3.15.0
-*/
-var Class$1 = /*#__PURE__*/ function() {
-	function PipeableBase() {}
-	PipeableBase.prototype = Prototype$1;
-	return PipeableBase;
-}();
+function g(e) {
+	return e.table;
+}
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Function.js
-/**
-* Creates a function that can be called in data-first style or data-last
-* (`pipe`-friendly) style.
-*
-* **When to use**
-*
-* Use to expose one implementation through both direct and `pipe`-friendly
-* call styles.
-*
-* **Details**
-*
-* Pass either the arity of the uncurried function or a predicate that decides
-* whether the current call is data-first. Arity is the common case. Use a
-* predicate when optional arguments make arity ambiguous.
-*
-* **Example** (Using arity to determine data-first or data-last style)
-*
-* ```ts
-* import { Function, pipe } from "effect"
-*
-* const sum = Function.dual<
-*   (that: number) => (self: number) => number,
-*   (self: number, that: number) => number
-* >(2, (self, that) => self + that)
-*
-* console.log(sum(2, 3)) // 5
-* console.log(pipe(2, sum(3))) // 5
-* ```
-*
-* **Example** (Using call signatures to define the overloads)
-*
-* ```ts
-* import { Function, pipe } from "effect"
-*
-* const sum: {
-*   (that: number): (self: number) => number
-*   (self: number, that: number): number
-* } = Function.dual(2, (self: number, that: number): number => self + that)
-*
-* console.log(sum(2, 3)) // 5
-* console.log(pipe(2, sum(3))) // 5
-* ```
-*
-* **Example** (Using a predicate to determine data-first or data-last style)
-*
-* ```ts
-* import { Function, pipe } from "effect"
-*
-* const sum = Function.dual<
-*   (that: number) => (self: number) => number,
-*   (self: number, that: number) => number
-* >(
-*   (args) => args.length === 2,
-*   (self, that) => self + that
-* )
-*
-* console.log(sum(2, 3)) // 5
-* console.log(pipe(2, sum(3))) // 5
-* ```
-*
-* @category combinators
-* @since 2.0.0
-*/
-var dual = function(arity, body) {
-	if (typeof arity === "function") return function() {
-		return arity(arguments) ? body.apply(this, arguments) : (self) => body(self, ...arguments);
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/table.utils.js
+var _ = Symbol.for("drizzle:Name"), v = Symbol.for("drizzle:Schema"), y = Symbol.for("drizzle:Columns"), b = Symbol.for("drizzle:ExtraConfigColumns"), x = Symbol.for("drizzle:OriginalName"), S = Symbol.for("drizzle:BaseName"), C = Symbol.for("drizzle:IsAlias"), ee = Symbol.for("drizzle:ExtraConfigBuilder"), te = Symbol.for("drizzle:IsDrizzleTable"), w = class {
+	static [d] = "Table";
+	static Symbol = {
+		Name: _,
+		Schema: v,
+		OriginalName: x,
+		Columns: y,
+		ExtraConfigColumns: b,
+		BaseName: S,
+		IsAlias: C,
+		ExtraConfigBuilder: ee
 	};
-	switch (arity) {
+	[_];
+	[x];
+	[v];
+	[y];
+	[b];
+	[S];
+	[C] = !1;
+	[te] = !0;
+	[ee] = void 0;
+	constructor(e, t, n) {
+		this[_] = this[x] = e, this[v] = t, this[S] = n;
+	}
+};
+function ne(e) {
+	return typeof e == "object" && !!e && te in e;
+}
+function re(e) {
+	return e[_];
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/subquery.js
+var T = class {
+	static [d] = "Subquery";
+	constructor(e, t, n, r = !1, i = []) {
+		this._ = {
+			brand: "Subquery",
+			sql: e,
+			selectedFields: t,
+			alias: n,
+			isWith: r,
+			usedTables: i
+		};
+	}
+}, ie = class extends T {
+	static [d] = "WithSubquery";
+}, ae = { startActiveSpan(e, t) {
+	return t();
+} }, E = Symbol.for("drizzle:ViewBaseConfig");
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sql/sql.js
+function oe(e) {
+	return e != null && typeof e.getSQL == "function";
+}
+function se(e) {
+	let t = {
+		sql: "",
+		params: []
+	};
+	for (let n of e) t.sql += n.sql, t.params.push(...n.params);
+	return t;
+}
+function ce(e) {
+	let t = {
+		sql: "",
+		params: []
+	}, n = [];
+	for (let r of e) n.push(r.sql), t.params.push(...r.params);
+	return t._sql = Object.assign(n, { raw: n }), t;
+}
+var D = class {
+	static [d] = "StringChunk";
+	value;
+	constructor(e) {
+		this.value = Array.isArray(e) ? e : [e];
+	}
+	getSQL() {
+		return new O([this]);
+	}
+}, O = class e {
+	static [d] = "SQL";
+	decoder = de;
+	shouldInlineParams = !1;
+	usedTables = [];
+	constructor(e) {
+		this.queryChunks = e;
+		for (let t of e) if (f(t, w)) {
+			let e = t[w.Symbol.Schema];
+			this.usedTables.push(e === void 0 ? t[w.Symbol.Name] : e + "." + t[w.Symbol.Name]);
+		}
+	}
+	append(e) {
+		return this.queryChunks.push(...e.queryChunks), this;
+	}
+	toQuery(e) {
+		return ae.startActiveSpan("drizzle.buildSQL", (t) => {
+			let n = this.buildQueryFromSourceParams(this.queryChunks, e);
+			return t?.setAttributes({
+				"drizzle.query.text": n.sql,
+				"drizzle.query.params": JSON.stringify(n.params)
+			}), n;
+		});
+	}
+	buildQueryFromSourceParams(t, n) {
+		let r = Object.assign({}, n, {
+			inlineParams: n.inlineParams || this.shouldInlineParams,
+			paramStartIndex: n.paramStartIndex || { value: 0 }
+		}), { escapeName: i, escapeParam: a, codecs: o, inlineParams: s, paramStartIndex: c, invokeSource: l } = r, u = t.map((t) => {
+			if (f(t, D)) return {
+				sql: t.value.join(""),
+				params: []
+			};
+			if (f(t, le)) return {
+				sql: i(t.value),
+				params: []
+			};
+			if (t === void 0) return {
+				sql: "",
+				params: []
+			};
+			if (Array.isArray(t)) {
+				let e = [new D("(")];
+				for (let [n, r] of t.entries()) e.push(r), n < t.length - 1 && e.push(new D(", "));
+				return e.push(new D(")")), this.buildQueryFromSourceParams(e, r);
+			}
+			if (f(t, e)) return this.buildQueryFromSourceParams(t.queryChunks, {
+				...r,
+				inlineParams: s || t.shouldInlineParams
+			});
+			if (f(t, w)) {
+				let e = t[w.Symbol.Schema], n = t[w.Symbol.Name];
+				return l === "mssql-view-with-schemabinding" ? {
+					sql: i(e === void 0 ? "dbo" : e) + "." + i(n),
+					params: []
+				} : {
+					sql: e === void 0 || t[C] ? i(n) : i(e) + "." + i(n),
+					params: []
+				};
+			}
+			if (f(t, h)) {
+				let e = t.name;
+				if (n.invokeSource === "indexes") return {
+					sql: i(e),
+					params: []
+				};
+				let r = l === "mssql-check" ? void 0 : t.table[w.Symbol.Schema];
+				return {
+					sql: t.isAlias ? i(t.name) : t.table[C] || r === void 0 ? i(t.table[w.Symbol.Name]) + "." + i(e) : i(r) + "." + i(t.table[w.Symbol.Name]) + "." + i(e),
+					params: []
+				};
+			}
+			if (f(t, ve)) {
+				let e = t[E].schema, n = t[E].name;
+				return {
+					sql: e === void 0 || t[E].isAlias ? i(n) : i(e) + "." + i(n),
+					params: []
+				};
+			}
+			if (f(t, pe)) {
+				if (f(t.value, e)) return this.buildQueryFromSourceParams([t.value], r);
+				let n = o && f(t.encoder, h);
+				if (f(t.value, he)) {
+					let e = a(c.value++, t);
+					return t.codec = n ? (e) => o.apply(t.encoder, "normalizeParam", e) : void 0, {
+						sql: n ? o.apply(t.encoder, "castParam", e) : e,
+						params: [t]
+					};
+				}
+				let i;
+				if (t.value === null) i = t.value;
+				else {
+					if (i = t.encoder.mapToDriverValue.isNoop ? t.value : t.encoder.mapToDriverValue(t.value), f(i, e)) return this.buildQueryFromSourceParams([i], r);
+					n && (i = o.apply(t.encoder, "normalizeParam", i));
+				}
+				if (s) return {
+					sql: this.mapInlineParam(i, r),
+					params: []
+				};
+				let l = a(c.value++, i);
+				return {
+					sql: n ? o.apply(t.encoder, "castParam", l) : l,
+					params: [i]
+				};
+			}
+			return f(t, he) ? {
+				sql: a(c.value++, t),
+				params: [t]
+			} : f(t, e.Aliased) && t.fieldAlias !== void 0 ? {
+				sql: (t.origin === void 0 ? "" : i(t.origin) + ".") + i(t.fieldAlias),
+				params: []
+			} : f(t, T) ? t._.isWith ? {
+				sql: i(t._.alias),
+				params: []
+			} : this.buildQueryFromSourceParams([
+				new D("("),
+				t._.sql,
+				new D(") "),
+				new le(t._.alias)
+			], r) : typeof t == "function" && "enumName" in t ? "schema" in t && t.schema ? {
+				sql: i(t.schema) + "." + i(t.enumName),
+				params: []
+			} : {
+				sql: i(t.enumName),
+				params: []
+			} : oe(t) ? t.shouldOmitSQLParens?.() ? this.buildQueryFromSourceParams([t.getSQL()], r) : this.buildQueryFromSourceParams([
+				new D("("),
+				t.getSQL(),
+				new D(")")
+			], r) : s ? {
+				sql: this.mapInlineParam(t, r),
+				params: []
+			} : {
+				sql: a(c.value++, t),
+				params: [t]
+			};
+		});
+		return n.tagged ? ce(u) : se(u);
+	}
+	mapInlineParam(e, { escapeString: t }) {
+		if (e === null) return "null";
+		if (typeof e == "number" || typeof e == "boolean" || typeof e == "bigint") return e.toString();
+		if (typeof e == "string") return t(e);
+		if (typeof e == "object") {
+			let n = e.toString();
+			return t(n === "[object Object]" ? JSON.stringify(e) : n);
+		}
+		throw Error("Unexpected param value: " + e);
+	}
+	getSQL() {
+		return this;
+	}
+	as(t) {
+		return t === void 0 ? this : new e.Aliased(this, t);
+	}
+	mapWith(e) {
+		return this.decoder = typeof e == "function" ? { mapFromDriverValue: e } : e, this;
+	}
+	nullable() {
+		return this;
+	}
+	inlineParams() {
+		return this.shouldInlineParams = !0, this;
+	}
+	if(e) {
+		return e ? this : void 0;
+	}
+}, le = class {
+	static [d] = "Name";
+	brand;
+	constructor(e) {
+		this.value = e;
+	}
+	getSQL() {
+		return new O([this]);
+	}
+};
+function ue(e) {
+	return typeof e == "object" && !!e && "mapToDriverValue" in e && typeof e.mapToDriverValue == "function";
+}
+var de = { mapFromDriverValue: (e) => e };
+de.mapFromDriverValue.isNoop = !0;
+var fe = { mapToDriverValue: (e) => e };
+fe.mapToDriverValue.isNoop = !0, {
+	...de,
+	...fe
+};
+var pe = class {
+	static [d] = "Param";
+	brand;
+	constructor(e, t = fe, n) {
+		this.value = e, this.encoder = t, this.codec = n;
+	}
+	getSQL() {
+		return new O([this]);
+	}
+};
+function k(e, ...t) {
+	let n = [];
+	(t.length > 0 || e.length > 0 && e[0] !== "") && n.push(new D(e[0]));
+	for (let [r, i] of t.entries()) n.push(i, new D(e[r + 1]));
+	return new O(n);
+}
+(function(e) {
+	function t() {
+		return new O([]);
+	}
+	e.empty = t;
+	function n(e) {
+		return new O(e);
+	}
+	e.fromList = n;
+	function r(e) {
+		return new O([new D(e)]);
+	}
+	e.raw = r;
+	function i(e, t) {
+		let n = [];
+		for (let [r, i] of e.entries()) r > 0 && t !== void 0 && n.push(t), n.push(i);
+		return new O(n);
+	}
+	e.join = i;
+	function a(e) {
+		return new le(e);
+	}
+	e.identifier = a;
+	function o(e) {
+		return new he(e);
+	}
+	e.placeholder = o;
+	function s(e, t) {
+		return new pe(e, t);
+	}
+	e.param = s;
+	function c(e) {
+		let t = me(e);
+		if (t.length) return k.raw(t);
+	}
+	e.comment = c;
+})(k ||= {});
+function me(e) {
+	let t = me.encodeInput(e);
+	return t.length ? `/*${t}*/` : "";
+}
+(function(e) {
+	function t(e, t) {
+		let r;
+		if (typeof e == "object" && typeof t == "object") r = n({
+			...e,
+			...t
+		});
+		else if (e && t) r = [n(e), n(t)].filter((e) => e.length).join(",");
+		else if (t) r = n(t);
+		else if (e) r = n(e);
+		else return "";
+		return r.length ? `/*${r}*/` : "";
+	}
+	e.merge = t;
+	function n(e) {
+		if (typeof e == "string") return e.length ? i(e) : e;
+		let t = [];
+		for (let [n, i] of Object.entries(e)) {
+			if (i == null || i === "") continue;
+			let e = r(n), a = r(String(i));
+			t.push(`${e}='${a}'`);
+		}
+		return t.length ? t.sort().join(",") : "";
+	}
+	e.encodeInput = n;
+	function r(e) {
+		return encodeURIComponent(e).replace(/'/g, "\\'");
+	}
+	e.sanitizeObjectElement = r;
+	function i(e) {
+		return e.replace(/\/\*/g, "/ *").replace(/\*\//g, "* /");
+	}
+	e.sanitizeStringInput = i;
+})(me ||= {}), (function(e) {
+	class t {
+		static [d] = "SQL.Aliased";
+		isSelectionField = !1;
+		origin;
+		constructor(e, t) {
+			this.sql = e, this.fieldAlias = t;
+		}
+		getSQL() {
+			return this.sql;
+		}
+		clone() {
+			return new t(this.sql, this.fieldAlias);
+		}
+	}
+	e.Aliased = t;
+})(O ||= {});
+var he = class {
+	static [d] = "Placeholder";
+	constructor(e) {
+		this.name = e;
+	}
+	getSQL() {
+		return new O([this]);
+	}
+};
+function ge(e, t) {
+	return e.map((e) => {
+		if (f(e, he)) {
+			if (!(e.name in t)) throw Error(`No value for placeholder "${e.name}" was provided`);
+			return t[e.name];
+		}
+		if (f(e, pe) && f(e.value, he)) {
+			if (!(e.value.name in t)) throw Error(`No value for placeholder "${e.value.name}" was provided`);
+			let n = t[e.value.name];
+			if (n === null) return n;
+			let r = e.encoder.mapToDriverValue.isNoop ? n : e.encoder.mapToDriverValue(n);
+			return e.codec ? e.codec(r) : r;
+		}
+		return e;
+	});
+}
+var _e = Symbol.for("drizzle:IsDrizzleView"), ve = class {
+	static [d] = "View";
+	[E];
+	[_e] = !0;
+	get [_]() {
+		return this[E].name;
+	}
+	get [v]() {
+		return this[E].schema;
+	}
+	get [C]() {
+		return this[E].isAlias;
+	}
+	get [x]() {
+		return this[E].originalName;
+	}
+	get [y]() {
+		return this[E].selectedFields;
+	}
+	constructor({ name: e, schema: t, selectedFields: n, query: r }) {
+		this[E] = {
+			name: e,
+			originalName: e,
+			schema: t,
+			selectedFields: n,
+			query: r,
+			isExisting: !r,
+			isAlias: !1
+		};
+	}
+};
+function ye(e) {
+	return typeof e == "object" && !!e && _e in e;
+}
+h.prototype.getSQL = function() {
+	return new O([this]);
+}, T.prototype.getSQL = function() {
+	return new O([this]);
+};
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/utils.js
+var be = Object.getPrototypeOf(() => null).constructor;
+function xe(e, t = {}) {
+	let n = [], r = [];
+	r.push(`const [ ${e.map((e, t) => `c${t}`).join(", ")} ] = rows[i];`);
+	let i = {}, a = {}, o = Array.from({ length: e.length });
+	for (let r = 0; r < e.length; ++r) {
+		let { field: s, path: c, codec: l, arrayDimensions: u } = e[r], d, p, m, g = !1;
+		f(s, h) ? (g = !0, d = s, m = `field: decoder${r}`) : f(s, O) ? (d = s.decoder, m = `field: { decoder: decoder${r} }`) : f(s, T) ? (d = s._.sql.decoder, m = `field: { _: { sql: { decoder: decoder${r} } } }`) : (d = s.sql.decoder, m = `field: { sql: { decoder: decoder${r} } }`), p = `decoder${r}.mapFromDriverValue`, d.mapFromDriverValue.isNoop && (p = ""), p ? n.push(`const { ${m}${l ? `, codec: codec${r}` : ""} } = columns[${r}];`) : l && n.push(`const { codec: codec${r} } = columns[${r}];`);
+		let _ = `c${r}`, v = _;
+		if (l && (v = `codec${r}(${v}, ${u})`), p && (v = `${p}(${v})`), o[r] = _ === v ? `${_}` : `${_} === null ? ${_} : ${v}`, c.length !== 2 || !g) continue;
+		a[c[0]] === void 0 ? a[c[0]] = [`c${r}`] : a[c[0]]?.push(`c${r}`);
+		let [y] = c, b = re(s.table);
+		i[y] = t[b] ? !1 : typeof i[y] == "string" ? i[y] === b ? b : !1 : b;
+	}
+	r.push("mapped[i] = {");
+	let s = [];
+	for (let t = 0; t < e.length; ++t) {
+		let { path: n } = e[t], c = n.map((e) => JSON.stringify(e)), l = o[t], u = n.slice(0, -1), d = 0;
+		for (; d < s.length && d < u.length && s[d] === u[d];) d++;
+		for (let e = s.length - 1; e >= d; --e) r.push(`${"	".repeat(e + 1)}},`);
+		for (let e = d; e < u.length; ++e) r.push(`${"	".repeat(e + 1)}${c[e]}: ${e === 0 && u.length === 1 && typeof i[n[0]] == "string" ? `${a[n[0]]?.map((e) => `${e} === null`).join(" && ")} ? null : {` : "{"}`);
+		s = u, r.push(`${"	".repeat(n.length)}${c[n.length - 1]}: ${l},`);
+	}
+	for (let e = s.length - 1; e >= 0; --e) r.push(`${"	".repeat(e + 1)}},`);
+	return r.push("};"), `${n.length ? `${n.join("\n	")}\n\t` : ""}for (let i = 0; i < length; ++i) {
+		${r.join("\n		")}
+	}`;
+}
+function Se(e, t) {
+	let n = `\t"use strict";
+	const { columns } = this;
+	const { length } = rows;
+	const mapped = Array.from({ length });
+	${xe(e, t)}
+	return mapped;
+	//# sourceURL=drizzle:jit-query-mapper`;
+	return Object.assign(new be("rows", n).bind({ columns: e }), { body: `function jitQueryMapper (rows) {\n${n}\n}` });
+}
+function Ce(e) {
+	if (!e) return !1;
+	try {
+		let e = new be("input", "\"use strict\"; return input;")(!0);
+		return e !== !0 && (console.warn("Unable to use jit mappers due to incompatibility: corrupted jit function output.\nFalling back to premade mappers.\nError details:"), console.error(`Expected to receive \`true\`, got: ${e}`)), !0;
+	} catch (e) {
+		return console.warn("Unable to use jit mappers due to incompatibility.\nFalling back to premade mappers.\nError details:"), console.error(e), !1;
+	}
+}
+function we(e, t) {
+	let n = e.map(({ field: e, codec: n, arrayDimensions: r, path: i }) => {
+		let a, o;
+		if (f(e, h)) {
+			if (o = e, t && i.length === 2) {
+				let t = i[0];
+				a = (n, r) => {
+					t in n ? typeof n[t] == "string" && n[t] !== re(e.table) && (n[t] = !1) : n[t] = r === null ? re(e.table) : !1;
+				};
+			}
+		} else o = f(e, O) ? e.decoder : f(e, T) ? e._.sql.decoder : e.sql.decoder;
+		let s;
+		return s = o.mapFromDriverValue.isNoop ? n ? (e) => n(e, r) : void 0 : n ? (e) => o.mapFromDriverValue(n(e, r)) : (e) => o.mapFromDriverValue(e), [s, a];
+	});
+	return ((r) => r.map((r) => {
+		let i = {}, a = e.reduce((e, { path: t }, a) => {
+			let o = e;
+			for (let [e, s] of t.entries()) if (e < t.length - 1) s in o || (o[s] = {}), o = o[s];
+			else {
+				let [e, t] = n[a], c = r[a], l = o[s] = c === null ? null : e ? e(c) : c;
+				t?.(i, l);
+			}
+			return e;
+		}, {});
+		if (t && Object.keys(i).length > 0) for (let [e, n] of Object.entries(i)) typeof n == "string" && !t[n] && (a[e] = null);
+		return a;
+	}));
+}
+function Te(e, t, n) {
+	return Object.entries(e).reduce((e, [r, i]) => {
+		if (typeof r != "string") return e;
+		let a = t ? [...t, r] : [r];
+		if (f(i, h)) e.push({
+			path: a,
+			field: i,
+			codec: n?.get(i, "normalize"),
+			arrayDimensions: i.dimensions,
+			column: i
+		});
+		else if (f(i, O) || f(i, O.Aliased)) {
+			let t = Ee(i);
+			e.push(t ? {
+				path: a,
+				field: i,
+				codec: n?.get(t, "normalize"),
+				arrayDimensions: t.dimensions,
+				column: t
+			} : {
+				path: a,
+				field: i
+			});
+		} else if (f(i, T)) {
+			let t, r = Object.values(i._.selectedFields)[0], o;
+			f(r, h) ? (t = r, o = r) : f(r, O) ? (t = Ee(r), o = r.decoder) : (t = Ee(r), o = r.sql.decoder), o && (i._.sql.decoder = o), e.push(t ? {
+				path: a,
+				field: i,
+				codec: n?.get(t, "normalize"),
+				arrayDimensions: t.dimensions,
+				column: t
+			} : {
+				path: a,
+				field: i
+			});
+		} else f(i, w) ? e.push(...Te(i[w.Symbol.Columns], a, n)) : e.push(...Te(i, a, n));
+		return e;
+	}, []);
+}
+function Ee(e) {
+	let t = e.getSQL();
+	if (f(t.decoder, h)) return t.decoder;
+}
+function De(e, t) {
+	let n = Object.keys(e), r = Object.keys(t);
+	if (n.length !== r.length) return !1;
+	for (let [e, t] of n.entries()) if (t !== r[e]) return !1;
+	return !0;
+}
+function Oe(e, t) {
+	let n = Object.entries(t).filter(([, e]) => e !== void 0).map(([t, n]) => f(n, O) || f(n, h) ? [t, n] : [t, new pe(n, e[w.Symbol.Columns][t])]);
+	if (n.length === 0) throw Error("No values to set");
+	return Object.fromEntries(n);
+}
+function ke(e, t) {
+	for (let n of t) for (let t of Object.getOwnPropertyNames(n.prototype)) t !== "constructor" && Object.defineProperty(e.prototype, t, Object.getOwnPropertyDescriptor(n.prototype, t) || Object.create(null));
+}
+function Ae(e) {
+	return e[w.Symbol.Columns];
+}
+function je(e) {
+	return f(e, w) ? e[w.Symbol.Columns] : f(e, ve) ? e[E].selectedFields : e._.selectedFields;
+}
+function Me(e) {
+	return f(e, T) ? e._.alias : f(e, ve) ? e[E].name : f(e, O) ? void 0 : e[w.Symbol.IsAlias] ? e[w.Symbol.Name] : e[w.Symbol.BaseName];
+}
+function Ne(e, t) {
+	return {
+		name: typeof e == "string" && e.length > 0 ? e : "",
+		config: typeof e == "object" ? e : t
+	};
+}
+var Pe = typeof TextDecoder > "u" ? null : new TextDecoder();
+function Fe(e) {
+	throw Error("Didn't expect to get here");
+}
+function Ie(e) {
+	return (typeof e == "object" && !!e || typeof e == "function") && "enumValues" in e && Array.isArray(e.enumValues) && e.enumValues.length > 0;
+}
+var A = {
+	INT8_MIN: -128,
+	INT8_MAX: 127,
+	INT8_UNSIGNED_MAX: 255,
+	INT16_MIN: -32768,
+	INT16_MAX: 32767,
+	INT16_UNSIGNED_MAX: 65535,
+	INT24_MIN: -8388608,
+	INT24_MAX: 8388607,
+	INT24_UNSIGNED_MAX: 16777215,
+	INT32_MIN: -2147483648,
+	INT32_MAX: 2147483647,
+	INT32_UNSIGNED_MAX: 4294967295,
+	INT48_MIN: -0x800000000000,
+	INT48_MAX: 0x7fffffffffff,
+	INT48_UNSIGNED_MAX: 0xffffffffffff,
+	INT64_MIN: -9223372036854775808n,
+	INT64_MAX: 9223372036854775807n,
+	INT64_UNSIGNED_MAX: 18446744073709551615n
+};
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/column-builder.js
+function Le(e) {
+	let [t, n] = e.dataType.split(" ");
+	return {
+		type: t,
+		constraint: n
+	};
+}
+var Re = class {
+	static [d] = "ColumnBuilder";
+	config;
+	constructor(e, t, n) {
+		this.config = {
+			name: e,
+			keyAsName: e === "",
+			notNull: !1,
+			default: void 0,
+			hasDefault: !1,
+			primaryKey: !1,
+			isUnique: !1,
+			uniqueName: void 0,
+			uniqueType: void 0,
+			dataType: t,
+			columnType: n,
+			generated: void 0
+		};
+	}
+	$type() {
+		return this;
+	}
+	notNull() {
+		return this.config.notNull = !0, this;
+	}
+	default(e) {
+		return this.config.default = e, this.config.hasDefault = !0, this;
+	}
+	$defaultFn(e) {
+		return this.config.defaultFn = e, this.config.hasDefault = !0, this;
+	}
+	$default = this.$defaultFn;
+	$onUpdateFn(e) {
+		return this.config.onUpdateFn = e, this.config.hasDefault = !0, this;
+	}
+	$onUpdate = this.$onUpdateFn;
+	primaryKey() {
+		return this.config.primaryKey = !0, this.config.notNull = !0, this;
+	}
+	setName(e, t) {
+		this.config.name === "" && (this.config.name = t(e));
+	}
+}, ze = (e, t) => {
+	switch (t.length) {
+		case 0: return e;
+		case 1: return t[0](e);
+		case 2: return t[1](t[0](e));
+		case 3: return t[2](t[1](t[0](e)));
+		case 4: return t[3](t[2](t[1](t[0](e))));
+		case 5: return t[4](t[3](t[2](t[1](t[0](e)))));
+		case 6: return t[5](t[4](t[3](t[2](t[1](t[0](e))))));
+		case 7: return t[6](t[5](t[4](t[3](t[2](t[1](t[0](e)))))));
+		case 8: return t[7](t[6](t[5](t[4](t[3](t[2](t[1](t[0](e))))))));
+		case 9: return t[8](t[7](t[6](t[5](t[4](t[3](t[2](t[1](t[0](e)))))))));
+		default: {
+			let n = e;
+			for (let e = 0, r = t.length; e < r; e++) n = t[e](n);
+			return n;
+		}
+	}
+}, Be = { pipe() {
+	return ze(this, arguments);
+} }, Ve = /*#__PURE__*/ function() {
+	function e() {}
+	return e.prototype = Be, e;
+}(), j = function(e, t) {
+	if (typeof e == "function") return function() {
+		return e(arguments) ? t.apply(this, arguments) : (e) => t(e, ...arguments);
+	};
+	switch (e) {
 		case 0:
-		case 1: throw new RangeError(`Invalid arity ${arity}`);
-		case 2: return function(a, b) {
-			if (arguments.length >= 2) return body(a, b);
-			return function(self) {
-				return body(self, a);
+		case 1: throw RangeError(`Invalid arity ${e}`);
+		case 2: return function(e, n) {
+			return arguments.length >= 2 ? t(e, n) : function(n) {
+				return t(n, e);
 			};
 		};
-		case 3: return function(a, b, c) {
-			if (arguments.length >= 3) return body(a, b, c);
-			return function(self) {
-				return body(self, a, b);
+		case 3: return function(e, n, r) {
+			return arguments.length >= 3 ? t(e, n, r) : function(r) {
+				return t(r, e, n);
 			};
 		};
 		default: return function() {
-			if (arguments.length >= arity) return body.apply(this, arguments);
-			const args = arguments;
-			return function(self) {
-				return body(self, ...args);
+			if (arguments.length >= e) return t.apply(this, arguments);
+			let n = arguments;
+			return function(e) {
+				return t(e, ...n);
 			};
 		};
 	}
-};
-/**
-* Returns its input argument unchanged.
-*
-* **When to use**
-*
-* Use to return a value unchanged where a function is required.
-*
-* **Example** (Returning the same value)
-*
-* ```ts
-* import { identity } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(identity(5), 5)
-* ```
-*
-* @category combinators
-* @since 2.0.0
-*/
-var identity = (a) => a;
-/**
-* Creates a zero-argument function that always returns the provided value.
-*
-* **When to use**
-*
-* Use when you need a thunk or callback that returns the same value on every
-* invocation.
-*
-* **Example** (Creating a constant thunk)
-*
-* ```ts
-* import { Function } from "effect"
-* import * as assert from "node:assert"
-*
-* const constNull = Function.constant(null)
-*
-* assert.deepStrictEqual(constNull(), null)
-* assert.deepStrictEqual(constNull(), null)
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var constant = (value) => () => value;
-/**
-* Returns `true` when called.
-*
-* **When to use**
-*
-* Use when you need a thunk that returns `true` on every invocation.
-*
-* **Example** (Returning true from a thunk)
-*
-* ```ts
-* import { Function } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(Function.constTrue(), true)
-* ```
-*
-* @category constants
-* @since 2.0.0
-*/
-var constTrue = /*#__PURE__*/ constant(true);
-/**
-* Returns `false` when called.
-*
-* **When to use**
-*
-* Use when you need a thunk that returns `false` on every invocation.
-*
-* **Example** (Returning false from a thunk)
-*
-* ```ts
-* import { Function } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(Function.constFalse(), false)
-* ```
-*
-* @category constants
-* @since 2.0.0
-*/
-var constFalse = /*#__PURE__*/ constant(false);
-/**
-* Returns `undefined` when called.
-*
-* **When to use**
-*
-* Use when you need a thunk that returns `undefined` on every invocation.
-*
-* **Example** (Returning undefined from a thunk)
-*
-* ```ts
-* import { Function } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(Function.constUndefined(), undefined)
-* ```
-*
-* @category constants
-* @since 2.0.0
-*/
-var constUndefined = /*#__PURE__*/ constant(void 0);
-/**
-* Returns no meaningful value when called.
-*
-* **When to use**
-*
-* Use when you need a thunk that is called only for its effect and has no
-* meaningful return value.
-*
-* **Example** (Returning void from a thunk)
-*
-* ```ts
-* import { Function } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(Function.constVoid(), undefined)
-* ```
-*
-* @category constants
-* @since 2.0.0
-*/
-var constVoid = constUndefined;
-function flow(ab, bc, cd, de, ef, fg, gh, hi, ij) {
+}, M = (e) => e, He = (e) => () => e, Ue = /*#__PURE__*/ He(!0), We = /*#__PURE__*/ He(!1), Ge = /*#__PURE__*/ He(void 0), Ke = Ge;
+function qe(e, t, n, r, i, a, o, s, c) {
 	switch (arguments.length) {
-		case 1: return ab;
+		case 1: return e;
 		case 2: return function() {
-			return bc(ab.apply(this, arguments));
+			return t(e.apply(this, arguments));
 		};
 		case 3: return function() {
-			return cd(bc(ab.apply(this, arguments)));
+			return n(t(e.apply(this, arguments)));
 		};
 		case 4: return function() {
-			return de(cd(bc(ab.apply(this, arguments))));
+			return r(n(t(e.apply(this, arguments))));
 		};
 		case 5: return function() {
-			return ef(de(cd(bc(ab.apply(this, arguments)))));
+			return i(r(n(t(e.apply(this, arguments)))));
 		};
 		case 6: return function() {
-			return fg(ef(de(cd(bc(ab.apply(this, arguments))))));
+			return a(i(r(n(t(e.apply(this, arguments))))));
 		};
 		case 7: return function() {
-			return gh(fg(ef(de(cd(bc(ab.apply(this, arguments)))))));
+			return o(a(i(r(n(t(e.apply(this, arguments)))))));
 		};
 		case 8: return function() {
-			return hi(gh(fg(ef(de(cd(bc(ab.apply(this, arguments))))))));
+			return s(o(a(i(r(n(t(e.apply(this, arguments))))))));
 		};
 		case 9: return function() {
-			return ij(hi(gh(fg(ef(de(cd(bc(ab.apply(this, arguments)))))))));
+			return c(s(o(a(i(r(n(t(e.apply(this, arguments)))))))));
 		};
 	}
 }
-/**
-* Creates a memoized function whose input is an object, caching results by
-* object identity.
-*
-* **When to use**
-*
-* Use to reuse the result of a synchronous computation whose output is stable
-* for a given object reference.
-*
-* **Details**
-*
-* Each memoized wrapper owns a private `WeakMap` keyed by object identity.
-* Cached `undefined` results are still returned because the cache is checked
-* with `WeakMap.has`.
-*
-* **Gotchas**
-*
-* Structurally equal objects do not share cache entries. If the same object is
-* mutated after its first call, later calls still return the cached result for
-* that reference.
-*
-* @category caching
-* @since 4.0.0
-*/
-function memoize(f) {
-	const cache = /* @__PURE__ */ new WeakMap();
-	return (a) => {
-		if (cache.has(a)) return cache.get(a);
-		const result = f(a);
-		cache.set(a, result);
-		return result;
+function Je(e) {
+	let t = /* @__PURE__ */ new WeakMap();
+	return (n) => {
+		if (t.has(n)) return t.get(n);
+		let r = e(n);
+		return t.set(n, r), r;
 	};
 }
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/equal.js
-/** @internal */
-var getAllObjectKeys = (obj) => {
-	const keys = new Set(Reflect.ownKeys(obj));
-	if (obj.constructor === Object) return keys;
-	if (obj instanceof Error) keys.delete("stack");
-	const proto = Object.getPrototypeOf(obj);
-	let current = proto;
-	while (current !== null && current !== Object.prototype) {
-		const ownKeys = Reflect.ownKeys(current);
-		for (let i = 0; i < ownKeys.length; i++) keys.add(ownKeys[i]);
-		current = Object.getPrototypeOf(current);
+var Ye = (e) => {
+	let t = new Set(Reflect.ownKeys(e));
+	if (e.constructor === Object) return t;
+	e instanceof Error && t.delete("stack");
+	let n = Object.getPrototypeOf(e), r = n;
+	for (; r !== null && r !== Object.prototype;) {
+		let e = Reflect.ownKeys(r);
+		for (let n = 0; n < e.length; n++) t.add(e[n]);
+		r = Object.getPrototypeOf(r);
 	}
-	if (keys.has("constructor") && typeof obj.constructor === "function" && proto === obj.constructor.prototype) keys.delete("constructor");
-	return keys;
-};
-/** @internal */
-var byReferenceInstances = /*#__PURE__*/ new WeakSet();
+	return t.has("constructor") && typeof e.constructor == "function" && n === e.constructor.prototype && t.delete("constructor"), t;
+}, Xe = /*#__PURE__*/ new WeakSet();
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Predicate.js
-/**
-* Defines runtime checks for values.
-*
-* A `Predicate<A>` returns `true` or `false` for an `A`. A
-* `Refinement<A, B>` is a predicate that also narrows the TypeScript type when
-* it succeeds. This module includes guards for common JavaScript values,
-* property and tag checks, tuple and struct checks, boolean combinators, and
-* helpers for composing predicates and refinements.
-*
-* @since 2.0.0
-*/
-/**
-* Checks whether a value is a `string`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` guard to narrow an `unknown` value to a
-* string.
-*
-* **Details**
-*
-* Uses `typeof input === "string"`.
-*
-* **Example** (Guard string)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const data: unknown = "hi"
-*
-* if (Predicate.isString(data)) {
-*   console.log(data.toUpperCase())
-* }
-* ```
-*
-* @see {@link isNumber}
-* @see {@link isBoolean}
-* @see {@link Refinement}
-* @category guards
-* @since 2.0.0
-*/
-function isString(input) {
-	return typeof input === "string";
+function Ze(e) {
+	return typeof e == "string";
 }
-/**
-* Checks whether a value is a `number`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` guard to narrow an `unknown` value to a
-* number.
-*
-* **Details**
-*
-* Uses `typeof input === "number"` and does not exclude `NaN` or `Infinity`.
-*
-* **Example** (Guard number)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const data: unknown = 42
-*
-* if (Predicate.isNumber(data)) {
-*   console.log(data + 1)
-* }
-* ```
-*
-* @see {@link isBigInt}
-* @see {@link isString}
-* @category guards
-* @since 2.0.0
-*/
-function isNumber(input) {
-	return typeof input === "number";
+function Qe(e) {
+	return typeof e == "number";
 }
-/**
-* Checks whether a value is a `function`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` guard to narrow an `unknown` value to a
-* callable function.
-*
-* **Details**
-*
-* Uses `typeof input === "function"`.
-*
-* **Example** (Guard function)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const data: unknown = () => 1
-*
-* if (Predicate.isFunction(data)) {
-*   console.log(data())
-* }
-* ```
-*
-* @see {@link isObjectKeyword}
-* @category guards
-* @since 2.0.0
-*/
-function isFunction(input) {
-	return typeof input === "function";
+function $e(e) {
+	return typeof e == "boolean";
 }
-/**
-* Checks whether a value is not `undefined`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` refinement that filters out `undefined`
-* while preserving other falsy values.
-*
-* **Details**
-*
-* Returns a refinement that excludes `undefined`.
-*
-* **Example** (Filter undefined)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const values = [1, undefined, 2]
-* const defined = values.filter(Predicate.isNotUndefined)
-*
-* console.log(defined)
-* ```
-*
-* @see {@link isUndefined}
-* @see {@link isNotNullish}
-* @category guards
-* @since 2.0.0
-*/
-function isNotUndefined(input) {
-	return input !== void 0;
+function et(e) {
+	return typeof e == "bigint";
 }
-/**
-* Checks whether a value is not `null` and not `undefined`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` refinement that filters out nullish values
-* but keeps other falsy ones.
-*
-* **Details**
-*
-* Uses `input != null`.
-*
-* **Example** (Filter non-nullish)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const values = [0, null, "", undefined]
-* const present = values.filter(Predicate.isNotNullish)
-*
-* console.log(present)
-* ```
-*
-* @see {@link isNullish}
-* @see {@link isNotNull}
-* @see {@link isNotUndefined}
-* @category guards
-* @since 4.0.0
-*/
-function isNotNullish(input) {
-	return input != null;
+function tt(e) {
+	return typeof e == "symbol";
 }
-/**
-* Type guard that always returns `true`.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` that always accepts, e.g. as a placeholder.
-*
-* **Example** (Always matches)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* console.log(Predicate.isUnknown(123))
-* ```
-*
-* @see {@link isNever}
-* @category guards
-* @since 2.0.0
-*/
-function isUnknown(_) {
-	return true;
+function nt(e) {
+	return Ze(e) || Qe(e) || tt(e);
 }
-/**
-* Checks whether a value is an `object` in the JavaScript sense (objects, arrays, functions).
-*
-* **When to use**
-*
-* Use when you need a `Predicate` guard that accepts arrays and functions as
-* well as objects.
-*
-* **Details**
-*
-* Returns `true` for arrays and functions, and `false` for `null`.
-*
-* **Example** (Object keyword)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* console.log(Predicate.isObjectKeyword(() => 1))
-* console.log(Predicate.isObjectKeyword(null))
-* ```
-*
-* @see {@link isObject}
-* @see {@link isObjectOrArray}
-* @category guards
-* @since 4.0.0
-*/
-function isObjectKeyword(input) {
-	return typeof input === "object" && input !== null || isFunction(input);
+function rt(e) {
+	return typeof e == "function";
 }
-/**
-* Checks whether a value has a given property key.
-*
-* **When to use**
-*
-* Use when you need a `Predicate` guard for property access on `unknown`
-* values with a simple structural object check.
-*
-* **Details**
-*
-* Uses the `in` operator and `isObjectKeyword`. This does not check property
-* value types.
-*
-* **Example** (Guard property)
-*
-* ```ts
-* import { Predicate } from "effect"
-*
-* const hasName = Predicate.hasProperty("name")
-* const data: unknown = { name: "Ada" }
-*
-* if (hasName(data)) {
-*   console.log(data.name)
-* }
-* ```
-*
-* @see {@link isTagged}
-* @see {@link isObjectKeyword}
-* @category guards
-* @since 2.0.0
-*/
-var hasProperty = /*#__PURE__*/ dual(2, (self, property) => isObjectKeyword(self) && property in self);
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Hash.js
-/**
-* Computes Effect hash values and defines the interface for objects that want
-* to provide their own hash implementation. Hashes are small numeric
-* fingerprints used by Effect data structures to bucket values quickly; they
-* are not cryptographic digests and they are not proof that two values are
-* equal. The module also includes helpers for primitive, structure, array, and
-* reference-based hashes, plus functions for combining and optimizing numeric
-* hash values.
-*
-* @since 2.0.0
-*/
-/**
-* Defines the unique identifier used to identify objects that implement the Hash interface.
-*
-* **When to use**
-*
-* Use as the computed property key for the method that supplies a custom hash
-* value on a `Hash` implementor.
-*
-* @see {@link Hash} for the interface implemented with this symbol
-* @see {@link isHash} for checking whether a value implements `Hash`
-* @see {@link hash} for computing hash values
-*
-* @category symbols
-* @since 2.0.0
-*/
-var symbol$1 = "~effect/interfaces/Hash";
-/**
-* Computes a hash value for any given value.
-*
-* **When to use**
-*
-* Use to compute an Effect hash for primitives, collections, and hashable
-* objects.
-*
-* **Details**
-*
-* This function can hash primitives (numbers, strings, booleans, etc.) as well as
-* objects, arrays, and other complex data structures. It automatically handles
-* different types and provides a consistent hash value for equivalent inputs.
-*
-* **Gotchas**
-*
-* Objects being hashed must be treated as immutable after their first hash
-* computation. Hash results are cached, so mutating an object after hashing will
-* lead to stale cached values and broken hash-based operations. For mutable
-* objects, implement a custom `Hash` interface that hashes the object reference
-* rather than its content.
-*
-* **Example** (Hashing different values)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* // Hash primitive values
-* console.log(Hash.hash(42)) // numeric hash
-* console.log(Hash.hash("hello")) // string hash
-* console.log(Hash.hash(true)) // boolean hash
-*
-* // Hash objects and arrays
-* console.log(Hash.hash({ name: "John", age: 30 }))
-* console.log(Hash.hash([1, 2, 3]))
-* console.log(Hash.hash({ id: "user-1", roles: ["admin", "editor"] }))
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var hash = (self) => {
-	switch (typeof self) {
-		case "number": return number$1(self);
-		case "bigint": return string$1(self.toString(10));
-		case "boolean": return string$1(String(self));
-		case "symbol": return string$1(String(self));
-		case "string": return string$1(self);
-		case "undefined": return string$1("undefined");
+function it(e) {
+	return e !== void 0;
+}
+function at(e) {
+	return e != null;
+}
+function ot(e) {
+	return !0;
+}
+function st(e) {
+	return typeof e == "object" && !!e || rt(e);
+}
+var N = /*#__PURE__*/ j(2, (e, t) => st(e) && t in e), P = "~effect/interfaces/Hash", F = (e) => {
+	switch (typeof e) {
+		case "number": return ft(e);
+		case "bigint": return I(e.toString(10));
+		case "boolean": return I(String(e));
+		case "symbol": return I(String(e));
+		case "string": return I(e);
+		case "undefined": return I("undefined");
 		case "function":
-		case "object": if (self === null) return string$1("null");
-		else if (self instanceof Date) return string$1(self.toISOString());
-		else if (self instanceof RegExp) return string$1(self.toString());
-		else {
-			if (byReferenceInstances.has(self)) return random(self);
-			if (hashCache.has(self)) return hashCache.get(self);
-			const h = withVisitedTracking$1(self, () => {
-				if (isHash(self)) return self[symbol$1]();
-				else if (typeof self === "function") return random(self);
-				else if (Array.isArray(self) || ArrayBuffer.isView(self)) return array(self);
-				else if (self instanceof Map) return hashMap(self);
-				else if (self instanceof Set) return hashSet(self);
-				return structure(self);
-			});
-			hashCache.set(self, h);
-			return h;
-		}
-		default: throw new Error(`BUG: unhandled typeof ${typeof self} - please report an issue at https://github.com/Effect-TS/effect/issues`);
+		case "object":
+			if (e === null) return I("null");
+			if (e instanceof Date) return I(e.toISOString());
+			if (e instanceof RegExp) return I(e.toString());
+			{
+				if (Xe.has(e)) return ct(e);
+				if (bt.has(e)) return bt.get(e);
+				let t = St(e, () => dt(e) ? e[P]() : typeof e == "function" ? ct(e) : Array.isArray(e) || ArrayBuffer.isView(e) ? gt(e) : e instanceof Map ? _t(e) : e instanceof Set ? vt(e) : mt(e));
+				return bt.set(e, t), t;
+			}
+		default: throw Error(`BUG: unhandled typeof ${typeof e} - please report an issue at https://github.com/Effect-TS/effect/issues`);
 	}
-};
-/**
-* Generates a random hash value for an object and caches it.
-*
-* **When to use**
-*
-* Use to hash an object by reference identity instead of structural content.
-*
-* **Details**
-*
-* This function creates a random hash value for objects that don't have their own
-* hash implementation. The hash value is cached using a WeakMap, so the same object
-* will always return the same hash value during its lifetime.
-*
-* **Example** (Hashing objects by reference)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* const obj1 = { a: 1 }
-* const obj2 = { a: 1 }
-*
-* // Same object always returns the same hash
-* console.log(Hash.random(obj1) === Hash.random(obj1)) // true
-*
-* // Different objects get different hashes
-* console.log(Hash.random(obj1) === Hash.random(obj2)) // false
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var random = (self) => {
-	if (!randomHashCache.has(self)) randomHashCache.set(self, number$1(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
-	return randomHashCache.get(self);
-};
-/**
-* Combines two hash values into a single hash value.
-*
-* **When to use**
-*
-* Use to build a hash for a composite value by folding together hash values for
-* its parts.
-*
-* **Details**
-*
-* Supports both direct and pipeable usage. The implementation combines two
-* hash values with `(self * 53) ^ b`.
-*
-* **Example** (Combining hash values)
-*
-* ```ts
-* import { Hash, pipe } from "effect"
-*
-* // Can also be used with pipe
-*
-* const hash1 = Hash.hash("hello")
-* const hash2 = Hash.hash("world")
-*
-* // Combine two hash values
-* const combined = Hash.combine(hash2)(hash1)
-* console.log(combined)
-* const result = pipe(hash1, Hash.combine(hash2))
-* ```
-*
-* @see {@link hash} for computing hash values from arbitrary inputs
-* @see {@link structureKeys} for hashing selected object fields without manual combination
-*
-* @category hashing
-* @since 2.0.0
-*/
-var combine = /*#__PURE__*/ dual(2, (self, b) => self * 53 ^ b);
-/**
-* Applies bit manipulation techniques to optimize a hash value.
-*
-* **When to use**
-*
-* Use to improve the bit distribution of a raw numeric hash value.
-*
-* **Details**
-*
-* This function takes a hash value and applies bitwise operations to improve
-* the distribution of hash values, reducing the likelihood of collisions.
-*
-* **Example** (Optimizing a hash value)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* const rawHash = 1234567890
-* const optimizedHash = Hash.optimize(rawHash)
-* console.log(optimizedHash) // optimized hash value
-*
-* // Often used internally by other hash functions
-* const stringHash = Hash.optimize(Hash.string("hello"))
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var optimize = (n) => n & 3221225471 | n >>> 1 & 1073741824;
-/**
-* Checks whether a value implements the Hash interface.
-*
-* **When to use**
-*
-* Use to detect whether an unknown value provides a custom hash implementation.
-*
-* **Details**
-*
-* This function determines whether a given value has the Hash symbol property,
-* indicating that it can provide its own hash value implementation.
-*
-* **Example** (Checking for Hash support)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* class MyHashable implements Hash.Hash {
-*   [Hash.symbol]() {
-*     return 42
-*   }
-* }
-*
-* const obj = new MyHashable()
-* console.log(Hash.isHash(obj)) // true
-* console.log(Hash.isHash({})) // false
-* console.log(Hash.isHash("string")) // false
-* ```
-*
-* @category guards
-* @since 2.0.0
-*/
-var isHash = (u) => hasProperty(u, symbol$1);
-/**
-* Computes a hash value for a number.
-*
-* **When to use**
-*
-* Use to hash a JavaScript number with Effect's numeric hash semantics.
-*
-* **Details**
-*
-* This function creates a hash value for numeric inputs, handling special cases
-* like NaN, Infinity, and -Infinity with distinct hash values. It uses bitwise operations to ensure good distribution
-* of hash values across different numeric inputs.
-*
-* **Example** (Hashing numbers)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* console.log(Hash.number(42)) // hash of 42
-* console.log(Hash.number(3.14)) // hash of 3.14
-* console.log(Hash.number(NaN)) // hash of "NaN"
-* console.log(Hash.number(Infinity)) // 0 (special case)
-*
-* // Same numbers produce the same hash
-* console.log(Hash.number(100) === Hash.number(100)) // true
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var number$1 = (n) => {
-	if (n !== n) return string$1("NaN");
-	if (n === Infinity) return string$1("Infinity");
-	if (n === -Infinity) return string$1("-Infinity");
-	let h = n | 0;
-	if (h !== n) h ^= n * 4294967295;
-	while (n > 4294967295) h ^= n /= 4294967295;
-	return optimize(h);
-};
-/**
-* Computes a hash value for a string using the djb2 algorithm.
-*
-* **When to use**
-*
-* Use when you need a string field to contribute to a custom structural hash
-* implementation.
-*
-* **Details**
-*
-* This function implements a variation of the djb2 hash algorithm, which is
-* known for its good distribution properties and speed. It processes each
-* character of the string to produce a consistent hash value.
-*
-* **Example** (Hashing strings)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* console.log(Hash.string("hello")) // hash of "hello"
-* console.log(Hash.string("world")) // hash of "world"
-* console.log(Hash.string("")) // hash of empty string
-*
-* // Same strings produce the same hash
-* console.log(Hash.string("test") === Hash.string("test")) // true
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var string$1 = (str) => {
-	let h = 5381, i = str.length;
-	while (i) h = h * 33 ^ str.charCodeAt(--i);
-	return optimize(h);
-};
-/**
-* Computes a hash value for an object using only the specified keys.
-*
-* **When to use**
-*
-* Use to hash an object by a selected set of property keys.
-*
-* **Details**
-*
-* This function allows you to hash an object by considering only specific keys,
-* which is useful when you want to create a hash based on a subset of an object's
-* properties.
-*
-* **Example** (Hashing selected object keys)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* const person = { name: "John", age: 30, city: "New York" }
-*
-* // Hash only specific keys
-* const hash1 = Hash.structureKeys(person, ["name", "age"])
-* const hash2 = Hash.structureKeys(person, ["name", "city"])
-*
-* console.log(hash1) // hash based on name and age
-* console.log(hash2) // hash based on name and city
-*
-* // Same keys produce the same hash
-* const person2 = { name: "John", age: 30, city: "Boston" }
-* const hash3 = Hash.structureKeys(person2, ["name", "age"])
-* console.log(hash1 === hash3) // true
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var structureKeys = (o, keys) => {
-	let h = 12289;
-	for (const key of keys) h ^= combine(hash(key), hash(o[key]));
-	return optimize(h);
-};
-/**
-* Computes a structural hash for an object using Effect's object key collection.
-*
-* **When to use**
-*
-* Use to hash an object from all structural keys collected by Effect.
-*
-* **Details**
-*
-* The hash is based on the object's structural keys and their values, including
-* symbol keys and relevant prototype keys for non-plain objects.
-*
-* **Example** (Hashing object structures)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* const obj1 = { name: "John", age: 30 }
-* const obj2 = { name: "Jane", age: 25 }
-* const obj3 = { name: "John", age: 30 }
-*
-* console.log(Hash.structure(obj1)) // hash of obj1
-* console.log(Hash.structure(obj2)) // different hash
-* console.log(Hash.structure(obj3)) // same as obj1
-*
-* // Objects with same properties produce same hash
-* console.log(Hash.structure(obj1) === Hash.structure(obj3)) // true
-* ```
-*
-* @category hashing
-* @since 2.0.0
-*/
-var structure = (o) => structureKeys(o, getAllObjectKeys(o));
-var iterableWith = (seed, f) => (iter) => {
-	let h = seed;
-	for (const element of iter) h ^= f(element);
-	return optimize(h);
-};
-/**
-* Computes a hash value for an iterable by hashing all of its elements.
-*
-* **When to use**
-*
-* Use to hash the values yielded by an iterable with Effect hash semantics.
-*
-* **Details**
-*
-* The implementation folds element hashes from the seed `6151` with XOR and
-* then optimizes the final hash.
-*
-* **Gotchas**
-*
-* A hash is not an equality proof. Because this implementation uses XOR,
-* reordered inputs can produce the same hash.
-*
-* **Example** (Hashing arrays)
-*
-* ```ts
-* import { Hash } from "effect"
-*
-* const arr1 = [1, 2, 3]
-* const arr2 = [1, 2, 3]
-* const arr3 = [3, 2, 1]
-*
-* console.log(Hash.array(arr1)) // hash of [1, 2, 3]
-* console.log(Hash.array(arr2)) // same hash as arr1
-* console.log(Hash.array(arr3)) // may match reordered inputs
-*
-* console.log(Hash.array(arr1) === Hash.array(arr2)) // true
-* console.log(Hash.array(arr1) === Hash.array(arr3)) // true
-* ```
-*
-* @see {@link hash} for the general-purpose hash dispatcher
-*
-* @category hashing
-* @since 2.0.0
-*/
-var array = /*#__PURE__*/ iterableWith(6151, hash);
-var hashMap = /*#__PURE__*/ iterableWith(/*#__PURE__*/ string$1("Map"), ([k, v]) => combine(hash(k), hash(v)));
-var hashSet = /*#__PURE__*/ iterableWith(/*#__PURE__*/ string$1("Set"), hash);
-var randomHashCache = /*#__PURE__*/ new WeakMap();
-var hashCache = /*#__PURE__*/ new WeakMap();
-var visitedObjects = /*#__PURE__*/ new WeakSet();
-function withVisitedTracking$1(obj, fn) {
-	if (visitedObjects.has(obj)) return string$1("[Circular]");
-	visitedObjects.add(obj);
-	const result = fn();
-	visitedObjects.delete(obj);
-	return result;
+}, ct = (e) => (yt.has(e) || yt.set(e, ft(Math.floor(Math.random() * (2 ** 53 - 1)))), yt.get(e)), lt = /*#__PURE__*/ j(2, (e, t) => e * 53 ^ t), ut = (e) => e & 3221225471 | e >>> 1 & 1073741824, dt = (e) => N(e, P), ft = (e) => {
+	if (e !== e) return I("NaN");
+	if (e === Infinity) return I("Infinity");
+	if (e === -Infinity) return I("-Infinity");
+	let t = e | 0;
+	for (t !== e && (t ^= e * 4294967295); e > 4294967295;) t ^= e /= 4294967295;
+	return ut(t);
+}, I = (e) => {
+	let t = 5381, n = e.length;
+	for (; n;) t = t * 33 ^ e.charCodeAt(--n);
+	return ut(t);
+}, pt = (e, t) => {
+	let n = 12289;
+	for (let r of t) n ^= lt(F(r), F(e[r]));
+	return ut(n);
+}, mt = (e) => pt(e, Ye(e)), ht = (e, t) => (n) => {
+	let r = e;
+	for (let e of n) r ^= t(e);
+	return ut(r);
+}, gt = /*#__PURE__*/ ht(6151, F), _t = /*#__PURE__*/ ht(/*#__PURE__*/ I("Map"), ([e, t]) => lt(F(e), F(t))), vt = /*#__PURE__*/ ht(/*#__PURE__*/ I("Set"), F), yt = /*#__PURE__*/ new WeakMap(), bt = /*#__PURE__*/ new WeakMap(), xt = /*#__PURE__*/ new WeakSet();
+function St(e, t) {
+	if (xt.has(e)) return I("[Circular]");
+	xt.add(e);
+	let n = t();
+	return xt.delete(e), n;
 }
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Equal.js
-/**
-* Defines the unique string identifier for the `Equal` interface.
-*
-* **When to use**
-*
-* Use when you implement custom equality and need the computed property key for
-* the equality method.
-*
-* **Details**
-*
-* This is a pure constant with no allocation or side effects.
-*
-* **Example** (Implementing Equal on a Class)
-*
-* ```ts
-* import { Equal, Hash } from "effect"
-*
-* class UserId implements Equal.Equal {
-*   constructor(readonly id: string) {}
-*
-*   [Equal.symbol](that: Equal.Equal): boolean {
-*     return that instanceof UserId && this.id === that.id
-*   }
-*
-*   [Hash.symbol](): number {
-*     return Hash.string(this.id)
-*   }
-* }
-* ```
-*
-* @see {@link Equal} — the interface that uses this symbol
-* @see {@link isEqual} — type guard for `Equal` implementors
-* @category symbols
-* @since 2.0.0
-*/
-var symbol = "~effect/interfaces/Equal";
-function equals$2() {
-	if (arguments.length === 1) return (self) => compareBoth(self, arguments[0]);
-	return compareBoth(arguments[0], arguments[1]);
+var L = "~effect/interfaces/Equal";
+function Ct() {
+	return arguments.length === 1 ? (e) => wt(e, arguments[0]) : wt(arguments[0], arguments[1]);
 }
-function compareBoth(self, that) {
-	if (self === that) return true;
-	if (self == null || that == null) return false;
-	const selfType = typeof self;
-	if (selfType !== typeof that) return false;
-	if (selfType === "number" && self !== self && that !== that) return true;
-	if (selfType !== "object" && selfType !== "function") return false;
-	if (byReferenceInstances.has(self) || byReferenceInstances.has(that)) return false;
-	return withCache(self, that, compareObjects);
+function wt(e, t) {
+	if (e === t) return !0;
+	if (e == null || t == null) return !1;
+	let n = typeof e;
+	return n === typeof t ? n === "number" && e !== e && t !== t ? !0 : n !== "object" && n !== "function" || Xe.has(e) || Xe.has(t) ? !1 : kt(e, t, Ot) : !1;
 }
-/** Helper to run comparison with proper visited tracking */
-function withVisitedTracking(self, that, fn) {
-	const hasLeft = visitedLeft.has(self);
-	const hasRight = visitedRight.has(that);
-	if (hasLeft && hasRight) return true;
-	if (hasLeft || hasRight) return false;
-	visitedLeft.add(self);
-	visitedRight.add(that);
-	const result = fn();
-	visitedLeft.delete(self);
-	visitedRight.delete(that);
-	return result;
+function Tt(e, t, n) {
+	let r = Et.has(e), i = Dt.has(t);
+	if (r && i) return !0;
+	if (r || i) return !1;
+	Et.add(e), Dt.add(t);
+	let a = n();
+	return Et.delete(e), Dt.delete(t), a;
 }
-var visitedLeft = /*#__PURE__*/ new WeakSet();
-var visitedRight = /*#__PURE__*/ new WeakSet();
-/** Helper to perform cached object comparison */
-function compareObjects(self, that) {
-	if (hash(self) !== hash(that)) return false;
-	else if (self instanceof Date) {
-		if (!(that instanceof Date)) return false;
-		return self.toISOString() === that.toISOString();
-	} else if (self instanceof RegExp) {
-		if (!(that instanceof RegExp)) return false;
-		return self.toString() === that.toString();
-	}
-	const selfIsEqual = isEqual(self);
-	const thatIsEqual = isEqual(that);
-	if (selfIsEqual !== thatIsEqual) return false;
-	const bothEquals = selfIsEqual && thatIsEqual;
-	if (typeof self === "function" && !bothEquals) return false;
-	return withVisitedTracking(self, that, () => {
-		if (bothEquals) return self[symbol](that);
-		else if (Array.isArray(self)) {
-			if (!Array.isArray(that) || self.length !== that.length) return false;
-			return compareArrays(self, that);
-		} else if (ArrayBuffer.isView(self)) {
-			if (!ArrayBuffer.isView(that) || self.byteLength !== that.byteLength) return false;
-			return compareTypedArrays(self, that);
-		} else if (self instanceof Map) {
-			if (!(that instanceof Map) || self.size !== that.size) return false;
-			return compareMaps(self, that);
-		} else if (self instanceof Set) {
-			if (!(that instanceof Set) || self.size !== that.size) return false;
-			return compareSets(self, that);
-		}
-		return compareRecords(self, that);
-	});
+var Et = /*#__PURE__*/ new WeakSet(), Dt = /*#__PURE__*/ new WeakSet();
+function Ot(e, t) {
+	if (F(e) !== F(t)) return !1;
+	if (e instanceof Date) return t instanceof Date ? e.toISOString() === t.toISOString() : !1;
+	if (e instanceof RegExp) return t instanceof RegExp ? e.toString() === t.toString() : !1;
+	let n = Rt(e), r = Rt(t);
+	if (n !== r) return !1;
+	let i = n && r;
+	return typeof e == "function" && !i ? !1 : Tt(e, t, () => i ? e[L](t) : Array.isArray(e) ? !Array.isArray(t) || e.length !== t.length ? !1 : jt(e, t) : ArrayBuffer.isView(e) ? !ArrayBuffer.isView(t) || e.byteLength !== t.byteLength ? !1 : Mt(e, t) : e instanceof Map ? !(t instanceof Map) || e.size !== t.size ? !1 : Ft(e, t) : e instanceof Set ? !(t instanceof Set) || e.size !== t.size ? !1 : Lt(e, t) : Nt(e, t));
 }
-function withCache(self, that, f) {
-	let selfMap = equalityCache.get(self);
-	if (!selfMap) {
-		selfMap = /* @__PURE__ */ new WeakMap();
-		equalityCache.set(self, selfMap);
-	} else if (selfMap.has(that)) return selfMap.get(that);
-	const result = f(self, that);
-	selfMap.set(that, result);
-	let thatMap = equalityCache.get(that);
-	if (!thatMap) {
-		thatMap = /* @__PURE__ */ new WeakMap();
-		equalityCache.set(that, thatMap);
-	}
-	thatMap.set(self, result);
-	return result;
+function kt(e, t, n) {
+	let r = At.get(e);
+	if (!r) r = /* @__PURE__ */ new WeakMap(), At.set(e, r);
+	else if (r.has(t)) return r.get(t);
+	let i = n(e, t);
+	r.set(t, i);
+	let a = At.get(t);
+	return a || (a = /* @__PURE__ */ new WeakMap(), At.set(t, a)), a.set(e, i), i;
 }
-var equalityCache = /*#__PURE__*/ new WeakMap();
-function compareArrays(self, that) {
-	for (let i = 0; i < self.length; i++) if (!compareBoth(self[i], that[i])) return false;
-	return true;
+var At = /*#__PURE__*/ new WeakMap();
+function jt(e, t) {
+	for (let n = 0; n < e.length; n++) if (!wt(e[n], t[n])) return !1;
+	return !0;
 }
-function compareTypedArrays(self, that) {
-	if (self.length !== that.length) return false;
-	for (let i = 0; i < self.length; i++) if (self[i] !== that[i]) return false;
-	return true;
+function Mt(e, t) {
+	if (e.length !== t.length) return !1;
+	for (let n = 0; n < e.length; n++) if (e[n] !== t[n]) return !1;
+	return !0;
 }
-function compareRecords(self, that) {
-	const selfKeys = getAllObjectKeys(self);
-	const thatKeys = getAllObjectKeys(that);
-	if (selfKeys.size !== thatKeys.size) return false;
-	for (const key of selfKeys) if (!thatKeys.has(key) || !compareBoth(self[key], that[key])) return false;
-	return true;
+function Nt(e, t) {
+	let n = Ye(e), r = Ye(t);
+	if (n.size !== r.size) return !1;
+	for (let i of n) if (!r.has(i) || !wt(e[i], t[i])) return !1;
+	return !0;
 }
-/** @internal */
-function makeCompareMap(keyEquivalence, valueEquivalence) {
-	return function compareMaps(self, that) {
-		for (const [selfKey, selfValue] of self) {
-			let found = false;
-			for (const [thatKey, thatValue] of that) if (keyEquivalence(selfKey, thatKey) && valueEquivalence(selfValue, thatValue)) {
-				found = true;
+function Pt(e, t) {
+	return function(n, r) {
+		for (let [i, a] of n) {
+			let n = !1;
+			for (let [o, s] of r) if (e(i, o) && t(a, s)) {
+				n = !0;
 				break;
 			}
-			if (!found) return false;
+			if (!n) return !1;
 		}
-		return true;
+		return !0;
 	};
 }
-var compareMaps = /*#__PURE__*/ makeCompareMap(compareBoth, compareBoth);
-/** @internal */
-function makeCompareSet(equivalence) {
-	return function compareSets(self, that) {
-		for (const selfValue of self) {
-			let found = false;
-			for (const thatValue of that) if (equivalence(selfValue, thatValue)) {
-				found = true;
+var Ft = /*#__PURE__*/ Pt(wt, wt);
+function It(e) {
+	return function(t, n) {
+		for (let r of t) {
+			let t = !1;
+			for (let i of n) if (e(r, i)) {
+				t = !0;
 				break;
 			}
-			if (!found) return false;
+			if (!t) return !1;
 		}
-		return true;
+		return !0;
 	};
 }
-var compareSets = /*#__PURE__*/ makeCompareSet(compareBoth);
-/**
-* Checks whether a value implements the {@link Equal} interface.
-*
-* **When to use**
-*
-* Use when you need generic utility code to distinguish `Equal` implementors
-* from plain values before calling `[Equal.symbol]` directly.
-*
-* **Details**
-*
-* - Pure function, no side effects.
-* - Returns `true` if and only if `u` has a property keyed by
-*   {@link symbol}.
-* - Acts as a TypeScript type guard, narrowing the input to {@link Equal}.
-*
-* **Example** (Type Guard)
-*
-* ```ts
-* import { Equal, Hash } from "effect"
-*
-* class Token implements Equal.Equal {
-*   constructor(readonly value: string) {}
-*   [Equal.symbol](that: Equal.Equal): boolean {
-*     return that instanceof Token && this.value === that.value
-*   }
-*   [Hash.symbol](): number {
-*     return Hash.string(this.value)
-*   }
-* }
-*
-* console.log(Equal.isEqual(new Token("abc"))) // true
-* console.log(Equal.isEqual({ x: 1 }))         // false
-* console.log(Equal.isEqual(42))                // false
-* ```
-*
-* @see {@link Equal} — the interface being checked
-* @see {@link symbol} — the property key that signals `Equal` support
-* @category guards
-* @since 2.0.0
-*/
-var isEqual = (u) => hasProperty(u, symbol);
-/**
-* Wraps {@link equals} as an `Equivalence<A>`.
-*
-* **When to use**
-*
-* Use when you want to pass `Equal.equals` to APIs that require an
-* `Equivalence`.
-*
-* **Details**
-*
-* - Returns a function `(a: A, b: A) => boolean` that delegates to
-*   {@link equals}.
-* - Pure; allocates a thin wrapper on each call.
-*
-* **Example** (Deduplicating with Equal Semantics)
-*
-* ```ts
-* import { Array, Equal } from "effect"
-*
-* const eq = Equal.asEquivalence<number>()
-* const result = Array.dedupeWith([1, 2, 2, 3, 1], eq)
-* console.log(result) // [1, 2, 3]
-* ```
-*
-* @see {@link equals} — the underlying comparison function
-* @category instances
-* @since 4.0.0
-*/
-var asEquivalence = () => equals$2;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Equivalence.js
-/**
-* Creates a custom equivalence relation with an optimized reference equality check.
-*
-* **When to use**
-*
-* Use when you need an equality rule that the built-in instances and input
-* mapping helpers cannot express, and you can provide a law-abiding comparison.
-*
-* **Details**
-*
-* The returned equivalence first checks reference equality (`===`) for
-* performance. If the values are not the same reference, it falls back to the
-* provided equivalence function, which must satisfy reflexive, symmetric, and
-* transitive properties.
-*
-* **Example** (Case-insensitive string equivalence)
-*
-* ```ts
-* import { Equivalence } from "effect"
-*
-* const caseInsensitive = Equivalence.make<string>((a, b) =>
-*   a.toLowerCase() === b.toLowerCase()
-* )
-*
-* console.log(caseInsensitive("Hello", "HELLO")) // true
-* console.log(caseInsensitive("foo", "bar")) // false
-*
-* // Same reference optimization
-* const str = "test"
-* console.log(caseInsensitive(str, str)) // true (fast path)
-* ```
-*
-* **Example** (Numeric tolerance equivalence)
-*
-* ```ts
-* import { Equivalence } from "effect"
-*
-* const tolerance = Equivalence.make<number>((a, b) => Math.abs(a - b) < 0.0001)
-*
-* console.log(tolerance(1.0, 1.001)) // false
-* console.log(tolerance(1.0, 1.00001)) // true
-* ```
-*
-* @see {@link strictEqual}
-* @see {@link mapInput}
-* @category constructors
-* @since 2.0.0
-*/
-var make$16 = (isEquivalent) => (self, that) => self === that || isEquivalent(self, that);
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/array.js
-/**
-* @since 2.0.0
-*/
-/** @internal */
-var isArrayNonEmpty$1 = (self) => self.length > 0;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Redactable.js
-/**
-* Defines the symbol used to identify objects that implement the {@link Redactable}
-* protocol.
-*
-* **When to use**
-*
-* Use as the property key when implementing the `Redactable` protocol.
-*
-* **Details**
-*
-* Add a method under this key to make an object redactable. The method receives
-* the current `Context` and must return the replacement value. The symbol is
-* registered globally via `Symbol.for("~effect/Redactable")`, so it is
-* identical across multiple copies of the library at runtime.
-*
-* **Example** (Masking an API key)
-*
-* ```ts
-* import { Context, Redactable } from "effect"
-*
-* class ApiKey {
-*   constructor(readonly raw: string) {}
-*
-*   [Redactable.symbolRedactable](_ctx: Context.Context<never>) {
-*     return this.raw.slice(0, 4) + "..."
-*   }
-* }
-* ```
-*
-* @see {@link Redactable} for the interface this symbol belongs to
-* @see {@link isRedactable} to check whether a value has this symbol
-* @category symbols
-* @since 3.10.0
-*/
-var symbolRedactable = /*#__PURE__*/ Symbol.for("~effect/Redactable");
-/**
-* Type guard that checks whether a value implements the {@link Redactable}
-* interface.
-*
-* **When to use**
-*
-* Use to narrow an unknown value before calling redaction-specific helpers.
-*
-* @see {@link Redactable} for the interface being checked
-* @see {@link redact} to apply redaction if the value is redactable
-* @category guards
-* @since 3.10.0
-*/
-var isRedactable = (u) => hasProperty(u, symbolRedactable);
-/**
-* Returns a redacted value if it implements {@link Redactable}, otherwise returns it
-* unchanged.
-*
-* **When to use**
-*
-* Use as the general-purpose entry point for redaction when the input may
-* or may not implement the redaction protocol.
-*
-* **Details**
-*
-* This function calls {@link isRedactable} and, when it returns `true`,
-* delegates to {@link getRedacted}.
-*
-* **Gotchas**
-*
-* Redaction is not recursive. Nested redactable values inside the returned
-* object are not automatically redacted.
-*
-* @see {@link isRedactable} to check before redacting
-* @see {@link getRedacted} for the lower-level variant for known redactables
-* @category destructors
-* @since 3.10.0
-*/
-function redact(u) {
-	if (isRedactable(u)) return getRedacted(u);
-	return u;
+var Lt = /*#__PURE__*/ It(wt), Rt = (e) => N(e, L), zt = () => Ct, Bt = (e) => (t, n) => t === n || e(t, n), Vt = (e) => e.length > 0, Ht = /*#__PURE__*/ Symbol.for("~effect/Redactable"), Ut = (e) => N(e, Ht);
+function Wt(e) {
+	return Ut(e) ? Gt(e) : e;
 }
-/**
-* Returns the result of calling `[symbolRedactable]` on a value that is
-* already known to be {@link Redactable}.
-*
-* **When to use**
-*
-* Use when you need to read the redacted representation from a value already
-* verified as `Redactable`.
-*
-* **Details**
-*
-* This function reads the current fiber's `Context` from the global fiber
-* reference and passes it to the redaction method.
-*
-* **Gotchas**
-*
-* If no fiber is active, an empty `Context` is passed to the redaction method.
-*
-* @see {@link redact} for the higher-level variant that handles non-redactable values
-* @see {@link isRedactable} for the type guard to verify before calling this
-* @category destructors
-* @since 4.0.0
-*/
-function getRedacted(redactable) {
-	return redactable[symbolRedactable](globalThis["~effect/Fiber/currentFiber"]?.context ?? emptyContext$1);
+function Gt(e) {
+	return e[Ht](globalThis["~effect/Fiber/currentFiber"]?.context ?? qt);
 }
-/** @internal */
-var currentFiberTypeId = "~effect/Fiber/currentFiber";
-var emptyContext$1 = {
+var Kt = "~effect/Fiber/currentFiber", qt = {
 	"~effect/Context": {},
 	mapUnsafe: /*#__PURE__*/ new Map(),
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
 };
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Formatter.js
-/**
-* Formats JavaScript values into readable strings.
-*
-* `format` is intended for logs, diagnostics, and error messages. It handles
-* primitives, objects, arrays, dates, regular expressions, maps, sets, class
-* instances, errors, circular references, and redactable values. `formatJson`
-* wraps JSON formatting with redaction and circular-reference handling, and the
-* module also includes helpers for property keys, paths, and dates.
-*
-* @since 4.0.0
-*/
-/**
-* Converts any JavaScript value into a human-readable string.
-*
-* **When to use**
-*
-* Use when you need to format arbitrary JavaScript values for debugging,
-* logging, or error messages.
-*
-* **Details**
-*
-* - Output is **not** valid JSON; use {@link formatJson} when you need
-*   parseable JSON.
-* - Handles `BigInt`, `Symbol`, `Set`, `Map`, `Date`, `RegExp`, and class
-*   instances that `JSON.stringify` cannot represent.
-* - Circular references are shown as `"[Circular]"` instead of throwing.
-* - Primitives: stringified naturally (`null`, `undefined`, `123`, `true`).
-*   Strings are JSON-quoted.
-* - Objects with a custom `toString` (not `Object.prototype.toString`):
-*   `toString()` is called unless `ignoreToString` is `true`.
-* - Errors with a `cause`: formatted as `"<message> (cause: <cause>)"`.
-* - Iterables (`Set`, `Map`, etc.): formatted as
-*   `ClassName([...elements])`.
-* - Class instances: wrapped as `ClassName({...})`.
-* - `Redactable` values are automatically redacted.
-* - Arrays/objects with 0–1 entries are inline; larger ones are
-*   pretty-printed when `space` is set.
-* - `space` — indentation unit (number of spaces, or a string like
-*   `"\t"`). Defaults to `0` (compact).
-* - `ignoreToString` — skip calling `toString()`. Defaults to `false`.
-*
-* **Example** (Compact output)
-*
-* ```ts
-* import { Formatter } from "effect"
-*
-* console.log(Formatter.format({ a: 1, b: [2, 3] }))
-* // {"a":1,"b":[2,3]}
-* ```
-*
-* **Example** (Pretty-printed output)
-*
-* ```ts
-* import { Formatter } from "effect"
-*
-* console.log(Formatter.format({ a: 1, b: [2, 3] }, { space: 2 }))
-* // {
-* //   "a": 1,
-* //   "b": [
-* //     2,
-* //     3
-* //   ]
-* // }
-* ```
-*
-* **Example** (Circular reference handling)
-*
-* ```ts
-* import { Formatter } from "effect"
-*
-* const obj: any = { name: "loop" }
-* obj.self = obj
-* console.log(Formatter.format(obj))
-* // {"name":"loop","self":[Circular]}
-* ```
-*
-* @see {@link formatJson}
-* @see {@link Formatter}
-* @category formatting
-* @since 2.0.0
-*/
-function format$1(input, options) {
-	const space = options?.space ?? 0;
-	const seen = /* @__PURE__ */ new WeakSet();
-	const gap = !space ? "" : typeof space === "number" ? " ".repeat(space) : space;
-	const ind = (d) => gap.repeat(d);
-	const wrap = (v, body) => {
-		const ctor = v?.constructor;
-		return ctor && ctor !== Object.prototype.constructor && ctor.name ? `${ctor.name}(${body})` : body;
-	};
-	const ownKeys = (o) => {
+function R(e, t) {
+	let n = t?.space ?? 0, r = /* @__PURE__ */ new WeakSet(), i = n ? typeof n == "number" ? " ".repeat(n) : n : "", a = (e) => i.repeat(e), o = (e, t) => {
+		let n = e?.constructor;
+		return n && n !== Object.prototype.constructor && n.name ? `${n.name}(${t})` : t;
+	}, s = (e) => {
 		try {
-			return Reflect.ownKeys(o);
+			return Reflect.ownKeys(e);
 		} catch {
 			return ["[ownKeys threw]"];
 		}
 	};
-	function recur(v, d = 0) {
-		if (Array.isArray(v)) {
-			if (seen.has(v)) return CIRCULAR;
-			seen.add(v);
-			if (!gap || v.length <= 1) return `[${v.map((x) => recur(x, d)).join(",")}]`;
-			const inner = v.map((x) => recur(x, d + 1)).join(",\n" + ind(d + 1));
-			return `[\n${ind(d + 1)}${inner}\n${ind(d)}]`;
+	function c(e, n = 0) {
+		if (Array.isArray(e)) {
+			if (r.has(e)) return Jt;
+			if (r.add(e), !i || e.length <= 1) return `[${e.map((e) => c(e, n)).join(",")}]`;
+			let t = e.map((e) => c(e, n + 1)).join(",\n" + a(n + 1));
+			return `[\n${a(n + 1)}${t}\n${a(n)}]`;
 		}
-		if (v instanceof Date) return formatDate(v);
-		if (!options?.ignoreToString && hasProperty(v, "toString") && typeof v["toString"] === "function" && v["toString"] !== Object.prototype.toString && v["toString"] !== Array.prototype.toString) {
-			const s = safeToString(v);
-			if (v instanceof Error && v.cause) return `${s} (cause: ${recur(v.cause, d)})`;
-			return s;
+		if (e instanceof Date) return Zt(e);
+		if (!t?.ignoreToString && N(e, "toString") && typeof e.toString == "function" && e.toString !== Object.prototype.toString && e.toString !== Array.prototype.toString) {
+			let t = Qt(e);
+			return e instanceof Error && e.cause ? `${t} (cause: ${c(e.cause, n)})` : t;
 		}
-		if (typeof v === "string") return JSON.stringify(v);
-		if (typeof v === "number" || v == null || typeof v === "boolean" || typeof v === "symbol") return String(v);
-		if (typeof v === "bigint") return String(v) + "n";
-		if (typeof v === "object" || typeof v === "function") {
-			if (seen.has(v)) return CIRCULAR;
-			seen.add(v);
-			if (symbolRedactable in v) return format$1(getRedacted(v));
-			if (Symbol.iterator in v) return `${v.constructor.name}(${recur(Array.from(v), d)})`;
-			const keys = ownKeys(v);
-			if (!gap || keys.length <= 1) {
-				const body = `{${keys.map((k) => `${formatPropertyKey(k)}:${recur(v[k], d)}`).join(",")}}`;
-				return wrap(v, body);
+		if (typeof e == "string") return JSON.stringify(e);
+		if (typeof e == "number" || e == null || typeof e == "boolean" || typeof e == "symbol") return String(e);
+		if (typeof e == "bigint") return String(e) + "n";
+		if (typeof e == "object" || typeof e == "function") {
+			if (r.has(e)) return Jt;
+			if (r.add(e), Ht in e) return R(Gt(e));
+			if (Symbol.iterator in e) return `${e.constructor.name}(${c(Array.from(e), n)})`;
+			let t = s(e);
+			if (!i || t.length <= 1) {
+				let r = `{${t.map((t) => `${Yt(t)}:${c(e[t], n)}`).join(",")}}`;
+				return o(e, r);
 			}
-			const body = `{\n${keys.map((k) => `${ind(d + 1)}${formatPropertyKey(k)}: ${recur(v[k], d + 1)}`).join(",\n")}\n${ind(d)}}`;
-			return wrap(v, body);
+			let l = `{\n${t.map((t) => `${a(n + 1)}${Yt(t)}: ${c(e[t], n + 1)}`).join(",\n")}\n${a(n)}}`;
+			return o(e, l);
 		}
-		return String(v);
+		return String(e);
 	}
-	return recur(input, 0);
+	return c(e, 0);
 }
-var CIRCULAR = "[Circular]";
-/**
-* @internal
-*/
-function formatPropertyKey(name) {
-	return typeof name === "string" ? JSON.stringify(name) : String(name);
+var Jt = "[Circular]";
+function Yt(e) {
+	return typeof e == "string" ? JSON.stringify(e) : String(e);
 }
-/**
-* Formats an array of property keys as a bracket-notation path string.
-*
-* @internal
-*/
-function formatPath(path) {
-	return path.map((key) => `[${formatPropertyKey(key)}]`).join("");
+function Xt(e) {
+	return e.map((e) => `[${Yt(e)}]`).join("");
 }
-/**
-* Formats a `Date` as an ISO 8601 string, returning `"Invalid Date"` for
-* invalid dates instead of throwing.
-*
-* @internal
-*/
-function formatDate(date) {
+function Zt(e) {
 	try {
-		return date.toISOString();
+		return e.toISOString();
 	} catch {
 		return "Invalid Date";
 	}
 }
-function safeToString(input) {
+function Qt(e) {
 	try {
-		const s = input.toString();
-		return typeof s === "string" ? s : String(s);
+		let t = e.toString();
+		return typeof t == "string" ? t : String(t);
 	} catch {
 		return "[toString threw]";
 	}
 }
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Inspectable.js
-/**
-* Defines the symbol used by Node.js for custom object inspection.
-*
-* **When to use**
-*
-* Use to implement Node.js custom inspection for a value.
-*
-* **Details**
-*
-* This symbol is recognized by Node.js's `util.inspect()` function and the REPL
-* for custom object representation. When an object has a method with this symbol,
-* it will be called to determine how the object should be displayed.
-*
-* **Example** (Defining custom Node inspection)
-*
-* ```ts
-* import { Inspectable } from "effect"
-*
-* class CustomObject {
-*   constructor(private value: string) {}
-*
-*   [Inspectable.NodeInspectSymbol]() {
-*     return `CustomObject(${this.value})`
-*   }
-* }
-*
-* const obj = new CustomObject("hello")
-* console.log(obj) // Displays: CustomObject(hello)
-* ```
-*
-* @category symbols
-* @since 2.0.0
-*/
-var NodeInspectSymbol = /*#__PURE__*/ Symbol.for("nodejs.util.inspect.custom");
-/**
-* Converts a value to a JSON-serializable representation safely.
-*
-* **When to use**
-*
-* Use when you need a safe, JSON-serializable representation of a value
-* without risking unhandled errors.
-*
-* **Details**
-*
-* This function attempts to extract JSON data from objects that implement the
-* `toJSON` method, recursively processes arrays, and handles errors gracefully.
-* For objects that don't have a `toJSON` method, it applies redaction to
-* protect sensitive information.
-*
-* @see {@link toStringUnknown} for converting unknown values to strings
-*
-* @category converting
-* @since 4.0.0
-*/
-var toJson = (input) => {
+var $t = /*#__PURE__*/ Symbol.for("nodejs.util.inspect.custom"), en = (e) => {
 	try {
-		if (hasProperty(input, "toJSON") && isFunction(input["toJSON"]) && input["toJSON"].length === 0) return input.toJSON();
-		else if (Array.isArray(input)) return input.map(toJson);
+		if (N(e, "toJSON") && rt(e.toJSON) && e.toJSON.length === 0) return e.toJSON();
+		if (Array.isArray(e)) return e.map(en);
 	} catch {
 		return "[toJSON threw]";
 	}
-	return redact(input);
-};
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Utils.js
-/**
-* Yields its wrapped value exactly once through an `IterableIterator`.
-*
-* **When to use**
-*
-* Use to implement `[Symbol.iterator]()` on Effect-like types so they can be
-* `yield*`-ed inside generator functions, such as `Effect.gen` and
-* `Option.gen`.
-*
-* **Details**
-*
-* The first call to `next()` returns `{ value: self, done: false }`. Every
-* subsequent call returns `{ value: a, done: true }` where `a` is the argument
-* passed to `next()`. `[Symbol.iterator]()` returns a **new** `SingleShotGen`
-* wrapping the same value, so the outer type can be iterated multiple times.
-*
-* **Example** (Yielding a wrapped value in a generator)
-*
-* ```ts
-* import { Utils } from "effect"
-*
-* const gen = new Utils.SingleShotGen<string, number>("hello")
-*
-* // First call yields the wrapped value
-* console.log(gen.next(0))
-* // { value: "hello", done: false }
-*
-* // Second call signals completion with the provided value
-* console.log(gen.next(42))
-* // { value: 42, done: true }
-* ```
-*
-* @see {@link Gen} for the type-level signature that relies on `SingleShotGen`
-* @category constructors
-* @since 2.0.0
-*/
-var SingleShotGen = class SingleShotGen {
-	called = false;
+	return Wt(e);
+}, tn = class e {
+	called = !1;
 	self;
-	constructor(self) {
-		this.self = self;
+	constructor(e) {
+		this.self = e;
 	}
-	/**
-	* Yields the stored value once, then completes with the value sent back in.
-	*
-	* **When to use**
-	*
-	* Use to advance a `SingleShotGen` through its single yield and completion
-	* step.
-	*
-	* @since 2.0.0
-	*/
-	next(a) {
+	next(e) {
 		return this.called ? {
-			value: a,
-			done: true
-		} : (this.called = true, {
+			value: e,
+			done: !0
+		} : (this.called = !0, {
 			value: this.self,
-			done: false
+			done: !1
 		});
 	}
-	/**
-	* Creates a fresh single-shot iterator over the stored value.
-	*
-	* **When to use**
-	*
-	* Use to iterate the wrapped value again without reusing the consumed
-	* iterator state.
-	*
-	* @since 2.0.0
-	*/
 	[Symbol.iterator]() {
-		return new SingleShotGen(this.self);
+		return new e(this.self);
 	}
-};
-var pickInternalCall = () => {
-	const InternalTypeId = "~effect/Utils/internal";
-	const standard = { [InternalTypeId]: (body) => {
-		return body();
-	} };
-	const forced = { [InternalTypeId]: (body) => {
+}, nn = /*#__PURE__*/ (() => {
+	let e = "~effect/Utils/internal", t = { [e]: (e) => e() }, n = { [e]: (e) => {
 		try {
-			return body();
+			return e();
 		} finally {}
 	} };
-	return standard[InternalTypeId](() => (/* @__PURE__ */ new Error()).stack)?.includes(InternalTypeId) === true ? standard[InternalTypeId] : forced[InternalTypeId];
-};
-/** @internal */
-var internalCall = /*#__PURE__*/ pickInternalCall();
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/core.js
-/** @internal */
-var EffectTypeId = `~effect/Effect`;
-/** @internal */
-var ExitTypeId = `~effect/Exit`;
-var effectVariance = {
-	_A: identity,
-	_E: identity,
-	_R: identity
-};
-/** @internal */
-var identifier = `${EffectTypeId}/identifier`;
-/** @internal */
-var args = `${EffectTypeId}/args`;
-/** @internal */
-var evaluate = `${EffectTypeId}/evaluate`;
-/** @internal */
-var contA = `${EffectTypeId}/successCont`;
-/** @internal */
-var contE = `${EffectTypeId}/failureCont`;
-/** @internal */
-var contAll = `${EffectTypeId}/ensureCont`;
-/** @internal */
-var Yield = /*#__PURE__*/ Symbol.for("effect/Effect/Yield");
-/** @internal */
-var PipeInspectableProto = {
+	return t[e](() => (/* @__PURE__ */ Error()).stack)?.includes(e) === !0 ? t[e] : n[e];
+})(), rn = "~effect/Effect", an = "~effect/Exit", on = {
+	_A: M,
+	_E: M,
+	_R: M
+}, sn = `${rn}/identifier`, z = `${rn}/args`, B = `${rn}/evaluate`, cn = `${rn}/successCont`, ln = `${rn}/failureCont`, un = `${rn}/ensureCont`, dn = /*#__PURE__*/ Symbol.for("effect/Effect/Yield"), fn = {
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	},
 	toJSON() {
 		return { ...this };
 	},
 	toString() {
-		return format$1(this.toJSON(), {
-			ignoreToString: true,
+		return R(this.toJSON(), {
+			ignoreToString: !0,
 			space: 2
 		});
 	},
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toJSON();
 	}
-};
-/** @internal */
-var EffectProto = {
-	[EffectTypeId]: effectVariance,
-	...PipeInspectableProto,
+}, pn = {
+	[rn]: on,
+	...fn,
 	[Symbol.iterator]() {
-		return new SingleShotGen(this);
+		return new tn(this);
 	},
 	toJSON() {
 		return {
 			_id: "Effect",
-			op: this[identifier],
-			...args in this ? { args: this[args] } : void 0
+			op: this[sn],
+			...z in this ? { args: this[z] } : void 0
 		};
 	}
-};
-/** @internal */
-var isEffect = (u) => hasProperty(u, EffectTypeId);
-/** @internal */
-var isExit = (u) => hasProperty(u, ExitTypeId);
-/** @internal */
-var CauseTypeId = "~effect/Cause";
-/** @internal */
-var CauseReasonTypeId = "~effect/Cause/Reason";
-/** @internal */
-var isCause = (self) => hasProperty(self, CauseTypeId);
-/** @internal */
-var CauseImpl = class {
-	[CauseTypeId];
+}, mn = (e) => N(e, rn), hn = (e) => N(e, an), gn = "~effect/Cause", _n = "~effect/Cause/Reason", vn = (e) => N(e, gn), yn = class {
+	[gn];
 	reasons;
-	constructor(failures) {
-		this[CauseTypeId] = CauseTypeId;
-		this.reasons = failures;
+	constructor(e) {
+		this[gn] = gn, this.reasons = e;
 	}
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
 	toJSON() {
 		return {
 			_id: "Cause",
-			failures: this.reasons.map((f) => f.toJSON())
+			failures: this.reasons.map((e) => e.toJSON())
 		};
 	}
 	toString() {
-		return `Cause(${format$1(this.reasons)})`;
+		return `Cause(${R(this.reasons)})`;
 	}
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toJSON();
 	}
-	[symbol](that) {
-		return isCause(that) && this.reasons.length === that.reasons.length && this.reasons.every((e, i) => equals$2(e, that.reasons[i]));
+	[L](e) {
+		return vn(e) && this.reasons.length === e.reasons.length && this.reasons.every((t, n) => Ct(t, e.reasons[n]));
 	}
-	[symbol$1]() {
-		return array(this.reasons);
+	[P]() {
+		return gt(this.reasons);
 	}
-};
-var annotationsMap = /*#__PURE__*/ new WeakMap();
-/** @internal */
-var ReasonBase = class {
-	[CauseReasonTypeId];
+}, bn = /*#__PURE__*/ new WeakMap(), xn = class {
+	[_n];
 	annotations;
 	_tag;
-	constructor(_tag, annotations, originalError) {
-		this[CauseReasonTypeId] = CauseReasonTypeId;
-		this._tag = _tag;
-		if (annotations !== constEmptyAnnotations && typeof originalError === "object" && originalError !== null && annotations.size > 0) {
-			const prevAnnotations = annotationsMap.get(originalError);
-			if (prevAnnotations) annotations = new Map([...prevAnnotations, ...annotations]);
-			annotationsMap.set(originalError, annotations);
+	constructor(e, t, n) {
+		if (this[_n] = _n, this._tag = e, t !== Sn && typeof n == "object" && n && t.size > 0) {
+			let e = bn.get(n);
+			e && (t = new Map([...e, ...t])), bn.set(n, t);
 		}
-		this.annotations = annotations;
+		this.annotations = t;
 	}
-	annotate(annotations, options) {
-		if (annotations.mapUnsafe.size === 0) return this;
-		const newAnnotations = new Map(this.annotations);
-		annotations.mapUnsafe.forEach((value, key) => {
-			if (options?.overwrite !== true && newAnnotations.has(key)) return;
-			newAnnotations.set(key, value);
+	annotate(e, t) {
+		if (e.mapUnsafe.size === 0) return this;
+		let n = new Map(this.annotations);
+		e.mapUnsafe.forEach((e, r) => {
+			t?.overwrite !== !0 && n.has(r) || n.set(r, e);
 		});
-		const self = Object.assign(Object.create(Object.getPrototypeOf(this)), this);
-		self.annotations = newAnnotations;
-		return self;
+		let r = Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+		return r.annotations = n, r;
 	}
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
 	toString() {
-		return format$1(this);
+		return R(this);
 	}
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toString();
 	}
-};
-/** @internal */
-var constEmptyAnnotations = /*#__PURE__*/ new Map();
-/** @internal */
-var Fail = class extends ReasonBase {
+}, Sn = /*#__PURE__*/ new Map(), Cn = class extends xn {
 	error;
-	constructor(error, annotations = constEmptyAnnotations) {
-		super("Fail", annotations, error);
-		this.error = error;
+	constructor(e, t = Sn) {
+		super("Fail", t, e), this.error = e;
 	}
 	toString() {
-		return `Fail(${format$1(this.error)})`;
+		return `Fail(${R(this.error)})`;
 	}
 	toJSON() {
 		return {
@@ -1977,26 +1213,19 @@ var Fail = class extends ReasonBase {
 			error: this.error
 		};
 	}
-	[symbol](that) {
-		return isFailReason(that) && equals$2(this.error, that.error) && equals$2(this.annotations, that.annotations);
+	[L](e) {
+		return kn(e) && Ct(this.error, e.error) && Ct(this.annotations, e.annotations);
 	}
-	[symbol$1]() {
-		return combine(string$1(this._tag))(combine(hash(this.error))(hash(this.annotations)));
+	[P]() {
+		return lt(I(this._tag))(lt(F(this.error))(F(this.annotations)));
 	}
-};
-/** @internal */
-var causeFromReasons = (reasons) => new CauseImpl(reasons);
-/** @internal */
-var causeFail = (error) => new CauseImpl([new Fail(error)]);
-/** @internal */
-var Die = class extends ReasonBase {
+}, wn = (e) => new yn(e), Tn = (e) => new yn([new Cn(e)]), En = class extends xn {
 	defect;
-	constructor(defect, annotations = constEmptyAnnotations) {
-		super("Die", annotations, defect);
-		this.defect = defect;
+	constructor(e, t = Sn) {
+		super("Die", t, e), this.defect = e;
 	}
 	toString() {
-		return `Die(${format$1(this.defect)})`;
+		return `Die(${R(this.defect)})`;
 	}
 	toJSON() {
 		return {
@@ -2004,209 +1233,153 @@ var Die = class extends ReasonBase {
 			defect: this.defect
 		};
 	}
-	[symbol](that) {
-		return isDieReason(that) && equals$2(this.defect, that.defect) && equals$2(this.annotations, that.annotations);
+	[L](e) {
+		return An(e) && Ct(this.defect, e.defect) && Ct(this.annotations, e.annotations);
 	}
-	[symbol$1]() {
-		return combine(string$1(this._tag))(combine(hash(this.defect))(hash(this.annotations)));
+	[P]() {
+		return lt(I(this._tag))(lt(F(this.defect))(F(this.annotations)));
 	}
-};
-/** @internal */
-var causeDie = (defect) => new CauseImpl([new Die(defect)]);
-/** @internal */
-var causeAnnotate = /*#__PURE__*/ dual((args) => isCause(args[0]), (self, annotations, options) => {
-	if (annotations.mapUnsafe.size === 0) return self;
-	return new CauseImpl(self.reasons.map((f) => f.annotate(annotations, options)));
-});
-/** @internal */
-var isFailReason = (self) => self._tag === "Fail";
-/** @internal */
-var isDieReason = (self) => self._tag === "Die";
-/** @internal */
-var isInterruptReason = (self) => self._tag === "Interrupt";
-function defaultEvaluate(_fiber) {
-	return exitDie(`Effect.evaluate: Not implemented`);
+}, Dn = (e) => new yn([new En(e)]), On = /*#__PURE__*/ j((e) => vn(e[0]), (e, t, n) => t.mapUnsafe.size === 0 ? e : new yn(e.reasons.map((e) => e.annotate(t, n)))), kn = (e) => e._tag === "Fail", An = (e) => e._tag === "Die", jn = (e) => e._tag === "Interrupt";
+function Mn(e) {
+	return Bn("Effect.evaluate: Not implemented");
 }
-/** @internal */
-var makePrimitiveProto = (options) => ({
-	...EffectProto,
-	[identifier]: options.op,
-	[evaluate]: options[evaluate] ?? defaultEvaluate,
-	[contA]: options[contA],
-	[contE]: options[contE],
-	[contAll]: options[contAll]
-});
-/** @internal */
-var makePrimitive = (options) => {
-	const Proto = makePrimitiveProto(options);
+var Nn = (e) => ({
+	...pn,
+	[sn]: e.op,
+	[B]: e[B] ?? Mn,
+	[cn]: e[cn],
+	[ln]: e[ln],
+	[un]: e[un]
+}), Pn = (e) => {
+	let t = Nn(e);
 	return function() {
-		const self = Object.create(Proto);
-		self[args] = options.single === false ? arguments : arguments[0];
-		return self;
+		let n = Object.create(t);
+		return n[z] = e.single === !1 ? arguments : arguments[0], n;
 	};
-};
-/** @internal */
-var makeExit = (options) => {
-	const Proto = {
-		...makePrimitiveProto(options),
-		[ExitTypeId]: ExitTypeId,
-		_tag: options.op,
-		get [options.prop]() {
-			return this[args];
+}, Fn = (e) => {
+	let t = {
+		...Nn(e),
+		[an]: an,
+		_tag: e.op,
+		get [e.prop]() {
+			return this[z];
 		},
 		toString() {
-			return `${options.op}(${format$1(this[args])})`;
+			return `${e.op}(${R(this[z])})`;
 		},
 		toJSON() {
 			return {
 				_id: "Exit",
-				_tag: options.op,
-				[options.prop]: this[args]
+				_tag: e.op,
+				[e.prop]: this[z]
 			};
 		},
-		[symbol](that) {
-			return isExit(that) && that._tag === this._tag && equals$2(this[args], that[args]);
+		[L](e) {
+			return hn(e) && e._tag === this._tag && Ct(this[z], e[z]);
 		},
-		[symbol$1]() {
-			return combine(string$1(options.op), hash(this[args]));
+		[P]() {
+			return lt(I(e.op), F(this[z]));
 		}
 	};
-	return function(value) {
-		const self = Object.create(Proto);
-		self[args] = value;
-		return self;
+	return function(e) {
+		let n = Object.create(t);
+		return n[z] = e, n;
 	};
-};
-/** @internal */
-var exitSucceed = /*#__PURE__*/ makeExit({
+}, In = /*#__PURE__*/ Fn({
 	op: "Success",
 	prop: "value",
-	[evaluate](fiber) {
-		const cont = fiber.getCont(contA);
-		return cont ? cont[contA](this[args], fiber, this) : fiber.yieldWith(this);
+	[B](e) {
+		let t = e.getCont(cn);
+		return t ? t[cn](this[z], e, this) : e.yieldWith(this);
 	}
-});
-/** @internal */
-var StackTraceKey = { key: "effect/Cause/StackTrace" };
-/** @internal */
-var exitFailCause = /*#__PURE__*/ makeExit({
+}), Ln = { key: "effect/Cause/StackTrace" }, Rn = /*#__PURE__*/ Fn({
 	op: "Failure",
 	prop: "cause",
-	[evaluate](fiber) {
-		let cause = this[args];
-		let annotated = false;
-		if (fiber.currentStackFrame) {
-			cause = causeAnnotate(cause, { mapUnsafe: /* @__PURE__ */ new Map([[StackTraceKey.key, fiber.currentStackFrame]]) });
-			annotated = true;
-		}
-		let cont = fiber.getCont(contE);
-		while (fiber.interruptible && fiber._interruptedCause && cont) cont = fiber.getCont(contE);
-		return cont ? cont[contE](cause, fiber, annotated ? void 0 : this) : fiber.yieldWith(annotated ? this : exitFailCause(cause));
+	[B](e) {
+		let t = this[z], n = !1;
+		e.currentStackFrame && (t = On(t, { mapUnsafe: /* @__PURE__ */ new Map([[Ln.key, e.currentStackFrame]]) }), n = !0);
+		let r = e.getCont(ln);
+		for (; e.interruptible && e._interruptedCause && r;) r = e.getCont(ln);
+		return r ? r[ln](t, e, n ? void 0 : this) : e.yieldWith(n ? this : Rn(t));
 	}
-});
-/** @internal */
-var exitFail = (e) => exitFailCause(causeFail(e));
-/** @internal */
-var exitDie = (defect) => exitFailCause(causeDie(defect));
-/** @internal */
-var withFiber$1 = /*#__PURE__*/ makePrimitive({
+}), zn = (e) => Rn(Tn(e)), Bn = (e) => Rn(Dn(e)), Vn = /*#__PURE__*/ Pn({
 	op: "WithFiber",
-	[evaluate](fiber) {
-		return this[args](fiber);
+	[B](e) {
+		return this[z](e);
 	}
-});
-/** @internal */
-var YieldableError = /*#__PURE__*/ function() {
-	class YieldableError extends globalThis.Error {}
-	const proto = /*#__PURE__*/ makePrimitiveProto({
+}), Hn = /*#__PURE__*/ function() {
+	class e extends globalThis.Error {}
+	let t = /*#__PURE__*/ Nn({
 		op: "YieldableError",
-		[evaluate]() {
-			return exitFail(this);
+		[B]() {
+			return zn(this);
 		}
 	});
-	delete proto.toString;
-	Object.assign(YieldableError.prototype, proto);
-	return YieldableError;
-}();
-/** @internal */
-var Error$1 = /*#__PURE__*/ function() {
-	const plainArgsSymbol = /*#__PURE__*/ Symbol.for("effect/Data/Error/plainArgs");
-	return class Base extends YieldableError {
-		constructor(args) {
-			super(args?.message, args?.cause ? { cause: args.cause } : void 0);
-			if (args) {
-				Object.assign(this, args);
-				Object.defineProperty(this, plainArgsSymbol, {
-					value: args,
-					enumerable: false
-				});
-			}
+	return delete t.toString, Object.assign(e.prototype, t), e;
+}(), Un = /*#__PURE__*/ function() {
+	let e = /*#__PURE__*/ Symbol.for("effect/Data/Error/plainArgs");
+	return class extends Hn {
+		constructor(t) {
+			super(t?.message, t?.cause ? { cause: t.cause } : void 0), t && (Object.assign(this, t), Object.defineProperty(this, e, {
+				value: t,
+				enumerable: !1
+			}));
 		}
 		toJSON() {
 			return {
-				...this[plainArgsSymbol],
+				...this[e],
 				...this
 			};
 		}
 	};
-}();
-/** @internal */
-var TaggedError$1 = (tag) => {
-	class Base extends Error$1 {
-		_tag = tag;
+}(), Wn = (e) => {
+	class t extends Un {
+		_tag = e;
 	}
-	Base.prototype.name = tag;
-	return Base;
+	return t.prototype.name = e, t;
 };
-TaggedError$1("NoSuchElementError");
+Wn("NoSuchElementError");
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/option.js
-/**
-* @since 2.0.0
-*/
-var TypeId$14 = "~effect/data/Option";
-var CommonProto$1 = {
-	[TypeId$14]: { _A: (_) => _ },
-	...PipeInspectableProto,
+var Gn = "~effect/data/Option", Kn = {
+	[Gn]: { _A: (e) => e },
+	...fn,
 	[Symbol.iterator]() {
-		return new SingleShotGen(this);
+		return new tn(this);
 	}
-};
-var SomeProto = /*#__PURE__*/ Object.defineProperty(/*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonProto$1), {
+}, qn = /*#__PURE__*/ Object.defineProperty(/*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(Kn), {
 	_tag: "Some",
 	_op: "Some",
-	[symbol](that) {
-		return isOption(that) && isSome$1(that) && equals$2(this.value, that.value);
+	[L](e) {
+		return Xn(e) && Qn(e) && Ct(this.value, e.value);
 	},
-	[symbol$1]() {
-		return combine(hash(this._tag))(hash(this.value));
+	[P]() {
+		return lt(F(this._tag))(F(this.value));
 	},
 	toString() {
-		return `some(${format$1(this.value)})`;
+		return `some(${R(this.value)})`;
 	},
 	toJSON() {
 		return {
 			_id: "Option",
 			_tag: this._tag,
-			value: toJson(this.value)
+			value: en(this.value)
 		};
 	}
 }), "valueOrUndefined", { get() {
 	return this.value;
-} });
-var NoneHash = /*#__PURE__*/ hash("None");
-var NoneProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonProto$1), {
+} }), Jn = /*#__PURE__*/ F("None"), Yn = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(Kn), {
 	_tag: "None",
 	_op: "None",
 	valueOrUndefined: void 0,
-	[symbol](that) {
-		return isOption(that) && isNone$1(that);
+	[L](e) {
+		return Xn(e) && Zn(e);
 	},
-	[symbol$1]() {
-		return NoneHash;
+	[P]() {
+		return Jn;
 	},
 	toString() {
-		return `none()`;
+		return "none()";
 	},
 	toJSON() {
 		return {
@@ -2214,941 +1387,101 @@ var NoneProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonPr
 			_tag: this._tag
 		};
 	}
-});
-/** @internal */
-var isOption = (input) => hasProperty(input, TypeId$14);
-/** @internal */
-var isNone$1 = (fa) => fa._tag === "None";
-/** @internal */
-var isSome$1 = (fa) => fa._tag === "Some";
-/** @internal */
-var none$1 = /*#__PURE__*/ Object.create(NoneProto);
-/** @internal */
-var some$1 = (value) => {
-	const a = Object.create(SomeProto);
-	a.value = value;
-	return a;
-};
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/result.js
-var TypeId$13 = "~effect/data/Result";
-var CommonProto = {
-	[TypeId$13]: {
+}), Xn = (e) => N(e, Gn), Zn = (e) => e._tag === "None", Qn = (e) => e._tag === "Some", $n = /*#__PURE__*/ Object.create(Yn), er = (e) => {
+	let t = Object.create(qn);
+	return t.value = e, t;
+}, tr = "~effect/data/Result", nr = {
+	[tr]: {
 		/* v8 ignore next 2 */
-		_A: (_) => _,
-		_E: (_) => _
+		_A: (e) => e,
+		_E: (e) => e
 	},
-	...PipeInspectableProto,
+	...fn,
 	[Symbol.iterator]() {
-		return new SingleShotGen(this);
+		return new tn(this);
 	}
-};
-var SuccessProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonProto), {
+}, rr = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(nr), {
 	_tag: "Success",
 	_op: "Success",
-	[symbol](that) {
-		return isResult(that) && isSuccess(that) && equals$2(this.success, that.success);
+	[L](e) {
+		return ar(e) && sr(e) && Ct(this.success, e.success);
 	},
-	[symbol$1]() {
-		return combine(hash(this._tag))(hash(this.success));
+	[P]() {
+		return lt(F(this._tag))(F(this.success));
 	},
 	toString() {
-		return `success(${format$1(this.success)})`;
+		return `success(${R(this.success)})`;
 	},
 	toJSON() {
 		return {
 			_id: "Result",
 			_tag: this._tag,
-			value: toJson(this.success)
+			value: en(this.success)
 		};
 	}
-});
-var FailureProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonProto), {
+}), ir = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(nr), {
 	_tag: "Failure",
 	_op: "Failure",
-	[symbol](that) {
-		return isResult(that) && isFailure$1(that) && equals$2(this.failure, that.failure);
+	[L](e) {
+		return ar(e) && or(e) && Ct(this.failure, e.failure);
 	},
-	[symbol$1]() {
-		return combine(hash(this._tag))(hash(this.failure));
+	[P]() {
+		return lt(F(this._tag))(F(this.failure));
 	},
 	toString() {
-		return `failure(${format$1(this.failure)})`;
+		return `failure(${R(this.failure)})`;
 	},
 	toJSON() {
 		return {
 			_id: "Result",
 			_tag: this._tag,
-			failure: toJson(this.failure)
+			failure: en(this.failure)
 		};
 	}
-});
-/** @internal */
-var isResult = (input) => hasProperty(input, TypeId$13);
-/** @internal */
-var isFailure$1 = (result) => result._tag === "Failure";
-/** @internal */
-var isSuccess = (result) => result._tag === "Success";
-/** @internal */
-var fail$4 = (failure) => {
-	const a = Object.create(FailureProto);
-	a.failure = failure;
-	return a;
-};
-/** @internal */
-var succeed$3 = (success) => {
-	const a = Object.create(SuccessProto);
-	a.success = success;
-	return a;
+}), ar = (e) => N(e, tr), or = (e) => e._tag === "Failure", sr = (e) => e._tag === "Success", cr = (e) => {
+	let t = Object.create(ir);
+	return t.failure = e, t;
+}, lr = (e) => {
+	let t = Object.create(rr);
+	return t.success = e, t;
 };
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Order.js
-/**
-* Defines comparison functions for ordered values.
-*
-* An `Order<A>` compares two `A` values and returns whether the first is less
-* than, equal to, or greater than the second. Orders are used for sorting,
-* choosing minimum or maximum values, checking ranges, and building ordered data
-* structures. This module includes built-in orders, constructors for custom
-* orders, tools for reversing and combining comparisons, tuple and struct
-* helpers, comparison predicates, clamping, and reducer support.
-*
-* @since 2.0.0
-*/
-/**
-* Creates a new `Order` instance from a comparison function.
-*
-* **When to use**
-*
-* Use when you need a sorting rule not covered by the built-in orders or input
-* mapping helpers, and you can provide a total comparison.
-*
-* **Details**
-*
-* Uses reference equality (`===`) as a shortcut: if `self === that`, it returns
-* `0` without calling the comparison function. The comparison function should
-* return `-1`, `0`, or `1`, and the returned order satisfies total ordering
-* laws when the comparison function does.
-*
-* **Example** (Creating an Order)
-*
-* ```ts
-* import { Order } from "effect"
-*
-* const byAge = Order.make<{ name: string; age: number }>((self, that) => {
-*   if (self.age < that.age) return -1
-*   if (self.age > that.age) return 1
-*   return 0
-* })
-*
-* console.log(byAge({ name: "Alice", age: 30 }, { name: "Bob", age: 25 })) // 1
-* console.log(byAge({ name: "Alice", age: 25 }, { name: "Bob", age: 30 })) // -1
-* ```
-*
-* @see {@link mapInput} to transform an order by mapping the input type
-* @see {@link combine} to combine multiple orders
-* @category constructors
-* @since 2.0.0
-*/
-function make$15(compare) {
-	return (self, that) => self === that ? 0 : compare(self, that);
+function ur(e) {
+	return (t, n) => t === n ? 0 : e(t, n);
 }
-/**
-* Order instance for numbers that compares them numerically.
-*
-* **When to use**
-*
-* Use when you need numeric ordering for numbers.
-*
-* **Details**
-*
-* `0` is considered equal to `-0`. All `NaN` values are considered equal to
-* each other, and any `NaN` is considered less than any non-`NaN` number. All
-* other values use standard numeric comparison.
-*
-* **Example** (Number Ordering)
-*
-* ```ts
-* import { Order } from "effect"
-*
-* console.log(Order.Number(1, 1)) // 0
-* console.log(Order.Number(1, 2)) // -1
-* console.log(Order.Number(2, 1)) // 1
-*
-* console.log(Order.Number(0, -0)) // 0
-* console.log(Order.Number(NaN, 1)) // -1
-* ```
-*
-* @see {@link mapInput} to compare objects by a number property
-* @see {@link BigInt} for bigint comparisons
-* @category instances
-* @since 4.0.0
-*/
-var Number$4 = /*#__PURE__*/ make$15((self, that) => {
-	if (globalThis.Number.isNaN(self) && globalThis.Number.isNaN(that)) return 0;
-	if (globalThis.Number.isNaN(self)) return -1;
-	if (globalThis.Number.isNaN(that)) return 1;
-	return self < that ? -1 : 1;
-});
-/**
-* Transforms an `Order` on type `A` into an `Order` on type `B` by providing a function that
-* maps values of type `B` to values of type `A`.
-*
-* **When to use**
-*
-* Use when you need to adapt an `Order` to compare a larger value by one
-* derived property.
-*
-* **Details**
-*
-* Applies the mapping function to both values before comparison. The mapping
-* function should be pure and not have side effects so the ordering properties
-* of the original order are preserved.
-*
-* **Example** (Mapping Input)
-*
-* ```ts
-* import { Order } from "effect"
-*
-* const byLength = Order.mapInput(Order.Number, (s: string) => s.length)
-*
-* console.log(byLength("a", "bb")) // -1
-* console.log(byLength("bb", "a")) // 1
-* console.log(byLength("aa", "bb")) // 0
-* ```
-*
-* @see {@link combine} to combine mapped orders for multi-criteria comparison
-* @see {@link Struct} to create orders for structs with multiple fields
-* @category mapping
-* @since 2.0.0
-*/
-var mapInput = /*#__PURE__*/ dual(2, (self, f) => make$15((b1, b2) => self(f(b1), f(b2))));
-/**
-* Checks whether one value is strictly greater than another according to the given order.
-*
-* **When to use**
-*
-* Use when you need a boolean greater-than predicate using an `Order`.
-*
-* **Details**
-*
-* Returns `true` if the order returns `1`, meaning the first value is greater
-* than the second. Equal or lesser values return `false`.
-*
-* **Example** (Greater Than)
-*
-* ```ts
-* import { Order } from "effect"
-*
-* const isGreaterThanNumber = Order.isGreaterThan(Order.Number)
-*
-* console.log(isGreaterThanNumber(2, 1)) // true
-* console.log(isGreaterThanNumber(1, 2)) // false
-* console.log(isGreaterThanNumber(1, 1)) // false
-* ```
-*
-* @see {@link isGreaterThanOrEqualTo} for non-strict greater than or equal
-* @see {@link isLessThan} for strict less than
-* @category predicates
-* @since 4.0.0
-*/
-var isGreaterThan$1 = (O) => dual(2, (self, that) => O(self, that) === 1);
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Option.js
-/**
-* Creates an `Option` representing the absence of a value.
-*
-* **When to use**
-*
-* Use to represent a missing or uninitialized value, such as returning "no
-* result" from a function.
-*
-* **Details**
-*
-* - Returns `Option<never>`, which is a subtype of `Option<A>` for any `A`
-* - Always returns the same singleton instance
-*
-* **Example** (Creating an empty Option)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* //      ┌─── Option<never>
-* //      ▼
-* const noValue = Option.none()
-*
-* console.log(noValue)
-* // Output: { _id: 'Option', _tag: 'None' }
-* ```
-*
-* @see {@link some} for the opposite operation.
-*
-* @category constructors
-* @since 2.0.0
-*/
-var none = () => none$1;
-/**
-* Wraps the given value into an `Option` to represent its presence.
-*
-* **When to use**
-*
-* Use to wrap a known present value as `Option`
-* - Returning a successful result from a partial function
-*
-* **Details**
-*
-* - Always returns `Some<A>`
-* - Does not filter `null` or `undefined`; use {@link fromNullishOr} for that
-*
-* **Example** (Wrapping a value)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* //      ┌─── Option<number>
-* //      ▼
-* const value = Option.some(1)
-*
-* console.log(value)
-* // Output: { _id: 'Option', _tag: 'Some', value: 1 }
-* ```
-*
-* @see {@link none} for the opposite operation.
-*
-* @category constructors
-* @since 2.0.0
-*/
-var some = some$1;
-/**
-* Checks whether an `Option` is `None` (absent).
-*
-* **When to use**
-*
-* Use when you need to branch on an absent `Option` before accessing `.value`.
-*
-* **Details**
-*
-* - Acts as a type guard, narrowing to `None<A>`
-*
-* **Example** (Checking for None)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* console.log(Option.isNone(Option.some(1)))
-* // Output: false
-*
-* console.log(Option.isNone(Option.none()))
-* // Output: true
-* ```
-*
-* @see {@link isSome} for the opposite check.
-*
-* @category guards
-* @since 2.0.0
-*/
-var isNone = isNone$1;
-/**
-* Checks whether an `Option` contains a value (`Some`).
-*
-* **When to use**
-*
-* Use when you need to branch on a present `Option` before accessing `.value`.
-*
-* **Details**
-*
-* - Acts as a type guard, narrowing to `Some<A>`
-*
-* **Example** (Checking for Some)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* console.log(Option.isSome(Option.some(1)))
-* // Output: true
-*
-* console.log(Option.isSome(Option.none()))
-* // Output: false
-* ```
-*
-* @see {@link isNone} for the opposite check.
-*
-* @category guards
-* @since 2.0.0
-*/
-var isSome = isSome$1;
-/**
-* Extracts the value from a `Some`, or returns `undefined` for `None`.
-*
-* **When to use**
-*
-* Use when you need to pass absent `Option` values to APIs that expect
-* `undefined`.
-*
-* **Details**
-*
-* - `Some` → the inner value
-* - `None` → `undefined`
-*
-* **Example** (Unwrapping to undefined)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* console.log(Option.getOrUndefined(Option.some(1)))
-* // Output: 1
-*
-* console.log(Option.getOrUndefined(Option.none()))
-* // Output: undefined
-* ```
-*
-* @see {@link getOrNull} to return `null` instead
-* @see {@link getOrElse} for a custom fallback
-*
-* @category getters
-* @since 2.0.0
-*/
-var getOrUndefined = /*#__PURE__*/ (/* @__PURE__ */ dual(2, (self, onNone) => isNone(self) ? onNone() : self.value))(constUndefined);
-/**
-* Transforms the value inside a `Some` using the provided function, leaving
-* `None` unchanged.
-*
-* **When to use**
-*
-* Use to apply a pure transformation to an `Option`'s present value, especially
-* when chaining transformations in a pipeline.
-*
-* **Details**
-*
-* - `Some` → applies `f` and wraps the result in a new `Some`
-* - `None` → returns `None` unchanged
-*
-* **Example** (Mapping over an Option)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* console.log(Option.map(Option.some(2), (n) => n * 2))
-* // Output: { _id: 'Option', _tag: 'Some', value: 4 }
-*
-* console.log(Option.map(Option.none(), (n: number) => n * 2))
-* // Output: { _id: 'Option', _tag: 'None' }
-* ```
-*
-* @see {@link flatMap} when `f` returns an `Option`
-* @see {@link as} to replace the value with a constant
-*
-* @category mapping
-* @since 2.0.0
-*/
-var map$2 = /*#__PURE__*/ dual(2, (self, f) => isNone(self) ? none() : some(f(self.value)));
-/**
-* Filters an `Option` using a predicate. Returns `None` if the predicate is
-* not satisfied or the input is `None`.
-*
-* **When to use**
-*
-* Use when you need to discard an `Option`'s present value when it does not
-* meet a condition, while narrowing the type via a refinement predicate.
-*
-* **Details**
-*
-* - `None` → `None`
-* - `Some` where `predicate(value)` is `true` → `Some(value)`
-* - `Some` where `predicate(value)` is `false` → `None`
-* - Supports refinements for type narrowing
-*
-* **Example** (Filtering with a predicate)
-*
-* ```ts
-* import { Option } from "effect"
-*
-* const removeEmpty = (input: Option.Option<string>) =>
-*   Option.filter(input, (value) => value !== "")
-*
-* console.log(removeEmpty(Option.some("hello")))
-* // Output: { _id: 'Option', _tag: 'Some', value: 'hello' }
-*
-* console.log(removeEmpty(Option.some("")))
-* // Output: { _id: 'Option', _tag: 'None' }
-*
-* console.log(removeEmpty(Option.none()))
-* // Output: { _id: 'Option', _tag: 'None' }
-* ```
-*
-* @see {@link filterMap} to transform and filter simultaneously
-* @see {@link exists} to test without filtering
-*
-* @category filtering
-* @since 2.0.0
-*/
-var filter = /*#__PURE__*/ dual(2, (self, predicate) => isNone(self) ? none() : predicate(self.value) ? some(self.value) : none());
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Result.js
-/**
-* Creates a `Result` holding a `Success` value.
-*
-* **Details**
-*
-* - Use when you have a value and want to lift it into the `Result` type
-* - The error type `E` defaults to `never`
-*
-* **Example** (Wrapping a value)
-*
-* ```ts
-* import { Result } from "effect"
-*
-* const result = Result.succeed(42)
-*
-* console.log(Result.isSuccess(result))
-* // Output: true
-* ```
-*
-* @see {@link fail} to create a Failure
-* @see {@link void_ void} for a pre-built `Success<void>`
-*
-* @category constructors
-* @since 4.0.0
-*/
-var succeed$2 = succeed$3;
-/**
-* Creates a `Result` holding a `Failure` value.
-*
-* **When to use**
-*
-* Use to represent a failed `Result` with a typed failure value.
-*
-* **Details**
-*
-* - The success type `A` defaults to `never`
-*
-* **Example** (Creating a failure)
-*
-* ```ts
-* import { Result } from "effect"
-*
-* const result = Result.fail("Something went wrong")
-*
-* console.log(Result.isFailure(result))
-* // Output: true
-* ```
-*
-* @see {@link succeed} to create a Success
-* @see {@link mapError} to transform the error
-*
-* @category constructors
-* @since 4.0.0
-*/
-var fail$3 = fail$4;
-/**
-* Checks whether a `Result` is a `Failure`.
-*
-* **When to use**
-*
-* Use to narrow a known `Result` to the `Failure` variant.
-*
-* **Details**
-*
-* - Acts as a TypeScript type guard, narrowing to `Failure<A, E>`
-* - After narrowing, you can access `.failure` to read the error value
-*
-* **Example** (Narrowing to Failure)
-*
-* ```ts
-* import { Result } from "effect"
-*
-* const result = Result.fail("oops")
-*
-* if (Result.isFailure(result)) {
-*   console.log(result.failure)
-*   // Output: "oops"
-* }
-* ```
-*
-* @see {@link isSuccess} for the opposite check
-* @see {@link isResult} to check if a value is any Result
-*
-* @category guards
-* @since 4.0.0
-*/
-var isFailure = isFailure$1;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Array.js
-/**
-* Works with JavaScript arrays, readonly arrays, and non-empty arrays.
-*
-* The helpers cover common collection work such as creating arrays, reading
-* elements, transforming values, sorting, grouping, splitting, combining, and
-* reducing many values to one result. Helpers that change contents return new
-* arrays and preserve non-empty array types when the result is guaranteed to
-* contain values.
-*
-* @since 2.0.0
-*/
-/**
-* Exposes the global array constructor.
-*
-* **When to use**
-*
-* Use to access native JavaScript array constructor methods such as `isArray`
-* or `from` from the Effect module namespace.
-*
-* **Example** (Using the Array constructor)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* const arr = new Array.Array(3)
-* console.log(arr) // [undefined, undefined, undefined]
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var Array$1 = globalThis.Array;
-/**
-* Converts an `Iterable` to an `Array`.
-*
-* **When to use**
-*
-* Use to convert any `Iterable` (Set, Generator, etc.) into an array.
-*
-* **Details**
-*
-* If the input is already an array, this returns it by reference without
-* copying. Otherwise, it creates a new array from the iterable. Use `copy` if
-* you need a fresh array even when the input is already an array.
-*
-* **Example** (Converting a Set to an array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* const result = Array.fromIterable(new Set([1, 2, 3]))
-* console.log(result) // [1, 2, 3]
-* ```
-*
-* @see {@link ensure} — wrap a single value or return an existing array
-* @see {@link copy} — create a shallow copy of an array
-*
-* @category constructors
-* @since 2.0.0
-*/
-var fromIterable = (collection) => Array$1.isArray(collection) ? collection : Array$1.from(collection);
-/**
-* Adds a single element to the end of an iterable, returning a `NonEmptyArray`.
-*
-* **When to use**
-*
-* Use when you need to guarantee a non-empty result after adding a required
-* trailing value.
-*
-* **Example** (Appending an element)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* const result = Array.append([1, 2, 3], 4)
-* console.log(result) // [1, 2, 3, 4]
-* ```
-*
-* @see {@link prepend} — add to the front
-* @see {@link appendAll} — append multiple elements
-*
-* @category combining
-* @since 2.0.0
-*/
-var append = /*#__PURE__*/ dual(2, (self, last) => [...self, last]);
-/**
-* Concatenates two iterables into a single array.
-*
-* **When to use**
-*
-* Use to combine two iterable inputs into a new array with the second input's
-* elements after the first.
-*
-* **Details**
-*
-* If either input is non-empty, the result is a `NonEmptyArray`.
-*
-* **Example** (Concatenating arrays)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* const result = Array.appendAll([1, 2], [3, 4])
-* console.log(result) // [1, 2, 3, 4]
-* ```
-*
-* @see {@link append} — add a single element to the end
-* @see {@link prependAll} — add elements to the front
-*
-* @category combining
-* @since 2.0.0
-*/
-var appendAll = /*#__PURE__*/ dual(2, (self, that) => fromIterable(self).concat(fromIterable(that)));
-Array$1.isArray;
-/**
-* Checks whether a mutable `Array` is non-empty, narrowing the type to
-* `NonEmptyArray`.
-*
-* **When to use**
-*
-* Use when you need the narrowed value to remain a mutable `Array` after proving
-* it has at least one element.
-*
-* **Example** (Checking for a non-empty array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.isArrayNonEmpty([])) // false
-* console.log(Array.isArrayNonEmpty([1, 2, 3])) // true
-* ```
-*
-* @see {@link isReadonlyArrayNonEmpty} — readonly variant
-* @see {@link isArrayEmpty} — opposite check
-*
-* @category guards
-* @since 4.0.0
-*/
-var isArrayNonEmpty = isArrayNonEmpty$1;
-/**
-* Checks whether a `ReadonlyArray` is non-empty, narrowing the type to
-* `NonEmptyReadonlyArray`.
-*
-* **When to use**
-*
-* Use when you need to prove a readonly array has at least one element without
-* requiring mutable array methods afterward.
-*
-* **Example** (Checking for a non-empty readonly array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.isReadonlyArrayNonEmpty([])) // false
-* console.log(Array.isReadonlyArrayNonEmpty([1, 2, 3])) // true
-* ```
-*
-* @see {@link isArrayNonEmpty} — mutable variant
-* @see {@link isReadonlyArrayEmpty} — opposite check
-*
-* @category guards
-* @since 4.0.0
-*/
-var isReadonlyArrayNonEmpty = isArrayNonEmpty$1;
-/** @internal */
-function isOutOfBounds(i, as) {
-	return i < 0 || i >= as.length;
+var dr = /*#__PURE__*/ ur((e, t) => globalThis.Number.isNaN(e) && globalThis.Number.isNaN(t) ? 0 : globalThis.Number.isNaN(e) ? -1 : globalThis.Number.isNaN(t) ? 1 : e < t ? -1 : 1), fr = /*#__PURE__*/ ur((e, t) => e < t ? -1 : 1), pr = /*#__PURE__*/ j(2, (e, t) => ur((n, r) => e(t(n), t(r)))), mr = /*#__PURE__*/ pr(dr, (e) => e.getTime()), hr = (e) => j(2, (t, n) => e(t, n) === 1), gr = (e) => j(2, (t, n) => e(t, n) !== 1), _r = (e) => j(2, (t, n) => e(t, n) !== -1), vr = () => $n, V = er, yr = Zn, br = Qn, xr = /*#__PURE__*/ (/* @__PURE__ */ j(2, (e, t) => yr(e) ? t() : e.value))(Ge), Sr = /*#__PURE__*/ j(2, (e, t) => yr(e) ? vr() : V(t(e.value))), Cr = /*#__PURE__*/ j(2, (e, t) => yr(e) ? vr() : t(e.value) ? V(e.value) : vr()), wr = lr, Tr = cr, Er = or, Dr = globalThis.Array, Or = (e) => Dr.isArray(e) ? e : Dr.from(e), kr = /*#__PURE__*/ j(2, (e, t) => [...e, t]), Ar = /*#__PURE__*/ j(2, (e, t) => Or(e).concat(Or(t)));
+Dr.isArray;
+var jr = Vt, Mr = Vt;
+function Nr(e, t) {
+	return e < 0 || e >= t.length;
 }
-/**
-* Returns the first element of a `NonEmptyReadonlyArray` directly (no `Option`
-* wrapper).
-*
-* **When to use**
-*
-* Use to get the first element without `Option` wrapping when the array is known
-* to be non-empty.
-*
-* **Example** (Getting the head of a non-empty array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.headNonEmpty([1, 2, 3, 4])) // 1
-* ```
-*
-* @see {@link head} — safe version for possibly-empty arrays
-*
-* @category getters
-* @since 2.0.0
-*/
-var headNonEmpty = /*#__PURE__*/ (/* @__PURE__ */ dual(2, (self, index) => {
-	const i = Math.floor(index);
-	if (isOutOfBounds(i, self)) throw new Error(`Index out of bounds: ${i}`);
-	return self[i];
-}))(0);
-/**
-* Returns all elements except the first of a `NonEmptyReadonlyArray`.
-*
-* **When to use**
-*
-* Use to get all elements after the first when the array is known to be non-empty.
-*
-* **Example** (Getting the tail of a non-empty array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.tailNonEmpty([1, 2, 3, 4])) // [2, 3, 4]
-* ```
-*
-* @see {@link tail} — safe version for possibly-empty arrays
-* @see {@link initNonEmpty} — all elements except the last
-*
-* @category getters
-* @since 2.0.0
-*/
-var tailNonEmpty = (self) => self.slice(1);
-/**
-* Computes the union of two arrays using a custom equivalence, removing
-* duplicates.
-*
-* **When to use**
-*
-* Use when you need the union of two arrays but duplicate detection must use a
-* custom equivalence instead of the default `Equal.equivalence()`.
-*
-* **Example** (Union with custom equality)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.unionWith([1, 2], [2, 3], (a, b) => a === b)) // [1, 2, 3]
-* ```
-*
-* @see {@link union} for the `Equal.equivalence()` variant
-* @see {@link intersectionWith} for keeping elements present in both arrays
-* @see {@link differenceWith} for keeping elements present only in the first array
-*
-* @category elements
-* @since 2.0.0
-*/
-var unionWith = /*#__PURE__*/ dual(3, (self, that, isEquivalent) => {
-	const a = fromIterable(self);
-	const b = fromIterable(that);
-	if (isReadonlyArrayNonEmpty(a)) {
-		if (isReadonlyArrayNonEmpty(b)) return dedupeWith(isEquivalent)(appendAll(a, b));
-		return a;
-	}
-	return b;
-});
-/**
-* Computes the union of two arrays, removing duplicates using
-* `Equal.equivalence()`.
-*
-* **Example** (Array union)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.union([1, 2], [2, 3])) // [1, 2, 3]
-* ```
-*
-* @see {@link unionWith} — use custom equality
-* @see {@link intersection} — elements in both arrays
-* @see {@link difference} — elements only in the first array
-*
-* @category elements
-* @since 2.0.0
-*/
-var union$2 = /*#__PURE__*/ dual(2, (self, that) => unionWith(self, that, asEquivalence()));
-/**
-* Creates an empty array.
-*
-* **When to use**
-*
-* Use to create a typed empty array without allocating placeholder elements.
-*
-* **Example** (Creating an empty array)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* const result = Array.empty<number>()
-* console.log(result) // []
-* ```
-*
-* @see {@link of} — create a single-element array
-* @see {@link make} — create from multiple values
-*
-* @category constructors
-* @since 2.0.0
-*/
-var empty$1 = () => [];
-/**
-* Transforms each element using a function, returning a new array.
-*
-* **When to use**
-*
-* Use to transform each element independently while preserving the array shape.
-*
-* **Details**
-*
-* The function receives `(element, index)`. The return type preserves
-* `NonEmptyArray`.
-*
-* **Example** (Doubling values)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.map([1, 2, 3], (x) => x * 2)) // [2, 4, 6]
-* ```
-*
-* @see {@link flatMap} — map and flatten
-*
-* @category mapping
-* @since 2.0.0
-*/
-var map$1 = /*#__PURE__*/ dual(2, (self, f) => self.map(f));
-/**
-* Removes duplicates using a custom equivalence, preserving the order of the
-* first occurrence.
-*
-* **When to use**
-*
-* Use to remove all duplicate elements with a custom equivalence when default
-* equality is not appropriate.
-*
-* **Example** (Deduplicating with custom equality)
-*
-* ```ts
-* import { Array } from "effect"
-*
-* console.log(Array.dedupeWith([1, 2, 2, 3, 3, 3], (a, b) => a === b)) // [1, 2, 3]
-* ```
-*
-* @see {@link dedupe} — uses default equality
-* @see {@link dedupeAdjacentWith} — only dedupes consecutive elements
-*
-* @category elements
-* @since 2.0.0
-*/
-var dedupeWith = /*#__PURE__*/ dual(2, (self, isEquivalent) => {
-	const input = fromIterable(self);
-	if (isReadonlyArrayNonEmpty(input)) {
-		const out = [headNonEmpty(input)];
-		const rest = tailNonEmpty(input);
-		for (const r of rest) if (out.every((a) => !isEquivalent(r, a))) out.push(r);
-		return out;
+var Pr = /*#__PURE__*/ (/* @__PURE__ */ j(2, (e, t) => {
+	let n = Math.floor(t);
+	if (Nr(n, e)) throw Error(`Index out of bounds: ${n}`);
+	return e[n];
+}))(0), Fr = (e) => e.slice(1), Ir = /*#__PURE__*/ j(3, (e, t, n) => {
+	let r = Or(e), i = Or(t);
+	return Mr(r) ? Mr(i) ? Br(n)(Ar(r, i)) : r : i;
+}), Lr = /*#__PURE__*/ j(2, (e, t) => Ir(e, t, zt())), Rr = () => [], zr = /*#__PURE__*/ j(2, (e, t) => e.map(t)), Br = /*#__PURE__*/ j(2, (e, t) => {
+	let n = Or(e);
+	if (Mr(n)) {
+		let e = [Pr(n)], r = Fr(n);
+		for (let n of r) e.every((e) => !t(n, e)) && e.push(n);
+		return e;
 	}
 	return [];
-});
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/BigDecimal.js
-/**
-* Decimal numbers and arithmetic for cases where JavaScript `number` rounding
-* is not precise enough. A `BigDecimal` stores digits as a `bigint` plus a
-* decimal scale, which lets the module parse, compare, add, subtract, multiply,
-* divide, round, and format decimal values such as money, quantities, and
-* measurements.
-*
-* @since 2.0.0
-*/
-var TypeId$12 = "~effect/BigDecimal";
-var BigDecimalProto = {
-	[TypeId$12]: TypeId$12,
-	[symbol$1]() {
-		const normalized = normalize(this);
-		return combine(hash(normalized.value), number$1(normalized.scale));
+}), Vr = "~effect/BigDecimal", Hr = {
+	[Vr]: Vr,
+	[P]() {
+		let e = Yr(this);
+		return lt(F(e.value), ft(e.scale));
 	},
-	[symbol](that) {
-		return isBigDecimal(that) && equals$1(this, that);
+	[L](e) {
+		return Ur(e) && $r(this, e);
 	},
 	toString() {
-		return `BigDecimal(${format(this)})`;
+		return `BigDecimal(${ei(this)})`;
 	},
 	toJSON() {
 		return {
@@ -3157,480 +1490,68 @@ var BigDecimalProto = {
 			scale: this.scale
 		};
 	},
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toJSON();
 	},
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
-};
-/**
-* Checks whether a given value is a `BigDecimal`.
-*
-* **When to use**
-*
-* Use to validate unknown input and narrow it to `BigDecimal`.
-*
-* **Example** (Checking BigDecimal values)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-*
-* const decimal = BigDecimal.fromNumber(123.45)
-* console.log(BigDecimal.isBigDecimal(decimal)) // true
-* console.log(BigDecimal.isBigDecimal(123.45)) // false
-* console.log(BigDecimal.isBigDecimal("123.45")) // false
-* ```
-*
-* @category guards
-* @since 2.0.0
-*/
-var isBigDecimal = (u) => hasProperty(u, TypeId$12);
-/**
-* Creates a `BigDecimal` from a `bigint` value and a scale.
-*
-* **When to use**
-*
-* Use to construct a decimal directly from its unscaled integer value and
-* decimal scale.
-*
-* **Example** (Creating decimals from bigint and scale)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-*
-* // Create 123.45 (12345 with scale 2)
-* const decimal = BigDecimal.make(12345n, 2)
-* console.log(BigDecimal.format(decimal)) // "123.45"
-*
-* // Create 42 (42 with scale 0)
-* const integer = BigDecimal.make(42n, 0)
-* console.log(BigDecimal.format(integer)) // "42"
-* ```
-*
-* @see {@link fromBigInt} for constructing an integer decimal from a `bigint`
-*
-* @category constructors
-* @since 2.0.0
-*/
-var make$14 = (value, scale) => {
-	const o = Object.create(BigDecimalProto);
-	o.value = value;
-	o.scale = scale;
-	return o;
-};
-/**
-* Internal function used to create pre-normalized `BigDecimal`s.
-*
-* @internal
-*/
-var makeNormalizedUnsafe = (value, scale) => {
-	if (value !== bigint0$2 && value % bigint10 === bigint0$2) throw new RangeError("Value must be normalized");
-	const o = make$14(value, scale);
-	o.normalized = o;
-	return o;
-};
-var bigint0$2 = /*#__PURE__*/ BigInt(0);
-var bigint10 = /*#__PURE__*/ BigInt(10);
-var zero$1 = /*#__PURE__*/ makeNormalizedUnsafe(bigint0$2, 0);
-/**
-* Normalizes a given `BigDecimal` by removing trailing zeros.
-*
-* **When to use**
-*
-* Use to canonicalize decimals that have equivalent values but different
-* internal scales.
-*
-* **Example** (Normalizing trailing zeros)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(
-*   BigDecimal.normalize(BigDecimal.fromStringUnsafe("123.00000")),
-*   BigDecimal.normalize(BigDecimal.make(123n, 0))
-* )
-* assert.deepStrictEqual(
-*   BigDecimal.normalize(BigDecimal.fromStringUnsafe("12300000")),
-*   BigDecimal.normalize(BigDecimal.make(123n, -5))
-* )
-* ```
-*
-* @see {@link format} for rendering normalized decimals as strings
-*
-* @category scaling
-* @since 2.0.0
-*/
-var normalize = (self) => {
-	if (self.normalized === void 0) if (self.value === bigint0$2) self.normalized = zero$1;
+}, Ur = (e) => N(e, Vr), Wr = (e, t) => {
+	let n = Object.create(Hr);
+	return n.value = e, n.scale = t, n;
+}, Gr = (e, t) => {
+	if (e !== Kr && e % qr === Kr) throw RangeError("Value must be normalized");
+	let n = Wr(e, t);
+	return n.normalized = n, n;
+}, Kr = /*#__PURE__*/ BigInt(0), qr = /*#__PURE__*/ BigInt(10), Jr = /*#__PURE__*/ Gr(Kr, 0), Yr = (e) => {
+	if (e.normalized === void 0) if (e.value === Kr) e.normalized = Jr;
 	else {
-		const digits = `${self.value}`;
-		let trail = 0;
-		for (let i = digits.length - 1; i >= 0; i--) if (digits[i] === "0") trail++;
-		else break;
-		if (trail === 0) self.normalized = self;
-		self.normalized = makeNormalizedUnsafe(BigInt(digits.substring(0, digits.length - trail)), self.scale - trail);
+		let t = `${e.value}`, n = 0;
+		for (let e = t.length - 1; e >= 0 && t[e] === "0"; e--) n++;
+		n === 0 && (e.normalized = e), e.normalized = Gr(BigInt(t.substring(0, t.length - n)), e.scale - n);
 	}
-	return self.normalized;
-};
-/**
-* Changes a `BigDecimal` to the specified scale.
-*
-* **When to use**
-*
-* Use to change how many decimal places are represented by a `BigDecimal`.
-*
-* **Details**
-*
-* Increasing the scale appends decimal zeros. Decreasing the scale discards
-* digits beyond the target scale by `bigint` division, which truncates toward
-* zero.
-*
-* **Example** (Scaling decimal precision)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-*
-* const decimal = BigDecimal.fromNumberUnsafe(123.45)
-*
-* // Increase scale (add more precision)
-* const scaled = BigDecimal.scale(decimal, 4)
-* console.log(BigDecimal.format(scaled)) // "123.4500"
-*
-* // Decrease scale (reduce precision, rounds down)
-* const reduced = BigDecimal.scale(decimal, 1)
-* console.log(BigDecimal.format(reduced)) // "123.4"
-* ```
-*
-* @see {@link round} for changing scale with configurable rounding
-*
-* @category scaling
-* @since 2.0.0
-*/
-var scale = /*#__PURE__*/ dual(2, (self, scale) => {
-	if (scale > self.scale) return make$14(self.value * bigint10 ** BigInt(scale - self.scale), scale);
-	if (scale < self.scale) return make$14(self.value / bigint10 ** BigInt(self.scale - scale), scale);
-	return self;
-});
-/**
-* Determines the absolute value of a given `BigDecimal`.
-*
-* **When to use**
-*
-* Use to remove the sign from a `BigDecimal` while preserving its magnitude.
-*
-* **Example** (Calculating absolute values)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(BigDecimal.abs(BigDecimal.fromStringUnsafe("-5")), BigDecimal.fromStringUnsafe("5"))
-* assert.deepStrictEqual(BigDecimal.abs(BigDecimal.fromStringUnsafe("0")), BigDecimal.fromStringUnsafe("0"))
-* assert.deepStrictEqual(BigDecimal.abs(BigDecimal.fromStringUnsafe("5")), BigDecimal.fromStringUnsafe("5"))
-* ```
-*
-* @category math
-* @since 2.0.0
-*/
-var abs = (n) => n.value < bigint0$2 ? make$14(-n.value, n.scale) : n;
-/**
-* Provides an `Equivalence` instance for `BigDecimal` that determines equality between BigDecimal values.
-*
-* **When to use**
-*
-* Use when comparing decimal values through APIs that accept an equivalence
-* relation.
-*
-* **Example** (Checking decimal equivalence)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-*
-* const a = BigDecimal.fromStringUnsafe("1.50")
-* const b = BigDecimal.fromStringUnsafe("1.5")
-* const c = BigDecimal.fromStringUnsafe("2.0")
-*
-* console.log(BigDecimal.Equivalence(a, b)) // true (1.50 === 1.5)
-* console.log(BigDecimal.Equivalence(a, c)) // false (1.50 !== 2.0)
-* ```
-*
-* @category instances
-* @since 2.0.0
-*/
-var Equivalence$3 = /*#__PURE__*/ make$16((self, that) => {
-	if (self.scale > that.scale) return scale(that, self.scale).value === self.value;
-	if (self.scale < that.scale) return scale(self, that.scale).value === that.value;
-	return self.value === that.value;
-});
-/**
-* Checks whether two `BigDecimal`s are equal.
-*
-* **When to use**
-*
-* Use to compare two `BigDecimal` values for numeric equality.
-*
-* **Example** (Checking decimal equality)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-*
-* const a = BigDecimal.fromStringUnsafe("1.5")
-* const b = BigDecimal.fromStringUnsafe("1.50")
-* const c = BigDecimal.fromStringUnsafe("2.0")
-*
-* console.log(BigDecimal.equals(a, b)) // true
-* console.log(BigDecimal.equals(a, c)) // false
-* ```
-*
-* @see {@link Equivalence} for passing decimal equality to APIs that require an `Equivalence`
-*
-* @category predicates
-* @since 2.0.0
-*/
-var equals$1 = /*#__PURE__*/ dual(2, (self, that) => Equivalence$3(self, that));
-/**
-* Formats a `BigDecimal` as a string.
-*
-* **When to use**
-*
-* Use to render a `BigDecimal` as plain decimal text when possible.
-*
-* **Details**
-*
-* The value is normalized before formatting. Scientific notation is used when
-* the absolute value of the normalized scale is at least `16`; otherwise plain
-* decimal notation is used.
-*
-* **Example** (Formatting decimals)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(BigDecimal.format(BigDecimal.fromStringUnsafe("-5")), "-5")
-* assert.deepStrictEqual(BigDecimal.format(BigDecimal.fromStringUnsafe("123.456")), "123.456")
-* assert.deepStrictEqual(BigDecimal.format(BigDecimal.fromStringUnsafe("-0.00000123")), "-0.00000123")
-* ```
-*
-* @see {@link toExponential} for always rendering scientific notation
-*
-* @category converting
-* @since 2.0.0
-*/
-var format = (n) => {
-	const normalized = normalize(n);
-	if (Math.abs(normalized.scale) >= 16) return toExponential(normalized);
-	const negative = normalized.value < bigint0$2;
-	const absolute = negative ? `${normalized.value}`.substring(1) : `${normalized.value}`;
-	let before;
-	let after;
-	if (normalized.scale >= absolute.length) {
-		before = "0";
-		after = "0".repeat(normalized.scale - absolute.length) + absolute;
-	} else {
-		const location = absolute.length - normalized.scale;
-		if (location > absolute.length) {
-			const zeros = location - absolute.length;
-			before = `${absolute}${"0".repeat(zeros)}`;
-			after = "";
-		} else {
-			after = absolute.slice(location);
-			before = absolute.slice(0, location);
-		}
+	return e.normalized;
+}, Xr = /*#__PURE__*/ j(2, (e, t) => t > e.scale ? Wr(e.value * qr ** BigInt(t - e.scale), t) : t < e.scale ? Wr(e.value / qr ** BigInt(e.scale - t), t) : e), Zr = (e) => e.value < Kr ? Wr(-e.value, e.scale) : e, Qr = /*#__PURE__*/ Bt((e, t) => e.scale > t.scale ? Xr(t, e.scale).value === e.value : e.scale < t.scale ? Xr(e, t.scale).value === t.value : e.value === t.value), $r = /*#__PURE__*/ j(2, (e, t) => Qr(e, t)), ei = (e) => {
+	let t = Yr(e);
+	if (Math.abs(t.scale) >= 16) return ti(t);
+	let n = t.value < Kr, r = n ? `${t.value}`.substring(1) : `${t.value}`, i, a;
+	if (t.scale >= r.length) i = "0", a = "0".repeat(t.scale - r.length) + r;
+	else {
+		let e = r.length - t.scale;
+		if (e > r.length) {
+			let t = e - r.length;
+			i = `${r}${"0".repeat(t)}`, a = "";
+		} else a = r.slice(e), i = r.slice(0, e);
 	}
-	const complete = after === "" ? before : `${before}.${after}`;
-	return negative ? `-${complete}` : complete;
-};
-/**
-* Formats a given `BigDecimal` as a `string` in scientific notation.
-*
-* **When to use**
-*
-* Use to render a `BigDecimal` in scientific notation.
-*
-* **Example** (Formatting decimals exponentially)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(BigDecimal.toExponential(BigDecimal.make(123456n, -5)), "1.23456e+10")
-* ```
-*
-* @see {@link format} for plain decimal formatting when possible
-*
-* @category converting
-* @since 3.11.0
-*/
-var toExponential = (n) => {
-	if (isZero(n)) return "0e+0";
-	const normalized = normalize(n);
-	const digits = `${abs(normalized).value}`;
-	const head = digits.slice(0, 1);
-	const tail = digits.slice(1);
-	let output = `${isNegative(normalized) ? "-" : ""}${head}`;
-	if (tail !== "") output += `.${tail}`;
-	const exp = tail.length - normalized.scale;
-	return `${output}e${exp >= 0 ? "+" : ""}${exp}`;
-};
-/**
-* Checks whether a given `BigDecimal` is `0`.
-*
-* **When to use**
-*
-* Use to test whether a `BigDecimal` is exactly zero.
-*
-* **Example** (Checking zero decimals)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(BigDecimal.isZero(BigDecimal.fromStringUnsafe("0")), true)
-* assert.deepStrictEqual(BigDecimal.isZero(BigDecimal.fromStringUnsafe("1")), false)
-* ```
-*
-* @category predicates
-* @since 2.0.0
-*/
-var isZero = (n) => n.value === bigint0$2;
-/**
-* Checks whether a given `BigDecimal` is negative.
-*
-* **When to use**
-*
-* Use to test whether a `BigDecimal` is less than zero.
-*
-* **Example** (Checking negative decimals)
-*
-* ```ts
-* import { BigDecimal } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(BigDecimal.isNegative(BigDecimal.fromStringUnsafe("-1")), true)
-* assert.deepStrictEqual(BigDecimal.isNegative(BigDecimal.fromStringUnsafe("0")), false)
-* assert.deepStrictEqual(BigDecimal.isNegative(BigDecimal.fromStringUnsafe("1")), false)
-* ```
-*
-* @category predicates
-* @since 2.0.0
-*/
-var isNegative = (n) => n.value < bigint0$2;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Effectable.js
-/**
-* Create a low-level `Effect` prototype.
-*
-* **When to use**
-*
-* Use when you need to create a custom Effect-like value without extending a
-* class, by providing a label and an evaluate function that receives the
-* current fiber.
-*
-* **Details**
-*
-* When the effect is evaluated, it calls `evaluate` with the current fiber.
-*
-* @see {@link Class} for a class-based approach to defining custom Effect values
-*
-* @category prototypes
-* @since 4.0.0
-*/
-var Prototype = (options) => makePrimitiveProto({
-	op: options.label,
-	[evaluate]: options.evaluate
-});
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Context.js
-/**
-* Runtime type identifier attached to `Context` service keys and used by
-* `isKey` to recognize them.
-*
-* @category type IDs
-* @since 4.0.0
-*/
-var ServiceTypeId = "~effect/Context/Service";
-/**
-* Creates a `Context` service key.
-*
-* **When to use**
-*
-* Use when you need to define a context service key for a dependency that must
-* be provided by the surrounding context.
-*
-* **Details**
-*
-* Call `Context.Service("Key")` for a function-style key, or use the two-stage
-* form `Context.Service<Self, Shape>()("Key")` for class-style service
-* declarations. The returned key can be yielded as an Effect and passed to
-* `Context.make`, `Context.add`, and the Context getter functions.
-*
-* **Gotchas**
-*
-* The string key is the runtime identity of the service. Reusing the same key
-* string for unrelated services makes them occupy the same slot in a
-* `Context`.
-*
-* **Example** (Creating service keys)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* // Create a simple service
-* const Database = Context.Service<{
-*   query: (sql: string) => string
-* }>("Database")
-*
-* // Create a service class
-* class Config extends Context.Service<Config, {
-*   port: number
-* }>()("Config") {}
-*
-* // Use the services to create contexts
-* const db = Context.make(Database, {
-*   query: (sql) => `Result: ${sql}`
-* })
-* const config = Context.make(Config, { port: 8080 })
-* ```
-*
-* @see {@link Reference} for service keys with default values
-*
-* @category constructors
-* @since 4.0.0
-*/
-var Service = function() {
-	const prevLimit = Error.stackTraceLimit;
+	let o = a === "" ? i : `${i}.${a}`;
+	return n ? `-${o}` : o;
+}, ti = (e) => {
+	if (ni(e)) return "0e+0";
+	let t = Yr(e), n = `${Zr(t).value}`, r = n.slice(0, 1), i = n.slice(1), a = `${ri(t) ? "-" : ""}${r}`;
+	i !== "" && (a += `.${i}`);
+	let o = i.length - t.scale;
+	return `${a}e${o >= 0 ? "+" : ""}${o}`;
+}, ni = (e) => e.value === Kr, ri = (e) => e.value < Kr, ii = (e) => Nn({
+	op: e.label,
+	[B]: e.evaluate
+}), ai = "~effect/Context/Service", oi = function() {
+	let e = Error.stackTraceLimit;
 	Error.stackTraceLimit = 2;
-	const err = /* @__PURE__ */ new Error();
-	Error.stackTraceLimit = prevLimit;
-	function KeyClass() {}
-	const self = KeyClass;
-	Object.setPrototypeOf(self, ServiceProto);
-	Object.defineProperty(self, "stack", { get() {
-		return err.stack;
-	} });
-	if (arguments.length > 0) {
-		self.key = arguments[0];
-		if (arguments[1]?.defaultValue) {
-			self[ReferenceTypeId] = ReferenceTypeId;
-			self.defaultValue = arguments[1].defaultValue;
-		}
-		return self;
-	}
-	return function(key, options) {
-		self.key = key;
-		if (options?.make) self.make = options.make;
-		return self;
+	let t = /* @__PURE__ */ Error();
+	Error.stackTraceLimit = e;
+	function n() {}
+	let r = n;
+	return Object.setPrototypeOf(r, si), Object.defineProperty(r, "stack", { get() {
+		return t.stack;
+	} }), arguments.length > 0 ? (r.key = arguments[0], arguments[1]?.defaultValue && (r[ci] = ci, r.defaultValue = arguments[1].defaultValue), r) : function(e, t) {
+		return r.key = e, t?.make && (r.make = t.make), r;
 	};
-};
-var ServiceProto = {
-	[ServiceTypeId]: ServiceTypeId,
-	.../*#__PURE__*/ Prototype({
+}, si = {
+	[ai]: ai,
+	.../*#__PURE__*/ ii({
 		label: "Service",
-		evaluate(fiber) {
-			return exitSucceed(get$1(fiber.context, this));
+		evaluate(e) {
+			return In(bi(e.context, this));
 		}
 	}),
 	toJSON() {
@@ -3640,603 +1561,119 @@ var ServiceProto = {
 			stack: this.stack
 		};
 	},
-	of(self) {
-		return self;
+	of(e) {
+		return e;
 	},
-	context(self) {
-		return make$13(this, self);
+	context(e) {
+		return gi(this, e);
 	},
-	use(f) {
-		return withFiber$1((fiber) => f(get$1(fiber.context, this)));
+	use(e) {
+		return Vn((t) => e(bi(t.context, this)));
 	},
-	useSync(f) {
-		return withFiber$1((fiber) => exitSucceed(f(get$1(fiber.context, this))));
+	useSync(e) {
+		return Vn((t) => In(e(bi(t.context, this))));
 	}
-};
-var ReferenceTypeId = "~effect/Context/Reference";
-var TypeId$11 = "~effect/Context";
-/**
-* Creates a `Context` from an existing service map.
-*
-* **When to use**
-*
-* Use when constructing a low-level `Context` from a trusted map whose lifecycle
-* you control.
-*
-* **Gotchas**
-*
-* This is unsafe because later mutation of the provided map can affect the
-* created `Context`. Prefer `empty`, `make`, `add`, or `merge` for normal
-* Context construction.
-*
-* **Example** (Creating a context from a map)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* // Create a context from a Map (unsafe)
-* const map = new Map([
-*   ["Logger", { log: (msg: string) => console.log(msg) }]
-* ])
-*
-* const context = Context.makeUnsafe(map)
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var makeUnsafe$4 = (mapUnsafe) => {
-	const self = Object.create(Proto$1);
-	self.mapUnsafe = mapUnsafe;
-	self.mutable = false;
-	return self;
-};
-var Proto$1 = {
-	...PipeInspectableProto,
-	[TypeId$11]: { _Services: (_) => _ },
+}, ci = "~effect/Context/Reference", li = "~effect/Context", ui = (e) => {
+	let t = Object.create(di);
+	return t.mapUnsafe = e, t.mutable = !1, t;
+}, di = {
+	...fn,
+	[li]: { _Services: (e) => e },
 	toJSON() {
 		return {
 			_id: "Context",
-			services: Array.from(this.mapUnsafe).map(([key, value]) => ({
-				key,
-				value
+			services: Array.from(this.mapUnsafe).map(([e, t]) => ({
+				key: e,
+				value: t
 			}))
 		};
 	},
-	[symbol](that) {
-		if (!isContext(that) || this.mapUnsafe.size !== that.mapUnsafe.size) return false;
-		for (const k of this.mapUnsafe.keys()) if (!that.mapUnsafe.has(k) || !equals$2(this.mapUnsafe.get(k), that.mapUnsafe.get(k))) return false;
-		return true;
+	[L](e) {
+		if (!fi(e) || this.mapUnsafe.size !== e.mapUnsafe.size) return !1;
+		for (let t of this.mapUnsafe.keys()) if (!e.mapUnsafe.has(t) || !Ct(this.mapUnsafe.get(t), e.mapUnsafe.get(t))) return !1;
+		return !0;
 	},
-	[symbol$1]() {
-		return number$1(this.mapUnsafe.size);
+	[P]() {
+		return ft(this.mapUnsafe.size);
 	}
-};
-/**
-* Checks whether the provided argument is a `Context`.
-*
-* **When to use**
-*
-* Use to narrow an unknown value before passing it to APIs that require a
-* `Context`.
-*
-* **Details**
-*
-* This checks the runtime `Context` marker and does not inspect which services
-* the context contains.
-*
-* **Gotchas**
-*
-* This guard only proves that the value is a `Context`; it does not prove that
-* any specific service is present.
-*
-* **Example** (Checking for contexts)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.strictEqual(Context.isContext(Context.empty()), true)
-* ```
-*
-* @see {@link isKey} for checking service keys
-* @see {@link isReference} for checking references with defaults
-*
-* @category guards
-* @since 2.0.0
-*/
-var isContext = (u) => hasProperty(u, TypeId$11);
-/**
-* Checks whether the provided argument is a `Reference`.
-*
-* **Example** (Checking for references)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* const LoggerRef = Context.Reference("Logger", {
-*   defaultValue: () => ({ log: (msg: string) => console.log(msg) })
-* })
-*
-* assert.strictEqual(Context.isReference(LoggerRef), true)
-* assert.strictEqual(Context.isReference(Context.Service("Key")), false)
-* ```
-*
-* @category guards
-* @since 3.11.0
-*/
-var isReference = (u) => hasProperty(u, ReferenceTypeId);
-/**
-* Returns an empty `Context`.
-*
-* **Example** (Creating an empty context)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.strictEqual(Context.isContext(Context.empty()), true)
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var empty = () => emptyContext;
-var emptyContext = /*#__PURE__*/ makeUnsafe$4(/*#__PURE__*/ new Map());
-/**
-* Creates a new `Context` with a single service associated to the key.
-*
-* **Example** (Creating a context with one service)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* const Port = Context.Service<{ PORT: number }>("Port")
-*
-* const context = Context.make(Port, { PORT: 8080 })
-*
-* assert.deepStrictEqual(Context.get(context, Port), { PORT: 8080 })
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var make$13 = (key, service) => makeUnsafe$4(/* @__PURE__ */ new Map([[key.key, service]]));
-/**
-* Adds a service to a given `Context`.
-*
-* **When to use**
-*
-* Use when you need to store a known service value in a `Context`.
-*
-* **Details**
-*
-* If the context already contains the same service key, the new service
-* replaces the previous one.
-*
-* **Example** (Adding a service to a context)
-*
-* ```ts
-* import { Context, pipe } from "effect"
-* import * as assert from "node:assert"
-*
-* const Port = Context.Service<{ PORT: number }>("Port")
-* const Timeout = Context.Service<{ TIMEOUT: number }>("Timeout")
-*
-* const someContext = Context.make(Port, { PORT: 8080 })
-*
-* const context = pipe(
-*   someContext,
-*   Context.add(Timeout, { TIMEOUT: 5000 })
-* )
-*
-* assert.deepStrictEqual(Context.get(context, Port), { PORT: 8080 })
-* assert.deepStrictEqual(Context.get(context, Timeout), { TIMEOUT: 5000 })
-* ```
-*
-* @see {@link addOrOmit} for adding or removing a service from an `Option`
-*
-* @category adders
-* @since 2.0.0
-*/
-var add = /*#__PURE__*/ dual(3, (self, key, service) => withMapUnsafe(self, (map) => {
-	map.set(key.key, service);
-}));
-/**
-* Gets the service for a key, or evaluates the fallback when a non-reference
-* key is absent.
-*
-* **When to use**
-*
-* Use when you need a fallback for a missing `Context.Service` key while still
-* resolving `Context.Reference` defaults.
-*
-* **Details**
-*
-* If the key is a `Context.Reference` and no override is stored in the
-* context, its cached default value is returned instead of the fallback.
-*
-* **Gotchas**
-*
-* The fallback is not evaluated for missing `Context.Reference` keys because
-* references resolve to their default value.
-*
-* **Example** (Falling back for missing services)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* const Logger = Context.Service<{ log: (msg: string) => void }>("Logger")
-* const Database = Context.Service<{ query: (sql: string) => string }>(
-*   "Database"
-* )
-*
-* const context = Context.make(Logger, {
-*   log: (msg: string) => console.log(msg)
-* })
-*
-* const logger = Context.getOrElse(context, Logger, () => ({ log: () => {} }))
-* const database = Context.getOrElse(
-*   context,
-*   Database,
-*   () => ({ query: () => "fallback" })
-* )
-*
-* console.log(logger === Context.get(context, Logger)) // true
-* console.log(database.query("SELECT 1")) // "fallback"
-* ```
-*
-* @see {@link getOption} for returning `Option.none` when a non-reference key is missing
-*
-* @category getters
-* @since 3.7.0
-*/
-var getOrElse = /*#__PURE__*/ dual(3, (self, key, orElse) => {
-	if (self.mapUnsafe.has(key.key)) return self.mapUnsafe.get(key.key);
-	return isReference(key) ? getDefaultValue(key) : orElse();
-});
-/**
-* Gets the service for a key, throwing if an absent non-reference key cannot be
-* resolved.
-*
-* **When to use**
-*
-* Use when you need to read a service from a context whose type does not prove
-* the service is present.
-*
-* **Details**
-*
-* If the key is a `Context.Reference` and no override is stored in the
-* context, its cached default value is returned. For absent non-reference keys,
-* this function throws a runtime error.
-*
-* **Example** (Getting services unsafely)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* const Port = Context.Service<{ PORT: number }>("Port")
-* const Timeout = Context.Service<{ TIMEOUT: number }>("Timeout")
-*
-* const context = Context.make(Port, { PORT: 8080 })
-*
-* assert.deepStrictEqual(Context.getUnsafe(context, Port), { PORT: 8080 })
-* assert.throws(() => Context.getUnsafe(context, Timeout))
-* ```
-*
-* @see {@link get} for type-checked service access
-* @see {@link getOption} for optional service access
-*
-* @category unsafe
-* @since 4.0.0
-*/
-var getUnsafe = /*#__PURE__*/ dual(2, (self, service) => {
-	if (!self.mapUnsafe.has(service.key)) {
-		if (ReferenceTypeId in service) return getDefaultValue(service);
-		throw serviceNotFoundError(service);
+}, fi = (e) => N(e, li), pi = (e) => N(e, ci), mi = () => hi, hi = /*#__PURE__*/ ui(/*#__PURE__*/ new Map()), gi = (e, t) => ui(/* @__PURE__ */ new Map([[e.key, t]])), _i = /*#__PURE__*/ j(3, (e, t, n) => Ei(e, (e) => {
+	e.set(t.key, n);
+})), vi = /*#__PURE__*/ j(3, (e, t, n) => e.mapUnsafe.has(t.key) ? e.mapUnsafe.get(t.key) : pi(t) ? Ci(t) : n()), yi = /*#__PURE__*/ j(2, (e, t) => {
+	if (!e.mapUnsafe.has(t.key)) {
+		if (ci in t) return Ci(t);
+		throw wi(t);
 	}
-	return self.mapUnsafe.get(service.key);
-});
-/**
-* Gets a service from the context that corresponds to the given key.
-*
-* **When to use**
-*
-* Use when you need type-checked access to a service already included in the
-* context type.
-*
-* **Example** (Getting a service from a context)
-*
-* ```ts
-* import { Context, pipe } from "effect"
-* import * as assert from "node:assert"
-*
-* const Port = Context.Service<{ PORT: number }>("Port")
-* const Timeout = Context.Service<{ TIMEOUT: number }>("Timeout")
-*
-* const context = pipe(
-*   Context.make(Port, { PORT: 8080 }),
-*   Context.add(Timeout, { TIMEOUT: 5000 })
-* )
-*
-* assert.deepStrictEqual(Context.get(context, Timeout), { TIMEOUT: 5000 })
-* ```
-*
-* @see {@link getOption} for optional service access
-* @see {@link getOrElse} for fallback values
-*
-* @category getters
-* @since 2.0.0
-*/
-var get$1 = getUnsafe;
-/**
-* Gets the value for a `Context.Reference`, returning its cached default when
-* the context does not contain an override.
-*
-* **When to use**
-*
-* Use when you need a `Context.Reference` value resolved from either a stored
-* override or the reference's default value.
-*
-* **Details**
-*
-* Stored overrides take precedence. If no override is present, the reference's
-* default value is computed lazily and cached on the reference itself.
-*
-* **Gotchas**
-*
-* Mutable default values can be shared across contexts unless an override is
-* provided, because the default is cached on the `Context.Reference`.
-*
-* **Example** (Getting reference defaults unsafely)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* const LoggerRef = Context.Reference("Logger", {
-*   defaultValue: () => ({ log: (msg: string) => console.log(msg) })
-* })
-*
-* const context = Context.empty()
-* const logger = Context.getReferenceUnsafe(context, LoggerRef)
-*
-* console.log(typeof logger.log) // "function"
-* ```
-*
-* @see {@link getUnsafe} for unsafe access with any service key
-* @see {@link get} for type-checked reference-aware access
-* @see {@link getOption} for optional access to non-reference keys
-*
-* @category unsafe
-* @since 4.0.0
-*/
-var getReferenceUnsafe = (self, service) => {
-	if (!self.mapUnsafe.has(service.key)) return getDefaultValue(service);
-	return self.mapUnsafe.get(service.key);
-};
-var defaultValueCacheKey = "~effect/Context/defaultValue";
-var getDefaultValue = (ref) => {
-	if (defaultValueCacheKey in ref) return ref[defaultValueCacheKey];
-	return ref[defaultValueCacheKey] = ref.defaultValue();
-};
-var serviceNotFoundError = (service) => {
-	const error = /* @__PURE__ */ new Error(`Service not found${service.key ? `: ${String(service.key)}` : ""}`);
-	if (service.stack) {
-		const lines = service.stack.split("\n");
-		if (lines.length > 2) {
-			const afterAt = lines[2].match(/at (.*)/);
-			if (afterAt) error.message = error.message + ` (defined at ${afterAt[1]})`;
+	return e.mapUnsafe.get(t.key);
+}), bi = yi, xi = (e, t) => e.mapUnsafe.has(t.key) ? e.mapUnsafe.get(t.key) : Ci(t), Si = "~effect/Context/defaultValue", Ci = (e) => Si in e ? e[Si] : e[Si] = e.defaultValue(), wi = (e) => {
+	let t = /* @__PURE__ */ Error(`Service not found${e.key ? `: ${String(e.key)}` : ""}`);
+	if (e.stack) {
+		let n = e.stack.split("\n");
+		if (n.length > 2) {
+			let e = n[2].match(/at (.*)/);
+			e && (t.message += ` (defined at ${e[1]})`);
 		}
 	}
-	if (error.stack) {
-		const lines = error.stack.split("\n");
-		lines.splice(1, 3);
-		error.stack = lines.join("\n");
+	if (t.stack) {
+		let e = t.stack.split("\n");
+		e.splice(1, 3), t.stack = e.join("\n");
 	}
-	return error;
-};
-/**
-* Merges two `Context`s into one.
-*
-* **When to use**
-*
-* Use when you need to combine two contexts.
-*
-* **Details**
-*
-* When both contexts contain the same service key, the service from `that`
-* overrides the service from `self`.
-*
-* **Example** (Merging two contexts)
-*
-* ```ts
-* import { Context } from "effect"
-* import * as assert from "node:assert"
-*
-* const Port = Context.Service<{ PORT: number }>("Port")
-* const Timeout = Context.Service<{ TIMEOUT: number }>("Timeout")
-*
-* const firstContext = Context.make(Port, { PORT: 8080 })
-* const secondContext = Context.make(Timeout, { TIMEOUT: 5000 })
-*
-* const context = Context.merge(firstContext, secondContext)
-*
-* assert.deepStrictEqual(Context.get(context, Port), { PORT: 8080 })
-* assert.deepStrictEqual(Context.get(context, Timeout), { TIMEOUT: 5000 })
-* ```
-*
-* @see {@link mergeAll} for merging more than two contexts at once
-*
-* @category combining
-* @since 2.0.0
-*/
-var merge = /*#__PURE__*/ dual(2, (self, that) => {
-	if (self.mapUnsafe.size === 0) return that;
-	if (that.mapUnsafe.size === 0) return self;
-	return withMapUnsafe(self, (map) => {
-		that.mapUnsafe.forEach((value, key) => map.set(key, value));
-	});
-});
-var withMapUnsafe = (self, f) => {
-	if (self.mutable) {
-		f(self.mapUnsafe);
-		return self;
-	}
-	const map = new Map(self.mapUnsafe);
-	f(map);
-	return makeUnsafe$4(map);
-};
-/**
-* Creates a context key with a default value.
-*
-* **When to use**
-*
-* Use when you need to define a context key with a lazily computed default
-* value.
-*
-* **Details**
-*
-* `Context.Reference` allows you to create a key that can hold a value. You
-* can provide a default value for the service, which will automatically be used
-* when the context is accessed, or override it with a custom implementation
-* when needed. The default value is computed lazily and cached on the
-* reference.
-*
-* **Example** (Creating references with default values)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* // Create a reference with a default value
-* const LoggerRef = Context.Reference("Logger", {
-*   defaultValue: () => ({ log: (msg: string) => console.log(msg) })
-* })
-*
-* // The reference provides the default value when accessed from an empty context
-* const context = Context.empty()
-* const logger = Context.get(context, LoggerRef)
-*
-* // You can also override the default value
-* const customContext = Context.make(LoggerRef, {
-*   log: (msg: string) => `Custom: ${msg}`
-* })
-* const customLogger = Context.get(customContext, LoggerRef)
-* ```
-*
-* @see {@link Service} for required services without default values
-*
-* @category references
-* @since 3.11.0
-*/
-var Reference = Service;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Duration.js
-var TypeId$10 = "~effect/time/Duration";
-var bigint0$1 = /*#__PURE__*/ BigInt(0);
-var bigint1 = /*#__PURE__*/ BigInt(1);
-var bigint1e3 = /*#__PURE__*/ BigInt(1e3);
-var roundTiesAwayFromZero = (input) => BigInt(input < 0 ? Math.ceil(input - .5) : Math.floor(input + .5));
-var roundMillisToNanos = (millis) => roundTiesAwayFromZero(millis * 1e6);
-var parseNanos = (input, scale) => input.includes(".") ? roundTiesAwayFromZero(Number(input) * Number(scale)) : BigInt(input) * scale;
-var DURATION_REGEXP = /^(-?\d+(?:\.\d+)?)\s+(nanos?|micros?|millis?|seconds?|minutes?|hours?|days?|weeks?)$/;
-/**
-* Decodes a `Duration.Input` into a `Duration`.
-*
-* **When to use**
-*
-* Use when the input has already been validated or comes from a trusted source
-* and throwing is acceptable for invalid duration syntax.
-*
-* **Gotchas**
-*
-* If the input is not a valid `Duration.Input`, it throws an error.
-*
-* **Example** (Decoding duration inputs)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration1 = Duration.fromInputUnsafe(1000) // 1000 milliseconds
-* const duration2 = Duration.fromInputUnsafe("5 seconds")
-* const duration3 = Duration.fromInputUnsafe("Infinity")
-* const duration4 = Duration.fromInputUnsafe([2, 500_000_000]) // 2 seconds and 500ms
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var fromInputUnsafe = (input) => {
-	switch (typeof input) {
-		case "number": return millis(input);
-		case "bigint": return nanos(input);
+	return t;
+}, Ti = /*#__PURE__*/ j(2, (e, t) => e.mapUnsafe.size === 0 ? t : t.mapUnsafe.size === 0 ? e : Ei(e, (e) => {
+	t.mapUnsafe.forEach((t, n) => e.set(n, t));
+})), Ei = (e, t) => {
+	if (e.mutable) return t(e.mapUnsafe), e;
+	let n = new Map(e.mapUnsafe);
+	return t(n), ui(n);
+}, H = oi, Di = "~effect/time/Duration", Oi = /*#__PURE__*/ BigInt(0), ki = /*#__PURE__*/ BigInt(1), Ai = /*#__PURE__*/ BigInt(1e3), ji = (e) => BigInt(e < 0 ? Math.ceil(e - .5) : Math.floor(e + .5)), Mi = (e) => ji(e * 1e6), Ni = (e, t) => e.includes(".") ? ji(Number(e) * Number(t)) : BigInt(e) * t, Pi = /^(-?\d+(?:\.\d+)?)\s+(nanos?|micros?|millis?|seconds?|minutes?|hours?|days?|weeks?)$/, Fi = (e) => {
+	switch (typeof e) {
+		case "number": return qi(e);
+		case "bigint": return Ki(e);
 		case "string": {
-			if (input === "Infinity") return infinity;
-			if (input === "-Infinity") return negativeInfinity;
-			const match = DURATION_REGEXP.exec(input);
-			if (!match) break;
-			const [_, valueStr, unit] = match;
-			if (unit === "nano" || unit === "nanos") return nanos(parseNanos(valueStr, bigint1));
-			if (unit === "micro" || unit === "micros") return nanos(parseNanos(valueStr, bigint1e3));
-			const value = Number(valueStr);
-			switch (unit) {
+			if (e === "Infinity") return Wi;
+			if (e === "-Infinity") return Gi;
+			let t = Pi.exec(e);
+			if (!t) break;
+			let [n, r, i] = t;
+			if (i === "nano" || i === "nanos") return Ki(Ni(r, ki));
+			if (i === "micro" || i === "micros") return Ki(Ni(r, Ai));
+			let a = Number(r);
+			switch (i) {
 				case "milli":
-				case "millis": return millis(value);
+				case "millis": return qi(a);
 				case "second":
-				case "seconds": return seconds(value);
+				case "seconds": return Ji(a);
 				case "minute":
-				case "minutes": return minutes(value);
+				case "minutes": return Yi(a);
 				case "hour":
-				case "hours": return hours(value);
+				case "hours": return Xi(a);
 				case "day":
-				case "days": return days(value);
+				case "days": return Zi(a);
 				case "week":
-				case "weeks": return weeks(value);
+				case "weeks": return Qi(a);
 			}
 			break;
 		}
 		case "object": {
-			if (input === null) break;
-			if (TypeId$10 in input) return input;
-			if (Array.isArray(input)) {
-				if (input.length !== 2 || !input.every(isNumber)) return invalid(input);
-				if (Number.isNaN(input[0]) || Number.isNaN(input[1])) return zero;
-				if (input[0] === -Infinity || input[1] === -Infinity) return negativeInfinity;
-				if (input[0] === Infinity || input[1] === Infinity) return infinity;
-				return make$12(roundTiesAwayFromZero(input[0] * 1e9 + input[1]));
-			}
-			const obj = input;
-			let millis = 0;
-			if (obj.weeks) millis += obj.weeks * 6048e5;
-			if (obj.days) millis += obj.days * 864e5;
-			if (obj.hours) millis += obj.hours * 36e5;
-			if (obj.minutes) millis += obj.minutes * 6e4;
-			if (obj.seconds) millis += obj.seconds * 1e3;
-			if (obj.milliseconds) millis += obj.milliseconds;
-			if (!obj.microseconds && !obj.nanoseconds) return make$12(millis);
-			return make$12(roundTiesAwayFromZero(millis * 1e6 + (obj.microseconds ?? 0) * 1e3 + (obj.nanoseconds ?? 0)));
+			if (e === null) break;
+			if (Di in e) return e;
+			if (Array.isArray(e)) return e.length !== 2 || !e.every(Qe) ? Ii(e) : Number.isNaN(e[0]) || Number.isNaN(e[1]) ? Ui : e[0] === -Infinity || e[1] === -Infinity ? Gi : e[0] === Infinity || e[1] === Infinity ? Wi : Vi(ji(e[0] * 1e9 + e[1]));
+			let t = e, n = 0;
+			return t.weeks && (n += t.weeks * 6048e5), t.days && (n += t.days * 864e5), t.hours && (n += t.hours * 36e5), t.minutes && (n += t.minutes * 6e4), t.seconds && (n += t.seconds * 1e3), t.milliseconds && (n += t.milliseconds), !t.microseconds && !t.nanoseconds ? Vi(n) : Vi(ji(n * 1e6 + (t.microseconds ?? 0) * 1e3 + (t.nanoseconds ?? 0)));
 		}
 	}
-	return invalid(input);
-};
-var invalid = (input) => {
-	throw new Error(`Invalid Input: ${input}`);
-};
-var zeroDurationValue = {
+	return Ii(e);
+}, Ii = (e) => {
+	throw Error(`Invalid Input: ${e}`);
+}, Li = {
 	_tag: "Millis",
 	millis: 0
-};
-var infinityDurationValue = { _tag: "Infinity" };
-var negativeInfinityDurationValue = { _tag: "NegativeInfinity" };
-var DurationProto = {
-	[TypeId$10]: TypeId$10,
-	[symbol$1]() {
-		return structure(this.value);
+}, Ri = { _tag: "Infinity" }, zi = { _tag: "NegativeInfinity" }, Bi = {
+	[Di]: Di,
+	[P]() {
+		return mt(this.value);
 	},
-	[symbol](that) {
-		return isDuration(that) && equals(this, that);
+	[L](e) {
+		return Hi(e) && ia(this, e);
 	},
 	toString() {
 		switch (this.value._tag) {
@@ -4268,762 +1705,101 @@ var DurationProto = {
 			};
 		}
 	},
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toJSON();
 	},
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
-};
-var make$12 = (input) => {
-	const duration = Object.create(DurationProto);
-	if (typeof input === "number") if (isNaN(input) || input === 0 || Object.is(input, -0)) duration.value = zeroDurationValue;
-	else if (!Number.isFinite(input)) duration.value = input > 0 ? infinityDurationValue : negativeInfinityDurationValue;
-	else if (!Number.isInteger(input)) duration.value = {
-		_tag: "Nanos",
-		nanos: roundMillisToNanos(input)
-	};
-	else duration.value = {
+}, Vi = (e) => {
+	let t = Object.create(Bi);
+	return typeof e == "number" ? isNaN(e) || e === 0 || Object.is(e, -0) ? t.value = Li : Number.isFinite(e) ? Number.isInteger(e) ? t.value = {
 		_tag: "Millis",
-		millis: input
-	};
-	else if (input === bigint0$1) duration.value = zeroDurationValue;
-	else duration.value = {
+		millis: e
+	} : t.value = {
 		_tag: "Nanos",
-		nanos: input
-	};
-	return duration;
-};
-/**
-* Checks whether a value is a Duration.
-*
-* **Example** (Checking for durations)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* console.log(Duration.isDuration(Duration.seconds(1))) // true
-* console.log(Duration.isDuration(1000)) // false
-* ```
-*
-* @category guards
-* @since 2.0.0
-*/
-var isDuration = (u) => hasProperty(u, TypeId$10);
-/**
-* A Duration representing zero time.
-*
-* **Example** (Using the zero duration)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* console.log(Duration.toMillis(Duration.zero)) // 0
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var zero = /*#__PURE__*/ make$12(0);
-/**
-* A Duration representing infinite time.
-*
-* **Example** (Using infinite duration)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* console.log(Duration.toMillis(Duration.infinity)) // Infinity
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var infinity = /*#__PURE__*/ make$12(Infinity);
-/**
-* A Duration representing negative infinite time.
-*
-* **Example** (Using negative infinite duration)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* console.log(Duration.toMillis(Duration.negativeInfinity)) // -Infinity
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var negativeInfinity = /*#__PURE__*/ make$12(-Infinity);
-/**
-* Creates a Duration from nanoseconds.
-*
-* **Example** (Creating durations from nanoseconds)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.nanos(BigInt(500_000_000))
-* console.log(Duration.toMillis(duration)) // 500
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var nanos = (nanos) => make$12(nanos);
-/**
-* Creates a Duration from milliseconds.
-*
-* **Example** (Creating durations from milliseconds)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.millis(1000)
-* console.log(Duration.toMillis(duration)) // 1000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var millis = (millis) => make$12(millis);
-/**
-* Creates a Duration from seconds.
-*
-* **Example** (Creating durations from seconds)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.seconds(30)
-* console.log(Duration.toMillis(duration)) // 30000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var seconds = (seconds) => make$12(seconds * 1e3);
-/**
-* Creates a Duration from minutes.
-*
-* **Example** (Creating durations from minutes)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.minutes(5)
-* console.log(Duration.toMillis(duration)) // 300000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var minutes = (minutes) => make$12(minutes * 6e4);
-/**
-* Creates a Duration from hours.
-*
-* **Example** (Creating durations from hours)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.hours(2)
-* console.log(Duration.toMillis(duration)) // 7200000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var hours = (hours) => make$12(hours * 36e5);
-/**
-* Creates a Duration from days.
-*
-* **Example** (Creating durations from days)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.days(1)
-* console.log(Duration.toMillis(duration)) // 86400000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var days = (days) => make$12(days * 864e5);
-/**
-* Creates a Duration from weeks.
-*
-* **Example** (Creating durations from weeks)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.weeks(1)
-* console.log(Duration.toMillis(duration)) // 604800000
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var weeks = (weeks) => make$12(weeks * 6048e5);
-/**
-* Converts a Duration to milliseconds.
-*
-* **Example** (Converting durations to milliseconds)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* console.log(Duration.toMillis(Duration.seconds(5))) // 5000
-* console.log(Duration.toMillis(Duration.minutes(2))) // 120000
-* ```
-*
-* @category getters
-* @since 2.0.0
-*/
-var toMillis = (self) => match$1(fromInputUnsafe(self), {
-	onMillis: identity,
-	onNanos: (nanos) => Number(nanos) / 1e6,
+		nanos: Mi(e)
+	} : t.value = e > 0 ? Ri : zi : e === Oi ? t.value = Li : t.value = {
+		_tag: "Nanos",
+		nanos: e
+	}, t;
+}, Hi = (e) => N(e, Di), Ui = /*#__PURE__*/ Vi(0), Wi = /*#__PURE__*/ Vi(Infinity), Gi = /*#__PURE__*/ Vi(-Infinity), Ki = (e) => Vi(e), qi = (e) => Vi(e), Ji = (e) => Vi(e * 1e3), Yi = (e) => Vi(e * 6e4), Xi = (e) => Vi(e * 36e5), Zi = (e) => Vi(e * 864e5), Qi = (e) => Vi(e * 6048e5), $i = (e) => ta(Fi(e), {
+	onMillis: M,
+	onNanos: (e) => Number(e) / 1e6,
 	onInfinity: () => Infinity,
 	onNegativeInfinity: () => -Infinity
-});
-/**
-* Gets the duration in nanoseconds as a bigint.
-*
-* **When to use**
-*
-* Use when the duration is known to be finite and you need the nanosecond value
-* as a `bigint`.
-*
-* **Details**
-*
-* Millisecond-backed fractional durations are rounded to the nearest
-* nanosecond, with ties away from zero.
-*
-* **Gotchas**
-*
-* If the duration is infinite, it throws an error.
-*
-* **Example** (Reading nanoseconds unsafely)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const duration = Duration.seconds(2)
-* const nanos = Duration.toNanosUnsafe(duration)
-* console.log(nanos) // 2000000000n
-*
-* // Duration.toNanosUnsafe(Duration.infinity)
-* // throws Error: "Cannot convert infinite duration to nanos"
-* ```
-*
-* @category getters
-* @since 4.0.0
-*/
-var toNanosUnsafe = (input) => {
-	const self = fromInputUnsafe(input);
-	switch (self.value._tag) {
+}), ea = (e) => {
+	let t = Fi(e);
+	switch (t.value._tag) {
 		case "Infinity":
-		case "NegativeInfinity": throw new Error("Cannot convert infinite duration to nanos");
-		case "Nanos": return self.value.nanos;
-		case "Millis": return roundMillisToNanos(self.value.millis);
+		case "NegativeInfinity": throw Error("Cannot convert infinite duration to nanos");
+		case "Nanos": return t.value.nanos;
+		case "Millis": return Mi(t.value.millis);
 	}
-};
-/**
-* Pattern matches on the representation of a `Duration`.
-*
-* **Details**
-*
-* Provide handlers for millisecond-backed values, nanosecond-backed values,
-* and positive infinity. Use `onNegativeInfinity` to handle negative infinity
-* separately; otherwise negative infinity is handled by `onInfinity`.
-*
-* **Example** (Pattern matching on duration representations)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const result = Duration.match(Duration.seconds(5), {
-*   onMillis: (millis) => `${millis} milliseconds`,
-*   onNanos: (nanos) => `${nanos} nanoseconds`,
-*   onInfinity: () => "infinite"
-* })
-* console.log(result) // "5000 milliseconds"
-* ```
-*
-* @category pattern matching
-* @since 2.0.0
-*/
-var match$1 = /*#__PURE__*/ dual(2, (self, options) => {
-	switch (self.value._tag) {
-		case "Millis": return options.onMillis(self.value.millis);
-		case "Nanos": return options.onNanos(self.value.nanos);
-		case "Infinity": return options.onInfinity();
-		case "NegativeInfinity": return (options.onNegativeInfinity ?? options.onInfinity)();
+}, ta = /*#__PURE__*/ j(2, (e, t) => {
+	switch (e.value._tag) {
+		case "Millis": return t.onMillis(e.value.millis);
+		case "Nanos": return t.onNanos(e.value.nanos);
+		case "Infinity": return t.onInfinity();
+		case "NegativeInfinity": return (t.onNegativeInfinity ?? t.onInfinity)();
 	}
-});
-/**
-* Pattern matches on two `Duration`s, providing handlers that receive both values.
-*
-* **Example** (Pattern matching on duration pairs)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const sum = Duration.matchPair(Duration.seconds(3), Duration.seconds(2), {
-*   onMillis: (a, b) => a + b,
-*   onNanos: (a, b) => Number(a + b),
-*   onInfinity: () => Infinity
-* })
-* console.log(sum) // 5000
-* ```
-*
-* @category pattern matching
-* @since 4.0.0
-*/
-var matchPair = /*#__PURE__*/ dual(3, (self, that, options) => {
-	if (self.value._tag === "Infinity" || self.value._tag === "NegativeInfinity" || that.value._tag === "Infinity" || that.value._tag === "NegativeInfinity") return options.onInfinity(self, that);
-	if (self.value._tag === "Millis") return that.value._tag === "Millis" ? options.onMillis(self.value.millis, that.value.millis) : options.onNanos(toNanosUnsafe(self), that.value.nanos);
-	else return options.onNanos(self.value.nanos, toNanosUnsafe(that));
-});
-/**
-* Provides an `Equivalence` instance for comparing `Duration` values.
-*
-* **Example** (Comparing durations for equivalence)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const isEqual = Duration.Equivalence(Duration.seconds(5), Duration.millis(5000))
-* console.log(isEqual) // true
-* ```
-*
-* @category instances
-* @since 2.0.0
-*/
-var Equivalence$2 = (self, that) => matchPair(self, that, {
-	onMillis: (self, that) => self === that,
-	onNanos: (self, that) => self === that,
-	onInfinity: (self, that) => self.value._tag === that.value._tag
-});
-/**
-* Checks whether two Durations are equal.
-*
-* **Example** (Checking duration equality)
-*
-* ```ts
-* import { Duration } from "effect"
-*
-* const isEqual = Duration.equals(Duration.seconds(5), Duration.millis(5000))
-* console.log(isEqual) // true
-* ```
-*
-* @category predicates
-* @since 2.0.0
-*/
-var equals = /*#__PURE__*/ dual(2, (self, that) => Equivalence$2(self, that));
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scheduler.js
-/**
-* Controls how runnable Effect fiber tasks are dispatched.
-*
-* A scheduler decides how tasks are queued, when queued tasks run, and when a
-* fiber should pause so other work can continue. This module includes the
-* scheduler service reference, the default `MixedScheduler`, dispatcher types
-* for queued tasks, and references for tuning or disabling automatic scheduler
-* yields.
-*
-* @since 2.0.0
-*/
-/**
-* Context reference for the scheduler used by the Effect runtime.
-*
-* **When to use**
-*
-* Use when you need to replace scheduling behavior globally in tests or runtime
-* setup, such as forcing deterministic task dispatch.
-*
-* **Details**
-*
-* The default value creates a `MixedScheduler`. Provide this service to
-* customize execution mode, task dispatching, or yield behavior.
-*
-* @category references
-* @since 2.0.0
-*/
-var Scheduler = /*#__PURE__*/ Reference("effect/Scheduler", { defaultValue: () => new MixedScheduler() });
-var setImmediate = "setImmediate" in globalThis ? (f) => {
-	const timer = globalThis.setImmediate(f);
-	return () => globalThis.clearImmediate(timer);
-} : (f) => {
-	const timer = setTimeout(f, 0);
-	return () => clearTimeout(timer);
-};
-var PriorityBuckets = class {
+}), na = /*#__PURE__*/ j(3, (e, t, n) => e.value._tag === "Infinity" || e.value._tag === "NegativeInfinity" || t.value._tag === "Infinity" || t.value._tag === "NegativeInfinity" ? n.onInfinity(e, t) : e.value._tag === "Millis" ? t.value._tag === "Millis" ? n.onMillis(e.value.millis, t.value.millis) : n.onNanos(ea(e), t.value.nanos) : n.onNanos(e.value.nanos, ea(t))), ra = (e, t) => na(e, t, {
+	onMillis: (e, t) => e === t,
+	onNanos: (e, t) => e === t,
+	onInfinity: (e, t) => e.value._tag === t.value._tag
+}), ia = /*#__PURE__*/ j(2, (e, t) => ra(e, t)), aa = /*#__PURE__*/ H("effect/Scheduler", { defaultValue: () => new ca() }), oa = "setImmediate" in globalThis ? (e) => {
+	let t = globalThis.setImmediate(e);
+	return () => globalThis.clearImmediate(t);
+} : (e) => {
+	let t = setTimeout(e, 0);
+	return () => clearTimeout(t);
+}, sa = class {
 	buckets = [];
-	scheduleTask(task, priority) {
-		const buckets = this.buckets;
-		const len = buckets.length;
-		let bucket;
-		let index = 0;
-		for (; index < len; index++) {
-			if (buckets[index][0] > priority) break;
-			bucket = buckets[index];
-		}
-		if (bucket && bucket[0] === priority) bucket[1].push(task);
-		else if (index === len) buckets.push([priority, [task]]);
-		else buckets.splice(index, 0, [priority, [task]]);
+	scheduleTask(e, t) {
+		let n = this.buckets, r = n.length, i, a = 0;
+		for (; a < r && !(n[a][0] > t); a++) i = n[a];
+		i && i[0] === t ? i[1].push(e) : a === r ? n.push([t, [e]]) : n.splice(a, 0, [t, [e]]);
 	}
 	drain() {
-		const buckets = this.buckets;
-		this.buckets = [];
-		return buckets;
+		let e = this.buckets;
+		return this.buckets = [], e;
 	}
-};
-/**
-* Provides a scheduler implementation that batches queued tasks and dispatches them by
-* priority.
-*
-* **When to use**
-*
-* Use when you need the default runtime scheduler directly, including a
-* scheduler that batches queued work by priority and preserves FIFO order within
-* each priority.
-*
-* **Details**
-*
-* `MixedScheduler` supports synchronous and asynchronous execution modes, uses
-* operation counts to decide when fibers should yield, and is the default
-* scheduler implementation.
-*
-* @category schedulers
-* @since 2.0.0
-*/
-var MixedScheduler = class {
+}, ca = class {
 	executionMode;
 	setImmediate;
-	constructor(executionMode = "async", setImmediateFn = setImmediate) {
-		this.executionMode = executionMode;
-		this.setImmediate = setImmediateFn;
+	constructor(e = "async", t = oa) {
+		this.executionMode = e, this.setImmediate = t;
 	}
-	/**
-	* Returns whether the fiber has reached its operation budget and should yield.
-	*
-	* **When to use**
-	*
-	* Use to decide whether a fiber should yield after consuming its current
-	* operation budget.
-	*
-	* @since 2.0.0
-	*/
-	shouldYield(fiber) {
-		return fiber.currentOpCount >= fiber.maxOpsBeforeYield;
+	shouldYield(e) {
+		return e.currentOpCount >= e.maxOpsBeforeYield;
 	}
-	/**
-	* Creates a dispatcher that schedules work through this scheduler.
-	*
-	* **When to use**
-	*
-	* Use when you need a standalone dispatcher from a scheduler instance, for
-	* example in tests that enqueue tasks and then flush them deterministically.
-	*
-	* @since 4.0.0
-	*/
 	makeDispatcher() {
-		return new MixedSchedulerDispatcher(this.setImmediate);
+		return new la(this.setImmediate);
 	}
-};
-var MixedSchedulerDispatcher = class {
-	tasks = /*#__PURE__*/ new PriorityBuckets();
+}, la = class {
+	tasks = /*#__PURE__*/ new sa();
 	running = void 0;
 	setImmediate;
-	constructor(setImmediateFn = setImmediate) {
-		this.setImmediate = setImmediateFn;
+	constructor(e = oa) {
+		this.setImmediate = e;
 	}
-	/**
-	* @since 2.0.0
-	*/
-	scheduleTask(task, priority) {
-		this.tasks.scheduleTask(task, priority);
-		if (this.running === void 0) this.running = this.setImmediate(this.afterScheduled);
+	scheduleTask(e, t) {
+		this.tasks.scheduleTask(e, t), this.running === void 0 && (this.running = this.setImmediate(this.afterScheduled));
 	}
-	/**
-	* @since 2.0.0
-	*/
 	afterScheduled = () => {
-		this.running = void 0;
-		this.runTasks();
+		this.running = void 0, this.runTasks();
 	};
-	/**
-	* @since 2.0.0
-	*/
 	runTasks() {
-		const buckets = this.tasks.drain();
-		for (let i = 0; i < buckets.length; i++) {
-			const toRun = buckets[i][1];
-			for (let j = 0; j < toRun.length; j++) toRun[j]();
+		let e = this.tasks.drain();
+		for (let t = 0; t < e.length; t++) {
+			let n = e[t][1];
+			for (let e = 0; e < n.length; e++) n[e]();
 		}
 	}
-	/**
-	* @since 2.0.0
-	*/
 	flush() {
-		while (this.tasks.buckets.length > 0) {
-			if (this.running !== void 0) {
-				this.running();
-				this.running = void 0;
-			}
-			this.runTasks();
-		}
+		for (; this.tasks.buckets.length > 0;) this.running !== void 0 && (this.running(), this.running = void 0), this.runTasks();
 	}
-};
-/**
-* Context reference that controls the maximum number of operations a fiber
-* can perform before yielding control back to the scheduler.
-*
-* **When to use**
-*
-* Use to tune scheduler fairness for CPU-bound fibers by changing the scheduler
-* operation budget that triggers a yield.
-*
-* **Details**
-*
-* The default value is `2048` operations, which balances performance and
-* fairness by helping prevent long-running fibers from monopolizing the
-* execution thread.
-*
-* @see {@link PreventSchedulerYield} for bypassing scheduler yield checks entirely rather than tuning the operation budget
-*
-* @category references
-* @since 4.0.0
-*/
-var MaxOpsBeforeYield = /*#__PURE__*/ Reference("effect/Scheduler/MaxOpsBeforeYield", { defaultValue: () => 2048 });
-/**
-* Context reference that controls whether the runtime should bypass scheduler
-* yield checks. When set to `true`, the fiber run loop won't call
-* `Scheduler.shouldYield`.
-*
-* **When to use**
-*
-* Use to bypass scheduler yield checks for controlled runtime workloads where
-* cooperative yielding should be disabled.
-*
-* **Gotchas**
-*
-* Setting this reference to `true` can let long-running fibers monopolize the
-* JavaScript thread.
-*
-* @see {@link MaxOpsBeforeYield} for tuning yield frequency without disabling yield checks
-* @see {@link Scheduler} for providing custom scheduler yield behavior
-*
-* @category references
-* @since 4.0.0
-*/
-var PreventSchedulerYield = /*#__PURE__*/ Reference("effect/Scheduler/PreventSchedulerYield", { defaultValue: () => false });
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Tracer.js
-/**
-* Defines the low-level tracing model used by Effect.
-*
-* A span records the lifetime of an operation, including its name, parent,
-* attributes, links, annotations, sampling decision, kind, and completion
-* status. The module also defines the tracer service, parent-span context,
-* external span support, trace propagation settings, and the default in-memory
-* span implementation.
-*
-* @since 2.0.0
-*/
-/**
-* Defines the string key for the parent-span context service.
-*
-* **When to use**
-*
-* Use when you need the raw context key for parent span lookup in lower-level
-* tracing code.
-*
-* **Example** (Reading the parent span key)
-*
-* ```ts
-* import { Tracer } from "effect"
-*
-* // The key used to identify parent spans in the context
-* console.log(Tracer.ParentSpanKey) // "effect/Tracer/ParentSpan"
-* ```
-*
-* @category constants
-* @since 4.0.0
-*/
-var ParentSpanKey = "effect/Tracer/ParentSpan";
-/**
-* Context service containing the `Span` or `ExternalSpan` to use as the parent
-* of newly-created child spans.
-*
-* **Example** (Accessing the parent span)
-*
-* ```ts
-* import { Effect, Tracer } from "effect"
-*
-* // Access the parent span from the context
-* const program = Effect.gen(function*() {
-*   const parentSpan = yield* Effect.service(Tracer.ParentSpan)
-*   console.log(`Parent span: ${parentSpan.spanId}`)
-* })
-* ```
-*
-* @category services
-* @since 2.0.0
-*/
-var ParentSpan = class extends Service()(ParentSpanKey) {};
-/**
-* Creates a `Tracer` value from a tracer implementation object.
-*
-* **When to use**
-*
-* Use to create a custom tracing backend value that Effect can use when
-* creating spans.
-*
-* **Details**
-*
-* `make` returns the supplied implementation object unchanged. The object must
-* satisfy the `Tracer` contract, including a `span` method that returns a
-* `Span`.
-*
-* @see {@link Span} for the span values returned by tracer implementations
-*
-* @category constructors
-* @since 2.0.0
-*/
-var make$11 = (options) => options;
-/**
-* Context reference for disabling trace propagation.
-*
-* **When to use**
-*
-* Use to prevent spans in a scope from propagating tracing context.
-*
-* **Details**
-*
-* When enabled on fiber or span annotations, new spans are created as
-* non-propagating no-op spans and disabled spans are skipped when deriving a
-* parent span.
-*
-* **Example** (Disabling span propagation)
-*
-* ```ts
-* import { Effect, Tracer } from "effect"
-*
-* // Disable span propagation for a specific effect
-* const program = Effect.gen(function*() {
-*   yield* Effect.log("This will not propagate parent span")
-* }).pipe(
-*   Effect.provideService(Tracer.DisablePropagation, true)
-* )
-* ```
-*
-* @category references
-* @since 3.12.0
-*/
-var DisablePropagation = /*#__PURE__*/ Reference("effect/Tracer/DisablePropagation", { defaultValue: constFalse });
-/**
-* Context reference for controlling the current trace level for dynamic filtering.
-*
-* **When to use**
-*
-* Use to set the default trace level for spans in a scope when span options do
-* not provide `level`.
-*
-* **Details**
-*
-* The default value is `"Info"`. Span creation uses `options.level ??
-* CurrentTraceLevel` before applying `MinimumTraceLevel`.
-*
-* @see {@link MinimumTraceLevel} for the threshold that decides whether spans at that level are sampled
-*
-* @category references
-* @since 4.0.0
-*/
-var CurrentTraceLevel = /*#__PURE__*/ Reference("effect/Tracer/CurrentTraceLevel", { defaultValue: () => "Info" });
-/**
-* Context reference for setting the minimum trace level threshold. Spans and their
-* descendants below this level will have their sampling decision forced to
-* false, preventing them from being exported.
-*
-* **When to use**
-*
-* Use to set the trace-level threshold that controls whether spans are sampled
-* by default.
-*
-* **Details**
-*
-* The default value is `"All"`. Span creation compares the span level from
-* `options.level ?? CurrentTraceLevel` against this threshold.
-*
-* **Gotchas**
-*
-* Explicit `options.sampled` bypasses threshold computation.
-*
-* @see {@link CurrentTraceLevel} for the default span level used when options do not specify one
-*
-* @category references
-* @since 4.0.0
-*/
-var MinimumTraceLevel = /*#__PURE__*/ Reference("effect/Tracer/MinimumTraceLevel", { defaultValue: () => "All" });
-/**
-* Defines the string key for the active tracer context reference.
-*
-* **When to use**
-*
-* Use when you need the raw context key for active tracer lookup in lower-level
-* tracing code.
-*
-* @category references
-* @since 4.0.0
-*/
-var TracerKey = "effect/Tracer";
-/**
-* Context reference for the active tracer service. By default it uses the
-* native tracer, which creates `NativeSpan` instances.
-*
-* **Example** (Accessing the current tracer)
-*
-* ```ts
-* import { Effect, Tracer } from "effect"
-*
-* // Access the current tracer from the context
-* const program = Effect.gen(function*() {
-*   const tracer = yield* Effect.service(Tracer.Tracer)
-*   console.log("Using current tracer")
-* })
-*
-* // Or use the built-in tracer effect
-* const tracerEffect = Effect.gen(function*() {
-*   const tracer = yield* Effect.tracer
-*   console.log("Current tracer obtained")
-* })
-* ```
-*
-* @category references
-* @since 2.0.0
-*/
-var Tracer = /*#__PURE__*/ Reference(TracerKey, { defaultValue: () => make$11({ span: (options) => new NativeSpan(options) }) });
-/**
-* Default in-memory `Span` implementation used by the native tracer. It
-* generates span and trace identifiers, stores attributes, events, and links,
-* and records `Started` or `Ended` status.
-*
-* **Details**
-*
-* The constructor initializes the span with `Started` status, inherits the
-* parent trace id or generates a new one, and always generates a new span id.
-* Attributes, events, links, and status are then mutated through `Span` methods.
-*
-* @see {@link Span} for the interface implemented by native spans
-*
-* @category native tracer
-* @since 4.0.0
-*/
-var NativeSpan = class {
+}, ua = /*#__PURE__*/ H("effect/Scheduler/MaxOpsBeforeYield", { defaultValue: () => 2048 }), da = /*#__PURE__*/ H("effect/Scheduler/PreventSchedulerYield", { defaultValue: () => !1 }), fa = "effect/Tracer/ParentSpan", pa = class extends oi()(fa) {}, ma = (e) => e, ha = /*#__PURE__*/ H("effect/Tracer/DisablePropagation", { defaultValue: We }), ga = /*#__PURE__*/ H("effect/Tracer/CurrentTraceLevel", { defaultValue: () => "Info" }), _a = /*#__PURE__*/ H("effect/Tracer/MinimumTraceLevel", { defaultValue: () => "All" }), va = "effect/Tracer", ya = /*#__PURE__*/ H(va, { defaultValue: () => ma({ span: (e) => new ba(e) }) }), ba = class {
 	_tag = "Span";
 	spanId;
 	traceId = "native";
@@ -5037,97 +1813,52 @@ var NativeSpan = class {
 	status;
 	attributes;
 	events = [];
-	constructor(options) {
-		this.name = options.name;
-		this.parent = options.parent;
-		this.annotations = options.annotations;
-		this.links = options.links;
-		this.startTime = options.startTime;
-		this.kind = options.kind;
-		this.sampled = options.sampled;
-		this.status = {
+	constructor(e) {
+		this.name = e.name, this.parent = e.parent, this.annotations = e.annotations, this.links = e.links, this.startTime = e.startTime, this.kind = e.kind, this.sampled = e.sampled, this.status = {
 			_tag: "Started",
-			startTime: options.startTime
-		};
-		this.attributes = /* @__PURE__ */ new Map();
-		this.traceId = getOrUndefined(options.parent)?.traceId ?? randomHexString(32);
-		this.spanId = randomHexString(16);
+			startTime: e.startTime
+		}, this.attributes = /* @__PURE__ */ new Map(), this.traceId = xr(e.parent)?.traceId ?? xa(32), this.spanId = xa(16);
 	}
-	end(endTime, exit) {
+	end(e, t) {
 		this.status = {
 			_tag: "Ended",
-			endTime,
-			exit,
+			endTime: e,
+			exit: t,
 			startTime: this.status.startTime
 		};
 	}
-	attribute(key, value) {
-		this.attributes.set(key, value);
+	attribute(e, t) {
+		this.attributes.set(e, t);
 	}
-	event(name, startTime, attributes) {
+	event(e, t, n) {
 		this.events.push([
-			name,
-			startTime,
-			attributes ?? {}
+			e,
+			t,
+			n ?? {}
 		]);
 	}
-	addLinks(links) {
-		this.links.push(...links);
+	addLinks(e) {
+		this.links.push(...e);
 	}
-};
-var randomHexString = /*#__PURE__*/ function() {
-	const characters = "abcdef0123456789";
-	const charactersLength = 16;
-	return function(length) {
-		let result = "";
-		for (let i = 0; i < length; i++) result += characters.charAt(Math.floor(Math.random() * charactersLength));
-		return result;
+}, xa = /*#__PURE__*/ function() {
+	return function(e) {
+		let t = "";
+		for (let n = 0; n < e; n++) t += "abcdef0123456789".charAt(Math.floor(Math.random() * 16));
+		return t;
 	};
-}();
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/metric.js
-/** @internal */
-var FiberRuntimeMetricsKey = "effect/observability/Metric/FiberRuntimeMetricsKey";
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/references.js
-/** @internal */
-var CurrentStackFrame = /*#__PURE__*/ Reference("effect/References/CurrentStackFrame", { defaultValue: constUndefined });
-/** @internal */
-var TracerEnabled = /*#__PURE__*/ Reference("effect/References/TracerEnabled", { defaultValue: constTrue });
-/** @internal */
-var TracerTimingEnabled = /*#__PURE__*/ Reference("effect/References/TracerTimingEnabled", { defaultValue: constTrue });
-/** @internal */
-var TracerSpanAnnotations = /*#__PURE__*/ Reference("effect/References/TracerSpanAnnotations", { defaultValue: () => ({}) });
-/** @internal */
-var TracerSpanLinks = /*#__PURE__*/ Reference("effect/References/TracerSpanLinks", { defaultValue: () => [] });
-/** @internal */
-var CurrentLogLevel = /*#__PURE__*/ Reference("effect/References/CurrentLogLevel", { defaultValue: () => "Info" });
-/** @internal */
-var MinimumLogLevel = /*#__PURE__*/ Reference("effect/References/MinimumLogLevel", { defaultValue: () => "Info" });
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/tracer.js
-/** @internal */
-var makeStackCleaner = (line) => (stack) => {
-	let cache;
+}(), Sa = "effect/observability/Metric/FiberRuntimeMetricsKey", Ca = /*#__PURE__*/ H("effect/References/CurrentStackFrame", { defaultValue: Ge }), wa = /*#__PURE__*/ H("effect/References/TracerEnabled", { defaultValue: Ue }), Ta = /*#__PURE__*/ H("effect/References/TracerTimingEnabled", { defaultValue: Ue }), Ea = /*#__PURE__*/ H("effect/References/TracerSpanAnnotations", { defaultValue: () => ({}) }), Da = /*#__PURE__*/ H("effect/References/TracerSpanLinks", { defaultValue: () => [] }), Oa = /*#__PURE__*/ H("effect/References/CurrentLogLevel", { defaultValue: () => "Info" }), ka = /*#__PURE__*/ H("effect/References/MinimumLogLevel", { defaultValue: () => "Info" }), Aa = (e) => (t) => {
+	let n;
 	return () => {
-		if (cache !== void 0) return cache;
-		const trace = stack();
-		if (!trace) return void 0;
-		const lines = trace.split("\n");
-		if (lines[line] !== void 0) {
-			cache = lines[line].trim();
-			return cache;
-		}
+		if (n !== void 0) return n;
+		let r = t();
+		if (!r) return;
+		let i = r.split("\n");
+		if (i[e] !== void 0) return n = i[e].trim(), n;
 	};
-};
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js
-/** @internal */
-var Interrupt = class extends ReasonBase {
+}, ja = class extends xn {
 	fiberId;
-	constructor(fiberId, annotations = constEmptyAnnotations) {
-		super("Interrupt", annotations, "Interrupted");
-		this.fiberId = fiberId;
+	constructor(e, t = Sn) {
+		super("Interrupt", t, "Interrupted"), this.fiberId = e;
 	}
 	toString() {
 		return `Interrupt(${this.fiberId})`;
@@ -5138,77 +1869,42 @@ var Interrupt = class extends ReasonBase {
 			fiberId: this.fiberId
 		};
 	}
-	[symbol](that) {
-		return isInterruptReason(that) && this.fiberId === that.fiberId && this.annotations === that.annotations;
+	[L](e) {
+		return jn(e) && this.fiberId === e.fiberId && this.annotations === e.annotations;
 	}
-	[symbol$1]() {
-		return combine(string$1(`${this._tag}:${this.fiberId}`))(random(this.annotations));
+	[P]() {
+		return lt(I(`${this._tag}:${this.fiberId}`))(ct(this.annotations));
 	}
-};
-/** @internal */
-var causeInterrupt = (fiberId) => new CauseImpl([new Interrupt(fiberId)]);
-/** @internal */
-var findError$1 = (self) => {
-	for (let i = 0; i < self.reasons.length; i++) {
-		const reason = self.reasons[i];
-		if (reason._tag === "Fail") return succeed$2(reason.error);
+}, Ma = (e) => new yn([new ja(e)]), Na = (e) => {
+	for (let t = 0; t < e.reasons.length; t++) {
+		let n = e.reasons[t];
+		if (n._tag === "Fail") return wr(n.error);
 	}
-	return fail$3(self);
-};
-/** @internal */
-var hasInterrupts = (self) => self.reasons.some(isInterruptReason);
-/** @internal */
-var causeCombine = /*#__PURE__*/ dual(2, (self, that) => {
-	if (self.reasons.length === 0) return that;
-	else if (that.reasons.length === 0) return self;
-	const newCause = new CauseImpl(union$2(self.reasons, that.reasons));
-	return equals$2(self, newCause) ? self : newCause;
-});
-/** @internal */
-var causePartition = (self) => {
-	const obj = {
+	return Tr(e);
+}, Pa = (e) => e.reasons.some(jn), Fa = /*#__PURE__*/ j(2, (e, t) => {
+	if (e.reasons.length === 0) return t;
+	if (t.reasons.length === 0) return e;
+	let n = new yn(Lr(e.reasons, t.reasons));
+	return Ct(e, n) ? e : n;
+}), Ia = (e) => {
+	let t = {
 		Fail: [],
 		Die: [],
 		Interrupt: []
 	};
-	for (let i = 0; i < self.reasons.length; i++) obj[self.reasons[i]._tag].push(self.reasons[i]);
-	return obj;
-};
-/** @internal */
-var causeSquash = (self) => {
-	const partitioned = causePartition(self);
-	if (partitioned.Fail.length > 0) return partitioned.Fail[0].error;
-	else if (partitioned.Die.length > 0) return partitioned.Die[0].defect;
-	else if (partitioned.Interrupt.length > 0) return new globalThis.Error("All fibers interrupted without error");
-	return new globalThis.Error("Empty cause");
-};
-/** @internal */
-var FiberTypeId = `~effect/Fiber/dev`;
-var fiberVariance = {
-	_A: identity,
-	_E: identity
-};
-var fiberIdStore = { id: 0 };
-/** @internal */
-var getCurrentFiber = () => globalThis[currentFiberTypeId];
-/** @internal */
-var FiberImpl = class {
-	constructor(context, interruptible = true) {
-		this[FiberTypeId] = fiberVariance;
-		this.setContext(context);
-		this.id = ++fiberIdStore.id;
-		this.currentOpCount = 0;
-		this.currentLoopCount = 0;
-		this.interruptible = interruptible;
-		this._stack = [];
-		this._observers = [];
-		this._exit = void 0;
-		this._children = void 0;
-		this._interruptedCause = void 0;
-		this._yielded = void 0;
-		this.runtimeMetrics?.recordFiberStart(this.context);
+	for (let n = 0; n < e.reasons.length; n++) t[e.reasons[n]._tag].push(e.reasons[n]);
+	return t;
+}, La = (e) => {
+	let t = Ia(e);
+	return t.Fail.length > 0 ? t.Fail[0].error : t.Die.length > 0 ? t.Die[0].defect : t.Interrupt.length > 0 ? new globalThis.Error("All fibers interrupted without error") : new globalThis.Error("Empty cause");
+}, Ra = "~effect/Fiber/dev", za = {
+	_A: M,
+	_E: M
+}, Ba = { id: 0 }, Va = () => globalThis[Kt], Ha = class {
+	constructor(e, t = !0) {
+		this[Ra] = za, this.setContext(e), this.id = ++Ba.id, this.currentOpCount = 0, this.currentLoopCount = 0, this.interruptible = t, this._stack = [], this._observers = [], this._exit = void 0, this._children = void 0, this._interruptedCause = void 0, this._yielded = void 0, this.runtimeMetrics?.recordFiberStart(this.context);
 	}
-	[FiberTypeId];
+	[Ra];
 	id;
 	interruptible;
 	currentOpCount;
@@ -5234,892 +1930,508 @@ var FiberImpl = class {
 	get currentDispatcher() {
 		return this._dispatcher ??= this.currentScheduler.makeDispatcher();
 	}
-	getRef(ref) {
-		return getReferenceUnsafe(this.context, ref);
+	getRef(e) {
+		return xi(this.context, e);
 	}
-	addObserver(cb) {
-		if (this._exit) {
-			cb(this._exit);
-			return constVoid;
-		}
-		this._observers.push(cb);
-		return () => {
-			const index = this._observers.indexOf(cb);
-			if (index >= 0) this._observers.splice(index, 1);
-		};
+	addObserver(e) {
+		return this._exit ? (e(this._exit), Ke) : (this._observers.push(e), () => {
+			let t = this._observers.indexOf(e);
+			t >= 0 && this._observers.splice(t, 1);
+		});
 	}
-	interruptUnsafe(fiberId, annotations) {
+	interruptUnsafe(e, t) {
 		if (this._exit) return;
-		let cause = causeInterrupt(fiberId);
-		if (this.currentStackFrame) cause = causeAnnotate(cause, make$13(StackTraceKey, this.currentStackFrame));
-		if (annotations) cause = causeAnnotate(cause, annotations);
-		this._interruptedCause = this._interruptedCause ? causeCombine(this._interruptedCause, cause) : cause;
-		if (this.interruptible) this.evaluate(failCause(this._interruptedCause));
+		let n = Ma(e);
+		this.currentStackFrame && (n = On(n, gi(Ln, this.currentStackFrame))), t && (n = On(n, t)), this._interruptedCause = this._interruptedCause ? Fa(this._interruptedCause, n) : n, this.interruptible && this.evaluate(Xa(this._interruptedCause));
 	}
 	pollUnsafe() {
 		return this._exit;
 	}
-	evaluate(effect) {
+	evaluate(e) {
 		if (this._exit) return;
-		else if (this._yielded !== void 0) {
-			const yielded = this._yielded;
-			this._yielded = void 0;
-			yielded();
+		if (this._yielded !== void 0) {
+			let e = this._yielded;
+			this._yielded = void 0, e();
 		}
-		const exit = this.runLoop(effect);
-		if (exit === Yield) return;
-		const interruptChildren = fiberMiddleware.interruptChildren && fiberMiddleware.interruptChildren(this);
-		if (interruptChildren !== void 0) return this.evaluate(flatMap$1(interruptChildren, () => exit));
-		this._exit = exit;
-		this.runtimeMetrics?.recordFiberEnd(this.context, this._exit);
-		for (let i = 0; i < this._observers.length; i++) this._observers[i](exit);
+		let t = this.runLoop(e);
+		if (t === dn) return;
+		let n = Ua.interruptChildren && Ua.interruptChildren(this);
+		if (n !== void 0) return this.evaluate(W(n, () => t));
+		this._exit = t, this.runtimeMetrics?.recordFiberEnd(this.context, this._exit);
+		for (let e = 0; e < this._observers.length; e++) this._observers[e](t);
 		this._observers.length = 0;
 	}
-	runLoop(effect) {
-		const prevFiber = globalThis[currentFiberTypeId];
-		globalThis[currentFiberTypeId] = this;
-		let yielding = false;
-		let current = effect;
+	runLoop(e) {
+		let t = globalThis[Kt];
+		globalThis[Kt] = this;
+		let n = !1, r = e;
 		this.currentOpCount = 0;
-		const currentLoop = ++this.currentLoopCount;
+		let i = ++this.currentLoopCount;
 		try {
-			while (true) {
-				this.currentOpCount++;
-				if (!yielding && !this.currentPreventYield && this.currentScheduler.shouldYield(this)) {
-					yielding = true;
-					const prev = current;
-					current = flatMap$1(yieldNow, () => prev);
+			for (;;) {
+				if (this.currentOpCount++, !n && !this.currentPreventYield && this.currentScheduler.shouldYield(this)) {
+					n = !0;
+					let e = r;
+					r = W(eo, () => e);
 				}
-				current = this.currentTracerContext ? this.currentTracerContext(current, this) : current[evaluate](this);
-				if (currentLoop !== this.currentLoopCount) return Yield;
-				else if (current === Yield) {
-					const yielded = this._yielded;
-					if (ExitTypeId in yielded) {
-						this._yielded = void 0;
-						return yielded;
-					}
-					return Yield;
+				if (r = this.currentTracerContext ? this.currentTracerContext(r, this) : r[B](this), i !== this.currentLoopCount) return dn;
+				if (r === dn) {
+					let e = this._yielded;
+					return an in e ? (this._yielded = void 0, e) : dn;
 				}
 			}
-		} catch (error) {
-			if (!hasProperty(current, evaluate)) return exitDie(`Fiber.runLoop: Not a valid effect: ${String(current)}`);
-			return this.runLoop(exitDie(error));
+		} catch (e) {
+			return N(r, B) ? this.runLoop(Bn(e)) : Bn(`Fiber.runLoop: Not a valid effect: ${String(r)}`);
 		} finally {
-			globalThis[currentFiberTypeId] = prevFiber;
+			globalThis[Kt] = t;
 		}
 	}
-	getCont(symbol) {
-		while (true) {
-			const op = this._stack.pop();
-			if (!op) return void 0;
-			const cont = op[contAll] && op[contAll](this);
-			if (cont) {
-				cont[symbol] = cont;
-				return cont;
-			}
-			if (op[symbol]) return op;
+	getCont(e) {
+		for (;;) {
+			let t = this._stack.pop();
+			if (!t) return;
+			let n = t[un] && t[un](this);
+			if (n) return n[e] = n, n;
+			if (t[e]) return t;
 		}
 	}
-	yieldWith(value) {
-		this._yielded = value;
-		return Yield;
+	yieldWith(e) {
+		return this._yielded = e, dn;
 	}
 	children() {
 		return this._children ??= /* @__PURE__ */ new Set();
 	}
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
-	setContext(context) {
-		this.context = context;
-		const scheduler = this.getRef(Scheduler);
-		if (scheduler !== this.currentScheduler) {
-			this.currentScheduler = scheduler;
-			this._dispatcher = void 0;
-		}
-		this.currentSpan = context.mapUnsafe.get(ParentSpanKey);
-		this.currentLogLevel = this.getRef(CurrentLogLevel);
-		this.minimumLogLevel = this.getRef(MinimumLogLevel);
-		this.currentStackFrame = context.mapUnsafe.get(CurrentStackFrame.key);
-		this.maxOpsBeforeYield = this.getRef(MaxOpsBeforeYield);
-		this.currentPreventYield = this.getRef(PreventSchedulerYield);
-		this.runtimeMetrics = context.mapUnsafe.get(FiberRuntimeMetricsKey);
-		const currentTracer = context.mapUnsafe.get(TracerKey);
-		this.currentTracerContext = currentTracer ? currentTracer["context"] : void 0;
+	setContext(e) {
+		this.context = e;
+		let t = this.getRef(aa);
+		t !== this.currentScheduler && (this.currentScheduler = t, this._dispatcher = void 0), this.currentSpan = e.mapUnsafe.get(fa), this.currentLogLevel = this.getRef(Oa), this.minimumLogLevel = this.getRef(ka), this.currentStackFrame = e.mapUnsafe.get(Ca.key), this.maxOpsBeforeYield = this.getRef(ua), this.currentPreventYield = this.getRef(da), this.runtimeMetrics = e.mapUnsafe.get(Sa);
+		let n = e.mapUnsafe.get(va);
+		this.currentTracerContext = n ? n.context : void 0;
 	}
 	get currentSpanLocal() {
 		return this.currentSpan?._tag === "Span" ? this.currentSpan : void 0;
 	}
-};
-var fiberMiddleware = { interruptChildren: void 0 };
-var fiberStackAnnotations = (fiber) => {
-	if (!fiber.currentStackFrame) return void 0;
-	const annotations = /* @__PURE__ */ new Map();
-	annotations.set(StackTraceKey.key, fiber.currentStackFrame);
-	return makeUnsafe$4(annotations);
-};
-/** @internal */
-var fiberAwait = (self) => {
-	const impl = self;
-	if (impl._exit) return succeed$1(impl._exit);
-	return callback((resume) => {
-		if (impl._exit) return resume(succeed$1(impl._exit));
-		return sync$1(self.addObserver((exit) => resume(succeed$1(exit))));
-	});
-};
-/** @internal */
-var fiberAwaitAll = (self) => callback((resume) => {
-	const iter = self[Symbol.iterator]();
-	const exits = [];
-	let cancel = void 0;
-	function loop() {
-		let result = iter.next();
-		while (!result.done) {
-			if (result.value._exit) {
-				exits.push(result.value._exit);
-				result = iter.next();
+}, Ua = { interruptChildren: void 0 }, Wa = (e) => {
+	if (!e.currentStackFrame) return;
+	let t = /* @__PURE__ */ new Map();
+	return t.set(Ln.key, e.currentStackFrame), ui(t);
+}, Ga = (e) => {
+	let t = e;
+	return t._exit ? U(t._exit) : lo((n) => t._exit ? n(U(t._exit)) : Qa(e.addObserver((e) => n(U(e)))));
+}, Ka = (e) => lo((t) => {
+	let n = e[Symbol.iterator](), r = [], i;
+	function a() {
+		let e = n.next();
+		for (; !e.done;) {
+			if (e.value._exit) {
+				r.push(e.value._exit), e = n.next();
 				continue;
 			}
-			cancel = result.value.addObserver((exit) => {
-				exits.push(exit);
-				loop();
+			i = e.value.addObserver((e) => {
+				r.push(e), a();
 			});
 			return;
 		}
-		resume(succeed$1(exits));
+		t(U(r));
 	}
-	loop();
-	return sync$1(() => cancel?.());
-});
-/** @internal */
-var fiberInterrupt = (self) => withFiber$1((fiber) => fiberInterruptAs(self, fiber.id));
-/** @internal */
-var fiberInterruptAs = /*#__PURE__*/ dual((args) => hasProperty(args[0], FiberTypeId), (self, fiberId, annotations) => withFiber$1((parent) => {
-	let ann = fiberStackAnnotations(parent);
-	ann = ann && annotations ? merge(ann, annotations) : ann ?? annotations;
-	self.interruptUnsafe(fiberId, ann);
-	return asVoid(fiberAwait(self));
-}));
-/** @internal */
-var fiberInterruptAll = (fibers) => withFiber$1((parent) => {
-	const annotations = fiberStackAnnotations(parent);
-	for (const fiber of fibers) fiber.interruptUnsafe(parent.id, annotations);
-	return asVoid(fiberAwaitAll(fibers));
-});
-/** @internal */
-var succeed$1 = exitSucceed;
-/** @internal */
-var failCause = exitFailCause;
-/** @internal */
-var fail$2 = exitFail;
-/** @internal */
-var sync$1 = /*#__PURE__*/ makePrimitive({
+	return a(), Qa(() => i?.());
+}), qa = (e) => Vn((t) => Ja(e, t.id)), Ja = /*#__PURE__*/ j((e) => N(e[0], Ra), (e, t, n) => Vn((r) => {
+	let i = Wa(r);
+	return i = i && n ? Ti(i, n) : i ?? n, e.interruptUnsafe(t, i), Co(Ga(e));
+})), Ya = (e) => Vn((t) => {
+	let n = Wa(t);
+	for (let r of e) r.interruptUnsafe(t.id, n);
+	return Co(Ka(e));
+}), U = In, Xa = Rn, Za = zn, Qa = /*#__PURE__*/ Pn({
 	op: "Sync",
-	[evaluate](fiber) {
-		const value = this[args]();
-		const cont = fiber.getCont(contA);
-		return cont ? cont[contA](value, fiber) : fiber.yieldWith(exitSucceed(value));
+	[B](e) {
+		let t = this[z](), n = e.getCont(cn);
+		return n ? n[cn](t, e) : e.yieldWith(In(t));
 	}
-});
-/** @internal */
-var suspend$1 = /*#__PURE__*/ makePrimitive({
+}), $a = /*#__PURE__*/ Pn({
 	op: "Suspend",
-	[evaluate](_fiber) {
-		return this[args]();
+	[B](e) {
+		return this[z]();
 	}
-});
-/** @internal */
-var yieldNow = /*#__PURE__*/ (/* @__PURE__ */ makePrimitive({
+}), eo = /*#__PURE__*/ (/* @__PURE__ */ Pn({
 	op: "Yield",
-	[evaluate](fiber) {
-		let resumed = false;
-		fiber.currentDispatcher.scheduleTask(() => {
-			if (resumed) return;
-			fiber.evaluate(exitVoid);
-		}, this[args] ?? 0);
-		return fiber.yieldWith(() => {
-			resumed = true;
+	[B](e) {
+		let t = !1;
+		return e.currentDispatcher.scheduleTask(() => {
+			t || e.evaluate(No);
+		}, this[z] ?? 0), e.yieldWith(() => {
+			t = !0;
 		});
 	}
-}))(0);
-/** @internal */
-var succeedSome$1 = (a) => succeed$1(some(a));
-/** @internal */
-var succeedNone$1 = /*#__PURE__*/ succeed$1(/*#__PURE__*/ none());
-/** @internal */
-var die$1 = (defect) => exitDie(defect);
-/** @internal */
-var failSync = (error) => suspend$1(() => fail$2(internalCall(error)));
-/** @internal */
-var void_$1 = /*#__PURE__*/ succeed$1(void 0);
-/** @internal */
-var tryPromise$1 = (options) => {
-	const f = typeof options === "function" ? options : options.try;
-	const catcher = typeof options === "function" ? (cause) => new UnknownError(cause, "An error occurred in Effect.tryPromise") : options.catch;
-	return callbackOptions(function(resume, signal) {
+}))(0), to = (e) => U(V(e)), no = /*#__PURE__*/ U(/*#__PURE__*/ vr()), ro = (e) => Bn(e), io = (e) => $a(() => Za(nn(e))), ao = /*#__PURE__*/ U(void 0), oo = (e) => {
+	let t = typeof e == "function" ? e : e.try, n = typeof e == "function" ? (e) => new $s(e, "An error occurred in Effect.tryPromise") : e.catch;
+	return so(function(e, r) {
 		try {
-			internalCall(() => f(signal)).then((a) => resume(succeed$1(a)), (e) => resume(fail$2(internalCall(() => catcher(e)))));
-		} catch (err) {
-			resume(fail$2(internalCall(() => catcher(err))));
+			nn(() => t(r)).then((t) => e(U(t)), (t) => e(Za(nn(() => n(t)))));
+		} catch (t) {
+			e(Za(nn(() => n(t))));
 		}
 	}, eval.length !== 0);
-};
-var callbackOptions = /*#__PURE__*/ makePrimitive({
+}, so = /*#__PURE__*/ Pn({
 	op: "Async",
-	single: false,
-	[evaluate](fiber) {
-		const register = internalCall(() => this[args][0].bind(fiber.currentScheduler));
-		let resumed = false;
-		let yielded = false;
-		const controller = this[args][1] ? new AbortController() : void 0;
-		const onCancel = register((effect) => {
-			if (resumed) return;
-			resumed = true;
-			if (yielded) fiber.evaluate(effect);
-			else yielded = effect;
-		}, controller?.signal);
-		if (yielded !== false) return yielded;
-		yielded = true;
-		fiber._yielded = () => {
-			resumed = true;
-		};
-		if (controller === void 0 && onCancel === void 0) return Yield;
-		fiber._stack.push(asyncFinalizer(() => {
-			resumed = true;
-			controller?.abort();
-			return onCancel ?? exitVoid;
-		}));
-		return Yield;
+	single: !1,
+	[B](e) {
+		let t = nn(() => this[z][0].bind(e.currentScheduler)), n = !1, r = !1, i = this[z][1] ? new AbortController() : void 0, a = t((t) => {
+			n || (n = !0, r ? e.evaluate(t) : r = t);
+		}, i?.signal);
+		return r === !1 ? (r = !0, e._yielded = () => {
+			n = !0;
+		}, i === void 0 && a === void 0 || e._stack.push(co(() => (n = !0, i?.abort(), a ?? No))), dn) : r;
 	}
-});
-var asyncFinalizer = /*#__PURE__*/ makePrimitive({
+}), co = /*#__PURE__*/ Pn({
 	op: "AsyncFinalizer",
-	[contAll](fiber) {
-		if (fiber.interruptible) {
-			fiber.interruptible = false;
-			fiber._stack.push(setInterruptibleTrue);
-		}
+	[un](e) {
+		e.interruptible && (e.interruptible = !1, e._stack.push(xs));
 	},
-	[contE](cause, _fiber) {
-		return hasInterrupts(cause) ? flatMap$1(this[args](), () => failCause(cause)) : failCause(cause);
+	[ln](e, t) {
+		return Pa(e) ? W(this[z](), () => Xa(e)) : Xa(e);
 	}
-});
-/** @internal */
-var callback = (register) => callbackOptions(register, register.length >= 2);
-/** @internal */
-var gen$1 = (...args) => suspend$1(() => fromIteratorUnsafe(args.length === 1 ? args[0]() : args[1].call(args[0].self)));
-/** @internal */
-var fnUntraced = (body, ...pipeables) => {
-	const fn = pipeables.length === 0 ? function() {
-		return suspend$1(() => fromIteratorUnsafe(body.apply(this, arguments)));
+}), lo = (e) => so(e, e.length >= 2), uo = (...e) => $a(() => yo(e.length === 1 ? e[0]() : e[1].call(e[0].self))), fo = (e, ...t) => {
+	let n = t.length === 0 ? function() {
+		return $a(() => yo(e.apply(this, arguments)));
 	} : function() {
-		let effect = suspend$1(() => fromIteratorUnsafe(body.apply(this, arguments)));
-		for (let i = 0; i < pipeables.length; i++) effect = pipeables[i](effect, ...arguments);
-		return effect;
+		let n = $a(() => yo(e.apply(this, arguments)));
+		for (let e = 0; e < t.length; e++) n = t[e](n, ...arguments);
+		return n;
 	};
-	return defineFunctionLength(body.length, fn);
-};
-var defineFunctionLength = (length, fn) => Object.defineProperty(fn, "length", {
-	value: length,
-	configurable: true
-});
-var fnStackCleaner = /*#__PURE__*/ makeStackCleaner(2);
-/** @internal */
-var fn$1 = function() {
-	const nameFirst = typeof arguments[0] === "string";
-	const name = nameFirst ? arguments[0] : "Effect.fn";
-	const spanOptions = nameFirst ? arguments[1] : void 0;
-	const prevLimit = globalThis.Error.stackTraceLimit;
+	return po(e.length, n);
+}, po = (e, t) => Object.defineProperty(t, "length", {
+	value: e,
+	configurable: !0
+}), mo = /*#__PURE__*/ Aa(2), ho = function() {
+	let e = typeof arguments[0] == "string", t = e ? arguments[0] : "Effect.fn", n = e ? arguments[1] : void 0, r = globalThis.Error.stackTraceLimit;
 	globalThis.Error.stackTraceLimit = 2;
-	const defError = new globalThis.Error();
-	globalThis.Error.stackTraceLimit = prevLimit;
-	if (nameFirst) return (body, ...pipeables) => makeFn(name, body, defError, pipeables, nameFirst, spanOptions);
-	return makeFn(name, arguments[0], defError, Array.prototype.slice.call(arguments, 1), nameFirst, spanOptions);
-};
-var makeFn = (name, bodyOrOptions, defError, pipeables, addSpan, spanOptions) => {
-	const body = typeof bodyOrOptions === "function" ? bodyOrOptions : pipeables.pop().bind(bodyOrOptions.self);
-	return defineFunctionLength(body.length, function(...args) {
-		let result = suspend$1(() => {
-			const iter = body.apply(this, arguments);
-			return isEffect(iter) ? iter : fromIteratorUnsafe(iter);
+	let i = new globalThis.Error();
+	return globalThis.Error.stackTraceLimit = r, e ? (r, ...a) => go(t, r, i, a, e, n) : go(t, arguments[0], i, Array.prototype.slice.call(arguments, 1), e, n);
+}, go = (e, t, n, r, i, a) => {
+	let o = typeof t == "function" ? t : r.pop().bind(t.self);
+	return po(o.length, function(...t) {
+		let s = $a(() => {
+			let e = o.apply(this, arguments);
+			return mn(e) ? e : yo(e);
 		});
-		for (let i = 0; i < pipeables.length; i++) result = pipeables[i](result, ...args);
-		if (!isEffect(result)) return result;
-		const prevLimit = globalThis.Error.stackTraceLimit;
+		for (let e = 0; e < r.length; e++) s = r[e](s, ...t);
+		if (!mn(s)) return s;
+		let c = globalThis.Error.stackTraceLimit;
 		globalThis.Error.stackTraceLimit = 2;
-		const callError = new globalThis.Error();
-		globalThis.Error.stackTraceLimit = prevLimit;
-		return updateService(addSpan ? useSpan(name, spanOptions, (span) => provideParentSpan(result, span)) : result, CurrentStackFrame, (prev) => ({
-			name,
-			stack: fnStackCleaner(() => callError.stack),
+		let l = new globalThis.Error();
+		return globalThis.Error.stackTraceLimit = c, zo(i ? Us(e, a, (e) => Ws(s, e)) : s, Ca, (t) => ({
+			name: e,
+			stack: mo(() => l.stack),
 			parent: {
-				name: `${name} (definition)`,
-				stack: fnStackCleaner(() => defError.stack),
-				parent: prev
+				name: `${e} (definition)`,
+				stack: mo(() => n.stack),
+				parent: t
 			}
 		}));
 	});
-};
-/** @internal */
-var fnUntracedEager$1 = (body, ...pipeables) => defineFunctionLength(body.length, pipeables.length === 0 ? function() {
-	return fromIteratorEagerUnsafe(() => body.apply(this, arguments));
+}, _o = (e, ...t) => po(e.length, t.length === 0 ? function() {
+	return vo(() => e.apply(this, arguments));
 } : function() {
-	let effect = fromIteratorEagerUnsafe(() => body.apply(this, arguments));
-	for (const pipeable of pipeables) effect = pipeable(effect);
-	return effect;
-});
-var fromIteratorEagerUnsafe = (evaluate) => {
+	let n = vo(() => e.apply(this, arguments));
+	for (let e of t) n = e(n);
+	return n;
+}), vo = (e) => {
 	try {
-		const iterator = evaluate();
-		let value = void 0;
-		while (true) {
-			const state = iterator.next(value);
-			if (state.done) return succeed$1(state.value);
-			const primitive = state.value;
-			if (primitive && primitive._tag === "Success") {
-				value = primitive.value;
+		let t = e(), n;
+		for (;;) {
+			let r = t.next(n);
+			if (r.done) return U(r.value);
+			let i = r.value;
+			if (i && i._tag === "Success") {
+				n = i.value;
 				continue;
-			} else if (primitive && primitive._tag === "Failure") return state.value;
+			} else if (i && i._tag === "Failure") return r.value;
 			else {
-				let isFirstExecution = true;
-				return suspend$1(() => {
-					if (isFirstExecution) {
-						isFirstExecution = false;
-						return flatMap$1(state.value, (value) => fromIteratorUnsafe(iterator, value));
-					} else return suspend$1(() => fromIteratorUnsafe(evaluate()));
-				});
+				let n = !0;
+				return $a(() => n ? (n = !1, W(r.value, (e) => yo(t, e))) : $a(() => yo(e())));
 			}
 		}
-	} catch (error) {
-		return die$1(error);
+	} catch (e) {
+		return ro(e);
 	}
-};
-var fromIteratorUnsafe = /*#__PURE__*/ makePrimitive({
+}, yo = /*#__PURE__*/ Pn({
 	op: "Iterator",
-	single: false,
-	[contA](value, fiber) {
-		const iter = this[args][0];
-		while (true) {
-			const state = iter.next(value);
-			if (state.done) return succeed$1(state.value);
-			if (!effectIsExit(state.value)) {
-				fiber._stack.push(this);
-				return state.value;
-			} else if (state.value._tag === "Failure") return state.value;
-			value = state.value.value;
+	single: !1,
+	[cn](e, t) {
+		let n = this[z][0];
+		for (;;) {
+			let r = n.next(e);
+			if (r.done) return U(r.value);
+			if (!To(r.value)) return t._stack.push(this), r.value;
+			if (r.value._tag === "Failure") return r.value;
+			e = r.value.value;
 		}
 	},
-	[evaluate](fiber) {
-		return this[contA](this[args][1], fiber);
+	[B](e) {
+		return this[cn](this[z][1], e);
 	}
-});
-/** @internal */
-var as = /*#__PURE__*/ dual(2, (self, value) => {
-	const b = succeed$1(value);
-	return flatMap$1(self, (_) => b);
-});
-/** @internal */
-var andThen = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => isEffect(f) ? f : internalCall(() => f(a))));
-/** @internal */
-var tap$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => as(isEffect(f) ? f : internalCall(() => f(a)), a)));
-/** @internal */
-var asVoid = (self) => flatMap$1(self, (_) => exitVoid);
-/** @internal */
-var flatMap$1 = /*#__PURE__*/ dual(2, (self, f) => {
-	const onSuccess = Object.create(OnSuccessProto);
-	onSuccess[args] = self;
-	onSuccess[contA] = f.length !== 1 ? (a) => f(a) : f;
-	return onSuccess;
-});
-var OnSuccessProto = /*#__PURE__*/ makePrimitiveProto({
+}), bo = /*#__PURE__*/ j(2, (e, t) => {
+	let n = U(t);
+	return W(e, (e) => n);
+}), xo = /*#__PURE__*/ j(2, (e, t) => W(e, (e) => mn(t) ? t : nn(() => t(e)))), So = /*#__PURE__*/ j(2, (e, t) => W(e, (e) => bo(mn(t) ? t : nn(() => t(e)), e))), Co = (e) => W(e, (e) => No), W = /*#__PURE__*/ j(2, (e, t) => {
+	let n = Object.create(wo);
+	return n[z] = e, n[cn] = t.length === 1 ? t : (e) => t(e), n;
+}), wo = /*#__PURE__*/ Nn({
 	op: "OnSuccess",
-	[evaluate](fiber) {
-		fiber._stack.push(this);
-		return this[args];
+	[B](e) {
+		return e._stack.push(this), this[z];
 	}
-});
-/** @internal */
-var effectIsExit = (effect) => ExitTypeId in effect;
-/** @internal */
-var flatMapEager$1 = /*#__PURE__*/ dual(2, (self, f) => {
-	if (effectIsExit(self)) return self._tag === "Success" ? f(self.value) : self;
-	return flatMap$1(self, f);
-});
-/** @internal */
-var flatten$1 = (self) => flatMap$1(self, identity);
-/** @internal */
-var map = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => succeed$1(internalCall(() => f(a)))));
-/** @internal */
-var mapEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMap(self, f) : map(self, f));
-/** @internal */
-var mapErrorEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMapError(self, f) : mapError(self, f));
-/** @internal */
-var catchEager$1 = /*#__PURE__*/ dual(2, (self, f) => {
-	if (effectIsExit(self)) {
-		if (self._tag === "Success") return self;
-		const error = findError$1(self.cause);
-		if (isFailure(error)) return self;
-		return f(error.success);
+}), To = (e) => an in e, Eo = /*#__PURE__*/ j(2, (e, t) => To(e) ? e._tag === "Success" ? t(e.value) : e : W(e, t)), Do = (e) => W(e, M), Oo = /*#__PURE__*/ j(2, (e, t) => W(e, (e) => U(nn(() => t(e))))), ko = /*#__PURE__*/ j(2, (e, t) => To(e) ? Po(e, t) : Oo(e, t)), Ao = /*#__PURE__*/ j(2, (e, t) => To(e) ? Fo(e, t) : Jo(e, t)), jo = /*#__PURE__*/ j(2, (e, t) => {
+	if (To(e)) {
+		if (e._tag === "Success") return e;
+		let n = Na(e.cause);
+		return Er(n) ? e : t(n.success);
 	}
-	return catch_(self, f);
-});
-/** @internal */
-var exitIsSuccess = (self) => self._tag === "Success";
-/** @internal */
-var exitVoid = /*#__PURE__*/ exitSucceed(void 0);
-/** @internal */
-var exitMap = /*#__PURE__*/ dual(2, (self, f) => self._tag === "Success" ? exitSucceed(f(self.value)) : self);
-/** @internal */
-var exitMapError = /*#__PURE__*/ dual(2, (self, f) => {
-	if (self._tag === "Success") return self;
-	const error = findError$1(self.cause);
-	if (isFailure(error)) return self;
-	return exitFail(f(error.success));
-});
-/** @internal */
-var exitAsVoidAll = (exits) => {
-	const failures = [];
-	for (const exit of exits) if (exit._tag === "Failure") failures.push(...exit.cause.reasons);
-	return failures.length === 0 ? exitVoid : exitFailCause(causeFromReasons(failures));
-};
-/** @internal */
-var exitGetSuccess = (self) => exitIsSuccess(self) ? some(self.value) : none();
-/** @internal */
-var updateContext = /*#__PURE__*/ dual(2, (self, f) => withFiber$1((fiber) => {
-	const prevContext = fiber.context;
-	const nextContext = f(prevContext);
-	if (prevContext === nextContext) return self;
-	fiber.setContext(nextContext);
-	return onExitPrimitive(self, () => {
-		fiber.setContext(prevContext);
-	});
-}));
-/** @internal */
-var updateService = /*#__PURE__*/ dual(3, (self, service, f) => updateContext(self, (s) => {
-	const prev = getUnsafe(s, service);
-	const next = f(prev);
-	if (prev === next) return s;
-	return add(s, service, next);
-}));
-/** @internal */
-var contextWith = (f) => withFiber$1((fiber) => f(fiber.context));
-/** @internal */
-var provideContext$1 = /*#__PURE__*/ dual(2, (self, context) => {
-	if (effectIsExit(self)) return self;
-	return updateContext(self, merge(context));
-});
-/** @internal */
-var provideService = function() {
-	if (arguments.length === 1) return dual(2, (self, impl) => provideServiceImpl(self, arguments[0], impl));
-	return dual(3, (self, service, impl) => provideServiceImpl(self, service, impl)).apply(this, arguments);
-};
-var provideServiceImpl = (self, service, implementation) => updateContext(self, (s) => {
-	if (s.mapUnsafe.get(service.key) === implementation) return s;
-	return add(s, service, implementation);
-});
-/** @internal */
-var catchCause = /*#__PURE__*/ dual(2, (self, f) => {
-	const onFailure = Object.create(OnFailureProto);
-	onFailure[args] = self;
-	onFailure[contE] = f.length !== 1 ? (cause) => f(cause) : f;
-	return onFailure;
-});
-var OnFailureProto = /*#__PURE__*/ makePrimitiveProto({
+	return qo(e, t);
+}), Mo = (e) => e._tag === "Success", No = /*#__PURE__*/ In(void 0), Po = /*#__PURE__*/ j(2, (e, t) => e._tag === "Success" ? In(t(e.value)) : e), Fo = /*#__PURE__*/ j(2, (e, t) => {
+	if (e._tag === "Success") return e;
+	let n = Na(e.cause);
+	return Er(n) ? e : zn(t(n.success));
+}), Io = (e) => {
+	let t = [];
+	for (let n of e) n._tag === "Failure" && t.push(...n.cause.reasons);
+	return t.length === 0 ? No : Rn(wn(t));
+}, Lo = (e) => Mo(e) ? V(e.value) : vr(), Ro = /*#__PURE__*/ j(2, (e, t) => Vn((n) => {
+	let r = n.context, i = t(r);
+	return r === i ? e : (n.setContext(i), ys(e, () => {
+		n.setContext(r);
+	}));
+})), zo = /*#__PURE__*/ j(3, (e, t, n) => Ro(e, (e) => {
+	let r = yi(e, t), i = n(r);
+	return r === i ? e : _i(e, t, i);
+})), Bo = (e) => Vn((t) => e(t.context)), Vo = /*#__PURE__*/ j(2, (e, t) => To(e) ? e : Ro(e, Ti(t))), Ho = function() {
+	return arguments.length === 1 ? j(2, (e, t) => Uo(e, arguments[0], t)) : j(3, (e, t, n) => Uo(e, t, n)).apply(this, arguments);
+}, Uo = (e, t, n) => Ro(e, (e) => e.mapUnsafe.get(t.key) === n ? e : _i(e, t, n)), Wo = /*#__PURE__*/ j(2, (e, t) => {
+	let n = Object.create(Go);
+	return n[z] = e, n[ln] = t.length === 1 ? t : (e) => t(e), n;
+}), Go = /*#__PURE__*/ Nn({
 	op: "OnFailure",
-	[evaluate](fiber) {
-		fiber._stack.push(this);
-		return this[args];
+	[B](e) {
+		return e._stack.push(this), this[z];
 	}
-});
-/** @internal */
-var catchCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause(self, (cause) => {
-	const eb = filter(cause);
-	return isFailure(eb) ? failCause(eb.failure) : internalCall(() => f(eb.success, cause));
-}));
-/** @internal */
-var catch_ = /*#__PURE__*/ dual(2, (self, f) => catchCauseFilter(self, findError$1, (e) => f(e)));
-/** @internal */
-var mapError = /*#__PURE__*/ dual(2, (self, f) => catch_(self, (error) => failSync(() => f(error))));
-/** @internal */
-var orDie$1 = (self) => catch_(self, die$1);
-/** @internal */
-var result$1 = (self) => matchEager(self, {
-	onFailure: fail$3,
-	onSuccess: succeed$2
-});
-/** @internal */
-var matchCauseEffect = /*#__PURE__*/ dual(2, (self, options) => {
-	const primitive = Object.create(OnSuccessAndFailureProto);
-	primitive[args] = self;
-	primitive[contA] = options.onSuccess.length !== 1 ? (a) => options.onSuccess(a) : options.onSuccess;
-	primitive[contE] = options.onFailure.length !== 1 ? (cause) => options.onFailure(cause) : options.onFailure;
-	return primitive;
-});
-var OnSuccessAndFailureProto = /*#__PURE__*/ makePrimitiveProto({
+}), Ko = /*#__PURE__*/ j(3, (e, t, n) => Wo(e, (e) => {
+	let r = t(e);
+	return Er(r) ? Xa(r.failure) : nn(() => n(r.success, e));
+})), qo = /*#__PURE__*/ j(2, (e, t) => Ko(e, Na, (e) => t(e))), Jo = /*#__PURE__*/ j(2, (e, t) => qo(e, (e) => io(() => t(e)))), Yo = (e) => qo(e, ro), Xo = (e) => ts(e, {
+	onFailure: Tr,
+	onSuccess: wr
+}), Zo = /*#__PURE__*/ j(2, (e, t) => {
+	let n = Object.create(Qo);
+	return n[z] = e, n[cn] = t.onSuccess.length === 1 ? t.onSuccess : (e) => t.onSuccess(e), n[ln] = t.onFailure.length === 1 ? t.onFailure : (e) => t.onFailure(e), n;
+}), Qo = /*#__PURE__*/ Nn({
 	op: "OnSuccessAndFailure",
-	[evaluate](fiber) {
-		fiber._stack.push(this);
-		return this[args];
+	[B](e) {
+		return e._stack.push(this), this[z];
 	}
-});
-/** @internal */
-var matchEffect = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self, {
-	onFailure: (cause) => {
-		const fail = cause.reasons.find(isFailReason);
-		return fail ? internalCall(() => options.onFailure(fail.error)) : failCause(cause);
+}), $o = /*#__PURE__*/ j(2, (e, t) => Zo(e, {
+	onFailure: (e) => {
+		let n = e.reasons.find(kn);
+		return n ? nn(() => t.onFailure(n.error)) : Xa(e);
 	},
-	onSuccess: options.onSuccess
-}));
-/** @internal */
-var match = /*#__PURE__*/ dual(2, (self, options) => matchEffect(self, {
-	onFailure: (error) => sync$1(() => options.onFailure(error)),
-	onSuccess: (value) => sync$1(() => options.onSuccess(value))
-}));
-/** @internal */
-var matchEager = /*#__PURE__*/ dual(2, (self, options) => {
-	if (effectIsExit(self)) {
-		if (self._tag === "Success") return exitSucceed(options.onSuccess(self.value));
-		const error = findError$1(self.cause);
-		if (isFailure(error)) return self;
-		return exitSucceed(options.onFailure(error.success));
+	onSuccess: t.onSuccess
+})), es = /*#__PURE__*/ j(2, (e, t) => $o(e, {
+	onFailure: (e) => Qa(() => t.onFailure(e)),
+	onSuccess: (e) => Qa(() => t.onSuccess(e))
+})), ts = /*#__PURE__*/ j(2, (e, t) => {
+	if (To(e)) {
+		if (e._tag === "Success") return In(t.onSuccess(e.value));
+		let n = Na(e.cause);
+		return Er(n) ? e : In(t.onFailure(n.success));
 	}
-	return match(self, options);
-});
-/** @internal */
-var exit$1 = (self) => effectIsExit(self) ? exitSucceed(self) : exitPrimitive(self);
-var exitPrimitive = /*#__PURE__*/ makePrimitive({
+	return es(e, t);
+}), ns = (e) => To(e) ? In(e) : rs(e), rs = /*#__PURE__*/ Pn({
 	op: "Exit",
-	[evaluate](fiber) {
-		fiber._stack.push(this);
-		return this[args];
+	[B](e) {
+		return e._stack.push(this), this[z];
 	},
-	[contA](value, _, exit) {
-		return succeed$1(exit ?? exitSucceed(value));
+	[cn](e, t, n) {
+		return U(n ?? In(e));
 	},
-	[contE](cause, _, exit) {
-		return succeed$1(exit ?? exitFailCause(cause));
+	[ln](e, t, n) {
+		return U(n ?? Rn(e));
 	}
-});
-/** @internal */
-var ScopeTypeId = "~effect/Scope";
-/** @internal */
-var ScopeCloseableTypeId = "~effect/Scope/Closeable";
-/** @internal */
-var scopeTag = /*#__PURE__*/ Service("effect/Scope");
-/** @internal */
-var scopeClose = (self, exit_) => suspend$1(() => scopeCloseUnsafe(self, exit_) ?? void_$1);
-/** @internal */
-var scopeCloseUnsafe = (self, exit_) => {
-	if (self.state._tag === "Closed") return;
-	const closed = {
+}), is = "~effect/Scope", as = "~effect/Scope/Closeable", os = /*#__PURE__*/ oi("effect/Scope"), ss = (e, t) => $a(() => cs(e, t) ?? ao), cs = (e, t) => {
+	if (e.state._tag === "Closed") return;
+	let n = {
 		_tag: "Closed",
-		exit: exit_
+		exit: t
 	};
-	if (self.state._tag === "Empty") {
-		self.state = closed;
+	if (e.state._tag === "Empty") {
+		e.state = n;
 		return;
 	}
-	const { finalizers } = self.state;
-	self.state = closed;
-	if (finalizers.size === 0) return;
-	else if (finalizers.size === 1) return finalizers.values().next().value(exit_);
-	return scopeCloseFinalizers(self, finalizers, exit_);
-};
-var scopeCloseFinalizers = /*#__PURE__*/ fnUntraced(function* (self, finalizers, exit_) {
-	let exits = [];
-	const fibers = [];
-	const arr = Array.from(finalizers.values());
-	const parent = getCurrentFiber();
-	for (let i = arr.length - 1; i >= 0; i--) {
-		const finalizer = arr[i];
-		if (self.strategy === "sequential") exits.push(yield* exit$1(finalizer(exit_)));
-		else fibers.push(forkUnsafe$1(parent, finalizer(exit_), true, true, "inherit"));
+	let { finalizers: r } = e.state;
+	if (e.state = n, r.size !== 0) return r.size === 1 ? r.values().next().value(t) : ls(e, r, t);
+}, ls = /*#__PURE__*/ fo(function* (e, t, n) {
+	let r = [], i = [], a = Array.from(t.values()), o = Va();
+	for (let t = a.length - 1; t >= 0; t--) {
+		let s = a[t];
+		e.strategy === "sequential" ? r.push(yield* ns(s(n))) : i.push(ws(o, s(n), !0, !0, "inherit"));
 	}
-	if (fibers.length > 0) exits = yield* fiberAwaitAll(fibers);
-	return yield* exitAsVoidAll(exits);
-});
-/** @internal */
-var scopeForkUnsafe = (scope, finalizerStrategy) => {
-	const newScope = scopeMakeUnsafe(finalizerStrategy);
-	if (scope.state._tag === "Closed") {
-		newScope.state = scope.state;
-		return newScope;
-	}
-	const key = {};
-	scopeAddFinalizerUnsafe(scope, key, (exit) => scopeClose(newScope, exit));
-	scopeAddFinalizerUnsafe(newScope, key, (_) => sync$1(() => scopeRemoveFinalizerUnsafe(scope, key)));
-	return newScope;
-};
-/** @internal */
-var scopeAddFinalizerExit = (scope, finalizer) => {
-	return suspend$1(() => {
-		if (scope.state._tag === "Closed") return finalizer(scope.state.exit);
-		scopeAddFinalizerUnsafe(scope, {}, finalizer);
-		return void_$1;
-	});
-};
-/** @internal */
-var scopeAddFinalizerUnsafe = (scope, key, finalizer) => {
-	if (scope.state._tag === "Empty") scope.state = {
+	return i.length > 0 && (r = yield* Ka(i)), yield* Io(r);
+}), us = (e, t) => {
+	let n = ms(t);
+	if (e.state._tag === "Closed") return n.state = e.state, n;
+	let r = {};
+	return fs(e, r, (e) => ss(n, e)), fs(n, r, (t) => Qa(() => ps(e, r))), n;
+}, ds = (e, t) => $a(() => e.state._tag === "Closed" ? t(e.state.exit) : (fs(e, {}, t), ao)), fs = (e, t, n) => {
+	e.state._tag === "Empty" ? e.state = {
 		_tag: "Open",
-		finalizers: /* @__PURE__ */ new Map([[key, finalizer]])
-	};
-	else if (scope.state._tag === "Open") scope.state.finalizers.set(key, finalizer);
-};
-/** @internal */
-var scopeRemoveFinalizerUnsafe = (scope, key) => {
-	if (scope.state._tag === "Open") scope.state.finalizers.delete(key);
-};
-/** @internal */
-var scopeMakeUnsafe = (finalizerStrategy = "sequential") => ({
-	[ScopeCloseableTypeId]: ScopeCloseableTypeId,
-	[ScopeTypeId]: ScopeTypeId,
-	strategy: finalizerStrategy,
-	state: constScopeEmpty
-});
-var constScopeEmpty = { _tag: "Empty" };
-/** @internal */
-var scope = scopeTag;
-/** @internal */
-var provideScope = /*#__PURE__*/ provideService(scopeTag);
-/** @internal */
-var addFinalizer$1 = (finalizer) => flatMap$1(scope, (scope) => contextWith((context) => scopeAddFinalizerExit(scope, (exit) => provideContext$1(finalizer(exit), context))));
-/** @internal */
-var onExitPrimitive = /*#__PURE__*/ makePrimitive({
+		finalizers: /* @__PURE__ */ new Map([[t, n]])
+	} : e.state._tag === "Open" && e.state.finalizers.set(t, n);
+}, ps = (e, t) => {
+	e.state._tag === "Open" && e.state.finalizers.delete(t);
+}, ms = (e = "sequential") => ({
+	[as]: as,
+	[is]: is,
+	strategy: e,
+	state: hs
+}), hs = { _tag: "Empty" }, gs = os, _s = /*#__PURE__*/ Ho(os), vs = (e) => W(gs, (t) => Bo((n) => ds(t, (t) => Vo(e(t), n)))), ys = /*#__PURE__*/ Pn({
 	op: "OnExit",
-	single: false,
-	[evaluate](fiber) {
-		fiber._stack.push(this);
-		return this[args][0];
+	single: !1,
+	[B](e) {
+		return e._stack.push(this), this[z][0];
 	},
-	[contAll](fiber) {
-		if (fiber.interruptible && this[args][2] !== true) {
-			fiber._stack.push(setInterruptibleTrue);
-			fiber.interruptible = false;
-		}
+	[un](e) {
+		e.interruptible && this[z][2] !== !0 && (e._stack.push(xs), e.interruptible = !1);
 	},
-	[contA](value, _, exit) {
-		exit ??= exitSucceed(value);
-		const eff = this[args][1](exit);
-		return eff ? flatMap$1(eff, (_) => exit) : exit;
+	[cn](e, t, n) {
+		n ??= In(e);
+		let r = this[z][1](n);
+		return r ? W(r, (e) => n) : n;
 	},
-	[contE](cause, _, exit) {
-		exit ??= exitFailCause(cause);
-		const eff = this[args][1](exit);
-		return eff ? flatMap$1(eff, (_) => exit) : exit;
+	[ln](e, t, n) {
+		n ??= Rn(e);
+		let r = this[z][1](n);
+		return r ? W(r, (e) => n) : n;
 	}
-});
-/** @internal */
-var onExit = /*#__PURE__*/ dual(2, onExitPrimitive);
-var setInterruptibleTrue = /*#__PURE__*/ (/* @__PURE__ */ makePrimitive({
+}), bs = /*#__PURE__*/ j(2, ys), xs = /*#__PURE__*/ (/* @__PURE__ */ Pn({
 	op: "SetInterruptible",
-	[contAll](fiber) {
-		fiber.interruptible = this[args];
-		if (fiber._interruptedCause && fiber.interruptible) return () => failCause(fiber._interruptedCause);
+	[un](e) {
+		if (e.interruptible = this[z], e._interruptedCause && e.interruptible) return () => Xa(e._interruptedCause);
 	}
-}))(true);
-var iterateEagerImpl = (options) => {
-	const onItem = options.onItem;
-	const step = options.step;
-	return (state, items, opts) => {
-		let index = opts?.start ?? 0;
-		const end = opts?.end ?? items.length;
-		const concurrency = opts?.concurrency ?? 1;
-		let done = false;
-		let parentFiber;
-		let fibers;
-		let resume;
-		let interrupted = false;
-		let terminal;
-		let effect;
-		const go = () => {
-			let paused = false;
-			for (; !terminal && index < end; index++) {
-				const item = items[index];
-				const eff = effect ?? onItem(state, item, index);
-				if (effectIsExit(eff)) {
-					terminal = step(state, item, eff, index);
-					if (terminal) break;
-				} else if (concurrency === 1) return flatMap$1(exit$1(eff), (exit) => {
-					terminal = step(state, item, exit, index);
-					index++;
-					return terminal ?? go() ?? void_$1;
-				});
-				else if (!parentFiber) return callback((cb) => {
-					parentFiber = getCurrentFiber();
-					effect = eff;
-					resume = cb;
-					const result = go();
-					if (result) return cb(result);
-					return suspend$1(() => {
-						terminal = exitVoid;
-						interrupted = true;
-						return fibers ? fiberInterruptAll(fibers) : void_$1;
-					});
-				});
-				else {
-					effect = void 0;
-					const fiber = forkUnsafe$1(parentFiber, eff, true, true, "inherit");
-					if (fiber._exit) {
-						terminal = step(state, item, fiber._exit, index);
-						if (terminal) break;
+}))(!0), Ss = (e) => {
+	let t = e.onItem, n = e.step;
+	return (e, r, i) => {
+		let a = i?.start ?? 0, o = i?.end ?? r.length, s = i?.concurrency ?? 1, c = !1, l, u, d, f = !1, p, m, h = () => {
+			let i = !1;
+			for (; !p && a < o; a++) {
+				let o = r[a], g = m ?? t(e, o, a);
+				if (To(g)) {
+					if (p = n(e, o, g, a), p) break;
+				} else if (s === 1) return W(ns(g), (t) => (p = n(e, o, t, a), a++, p ?? h() ?? ao));
+				else if (l) {
+					m = void 0;
+					let t = ws(l, g, !0, !0, "inherit");
+					if (t._exit) {
+						if (p = n(e, o, t._exit, a), p) break;
 						continue;
 					}
-					if (fibers) fibers.add(fiber);
-					else fibers = /* @__PURE__ */ new Set([fiber]);
-					const currentIndex = index;
-					fiber.addObserver((exit) => {
-						fibers.delete(fiber);
-						if (terminal) {
-							if (!interrupted && exit._tag === "Failure") for (const reason of exit.cause.reasons) if (reason._tag === "Interrupt") continue;
-							else if (terminal._tag === "Failure") terminal.cause.reasons.push(reason);
-							else terminal = exitFailCause(causeFromReasons([reason]));
+					u ? u.add(t) : u = /* @__PURE__ */ new Set([t]);
+					let r = a;
+					if (t.addObserver((a) => {
+						if (u.delete(t), p) {
+							if (!f && a._tag === "Failure") for (let e of a.cause.reasons) if (e._tag === "Interrupt") continue;
+							else p._tag === "Failure" ? p.cause.reasons.push(e) : p = Rn(wn([e]));
 						} else {
-							const result = step(state, item, exit, currentIndex);
-							if (result) {
-								terminal = result._tag === "Failure" ? exitFailCause(causeFromReasons(result.cause.reasons.slice())) : result;
-								go();
-							}
+							let t = n(e, o, a, r);
+							t && (p = t._tag === "Failure" ? Rn(wn(t.cause.reasons.slice())) : t, h());
 						}
-						if (paused) {
-							const eff = go();
-							if (eff) resume(eff);
-						} else if (done && fibers.size === 0) resume(terminal ?? void_$1);
-					});
-					if (fibers.size < concurrency) continue;
-					paused = true;
-					index++;
+						if (i) {
+							let e = h();
+							e && d(e);
+						} else c && u.size === 0 && d(p ?? ao);
+					}), u.size < s) continue;
+					i = !0, a++;
+					return;
+				} else return lo((e) => {
+					l = Va(), m = g, d = e;
+					let t = h();
+					return t ? e(t) : $a(() => (p = No, f = !0, u ? Ya(u) : ao));
+				});
+			}
+			if (c = !0, p) {
+				if (u && u.size > 0) {
+					let e = Wa(l);
+					u.forEach((t) => t.interruptUnsafe(l.id, e));
 					return;
 				}
-			}
-			done = true;
-			if (terminal) {
-				if (fibers && fibers.size > 0) {
-					const annotations = fiberStackAnnotations(parentFiber);
-					fibers.forEach((f) => f.interruptUnsafe(parentFiber.id, annotations));
-					return;
-				}
-				if (resume || terminal._tag === "Failure") return terminal;
-			} else if (resume) {
-				if (!fibers) return exitVoid;
-				else if (fibers.size === 0) resume(void_$1);
-			}
+				if (d || p._tag === "Failure") return p;
+			} else if (d) if (u) u.size === 0 && d(ao);
+			else return No;
 		};
-		return go();
+		return h();
 	};
-};
-/** @internal */
-var iterateEager = () => iterateEagerImpl;
-/** @internal */
-var forkUnsafe$1 = (parent, effect, immediate = false, daemon = false, uninterruptible = false) => {
-	const interruptible = uninterruptible === "inherit" ? parent.interruptible : !uninterruptible;
-	const child = new FiberImpl(parent.context, interruptible);
-	if (immediate) child.evaluate(effect);
-	else parent.currentDispatcher.scheduleTask(() => child.evaluate(effect), 0);
-	if (!daemon && !child._exit) {
-		parent.children().add(child);
-		child.addObserver(() => parent._children.delete(child));
-	}
-	return child;
-};
-/** @internal */
-var runForkWith$1 = (context) => (effect, options) => {
-	const fiber = new FiberImpl(options?.scheduler ? add(context, Scheduler, options.scheduler) : context, options?.uninterruptible !== true);
-	fiber.evaluate(effect);
-	if (fiber._exit) return fiber;
-	if (options?.signal) if (options.signal.aborted) fiber.interruptUnsafe();
+}, Cs = () => Ss, ws = (e, t, n = !1, r = !1, i = !1) => {
+	let a = i === "inherit" ? e.interruptible : !i, o = new Ha(e.context, a);
+	return n ? o.evaluate(t) : e.currentDispatcher.scheduleTask(() => o.evaluate(t), 0), !r && !o._exit && (e.children().add(o), o.addObserver(() => e._children.delete(o))), o;
+}, Ts = (e) => (t, n) => {
+	let r = new Ha(n?.scheduler ? _i(e, aa, n.scheduler) : e, n?.uninterruptible !== !0);
+	if (r.evaluate(t), r._exit) return r;
+	if (n?.signal) if (n.signal.aborted) r.interruptUnsafe();
 	else {
-		const abort = () => fiber.interruptUnsafe();
-		options.signal.addEventListener("abort", abort, { once: true });
-		fiber.addObserver(() => options.signal.removeEventListener("abort", abort));
+		let e = () => r.interruptUnsafe();
+		n.signal.addEventListener("abort", e, { once: !0 }), r.addObserver(() => n.signal.removeEventListener("abort", e));
 	}
-	if (options?.onFiberStart) options.onFiberStart(fiber);
-	return fiber;
-};
-/** @internal */
-var fiberRunIn = /*#__PURE__*/ dual(2, (self, scope) => {
-	if (self._exit) return self;
-	else if (scope.state._tag === "Closed") {
-		self.interruptUnsafe(self.id);
-		return self;
-	}
-	const key = {};
-	scopeAddFinalizerUnsafe(scope, key, () => fiberInterrupt(self));
-	self.addObserver(() => scopeRemoveFinalizerUnsafe(scope, key));
-	return self;
-});
-/** @internal */
-var runFork$1 = /*#__PURE__*/ runForkWith$1(/*#__PURE__*/ empty());
-/** @internal */
-var runCallbackWith$1 = (context) => {
-	const runFork = runForkWith$1(context);
-	return (effect, options) => {
-		const fiber = runFork(effect, options);
-		if (options?.onExit) fiber.addObserver(options.onExit);
-		return (interruptor) => {
-			return fiber.interruptUnsafe(interruptor);
-		};
+	return n?.onFiberStart && n.onFiberStart(r), r;
+}, Es = /*#__PURE__*/ j(2, (e, t) => {
+	if (e._exit) return e;
+	if (t.state._tag === "Closed") return e.interruptUnsafe(e.id), e;
+	let n = {};
+	return fs(t, n, () => qa(e)), e.addObserver(() => ps(t, n)), e;
+}), Ds = /*#__PURE__*/ Ts(/*#__PURE__*/ mi()), Os = (e) => {
+	let t = Ts(e);
+	return (e, n) => {
+		let r = t(e, n);
+		return n?.onExit && r.addObserver(n.onExit), (e) => r.interruptUnsafe(e);
 	};
-};
-/** @internal */
-var runCallback$1 = /*#__PURE__*/ runCallbackWith$1(/*#__PURE__*/ empty());
-/** @internal */
-var runPromiseExitWith$1 = (context) => {
-	const runFork = runForkWith$1(context);
-	return (effect, options) => {
-		const fiber = runFork(effect, options);
-		return new Promise((resolve) => {
-			fiber.addObserver((exit) => resolve(exit));
+}, ks = /*#__PURE__*/ Os(/*#__PURE__*/ mi()), As = (e) => {
+	let t = Ts(e);
+	return (e, n) => {
+		let r = t(e, n);
+		return new Promise((e) => {
+			r.addObserver((t) => e(t));
 		});
 	};
-};
-/** @internal */
-var runPromiseExit$1 = /*#__PURE__*/ runPromiseExitWith$1(/*#__PURE__*/ empty());
-/** @internal */
-var runPromiseWith$1 = (context) => {
-	const runPromiseExit = runPromiseExitWith$1(context);
-	return (effect, options) => runPromiseExit(effect, options).then((exit) => {
-		if (exit._tag === "Failure") throw causeSquash(exit.cause);
-		return exit.value;
+}, js = /*#__PURE__*/ As(/*#__PURE__*/ mi()), Ms = (e) => {
+	let t = As(e);
+	return (e, n) => t(e, n).then((e) => {
+		if (e._tag === "Failure") throw La(e.cause);
+		return e.value;
 	});
-};
-/** @internal */
-var runPromise$1 = /*#__PURE__*/ runPromiseWith$1(/*#__PURE__*/ empty());
-/** @internal */
-var runSyncExitWith$1 = (context) => {
-	const runFork = runForkWith$1(context);
-	return (effect) => {
-		if (effectIsExit(effect)) return effect;
-		const scheduler = new MixedScheduler("sync");
-		const fiber = runFork(effect, { scheduler });
-		fiber.currentDispatcher?.flush();
-		return fiber._exit ?? exitDie(new AsyncFiberError(fiber));
+}, Ns = /*#__PURE__*/ Ms(/*#__PURE__*/ mi()), Ps = (e) => {
+	let t = Ts(e);
+	return (e) => {
+		if (To(e)) return e;
+		let n = new ca("sync"), r = t(e, { scheduler: n });
+		return r.currentDispatcher?.flush(), r._exit ?? Bn(new Zs(r));
 	};
-};
-/** @internal */
-var runSyncExit$1 = /*#__PURE__*/ runSyncExitWith$1(/*#__PURE__*/ empty());
-/** @internal */
-var runSyncWith$1 = (context) => {
-	const runSyncExit = runSyncExitWith$1(context);
-	return (effect) => {
-		const exit = runSyncExit(effect);
-		if (exit._tag === "Failure") throw causeSquash(exit.cause);
-		return exit.value;
+}, Fs = /*#__PURE__*/ Ps(/*#__PURE__*/ mi()), Is = (e) => {
+	let t = Ps(e);
+	return (e) => {
+		let n = t(e);
+		if (n._tag === "Failure") throw La(n.cause);
+		return n.value;
 	};
-};
-/** @internal */
-var runSync$1 = /*#__PURE__*/ runSyncWith$1(/*#__PURE__*/ empty());
-var bigint0 = /*#__PURE__*/ BigInt(0);
-var NoopSpanProto = {
+}, Ls = /*#__PURE__*/ Is(/*#__PURE__*/ mi()), Rs = /*#__PURE__*/ BigInt(0), zs = {
 	_tag: "Span",
 	spanId: "noop",
 	traceId: "noop",
-	sampled: false,
+	sampled: !1,
 	status: {
 		_tag: "Ended",
-		startTime: bigint0,
-		endTime: bigint0,
-		exit: exitVoid
+		startTime: Rs,
+		endTime: Rs,
+		exit: No
 	},
 	attributes: /*#__PURE__*/ new Map(),
 	links: [],
@@ -6128,138 +2440,95 @@ var NoopSpanProto = {
 	event() {},
 	end() {},
 	addLinks() {}
-};
-/** @internal */
-var noopSpan = (options) => Object.assign(Object.create(NoopSpanProto), options);
-var filterDisablePropagation = (span) => {
-	if (!span) return none();
-	return get$1(span.annotations, DisablePropagation) ? span._tag === "Span" ? filterDisablePropagation(getOrUndefined(span.parent)) : none() : some(span);
-};
-/** @internal */
-var makeSpanUnsafe = (fiber, name, options) => {
-	const disablePropagation = !fiber.getRef(TracerEnabled) || options?.annotations && get$1(options.annotations, DisablePropagation);
-	const parent = options?.parent !== void 0 ? some(options.parent) : options?.root ? none() : filterDisablePropagation(fiber.currentSpan);
-	let span;
-	if (disablePropagation) span = noopSpan({
-		name,
-		parent,
-		annotations: add(options?.annotations ?? empty(), DisablePropagation, true)
+}, Bs = (e) => Object.assign(Object.create(zs), e), Vs = (e) => e ? bi(e.annotations, ha) ? e._tag === "Span" ? Vs(xr(e.parent)) : vr() : V(e) : vr(), Hs = (e, t, n) => {
+	let r = !e.getRef(wa) || n?.annotations && bi(n.annotations, ha), i = n?.parent === void 0 ? n?.root ? vr() : Vs(e.currentSpan) : V(n.parent), a;
+	if (r) a = Bs({
+		name: t,
+		parent: i,
+		annotations: _i(n?.annotations ?? mi(), ha, !0)
 	});
 	else {
-		const tracer = fiber.getRef(Tracer);
-		const clock = fiber.getRef(ClockRef);
-		const timingEnabled = fiber.getRef(TracerTimingEnabled);
-		const annotationsFromEnv = fiber.getRef(TracerSpanAnnotations);
-		const linksFromEnv = fiber.getRef(TracerSpanLinks);
-		const level = options?.level ?? fiber.getRef(CurrentTraceLevel);
-		const links = options?.links !== void 0 ? [...linksFromEnv, ...options.links] : linksFromEnv.slice();
-		span = tracer.span({
-			name,
-			parent,
-			annotations: options?.annotations ?? empty(),
-			links,
-			startTime: timingEnabled ? clock.currentTimeNanosUnsafe() : BigInt(0),
-			kind: options?.kind ?? "internal",
-			root: options?.root ?? isNone(parent),
-			sampled: options?.sampled ?? (isSome(parent) && parent.value.sampled === false ? false : !isLogLevelGreaterThan(fiber.getRef(MinimumTraceLevel), level))
+		let r = e.getRef(ya), o = e.getRef(Gs), s = e.getRef(Ta), c = e.getRef(Ea), l = e.getRef(Da), u = n?.level ?? e.getRef(ga), d = n?.links === void 0 ? l.slice() : [...l, ...n.links];
+		a = r.span({
+			name: t,
+			parent: i,
+			annotations: n?.annotations ?? mi(),
+			links: d,
+			startTime: s ? o.currentTimeNanosUnsafe() : BigInt(0),
+			kind: n?.kind ?? "internal",
+			root: n?.root ?? yr(i),
+			sampled: n?.sampled ?? (br(i) && i.value.sampled === !1 ? !1 : !ec(e.getRef(_a), u))
 		});
-		for (const [key, value] of Object.entries(annotationsFromEnv)) span.attribute(key, value);
-		if (options?.attributes !== void 0) for (const [key, value] of Object.entries(options.attributes)) span.attribute(key, value);
+		for (let [e, t] of Object.entries(c)) a.attribute(e, t);
+		if (n?.attributes !== void 0) for (let [e, t] of Object.entries(n.attributes)) a.attribute(e, t);
 	}
-	return span;
-};
-/** @internal */
-var useSpan = (name, ...args) => {
-	const options = args.length === 1 ? void 0 : args[0];
-	const evaluate = args[args.length - 1];
-	return withFiber$1((fiber) => {
-		const span = makeSpanUnsafe(fiber, name, options);
-		const clock = fiber.getRef(ClockRef);
-		return onExit(internalCall(() => evaluate(span)), (exit) => sync$1(() => {
-			if (span.status._tag === "Ended") return;
-			span.end(clock.currentTimeNanosUnsafe(), exit);
+	return a;
+}, Us = (e, ...t) => {
+	let n = t.length === 1 ? void 0 : t[0], r = t[t.length - 1];
+	return Vn((t) => {
+		let i = Hs(t, e, n), a = t.getRef(Gs);
+		return bs(nn(() => r(i)), (e) => Qa(() => {
+			i.status._tag !== "Ended" && i.end(a.currentTimeNanosUnsafe(), e);
 		}));
 	});
-};
-var provideParentSpan = /*#__PURE__*/ provideService(ParentSpan);
-/** @internal */
-var ClockRef = /*#__PURE__*/ Reference("effect/Clock", { defaultValue: () => new ClockImpl() });
-var MAX_TIMER_MILLIS = 2 ** 31 - 1;
-var ClockImpl = class {
+}, Ws = /*#__PURE__*/ Ho(pa), Gs = /*#__PURE__*/ H("effect/Clock", { defaultValue: () => new qs() }), Ks = 2 ** 31 - 1, qs = class {
 	currentTimeMillisUnsafe() {
 		return Date.now();
 	}
-	currentTimeMillis = /*#__PURE__*/ sync$1(() => this.currentTimeMillisUnsafe());
+	currentTimeMillis = /*#__PURE__*/ Qa(() => this.currentTimeMillisUnsafe());
 	currentTimeNanosUnsafe() {
-		return processOrPerformanceNow();
+		return Ys();
 	}
-	currentTimeNanos = /*#__PURE__*/ sync$1(() => this.currentTimeNanosUnsafe());
-	sleep(duration) {
-		const millis = toMillis(duration);
-		if (millis <= 0) return yieldNow;
-		return callback((resume) => {
-			if (millis > MAX_TIMER_MILLIS) return;
-			const handle = setTimeout(() => resume(void_$1), millis);
-			return sync$1(() => clearTimeout(handle));
+	currentTimeNanos = /*#__PURE__*/ Qa(() => this.currentTimeNanosUnsafe());
+	sleep(e) {
+		let t = $i(e);
+		return t <= 0 ? eo : lo((e) => {
+			if (t > Ks) return;
+			let n = setTimeout(() => e(ao), t);
+			return Qa(() => clearTimeout(n));
 		});
 	}
-};
-var performanceNowNanos = /*#__PURE__*/ function() {
-	const bigint1e6 = /*#__PURE__*/ BigInt(1e6);
-	if (typeof performance === "undefined" || typeof performance.now === "undefined") return () => BigInt(Date.now()) * bigint1e6;
-	else if (typeof performance.timeOrigin === "number" && performance.timeOrigin === 0) return () => BigInt(Math.round(performance.now() * 1e6));
-	const origin = /*#__PURE__*/ BigInt(/*#__PURE__*/ Date.now()) * bigint1e6 - /*#__PURE__*/ BigInt(/*#__PURE__*/ Math.round(/*#__PURE__*/ performance.now() * 1e6));
-	return () => origin + BigInt(Math.round(performance.now() * 1e6));
+}, Js = /*#__PURE__*/ function() {
+	let e = /*#__PURE__*/ BigInt(1e6);
+	if (typeof performance > "u" || performance.now === void 0) return () => BigInt(Date.now()) * e;
+	if (typeof performance.timeOrigin == "number" && performance.timeOrigin === 0) return () => BigInt(Math.round(performance.now() * 1e6));
+	let t = /*#__PURE__*/ BigInt(/*#__PURE__*/ Date.now()) * e - /*#__PURE__*/ BigInt(/*#__PURE__*/ Math.round(/*#__PURE__*/ performance.now() * 1e6));
+	return () => t + BigInt(Math.round(performance.now() * 1e6));
+}(), Ys = /*#__PURE__*/ function() {
+	let e = typeof process == "object" && "hrtime" in process && typeof process.hrtime.bigint == "function" ? process.hrtime : void 0;
+	if (!e) return Js;
+	let t = /*#__PURE__*/ Js() - /*#__PURE__*/ e.bigint();
+	return () => t + e.bigint();
 }();
-var processOrPerformanceNow = /*#__PURE__*/ function() {
-	const processHrtime = typeof process === "object" && "hrtime" in process && typeof process.hrtime.bigint === "function" ? process.hrtime : void 0;
-	if (!processHrtime) return performanceNowNanos;
-	const origin = /*#__PURE__*/ performanceNowNanos() - /*#__PURE__*/ processHrtime.bigint();
-	return () => origin + processHrtime.bigint();
-}();
-TaggedError$1("TimeoutError");
-TaggedError$1("IllegalArgumentError");
-TaggedError$1("ExceededCapacityError");
-/** @internal */
-var AsyncFiberErrorTypeId = "~effect/Cause/AsyncFiberError";
-/** @internal */
-var AsyncFiberError = class extends TaggedError$1("AsyncFiberError") {
-	[AsyncFiberErrorTypeId] = AsyncFiberErrorTypeId;
-	constructor(fiber) {
+Wn("TimeoutError"), Wn("IllegalArgumentError"), Wn("ExceededCapacityError");
+var Xs = "~effect/Cause/AsyncFiberError", Zs = class extends Wn("AsyncFiberError") {
+	[Xs] = Xs;
+	constructor(e) {
 		super({
 			message: "An asynchronous Effect was executed with Effect.runSync",
-			fiber
+			fiber: e
 		});
 	}
-};
-/** @internal */
-var UnknownErrorTypeId = "~effect/Cause/UnknownError";
-/** @internal */
-var UnknownError = class extends TaggedError$1("UnknownError") {
-	[UnknownErrorTypeId] = UnknownErrorTypeId;
-	constructor(cause, message) {
+}, Qs = "~effect/Cause/UnknownError", $s = class extends Wn("UnknownError") {
+	[Qs] = Qs;
+	constructor(e, t) {
 		super({
-			message,
-			cause
+			message: t,
+			cause: e
 		});
 	}
-};
-/** @internal */
-var logLevelToOrder = (level) => {
-	switch (level) {
-		case "All": return Number.MIN_SAFE_INTEGER;
+}, ec = /*#__PURE__*/ hr(/* @__PURE__ */ pr(dr, (e) => {
+	switch (e) {
+		case "All": return -(2 ** 53 - 1);
 		case "Fatal": return 5e4;
 		case "Error": return 4e4;
 		case "Warn": return 3e4;
 		case "Info": return 2e4;
 		case "Debug": return 1e4;
 		case "Trace": return 0;
-		case "None": return Number.MAX_SAFE_INTEGER;
+		case "None": return 2 ** 53 - 1;
 	}
-};
-/** @internal */
-var isLogLevelGreaterThan = /*#__PURE__*/ isGreaterThan$1(/* @__PURE__ */ mapInput(Number$4, logLevelToOrder));
-var colors = {
+})), tc = {
 	bold: "1",
 	red: "31",
 	green: "32",
@@ -6271,4429 +2540,823 @@ var colors = {
 	black: "30",
 	bgBrightRed: "101"
 };
-colors.gray, colors.blue, colors.green, colors.yellow, colors.red, colors.bgBrightRed, colors.black;
+tc.gray, tc.blue, tc.green, tc.yellow, tc.red, tc.bgBrightRed, tc.black;
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Cause.js
-/**
-* Records the full reason an `Effect` failed.
-*
-* A `Cause<E>` can contain typed failures, unexpected defects, interruptions,
-* and annotations. Keeping those details together lets code inspect or format
-* failures without first collapsing them to a single error value. This module
-* includes the `Cause` and `Reason` data types, helpers for building and
-* checking causes, and small error types used by several Effect APIs.
-*
-* @since 2.0.0
-*/
-/**
-* Returns a `Result` whose success value is the first typed error value `E`
-* from a `Fail` reason in the cause. If the cause has no `Fail` reason,
-* the failure value is the original cause narrowed to `Cause<never>`, because
-* it contains no typed error reasons.
-*
-* **When to use**
-*
-* Use when you need the first typed error value from a `Cause` as a `Result`
-* that preserves the original cause when no match is found.
-*
-* **Example** (extracting the first error value)
-*
-* ```ts
-* import { Cause, Result } from "effect"
-*
-* const result = Cause.findError(Cause.fail("error"))
-* if (!Result.isFailure(result)) {
-*   console.log(result.success) // "error"
-* }
-* ```
-*
-* @see {@link findFail} — extract the full `Fail` reason
-* @see {@link findErrorOption} — `Option`-based variant
-*
-* @category filtering
-* @since 4.0.0
-*/
-var findError = findError$1;
-Service()("effect/Cause/StackTrace");
-Service()("effect/Cause/InterruptorStackTrace");
-/**
-* Creates a tagged error class with a `_tag` discriminator.
-*
-* **When to use**
-*
-* Use when you need domain errors with discriminated-union handling.
-*
-* **Details**
-*
-* Like {@link Error}, but instances also carry a `readonly _tag` property,
-* enabling `Effect.catchTag` and `Effect.catchTags` for tag-based recovery.
-* The `_tag` is excluded from the constructor argument. Yielding an instance
-* inside `Effect.gen` fails the effect with this error.
-*
-* **Example** (Tag-based error recovery)
-*
-* ```ts
-* import { Data, Effect } from "effect"
-*
-* class NotFound extends Data.TaggedError("NotFound")<{
-*   readonly resource: string
-* }> {}
-*
-* class Forbidden extends Data.TaggedError("Forbidden")<{
-*   readonly reason: string
-* }> {}
-*
-* const program = Effect.gen(function*() {
-*   return yield* new NotFound({ resource: "/users/42" })
-* })
-*
-* const recovered = program.pipe(
-*   Effect.catchTag("NotFound", (e) =>
-*     Effect.succeed(`missing: ${e.resource}`))
-* )
-* ```
-*
-* @see {@link Error} — without a `_tag`
-* @see {@link TaggedClass} — tagged class that is not an error
-*
-* @category constructors
-* @since 2.0.0
-*/
-var TaggedError = TaggedError$1;
+var nc = Na;
+oi()("effect/Cause/StackTrace"), oi()("effect/Cause/InterruptorStackTrace");
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Exit.js
-/**
-* Creates a failed Exit from a typed error value.
-*
-* **When to use**
-*
-* Use when you need to represent an expected typed failure as an `Exit`.
-*
-* **Details**
-*
-* The error is wrapped in a `Cause.Fail` internally.
-*
-* Returns a `Failure<never, E>`.
-*
-* **Example** (Creating a failed Exit)
-*
-* ```ts
-* import { Exit } from "effect"
-*
-* const exit = Exit.fail("Something went wrong")
-* console.log(Exit.isFailure(exit)) // true
-* ```
-*
-* @see {@link succeed} to create a successful Exit
-* @see {@link die} to create a Failure from an unexpected defect
-* @see {@link failCause} to create a Failure from a full Cause
-*
-* @category constructors
-* @since 2.0.0
-*/
-var fail$1 = exitFail;
-var void_ = exitVoid;
-/**
-* Returns the success value of an Exit as an Option.
-*
-* **When to use**
-*
-* Use when you need the success value from an `Exit` as an `Option` instead of
-* pattern matching.
-*
-* **Details**
-*
-* Returns `Option.some(value)` for a Success and `Option.none()` for a Failure.
-*
-* **Example** (Getting the success value)
-*
-* ```ts
-* import { Exit } from "effect"
-*
-* console.log(Exit.getSuccess(Exit.succeed(42))) // { _tag: "Some", value: 42 }
-* console.log(Exit.getSuccess(Exit.fail("err"))) // { _tag: "None" }
-* ```
-*
-* @see {@link getCause} to extract the Cause of a failure
-* @see {@link filterValue} for filter-pipeline usage
-*
-* @category accessors
-* @since 4.0.0
-*/
-var getSuccess = exitGetSuccess;
-var DeferredProto = {
-	["~effect/Deferred"]: {
-		_A: identity,
-		_E: identity
+var rc = zn, ic = No, ac = Lo, oc = {
+	"~effect/Deferred": {
+		_A: M,
+		_E: M
 	},
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
-};
-/**
-* Creates an empty `Deferred` synchronously outside the `Effect` runtime.
-*
-* **When to use**
-*
-* Use to allocate a `Deferred` synchronously when direct allocation outside
-* `Effect` is required.
-*
-* **Example** (Creating a Deferred unsafely)
-*
-* ```ts
-* import { Deferred } from "effect"
-*
-* const deferred = Deferred.makeUnsafe<number>()
-* console.log(deferred)
-* ```
-*
-* @category unsafe
-* @since 4.0.0
-*/
-var makeUnsafe$3 = () => {
-	const self = Object.create(DeferredProto);
-	self.resumes = void 0;
-	self.effect = void 0;
-	return self;
-};
-var _await = (self) => callback((resume) => {
-	if (self.effect) return resume(self.effect);
-	self.resumes ??= [];
-	self.resumes.push(resume);
-	return sync$1(() => {
-		const index = self.resumes.indexOf(resume);
-		self.resumes.splice(index, 1);
-	});
-});
-/**
-* Completes the `Deferred` with the specified `Exit` value, which will be
-* propagated to all fibers waiting on the value of the `Deferred`.
-*
-* **When to use**
-*
-* Use to complete a `Deferred` from an already computed `Exit`.
-*
-* **Details**
-*
-* The returned effect succeeds with `true` when this call completed the
-* `Deferred`, or `false` if it was already completed.
-*
-* **Example** (Completing a Deferred with an Exit)
-*
-* ```ts
-* import { Deferred, Effect, Exit } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const deferred = yield* Deferred.make<number>()
-*   yield* Deferred.done(deferred, Exit.succeed(42))
-*
-*   const value = yield* Deferred.await(deferred)
-*   console.log(value) // 42
-* })
-* ```
-*
-* @see {@link complete} for completing from an effect and memoizing its result
-* @see {@link completeWith} for storing an effect directly
-* @see {@link succeed} for completing with a success value
-* @see {@link failCause} for completing with a failure cause
-*
-* @category completion
-* @since 2.0.0
-*/
-var done = /* @__PURE__ */ dual(2, (self, effect) => sync$1(() => doneUnsafe(self, effect)));
-/**
-* Attempts to complete the `Deferred` synchronously with the specified
-* completion effect.
-*
-* **When to use**
-*
-* Use to complete a `Deferred` synchronously in low-level code that already has
-* the completion effect.
-*
-* **Details**
-*
-* This mutates the `Deferred` directly and should be reserved for low-level
-* code; prefer the effectful completion APIs when possible. Returns `true` if
-* this call completed the `Deferred`, or `false` if it was already completed.
-*
-* **Example** (Completing a Deferred unsafely)
-*
-* ```ts
-* import { Deferred, Effect } from "effect"
-*
-* const deferred = Deferred.makeUnsafe<number>()
-* const success = Deferred.doneUnsafe(deferred, Effect.succeed(42))
-* console.log(success) // true
-* ```
-*
-* @category unsafe
-* @since 4.0.0
-*/
-var doneUnsafe = (self, effect) => {
-	if (self.effect) return false;
-	self.effect = effect;
-	if (self.resumes) {
-		for (let i = 0; i < self.resumes.length; i++) self.resumes[i](effect);
-		self.resumes = void 0;
+}, sc = () => {
+	let e = Object.create(oc);
+	return e.resumes = void 0, e.effect = void 0, e;
+}, cc = (e) => lo((t) => e.effect ? t(e.effect) : (e.resumes ??= [], e.resumes.push(t), Qa(() => {
+	let n = e.resumes.indexOf(t);
+	e.resumes.splice(n, 1);
+}))), lc = /* @__PURE__ */ j(2, (e, t) => Qa(() => uc(e, t))), uc = (e, t) => {
+	if (e.effect) return !1;
+	if (e.effect = t, e.resumes) {
+		for (let n = 0; n < e.resumes.length; n++) e.resumes[n](t);
+		e.resumes = void 0;
 	}
-	return true;
-};
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scope.js
-/**
-* Controls how long resources stay open.
-*
-* A scope is a lifetime boundary. Code can register cleanup effects on it, and
-* closing the scope runs those cleanups with the `Exit` value that ended the
-* work. Most application code uses higher-level APIs such as `Effect.scoped`
-* and `Layer`, while this module is useful when code needs to create, provide,
-* fork, close, or inspect scopes directly.
-*
-* @since 2.0.0
-*/
-/**
-* Creates a new `Scope` synchronously without wrapping it in an `Effect`.
-* This is useful when you need a scope immediately but should be used with caution
-* as it doesn't provide the same safety guarantees as the `Effect`-wrapped version.
-*
-* **When to use**
-*
-* Use when a scope must be allocated synchronously and the caller will close it
-* manually.
-*
-* **Example** (Creating a scope synchronously)
-*
-* ```ts
-* import { Console, Effect, Exit, Scope } from "effect"
-*
-* // Create a scope immediately
-* const scope = Scope.makeUnsafe("sequential")
-*
-* // Use it in an Effect program
-* const program = Effect.gen(function*() {
-*   yield* Scope.addFinalizer(scope, Console.log("Cleanup"))
-*   yield* Scope.close(scope, Exit.void)
-* })
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var makeUnsafe$2 = scopeMakeUnsafe;
-/**
-* Provides a concrete `Scope` to an effect.
-*
-* **When to use**
-*
-* Use to run an effect that requires `Scope` with a scope managed by the
-* caller.
-*
-* **Details**
-*
-* Providing the scope removes the `Scope` requirement from the effect context.
-*
-* **Example** (Providing a scope)
-*
-* ```ts
-* import { Console, Effect, Scope } from "effect"
-*
-* // An effect that requires a Scope
-* const program = Effect.gen(function*() {
-*   const scope = yield* Scope.Scope
-*   yield* Scope.addFinalizer(scope, Console.log("Cleanup"))
-*   yield* Console.log("Working...")
-* })
-*
-* // Provide a scope to the program
-* const withScope = Effect.gen(function*() {
-*   const scope = yield* Scope.make()
-*   yield* Scope.provide(scope)(program)
-* })
-* ```
-*
-* @category combinators
-* @since 4.0.0
-*/
-var provide$1 = provideScope;
-/**
-* Creates a closeable child scope synchronously and registers it with a parent scope.
-*
-* **When to use**
-*
-* Use when a child scope must be created synchronously and the caller controls
-* both parent and child scope lifetimes.
-*
-* **Details**
-*
-* Closing the parent closes the child with the same exit value, and closing the
-* child detaches it from the parent. The optional finalizer strategy configures
-* the child scope and defaults to `"sequential"` when omitted.
-*
-* **Example** (Creating a child scope synchronously)
-*
-* ```ts
-* import { Console, Effect, Exit, Scope } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const parentScope = Scope.makeUnsafe("sequential")
-*   const childScope = Scope.forkUnsafe(parentScope, "parallel")
-*
-*   // Add finalizers to both scopes
-*   yield* Scope.addFinalizer(parentScope, Console.log("Parent cleanup"))
-*   yield* Scope.addFinalizer(childScope, Console.log("Child cleanup"))
-*
-*   // Close child first, then parent
-*   yield* Scope.close(childScope, Exit.void)
-*   yield* Scope.close(parentScope, Exit.void)
-* })
-* ```
-*
-* @category combinators
-* @since 4.0.0
-*/
-var forkUnsafe = scopeForkUnsafe;
-/**
-* Closes a scope and runs its registered finalizers.
-*
-* **When to use**
-*
-* Use to close a scope manually with a specific exit value.
-*
-* **Details**
-*
-* Finalizers run in the scope's configured order and receive the supplied
-* `Exit`.
-*
-* **Example** (Running scope finalizers)
-*
-* ```ts
-* import { Console, Effect, Exit, Scope } from "effect"
-*
-* const resourceManagement = Effect.gen(function*() {
-*   const scope = yield* Scope.make("sequential")
-*
-*   // Add multiple finalizers
-*   yield* Scope.addFinalizer(scope, Console.log("Close database connection"))
-*   yield* Scope.addFinalizer(scope, Console.log("Close file handle"))
-*   yield* Scope.addFinalizer(scope, Console.log("Release memory"))
-*
-*   // Do some work...
-*   yield* Console.log("Performing operations...")
-*
-*   // Close scope - finalizers run in reverse order of registration
-*   yield* Scope.close(scope, Exit.succeed("Success!"))
-*   // Output: "Release memory", "Close file handle", "Close database connection"
-* })
-* ```
-*
-* @category combinators
-* @since 2.0.0
-*/
-var close = scopeClose;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Layer.js
-var TypeId$8 = "~effect/Layer";
-var MemoMapTypeId = "~effect/Layer/MemoMap";
-var memoMapReuse = (entry, scope) => {
-	entry.observers++;
-	return andThen(scopeAddFinalizerExit(scope, (exit) => entry.finalizer(exit)), entry.effect);
-};
-var LayerProto = {
-	[TypeId$8]: {
-		_ROut: identity,
-		_E: identity,
-		_RIn: identity
+	return !0;
+}, dc = ms, fc = _s, pc = us, mc = ss, hc = "~effect/Layer", gc = "~effect/Layer/MemoMap", _c = (e, t) => (e.observers++, xo(ds(t, (t) => e.finalizer(t)), e.effect)), vc = {
+	[hc]: {
+		_ROut: M,
+		_E: M,
+		_RIn: M
 	},
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	}
-};
-var fromBuildUnsafe = (build) => {
-	const self = Object.create(LayerProto);
-	self.build = build;
-	return self;
-};
-/**
-* Constructs a `Layer` from a function that uses a `MemoMap` and `Scope` to
-* build the layer.
-*
-* **Details**
-*
-* The function receives a `MemoMap` for memoization and a `Scope` for resource management.
-* A child scope is created, and if the build fails, the child scope is closed.
-*
-* **Example** (Constructing a layer from a build function)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* const databaseLayer = Layer.fromBuild(() =>
-*   Effect.sync(() =>
-*     Context.make(Database, {
-*       query: (sql: string) => Effect.succeed("result")
-*     })
-*   )
-* )
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var fromBuild = (build) => fromBuildUnsafe((memoMap, scope) => {
-	const layerScope = forkUnsafe(scope);
-	return onExit(build(memoMap, layerScope), (exit) => exit._tag === "Failure" ? close(layerScope, exit) : void_$1);
-});
-/**
-* Constructs a `Layer` from a function that uses a `MemoMap` and `Scope` to
-* build the layer, with automatic memoization.
-*
-* **Details**
-*
-* This is similar to `fromBuild` but provides automatic memoization of the layer construction.
-* The layer will be memoized based on the provided `MemoMap`.
-*
-* **Example** (Memoizing layer construction)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* const databaseLayer = Layer.fromBuildMemo(() =>
-*   Effect.sync(() =>
-*     Context.make(Database, {
-*       query: (sql: string) => Effect.succeed("result")
-*     })
-*   )
-* )
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var fromBuildMemo = (build) => {
-	const self = fromBuild((memoMap, scope) => memoMap.getOrElseMemoize(self, scope, build));
-	return self;
-};
-var memoMapBuild = (memoMap, layer, scope, build) => {
-	const layerScope = makeUnsafe$2();
-	const deferred = makeUnsafe$3();
-	const entry = {
+}, yc = (e) => {
+	let t = Object.create(vc);
+	return t.build = e, t;
+}, bc = (e) => yc((t, n) => {
+	let r = pc(n);
+	return bs(e(t, r), (e) => e._tag === "Failure" ? mc(r, e) : ao);
+}), xc = (e) => {
+	let t = bc((n, r) => n.getOrElseMemoize(t, r, e));
+	return t;
+}, Sc = (e, t, n, r) => {
+	let i = dc(), a = sc(), o = {
 		observers: 1,
-		effect: _await(deferred),
-		finalizer: (exit) => suspend$1(() => {
-			entry.observers--;
-			if (entry.observers === 0) {
-				memoMap.map.delete(layer);
-				return close(layerScope, exit);
-			}
-			return void_$1;
-		})
+		effect: cc(a),
+		finalizer: (n) => $a(() => (o.observers--, o.observers === 0 ? (e.map.delete(t), mc(i, n)) : ao))
 	};
-	memoMap.map.set(layer, entry);
-	return scopeAddFinalizerExit(scope, entry.finalizer).pipe(flatMap$1(() => build(memoMap, layerScope)), onExit((exit) => {
-		entry.effect = exit;
-		return done(deferred, exit);
-	}));
-};
-var MemoMapImpl = class {
-	get [MemoMapTypeId]() {
-		return MemoMapTypeId;
+	return e.map.set(t, o), ds(n, o.finalizer).pipe(W(() => r(e, i)), bs((e) => (o.effect = e, lc(a, e))));
+}, Cc = class {
+	get [gc]() {
+		return gc;
 	}
 	parent;
-	constructor(parent) {
-		this.parent = parent;
+	constructor(e) {
+		this.parent = e;
 	}
 	map = /*#__PURE__*/ new Map();
-	get(layer, scope) {
-		const local = this.map.get(layer);
-		if (local) return memoMapReuse(local, scope);
-		return this.parent?.get(layer, scope);
+	get(e, t) {
+		let n = this.map.get(e);
+		return n ? _c(n, t) : this.parent?.get(e, t);
 	}
-	getOrElseMemoize(layer, scope, build) {
-		const existing = this.get(layer, scope);
-		if (existing) return existing;
-		return memoMapBuild(this, layer, scope, build);
+	getOrElseMemoize(e, t, n) {
+		return this.get(e, t) || Sc(this, e, t, n);
 	}
-};
-/**
-* Constructs a `MemoMap` synchronously so it can be used to build additional layers.
-*
-* **Example** (Creating a memo map unsafely)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* // Create a memo map for manual layer building
-* const program = Effect.gen(function*() {
-*   const memoMap = Layer.makeMemoMapUnsafe()
-*   const scope = yield* Effect.scope
-*
-*   const dbLayer = Layer.succeed(Database, {
-*     query: Effect.fn("Database.query")((sql: string) => Effect.succeed("result"))
-*   })
-*   const context = yield* Layer.buildWithMemoMap(dbLayer, memoMap, scope)
-*
-*   return Context.get(context, Database)
-* })
-* ```
-*
-* @category memo map
-* @since 4.0.0
-*/
-var makeMemoMapUnsafe = () => new MemoMapImpl();
-/**
-* Context service for the current `MemoMap` used in layer construction.
-*
-* **When to use**
-*
-* Use when building custom layer operations that need to access the current
-* memoization map from the fiber context.
-*
-* **Details**
-*
-* This service wraps a `MemoMap` as a `Context.Service`, making it available
-* for dependency injection during layer construction.
-*
-* @see {@link MemoMap} the memoization map type wrapped by this service
-*
-* @category models
-* @since 3.13.0
-*/
-var CurrentMemoMap = class extends Service()("effect/Layer/CurrentMemoMap") {
-	static getOrCreate = /*#__PURE__*/ getOrElse(this, makeMemoMapUnsafe);
-};
-/**
-* Builds a layer into an `Effect` value, using the specified `MemoMap` to memoize
-* the layer construction.
-*
-* **Example** (Building layers with an explicit memo map)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* class Logger extends Context.Service<Logger, {
-*   readonly log: (msg: string) => Effect.Effect<void>
-* }>()("Logger") {}
-*
-* // Build layers with explicit memoization control
-* const program = Effect.gen(function*() {
-*   const memoMap = yield* Layer.makeMemoMap
-*   const scope = yield* Effect.scope
-*
-*   // Build database layer with memoization
-*   const dbLayer = Layer.succeed(Database, {
-*     query: Effect.fn("Database.query")((sql: string) => Effect.succeed("result"))
-*   })
-*   const dbContext = yield* Layer.buildWithMemoMap(dbLayer, memoMap, scope)
-*
-*   // Build logger layer with same memoization (reuses memo if same layer)
-*   const loggerLayer = Layer.succeed(Logger, {
-*     log: Effect.fn("Logger.log")((msg: string) => Effect.sync(() => console.log(msg)))
-*   })
-*   const loggerContext = yield* Layer.buildWithMemoMap(
-*     loggerLayer,
-*     memoMap,
-*     scope
-*   )
-*
-*   return {
-*     database: Context.get(dbContext, Database),
-*     logger: Context.get(loggerContext, Logger)
-*   }
-* })
-* ```
-*
-* @category memo map
-* @since 2.0.0
-*/
-var buildWithMemoMap = /*#__PURE__*/ dual(3, (self, memoMap, scope) => provideService(map(self.build(memoMap, scope), add(CurrentMemoMap, memoMap)), CurrentMemoMap, memoMap));
-/**
-* Constructs a layer from an effect that produces a single service.
-*
-* **When to use**
-*
-* Use when you need to construct a `Layer`-provided service with an `Effect`,
-* dependencies, or scoped resource acquisition.
-*
-* **Details**
-*
-* This allows you to create a `Layer` from an `Effect` that produces a service.
-* The `Effect` is executed in the scope of the layer, allowing for proper
-* resource management.
-*
-* **Example** (Creating a layer from an effect)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* const layer = Layer.effect(Database,
-*   Effect.sync(() => ({
-*     query: (sql: string) => Effect.succeed(`Query: ${sql}`)
-*   }))
-* )
-* ```
-*
-* @see {@link effectContext} for effectfully providing multiple services
-* @see {@link effectDiscard} for running construction work without providing services
-*
-* @category constructors
-* @since 2.0.0
-*/
-var effect = function() {
-	if (arguments.length === 1) return (effect) => effectImpl(arguments[0], effect);
-	return effectImpl(arguments[0], arguments[1]);
-};
-var effectImpl = (service, effect) => effectContext(map(effect, (value) => make$13(service, value)));
-/**
-* Constructs a layer from an effect that produces all services in a `Context`.
-*
-* **When to use**
-*
-* Use when you need a `Layer` that effectfully constructs a `Context` with
-* multiple services.
-*
-* **Details**
-*
-* This allows you to create a `Layer` from an effectful computation that
-* returns multiple services. The `Effect` is executed in the scope of the
-* layer.
-*
-* **Example** (Creating a layer from an effectful context)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<
-*   Database,
-*   { readonly query: (sql: string) => Effect.Effect<string> }
-* >()("Database") {}
-*
-* const layer = Layer.effectContext(
-*   Effect.succeed(Context.make(Database, {
-*     query: (sql: string) => Effect.succeed(`Query: ${sql}`)
-*   }))
-* )
-* ```
-*
-* @see {@link effect} for effectfully providing a single service
-*
-* @category constructors
-* @since 2.0.0
-*/
-var effectContext = (effect) => fromBuildMemo((_, scope) => provide$1(effect, scope));
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/dateTime.js
-/** @internal */
-var TypeId$7 = "~effect/time/DateTime";
-/** @internal */
-var TimeZoneTypeId = "~effect/time/DateTime/TimeZone";
-var Proto = {
-	[TypeId$7]: TypeId$7,
+}, wc = () => new Cc(), Tc = class extends oi()("effect/Layer/CurrentMemoMap") {
+	static getOrCreate = /*#__PURE__*/ vi(this, wc);
+}, Ec = /*#__PURE__*/ j(3, (e, t, n) => Ho(Oo(e.build(t, n), _i(Tc, t)), Tc, t)), Dc = function() {
+	return arguments.length === 1 ? (e) => Oc(arguments[0], e) : Oc(arguments[0], arguments[1]);
+}, Oc = (e, t) => kc(Oo(t, (t) => gi(e, t))), kc = (e) => xc((t, n) => fc(e, n)), Ac = Wn, jc = "~effect/time/DateTime", Mc = "~effect/time/DateTime/TimeZone", Nc = {
+	[jc]: jc,
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	},
-	[NodeInspectSymbol]() {
+	[$t]() {
 		return this.toString();
 	},
 	toJSON() {
-		return toDateUtc$1(this).toJSON();
+		return Fc(this).toJSON();
 	}
 };
-({ ...Proto });
-({ ...Proto });
-var ProtoTimeZone = {
-	[TimeZoneTypeId]: TimeZoneTypeId,
-	[NodeInspectSymbol]() {
+({ ...Nc }), { ...Nc };
+var Pc = {
+	[Mc]: Mc,
+	[$t]() {
 		return this.toString();
 	}
 };
-({ ...ProtoTimeZone });
-({ ...ProtoTimeZone });
-/** @internal */
-var toDateUtc$1 = (self) => new Date(self.epochMilliseconds);
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Effect.js
-/**
-* Creates an `Effect` that represents an asynchronous computation that might
-* fail.
-*
-* **When to use**
-*
-* Use when you need to perform asynchronous operations that might fail, such
-* as fetching data from an API, and want thrown exceptions or rejected promises
-* captured as Effect errors.
-*
-* **Details**
-*
-* Error Handling:
-*
-* There are two ways to handle errors with `tryPromise`:
-*
-* 1. If you don't provide a `catch` function, the error is caught and the
-*    effect fails with an `UnknownError`.
-* 2. If you provide a `catch` function, the error is caught and the `catch`
-*    function maps it to an error of type `E`.
-*
-* Interruptions:
-*
-* An optional `AbortSignal` can be provided to allow for interruption of the
-* wrapped `Promise` API.
-*
-* **Example** (Wrapping a fetch request that may fail)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const getTodo = (id: number) =>
-*   // Will catch any errors and propagate them as UnknownError
-*   Effect.tryPromise(() =>
-*     fetch(`https://jsonplaceholder.typicode.com/todos/${id}`)
-*   )
-*
-* //      ┌─── Effect<Response, UnknownError, never>
-* //      ▼
-* const program = getTodo(1)
-* ```
-*
-* **Example** (Mapping Promise rejections to a tagged error)
-*
-* ```ts
-* import { Data, Effect } from "effect"
-*
-* class TodoFetchError extends Data.TaggedError("TodoFetchError")<{ readonly cause: unknown }> {}
-*
-* const getTodo = (id: number) =>
-*   Effect.tryPromise({
-*     try: () => fetch(`https://jsonplaceholder.typicode.com/todos/${id}`),
-*     // remap the error
-*     catch: (cause) => new TodoFetchError({ cause })
-*   })
-*
-* //      ┌─── Effect<Response, TodoFetchError, never>
-* //      ▼
-* const program = getTodo(1)
-* ```
-*
-* @see {@link promise} if the effectful computation is asynchronous and does not throw errors.
-* @category constructors
-* @since 2.0.0
-*/
-var tryPromise = tryPromise$1;
-/**
-* Creates an `Effect` that always succeeds with a given value.
-*
-* **When to use**
-*
-* Use when an effect should complete successfully with a specific value without any errors
-* or external dependencies.
-*
-* **Example** (Creating a successful effect)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // Creating an effect that represents a successful scenario
-* //
-* //      ┌─── Effect<number, never, never>
-* //      ▼
-* const success = Effect.succeed(42)
-* ```
-*
-* @see {@link fail} to create an effect that represents a failure.
-* @category constructors
-* @since 2.0.0
-*/
-var succeed = succeed$1;
-/**
-* Returns an effect which succeeds with `None`.
-*
-* **Example** (Succeeding with Option.none)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const program = Effect.succeedNone
-*
-* Effect.runPromise(program).then(console.log)
-* // Output: { _id: 'Option', _tag: 'None' }
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var succeedNone = succeedNone$1;
-/**
-* Returns an effect which succeeds with the value wrapped in a `Some`.
-*
-* **Example** (Succeeding with Option.some)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const program = Effect.succeedSome(42)
-*
-* Effect.runPromise(program).then(console.log)
-* // Output: { _id: 'Option', _tag: 'Some', value: 42 }
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var succeedSome = succeedSome$1;
-/**
-* Creates an `Effect` lazily, delaying construction until it is needed.
-*
-* **When to use**
-*
-* Use when you need to defer the evaluation of an effect until it is required.
-*
-* **Details**
-*
-* `suspend` takes a thunk that represents an effect and delays creating it
-* until the suspended effect is evaluated. This is useful for optimizing
-* expensive computations, managing circular dependencies such as recursive
-* functions, and helping TypeScript unify return types when branches construct
-* different effects. Any side effects or scoped captures inside the thunk are
-* re-executed on each invocation.
-*
-* **Example** (Lazily evaluating side effects)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* let i = 0
-*
-* const bad = Effect.succeed(i++)
-*
-* const good = Effect.suspend(() => Effect.succeed(i++))
-*
-* console.log(Effect.runSync(bad)) // Output: 0
-* console.log(Effect.runSync(bad)) // Output: 0
-*
-* console.log(Effect.runSync(good)) // Output: 1
-* console.log(Effect.runSync(good)) // Output: 2
-* ```
-*
-* **Example** (Suspending recursive Fibonacci evaluation)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const blowsUp = (n: number): Effect.Effect<number> =>
-*   n < 2
-*     ? Effect.succeed(1)
-*     : Effect.zipWith(blowsUp(n - 1), blowsUp(n - 2), (a, b) => a + b)
-*
-* // console.log(Effect.runSync(blowsUp(32)))
-* // crash: JavaScript heap out of memory
-*
-* const allGood = (n: number): Effect.Effect<number> =>
-*   n < 2
-*     ? Effect.succeed(1)
-*     : Effect.zipWith(
-*         Effect.suspend(() => allGood(n - 1)),
-*         Effect.suspend(() => allGood(n - 2)),
-*         (a, b) => a + b
-*       )
-*
-* console.log(Effect.runSync(allGood(32)))
-* // Output: 3524578
-* ```
-*
-* **Example** (Helping TypeScript infer recursive effect types)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* //   Without suspend, TypeScript may struggle with type inference.
-* //   Inferred type:
-* //     (a: number, b: number) =>
-* //       Effect<never, Error, never> | Effect<number, never, never>
-* const withoutSuspend = (a: number, b: number) =>
-*   b === 0
-*     ? Effect.fail(new Error("Cannot divide by zero"))
-*     : Effect.succeed(a / b)
-*
-* //   Using suspend to unify return types.
-* //   Inferred type:
-* //     (a: number, b: number) => Effect<number, Error, never>
-* const withSuspend = (a: number, b: number) =>
-*   Effect.suspend(() =>
-*     b === 0
-*       ? Effect.fail(new Error("Cannot divide by zero"))
-*       : Effect.succeed(a / b)
-*   )
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var suspend = suspend$1;
-/**
-* Creates an `Effect` that represents a synchronous side-effectful computation.
-*
-* **When to use**
-*
-* Use when you need to wrap a synchronous side-effectful operation that is not
-* expected to throw.
-*
-* **Details**
-*
-* The provided function is evaluated lazily when the effect runs.
-*
-* **Gotchas**
-*
-* The function must not throw. If it throws, the thrown value is treated as a
-* defect, not as a typed failure. Use `try` when throwing is expected.
-*
-* **Example** (Capturing synchronous logging in an Effect)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const log = (message: string) =>
-*   Effect.sync(() => {
-*     console.log(message) // side effect
-*   })
-*
-* //      ┌─── Effect<void, never, never>
-* //      ▼
-* const program = log("Hello, World!")
-* ```
-*
-* @see {@link try_ | try} for a version that can handle failures.
-* @category constructors
-* @since 2.0.0
-*/
-var sync = sync$1;
-/**
-* Provides a way to write effectful code using generator functions, simplifying
-* control flow and error handling.
-*
-* **When to use**
-*
-* Use when you want to write effectful code that looks and behaves like
-* synchronous code, while still handling asynchronous tasks, errors, and complex
-* control flow such as loops and conditions.
-*
-* Generator functions work similarly to `async/await` but keep errors,
-* requirements, and interruption in the Effect type. You can `yield*` values
-* from effects and return the final result at the end.
-*
-* **Example** (Sequencing effects with generators)
-*
-* ```ts
-* import { Data, Effect } from "effect"
-*
-* class DiscountRateError extends Data.TaggedError("DiscountRateError")<{}> {}
-*
-* const addServiceCharge = (amount: number) => amount + 1
-*
-* const applyDiscount = (
-*   total: number,
-*   discountRate: number
-* ): Effect.Effect<number, DiscountRateError> =>
-*   discountRate === 0
-*     ? Effect.fail(new DiscountRateError())
-*     : Effect.succeed(total - (total * discountRate) / 100)
-*
-* const fetchTransactionAmount = Effect.promise(() => Promise.resolve(100))
-*
-* const fetchDiscountRate = Effect.promise(() => Promise.resolve(5))
-*
-* export const program = Effect.gen(function*() {
-*   const transactionAmount = yield* fetchTransactionAmount
-*   const discountRate = yield* fetchDiscountRate
-*   const discountedAmount = yield* applyDiscount(
-*     transactionAmount,
-*     discountRate
-*   )
-*   const finalAmount = addServiceCharge(discountedAmount)
-*   return `Final amount to charge: ${finalAmount}`
-* })
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var gen = gen$1;
-/**
-* Creates an `Effect` that represents a recoverable error.
-*
-* **When to use**
-*
-* Use to explicitly signal a recoverable error in an `Effect`.
-*
-* **Details**
-*
-* The error keeps propagating unless it is handled. You can handle tagged
-* errors with functions like {@link catchTag} or {@link catchTags}.
-*
-* **Example** (Creating a failed effect)
-*
-* ```ts
-* import { Data, Effect } from "effect"
-*
-* class OperationFailedError extends Data.TaggedError("OperationFailedError")<{}> {}
-*
-* //      ┌─── Effect<never, OperationFailedError, never>
-* //      ▼
-* const failure = Effect.fail(
-*   new OperationFailedError()
-* )
-* ```
-*
-* @see {@link succeed} to create an effect that represents a successful value.
-* @category constructors
-* @since 2.0.0
-*/
-var fail = fail$2;
-/**
-* Creates an effect that terminates a fiber with a specified error.
-*
-* **When to use**
-*
-* Use when you need an `Effect` to report an unrecoverable defect instead of a
-* typed error.
-*
-* **Details**
-*
-* The `die` function is used to signal a defect, which represents a critical
-* and unexpected error in the code. When invoked, it produces an effect that
-* does not handle the error and instead terminates the fiber.
-*
-* The error channel of the resulting effect is of type `never`, indicating that
-* it cannot recover from this failure.
-*
-* **Example** (Failing when division by zero)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const divide = (a: number, b: number) =>
-*   b === 0
-*     ? Effect.die(new Error("Cannot divide by zero"))
-*     : Effect.succeed(a / b)
-*
-* //      ┌─── Effect<number, never, never>
-* //      ▼
-* const program = divide(1, 0)
-*
-* Effect.runPromise(program).catch(console.error)
-* // Output:
-* // (FiberFailure) Error: Cannot divide by zero
-* //   ...stack trace...
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var die = die$1;
-/**
-* Provides access to the current fiber within an effect computation.
-*
-* **Example** (Reading the current fiber)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const program = Effect.withFiber((fiber) =>
-*   Effect.succeed(`Fiber ID: ${fiber.id}`)
-* )
-*
-* Effect.runPromise(program).then(console.log)
-* // Output: Fiber ID: 1
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var withFiber = withFiber$1;
-/**
-* Chains effects to produce new `Effect` instances, useful for combining
-* operations that depend on previous results.
-*
-* **When to use**
-*
-* Use when you need to chain multiple effects, ensuring that each
-* step produces a new `Effect` while flattening any nested effects that may
-* occur.
-*
-* **Details**
-*
-* `flatMap` lets you sequence effects so that the result of one effect can be
-* used in the next step. It is similar to `flatMap` used with arrays but works
-* specifically with `Effect` instances, allowing you to avoid deeply nested
-* effect structures.
-*
-* Since effects are immutable, `flatMap` always returns a new effect instead of
-* changing the original one.
-*
-* **Example** (Syntax)
-*
-* ```ts
-* import { Effect, pipe } from "effect"
-*
-* const myEffect = Effect.succeed(1)
-* const transformation = (n: number) => Effect.succeed(n + 1)
-*
-* const flatMappedWithPipe = pipe(myEffect, Effect.flatMap(transformation))
-* const flatMappedWithDataFirst = Effect.flatMap(myEffect, transformation)
-* const flatMappedWithMethod = myEffect.pipe(Effect.flatMap(transformation))
-* ```
-*
-* **Example** (Sequencing dependent effects)
-*
-* ```ts
-* import { Data, Effect, pipe } from "effect"
-*
-* class DiscountRateError extends Data.TaggedError("DiscountRateError")<{}> {}
-*
-* // Function to apply a discount safely to a transaction amount
-* const applyDiscount = (
-*   total: number,
-*   discountRate: number
-* ): Effect.Effect<number, DiscountRateError> =>
-*   discountRate === 0
-*     ? Effect.fail(new DiscountRateError())
-*     : Effect.succeed(total - (total * discountRate) / 100)
-*
-* // Simulated asynchronous task to fetch a transaction amount from database
-* const fetchTransactionAmount = Effect.promise(() => Promise.resolve(100))
-*
-* // Chaining the fetch and discount application using `flatMap`
-* const finalAmount = pipe(
-*   fetchTransactionAmount,
-*   Effect.flatMap((amount) => applyDiscount(amount, 5))
-* )
-*
-* Effect.runPromise(finalAmount).then(console.log)
-* // Output: 95
-* ```
-*
-* @see {@link tap} for a version that ignores the result of the effect.
-* @category sequencing
-* @since 2.0.0
-*/
-var flatMap = flatMap$1;
-/**
-* Flattens an `Effect` that produces another `Effect` into a single effect.
-*
-* **Example** (Flattening nested effects)
-*
-* ```ts
-* import { Console, Effect } from "effect"
-*
-* const nested = Effect.succeed(Effect.succeed("hello"))
-*
-* const program = Effect.gen(function*() {
-*   const value = yield* Effect.flatten(nested)
-*   yield* Console.log(value)
-*   // Output: hello
-* })
-* ```
-*
-* @category sequencing
-* @since 2.0.0
-*/
-var flatten = flatten$1;
-/**
-* Runs a side effect with the result of an effect without changing the original
-* value.
-*
-* **When to use**
-*
-* Use when you need to run an effectful observation, such as logging or
-* tracking, while passing the original success value to the next step.
-*
-* **Details**
-*
-* `tap` works similarly to `flatMap`, but it ignores the result of the function
-* passed to it. The value from the previous effect remains available for the
-* next part of the chain. Note that if the side effect fails, the entire chain
-* will fail too.
-*
-* **Example** (Logging a step in a pipeline)
-*
-* ```ts
-* import { Console, Data, Effect, pipe } from "effect"
-*
-* class DiscountRateError extends Data.TaggedError("DiscountRateError")<{}> {}
-*
-* // Function to apply a discount safely to a transaction amount
-* const applyDiscount = (
-*   total: number,
-*   discountRate: number
-* ): Effect.Effect<number, DiscountRateError> =>
-*   discountRate === 0
-*     ? Effect.fail(new DiscountRateError())
-*     : Effect.succeed(total - (total * discountRate) / 100)
-*
-* // Simulated asynchronous task to fetch a transaction amount from database
-* const fetchTransactionAmount = Effect.promise(() => Promise.resolve(100))
-*
-* const finalAmount = pipe(
-*   fetchTransactionAmount,
-*   // Log the fetched transaction amount
-*   Effect.tap((amount) => Console.log(`Apply a discount to: ${amount}`)),
-*   // `amount` is still available!
-*   Effect.flatMap((amount) => applyDiscount(amount, 5))
-* )
-*
-* Effect.runPromise(finalAmount).then(console.log)
-* // Output:
-* // Apply a discount to: 100
-* // 95
-* ```
-*
-* @category sequencing
-* @since 2.0.0
-*/
-var tap = tap$1;
-/**
-* Converts both success and failure of an `Effect` into a `Result` type.
-*
-* **When to use**
-*
-* Use when you want an `Effect`'s typed failures to be handled as `Result`
-* data while preserving the original error value.
-*
-* **Details**
-*
-* This function converts an effect that may fail into an effect that always
-* succeeds, wrapping the outcome in a `Result` type. The result will be
-* `Result.Failure` if the effect fails, containing the recoverable error, or
-* `Result.Success` if it succeeds, containing the result.
-*
-* Using this function, you can handle recoverable errors explicitly without
-* causing the effect to fail. This is particularly useful in scenarios where
-* you want to chain effects and manage both success and failure in the same
-* logical flow.
-*
-* The resulting effect cannot fail directly because all recoverable failures
-* are represented inside the `Result` type.
-*
-* **Gotchas**
-*
-* `result` only captures typed, recoverable failures. Defects and
-* interruptions are not captured inside the `Result` and still fail the
-* effect.
-*
-* **Example** (Capturing success or failure as Result)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const success = Effect.succeed(42)
-* const failure = Effect.fail("Something went wrong")
-*
-* const program1 = Effect.result(success)
-* const program2 = Effect.result(failure)
-*
-* Effect.runPromise(program1).then(console.log)
-* // { _id: 'Result', _tag: 'Success', value: 42 }
-*
-* Effect.runPromise(program2).then(console.log)
-* // { _id: 'Result', _tag: 'Failure', error: 'Something went wrong' }
-* ```
-*
-* @see {@link option} for a version that uses `Option` instead.
-* @see {@link exit} for a version that encapsulates both recoverable errors and defects in an `Exit`.
-*
-* @category outcome encapsulation
-* @since 4.0.0
-*/
-var result = result$1;
-/**
-* Transforms an effect to encapsulate both failure and success using the `Exit`
-* data type.
-*
-* **When to use**
-*
-* Use when you need to inspect the full outcome, including typed failures, defects,
-* and interruptions.
-*
-* **Details**
-*
-* `exit` wraps an effect's success or failure inside an `Exit` type, allowing
-* you to handle both cases explicitly.
-*
-* The resulting effect cannot fail because the failure is encapsulated within
-* the `Exit.Failure` type. The error type is set to `never`, indicating that
-* the effect is structured to never fail directly.
-*
-* **Example** (Capturing completion as Exit)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const success = Effect.succeed(42)
-* const failure = Effect.fail("Something went wrong")
-*
-* const program1 = Effect.exit(success)
-* const program2 = Effect.exit(failure)
-*
-* Effect.runPromise(program1).then(console.log)
-* // { _id: 'Exit', _tag: 'Success', value: 42 }
-*
-* Effect.runPromise(program2).then(console.log)
-* // { _id: 'Exit', _tag: 'Failure', cause: { _id: 'Cause', _tag: 'Fail', failure: 'Something went wrong' } }
-* ```
-*
-* @see {@link option} for a version that uses `Option` instead.
-* @see {@link result} for a version that uses `Result` instead.
-*
-* @category outcome encapsulation
-* @since 2.0.0
-*/
-var exit = exit$1;
-/**
-* Converts typed failures from the error channel into defects, removing the
-* error type from the returned effect.
-*
-* **When to use**
-*
-* Use when you need to turn an `Effect` typed failure that represents an
-* unrecoverable bug or invalid state into a defect.
-*
-* **Example** (Converting typed failures into defects)
-*
-* ```ts
-* import { Data, Effect } from "effect"
-*
-* class DivideByZeroError extends Data.TaggedError("DivideByZeroError")<{}> {}
-*
-* const divide = (a: number, b: number) =>
-*   b === 0
-*     ? Effect.fail(new DivideByZeroError())
-*     : Effect.succeed(a / b)
-*
-* //      ┌─── Effect<number, never, never>
-* //      ▼
-* const program = Effect.orDie(divide(1, 0))
-*
-* Effect.runPromise(program).catch(console.error)
-* // Output:
-* // (FiberFailure) DivideByZeroError
-* //   ...stack trace...
-* ```
-*
-* @category converting failures to defects
-* @since 2.0.0
-*/
-var orDie = orDie$1;
-/**
-* Provides a context to an effect, fulfilling its service requirements.
-*
-* **Details**
-*
-* This function provides multiple services at once by supplying a context
-* that contains all the required services. It removes the provided services
-* from the effect's requirements, making them available to the effect.
-*
-* **Example** (Providing a complete context)
-*
-* ```ts
-* import { Context, Effect } from "effect"
-*
-* // Define service keys
-* const Logger = Context.Service<{
-*   log: (msg: string) => void
-* }>("Logger")
-* const Database = Context.Service<{
-*   query: (sql: string) => string
-* }>("Database")
-*
-* // Create a context with multiple services
-* const context = Context.make(Logger, { log: console.log })
-*   .pipe(Context.add(Database, { query: () => "result" }))
-*
-* // An effect that requires both services
-* const program = Effect.gen(function*() {
-*   const logger = yield* Effect.service(Logger)
-*   const db = yield* Effect.service(Database)
-*   logger.log("Querying database")
-*   return db.query("SELECT * FROM users")
-* })
-*
-* const provided = Effect.provideContext(program, context)
-* ```
-*
-* @category environment
-* @since 4.0.0
-*/
-var provideContext = provideContext$1;
-/**
-* Adds a finalizer to the current scope.
-*
-* **When to use**
-*
-* Use to register low-level cleanup in the current scope.
-*
-* **Details**
-*
-* The finalizer runs when the surrounding scope is closed and receives the
-* `Exit` value used to close the scope.
-*
-* **Example** (Registering scope finalizers)
-*
-* ```ts
-* import { Console, Effect, Exit } from "effect"
-*
-* const program = Effect.scoped(
-*   Effect.gen(function*() {
-*     // Add a finalizer that runs when the scope closes
-*     yield* Effect.addFinalizer((exit) =>
-*       Console.log(
-*         Exit.isSuccess(exit)
-*           ? "Cleanup: Operation completed successfully"
-*           : "Cleanup: Operation failed, cleaning up resources"
-*       )
-*     )
-*
-*     yield* Console.log("Performing main operation...")
-*
-*     // This could succeed or fail
-*     return "operation result"
-*   })
-* )
-*
-* Effect.runPromise(program).then(console.log)
-* // Output:
-* // Performing main operation...
-* // Cleanup: Operation completed successfully
-* // operation result
-* ```
-*
-* @see {@link acquireRelease} for resource acquisition with a release finalizer
-* @see {@link ensuring} for attaching a finalizer to one effect
-*
-* @category resource management
-* @since 2.0.0
-*/
-var addFinalizer = addFinalizer$1;
-/**
-* Runs an effect in the background, returning a fiber that can
-* be observed or interrupted.
-*
-* **When to use**
-*
-* Use when you need to start an effect in the background and receive a fiber.
-*
-* **Example** (Running an effect in the background)
-*
-* ```ts
-* import { Console, Effect, Fiber, Schedule } from "effect"
-*
-* //      ┌─── Effect<number, never, never>
-* //      ▼
-* const program = Effect.repeat(
-*   Console.log("running..."),
-*   Schedule.spaced("200 millis")
-* )
-*
-* //      ┌─── RuntimeFiber<number, never>
-* //      ▼
-* const fiber = Effect.runFork(program)
-*
-* setTimeout(() => {
-*   Effect.runFork(Fiber.interrupt(fiber))
-* }, 500)
-* ```
-*
-* @category running
-* @since 2.0.0
-*/
-var runFork = runFork$1;
-/**
-* Runs an effect in the background with the provided services.
-*
-* **When to use**
-*
-* Use when an effect still requires services, you already have a `Context`, and
-* you want a background fiber.
-*
-* **Example** (Running with services in the background)
-*
-* ```ts
-* import { Context, Effect } from "effect"
-*
-* interface Logger {
-*   log: (message: string) => void
-* }
-*
-* const Logger = Context.Service<Logger>("Logger")
-*
-* const services = Context.make(Logger, {
-*   log: (message) => console.log(message)
-* })
-*
-* const program = Effect.gen(function*() {
-*   const logger = yield* Logger
-*   logger.log("Hello from service!")
-*   return "done"
-* })
-*
-* const fiber = Effect.runForkWith(services)(program)
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runForkWith = runForkWith$1;
-/**
-* Forks an effect with the provided services, registers `onExit` as a fiber observer, and returns an interruptor.
-*
-* **When to use**
-*
-* Use when embedding an effect into callback-style code with explicit services
-* and a synchronous interruptor.
-*
-* **Details**
-*
-* The returned interruptor calls `fiber.interruptUnsafe`, optionally with an interruptor id.
-*
-* **Example** (Running with services and a callback)
-*
-* ```ts
-* import { Console, Context, Effect, Exit } from "effect"
-*
-* interface Logger {
-*   log: (message: string) => Effect.Effect<void>
-* }
-*
-* const Logger = Context.Service<Logger>("Logger")
-*
-* const services = Context.make(Logger, {
-*   log: (message) => Console.log(message)
-* })
-*
-* const program = Effect.gen(function*() {
-*   const logger = yield* Logger
-*   yield* logger.log("Started")
-*   return "done"
-* })
-*
-* const interrupt = Effect.runCallbackWith(services)(program, {
-*   onExit: (exit) => {
-*     if (Exit.isFailure(exit)) {
-*       // handle failure or interruption
-*     }
-*   }
-* })
-*
-* // Use the interruptor if you need to cancel the fiber later.
-* interrupt()
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runCallbackWith = runCallbackWith$1;
-/**
-* Runs an effect asynchronously, registering `onExit` as a fiber observer and
-* returning an interruptor.
-*
-* **Details**
-*
-* The interruptor calls `fiber.interruptUnsafe` with the optional interruptor
-* id.
-*
-* **Example** (Running with a callback)
-*
-* ```ts
-* import { Console, Effect, Exit } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   yield* Console.log("working")
-*   return "done"
-* })
-*
-* const interrupt = Effect.runCallback(program, {
-*   onExit: (exit) => {
-*     Effect.runSync(
-*       Exit.match(exit, {
-*         onFailure: () => Console.log("failed"),
-*         onSuccess: (value) => Console.log(`success: ${value}`)
-*       })
-*     )
-*   }
-* })
-*
-* // Output:
-* // working
-* // success: done
-*
-* // interrupt() to cancel the fiber if needed
-* ```
-*
-* @category running
-* @since 2.0.0
-*/
-var runCallback = runCallback$1;
-/**
-* Executes an effect and returns the result as a `Promise`.
-*
-* **When to use**
-*
-* Use when you need to execute an effect and work with the
-* result using `Promise` syntax, typically for compatibility with other
-* promise-based code.
-*
-* If the effect succeeds, the promise will resolve with the result. If the
-* effect fails, the promise will reject with an error.
-*
-* **Example** (Running a successful effect as a Promise)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* Effect.runPromise(Effect.succeed(1)).then(console.log)
-* // Output: 1
-* ```
-*
-* **Example** (Running effects as promises)
-*
-* ```ts
-* //Example: Handling a Failing Effect as a Rejected Promise
-* import { Effect } from "effect"
-*
-* Effect.runPromise(Effect.fail("my error")).catch(console.error)
-* // Output:
-* // (FiberFailure) Error: my error
-* ```
-*
-* @see {@link runPromiseExit} for a version that returns an `Exit` type instead of rejecting.
-* @category running
-* @since 2.0.0
-*/
-var runPromise = runPromise$1;
-/**
-* Executes an effect as a Promise with the provided services.
-*
-* **When to use**
-*
-* Use when you already have a `Context` and need Promise interop that rejects on
-* effect failure.
-*
-* **Example** (Running with services as a promise)
-*
-* ```ts
-* import { Context, Effect } from "effect"
-*
-* interface Config {
-*   apiUrl: string
-* }
-*
-* const Config = Context.Service<Config>("Config")
-*
-* const context = Context.make(Config, {
-*   apiUrl: "https://api.example.com"
-* })
-*
-* const program = Effect.gen(function*() {
-*   const config = yield* Config
-*   return `Connecting to ${config.apiUrl}`
-* })
-*
-* Effect.runPromiseWith(context)(program).then(console.log)
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runPromiseWith = runPromiseWith$1;
-/**
-* Runs an effect and returns a `Promise` that resolves to an `Exit`, which
-* represents the outcome (success or failure) of the effect.
-*
-* **When to use**
-*
-* Use when you need to determine if an effect succeeded
-* or failed, including any defects, and you want to work with a `Promise`.
-*
-* **Details**
-*
-* The `Exit` type represents the result of the effect. Successful effects are
-* wrapped in `Success`, and failed effects are wrapped in `Failure` with a
-* `Cause`.
-*
-* **Example** (Observing promise results as Exit)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // Execute a successful effect and get the Exit result as a Promise
-* Effect.runPromiseExit(Effect.succeed(1)).then(console.log)
-* // Output:
-* // {
-* //   _id: "Exit",
-* //   _tag: "Success",
-* //   value: 1
-* // }
-*
-* // Execute a failing effect and get the Exit result as a Promise
-* Effect.runPromiseExit(Effect.fail("my error")).then(console.log)
-* // Output:
-* // {
-* //   _id: "Exit",
-* //   _tag: "Failure",
-* //   cause: {
-* //     _id: "Cause",
-* //     _tag: "Fail",
-* //     failure: "my error"
-* //   }
-* // }
-* ```
-*
-* @see {@link runPromise} for a version that rejects on failure.
-*
-* @category running
-* @since 2.0.0
-*/
-var runPromiseExit = runPromiseExit$1;
-/**
-* Runs an effect and returns a Promise of Exit with provided services.
-*
-* **When to use**
-*
-* Use when you already have a `Context` and need Promise interop that preserves
-* success and failure as an `Exit`.
-*
-* **Example** (Running with services as an Exit promise)
-*
-* ```ts
-* import { Context, Effect, Exit } from "effect"
-*
-* interface Database {
-*   query: (sql: string) => string
-* }
-*
-* const Database = Context.Service<Database>("Database")
-*
-* const services = Context.make(Database, {
-*   query: (sql) => `Result for: ${sql}`
-* })
-*
-* const program = Effect.gen(function*() {
-*   const db = yield* Database
-*   return db.query("SELECT * FROM users")
-* })
-*
-* Effect.runPromiseExitWith(services)(program).then((exit) => {
-*   if (Exit.isSuccess(exit)) {
-*     console.log("Success:", exit.value)
-*   }
-* })
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runPromiseExitWith = runPromiseExitWith$1;
-/**
-* Executes an effect synchronously and returns its success value.
-*
-* **When to use**
-*
-* Use when you need to execute an effect that is guaranteed to complete
-* synchronously.
-*
-* **Details**
-*
-* If the effect fails, dies, is interrupted, or performs asynchronous work,
-* `runSync` throws a `FiberFailure` instead of returning a value. Use
-* `runSyncExit` when you want the failure captured as an `Exit`.
-*
-* **Example** (Running a synchronous effect)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const program = Effect.sync(() => {
-*   console.log("Hello, World!")
-*   return 1
-* })
-*
-* const result = Effect.runSync(program)
-* // Output: Hello, World!
-*
-* console.log(result)
-* // Output: 1
-* ```
-*
-* **Example** (Throwing for failed or async effects)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* try {
-*   // Attempt to run an effect that fails
-*   Effect.runSync(Effect.fail("my error"))
-* } catch (e) {
-*   console.error(e)
-* }
-* // Output:
-* // (FiberFailure) Error: my error
-*
-* try {
-*   // Attempt to run an effect that involves async work
-*   Effect.runSync(Effect.promise(() => Promise.resolve(1)))
-* } catch (e) {
-*   console.error(e)
-* }
-* // Output:
-* // (FiberFailure) AsyncFiberException: Fiber #0 cannot be resolved synchronously. This is caused by using runSync on an effect that performs async work
-* ```
-*
-* @see {@link runSyncExit} for a version that returns an `Exit` type instead of
-* throwing an error.
-* @category running
-* @since 2.0.0
-*/
-var runSync = runSync$1;
-/**
-* Executes an effect synchronously with provided services.
-*
-* **When to use**
-*
-* Use when you already have a `Context`, the effect is known to complete
-* synchronously, and failures should throw.
-*
-* **Example** (Running synchronously with services)
-*
-* ```ts
-* import { Context, Effect } from "effect"
-*
-* interface MathService {
-*   add: (a: number, b: number) => number
-* }
-*
-* const MathService = Context.Service<MathService>("MathService")
-*
-* const context = Context.make(MathService, {
-*   add: (a, b) => a + b
-* })
-*
-* const program = Effect.gen(function*() {
-*   const math = yield* MathService
-*   return math.add(2, 3)
-* })
-*
-* const result = Effect.runSyncWith(context)(program)
-* console.log(result) // 5
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runSyncWith = runSyncWith$1;
-/**
-* Runs an effect synchronously and captures the outcome safely as an `Exit` type, which
-* represents the outcome (success or failure) of the effect.
-*
-* **When to use**
-*
-* Use to find out whether an effect succeeded or failed,
-* including any defects, without dealing with asynchronous operations.
-*
-* **Details**
-*
-* The `Exit` type represents the result of the effect. Successful effects are
-* wrapped in `Success`, and failed effects are wrapped in `Failure` with a
-* `Cause`.
-*
-* If the effect contains asynchronous operations, `runSyncExit` will
-* return an `Failure` with a `Die` cause, indicating that the effect cannot be
-* resolved synchronously.
-*
-* **Example** (Observing synchronous results as Exit)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* console.log(Effect.runSyncExit(Effect.succeed(1)))
-* // Output:
-* // {
-* //   _id: "Exit",
-* //   _tag: "Success",
-* //   value: 1
-* // }
-*
-* console.log(Effect.runSyncExit(Effect.fail("my error")))
-* // Output:
-* // {
-* //   _id: "Exit",
-* //   _tag: "Failure",
-* //   cause: {
-* //     _id: "Cause",
-* //     _tag: "Fail",
-* //     failure: "my error"
-* //   }
-* // }
-* ```
-*
-* **Example** (Capturing async work as a Die cause)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* console.log(Effect.runSyncExit(Effect.promise(() => Promise.resolve(1))))
-* // Output:
-* // {
-* //   _id: 'Exit',
-* //   _tag: 'Failure',
-* //   cause: {
-* //     _id: 'Cause',
-* //     _tag: 'Die',
-* //     defect: [Fiber #0 cannot be resolved synchronously. This is caused by using runSync on an effect that performs async work] {
-* //       fiber: [FiberRuntime],
-* //       _tag: 'AsyncFiberException',
-* //       name: 'AsyncFiberException'
-* //     }
-* //   }
-* // }
-* ```
-*
-* @see {@link runSync} for a version that throws on failure.
-*
-* @category running
-* @since 2.0.0
-*/
-var runSyncExit = runSyncExit$1;
-/**
-* Runs an effect synchronously with provided services, returning an Exit result safely.
-*
-* **When to use**
-*
-* Use when you already have a `Context` and need a synchronous `Exit` instead of
-* throwing on failure.
-*
-* **Example** (Running synchronously with services as Exit)
-*
-* ```ts
-* import { Context, Effect, Exit } from "effect"
-*
-* // Define a logger service
-* const Logger = Context.Service<{
-*   log: (msg: string) => void
-* }>("Logger")
-*
-* const program = Effect.gen(function*() {
-*   const logger = yield* Effect.service(Logger)
-*   logger.log("Computing result...")
-*   return 42
-* })
-*
-* // Prepare context
-* const context = Context.make(Logger, {
-*   log: (msg) => console.log(`[LOG] ${msg}`)
-* })
-*
-* const exit = Effect.runSyncExitWith(context)(program)
-*
-* if (Exit.isSuccess(exit)) {
-*   console.log(`Success: ${exit.value}`)
-* } else {
-*   console.log(`Failure: ${exit.cause}`)
-* }
-* // Output:
-* // [LOG] Computing result...
-* // Success: 42
-* ```
-*
-* @category running
-* @since 4.0.0
-*/
-var runSyncExitWith = runSyncExitWith$1;
-/**
-* Creates a reusable traced function from an Effect body.
-*
-* **When to use**
-*
-* Use when you are defining a reusable Effect function whose implementation
-* would otherwise be a normal function returning {@link gen}, and you want
-* tracing spans or stack-frame capture.
-*
-* **Details**
-*
-* Compared to a plain function that returns {@link gen}, `Effect.fn` reuses the
-* generator body instead of allocating a fresh generator closure around the
-* arguments on every call. Call `Effect.fn(body, ...)` for a generic
-* stack-frame boundary without creating a span. Call
-* `Effect.fn("operationName", options?)(body, ...)` when that boundary should
-* have a readable operation name and the returned `Effect` should create a
-* tracing span when run. {@link SpanOptionsNoTrace} configures span metadata
-* such as attributes, links, parent or root selection, kind, sampling, and log
-* level. Additional arguments after the generator body act like `pipe`
-* transforms: each transform receives the previous result and the original
-* function arguments. When those transforms return an `Effect`, the returned
-* effect includes stack-frame metadata and, for the named form, a tracing span.
-* Generator bodies may declare a `this` parameter; pass `{ self }` before the
-* body to bind `this` when the function is created.
-*
-* **Example** (Defining traced effect functions)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const f = Effect.fn("calculateLength")(function*(value: string) {
-*   return yield* Effect.succeed(value.length)
-* })
-*
-* //      ┌─── Effect.Effect<number>
-* //      ▼
-* const program = f("hello")
-* ```
-*
-* **Example** (Transforming the returned Effect)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const f = Effect.fn("formatLength")(
-*   function*(value: string) {
-*     return yield* Effect.succeed(value.length)
-*   },
-*   (effect, value) =>
-*     effect.pipe(Effect.map((length) => `${value}: ${length}`))
-* )
-*
-* //      ┌─── Effect.Effect<string>
-* //      ▼
-* const program = f("hello")
-* ```
-*
-* **Example** (Binding this)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* class Counter {
-*   count = 0
-*
-*   increment = Effect.fn("Counter.increment")(
-*     { self: this },
-*     function*(this: Counter, by: number) {
-*       this.count += by
-*       return yield* Effect.succeed(this.count)
-*     }
-*   )
-* }
-*
-* const counter = new Counter()
-*
-* //      ┌─── Effect.Effect<number>
-* //      ▼
-* const program = counter.increment(1)
-* ```
-*
-* **Example** (Annotating a traced non-parametric function)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const f = Effect.fn("calculateLength")(function*(
-*   value: string
-* ): Effect.fn.Return<number> {
-*   return yield* Effect.succeed(value.length)
-* })
-*
-* //      ┌─── Effect.Effect<number>
-* //      ▼
-* const program = f("hello")
-* ```
-*
-* **Example** (Annotating a traced parametric function)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const f = Effect.fn("succeed")(function*<A>(
-*   value: A
-* ): Effect.fn.Return<A> {
-*   return yield* Effect.succeed(value)
-* })
-*
-* //      ┌─── Effect.Effect<string>
-* //      ▼
-* const program = f("hello")
-* ```
-*
-* @category functions
-* @since 3.11.0
-*/
-var fn = fn$1;
-Service()("effect/Effect/Transaction");
-/**
-* Applies `map` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved effect should apply a success transformation
-* immediately while pending effects still use regular mapping.
-*
-* **Details**
-*
-* Success effects apply the mapping function immediately. Failure effects pass
-* through unchanged, and pending effects fall back to regular `map` behavior.
-*
-* **Example** (Mapping already completed effects)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved effects, the mapping is applied immediately
-* const resolved = Effect.succeed(5)
-* const mapped = Effect.mapEager(resolved, (n) => n * 2) // Applied eagerly
-*
-* // For pending effects, behaves like regular map
-* const pending = Effect.delay(Effect.succeed(5), "100 millis")
-* const mappedPending = Effect.mapEager(pending, (n) => n * 2) // Uses regular map
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var mapEager = mapEager$1;
-/**
-* Applies `mapError` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved failed effect should apply an error
-* transformation immediately while pending effects still use regular error
-* mapping.
-*
-* **Details**
-*
-* Success effects pass through unchanged because there is no error to
-* transform. Failure effects apply the mapping function immediately, and
-* pending effects fall back to regular `mapError` behavior.
-*
-* **Example** (Mapping errors eagerly when possible)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved failure effects, the error mapping is applied immediately
-* const failed = Effect.fail("original error")
-* const mapped = Effect.mapErrorEager(failed, (err: string) => `mapped: ${err}`) // Applied eagerly
-*
-* // For pending effects, behaves like regular mapError
-* const pending = Effect.delay(Effect.fail("error"), "100 millis")
-* const mappedPending = Effect.mapErrorEager(
-*   pending,
-*   (err: string) => `mapped: ${err}`
-* ) // Uses regular mapError
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var mapErrorEager = mapErrorEager$1;
-/**
-* Applies `flatMap` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved successful effect should bind immediately to the
-* next effect while pending effects still use regular flat mapping.
-*
-* **Details**
-*
-* Success effects apply the flatMap function immediately. Failure effects pass
-* through unchanged, and pending effects fall back to regular `flatMap`
-* behavior.
-*
-* **Example** (Flat mapping eagerly when possible)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved effects, the flatMap is applied immediately
-* const resolved = Effect.succeed(5)
-* const flatMapped = Effect.flatMapEager(resolved, (n) => Effect.succeed(n * 2)) // Applied eagerly
-*
-* // For pending effects, behaves like regular flatMap
-* const pending = Effect.delay(Effect.succeed(5), "100 millis")
-* const flatMappedPending = Effect.flatMapEager(
-*   pending,
-*   (n) => Effect.succeed(n * 2)
-* ) // Uses regular flatMap
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var flatMapEager = flatMapEager$1;
-/**
-* Applies `catch` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved failed effect should recover immediately while
-* pending effects still use regular error recovery.
-*
-* **Details**
-*
-* Success effects pass through unchanged because there is no error to catch.
-* Failure effects apply the catch function immediately, and pending effects
-* fall back to regular `catch` behavior.
-*
-* **Example** (Catching failures eagerly when possible)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved failure effects, the catch function is applied immediately
-* const failed = Effect.fail("original error")
-* const recovered = Effect.catchEager(
-*   failed,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Applied eagerly
-*
-* // For success effects, returns success as-is
-* const success = Effect.succeed(42)
-* const unchanged = Effect.catchEager(
-*   success,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Returns success as-is
-*
-* // For pending effects, behaves like regular catch
-* const pending = Effect.delay(Effect.fail("error"), "100 millis")
-* const recoveredPending = Effect.catchEager(
-*   pending,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Uses regular catch
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var catchEager = catchEager$1;
-/**
-* Creates untraced function effects with eager evaluation optimization.
-*
-* **Details**
-*
-* Executes generator functions eagerly when all yielded effects are synchronous,
-* stopping at the first async effect and deferring to normal execution.
-*
-* **Example** (Defining eager untraced effect functions)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* const computation = Effect.fnUntracedEager(function*() {
-*   yield* Effect.succeed(1)
-*   yield* Effect.succeed(2)
-*   return "computed eagerly"
-* })
-*
-* const effect = computation() // Executed immediately if all effects are sync
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var fnUntracedEager = fnUntracedEager$1;
-Service()("effect/DateTime/CurrentTimeZone");
-TaggedError("EncodingError");
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/annotations.js
-/** @internal */
-function resolve(ast) {
-	return ast.checks ? ast.checks[ast.checks.length - 1].annotations : ast.annotations;
-}
-/** @internal */
-function resolveAt(key) {
-	return (ast) => resolve(ast)?.[key];
-}
-/** @internal */
-var resolveIdentifier = /*#__PURE__*/ resolveAt("identifier");
-/** @internal */
-var getExpected = /*#__PURE__*/ memoize((ast) => {
-	const identifier = resolveIdentifier(ast);
-	if (typeof identifier === "string") return identifier;
-	return ast.getExpected(getExpected);
-});
+({ ...Pc }), { ...Pc };
+var Fc = (e) => new Date(e.epochMilliseconds), Ic = oo, Lc = U, Rc = no, zc = to, Bc = $a, Vc = Qa, Hc = uo, G = Za, Uc = ro, Wc = Vn, Gc = W, Kc = Do, qc = So, Jc = Xo, Yc = ns, Xc = Oo, Zc = Yo, Qc = Vo, $c = vs, el = Ds, tl = Ts, nl = Os, rl = ks, il = Ns, al = Ms, ol = js, sl = As, cl = Ls, ll = Is, ul = Fs, dl = Ps, fl = ho;
+oi()("effect/Effect/Transaction");
+var pl = ko, ml = Ao, hl = Eo, gl = jo, _l = _o;
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/record.js
-/**
-* @since 4.0.0
-*/
-/** @internal */
-function set$2(self, key, value) {
-	if (key === "__proto__") Object.defineProperty(self, key, {
-		value,
-		writable: true,
-		enumerable: true,
-		configurable: true
-	});
-	else self[key] = value;
-	return self;
+function vl(e, t, n) {
+	return t === "__proto__" ? Object.defineProperty(e, t, {
+		value: n,
+		writable: !0,
+		enumerable: !0,
+		configurable: !0
+	}) : e[t] = n, e;
 }
-globalThis.RegExp;
-/**
-* Escapes special characters in a regular expression pattern.
-*
-* **When to use**
-*
-* Use to turn literal text into a safe regular expression pattern fragment.
-*
-* **Example** (Escaping a pattern string)
-*
-* ```ts
-* import { RegExp } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(RegExp.escape("a*b"), "a\\*b")
-* ```
-*
-* @category RegExp
-* @since 2.0.0
-*/
-var escape = (string) => string.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaIssue.js
-var TypeId$6 = "~effect/SchemaIssue/Issue";
-/**
-* Returns `true` if the given value is an {@link Issue}.
-*
-* **When to use**
-*
-* Use when you need to narrow an `unknown` value to `Issue` in error-handling
-* code, such as distinguishing an `Issue` from other error types in a catch-all
-* handler.
-*
-* **Details**
-*
-* - Checks for the internal `TypeId` brand on the value.
-*
-* **Example** (Type-guarding an unknown error)
-*
-* ```ts
-* import { SchemaIssue } from "effect"
-*
-* const issue = new SchemaIssue.MissingKey(undefined)
-* console.log(SchemaIssue.isIssue(issue))
-* // true
-* console.log(SchemaIssue.isIssue("not an issue"))
-* // false
-* ```
-*
-* @see {@link Issue}
-*
-* @category guards
-* @since 4.0.0
-*/
-function isIssue(u) {
-	return hasProperty(u, TypeId$6);
+//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/annotations.js
+function yl(e) {
+	return e.checks ? e.checks[e.checks.length - 1].annotations : e.annotations;
 }
-var Base$1 = class {
-	[TypeId$6] = TypeId$6;
+function bl(e) {
+	return (t) => yl(t)?.[e];
+}
+var xl = /*#__PURE__*/ bl("identifier"), Sl = /*#__PURE__*/ Je((e) => {
+	let t = xl(e);
+	return typeof t == "string" ? t : e.getExpected(Sl);
+});
+globalThis.RegExp;
+var Cl = (e) => e.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
+oi()("effect/DateTime/CurrentTimeZone"), Ac("EncodingError");
+var wl = "~effect/SchemaIssue/Issue";
+function Tl(e) {
+	return N(e, wl);
+}
+var El = class {
+	[wl] = wl;
 	toString() {
-		return defaultFormatter(this);
+		return Kl(this);
 	}
-};
-/**
-* Represents a schema issue produced when a schema filter (refinement check) fails.
-*
-* **When to use**
-*
-* Use when you need to inspect a schema issue that records which refinement
-* check rejected the value.
-*
-* **Details**
-*
-* - `actual` is the raw input value that was tested (plain `unknown`, not
-*   wrapped in `Option`).
-* - `filter` is the AST filter node that produced this issue.
-* - `issue` is the inner issue describing the failure reason.
-*
-* **Example** (Matching a Filter issue)
-*
-* ```ts
-* import { SchemaIssue } from "effect"
-*
-* function describe(issue: SchemaIssue.Issue): string {
-*   if (issue._tag === "Filter") {
-*     return `Filter failed on: ${JSON.stringify(issue.actual)}`
-*   }
-*   return String(issue)
-* }
-* ```
-*
-* @see {@link Leaf} — terminal issue types that commonly appear as the inner `issue`
-* @see {@link CheckHook} — formatter hook for `Filter` issues
-*
-* @category models
-* @since 4.0.0
-*/
-var Filter$1 = class extends Base$1 {
+}, Dl = class extends El {
 	_tag = "Filter";
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	/**
-	* The filter that failed.
-	*/
 	filter;
-	/**
-	* The issue that occurred.
-	*/
 	issue;
-	constructor(actual, filter, issue) {
-		super();
-		this.actual = actual;
-		this.filter = filter;
-		this.issue = issue;
+	constructor(e, t, n) {
+		super(), this.actual = e, this.filter = t, this.issue = n;
 	}
-};
-/**
-* Represents a schema issue produced when a schema transformation (encode/decode step) fails.
-*
-* **When to use**
-*
-* Use when you need to inspect failures from `Schema.decodeTo` / `Schema.encodeTo`
-*   transformations.
-*
-* **Details**
-*
-* - `ast` is the AST node for the transformation that failed.
-* - `actual` is `Option.some(value)` when the input was present, or
-*   `Option.none()` when it was absent.
-* - `issue` is the inner issue describing the failure.
-*
-* @see {@link Filter} — failure from a refinement check (not a transformation)
-* @see {@link Composite} — multiple issues from a single schema node
-*
-* @category models
-* @since 4.0.0
-*/
-var Encoding = class extends Base$1 {
+}, Ol = class extends El {
 	_tag = "Encoding";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	/**
-	* The issue that occurred.
-	*/
 	issue;
-	constructor(ast, actual, issue) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
-		this.issue = issue;
+	constructor(e, t, n) {
+		super(), this.ast = e, this.actual = t, this.issue = n;
 	}
-};
-/**
-* Wraps an inner {@link Issue} with a property-key path, indicating *where* in
-* a nested structure the error occurred.
-*
-* **When to use**
-*
-* Use when you need to walk the issue tree to accumulate path segments for error
-* reporting.
-*
-* **Details**
-*
-* - `path` is an array of property keys (strings, numbers, or symbols).
-* - Has no `actual` value — {@link getActual} returns `Option.none()`.
-* - Formatters concatenate nested `Pointer` paths into a single path like
-*   `["a"]["b"][0]`.
-*
-* @see {@link getActual} — returns `Option.none()` for `Pointer`
-* @see {@link Composite} — groups multiple issues under one schema node
-*
-* @category models
-* @since 3.10.0
-*/
-var Pointer = class extends Base$1 {
+}, kl = class extends El {
 	_tag = "Pointer";
-	/**
-	* The path to the location in the input that caused the issue.
-	*/
 	path;
-	/**
-	* The issue that occurred.
-	*/
 	issue;
-	constructor(path, issue) {
-		super();
-		this.path = path;
-		this.issue = issue;
+	constructor(e, t) {
+		super(), this.path = e, this.issue = t;
 	}
-};
-/**
-* Represents a schema issue produced when a required key or tuple index is missing from the input.
-*
-* **When to use**
-*
-* Use when you need to detect absent fields in struct/tuple validation.
-*
-* **Details**
-*
-* - Has no `actual` value — {@link getActual} returns `Option.none()`.
-* - `annotations` may contain a custom `messageMissingKey` for formatting.
-*
-* @see {@link Pointer} — wraps this issue with the missing key's path
-* @see {@link UnexpectedKey} — the opposite case (extra key present)
-*
-* @category models
-* @since 4.0.0
-*/
-var MissingKey = class extends Base$1 {
+}, Al = class extends El {
 	_tag = "MissingKey";
-	/**
-	* The metadata for the issue.
-	*/
 	annotations;
-	constructor(annotations) {
-		super();
-		this.annotations = annotations;
+	constructor(e) {
+		super(), this.annotations = e;
 	}
-};
-/**
-* Represents a schema issue produced when an input object or tuple contains a key/index not
-* declared by the schema.
-*
-* **When to use**
-*
-* Use when you need to detect excess properties during strict struct/tuple
-* validation.
-*
-* **Details**
-*
-* - `actual` is the raw value at the unexpected key (plain `unknown`).
-* - `ast` is the schema that was being validated against.
-* - `annotations` on `ast` may contain a custom `messageUnexpectedKey`.
-*
-* @see {@link MissingKey} — the opposite case (required key absent)
-* @see {@link Pointer} — wraps this issue with the unexpected key's path
-*
-* @category models
-* @since 4.0.0
-*/
-var UnexpectedKey = class extends Base$1 {
+}, jl = class extends El {
 	_tag = "UnexpectedKey";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	constructor(ast, actual) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
+	constructor(e, t) {
+		super(), this.ast = e, this.actual = t;
 	}
-};
-/**
-* Represents a schema issue that groups multiple child issues under a single schema node.
-*
-* **When to use**
-*
-* Use when you need to walk the issue tree for struct/tuple schemas that collect
-* all field errors rather than failing on the first.
-*
-* **Details**
-*
-* - `issues` is a non-empty readonly array (at least one child).
-* - `actual` is `Option.some(value)` when the input was present, or
-*   `Option.none()` when absent.
-* - Formatters flatten `Composite` by recursing into each child.
-*
-* @see {@link AnyOf} — used for union no-match errors (similar but different semantics)
-* @see {@link Pointer} — adds path context to individual issues
-*
-* @category models
-* @since 3.10.0
-*/
-var Composite = class extends Base$1 {
+}, Ml = class extends El {
 	_tag = "Composite";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	/**
-	* The issues that occurred.
-	*/
 	issues;
-	constructor(ast, actual, issues) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
-		this.issues = issues;
+	constructor(e, t, n) {
+		super(), this.ast = e, this.actual = t, this.issues = n;
 	}
-};
-/**
-* Represents a schema issue produced when the runtime type of the input does not match the type
-* expected by the schema (e.g. got `null` when `string` was expected).
-*
-* **When to use**
-*
-* Use when you need to detect basic type mismatches, such as a wrong primitive
-* or `null` where an object was expected.
-*
-* **Details**
-*
-* - `ast` is the schema node that expected a different type.
-* - `actual` is `Option.some(value)` when the input was present, or
-*   `Option.none()` when no value was provided.
-* - The default formatter renders this as `"Expected <type>, got <actual>"`.
-*
-* **Example** (Formatted output)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* try {
-*   Schema.decodeUnknownSync(Schema.String)(42)
-* } catch (e) {
-*   if (Schema.isSchemaError(e)) {
-*     console.log(String(e.issue))
-*     // "Expected string, got 42"
-*   }
-* }
-* ```
-*
-* @see {@link InvalidValue} — the input has the right type but fails a value constraint
-*
-* @category models
-* @since 4.0.0
-*/
-var InvalidType = class extends Base$1 {
+}, Nl = class extends El {
 	_tag = "InvalidType";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	constructor(ast, actual) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
+	constructor(e, t) {
+		super(), this.ast = e, this.actual = t;
 	}
-};
-/**
-* Represents a schema issue produced when the input has the correct type but its value violates a
-* constraint (e.g. a string that is too short, a number out of range).
-*
-* **When to use**
-*
-* Use when you need to detect constraint violations from `Schema.filter`,
-* `Schema.minLength`, `Schema.greaterThan`, or similar checks.
-*
-* **Details**
-*
-* - `actual` is `Option.some(value)` when the failing value is known, or
-*   `Option.none()` when absent.
-* - `annotations` optionally carries a `message` string for formatting.
-* - The default formatter renders this as `"Invalid data <actual>"` unless a
-*   custom `message` annotation is provided.
-*
-* **Example** (Custom filter returning InvalidValue)
-*
-* ```ts
-* import { Option, SchemaIssue } from "effect"
-*
-* const issue = new SchemaIssue.InvalidValue(
-*   Option.some(""),
-*   { message: "must not be empty" }
-* )
-* console.log(String(issue))
-* // "must not be empty"
-* ```
-*
-* @see {@link InvalidType} — the input has the wrong type entirely
-* @see {@link Filter} — composite wrapper when a schema filter produces this issue
-*
-* @category models
-* @since 4.0.0
-*/
-var InvalidValue = class extends Base$1 {
+}, Pl = class extends El {
 	_tag = "InvalidValue";
-	/**
-	* The value that caused the issue.
-	*/
 	actual;
-	/**
-	* The metadata for the issue.
-	*/
 	annotations;
-	constructor(actual, annotations) {
-		super();
-		this.actual = actual;
-		this.annotations = annotations;
+	constructor(e, t) {
+		super(), this.actual = e, this.annotations = t;
 	}
-};
-/**
-* Represents a schema issue produced when a value does not match *any* member of a union schema.
-*
-* **When to use**
-*
-* Use when you need to inspect which union members were attempted and why each
-* failed.
-*
-* **Details**
-*
-* - `ast` is the `Union` AST node.
-* - `actual` is the raw input value (plain `unknown`).
-* - `issues` contains per-member failures. When empty, the formatter falls
-*   back to the union's `expected` annotation.
-*
-* @see {@link OneOf} — the opposite: *too many* members matched
-* @see {@link Composite} — groups multiple issues under a non-union schema
-*
-* @category models
-* @since 4.0.0
-*/
-var AnyOf = class extends Base$1 {
+}, Fl = class extends El {
 	_tag = "AnyOf";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	/**
-	* The issues that occurred.
-	*/
 	issues;
-	constructor(ast, actual, issues) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
-		this.issues = issues;
+	constructor(e, t, n) {
+		super(), this.ast = e, this.actual = t, this.issues = n;
 	}
-};
-/**
-* Represents a schema issue produced when a value matches *multiple* members of a union that is
-* configured to allow exactly one match (oneOf mode).
-*
-* **When to use**
-*
-* Use when you need to detect ambiguous union matches when `oneOf` validation is
-* enabled.
-*
-* **Details**
-*
-* - `ast` is the `Union` AST node.
-* - `actual` is the raw input value (plain `unknown`).
-* - `successes` lists the AST nodes of each member that accepted the input.
-* - The default formatter renders this as
-*   `"Expected exactly one member to match the input <actual>"`.
-*
-* @see {@link AnyOf} — the opposite: *no* members matched
-*
-* @category models
-* @since 4.0.0
-*/
-var OneOf = class extends Base$1 {
+}, Il = class extends El {
 	_tag = "OneOf";
-	/**
-	* The schema that caused the issue.
-	*/
 	ast;
-	/**
-	* The input value that caused the issue.
-	*/
 	actual;
-	/**
-	* The schemas that were successful.
-	*/
 	successes;
-	constructor(ast, actual, successes) {
-		super();
-		this.ast = ast;
-		this.actual = actual;
-		this.successes = successes;
+	constructor(e, t, n) {
+		super(), this.ast = e, this.actual = t, this.successes = n;
 	}
 };
-function makeFilterIssue(input, entry) {
-	if (isIssue(entry)) return entry;
-	if (typeof entry === "string") return new InvalidValue(some(input), { message: entry });
-	const inner = typeof entry.issue === "string" ? new InvalidValue(some(input), { message: entry.issue }) : entry.issue;
-	return new Pointer(entry.path, inner);
+function Ll(e, t) {
+	if (Tl(t)) return t;
+	if (typeof t == "string") return new Pl(V(e), { message: t });
+	let n = typeof t.issue == "string" ? new Pl(V(e), { message: t.issue }) : t.issue;
+	return new kl(t.path, n);
 }
-/** @internal */
-function makeSingle(input, out) {
-	if (out === void 0) return;
-	if (typeof out === "boolean") return out ? void 0 : new InvalidValue(some(input));
-	return makeFilterIssue(input, out);
+function Rl(e, t) {
+	if (t !== void 0) return typeof t == "boolean" ? t ? void 0 : new Pl(V(e)) : Ll(e, t);
 }
-/** @internal */
-function make$8(input, ast, out) {
-	if (Array.isArray(out)) {
-		if (isReadonlyArrayNonEmpty(out)) {
-			if (out.length === 1) return makeFilterIssue(input, out[0]);
-			return new Composite(ast, some(input), map$1(out, (entry) => makeFilterIssue(input, entry)));
-		}
-		return;
-	}
-	return makeSingle(input, out);
+function zl(e, t, n) {
+	return Array.isArray(n) ? Mr(n) ? n.length === 1 ? Ll(e, n[0]) : new Ml(t, V(e), zr(n, (t) => Ll(e, t))) : void 0 : Rl(e, n);
 }
-/**
-* Returns the built-in {@link LeafHook} used by default formatters.
-*
-* **When to use**
-*
-* Use as the default leaf renderer when customizing only the {@link CheckHook}.
-*
-* **Details**
-*
-* - Checks for a `message` annotation first; returns it if present.
-* - Otherwise generates a default message per `_tag`:
-*   - `InvalidType` → `"Expected <type>, got <actual>"`
-*   - `InvalidValue` → `"Invalid data <actual>"`
-*   - `MissingKey` → `"Missing key"`
-*   - `UnexpectedKey` → `"Unexpected key with value <actual>"`
-*   - `Forbidden` → `"Forbidden operation"`
-*   - `OneOf` → `"Expected exactly one member to match the input <actual>"`
-*
-* **Example** (Using defaultLeafHook with Standard Schema formatter)
-*
-* ```ts
-* import { SchemaIssue } from "effect"
-*
-* const formatter = SchemaIssue.makeFormatterStandardSchemaV1({
-*   leafHook: SchemaIssue.defaultLeafHook
-* })
-* ```
-*
-* @see {@link LeafHook}
-* @see {@link makeFormatterStandardSchemaV1}
-*
-* @category Formatter
-* @since 4.0.0
-*/
-var defaultLeafHook = (issue) => {
-	const message = findMessage(issue);
-	if (message !== void 0) return message;
-	switch (issue._tag) {
-		case "InvalidType": return getExpectedMessage(getExpected(issue.ast), formatOption(issue.actual));
-		case "InvalidValue": return `Invalid data ${formatOption(issue.actual)}`;
+var Bl = (e) => {
+	let t = Jl(e);
+	if (t !== void 0) return t;
+	switch (e._tag) {
+		case "InvalidType": return Hl(Sl(e.ast), Xl(e.actual));
+		case "InvalidValue": return `Invalid data ${Xl(e.actual)}`;
 		case "MissingKey": return "Missing key";
-		case "UnexpectedKey": return `Unexpected key with value ${format$1(issue.actual)}`;
+		case "UnexpectedKey": return `Unexpected key with value ${R(e.actual)}`;
 		case "Forbidden": return "Forbidden operation";
-		case "OneOf": return `Expected exactly one member to match the input ${format$1(issue.actual)}`;
+		case "OneOf": return `Expected exactly one member to match the input ${R(e.actual)}`;
 	}
-};
-/**
-* Returns the built-in {@link CheckHook} used by default formatters.
-*
-* **When to use**
-*
-* Use as the default filter renderer when customizing only the {@link LeafHook}.
-*
-* **Details**
-*
-* - Looks for a `message` annotation on the inner issue first, then on the
-*   filter itself.
-* - Returns `undefined` when no annotation is found, causing the formatter to
-*   fall back to `"Expected <filter>, got <actual>"`.
-*
-* @see {@link CheckHook}
-* @see {@link makeFormatterStandardSchemaV1}
-*
-* @category Formatter
-* @since 4.0.0
-*/
-var defaultCheckHook = (issue) => {
-	return findMessage(issue.issue) ?? findMessage(issue);
-};
-function getExpectedMessage(expected, actual) {
-	return `Expected ${expected}, got ${actual}`;
+}, Vl = (e) => Jl(e.issue) ?? Jl(e);
+function Hl(e, t) {
+	return `Expected ${e}, got ${t}`;
 }
-function toDefaultIssues(issue, path, leafHook, checkHook) {
-	switch (issue._tag) {
+function Ul(e, t, n, r) {
+	switch (e._tag) {
 		case "Filter": {
-			const message = checkHook(issue);
-			if (message !== void 0) return [{
-				path,
-				message
+			let i = r(e);
+			if (i !== void 0) return [{
+				path: t,
+				message: i
 			}];
-			switch (issue.issue._tag) {
+			switch (e.issue._tag) {
 				case "InvalidValue": return [{
-					path,
-					message: getExpectedMessage(formatCheck(issue.filter), format$1(issue.actual))
+					path: t,
+					message: Hl(Wl(e.filter), R(e.actual))
 				}];
-				default: return toDefaultIssues(issue.issue, path, leafHook, checkHook);
+				default: return Ul(e.issue, t, n, r);
 			}
 		}
-		case "Encoding": return toDefaultIssues(issue.issue, path, leafHook, checkHook);
-		case "Pointer": return toDefaultIssues(issue.issue, [...path, ...issue.path], leafHook, checkHook);
-		case "Composite": return issue.issues.flatMap((issue) => toDefaultIssues(issue, path, leafHook, checkHook));
+		case "Encoding": return Ul(e.issue, t, n, r);
+		case "Pointer": return Ul(e.issue, [...t, ...e.path], n, r);
+		case "Composite": return e.issues.flatMap((e) => Ul(e, t, n, r));
 		case "AnyOf": {
-			const message = findMessage(issue);
-			if (issue.issues.length === 0) {
-				if (message !== void 0) return [{
-					path,
-					message
-				}];
-				return [{
-					path,
-					message: getExpectedMessage(getExpected(issue.ast), format$1(issue.actual))
-				}];
-			}
-			return issue.issues.flatMap((issue) => toDefaultIssues(issue, path, leafHook, checkHook));
+			let i = Jl(e);
+			return e.issues.length === 0 ? i === void 0 ? [{
+				path: t,
+				message: Hl(Sl(e.ast), R(e.actual))
+			}] : [{
+				path: t,
+				message: i
+			}] : e.issues.flatMap((e) => Ul(e, t, n, r));
 		}
 		default: return [{
-			path,
-			message: leafHook(issue)
+			path: t,
+			message: n(e)
 		}];
 	}
 }
-function formatCheck(check) {
-	const expected = check.annotations?.expected;
-	if (typeof expected === "string") return expected;
-	switch (check._tag) {
+function Wl(e) {
+	let t = e.annotations?.expected;
+	if (typeof t == "string") return t;
+	switch (e._tag) {
 		case "Filter": return "<filter>";
-		case "FilterGroup": return check.checks.map((check) => formatCheck(check)).join(" & ");
+		case "FilterGroup": return e.checks.map((e) => Wl(e)).join(" & ");
 	}
 }
-/**
-* Creates a {@link Formatter} that converts an {@link Issue} into a
-* human-readable multi-line string.
-*
-* **When to use**
-*
-* Use when you need to format a `SchemaIssue.Issue` as error messages for
-* logging, CLI output, or developer-facing diagnostics.
-*
-* **Details**
-*
-* This is the default formatter used by `SchemaIssue.toString()`.
-*
-* - Flattens the issue tree into `{ message, path }` entries using
-*   {@link defaultLeafHook} and {@link defaultCheckHook}.
-* - Each entry is rendered as `"<message>"` or `"<message>\n  at <path>"`.
-* - Multiple entries are joined with newlines.
-*
-* **Example** (Formatting an issue as a string)
-*
-* ```ts
-* import { SchemaIssue } from "effect"
-*
-* const formatter = SchemaIssue.makeFormatterDefault()
-* ```
-*
-* @see {@link makeFormatterStandardSchemaV1} — produces Standard Schema V1 format instead
-* @see {@link Formatter}
-*
-* @category Formatter
-* @since 4.0.0
-*/
-function makeFormatterDefault() {
-	return (issue) => toDefaultIssues(issue, [], defaultLeafHook, defaultCheckHook).map(formatDefaultIssue).join("\n");
+function Gl() {
+	return (e) => Ul(e, [], Bl, Vl).map(ql).join("\n");
 }
-/** @internal */
-var defaultFormatter = /*#__PURE__*/ makeFormatterDefault();
-function formatDefaultIssue(issue) {
-	let out = issue.message;
-	if (issue.path && issue.path.length > 0) {
-		const path = formatPath(issue.path);
-		out += `\n  at ${path}`;
+var Kl = /*#__PURE__*/ Gl();
+function ql(e) {
+	let t = e.message;
+	if (e.path && e.path.length > 0) {
+		let n = Xt(e.path);
+		t += `\n  at ${n}`;
 	}
-	return out;
+	return t;
 }
-function findMessage(issue) {
-	switch (issue._tag) {
+function Jl(e) {
+	switch (e._tag) {
 		case "InvalidType":
 		case "OneOf":
 		case "Composite":
-		case "AnyOf": return getMessageAnnotation(issue.ast.annotations);
+		case "AnyOf": return Yl(e.ast.annotations);
 		case "InvalidValue":
-		case "Forbidden": return getMessageAnnotation(issue.annotations);
-		case "MissingKey": return getMessageAnnotation(issue.annotations, "messageMissingKey");
-		case "UnexpectedKey": return getMessageAnnotation(issue.ast.annotations, "messageUnexpectedKey");
-		case "Filter": return getMessageAnnotation(issue.filter.annotations);
-		case "Encoding": return findMessage(issue.issue);
+		case "Forbidden": return Yl(e.annotations);
+		case "MissingKey": return Yl(e.annotations, "messageMissingKey");
+		case "UnexpectedKey": return Yl(e.ast.annotations, "messageUnexpectedKey");
+		case "Filter": return Yl(e.filter.annotations);
+		case "Encoding": return Jl(e.issue);
 	}
 }
-function getMessageAnnotation(annotations, type = "message") {
-	const message = annotations?.[type];
-	if (typeof message === "string") return message;
+function Yl(e, t = "message") {
+	let n = e?.[t];
+	if (typeof n == "string") return n;
 }
-function formatOption(actual) {
-	if (isNone(actual)) return "no value provided";
-	return format$1(actual.value);
+function Xl(e) {
+	return yr(e) ? "no value provided" : R(e.value);
 }
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaGetter.js
-/**
-* Builds one-way conversions used by schemas.
-*
-* A `Getter<T, E, R>` receives an optional encoded value and returns an
-* optional decoded value. It can also report a schema issue or require Effect
-* services. Schema transformations use getters to describe one direction of a
-* conversion, for example decoding a field from input data. This module
-* includes basic getters, validation helpers, pure and effectful conversions,
-* and ready-made conversions for common string, number, binary, date, form, and
-* URL-related values.
-*
-* @since 4.0.0
-*/
-/**
-* Represents a composable transformation from an encoded type `E` to a decoded type `T`.
-*
-* **When to use**
-*
-* Use when you need a schema getter to build and compose custom transformations
-* for `Schema.decodeTo` or `Schema.decode`.
-*
-* **Details**
-*
-* A getter wraps a function `Option<E> -> Effect<Option<T>, Issue, R>`. It
-* receives `Option.None` when the encoded key is absent, such as a missing
-* struct field, and returns `Option.None` to omit the value from the decoded
-* output. It fails with `Issue` on invalid input and may require Effect
-* services via `R`. `.map(f)` applies `f` to the decoded value inside `Some`
-* while leaving `None` unchanged. `.compose(other)` chains two getters by
-* feeding the output of `this` into `other`; passthrough getters on either side
-* are optimized away.
-*
-* **Example** (Creating and composing getters)
-*
-* ```ts
-* import { SchemaGetter } from "effect"
-*
-* const parseNumber = SchemaGetter.transform<number, string>((s) => Number(s))
-* const double = SchemaGetter.transform<number, number>((n) => n * 2)
-* const composed = parseNumber.compose(double)
-* // composed: Getter<number, string> — parses then doubles
-* ```
-*
-* @see {@link transform} to create a getter from a pure function
-* @see {@link passthrough} for the identity getter
-* @see {@link transformOrFail} for fallible transformation
-*
-* @category models
-* @since 4.0.0
-*/
-var Getter = class Getter extends Class$1 {
+var Zl = class e extends Ve {
 	run;
-	constructor(run) {
-		super();
-		this.run = run;
+	constructor(e) {
+		super(), this.run = e;
 	}
-	map(f) {
-		return new Getter((oe, options) => this.run(oe, options).pipe(mapEager(map$2(f))));
+	map(t) {
+		return new e((e, n) => this.run(e, n).pipe(pl(Sr(t))));
 	}
-	compose(other) {
-		if (isPassthrough(this)) return other;
-		if (isPassthrough(other)) return this;
-		return new Getter((oe, options) => this.run(oe, options).pipe(flatMapEager((ot) => other.run(ot, options))));
+	compose(t) {
+		return $l(this) ? t : $l(t) ? this : new e((e, n) => this.run(e, n).pipe(hl((e) => t.run(e, n))));
 	}
-};
-var passthrough_$1 = /*#__PURE__*/ new Getter(succeed);
-function isPassthrough(getter) {
-	return getter.run === passthrough_$1.run;
+}, Ql = /*#__PURE__*/ new Zl(Lc);
+function $l(e) {
+	return e.run === Ql.run;
 }
-function passthrough$1() {
-	return passthrough_$1;
+function eu() {
+	return Ql;
 }
-/**
-* Creates a getter that applies a pure function to present values.
-*
-* **When to use**
-*
-* Use when you need a schema getter for a pure, infallible transformation
-* between types.
-* - Building encode/decode pairs for `Schema.decodeTo`.
-*
-* **Details**
-*
-* - This is the most commonly used constructor.
-* - Transforms `Some(e)` to `Some(f(e))` and leaves `None` unchanged.
-* - Skips `None` inputs — only called when a value is present.
-* - Never fails.
-*
-* **Example** (String to number transformation pair)
-*
-* ```ts
-* import { Schema, SchemaGetter } from "effect"
-*
-* const NumberFromString = Schema.String.pipe(
-*   Schema.decodeTo(Schema.Number, {
-*     decode: SchemaGetter.transform((s) => Number(s)),
-*     encode: SchemaGetter.transform((n) => String(n))
-*   })
-* )
-* ```
-*
-* @see {@link transformOrFail} when the transformation can fail
-* @see {@link transformOptional} when you need to handle `None` inputs
-* @see {@link passthrough} when no transformation is needed
-*
-* @category constructors
-* @since 4.0.0
-*/
-function transform$1(f) {
-	return transformOptional(map$2(f));
+function tu(e) {
+	return nu(Sr(e));
 }
-/**
-* Creates a getter that transforms the full `Option` — both present and absent values.
-*
-* **When to use**
-*
-* Use when you need a schema getter to handle both `Some` and `None` cases.
-*
-* **Details**
-*
-* The getter is pure and never fails. It receives the full `Option<E>` and
-* must return `Option<T>`, so it can turn a present value into absent or an
-* absent value into present.
-*
-* **Example** (Filter out empty strings)
-*
-* ```ts
-* import { Option, SchemaGetter } from "effect"
-*
-* const skipEmpty = SchemaGetter.transformOptional<string, string>((o) =>
-*   Option.filter(o, (s) => s.length > 0)
-* )
-* ```
-*
-* @see {@link transform} when you only need to transform present values
-* @see {@link omit} when you always want `None`
-*
-* @category constructors
-* @since 4.0.0
-*/
-function transformOptional(f) {
-	return new Getter((oe) => succeed(f(oe)));
+function nu(e) {
+	return new Zl((t) => Lc(e(t)));
 }
-/**
-* Creates a getter that replaces `undefined` values with a default.
-*
-* **When to use**
-*
-* Use when you need a schema getter to provide a fallback for a field that may
-* be `undefined` in the encoded input.
-*
-* **Details**
-*
-* - If the input is `Some(undefined)` or `None`, produces `Some(T)`.
-* - If the input is `Some(value)` where value is not `undefined`, passes it through.
-* - `defaultValue` is an `Effect` that will be executed each time a default is needed.
-*
-* **Example** (Default value for optional field)
-*
-* ```ts
-* import { Effect, SchemaGetter } from "effect"
-*
-* const withZero = SchemaGetter.withDefault(Effect.succeed(0))
-* // Getter<number, number | undefined>
-* ```
-*
-* @see {@link onNone} to handle only absent keys (not `undefined` values)
-* @see {@link required} when absent input should fail instead of using a default
-*
-* @category constructors
-* @since 4.0.0
-*/
-function withDefault(defaultValue) {
-	return new Getter((o) => {
-		const filtered = filter(o, isNotUndefined);
-		return isSome(filtered) ? succeed(filtered) : mapEager(defaultValue, some);
+function ru(e) {
+	return new Zl((t) => {
+		let n = Cr(t, it);
+		return br(n) ? Lc(n) : pl(e, V);
 	});
 }
-/**
-* Coerces any value to a `string` using the global `String()` constructor.
-*
-* **When to use**
-*
-* Use when you need a schema getter to coerce a present encoded value to a
-* string with `String()`.
-*
-* **Details**
-*
-* The getter is pure, never fails, and delegates to `globalThis.String`.
-*
-* **Example** (Coerce to string)
-*
-* ```ts
-* import { SchemaGetter } from "effect"
-*
-* const toString = SchemaGetter.String<number>()
-* // Getter<string, number>
-* ```
-*
-* @see {@link transform} for custom string conversions
-*
-* @category Coercions
-* @since 4.0.0
-*/
-function String$3() {
-	return transform$1(globalThis.String);
+function iu() {
+	return tu(globalThis.String);
 }
-/**
-* Coerces any value to a `number` using the global `Number()` constructor.
-*
-* **When to use**
-*
-* Use when you need a schema getter to coerce a present encoded value to a
-* number with `Number()`.
-*
-* **Details**
-*
-* The getter is pure, never fails, and delegates to `globalThis.Number`. It may
-* produce `NaN` for non-numeric inputs.
-*
-* **Example** (Coerce to number)
-*
-* ```ts
-* import { SchemaGetter } from "effect"
-*
-* const toNumber = SchemaGetter.Number<string>()
-* // Getter<number, string>
-* ```
-*
-* @see {@link transformOrFail} for validated number parsing
-*
-* @category Coercions
-* @since 4.0.0
-*/
-function Number$3() {
-	return transform$1(globalThis.Number);
+function au() {
+	return tu(globalThis.Number);
+}
+function ou() {
+	return tu(globalThis.BigInt);
+}
+function su() {
+	return tu((e) => new globalThis.Date(e));
 }
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaTransformation.js
-var TypeId$5 = "~effect/SchemaTransformation/Transformation";
-/**
-* Represents a bidirectional transformation between a decoded type `T` and an encoded
-* type `E`, built from a pair of `Getter`s.
-*
-* **When to use**
-*
-* Use when you need a schema transformation that defines how a schema converts
-* between two representations.
-* - You want to compose multiple transformations into a pipeline.
-* - You want to flip a transformation to swap decode/encode.
-*
-* **Details**
-*
-* This is the primary building block for `Schema.decodeTo`, `Schema.encodeTo`,
-* `Schema.decode`, `Schema.encode`, and `Schema.link`. Each direction is a
-* `SchemaGetter.Getter` that handles optionality, failure, and Effect services.
-*
-* - Immutable — `flip()` and `compose()` return new instances.
-* - `flip()` swaps the decode and encode getters.
-* - `compose(other)` chains: `this.decode` then `other.decode` for decoding,
-*   `other.encode` then `this.encode` for encoding.
-*
-* **Example** (Composing two transformations)
-*
-* ```ts
-* import { SchemaTransformation } from "effect"
-*
-* const trimAndLower = SchemaTransformation.trim().compose(
-*   SchemaTransformation.toLowerCase()
-* )
-* // decode: trim then lowercase
-* // encode: passthrough (both directions)
-* ```
-*
-* @see {@link make} — construct from `{ decode, encode }` getters
-* @see {@link transform} — construct from pure functions
-* @see {@link transformOrFail} — construct from effectful functions
-* @see {@link Middleware} — effect-pipeline-level alternative
-*
-* @category models
-* @since 4.0.0
-*/
-var Transformation = class Transformation {
-	[TypeId$5] = TypeId$5;
+var cu = "~effect/SchemaTransformation/Transformation", lu = class e {
+	[cu] = cu;
 	_tag = "Transformation";
 	decode;
 	encode;
-	constructor(decode, encode) {
-		this.decode = decode;
-		this.encode = encode;
+	constructor(e, t) {
+		this.decode = e, this.encode = t;
 	}
 	flip() {
-		return new Transformation(this.encode, this.decode);
+		return new e(this.encode, this.decode);
 	}
-	compose(other) {
-		return new Transformation(this.decode.compose(other.decode), other.encode.compose(this.encode));
+	compose(t) {
+		return new e(this.decode.compose(t.decode), t.encode.compose(this.encode));
 	}
 };
-/**
-* Returns `true` if `u` is a `Transformation` instance.
-*
-* **When to use**
-*
-* Use to check whether a value is already a schema transformation before
-* wrapping it.
-*
-* **Details**
-*
-* - Pure predicate, no side effects.
-* - Acts as a TypeScript type guard.
-*
-* **Example** (Checking a value)
-*
-* ```ts
-* import { SchemaTransformation } from "effect"
-*
-* SchemaTransformation.isTransformation(SchemaTransformation.trim())
-* // true
-*
-* SchemaTransformation.isTransformation({ decode: null, encode: null })
-* // false
-* ```
-*
-* @see {@link Transformation}
-* @see {@link make}
-*
-* @category guards
-* @since 4.0.0
-*/
-function isTransformation(u) {
-	return hasProperty(u, TypeId$5);
+function uu(e) {
+	return N(e, cu);
 }
-/**
-* Constructs a `Transformation` from an object with `decode` and `encode`
-* `Getter`s. If the input is already a `Transformation`, returns it as-is.
-*
-* **When to use**
-*
-* Use when you already have schema getter instances and want to pair them into
-* a schema transformation.
-* - You want idempotent wrapping (won't double-wrap).
-*
-* **Details**
-*
-* - Returns the input unchanged if it is already a `Transformation`.
-*
-* **Example** (Wrapping existing getters)
-*
-* ```ts
-* import { SchemaGetter, SchemaTransformation } from "effect"
-*
-* const t = SchemaTransformation.make({
-*   decode: SchemaGetter.transform<number, string>((s) => Number(s)),
-*   encode: SchemaGetter.transform<string, number>((n) => String(n))
-* })
-* ```
-*
-* @see {@link transform} — simpler constructor from pure functions
-* @see {@link transformOrFail} — constructor from effectful functions
-* @see {@link Transformation}
-*
-* @category constructors
-* @since 3.10.0
-*/
-var make$7 = (options) => {
-	if (isTransformation(options)) return options;
-	return new Transformation(options.decode, options.encode);
-};
-var passthrough_ = /*#__PURE__*/ new Transformation(/*#__PURE__*/ passthrough$1(), /*#__PURE__*/ passthrough$1());
-function passthrough() {
-	return passthrough_;
+var du = (e) => uu(e) ? e : new lu(e.decode, e.encode), fu = /*#__PURE__*/ new lu(/*#__PURE__*/ eu(), /*#__PURE__*/ eu());
+function pu() {
+	return fu;
 }
-/**
-* Decodes a `string` into a `number` and encodes a `number` back to a
-* `string`.
-*
-* **When to use**
-*
-* Use when you need a schema transformation to parse numeric strings from APIs,
-* form data, or URL parameters.
-*
-* **Details**
-*
-* Decoding coerces the string to a number like `Number(s)`. Encoding coerces
-* the number to a string like `String(n)`. This does not validate that the
-* result is finite; combine with `Schema.Finite` or `Schema.Int` for stricter
-* checks.
-*
-* **Example** (Number from string)
-*
-* ```ts
-* import { Schema, SchemaTransformation } from "effect"
-*
-* const schema = Schema.String.pipe(
-*   Schema.decodeTo(Schema.Number, SchemaTransformation.numberFromString)
-* )
-* ```
-*
-* @see {@link bigintFromString}
-* @see {@link transform}
-*
-* @category Coercions
-* @since 4.0.0
-*/
-var numberFromString = /*#__PURE__*/ new Transformation(/*#__PURE__*/ Number$3(), /*#__PURE__*/ String$3());
+var mu = /*#__PURE__*/ new lu(/*#__PURE__*/ au(), /*#__PURE__*/ iu()), hu = /*#__PURE__*/ new lu(/*#__PURE__*/ ou(), /*#__PURE__*/ iu()), gu = /*#__PURE__*/ new lu(/*#__PURE__*/ su(), /*#__PURE__*/ tu(Zt));
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaAST.js
-/**
-* Represents Effect schemas as runtime trees.
-*
-* Every `Schema` has an AST made from nodes for declarations, primitives,
-* literals, arrays, objects, unions, suspended schemas, checks, annotations,
-* encoding links, and parsing context. Most users work with the higher-level
-* `Schema` module. Use `SchemaAST` when you need to inspect schema nodes, build
-* ASTs programmatically, change encoded or decoded views, collect issues, or
-* run low-level schema checks.
-*
-* @since 4.0.0
-*/
-function makeGuard(tag) {
-	return (ast) => ast._tag === tag;
+function _u(e) {
+	return (t) => t._tag === e;
 }
-/**
-* Narrows an {@link AST} to {@link Declaration}.
-*
-* **When to use**
-*
-* Use to recognize declaration AST nodes before running declaration-specific
-* handling.
-*
-* @see {@link Declaration} for the AST node type narrowed by this guard
-*
-* @category guards
-* @since 3.10.0
-*/
-var isDeclaration = /*#__PURE__*/ makeGuard("Declaration");
-/**
-* Narrows an {@link AST} to {@link Never}.
-*
-* **When to use**
-*
-* Use to detect the AST node for a schema that can never match before handling
-* other schema variants.
-*
-* @see {@link Never} for the AST node type narrowed by this guard
-* @see {@link never} for the singleton `Never` AST instance
-*
-* @category guards
-* @since 4.0.0
-*/
-var isNever = /*#__PURE__*/ makeGuard("Never");
-/**
-* Narrows an {@link AST} to {@link Literal}.
-*
-* **When to use**
-*
-* Use to recognize exact string, number, boolean, or bigint literal AST nodes.
-*
-* @see {@link Literal} for the AST node type narrowed by this guard
-* @see {@link LiteralValue} for the values stored by literal nodes
-*
-* @category guards
-* @since 3.10.0
-*/
-var isLiteral = /*#__PURE__*/ makeGuard("Literal");
-/**
-* Narrows an {@link AST} to {@link UniqueSymbol}.
-*
-* @category guards
-* @since 3.10.0
-*/
-var isUniqueSymbol = /*#__PURE__*/ makeGuard("UniqueSymbol");
-/**
-* Narrows an {@link AST} to {@link Arrays}.
-*
-* **When to use**
-*
-* Use to recognize array-like AST nodes before reading their element, rest, or
-* mutability metadata.
-*
-* @see {@link Arrays} for the AST node type narrowed by this guard
-*
-* @category guards
-* @since 4.0.0
-*/
-var isArrays = /*#__PURE__*/ makeGuard("Arrays");
-/**
-* Narrows an {@link AST} to {@link Objects}.
-*
-* @category guards
-* @since 4.0.0
-*/
-var isObjects = /*#__PURE__*/ makeGuard("Objects");
-/**
-* Narrows an {@link AST} to {@link Union}.
-*
-* @category guards
-* @since 3.10.0
-*/
-var isUnion = /*#__PURE__*/ makeGuard("Union");
-/**
-* Represents a single step in an {@link Encoding} chain.
-*
-* **Details**
-*
-* A link pairs a target {@link AST} with a `Transformation` or `Middleware`
-* that converts values between the current node and the target.
-*
-* - `to` — the AST node on the other side of this transformation step.
-* - `transformation` — the bidirectional conversion logic (decode/encode).
-*
-* Links are composed into a non-empty array ({@link Encoding}) attached to
-* AST nodes that have a different encoded representation.
-*
-* @see {@link Encoding}
-* @see {@link decodeTo}
-* @category models
-* @since 4.0.0
-*/
-var Link = class {
+var vu = /*#__PURE__*/ _u("Declaration"), yu = /*#__PURE__*/ _u("Never"), bu = /*#__PURE__*/ _u("Literal"), xu = /*#__PURE__*/ _u("UniqueSymbol"), Su = /*#__PURE__*/ _u("Arrays"), Cu = /*#__PURE__*/ _u("Objects"), wu = /*#__PURE__*/ _u("Union"), K = class {
 	to;
 	transformation;
-	constructor(to, transformation) {
-		this.to = to;
-		this.transformation = transformation;
+	constructor(e, t) {
+		this.to = e, this.transformation = t;
 	}
-};
-/** @internal */
-var defaultParseOptions = {};
-/**
-* Represents per-property metadata attached to AST nodes via {@link Base.context}.
-*
-* **Details**
-*
-* Tracks whether a property key is optional, mutable, has a constructor
-* default, or carries key-level annotations. Typically set by helpers like
-* {@link optionalKey} and `Schema.mutableKey`.
-*
-* - `isOptional` — the property key may be absent from the input.
-* - `isMutable` — the property is `readonly` when `false`.
-* - `defaultValue` — an {@link Encoding} applied during construction to
-*   supply missing values.
-* - `annotations` — key-level annotations (e.g. description of the key
-*   itself).
-*
-* @see {@link optionalKey}
-* @see {@link isOptional}
-* @category models
-* @since 4.0.0
-*/
-var Context = class {
+}, Tu = {}, Eu = class {
 	isOptional;
 	isMutable;
-	/** Used for constructor default values (e.g. `withConstructorDefault` API) */
 	defaultValue;
 	annotations;
-	constructor(isOptional, isMutable, defaultValue = void 0, annotations = void 0) {
-		this.isOptional = isOptional;
-		this.isMutable = isMutable;
-		this.defaultValue = defaultValue;
-		this.annotations = annotations;
+	constructor(e, t, n = void 0, r = void 0) {
+		this.isOptional = e, this.isMutable = t, this.defaultValue = n, this.annotations = r;
 	}
-};
-var TypeId$4 = "~effect/Schema";
-/**
-* Represents the abstract base class for all {@link AST} node variants.
-*
-* **Details**
-*
-* Every AST node extends `Base` and inherits these fields:
-*
-* - `annotations` — user-supplied metadata (identifier, title, description,
-*   arbitrary keys).
-* - `checks` — optional {@link Checks} for post-type-match validation.
-* - `encoding` — optional {@link Encoding} chain for type ↔ wire
-*   transformations.
-* - `context` — optional {@link Context} for per-property metadata.
-*
-* Subclasses add a `_tag` discriminant and variant-specific data.
-*
-* @see {@link AST}
-* @category models
-* @since 4.0.0
-*/
-var Base = class {
-	[TypeId$4] = TypeId$4;
+}, Du = "~effect/Schema", q = class {
+	[Du] = Du;
 	annotations;
 	checks;
 	encoding;
 	context;
-	constructor(annotations = void 0, checks = void 0, encoding = void 0, context = void 0) {
-		this.annotations = annotations;
-		this.checks = checks;
-		this.encoding = encoding;
-		this.context = context;
+	constructor(e = void 0, t = void 0, n = void 0, r = void 0) {
+		this.annotations = e, this.checks = t, this.encoding = n, this.context = r;
 	}
 	toString() {
 		return `<${this._tag}>`;
 	}
-};
-/**
-* AST node for user-defined opaque types with custom parsing logic.
-*
-* **When to use**
-*
-* Use when you need a custom schema AST node because none of the built-in
-* nodes fit.
-*
-* **Details**
-*
-* - `typeParameters` — inner schemas this declaration is parameterized over
-*   (e.g. the element type for a custom collection).
-* - `run` — factory that receives `typeParameters` and returns a parser that
-*   validates or transforms raw input.
-*
-* @see {@link isDeclaration}
-* @category models
-* @since 3.10.0
-*/
-var Declaration = class Declaration extends Base {
+}, Ou = class e extends q {
 	_tag = "Declaration";
 	typeParameters;
 	run;
 	encodingChecks;
-	constructor(typeParameters, run, annotations, checks, encoding, context, encodingChecks) {
-		super(annotations, checks, encoding, context);
-		this.typeParameters = typeParameters;
-		this.run = run;
-		this.encodingChecks = encodingChecks;
+	constructor(e, t, n, r, i, a, o) {
+		super(n, r, i, a), this.typeParameters = e, this.run = t, this.encodingChecks = o;
 	}
-	/** @internal */
 	getParser() {
-		const run = this.run(this.typeParameters);
-		return (oinput, options) => {
-			if (isNone(oinput)) return succeedNone;
-			return mapEager(run(oinput.value, this, options), some);
-		};
+		let e = this.run(this.typeParameters);
+		return (t, n) => yr(t) ? Rc : pl(e(t.value, this, n), V);
 	}
-	rebuild(recur, checks, encodingChecks) {
-		const tps = mapOrSame(this.typeParameters, recur);
-		return tps === this.typeParameters ? this : new Declaration(tps, this.run, this.annotations, checks, void 0, this.context, encodingChecks);
+	rebuild(t, n, r) {
+		let i = Md(this.typeParameters, t);
+		return i === this.typeParameters ? this : new e(i, this.run, this.annotations, n, void 0, this.context, r);
 	}
-	/** @internal */
-	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+	recur(e) {
+		return this.rebuild(e, this.checks, this.encodingChecks);
 	}
-	/** @internal */
-	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+	flip(e) {
+		return this.rebuild(e, this.encodingChecks, this.checks);
 	}
-	/** @internal */
 	getExpected() {
-		const expected = this.annotations?.expected;
-		if (typeof expected === "string") return expected;
-		return "<Declaration>";
+		let e = this.annotations?.expected;
+		return typeof e == "string" ? e : "<Declaration>";
 	}
-};
-/**
-* AST node matching the `null` literal value.
-*
-* **Details**
-*
-* Parsing succeeds only when the input is exactly `null`.
-*
-* @see {@link null_ null}
-* @see {@link isNull}
-* @category models
-* @since 4.0.0
-*/
-var Null$1 = class extends Base {
+}, ku = /*#__PURE__*/ new class extends q {
 	_tag = "Null";
-	/** @internal */
 	getParser() {
-		return fromConst(this, null);
+		return Xd(this, null);
 	}
-	/** @internal */
 	getExpected() {
 		return "null";
 	}
-};
-var null_ = /*#__PURE__*/ new Null$1();
-/**
-* AST node representing the `unknown` type — every value matches.
-*
-* **Details**
-*
-* Unlike {@link Any}, this is type-safe: the parsed result is typed as
-* `unknown` rather than `any`.
-*
-* @see {@link unknown}
-* @see {@link isUnknown}
-* @category models
-* @since 4.0.0
-*/
-var Unknown = class extends Base {
-	_tag = "Unknown";
-	/** @internal */
+}(), Au = class extends q {
+	_tag = "Undefined";
 	getParser() {
-		return fromRefinement(this, isUnknown);
+		return Xd(this, void 0);
 	}
-	/** @internal */
+	toCodecJson() {
+		return J(this, [ju]);
+	}
+	getExpected() {
+		return "undefined";
+	}
+}, ju = /*#__PURE__*/ new K(ku, /*#__PURE__*/ new lu(/*#__PURE__*/ tu(() => void 0), /*#__PURE__*/ tu(() => null))), Mu = /*#__PURE__*/ new Au(), Nu = /*#__PURE__*/ new class extends q {
+	_tag = "Any";
+	getParser() {
+		return Zd(this, ot);
+	}
+	getExpected() {
+		return "any";
+	}
+}(), Pu = /*#__PURE__*/ new class extends q {
+	_tag = "Unknown";
+	getParser() {
+		return Zd(this, ot);
+	}
 	getExpected() {
 		return "unknown";
 	}
-};
-/**
-* Provides the singleton {@link Unknown} AST instance.
-*
-* **When to use**
-*
-* Use when you need the reusable AST singleton for a schema node that accepts
-* every value while keeping parsed values opaque.
-*
-* @see {@link any} for the singleton that accepts every value as `any`
-*
-* @category constructors
-* @since 4.0.0
-*/
-var unknown = /*#__PURE__*/ new Unknown();
-/**
-* AST node matching an exact primitive value (string, number, boolean, or
-* bigint).
-*
-* **Details**
-*
-* Parsing succeeds only when the input is strictly equal (`===`) to the
-* stored `literal`. Numeric literals must be finite — `Infinity`, `-Infinity`,
-* and `NaN` are rejected at construction time.
-*
-* **Example** (Creating a literal AST)
-*
-* ```ts
-* import { SchemaAST } from "effect"
-*
-* const ast = new SchemaAST.Literal("active")
-* console.log(ast.literal) // "active"
-* ```
-*
-* @see {@link LiteralValue}
-* @see {@link isLiteral}
-* @category models
-* @since 3.10.0
-*/
-var Literal$1 = class extends Base {
+}(), Fu = /*#__PURE__*/ new class extends q {
+	_tag = "ObjectKeyword";
+	getParser() {
+		return Zd(this, st);
+	}
+	getExpected() {
+		return "object | array | function";
+	}
+}(), Iu = class extends q {
 	_tag = "Literal";
 	literal;
-	constructor(literal, annotations, checks, encoding, context) {
-		super(annotations, checks, encoding, context);
-		if (typeof literal === "number" && !globalThis.Number.isFinite(literal)) throw new Error(`A numeric literal must be finite, got ${format$1(literal)}`);
-		this.literal = literal;
+	constructor(e, t, n, r, i) {
+		if (super(t, n, r, i), typeof e == "number" && !globalThis.Number.isFinite(e)) throw Error(`A numeric literal must be finite, got ${R(e)}`);
+		this.literal = e;
 	}
-	/** @internal */
 	getParser() {
-		return fromConst(this, this.literal);
+		return Xd(this, this.literal);
 	}
-	/** @internal */
 	toCodecJson() {
-		return typeof this.literal === "bigint" ? literalToString(this) : this;
+		return typeof this.literal == "bigint" ? Lu(this) : this;
 	}
-	/** @internal */
 	toCodecStringTree() {
-		return typeof this.literal === "string" ? this : literalToString(this);
+		return typeof this.literal == "string" ? this : Lu(this);
 	}
-	/** @internal */
 	getExpected() {
-		return typeof this.literal === "string" ? JSON.stringify(this.literal) : globalThis.String(this.literal);
+		return typeof this.literal == "string" ? JSON.stringify(this.literal) : globalThis.String(this.literal);
 	}
 };
-function literalToString(ast) {
-	const literalAsString = globalThis.String(ast.literal);
-	return replaceEncoding(ast, [new Link(new Literal$1(literalAsString), new Transformation(transform$1(() => ast.literal), transform$1(() => literalAsString)))]);
+function Lu(e) {
+	let t = globalThis.String(e.literal);
+	return J(e, [new K(new Iu(t), new lu(tu(() => e.literal), tu(() => t)))]);
 }
-/**
-* AST node matching any `string` value.
-*
-* @see {@link string}
-* @see {@link isString}
-*
-* @category models
-* @since 4.0.0
-*/
-var String$2 = class extends Base {
+var Ru = /*#__PURE__*/ new class extends q {
 	_tag = "String";
-	/** @internal */
 	getParser() {
-		return fromRefinement(this, isString);
+		return Zd(this, Ze);
 	}
-	/** @internal */
 	getExpected() {
 		return "string";
 	}
-};
-/**
-* Provides the singleton {@link String} AST instance.
-*
-* **When to use**
-*
-* Use as the shared `SchemaAST` node for unconstrained JavaScript strings.
-*
-* @see {@link String} for the AST node class
-* @see {@link isString} for narrowing an AST to a string node
-*
-* @category constructors
-* @since 4.0.0
-*/
-var string = /*#__PURE__*/ new String$2();
-/**
-* AST node matching any `number` value (including `NaN`, `Infinity`,
-* `-Infinity`).
-*
-* **Details**
-*
-* Default JSON serialization:
-*
-* - Finite numbers are serialized as JSON numbers.
-* - `Infinity`, `-Infinity`, and `NaN` are serialized as JSON strings.
-*
-* If the node has an `isFinite` or `isInt` check, the string fallback is
-* skipped since non-finite values cannot occur.
-*
-* @see {@link number}
-* @see {@link isNumber}
-* @category models
-* @since 4.0.0
-*/
-var Number$2 = class extends Base {
+}(), zu = class extends q {
 	_tag = "Number";
-	/** @internal */
 	getParser() {
-		return fromRefinement(this, isNumber);
+		return Zd(this, Qe);
 	}
-	/** @internal */
 	toCodecJson() {
-		if (this.checks && (hasCheck(this.checks, "isFinite") || hasCheck(this.checks, "isInt"))) return this;
-		return replaceEncoding(this, [numberToJson]);
+		return this.checks && (Bu(this.checks, "isFinite") || Bu(this.checks, "isInt")) ? this : J(this, [gd]);
 	}
-	/** @internal */
 	toCodecStringTree() {
-		if (this.checks && (hasCheck(this.checks, "isFinite") || hasCheck(this.checks, "isInt"))) return replaceEncoding(this, [finiteToString]);
-		return replaceEncoding(this, [numberToString]);
+		return this.checks && (Bu(this.checks, "isFinite") || Bu(this.checks, "isInt")) ? J(this, [af]) : J(this, [of]);
 	}
-	/** @internal */
 	getExpected() {
 		return "number";
 	}
 };
-function hasCheck(checks, tag) {
-	return checks.some((c) => {
-		switch (c._tag) {
-			case "Filter": return c.annotations?.meta?._tag === tag;
-			case "FilterGroup": return hasCheck(c.checks, tag);
+function Bu(e, t) {
+	return e.some((e) => {
+		switch (e._tag) {
+			case "Filter": return e.annotations?.meta?._tag === t;
+			case "FilterGroup": return Bu(e.checks, t);
 		}
 	});
 }
-/**
-* Provides the singleton {@link Number} AST instance.
-*
-* **When to use**
-*
-* Use when you need the canonical `SchemaAST` node for schemas that accept any
-* JavaScript number value.
-*
-* @see {@link Number} for the AST node class and serialization behavior
-* @see {@link Literal} for exact finite numeric literal AST nodes
-*
-* @category constructors
-* @since 4.0.0
-*/
-var number = /*#__PURE__*/ new Number$2();
-/**
-* AST node for array-like types — both tuples and arrays.
-*
-* **When to use**
-*
-* Use when constructing or inspecting AST nodes for tuple or array-like schemas,
-* including rest elements.
-*
-* **Details**
-*
-* - `elements` — positional element types (tuple elements). An element is
-*   optional if its {@link Context.isOptional} is `true`.
-* - `rest` — the rest/variadic element types. When non-empty, the first
-*   entry is the "spread" type (e.g. `...Array<string>`), and subsequent
-*   entries are trailing positional elements after the spread.
-* - `isMutable` — whether the resulting array is `readonly` (`false`) or
-*   mutable (`true`).
-*
-* **Gotchas**
-*
-* Construction enforces TypeScript ordering rules: a required element
-* cannot follow an optional one, and an optional element cannot follow a
-* rest element.
-*
-* **Example** (Inspecting a tuple AST)
-*
-* ```ts
-* import { Schema, SchemaAST } from "effect"
-*
-* const schema = Schema.Tuple([Schema.String, Schema.Number])
-* const ast = schema.ast
-*
-* if (SchemaAST.isArrays(ast)) {
-*   console.log(ast.elements.length) // 2
-*   console.log(ast.rest.length)     // 0
-* }
-* ```
-*
-* @see {@link isArrays}
-* @see {@link Objects}
-* @category models
-* @since 4.0.0
-*/
-var Arrays = class Arrays extends Base {
+var Vu = /*#__PURE__*/ new zu(), Hu = /*#__PURE__*/ new class extends q {
+	_tag = "Boolean";
+	getParser() {
+		return Zd(this, $e);
+	}
+	getExpected() {
+		return "boolean";
+	}
+}(), Uu = /*#__PURE__*/ new class extends q {
+	_tag = "BigInt";
+	getParser() {
+		return Zd(this, et);
+	}
+	toCodecStringTree() {
+		return J(this, [uf]);
+	}
+	getExpected() {
+		return "bigint";
+	}
+}(), Wu = class e extends q {
 	_tag = "Arrays";
 	isMutable;
 	elements;
 	rest;
 	encodingChecks;
-	constructor(isMutable, elements, rest, annotations, checks, encoding, context, encodingChecks) {
-		super(annotations, checks, encoding, context);
-		this.isMutable = isMutable;
-		this.elements = elements;
-		this.rest = rest;
-		this.encodingChecks = encodingChecks;
-		const i = elements.findIndex(isOptional);
-		if (i !== -1 && (elements.slice(i + 1).some((e) => !isOptional(e)) || rest.length > 1)) throw new Error("A required element cannot follow an optional element. ts(1257)");
-		if (rest.length > 1 && rest.slice(1).some(isOptional)) throw new Error("An optional element cannot follow a rest element. ts(1266)");
+	constructor(e, t, n, r, i, a, o, s) {
+		super(r, i, a, o), this.isMutable = e, this.elements = t, this.rest = n, this.encodingChecks = s;
+		let c = t.findIndex(Bd);
+		if (c !== -1 && (t.slice(c + 1).some((e) => !Bd(e)) || n.length > 1)) throw Error("A required element cannot follow an optional element. ts(1257)");
+		if (n.length > 1 && n.slice(1).some(Bd)) throw Error("An optional element cannot follow a rest element. ts(1266)");
 	}
-	/** @internal */
-	getParser(recur) {
-		const ast = this;
-		const elements = ast.elements.map((ast) => ({
-			ast,
-			parser: recur(ast)
-		}));
-		const rest = ast.rest.map((ast) => ({
-			ast,
-			parser: recur(ast)
-		}));
-		const elementLen = elements.length;
-		const [head, ...tail] = rest;
-		const tailLen = tail.length;
-		function getParser(tailThreshold, index) {
-			if (index < elementLen) return elements[index];
-			else if (index >= tailThreshold) return tail[index - tailThreshold];
-			return head;
+	getParser(e) {
+		let t = this, n = t.elements.map((t) => ({
+			ast: t,
+			parser: e(t)
+		})), r = t.rest.map((t) => ({
+			ast: t,
+			parser: e(t)
+		})), i = n.length, [a, ...o] = r, s = o.length;
+		function c(e, t) {
+			return t < i ? n[t] : t >= e ? o[t - e] : a;
 		}
-		return fnUntracedEager(function* (oinput, options) {
-			if (oinput._tag === "None") return oinput;
-			const input = oinput.value;
-			if (!Array.isArray(input)) return yield* fail(new InvalidType(ast, oinput));
-			const len = input.length;
-			const state = {
-				ast,
-				getParser,
-				oinput,
-				len,
-				tailThreshold: resolveTailThreshold(len, elementLen, tailLen),
-				output: new globalThis.Array(len),
+		return _l(function* (e, n) {
+			if (e._tag === "None") return e;
+			let r = e.value;
+			if (!Array.isArray(r)) return yield* G(new Nl(t, e));
+			let a = r.length, o = {
+				ast: t,
+				getParser: c,
+				oinput: e,
+				len: a,
+				tailThreshold: Ku(a, i, s),
+				output: new globalThis.Array(a),
 				issues: void 0,
-				options
-			};
-			const eff = parseArray(state, input, {
-				concurrency: resolveConcurrency(options?.concurrency)?.concurrency,
-				end: ast.rest.length === 0 ? elementLen : Math.max(len, elementLen + tailLen)
+				options: n
+			}, l = Gu(o, r, {
+				concurrency: qu(n?.concurrency)?.concurrency,
+				end: t.rest.length === 0 ? i : Math.max(a, i + s)
 			});
-			if (eff) yield* eff;
-			if (ast.rest.length === 0 && len > elementLen) for (let i = elementLen; i <= len - 1; i++) {
-				const issue = new Pointer([i], new UnexpectedKey(ast, input[i]));
-				if (options.errors === "all") if (state.issues) state.issues.push(issue);
-				else state.issues = [issue];
-				else return yield* fail(new Composite(ast, oinput, [issue]));
+			if (l && (yield* l), t.rest.length === 0 && a > i) for (let s = i; s <= a - 1; s++) {
+				let i = new kl([s], new jl(t, r[s]));
+				if (n.errors === "all") o.issues ? o.issues.push(i) : o.issues = [i];
+				else return yield* G(new Ml(t, e, [i]));
 			}
-			if (state.issues) return yield* fail(new Composite(ast, oinput, state.issues));
-			return some(state.output);
+			return o.issues ? yield* G(new Ml(t, e, o.issues)) : V(o.output);
 		});
 	}
-	rebuild(recur, checks, encodingChecks) {
-		const elements = mapOrSame(this.elements, recur);
-		const rest = mapOrSame(this.rest, recur);
-		return elements === this.elements && rest === this.rest ? this : new Arrays(this.isMutable, elements, rest, this.annotations, checks, void 0, this.context, encodingChecks);
+	rebuild(t, n, r) {
+		let i = Md(this.elements, t), a = Md(this.rest, t);
+		return i === this.elements && a === this.rest ? this : new e(this.isMutable, i, a, this.annotations, n, void 0, this.context, r);
 	}
-	/** @internal */
-	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+	recur(e) {
+		return this.rebuild(e, this.checks, this.encodingChecks);
 	}
-	/** @internal */
-	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+	flip(e) {
+		return this.rebuild(e, this.encodingChecks, this.checks);
 	}
-	/** @internal */
 	getExpected() {
 		return "array";
 	}
-};
-var parseArray = /*#__PURE__*/ iterateEager()({
-	onItem(s, item, i) {
-		const value = i < s.len ? some(item) : none();
-		return s.getParser(s.tailThreshold, i).parser(value, s.options);
+}, Gu = /*#__PURE__*/ Cs()({
+	onItem(e, t, n) {
+		let r = n < e.len ? V(t) : vr();
+		return e.getParser(e.tailThreshold, n).parser(r, e.options);
 	},
-	step(s, _, exit, i) {
-		if (exit._tag === "Failure") return wrapPropertyKeyIssue(s, s.ast, i, exit);
-		else if (exit.value._tag === "Some") s.output[i] = exit.value.value;
+	step(e, t, n, r) {
+		if (n._tag === "Failure") return Ju(e, e.ast, r, n);
+		if (n.value._tag === "Some") e.output[r] = n.value.value;
 		else {
-			const p = s.getParser(s.tailThreshold, i);
-			if (isOptional(p.ast)) return;
-			const issue = new Pointer([i], new MissingKey(p.ast.context?.annotations));
-			if (s.options.errors === "all") if (s.issues) s.issues.push(issue);
-			else s.issues = [issue];
-			else return fail$1(new Composite(s.ast, s.oinput, [issue]));
+			let t = e.getParser(e.tailThreshold, r);
+			if (Bd(t.ast)) return;
+			let n = new kl([r], new Al(t.ast.context?.annotations));
+			if (e.options.errors === "all") e.issues ? e.issues.push(n) : e.issues = [n];
+			else return rc(new Ml(e.ast, e.oinput, [n]));
 		}
 	}
 });
-function resolveTailThreshold(inputLen, elementLen, tailLen) {
-	return Math.max(elementLen, inputLen - tailLen);
+function Ku(e, t, n) {
+	return Math.max(t, e - n);
 }
-var resolveConcurrency = (value) => {
-	value = value === "unbounded" ? Infinity : value ?? 1;
-	return value > 1 ? { concurrency: value } : void 0;
-};
-var wrapPropertyKeyIssue = (s, ast, key, exit) => {
-	const issueResult = findError(exit.cause);
-	if (isFailure(issueResult)) return exit;
-	const issue = new Pointer([key], issueResult.success);
-	if (s.options.errors === "all") if (s.issues) s.issues.push(issue);
-	else s.issues = [issue];
-	else return fail$1(new Composite(ast, s.oinput, [issue]));
-};
-/**
-* floating point or integer, with optional exponent
-* @internal
-*/
-var FINITE_PATTERN = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?";
-var isNumberStringRegExp = /*#__PURE__*/ new globalThis.RegExp(`(?:${FINITE_PATTERN}|Infinity|-Infinity|NaN)`);
-/**
-* Returns the object keys that match the index signature parameter schema.
-* @internal
-*/
-function getIndexSignatureKeys(input, parameter) {
-	const encoded = toEncoded(parameter);
-	switch (encoded._tag) {
-		case "String": return Object.keys(input);
+var qu = (e) => (e = e === "unbounded" ? Infinity : e ?? 1, e > 1 ? { concurrency: e } : void 0), Ju = (e, t, n, r) => {
+	let i = nc(r.cause);
+	if (Er(i)) return r;
+	let a = new kl([n], i.success);
+	if (e.options.errors === "all") e.issues ? e.issues.push(a) : e.issues = [a];
+	else return rc(new Ml(t, e.oinput, [a]));
+}, Yu = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?", Xu = /*#__PURE__*/ new globalThis.RegExp(`(?:${Yu}|Infinity|-Infinity|NaN)`);
+function Zu(e, t) {
+	let n = Hd(t);
+	switch (n._tag) {
+		case "String": return Object.keys(e);
 		case "TemplateLiteral": {
-			const regExp = getTemplateLiteralRegExp(encoded);
-			return Object.keys(input).filter((k) => regExp.test(k));
+			let t = qd(n);
+			return Object.keys(e).filter((e) => t.test(e));
 		}
-		case "Symbol": return Object.getOwnPropertySymbols(input);
-		case "Number": return Object.keys(input).filter((k) => isNumberStringRegExp.test(k));
-		case "Union": return [...new Set(encoded.types.flatMap((t) => getIndexSignatureKeys(input, t)))];
+		case "Symbol": return Object.getOwnPropertySymbols(e);
+		case "Number": return Object.keys(e).filter((e) => Xu.test(e));
+		case "Union": return [...new Set(n.types.flatMap((t) => Zu(e, t)))];
 		default: return [];
 	}
 }
-/**
-* Represents a named property within an {@link Objects} node.
-*
-* **Details**
-*
-* Pairs a `name` (any `PropertyKey`) with a `type` ({@link AST}). The
-* property's optionality and mutability are determined by the `type`'s
-* {@link Context}.
-*
-* @see {@link Objects}
-* @category models
-* @since 3.10.0
-*/
-var PropertySignature = class {
+var Qu = class {
 	name;
 	type;
-	constructor(name, type) {
-		this.name = name;
-		this.type = type;
+	constructor(e, t) {
+		this.name = e, this.type = t;
 	}
-};
-/**
-* Represents an index signature entry within an {@link Objects} node.
-*
-* **When to use**
-*
-* Use when constructing or inspecting object AST entries for record-like keys
-* and values.
-*
-* **Details**
-*
-* - `parameter` — the key type AST (e.g. {@link String} for `string` keys,
-*   {@link TemplateLiteral} for patterned keys).
-* - `type` — the value type SchemaAST.
-* - `merge` — optional {@link KeyValueCombiner} for handling duplicate keys.
-*
-* **Gotchas**
-*
-* Using `Schema.optionalKey` on the value type is not allowed for index
-* signatures (throws at construction); use `Schema.optional` instead.
-*
-* @see {@link Objects}
-* @see {@link PropertySignature}
-* @category models
-* @since 3.10.0
-*/
-var IndexSignature = class {
+}, $u = class e {
+	decode;
+	encode;
+	constructor(e, t) {
+		this.decode = e, this.encode = t;
+	}
+	flip() {
+		return new e(this.encode, this.decode);
+	}
+}, ed = class {
 	parameter;
 	type;
 	merge;
-	constructor(parameter, type, merge) {
-		this.parameter = parameter;
-		this.type = type;
-		this.merge = merge;
-		if (isOptional(type) && !containsUndefined(type)) throw new Error("Cannot use `Schema.optionalKey` with index signatures, use `Schema.optional` instead.");
+	constructor(e, t, n) {
+		if (this.parameter = e, this.type = t, this.merge = n, Bd(t) && !Gd(t)) throw Error("Cannot use `Schema.optionalKey` with index signatures, use `Schema.optional` instead.");
 	}
-};
-/**
-* AST node for object-like schemas, including structs and records.
-*
-* **When to use**
-*
-* Use when constructing or inspecting AST nodes for structs or records rather
-* than array-like schemas.
-*
-* **Details**
-*
-* - `propertySignatures` — named properties with their types (struct fields).
-* - `indexSignatures` — index signature entries (record patterns), each with
-*   a `parameter` AST for matching keys and a `type` AST for values.
-*
-* An `Objects` node with no properties and no index signatures performs only a
-* non-nullish check: it accepts any value except `null` and `undefined`,
-* including primitive values.
-*
-* **Gotchas**
-*
-* Duplicate property names throw at construction time.
-*
-* **Example** (Inspecting a struct AST)
-*
-* ```ts
-* import { Schema, SchemaAST } from "effect"
-*
-* const schema = Schema.Struct({ name: Schema.String })
-* const ast = schema.ast
-*
-* if (SchemaAST.isObjects(ast)) {
-*   for (const ps of ast.propertySignatures) {
-*     console.log(ps.name, ps.type._tag)
-*   }
-*   // "name" "String"
-* }
-* ```
-*
-* @see {@link isObjects}
-* @see {@link PropertySignature}
-* @see {@link IndexSignature}
-* @see {@link Arrays}
-* @category models
-* @since 4.0.0
-*/
-var Objects = class Objects extends Base {
+}, td = class e extends q {
 	_tag = "Objects";
 	propertySignatures;
 	indexSignatures;
 	encodingChecks;
-	constructor(propertySignatures, indexSignatures, annotations, checks, encoding, context, encodingChecks) {
-		super(annotations, checks, encoding, context);
-		this.propertySignatures = propertySignatures;
-		this.indexSignatures = indexSignatures;
-		this.encodingChecks = encodingChecks;
-		const duplicates = propertySignatures.map((ps) => ps.name).filter((name, i, arr) => arr.indexOf(name) !== i);
-		if (duplicates.length > 0) throw new Error(`Duplicate identifiers: ${JSON.stringify(duplicates)}. ts(2300)`);
+	constructor(e, t, n, r, i, a, o) {
+		super(n, r, i, a), this.propertySignatures = e, this.indexSignatures = t, this.encodingChecks = o;
+		let s = e.map((e) => e.name).filter((e, t, n) => n.indexOf(e) !== t);
+		if (s.length > 0) throw Error(`Duplicate identifiers: ${JSON.stringify(s)}. ts(2300)`);
 	}
-	/** @internal */
-	getParser(recur) {
-		const ast = this;
-		const expectedKeys = [];
-		const expectedKeysSet = /* @__PURE__ */ new Set();
-		const properties = [];
-		for (const ps of ast.propertySignatures) {
-			expectedKeys.push(ps.name);
-			expectedKeysSet.add(ps.name);
-			properties.push({
-				ps,
-				parser: recur(ps.type),
-				name: ps.name,
-				type: ps.type
-			});
-		}
-		const indexCount = ast.indexSignatures.length;
-		if (ast.propertySignatures.length === 0 && ast.indexSignatures.length === 0) return fromRefinement(ast, isNotNullish);
-		const parseIndexes = indexCount > 0 ? iterateEager()({
-			onItem: fnUntracedEager(function* (s, [key, is]) {
-				const effKey = recur(indexSignatureParameterFromString(is.parameter))(some(key), s.options);
-				const exitKey = effectIsExit(effKey) ? effKey : yield* exit(effKey);
-				if (exitKey._tag === "Failure") {
-					const eff = wrapPropertyKeyIssue(s, ast, key, exitKey);
-					if (eff) yield* eff;
+	getParser(e) {
+		let t = this, n = [], r = /* @__PURE__ */ new Set(), i = [];
+		for (let a of t.propertySignatures) n.push(a.name), r.add(a.name), i.push({
+			ps: a,
+			parser: e(a.type),
+			name: a.name,
+			type: a.type
+		});
+		let a = t.indexSignatures.length;
+		if (t.propertySignatures.length === 0 && t.indexSignatures.length === 0) return Zd(t, at);
+		let o = a > 0 ? Cs()({
+			onItem: _l(function* (n, [i, a]) {
+				let o = e($d(a.parameter))(V(i), n.options), s = To(o) ? o : yield* Yc(o);
+				if (s._tag === "Failure") {
+					let e = Ju(n, t, i, s);
+					e && (yield* e);
 					return;
 				}
-				const value = some(s.input[key]);
-				const effValue = recur(is.type)(value, s.options);
-				const exitValue = effectIsExit(effValue) ? effValue : yield* exit(effValue);
-				if (exitValue._tag === "Failure") {
-					const eff = wrapPropertyKeyIssue(s, ast, key, exitValue);
-					if (eff) yield* eff;
+				let c = V(n.input[i]), l = e(a.type)(c, n.options), u = To(l) ? l : yield* Yc(l);
+				if (u._tag === "Failure") {
+					let e = Ju(n, t, i, u);
+					e && (yield* e);
 					return;
-				} else if (exitKey.value._tag === "Some" && exitValue.value._tag === "Some") {
-					const k2 = exitKey.value.value;
-					if (expectedKeysSet.has(key) || expectedKeysSet.has(k2)) return;
-					const v2 = exitValue.value.value;
-					if (is.merge && is.merge.decode && Object.hasOwn(s.out, k2)) {
-						const [k, v] = is.merge.decode.combine([k2, s.out[k2]], [k2, v2]);
-						set$2(s.out, k, v);
-					} else set$2(s.out, k2, v2);
+				} else if (s.value._tag === "Some" && u.value._tag === "Some") {
+					let e = s.value.value;
+					if (r.has(i) || r.has(e)) return;
+					let t = u.value.value;
+					if (a.merge && a.merge.decode && Object.hasOwn(n.out, e)) {
+						let [r, i] = a.merge.decode.combine([e, n.out[e]], [e, t]);
+						vl(n.out, r, i);
+					} else vl(n.out, e, t);
 				}
 			}),
-			step: (_s, _, exit) => exit._tag === "Failure" ? exit : void 0
+			step: (e, t, n) => n._tag === "Failure" ? n : void 0
 		}) : void 0;
-		return fnUntracedEager(function* (oinput, options) {
-			if (oinput._tag === "None") return oinput;
-			const input = oinput.value;
-			if (!(typeof input === "object" && input !== null && !Array.isArray(input))) return yield* fail(new InvalidType(ast, oinput));
-			const out = {};
-			const state = {
-				ast,
-				oinput,
-				input,
-				out,
+		return _l(function* (e, s) {
+			if (e._tag === "None") return e;
+			let c = e.value;
+			if (!(typeof c == "object" && c && !Array.isArray(c))) return yield* G(new Nl(t, e));
+			let l = {}, u = {
+				ast: t,
+				oinput: e,
+				input: c,
+				out: l,
 				issues: void 0,
-				options
-			};
-			const errorsAllOption = options.errors === "all";
-			const onExcessPropertyError = options.onExcessProperty === "error";
-			const onExcessPropertyPreserve = options.onExcessProperty === "preserve";
-			let inputKeys;
-			if (ast.indexSignatures.length === 0 && (onExcessPropertyError || onExcessPropertyPreserve)) {
-				inputKeys = Reflect.ownKeys(input);
-				for (let i = 0; i < inputKeys.length; i++) {
-					const key = inputKeys[i];
-					if (!expectedKeysSet.has(key)) if (onExcessPropertyError) {
-						const issue = new Pointer([key], new UnexpectedKey(ast, input[key]));
-						if (errorsAllOption) {
-							if (state.issues) state.issues.push(issue);
-							else state.issues = [issue];
+				options: s
+			}, d = s.errors === "all", f = s.onExcessProperty === "error", p = s.onExcessProperty === "preserve", m;
+			if (t.indexSignatures.length === 0 && (f || p)) {
+				m = Reflect.ownKeys(c);
+				for (let n = 0; n < m.length; n++) {
+					let i = m[n];
+					if (!r.has(i)) if (f) {
+						let n = new kl([i], new jl(t, c[i]));
+						if (d) {
+							u.issues ? u.issues.push(n) : u.issues = [n];
 							continue;
-						} else return yield* fail(new Composite(ast, oinput, [issue]));
-					} else set$2(out, key, input[key]);
+						} else return yield* G(new Ml(t, e, [n]));
+					} else vl(l, i, c[i]);
 				}
 			}
-			const concurrency = resolveConcurrency(options?.concurrency);
-			const eff = parseProperties(state, properties, concurrency);
-			if (eff) yield* eff;
-			if (parseIndexes) {
-				const keyPairs = empty$1();
-				for (let i = 0; i < indexCount; i++) {
-					const is = ast.indexSignatures[i];
-					const keys = getIndexSignatureKeys(input, is.parameter);
-					for (let j = 0; j < keys.length; j++) {
-						const key = keys[j];
-						keyPairs.push([key, is]);
+			let h = qu(s?.concurrency), g = nd(u, i, h);
+			if (g && (yield* g), o) {
+				let e = Rr();
+				for (let n = 0; n < a; n++) {
+					let r = t.indexSignatures[n], i = Zu(c, r.parameter);
+					for (let t = 0; t < i.length; t++) {
+						let n = i[t];
+						e.push([n, r]);
 					}
 				}
-				const eff = parseIndexes(state, keyPairs, concurrency);
-				if (eff) yield* eff;
+				let n = o(u, e, h);
+				n && (yield* n);
 			}
-			if (state.issues) return yield* fail(new Composite(ast, oinput, state.issues));
-			if (options.propertyOrder === "original") {
-				const keys = (inputKeys ?? Reflect.ownKeys(input)).concat(expectedKeys);
-				const preserved = {};
-				for (const key of keys) if (Object.hasOwn(out, key)) set$2(preserved, key, out[key]);
-				return some(preserved);
+			if (u.issues) return yield* G(new Ml(t, e, u.issues));
+			if (s.propertyOrder === "original") {
+				let e = (m ?? Reflect.ownKeys(c)).concat(n), t = {};
+				for (let n of e) Object.hasOwn(l, n) && vl(t, n, l[n]);
+				return V(t);
 			}
-			return some(out);
+			return V(l);
 		});
 	}
-	rebuild(recur, flipMerge, checks, encodingChecks) {
-		const props = mapOrSame(this.propertySignatures, (ps) => {
-			const t = recur(ps.type);
-			return t === ps.type ? ps : new PropertySignature(ps.name, t);
+	rebuild(t, n, r, i) {
+		let a = Md(this.propertySignatures, (e) => {
+			let n = t(e.type);
+			return n === e.type ? e : new Qu(e.name, n);
+		}), o = Md(this.indexSignatures, (e) => {
+			let r = t(e.parameter), i = t(e.type), a = n ? e.merge?.flip() : e.merge;
+			return r === e.parameter && i === e.type && a === e.merge ? e : new ed(r, i, a);
 		});
-		const indexes = mapOrSame(this.indexSignatures, (is) => {
-			const p = recur(is.parameter);
-			const t = recur(is.type);
-			const merge = flipMerge ? is.merge?.flip() : is.merge;
-			return p === is.parameter && t === is.type && merge === is.merge ? is : new IndexSignature(p, t, merge);
-		});
-		return props === this.propertySignatures && indexes === this.indexSignatures ? this : new Objects(props, indexes, this.annotations, checks, void 0, this.context, encodingChecks);
+		return a === this.propertySignatures && o === this.indexSignatures ? this : new e(a, o, this.annotations, r, void 0, this.context, i);
 	}
-	/** @internal */
-	flip(recur) {
-		return this.rebuild(recur, true, this.encodingChecks, this.checks);
+	flip(e) {
+		return this.rebuild(e, !0, this.encodingChecks, this.checks);
 	}
-	/** @internal */
-	recur(recur) {
-		return this.rebuild(recur, false, this.checks, this.encodingChecks);
+	recur(e) {
+		return this.rebuild(e, !1, this.checks, this.encodingChecks);
 	}
-	/** @internal */
 	getExpected() {
-		if (this.propertySignatures.length === 0 && this.indexSignatures.length === 0) return "object | array";
-		return "object";
+		return this.propertySignatures.length === 0 && this.indexSignatures.length === 0 ? "object | array" : "object";
 	}
-};
-var parseProperties = /*#__PURE__*/ iterateEager()({
-	onItem(s, p) {
-		const value = Object.hasOwn(s.input, p.name) ? some(s.input[p.name]) : none();
-		return p.parser(value, s.options);
+}, nd = /*#__PURE__*/ Cs()({
+	onItem(e, t) {
+		let n = Object.hasOwn(e.input, t.name) ? V(e.input[t.name]) : vr();
+		return t.parser(n, e.options);
 	},
-	step(s, p, exit) {
-		if (exit._tag === "Failure") return wrapPropertyKeyIssue(s, s.ast, p.name, exit);
-		else if (exit.value._tag === "Some") set$2(s.out, p.name, exit.value.value);
-		else if (!isOptional(p.type)) {
-			const issue = new Pointer([p.name], new MissingKey(p.type.context?.annotations));
-			if (s.options.errors === "all") {
-				if (s.issues) s.issues.push(issue);
-				else s.issues = [issue];
+	step(e, t, n) {
+		if (n._tag === "Failure") return Ju(e, e.ast, t.name, n);
+		if (n.value._tag === "Some") vl(e.out, t.name, n.value.value);
+		else if (!Bd(t.type)) {
+			let n = new kl([t.name], new Al(t.type.context?.annotations));
+			if (e.options.errors === "all") {
+				e.issues ? e.issues.push(n) : e.issues = [n];
 				return;
-			} else return fail$1(new Composite(s.ast, s.oinput, [issue]));
+			} else return rc(new Ml(e.ast, e.oinput, [n]));
 		}
 	}
 });
-/** @internal */
-function struct(fields, checks, annotations) {
-	return new Objects(Reflect.ownKeys(fields).map((key) => {
-		return new PropertySignature(key, fields[key].ast);
-	}), [], annotations, checks);
+function rd(e, t, n) {
+	return new td(Reflect.ownKeys(e).map((t) => new Qu(t, e[t].ast)), [], n, t);
 }
-/** @internal */
-function getAST(self) {
-	return self.ast;
+function id(e) {
+	return e.ast;
 }
-/** @internal */
-function tuple(elements, checks = void 0) {
-	return new Arrays(false, elements.map((e) => e.ast), [], void 0, checks);
+function ad(e, t = void 0) {
+	return new Wu(!1, e.map((e) => e.ast), [], void 0, t);
 }
-/** @internal */
-function union$1(members, mode, checks) {
-	return new Union$1(members.map(getAST), mode, void 0, checks);
+function od(e, t, n) {
+	return new pd(e.map(id), t, void 0, n);
 }
-function getCandidateTypes(ast) {
-	switch (ast._tag) {
+function sd(e) {
+	switch (e._tag) {
 		case "Null": return ["null"];
 		case "Undefined":
 		case "Void": return ["undefined"];
@@ -10710,10 +3373,10 @@ function getCandidateTypes(ast) {
 			"array",
 			"function"
 		];
-		case "Objects": return ast.propertySignatures.length || ast.indexSignatures.length ? ["object"] : ["object", "array"];
-		case "Enum": return Array.from(new Set(ast.enums.map(([, v]) => typeof v)));
-		case "Literal": return [typeof ast.literal];
-		case "Union": return Array.from(new Set(ast.types.flatMap(getCandidateTypes)));
+		case "Objects": return e.propertySignatures.length || e.indexSignatures.length ? ["object"] : ["object", "array"];
+		case "Enum": return Array.from(new Set(e.enums.map(([, e]) => typeof e)));
+		case "Literal": return [typeof e.literal];
+		case "Union": return Array.from(new Set(e.types.flatMap(sd)));
 		default: return [
 			"null",
 			"undefined",
@@ -10728,960 +3391,563 @@ function getCandidateTypes(ast) {
 		];
 	}
 }
-/** @internal */
-function collectSentinels(ast) {
-	switch (ast._tag) {
+function cd(e) {
+	switch (e._tag) {
 		default: return [];
 		case "Declaration": {
-			const s = ast.annotations?.["~sentinels"];
-			return Array.isArray(s) ? s : [];
+			let t = e.annotations?.["~sentinels"];
+			return Array.isArray(t) ? t : [];
 		}
-		case "Objects": return ast.propertySignatures.flatMap((ps) => {
-			const type = ps.type;
-			if (!isOptional(type)) {
-				if (isLiteral(type)) return [{
-					key: ps.name,
-					literal: type.literal
+		case "Objects": return e.propertySignatures.flatMap((e) => {
+			let t = e.type;
+			if (!Bd(t)) {
+				if (bu(t)) return [{
+					key: e.name,
+					literal: t.literal
 				}];
-				if (isUniqueSymbol(type)) return [{
-					key: ps.name,
-					literal: type.symbol
+				if (xu(t)) return [{
+					key: e.name,
+					literal: t.symbol
 				}];
 			}
 			return [];
 		});
-		case "Arrays": return ast.elements.flatMap((e, i) => {
-			return isLiteral(e) && !isOptional(e) ? [{
-				key: i,
-				literal: e.literal
-			}] : [];
-		});
-		case "Suspend": return collectSentinels(ast.thunk());
+		case "Arrays": return e.elements.flatMap((e, t) => bu(e) && !Bd(e) ? [{
+			key: t,
+			literal: e.literal
+		}] : []);
+		case "Suspend": return cd(e.thunk());
 	}
 }
-var candidateIndexCache = /*#__PURE__*/ new WeakMap();
-function getIndex(types) {
-	let idx = candidateIndexCache.get(types);
-	if (idx) return idx;
-	idx = {};
-	for (const a of types) {
-		const encoded = toEncoded(a);
-		if (isNever(encoded)) continue;
-		const types = getCandidateTypes(encoded);
-		const sentinels = collectSentinels(encoded);
-		idx.byType ??= {};
-		for (const t of types) (idx.byType[t] ??= []).push(a);
-		if (sentinels.length > 0) {
-			idx.bySentinel ??= /* @__PURE__ */ new Map();
-			for (const { key, literal } of sentinels) {
-				let m = idx.bySentinel.get(key);
-				if (!m) idx.bySentinel.set(key, m = /* @__PURE__ */ new Map());
-				let arr = m.get(literal);
-				if (!arr) m.set(literal, arr = []);
-				arr.push(a);
+var ld = /*#__PURE__*/ new WeakMap();
+function ud(e) {
+	let t = ld.get(e);
+	if (t) return t;
+	t = {};
+	for (let n of e) {
+		let e = Hd(n);
+		if (yu(e)) continue;
+		let r = sd(e), i = cd(e);
+		t.byType ??= {};
+		for (let e of r) (t.byType[e] ??= []).push(n);
+		if (i.length > 0) {
+			t.bySentinel ??= /* @__PURE__ */ new Map();
+			for (let { key: e, literal: r } of i) {
+				let i = t.bySentinel.get(e);
+				i || t.bySentinel.set(e, i = /* @__PURE__ */ new Map());
+				let a = i.get(r);
+				a || i.set(r, a = []), a.push(n);
 			}
 		} else {
-			idx.otherwise ??= {};
-			for (const t of types) (idx.otherwise[t] ??= []).push(a);
+			t.otherwise ??= {};
+			for (let e of r) (t.otherwise[e] ??= []).push(n);
 		}
 	}
-	candidateIndexCache.set(types, idx);
-	return idx;
+	return ld.set(e, t), t;
 }
-function filterLiterals(input) {
-	return (ast) => {
-		const encoded = toEncoded(ast);
-		return encoded._tag === "Literal" ? encoded.literal === input : encoded._tag === "UniqueSymbol" ? encoded.symbol === input : true;
+function dd(e) {
+	return (t) => {
+		let n = Hd(t);
+		return n._tag === "Literal" ? n.literal === e : n._tag === "UniqueSymbol" ? n.symbol === e : !0;
 	};
 }
-/**
-* The goal is to reduce the number of a union members that will be checked.
-* This is useful to reduce the number of issues that will be returned.
-*
-* @internal
-*/
-function getCandidates(input, types) {
-	const idx = getIndex(types);
-	const runtimeType = input === null ? "null" : Array.isArray(input) ? "array" : typeof input;
-	if (idx.bySentinel) {
-		const base = idx.otherwise?.[runtimeType] ?? [];
-		if (runtimeType === "object" || runtimeType === "array") {
-			for (const [k, m] of idx.bySentinel) if (Object.hasOwn(input, k)) {
-				const match = m.get(input[k]);
-				if (match) return [...match, ...base].filter(filterLiterals(input));
+function fd(e, t) {
+	let n = ud(t), r = e === null ? "null" : Array.isArray(e) ? "array" : typeof e;
+	if (n.bySentinel) {
+		let t = n.otherwise?.[r] ?? [];
+		if (r === "object" || r === "array") {
+			for (let [r, i] of n.bySentinel) if (Object.hasOwn(e, r)) {
+				let n = i.get(e[r]);
+				if (n) return [...n, ...t].filter(dd(e));
 			}
 		}
-		return base;
+		return t;
 	}
-	return (idx.byType?.[runtimeType] ?? []).filter(filterLiterals(input));
+	return (n.byType?.[r] ?? []).filter(dd(e));
 }
-/**
-* AST node representing a union of schemas.
-*
-* **Details**
-*
-* - `types` — the member AST nodes.
-* - `mode` — `"anyOf"` succeeds on the first match (like TypeScript unions);
-*   `"oneOf"` requires exactly one member to match (fails if multiple do).
-*
-* During parsing, members are tried in order. An internal candidate index
-* narrows which members to try based on the runtime type of the input and
-* discriminant ("sentinel") fields, making large unions efficient.
-*
-* **Example** (Inspecting a union AST)
-*
-* ```ts
-* import { Schema, SchemaAST } from "effect"
-*
-* const schema = Schema.Union([Schema.String, Schema.Number])
-* const ast = schema.ast
-*
-* if (SchemaAST.isUnion(ast)) {
-*   console.log(ast.types.length) // 2
-*   console.log(ast.mode)         // "anyOf"
-* }
-* ```
-*
-* @see {@link isUnion}
-* @category models
-* @since 3.10.0
-*/
-var Union$1 = class Union$1 extends Base {
+var pd = class e extends q {
 	_tag = "Union";
 	types;
 	mode;
 	encodingChecks;
-	constructor(types, mode, annotations, checks, encoding, context, encodingChecks) {
-		super(annotations, checks, encoding, context);
-		this.types = types;
-		this.mode = mode;
-		this.encodingChecks = encodingChecks;
+	constructor(e, t, n, r, i, a, o) {
+		super(n, r, i, a), this.types = e, this.mode = t, this.encodingChecks = o;
 	}
-	/** @internal */
-	getParser(recur) {
-		const ast = this;
-		return (oinput, options) => {
-			if (oinput._tag === "None") return succeed(oinput);
-			const input = oinput.value;
-			const candidates = getCandidates(input, ast.types);
-			const state = {
-				ast,
-				recur,
-				oinput,
-				input,
+	getParser(e) {
+		let t = this;
+		return (n, r) => {
+			if (n._tag === "None") return Lc(n);
+			let i = n.value, a = fd(i, t.types), o = {
+				ast: t,
+				recur: e,
+				oinput: n,
+				input: i,
 				out: void 0,
 				successes: [],
 				issues: void 0,
-				options
-			};
-			const eff = parseUnion(state, candidates, resolveConcurrency(options?.concurrency));
-			if (!eff) return state.out ? succeed(state.out) : fail(new AnyOf(ast, input, state.issues ?? []));
-			return flatMap(eff, (_) => {
-				return state.out ? succeed(state.out) : fail(new AnyOf(ast, input, state.issues ?? []));
-			});
+				options: r
+			}, s = md(o, a, qu(r?.concurrency));
+			return s ? Gc(s, (e) => o.out ? Lc(o.out) : G(new Fl(t, i, o.issues ?? []))) : o.out ? Lc(o.out) : G(new Fl(t, i, o.issues ?? []));
 		};
 	}
-	rebuild(recur, checks, encodingChecks) {
-		const types = mapOrSame(this.types, recur);
-		return types === this.types ? this : new Union$1(types, this.mode, this.annotations, checks, void 0, this.context, encodingChecks);
+	rebuild(t, n, r) {
+		let i = Md(this.types, t);
+		return i === this.types ? this : new e(i, this.mode, this.annotations, n, void 0, this.context, r);
 	}
-	/** @internal */
-	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+	recur(e) {
+		return this.rebuild(e, this.checks, this.encodingChecks);
 	}
-	/** @internal */
-	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+	flip(e) {
+		return this.rebuild(e, this.encodingChecks, this.checks);
 	}
-	/** @internal */
-	getExpected(getExpected) {
-		const expected = this.annotations?.expected;
-		if (typeof expected === "string") return expected;
+	getExpected(e) {
+		let t = this.annotations?.expected;
+		if (typeof t == "string") return t;
 		if (this.types.length === 0) return "never";
-		const types = this.types.map((type) => {
-			const encoded = toEncoded(type);
-			switch (encoded._tag) {
+		let n = this.types.map((t) => {
+			let n = Hd(t);
+			switch (n._tag) {
 				case "Arrays": {
-					const literals = encoded.elements.filter(isLiteral);
-					if (literals.length > 0) return `${formatIsMutable(encoded.isMutable)}[ ${literals.map((e) => getExpected(e) + formatIsOptional(e.context?.isOptional)).join(", ")}, ... ]`;
+					let t = n.elements.filter(bu);
+					if (t.length > 0) return `${_d(n.isMutable)}[ ${t.map((t) => e(t) + vd(t.context?.isOptional)).join(", ")}, ... ]`;
 					break;
 				}
 				case "Objects": {
-					const literals = encoded.propertySignatures.filter((ps) => isLiteral(ps.type));
-					if (literals.length > 0) return `{ ${literals.map((ps) => `${formatIsMutable(ps.type.context?.isMutable)}${formatPropertyKey(ps.name)}${formatIsOptional(ps.type.context?.isOptional)}: ${getExpected(ps.type)}`).join(", ")}, ... }`;
+					let t = n.propertySignatures.filter((e) => bu(e.type));
+					if (t.length > 0) return `{ ${t.map((t) => `${_d(t.type.context?.isMutable)}${Yt(t.name)}${vd(t.type.context?.isOptional)}: ${e(t.type)}`).join(", ")}, ... }`;
 					break;
 				}
 			}
-			return getExpected(encoded);
+			return e(n);
 		});
-		return Array.from(new Set(types)).join(" | ");
+		return Array.from(new Set(n)).join(" | ");
 	}
-};
-var parseUnion = /*#__PURE__*/ iterateEager()({
-	onItem(s, ast) {
-		return s.recur(ast)(s.oinput, s.options);
+}, md = /*#__PURE__*/ Cs()({
+	onItem(e, t) {
+		return e.recur(t)(e.oinput, e.options);
 	},
-	step(s, candidate, exit) {
-		if (exit._tag === "Failure") {
-			const issueResult = findError(exit.cause);
-			if (isFailure(issueResult)) return exit;
-			if (s.issues) s.issues.push(issueResult.success);
-			else s.issues = [issueResult.success];
+	step(e, t, n) {
+		if (n._tag === "Failure") {
+			let t = nc(n.cause);
+			if (Er(t)) return n;
+			e.issues ? e.issues.push(t.success) : e.issues = [t.success];
 		} else {
-			if (s.out && s.ast.mode === "oneOf") {
-				s.successes.push(candidate);
-				return fail$1(new OneOf(s.ast, s.input, s.successes));
-			}
-			s.out = exit.value;
-			s.successes.push(candidate);
-			if (s.ast.mode === "anyOf") return void_;
+			if (e.out && e.ast.mode === "oneOf") return e.successes.push(t), rc(new Il(e.ast, e.input, e.successes));
+			if (e.out = n.value, e.successes.push(t), e.ast.mode === "anyOf") return ic;
 		}
 	}
-});
-var nonFiniteLiterals = /*#__PURE__*/ new Union$1([
-	/*#__PURE__*/ new Literal$1("Infinity"),
-	/*#__PURE__*/ new Literal$1("-Infinity"),
-	/*#__PURE__*/ new Literal$1("NaN")
-], "anyOf");
-var numberToJson = /*#__PURE__*/ new Link(/*#__PURE__*/ new Union$1([number, nonFiniteLiterals], "anyOf"), /*#__PURE__*/ new Transformation(/*#__PURE__*/ Number$3(), /*#__PURE__*/ transform$1((n) => globalThis.Number.isFinite(n) ? n : globalThis.String(n))));
-function formatIsMutable(isMutable) {
-	return isMutable ? "" : "readonly ";
+}), hd = /*#__PURE__*/ new pd([
+	/*#__PURE__*/ new Iu("Infinity"),
+	/*#__PURE__*/ new Iu("-Infinity"),
+	/*#__PURE__*/ new Iu("NaN")
+], "anyOf"), gd = /*#__PURE__*/ new K(/*#__PURE__*/ new pd([Vu, hd], "anyOf"), /*#__PURE__*/ new lu(/*#__PURE__*/ au(), /*#__PURE__*/ tu((e) => globalThis.Number.isFinite(e) ? e : globalThis.String(e))));
+function _d(e) {
+	return e ? "" : "readonly ";
 }
-function formatIsOptional(isOptional) {
-	return isOptional ? "?" : "";
+function vd(e) {
+	return e ? "?" : "";
 }
-/** @internal */
-function getEncodingChecks(ast) {
-	switch (ast._tag) {
+function yd(e) {
+	switch (e._tag) {
 		case "Declaration":
 		case "Arrays":
 		case "Objects":
-		case "Union": return ast.encodingChecks;
+		case "Union": return e.encodingChecks;
 		default: return;
 	}
 }
-/**
-* Represents a single validation check attached to an AST node.
-*
-* **Details**
-*
-* - `run` — the validation function. Returns `undefined` on success, or an
-*   `Issue` on failure.
-* - `annotations` — optional filter-level metadata (expected message, meta
-*   tags, arbitrary constraint hints).
-* - `aborted` — when `true`, parsing stops immediately after this filter
-*   fails (no further checks run).
-*
-* Use `.annotate()` to add metadata and `.abort()` to mark as aborting.
-* Combine with another check via `.and()` to form a {@link FilterGroup}.
-*
-* @see {@link FilterGroup}
-* @see {@link Check}
-* @see {@link isPattern}
-* @category models
-* @since 4.0.0
-*/
-var Filter = class Filter extends Class$1 {
+var bd = class e extends Ve {
 	_tag = "Filter";
 	run;
 	annotations;
-	/**
-	* Whether the parsing process should be aborted after this check has failed.
-	*/
 	aborted;
-	constructor(run, annotations = void 0, aborted = false) {
-		super();
-		this.run = run;
-		this.annotations = annotations;
-		this.aborted = aborted;
+	constructor(e, t = void 0, n = !1) {
+		super(), this.run = e, this.annotations = t, this.aborted = n;
 	}
-	annotate(annotations) {
-		return new Filter(this.run, {
+	annotate(t) {
+		return new e(this.run, {
 			...this.annotations,
-			...annotations
+			...t
 		}, this.aborted);
 	}
 	abort() {
-		return new Filter(this.run, this.annotations, true);
+		return new e(this.run, this.annotations, !0);
 	}
-	and(other, annotations) {
-		return new FilterGroup([this, other], annotations);
+	and(e, t) {
+		return new xd([this, e], t);
 	}
-};
-/**
-* Represents a composite validation check grouping multiple {@link Check} values.
-*
-* **Details**
-*
-* Created by calling `.and()` on a {@link Filter} or another `FilterGroup`.
-* All inner checks are run; failures from aborted filters still stop
-* evaluation.
-*
-* @see {@link Filter}
-* @see {@link Check}
-* @category models
-* @since 4.0.0
-*/
-var FilterGroup = class FilterGroup extends Class$1 {
+}, xd = class e extends Ve {
 	_tag = "FilterGroup";
 	checks;
 	annotations;
-	constructor(checks, annotations = void 0) {
-		super();
-		this.checks = checks;
-		this.annotations = annotations;
+	constructor(e, t = void 0) {
+		super(), this.checks = e, this.annotations = t;
 	}
-	annotate(annotations) {
-		return new FilterGroup(this.checks, {
+	annotate(t) {
+		return new e(this.checks, {
 			...this.annotations,
-			...annotations
+			...t
 		});
 	}
-	and(other, annotations) {
-		return new FilterGroup([this, other], annotations);
+	and(t, n) {
+		return new e([this, t], n);
 	}
 };
-/** @internal */
-function makeFilter$1(filter, annotations, aborted = false) {
-	return new Filter((input, ast, options) => make$8(input, ast, filter(input, ast, options)), annotations, aborted);
+function Sd(e, t, n = !1) {
+	return new bd((t, n, r) => zl(t, n, e(t, n, r)), t, n);
 }
-/**
-* Creates a {@link Filter} that validates strings by running `RegExp.test`.
-*
-* **When to use**
-*
-* Use when string validation should be represented as a schema `Filter` backed
-* by a regular expression.
-*
-* **Details**
-*
-* The filter can be used with `Schema.filter` or attached directly to a
-* `String` AST node through checks. The regular expression source is stored in
-* annotations for serialization and arbitrary generation.
-*
-* **Gotchas**
-*
-* Use a non-global, non-sticky regular expression, or reset `lastIndex`
-* yourself, because `RegExp.test` is stateful for expressions with the `g` or
-* `y` flag.
-*
-* **Example** (Validating an email pattern)
-*
-* ```ts
-* import { SchemaAST } from "effect"
-*
-* const emailFilter = SchemaAST.isPattern(/^[^@]+@[^@]+$/)
-* ```
-*
-* @see {@link Filter}
-* @category constructors
-* @since 4.0.0
-*/
-function isPattern$1(regExp, annotations) {
-	const source = regExp.source;
-	return makeFilter$1((s) => regExp.test(s), {
-		expected: `a string matching the RegExp ${source}`,
+function Cd(e, t) {
+	let n = e.source;
+	return Sd((t) => e.test(t), {
+		expected: `a string matching the RegExp ${n}`,
 		meta: {
 			_tag: "isPattern",
-			regExp
+			regExp: e
 		},
-		arbitrary: { constraint: { patterns: [regExp.source] } },
-		...annotations
+		arbitrary: { constraint: { patterns: [e.source] } },
+		...t
 	});
 }
-function modifyOwnPropertyDescriptors(ast, f) {
-	const d = Object.getOwnPropertyDescriptors(ast);
-	f(d);
-	return Object.create(Object.getPrototypeOf(ast), d);
+function wd(e, t) {
+	let n = Object.getOwnPropertyDescriptors(e);
+	return t(n), Object.create(Object.getPrototypeOf(e), n);
 }
-/** @internal */
-function replaceEncoding(ast, encoding) {
-	if (ast.encoding === encoding) return ast;
-	return modifyOwnPropertyDescriptors(ast, (d) => {
-		d.encoding.value = encoding;
+function J(e, t) {
+	return e.encoding === t ? e : wd(e, (e) => {
+		e.encoding.value = t;
 	});
 }
-/** @internal */
-function replaceContext(ast, context) {
-	if (ast.context === context) return ast;
-	return modifyOwnPropertyDescriptors(ast, (d) => {
-		d.context.value = context;
+function Td(e, t) {
+	return e.context === t ? e : wd(e, (e) => {
+		e.context.value = t;
 	});
 }
-/** @internal */
-function annotate(ast, annotations) {
-	if (ast.checks) {
-		const last = ast.checks[ast.checks.length - 1];
-		return replaceChecks(ast, append(ast.checks.slice(0, -1), last.annotate(annotations)));
+function Ed(e, t) {
+	if (e.checks) {
+		let n = e.checks[e.checks.length - 1];
+		return Dd(e, kr(e.checks.slice(0, -1), n.annotate(t)));
 	}
-	return modifyOwnPropertyDescriptors(ast, (d) => {
-		d.annotations.value = {
-			...d.annotations.value,
-			...annotations
+	return wd(e, (e) => {
+		e.annotations.value = {
+			...e.annotations.value,
+			...t
 		};
 	});
 }
-/** @internal */
-function replaceChecks(ast, checks) {
-	if (ast._tag === "Suspend" && checks !== void 0) throw new Error("Cannot add checks to Suspend");
-	if (ast.checks === checks) return ast;
-	return modifyOwnPropertyDescriptors(ast, (d) => {
-		d.checks.value = checks;
+function Dd(e, t) {
+	if (e._tag === "Suspend" && t !== void 0) throw Error("Cannot add checks to Suspend");
+	return e.checks === t ? e : wd(e, (e) => {
+		e.checks.value = t;
 	});
 }
-/** @internal */
-function appendChecks(ast, checks) {
-	return replaceChecks(ast, ast.checks ? [...ast.checks, ...checks] : checks);
+function Od(e, t) {
+	return Dd(e, e.checks ? [...e.checks, ...t] : t);
 }
-function updateLastLink(encoding, f) {
-	const links = encoding;
-	const last = links[links.length - 1];
-	const to = f(last.to);
-	if (to !== last.to) return append(encoding.slice(0, encoding.length - 1), new Link(to, last.transformation));
-	return encoding;
+function kd(e, t) {
+	let n = e, r = n[n.length - 1], i = t(r.to);
+	return i === r.to ? e : kr(e.slice(0, e.length - 1), new K(i, r.transformation));
 }
-function appendTransformation(from, transformation, to) {
-	const link = new Link(from, transformation);
-	return replaceEncoding(to, to.encoding ? [...to.encoding, link] : [link]);
+function Ad(e) {
+	return (t) => t.encoding ? J(t, kd(t.encoding, e)) : t;
 }
-function mapOrSame(as, f) {
-	let changed = false;
-	const out = new Array(as.length);
-	for (let i = 0; i < as.length; i++) {
-		const a = as[i];
-		const fa = f(a);
-		if (fa !== a) changed = true;
-		out[i] = fa;
+function jd(e, t, n) {
+	let r = new K(e, t);
+	return J(n, n.encoding ? [...n.encoding, r] : [r]);
+}
+function Md(e, t) {
+	let n = !1, r = Array(e.length);
+	for (let i = 0; i < e.length; i++) {
+		let a = e[i], o = t(a);
+		o !== a && (n = !0), r[i] = o;
 	}
-	return changed ? out : as;
+	return n ? r : e;
 }
-/** @internal */
-function annotateKey(ast, annotations) {
-	return replaceContext(ast, ast.context ? new Context(ast.context.isOptional, ast.context.isMutable, ast.context.defaultValue, {
-		...ast.context.annotations,
-		...annotations
-	}) : new Context(false, false, void 0, annotations));
+function Nd(e, t) {
+	return Td(e, e.context ? new Eu(e.context.isOptional, e.context.isMutable, e.context.defaultValue, {
+		...e.context.annotations,
+		...t
+	}) : new Eu(!1, !1, void 0, t));
 }
-/** @internal */
-function withConstructorDefault$1(ast, defaultValue) {
-	const encoding = [new Link(unknown, new Transformation(withDefault(defaultValue), passthrough$1()))];
-	return replaceContext(ast, ast.context ? new Context(ast.context.isOptional, ast.context.isMutable, encoding, ast.context.annotations) : new Context(false, false, encoding));
+var Pd = /*#__PURE__*/ Ad(Fd);
+function Fd(e) {
+	return Pd(Td(e, e.context ? e.context.isOptional === !1 ? new Eu(!0, e.context.isMutable, e.context.defaultValue, e.context.annotations) : e.context : new Eu(!0, !1)));
 }
-/**
-* Attaches a `Transformation` to the `to` AST, making it decode from the
-* `from` AST and encode back to it.
-*
-* **Details**
-*
-* This is the low-level primitive behind `Schema.transform` and
-* `Schema.transformOrFail`. It appends a {@link Link} to the `to` node's
-* encoding chain.
-*
-* - Returns a new AST with the same type as `to`.
-*
-* @see {@link Link}
-* @see {@link Encoding}
-* @see {@link flip}
-* @category transforming
-* @since 4.0.0
-*/
-function decodeTo$1(from, to, transformation) {
-	return appendTransformation(from, transformation, to);
+function Id(e, t) {
+	let n = [new K(Pu, new lu(ru(t), eu()))];
+	return Td(e, e.context ? new Eu(e.context.isOptional, e.context.isMutable, n, e.context.annotations) : new Eu(!1, !1, n));
 }
-/**
-* Returns `true` if the AST node represents an optional property.
-*
-* **Details**
-*
-* Checks `ast.context?.isOptional`. Defaults to `false` when no
-* {@link Context} is set.
-*
-* @see {@link optionalKey}
-* @see {@link Context}
-* @category predicates
-* @since 4.0.0
-*/
-function isOptional(ast) {
-	return ast.context?.isOptional ?? false;
+function Ld(e, t, n) {
+	return jd(e, n, t);
 }
-/**
-* Strips all encoding transformations from an AST, returning the decoded
-* (type-level) representation.
-*
-* **Details**
-*
-* - Memoized: same input reference → same output reference.
-* - Recursively walks into composite nodes ({@link Arrays}, {@link Objects},
-*   {@link Union}, {@link Suspend}).
-*
-* **Example** (Getting the type AST)
-*
-* ```ts
-* import { Schema, SchemaAST } from "effect"
-*
-* const schema = Schema.NumberFromString
-* const typeAst = SchemaAST.toType(schema.ast)
-* console.log(typeAst._tag) // "Number"
-* ```
-*
-* @see {@link toEncoded}
-* @see {@link flip}
-* @category transforming
-* @since 4.0.0
-*/
-var toType = /*#__PURE__*/ memoize((ast) => {
-	if (ast.encoding) return toType(replaceEncoding(ast, void 0));
-	const out = ast;
-	const type = out.recur?.(toType) ?? out;
-	if (getEncodingChecks(type)) return modifyOwnPropertyDescriptors(type, (d) => {
-		d.encodingChecks.value = void 0;
-	});
-	return type;
-});
-/**
-* Returns the encoded (wire-format) AST by flipping and then stripping
-* encodings.
-*
-* **Details**
-*
-* Equivalent to `toType(flip(ast))`. This gives you the AST that describes
-* the shape of the serialized/encoded data.
-*
-* - Memoized: same input reference → same output reference.
-*
-* **Example** (Getting the encoded AST)
-*
-* ```ts
-* import { Schema, SchemaAST } from "effect"
-*
-* const schema = Schema.NumberFromString
-* const encodedAst = SchemaAST.toEncoded(schema.ast)
-* console.log(encodedAst._tag) // "String"
-* ```
-*
-* @see {@link toType}
-* @see {@link flip}
-* @category transforming
-* @since 4.0.0
-*/
-var toEncoded = /*#__PURE__*/ memoize((ast) => {
-	return toType(flip(ast));
-});
-function flipEncoding(ast, encoding) {
-	const links = encoding;
-	const len = links.length;
-	const last = links[len - 1];
-	const ls = [new Link(flip(replaceEncoding(ast, void 0)), links[0].transformation.flip())];
-	for (let i = 1; i < len; i++) ls.unshift(new Link(flip(links[i - 1].to), links[i].transformation.flip()));
-	const to = flip(last.to);
-	if (to.encoding) return replaceEncoding(to, [...to.encoding, ...ls]);
-	else return replaceEncoding(to, ls);
-}
-/**
-* Swaps the decode and encode directions of an AST's {@link Encoding} chain.
-*
-* **Details**
-*
-* After flipping, what was decoding becomes encoding and vice versa. This is
-* the core operation behind `Schema.encode` — encoding a value is decoding
-* with a flipped SchemaAST.
-*
-* - Memoized: same input reference → same output reference.
-* - Recursively walks composite nodes.
-*
-* @see {@link toType}
-* @see {@link toEncoded}
-* @category transforming
-* @since 4.0.0
-*/
-var flip = /*#__PURE__*/ memoize((ast) => {
-	if (ast.encoding) return flipEncoding(ast, ast.encoding);
-	const out = ast;
-	return out.flip?.(flip) ?? out.recur?.(flip) ?? out;
-});
-/** @internal */
-function containsUndefined(ast) {
-	switch (ast._tag) {
-		case "Undefined": return true;
-		case "Union": return ast.types.some(containsUndefined);
-		default: return false;
+function Rd(e) {
+	switch (e._tag) {
+		case "Literal": return {
+			literals: nt(e.literal) ? [e.literal] : [],
+			parameters: []
+		};
+		case "UniqueSymbol": return {
+			literals: [e.symbol],
+			parameters: []
+		};
+		case "String":
+		case "Number":
+		case "Symbol":
+		case "TemplateLiteral": return {
+			literals: [],
+			parameters: [e]
+		};
+		case "Union": {
+			let t = {
+				literals: [],
+				parameters: []
+			};
+			for (let n = 0; n < e.types.length; n++) {
+				let r = Rd(e.types[n]);
+				t.literals = t.literals.concat(r.literals), t.parameters = t.parameters.concat(r.parameters);
+			}
+			return t;
+		}
 	}
-}
-function getTemplateLiteralSource(ast, top) {
-	return ast.encodedParts.map((part) => handleTemplateLiteralASTPartParens(part, getTemplateLiteralASTPartPattern(part), top)).join("");
-}
-/** @internal */
-var getTemplateLiteralRegExp = /*#__PURE__*/ memoize((ast) => {
-	return new globalThis.RegExp(`^${getTemplateLiteralSource(ast, true)}$`);
-});
-function getTemplateLiteralASTPartPattern(part) {
-	switch (part._tag) {
-		case "Literal": return escape(globalThis.String(part.literal));
-		case "String": return STRING_PATTERN;
-		case "Number": return FINITE_PATTERN;
-		case "BigInt": return BIGINT_PATTERN;
-		case "TemplateLiteral": return getTemplateLiteralSource(part, false);
-		case "Union": return part.types.map(getTemplateLiteralASTPartPattern).join("|");
-	}
-}
-function handleTemplateLiteralASTPartParens(part, s, top) {
-	if (isUnion(part)) {
-		if (!top) return `(?:${s})`;
-	} else if (!top) return s;
-	return `(${s})`;
-}
-function fromConst(ast, value) {
-	const succeed = succeedSome(value);
-	return (oinput) => {
-		if (oinput._tag === "None") return succeedNone;
-		return oinput.value === value ? succeed : fail(new InvalidType(ast, oinput));
+	return {
+		literals: [],
+		parameters: []
 	};
 }
-function fromRefinement(ast, refinement) {
-	return (oinput) => {
-		if (oinput._tag === "None") return succeedNone;
-		return refinement(oinput.value) ? succeed(oinput) : fail(new InvalidType(ast, oinput));
-	};
+function zd(e, t, n) {
+	let { literals: r, parameters: i } = Rd(e);
+	return new td(r.map((e) => new Qu(e, t)), i.map((e) => new ed(e, t, n)));
 }
-/** @internal */
-function toCodec(f) {
-	function out(ast) {
-		return ast.encoding ? replaceEncoding(ast, updateLastLink(ast.encoding, out)) : f(ast);
-	}
-	return memoize(out);
+function Bd(e) {
+	return e.context?.isOptional ?? !1;
 }
-var indexSignatureParameterFromString = /*#__PURE__*/ toCodec((ast) => {
-	switch (ast._tag) {
-		default: return ast;
-		case "Number": return ast.toCodecStringTree();
-		case "Union": return ast.recur(indexSignatureParameterFromString);
-	}
+var Vd = /*#__PURE__*/ Je((e) => {
+	if (e.encoding) return Vd(J(e, void 0));
+	let t = e, n = t.recur?.(Vd) ?? t;
+	return yd(n) ? wd(n, (e) => {
+		e.encodingChecks.value = void 0;
+	}) : n;
+}), Hd = /*#__PURE__*/ Je((e) => Vd(Wd(e)));
+function Ud(e, t) {
+	let n = t, r = n.length, i = n[r - 1], a = [new K(Wd(J(e, void 0)), n[0].transformation.flip())];
+	for (let e = 1; e < r; e++) a.unshift(new K(Wd(n[e - 1].to), n[e].transformation.flip()));
+	let o = Wd(i.to);
+	return o.encoding ? J(o, [...o.encoding, ...a]) : J(o, a);
+}
+var Wd = /*#__PURE__*/ Je((e) => {
+	if (e.encoding) return Ud(e, e.encoding);
+	let t = e;
+	return t.flip?.(Wd) ?? t.recur?.(Wd) ?? t;
 });
-/**
-* any string, including newlines
-* @internal
-*/
-var STRING_PATTERN = "[\\s\\S]*?";
-var isStringFiniteRegExp = /*#__PURE__*/ new globalThis.RegExp(`^${FINITE_PATTERN}$`);
-/** @internal */
-function isStringFinite(annotations) {
-	return isPattern$1(isStringFiniteRegExp, {
+function Gd(e) {
+	switch (e._tag) {
+		case "Undefined": return !0;
+		case "Union": return e.types.some(Gd);
+		default: return !1;
+	}
+}
+function Kd(e, t) {
+	return e.encodedParts.map((e) => Yd(e, Jd(e), t)).join("");
+}
+var qd = /*#__PURE__*/ Je((e) => new globalThis.RegExp(`^${Kd(e, !0)}$`));
+function Jd(e) {
+	switch (e._tag) {
+		case "Literal": return Cl(globalThis.String(e.literal));
+		case "String": return ef;
+		case "Number": return Yu;
+		case "BigInt": return sf;
+		case "TemplateLiteral": return Kd(e, !1);
+		case "Union": return e.types.map(Jd).join("|");
+	}
+}
+function Yd(e, t, n) {
+	if (wu(e)) {
+		if (!n) return `(?:${t})`;
+	} else if (!n) return t;
+	return `(${t})`;
+}
+function Xd(e, t) {
+	let n = zc(t);
+	return (r) => r._tag === "None" ? Rc : r.value === t ? n : G(new Nl(e, r));
+}
+function Zd(e, t) {
+	return (n) => n._tag === "None" ? Rc : t(n.value) ? Lc(n) : G(new Nl(e, n));
+}
+function Qd(e) {
+	function t(n) {
+		return n.encoding ? J(n, kd(n.encoding, t)) : e(n);
+	}
+	return Je(t);
+}
+var $d = /*#__PURE__*/ Qd((e) => {
+	switch (e._tag) {
+		default: return e;
+		case "Number": return e.toCodecStringTree();
+		case "Union": return e.recur($d);
+	}
+}), ef = "[\\s\\S]*?", tf = /*#__PURE__*/ new globalThis.RegExp(`^${Yu}$`);
+function nf(e) {
+	return Cd(tf, {
 		expected: "a string representing a finite number",
 		meta: {
 			_tag: "isStringFinite",
-			regExp: isStringFiniteRegExp
+			regExp: tf
 		},
-		...annotations
+		...e
 	});
 }
-var finiteString = /*#__PURE__*/ appendChecks(string, [/*#__PURE__*/ isStringFinite()]);
-var finiteToString = /*#__PURE__*/ new Link(finiteString, numberFromString);
-var numberToString = /*#__PURE__*/ new Link(/*#__PURE__*/ new Union$1([finiteString, nonFiniteLiterals], "anyOf"), numberFromString);
-/**
-* signed integer only (no leading "+" because TypeScript doesn't support it)
-*/
-var BIGINT_PATTERN = "-?\\d+";
-`${BIGINT_PATTERN}`;
-/** @internal */
-function collectIssues(checks, value, issues, ast, options) {
-	for (let i = 0; i < checks.length; i++) {
-		const check = checks[i];
-		if (check._tag === "FilterGroup") collectIssues(check.checks, value, issues, ast, options);
+var rf = /*#__PURE__*/ Od(Ru, [/*#__PURE__*/ nf()]), af = /*#__PURE__*/ new K(rf, mu), of = /*#__PURE__*/ new K(/*#__PURE__*/ new pd([rf, hd], "anyOf"), mu), sf = "-?\\d+", cf = /*#__PURE__*/ new globalThis.RegExp(`^${sf}$`);
+function lf(e) {
+	return Cd(cf, {
+		expected: "a string representing a bigint",
+		meta: {
+			_tag: "isStringBigInt",
+			regExp: cf
+		},
+		...e
+	});
+}
+var uf = /*#__PURE__*/ new K(/* @__PURE__ */ Od(Ru, [/*#__PURE__*/ lf({ expected: "a string representing a bigint" })]), hu);
+function df(e, t, n, r, i) {
+	for (let a = 0; a < e.length; a++) {
+		let o = e[a];
+		if (o._tag === "FilterGroup") df(o.checks, t, n, r, i);
 		else {
-			const issue = check.run(value, ast, options);
-			if (issue) {
-				issues.push(new Filter$1(value, check, issue));
-				if (check.aborted || options?.errors !== "all") return;
-			}
+			let e = o.run(t, r, i);
+			if (e && (n.push(new Dl(t, o, e)), o.aborted || i?.errors !== "all")) return;
 		}
 	}
 }
-/** @internal */
-var ClassTypeId = "~effect/Schema/Class";
-/** @internal */
-var STRUCTURAL_ANNOTATION_KEY = "~structural";
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Struct.js
-/**
-* Wraps a plain function as a {@link Lambda} value so it can be used with
-* {@link map}, {@link mapPick}, and {@link mapOmit}.
-*
-* **When to use**
-*
-* Use to create a typed lambda for struct mapping APIs that need type-level
-* input and output tracking.
-*
-* **Details**
-*
-* The type parameter `L` encodes both the input and output types at the type
-* level, allowing the compiler to track how struct value types change. At
-* runtime, the returned value is the same function; `lambda` only adjusts the
-* type.
-*
-* **Example** (Wrapping values in arrays)
-*
-* ```ts
-* import { pipe, Struct } from "effect"
-*
-* interface AsArray extends Struct.Lambda {
-*   <A>(self: A): Array<A>
-*   readonly "~lambda.out": Array<this["~lambda.in"]>
-* }
-*
-* const asArray = Struct.lambda<AsArray>((a) => [a])
-* const result = pipe({ x: 1, y: "hello" }, Struct.map(asArray))
-* console.log(result) // { x: [1], y: ["hello"] }
-* ```
-*
-* @see {@link Lambda} – the type-level interface
-* @see {@link map} – apply a lambda to all struct values
-* @category Lambda
-* @since 4.0.0
-*/
-var lambda = (f) => f;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaParser.js
-/**
-* Runs schemas against real values.
-*
-* Schema parsers construct values from schema input, check whether a value
-* matches a schema, decode encoded input, and encode decoded values back to
-* their external form. This module exposes those operations through several
-* result styles, including `Effect`, `Promise`, `Exit`, `Option`, `Result`, and
-* synchronous functions that throw. It also contains the lower-level runner that
-* walks a schema AST and reports schema failures as `SchemaIssue.Issue` values.
-*
-* @since 4.0.0
-*/
-var recurDefaults = /*#__PURE__*/ memoize((ast) => {
-	switch (ast._tag) {
+var ff = "~effect/Schema/Class", pf = "~structural", mf = Ga, hf = Es, gf = "~effect/MutableRef", _f = {
+	[gf]: gf,
+	...fn,
+	toJSON() {
+		return {
+			_id: "MutableRef",
+			current: en(this.current)
+		};
+	}
+}, vf = (e) => {
+	let t = Object.create(_f);
+	return t.current = e, t;
+}, yf = /*#__PURE__*/ j(2, (e, t) => (e.current = t, e)), bf = (e) => e, xf = /*#__PURE__*/ Je((e) => {
+	switch (e._tag) {
 		case "Declaration": {
-			const getLink = ast.annotations?.[ClassTypeId];
-			if (isFunction(getLink)) {
-				const link = getLink(ast.typeParameters);
-				const to = recurDefaults(link.to);
-				return replaceEncoding(ast, to === link.to ? [link] : [new Link(to, link.transformation)]);
+			let t = e.annotations?.[ff];
+			if (rt(t)) {
+				let n = t(e.typeParameters), r = xf(n.to);
+				return J(e, r === n.to ? [n] : [new K(r, n.transformation)]);
 			}
-			return ast;
+			return e;
 		}
 		case "Objects":
-		case "Arrays": return ast.recur((ast) => {
-			const defaultValue = ast.context?.defaultValue;
-			if (defaultValue) return replaceEncoding(recurDefaults(ast), defaultValue);
-			return recurDefaults(ast);
+		case "Arrays": return e.recur((e) => {
+			let t = e.context?.defaultValue;
+			return t ? J(xf(e), t) : xf(e);
 		});
-		case "Suspend": return ast.recur(recurDefaults);
-		default: return ast;
+		case "Suspend": return e.recur(xf);
+		default: return e;
 	}
 });
-/**
-* Creates an effectful maker for the schema's decoded type side.
-*
-* **When to use**
-*
-* Use to construct decoded schema values in `Effect` while preserving
-* construction failures as `SchemaIssue.Issue` values in the error channel.
-*
-* **Details**
-*
-* The returned function accepts constructor input, applies constructor defaults,
-* runs type-side validation unless checks are disabled, and fails with a
-* `SchemaIssue.Issue` when construction fails.
-*
-* @category constructors
-* @since 4.0.0
-*/
-function makeEffect(schema) {
-	const parser = run(recurDefaults(toType(schema.ast)));
-	return (input, options) => {
-		return parser(input, options?.disableChecks ? options?.parseOptions ? {
-			...options.parseOptions,
-			disableChecks: true
-		} : { disableChecks: true } : options?.parseOptions);
-	};
+function Sf(e) {
+	let t = Df(xf(Vd(e.ast)));
+	return (e, n) => t(e, n?.disableChecks ? n?.parseOptions ? {
+		...n.parseOptions,
+		disableChecks: !0
+	} : { disableChecks: !0 } : n?.parseOptions);
 }
-/**
-* Creates a synchronous maker that returns `Option.some` with the constructed
-* value on success, or `Option.none` when construction fails.
-*
-* **When to use**
-*
-* Use when you need to validate schema constructor input and only care whether
-* construction succeeds, without exposing `SchemaIssue.Issue` details.
-*
-* @category constructors
-* @since 4.0.0
-*/
-function makeOption(schema) {
-	const parser = makeEffect(schema);
-	return (input, options) => {
-		return getSuccess(runSyncExit(parser(input, options)));
-	};
+function Cf(e) {
+	let t = Sf(e);
+	return (e, n) => ac(ul(t(e, n)));
 }
-/**
-* Creates a synchronous maker for the schema's decoded type side.
-*
-* **When to use**
-*
-* Use to construct decoded schema values synchronously when invalid input
-* should throw an `Error` whose cause is `SchemaIssue.Issue`.
-*
-* **Details**
-*
-* The returned function constructs a value from constructor input and throws an
-* `Error` with the `SchemaIssue.Issue` in its `cause` when construction fails.
-*
-* @category constructors
-* @since 4.0.0
-*/
-function make$6(schema) {
-	const parser = makeEffect(schema);
-	return (input, options) => {
-		return runSync(mapErrorEager(parser(input, options), (issue) => new Error(issue.toString(), { cause: issue })));
-	};
+function wf(e) {
+	let t = Sf(e);
+	return (e, n) => cl(ml(t(e, n), (e) => Error(e.toString(), { cause: e })));
 }
-/**
-* Creates an effectful decoder for `unknown` input.
-*
-* **When to use**
-*
-* Use when you need to decode untyped boundary input in an `Effect` whose
-* failure channel is `SchemaIssue.Issue`, while preserving transformations
-* and service requirements.
-*
-* **Details**
-*
-* The returned function succeeds with the schema's decoded `Type` or fails with a
-* `SchemaIssue.Issue`. Decoding service requirements are preserved in the returned
-* `Effect`. Parse options may be provided when creating the decoder and overridden
-* when applying it.
-*
-* @see {@link decodeEffect} for input already typed as the schema's `Encoded` type
-*
-* @category decoding
-* @since 4.0.0
-*/
-function decodeUnknownEffect$1(schema, options) {
-	const parser = run(schema.ast);
-	return options === void 0 ? parser : (input, overrideOptions) => parser(input, mergeParseOptions(options, overrideOptions));
+function Tf(e, t) {
+	let n = Df(e.ast);
+	return t === void 0 ? n : (e, r) => n(e, Ef(t, r));
 }
-var mergeParseOptions = (options, overrideOptions) => overrideOptions === void 0 ? options : {
-	...options,
-	...overrideOptions
+var Ef = (e, t) => t === void 0 ? e : {
+	...e,
+	...t
 };
-/** @internal */
-function run(ast) {
-	const parser = recur(ast);
-	return (input, options) => flatMapEager(parser(some(input), options ?? defaultParseOptions), (oa) => {
-		if (oa._tag === "None") return fail(new InvalidValue(oa));
-		return succeed(oa.value);
-	});
+function Df(e) {
+	let t = Of(e);
+	return (e, n) => hl(t(V(e), n ?? Tu), (e) => e._tag === "None" ? G(new Pl(e)) : Lc(e.value));
 }
-var recur = /*#__PURE__*/ memoize((ast) => {
-	let parser;
-	const encodingChecks = getEncodingChecks(ast);
-	const resolvedChecks = ast.checks ?? encodingChecks;
-	const astOptions = (resolvedChecks ? resolvedChecks[resolvedChecks.length - 1].annotations : ast.annotations)?.["parseOptions"];
-	if (!ast.context && !ast.encoding && !ast.checks && !encodingChecks) return (ou, options) => {
-		parser ??= ast.getParser(recur);
-		if (astOptions) options = {
-			...options,
-			...astOptions
-		};
-		return parser(ou, options);
-	};
-	const isStructural = isArrays(ast) || isObjects(ast) || isDeclaration(ast) && ast.typeParameters.length > 0;
-	return (ou, options) => {
-		if (astOptions) options = {
-			...options,
-			...astOptions
-		};
-		const encoding = ast.encoding;
-		let srou;
-		if (encoding) {
-			const links = encoding;
-			const len = links.length;
-			for (let i = len - 1; i >= 0; i--) {
-				const link = links[i];
-				const to = link.to;
-				const parser = recur(to);
-				srou = srou ? flatMapEager(srou, (ou) => parser(ou, options)) : parser(ou, options);
-				if (link.transformation._tag === "Transformation") {
-					const getter = link.transformation.decode;
-					srou = flatMapEager(srou, (ou) => getter.run(ou, options));
-				} else srou = link.transformation.decode(srou, options);
-			}
-			srou = mapErrorEager(srou, (issue) => new Encoding(ast, ou, issue));
-		}
-		parser ??= ast.getParser(recur);
-		let sroa = srou ? flatMapEager(srou, (ou) => parser(ou, options)) : parser(ou, options);
-		if (encodingChecks && !options?.disableChecks) sroa = flatMapEager(sroa, (oa) => {
-			if (isSome(ou) && isSome(oa)) {
-				const issues = [];
-				collectIssues(encodingChecks, ou.value, issues, ast, options);
-				if (isArrayNonEmpty(issues)) return fail(new Composite(ast, ou, issues));
-			}
-			return succeed(oa);
+var Of = /*#__PURE__*/ Je((e) => {
+	let t, n = yd(e), r = e.checks ?? n, i = (r ? r[r.length - 1].annotations : e.annotations)?.parseOptions;
+	if (!e.context && !e.encoding && !e.checks && !n) return (n, r) => (t ??= e.getParser(Of), i && (r = {
+		...r,
+		...i
+	}), t(n, r));
+	let a = Su(e) || Cu(e) || vu(e) && e.typeParameters.length > 0;
+	return (r, o) => {
+		i && (o = {
+			...o,
+			...i
 		});
-		if (ast.checks && !options?.disableChecks) {
-			const checks = ast.checks;
-			if (options?.errors === "all" && isStructural && isSome(ou)) sroa = catchEager(sroa, (issue) => {
-				const issues = [];
-				collectIssues(checks.filter((check) => check.annotations?.[STRUCTURAL_ANNOTATION_KEY]), ou.value, issues, ast, options);
-				return fail(isArrayNonEmpty(issues) ? issue._tag === "Composite" && issue.ast === ast ? new Composite(ast, issue.actual, [...issue.issues, ...issues]) : new Composite(ast, ou, [issue, ...issues]) : issue);
-			});
-			sroa = flatMapEager(sroa, (oa) => {
-				if (isSome(oa)) {
-					const value = oa.value;
-					const issues = [];
-					collectIssues(checks, value, issues, ast, options);
-					if (isArrayNonEmpty(issues)) return fail(new Composite(ast, oa, issues));
+		let s = e.encoding, c;
+		if (s) {
+			let t = s, n = t.length;
+			for (let e = n - 1; e >= 0; e--) {
+				let n = t[e], i = n.to, a = Of(i);
+				if (c = c ? hl(c, (e) => a(e, o)) : a(r, o), n.transformation._tag === "Transformation") {
+					let e = n.transformation.decode;
+					c = hl(c, (t) => e.run(t, o));
+				} else c = n.transformation.decode(c, o);
+			}
+			c = ml(c, (t) => new Ol(e, r, t));
+		}
+		t ??= e.getParser(Of);
+		let l = c ? hl(c, (e) => t(e, o)) : t(r, o);
+		if (n && !o?.disableChecks && (l = hl(l, (t) => {
+			if (br(r) && br(t)) {
+				let t = [];
+				if (df(n, r.value, t, e, o), jr(t)) return G(new Ml(e, r, t));
+			}
+			return Lc(t);
+		})), e.checks && !o?.disableChecks) {
+			let t = e.checks;
+			o?.errors === "all" && a && br(r) && (l = gl(l, (n) => {
+				let i = [];
+				return df(t.filter((e) => e.annotations?.[pf]), r.value, i, e, o), G(jr(i) ? n._tag === "Composite" && n.ast === e ? new Ml(e, n.actual, [...n.issues, ...i]) : new Ml(e, r, [n, ...i]) : n);
+			})), l = hl(l, (n) => {
+				if (br(n)) {
+					let r = n.value, i = [];
+					if (df(t, r, i, e, o), jr(i)) return G(new Ml(e, n, i));
 				}
-				return succeed(oa);
+				return Lc(n);
 			});
 		}
-		return sroa;
+		return l;
 	};
-});
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/schema.js
-/** @internal */
-var TypeId$3 = "~effect/Schema/Schema";
-var SchemaProto = {
-	[TypeId$3]: TypeId$3,
+}), kf = "~effect/Schema/Schema", Af = {
+	[kf]: kf,
 	pipe() {
-		return pipeArguments(this, arguments);
+		return ze(this, arguments);
 	},
-	annotate(annotations) {
-		return this.rebuild(annotate(this.ast, annotations));
+	annotate(e) {
+		return this.rebuild(Ed(this.ast, e));
 	},
-	annotateKey(annotations) {
-		return this.rebuild(annotateKey(this.ast, annotations));
+	annotateKey(e) {
+		return this.rebuild(Nd(this.ast, e));
 	},
-	check(...checks) {
-		return this.rebuild(appendChecks(this.ast, checks));
+	check(...e) {
+		return this.rebuild(Od(this.ast, e));
 	}
 };
-/** @internal */
-function make$5(ast, options) {
-	const self = Object.create(SchemaProto);
-	if (options) Object.assign(self, options);
-	self.ast = ast;
-	self.rebuild = (ast) => make$5(ast, options);
-	self.makeEffect = flow(makeEffect(self), mapErrorEager((issue) => new SchemaError(issue)));
-	self.make = make$6(self);
-	self.makeOption = makeOption(self);
-	return self;
+function jf(e, t) {
+	let n = Object.create(Af);
+	return t && Object.assign(n, t), n.ast = e, n.rebuild = (e) => jf(e, t), n.makeEffect = qe(Sf(n), ml((e) => new Nf(e))), n.make = wf(n), n.makeOption = Cf(n), n;
 }
-/** @internal */
-var SchemaErrorTypeId = "~effect/Schema/SchemaError";
-var SchemaError = class {
-	[SchemaErrorTypeId] = SchemaErrorTypeId;
+var Mf = "~effect/Schema/SchemaError", Nf = class {
+	[Mf] = Mf;
 	_tag = "SchemaError";
 	name = "SchemaError";
 	issue;
-	constructor(issue) {
-		this.issue = issue;
+	constructor(e) {
+		this.issue = e;
 	}
 	get message() {
 		return this.issue.toString();
@@ -11689,2041 +3955,1492 @@ var SchemaError = class {
 	toString() {
 		return `SchemaError(${this.message})`;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Schema.js
-var TypeId$2 = TypeId$3;
-/**
-* Decodes an `unknown` input against a schema, returning an `Effect` that
-* succeeds with the decoded value or fails with a {@link SchemaError}.
-*
-* **When to use**
-*
-* Use when you need to decode unknown input in an `Effect` whose failure
-* channel is `SchemaError`.
-*
-* **Details**
-*
-* Prefer {@link decodeEffect} when the input is already typed as the schema's
-* `Encoded` type.
-* Options may be provided either when creating the decoder or when applying it;
-* application options override creation options.
-*
-* @see {@link SchemaParser.decodeUnknownEffect} for the adapter that fails with `SchemaIssue.Issue` directly
-*
-* @category decoding
-* @since 4.0.0
-*/
-function decodeUnknownEffect(schema, options) {
-	const parser = decodeUnknownEffect$1(schema, options);
-	return (input, options) => {
-		return mapErrorEager(parser(input, options), (issue) => new SchemaError(issue));
-	};
+}, Pf = kf;
+function Ff() {
+	return (e, t, n) => Y(new Ou(e.map(id), (e) => t(e.map((e) => Y(e))), n));
 }
-/**
-* Creates a schema from an AST (Abstract Syntax Tree) node.
-*
-* **Details**
-*
-* This is the fundamental constructor for all schemas in the Effect Schema
-* library. It takes an AST node and wraps it in a fully-typed schema that
-* preserves all type information and provides the complete schema API.
-*
-* The `make` function is used internally to create all primitive schemas like
-* `String`, `Number`, `Boolean`, etc., as well as more complex schemas. It's
-* the bridge between the untyped AST representation and the strongly-typed
-* schema.
-*
-* @category constructors
-* @since 3.10.0
-*/
-var make$4 = make$5;
-/**
-* Checks whether a value is a `Schema`.
-*
-* @category guards
-* @since 3.10.0
-*/
-function isSchema(u) {
-	return hasProperty(u, TypeId$2) && u[TypeId$2] === TypeId$2;
+function If(e, t) {
+	return Ff()([], () => (t, n) => e(t) ? Lc(t) : G(new Nl(n, V(t))), t);
 }
-/**
-* Creates a schema for a single literal value (string, number, bigint, boolean, or null).
-*
-* **Example** (String literal)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const schema = Schema.Literal("hello")
-* // Type: Schema.Literal<"hello">
-* ```
-*
-* @see {@link Literals} for a schema that represents a union of literals.
-* @see {@link tag} for a schema that represents a literal value that can be
-* used as a discriminator field in tagged unions and has a constructor default.
-* @category constructors
-* @since 3.10.0
-*/
-function Literal(literal) {
-	const out = make$4(new Literal$1(literal), {
-		literal,
-		transform(to) {
-			return out.pipe(decodeTo(Literal(to), {
-				decode: transform$1(() => to),
-				encode: transform$1(() => literal)
+function Lf(e, t) {
+	let n = Tf(e, t);
+	return (e, t) => ml(n(e, t), (e) => new Nf(e));
+}
+var Y = jf;
+function Rf(e) {
+	return N(e, Pf) && e[Pf] === Pf;
+}
+var zf = /*#__PURE__*/ bf((e) => Y(Fd(e.ast), { schema: e })), Bf = /*#__PURE__*/ bf((e) => zf(op(e)));
+function Vf(e) {
+	let t = Y(new Iu(e), {
+		literal: e,
+		transform(n) {
+			return t.pipe(sp(Vf(n), {
+				decode: tu(() => n),
+				encode: tu(() => e)
 			}));
 		}
 	});
-	return out;
+	return t;
 }
-/**
-* Schema for the `null` literal. Validates that the input is strictly `null`.
-*
-* @see {@link NullOr} for a union with another schema.
-* @category schemas
-* @since 3.10.0
-*/
-var Null = /*#__PURE__*/ make$4(null_);
-/**
-* Schema for `string` values. Validates that the input is `typeof` `"string"`.
-*
-* @category schemas
-* @since 4.0.0
-*/
-var String$1 = /*#__PURE__*/ make$4(string);
-/**
-* Schema for `number` values, including `NaN`, `Infinity`, and `-Infinity`.
-*
-* **Details**
-*
-* Default JSON serializer:
-*
-* - Finite numbers are serialized as numbers.
-* - Non-finite values are serialized as strings (`"NaN"`, `"Infinity"`, `"-Infinity"`).
-*
-* @see {@link Finite} for a schema that excludes non-finite values.
-* @category schemas
-* @since 4.0.0
-*/
-var Number$1 = /*#__PURE__*/ make$4(number);
-function makeStruct(ast, fields) {
-	return make$4(ast, {
-		fields,
-		mapFields(f, options) {
-			const fields = f(this.fields);
-			return makeStruct(struct(fields, options?.unsafePreserveChecks ? this.ast.checks : void 0), fields);
+var Hf = /*#__PURE__*/ Y(Nu), Uf = /*#__PURE__*/ Y(Pu), Wf = /*#__PURE__*/ Y(ku), Gf = /*#__PURE__*/ Y(Mu), Kf = /*#__PURE__*/ Y(Ru), X = /*#__PURE__*/ Y(Vu), qf = /*#__PURE__*/ Y(Hu), Jf = /*#__PURE__*/ Y(Uu), Yf = /*#__PURE__*/ Y(Fu);
+function Xf(e, t) {
+	return Y(e, {
+		fields: t,
+		mapFields(e, t) {
+			let n = e(this.fields);
+			return Xf(rd(n, t?.unsafePreserveChecks ? this.ast.checks : void 0), n);
 		}
 	});
 }
-/**
-* Defines a struct schema from a map of field schemas.
-*
-* **Details**
-*
-* Each field value is a schema. Use {@link optionalKey} or {@link optional} to
-* mark fields as optional, and {@link mutableKey} to mark them as mutable.
-*
-* The resulting schema's `Type` is a readonly object type with the fields'
-* decoded types. The `Encoded` form mirrors the field schemas' encoded types.
-*
-* **Example** (Basic struct)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const Person = Schema.Struct({
-*   name: Schema.String,
-*   age: Schema.Number,
-*   email: Schema.optionalKey(Schema.String)
-* })
-*
-* // { readonly name: string; readonly age: number; readonly email?: string }
-* type Person = typeof Person.Type
-*
-* const alice = Schema.decodeUnknownSync(Person)({ name: "Alice", age: 30 })
-* console.log(alice)
-* // { name: 'Alice', age: 30 }
-* ```
-*
-* @category constructors
-* @since 3.10.0
-*/
-function Struct(fields) {
-	return makeStruct(struct(fields, void 0), fields);
+function Zf(e) {
+	return Xf(rd(e, void 0), e);
 }
-function makeTuple(ast, elements) {
-	return make$4(ast, {
-		elements,
-		mapElements(f, options) {
-			const elements = f(this.elements);
-			return makeTuple(tuple(elements, options?.unsafePreserveChecks ? this.ast.checks : void 0), elements);
+function Qf(e, t, n) {
+	let r = n?.keyValueCombiner?.decode || n?.keyValueCombiner?.encode ? new $u(n.keyValueCombiner.decode, n.keyValueCombiner.encode) : void 0;
+	return Y(zd(e.ast, t.ast, r), {
+		key: e,
+		value: t
+	});
+}
+function $f(e, t) {
+	return Y(e, {
+		elements: t,
+		mapElements(e, t) {
+			let n = e(this.elements);
+			return $f(ad(n, t?.unsafePreserveChecks ? this.ast.checks : void 0), n);
 		}
 	});
 }
-function makeUnion(ast, members) {
-	return make$4(ast, {
-		members,
-		mapMembers(f, options) {
-			const members = f(this.members);
-			return makeUnion(union$1(members, this.ast.mode, options?.unsafePreserveChecks ? this.ast.checks : void 0), members);
+function ep(e) {
+	return $f(ad(e), e);
+}
+var tp = /*#__PURE__*/ bf((e) => Y(new Wu(!1, [], [e.ast]), { value: e }));
+function np(e, t) {
+	return Y(e, {
+		members: t,
+		mapMembers(e, t) {
+			let n = e(this.members);
+			return np(od(n, this.ast.mode, t?.unsafePreserveChecks ? this.ast.checks : void 0), n);
 		}
 	});
 }
-/**
-* Creates a union schema from an array of member schemas. Members are tested in
-* order; the first match is returned.
-*
-* **Details**
-*
-* Optionally, specify `mode`:
-* - `"anyOf"` (default) — matches if any member matches.
-* - `"oneOf"` — matches if exactly one member matches.
-*
-* **Example** (String or number union)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const schema = Schema.Union([Schema.String, Schema.Number])
-*
-* Schema.decodeUnknownSync(schema)("hello") // "hello"
-* Schema.decodeUnknownSync(schema)(42)       // 42
-* ```
-*
-* @category constructors
-* @since 3.10.0
-*/
-function Union(members, options) {
-	return makeUnion(union$1(members, options?.mode ?? "anyOf", void 0), members);
+function rp(e, t) {
+	return np(od(e, t?.mode ?? "anyOf", void 0), e);
 }
-/**
-* Creates a union schema from an array of literal values.
-*
-* **Example** (Status codes)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const schema = Schema.Literals(["active", "inactive", "pending"])
-* // accepts "active", "inactive", or "pending"
-* ```
-*
-* @see {@link Literal} for a schema that represents a single literal.
-* @category constructors
-* @since 4.0.0
-*/
-function Literals(literals) {
-	const members = literals.map(Literal);
-	return make$4(union$1(members, "anyOf", void 0), {
-		literals,
-		members,
-		mapMembers(f) {
-			return Union(f(this.members));
+function ip(e) {
+	let t = e.map(Vf);
+	return Y(od(t, "anyOf", void 0), {
+		literals: e,
+		members: t,
+		mapMembers(e) {
+			return rp(e(this.members));
 		},
-		pick(literals) {
-			return Literals(literals);
+		pick(e) {
+			return ip(e);
 		},
-		transform(to) {
-			return Union(members.map((member, index) => member.transform(to[index])));
+		transform(e) {
+			return rp(t.map((t, n) => t.transform(e[n])));
 		}
 	});
 }
-/**
-* Creates a union schema of `S | null`.
-*
-* @category constructors
-* @since 3.10.0
-*/
-var NullOr = /*#__PURE__*/ lambda((self) => Union([self, Null]));
-function decodeTo(to, transformation) {
-	return (from) => {
-		return make$4(decodeTo$1(from.ast, to.ast, transformation ? make$7(transformation) : passthrough()), {
-			from,
-			to
-		});
-	};
-}
-/**
-* Attaches a constructor default value to a schema field.
-*
-* **Details**
-*
-* Constructor defaults are applied only during `make*`, not during decoding or
-* encoding.
-*
-* **Example** (Optional field with a static default)
-*
-* ```ts
-* import { Effect, Schema } from "effect"
-*
-* const MySchema = Schema.Struct({
-*   name: Schema.String.pipe(
-*     Schema.optionalKey,
-*     Schema.withConstructorDefault(Effect.succeed("anonymous"))
-*   )
-* })
-*
-* const value = MySchema.make({})
-* // value: { name: "anonymous" }
-* ```
-*
-* @category constructors
-* @since 3.10.0
-*/
-function withConstructorDefault(defaultValue) {
-	return (schema) => make$4(withConstructorDefault$1(schema.ast, mapErrorEager(defaultValue, (e) => e.issue)), { schema });
-}
-/**
-* Combines a {@link Literal} schema with {@link withConstructorDefault}, making it ideal
-* for discriminator fields in tagged unions. When constructing via `make`, the
-* `_tag` field can be omitted and will be filled automatically.
-*
-* **Example** (Discriminated union tag)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const A = Schema.Struct({ _tag: Schema.tag("A"), value: Schema.Number })
-*
-* // _tag is optional in make, auto-filled to "A"
-* const a = A.make({ value: 42 })
-* // a: { _tag: "A", value: 42 }
-* ```
-*
-* @see {@link tagDefaultOmit} to also omit the tag during encoding
-* @see {@link TaggedStruct} for a shorthand that adds `_tag` automatically
-* @category constructors
-* @since 3.10.0
-*/
-function tag(literal) {
-	return Literal(literal).pipe(withConstructorDefault(succeed(literal)));
-}
-/**
-* Creates a struct schema with an automatically populated `_tag` field.
-*
-* **When to use**
-*
-* Use to define a tagged union case from a literal tag and a set of fields.
-*
-* **Details**
-*
-* When using the `make` method, the `_tag` field is optional and will be
-* added automatically. However, when decoding or encoding, the `_tag` field
-* must be present in the input.
-*
-* **Example** (Tagged struct as a shorthand for a struct with a `_tag` field)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* // Defines a struct with a fixed `_tag` field
-* const tagged = Schema.TaggedStruct("A", {
-*   a: Schema.String
-* })
-*
-* // This is the same as writing:
-* const equivalent = Schema.Struct({
-*   _tag: Schema.tag("A"),
-*   a: Schema.String
-* })
-* ```
-*
-* **Example** (Accessing the literal value of the tag)
-*
-* ```ts
-* import { Schema } from "effect"
-*
-* const tagged = Schema.TaggedStruct("A", {
-*   a: Schema.String
-* })
-*
-* // literal: "A"
-* const literal = tagged.fields._tag.schema.literal
-* ```
-*
-* @category constructors
-* @since 3.10.0
-*/
-function TaggedStruct(value, fields) {
-	return Struct({
-		_tag: tag(value),
-		...fields
+var ap = /*#__PURE__*/ bf((e) => rp([e, Wf])), op = /*#__PURE__*/ bf((e) => rp([e, Gf]));
+function sp(e, t) {
+	return (n) => Y(Ld(n.ast, e.ast, t ? du(t) : pu()), {
+		from: n,
+		to: e
 	});
 }
-globalThis.RegExp;
-globalThis.URL;
-globalThis.File;
-globalThis.FormData;
-globalThis.URLSearchParams;
+function cp(e) {
+	return (t) => Y(Id(t.ast, ml(e, (e) => e.issue)), { schema: t });
+}
+function lp(e) {
+	return Vf(e).pipe(cp(Lc(e)));
+}
+function up(e, t) {
+	return Zf({
+		_tag: lp(e),
+		...t
+	});
+}
+function dp(e, t) {
+	return If((t) => t instanceof e, t);
+}
+function fp() {
+	return (e, t) => new K(e.ast, du(t));
+}
+var pp = Sd, mp = Cd, hp = (e) => e ? new globalThis.RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${e}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`) : /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$/;
+function gp(e, t) {
+	let n = hp(e);
+	return mp(n, {
+		expected: e ? `a UUID v${e}` : "a UUID",
+		meta: {
+			_tag: "isUUID",
+			regExp: n,
+			version: e
+		},
+		...t
+	});
+}
+function _p(e) {
+	let t = _r(e.order), n = e.formatter ?? R;
+	return (r, i) => pp((e) => t(e, r), {
+		expected: `a value greater than or equal to ${n(r)}`,
+		arbitrary: { constraint: { ordered: {
+			order: e.order,
+			minimum: r
+		} } },
+		...e.annotate?.(r),
+		...i
+	});
+}
+function vp(e) {
+	let t = gr(e.order), n = e.formatter ?? R;
+	return (r, i) => pp((e) => t(e, r), {
+		expected: `a value less than or equal to ${n(r)}`,
+		arbitrary: { constraint: { ordered: {
+			order: e.order,
+			maximum: r
+		} } },
+		...e.annotate?.(r),
+		...i
+	});
+}
+var yp = /*#__PURE__*/ _p({
+	order: dr,
+	annotate: (e) => ({ meta: {
+		_tag: "isGreaterThanOrEqualTo",
+		minimum: e
+	} })
+}), bp = /*#__PURE__*/ vp({
+	order: dr,
+	annotate: (e) => ({ meta: {
+		_tag: "isLessThanOrEqualTo",
+		maximum: e
+	} })
+});
+function xp(e) {
+	return pp((e) => globalThis.Number.isSafeInteger(e), {
+		expected: "an integer",
+		meta: { _tag: "isInt" },
+		arbitrary: { constraint: { integer: !0 } },
+		...e
+	});
+}
+var Sp = /*#__PURE__*/ _p({
+	order: fr,
+	annotate: (e) => ({ meta: {
+		_tag: "isGreaterThanOrEqualToBigInt",
+		minimum: e
+	} })
+}), Cp = /*#__PURE__*/ vp({
+	order: fr,
+	annotate: (e) => ({ meta: {
+		_tag: "isLessThanOrEqualToBigInt",
+		maximum: e
+	} })
+});
+function wp(e, t) {
+	return e = Math.max(0, Math.floor(e)), pp((t) => t.length <= e, {
+		expected: `a value with a length of at most ${e}`,
+		meta: {
+			_tag: "isMaxLength",
+			maxLength: e
+		},
+		[pf]: !0,
+		arbitrary: { constraint: { maxLength: e } },
+		...t
+	});
+}
+function Tp(e, t, n) {
+	return e = Math.max(0, Math.floor(e)), t = Math.max(0, Math.floor(t)), pp((n) => n.length >= e && n.length <= t, {
+		expected: e === t ? `a value with a length of ${e}` : `a value with a length between ${e} and ${t}`,
+		meta: {
+			_tag: "isLengthBetween",
+			minimum: e,
+			maximum: t
+		},
+		[pf]: !0,
+		arbitrary: { constraint: {
+			minLength: e,
+			maxLength: t
+		} },
+		...n
+	});
+}
+globalThis.RegExp, globalThis.URL;
+function Ep(e, t, n, r) {
+	let i = { ...n };
+	if (delete i.valid, (n?.valid || e?.valid) && (i.noInvalidDate = !0), t?.minimum !== void 0) {
+		let e = r === void 0 ? t.minimum : r(t.minimum), n = t.exclusiveMinimum ? new globalThis.Date(e.getTime() + 1) : e;
+		(i.min === void 0 || n.getTime() > i.min.getTime()) && (i.min = n);
+	}
+	if (t?.maximum !== void 0) {
+		let e = r === void 0 ? t.maximum : r(t.maximum), n = t.exclusiveMaximum ? new globalThis.Date(e.getTime() - 1) : e;
+		(i.max === void 0 || n.getTime() < i.max.getTime()) && (i.max = n);
+	}
+	return i;
+}
+var Dp = /*#__PURE__*/ Kf.annotate({ expected: "a string in ISO 8601 format that will be decoded as a Date" }), Op = /*#__PURE__*/ dp(globalThis.Date, {
+	typeConstructor: { _tag: "Date" },
+	generation: {
+		runtime: "Schema.Date",
+		Type: "globalThis.Date"
+	},
+	expected: "Date",
+	toCodecJson: () => fp()(Dp, gu),
+	toArbitrary: () => (e, t) => e.date(Ep(t?.constraint, t?.constraint?.ordered?.order === mr ? t.constraint.ordered : void 0))
+});
+globalThis.File, globalThis.FormData, globalThis.URLSearchParams;
+var kp = /*#__PURE__*/ X.check(/*#__PURE__*/ xp());
 globalThis.Uint8Array;
-var immerable = /*#__PURE__*/ globalThis.Symbol.for("immer-draftable");
-function makeClass(Inherited, identifier, struct$1, annotations, proto) {
-	const getClassSchema = getClassSchemaFactory(struct$1, identifier, annotations);
-	const ClassTypeId = getClassTypeId(identifier);
-	const out = class extends Inherited {
-		constructor(...[input, options]) {
-			input = input ?? {};
-			const validated = struct$1.make(input, options);
+var Ap = /*#__PURE__*/ globalThis.Symbol.for("immer-draftable");
+function jp(e, t, n, r, i) {
+	let a = Pp(n, t, r), o = Np(t), s = class extends e {
+		constructor(...[e, t]) {
+			e ??= {};
+			let r = n.make(e, t);
 			super({
-				...input,
-				...validated
+				...e,
+				...r
 			}, {
-				...options,
-				disableChecks: true
+				...t,
+				disableChecks: !0
 			});
 		}
-		static [TypeId$2] = TypeId$2;
-		get [ClassTypeId]() {
-			return ClassTypeId;
+		static [Pf] = Pf;
+		get [o]() {
+			return o;
 		}
-		static [immerable] = true;
-		static identifier = identifier;
-		static fields = struct$1.fields;
+		static [Ap] = !0;
+		static identifier = t;
+		static fields = n.fields;
 		static get ast() {
-			return getClassSchema(this).ast;
+			return a(this).ast;
 		}
 		static pipe() {
-			return pipeArguments(this, arguments);
+			return ze(this, arguments);
 		}
-		static rebuild(ast) {
-			return getClassSchema(this).rebuild(ast);
+		static rebuild(e) {
+			return a(this).rebuild(e);
 		}
-		static make(input, options) {
-			return new this(input, options);
+		static make(e, t) {
+			return new this(e, t);
 		}
-		static makeOption(input, options) {
-			return makeOption(getClassSchema(this))(input ?? {}, options);
+		static makeOption(e, t) {
+			return Cf(a(this))(e ?? {}, t);
 		}
-		static makeEffect(input, options) {
-			return getClassSchema(this).makeEffect(input ?? {}, options);
+		static makeEffect(e, t) {
+			return a(this).makeEffect(e ?? {}, t);
 		}
-		static annotate(annotations) {
-			return this.rebuild(annotate(this.ast, annotations));
+		static annotate(e) {
+			return this.rebuild(Ed(this.ast, e));
 		}
-		static annotateKey(annotations) {
-			return this.rebuild(annotateKey(this.ast, annotations));
+		static annotateKey(e) {
+			return this.rebuild(Nd(this.ast, e));
 		}
-		static check(...checks) {
-			return this.rebuild(appendChecks(this.ast, checks));
+		static check(...e) {
+			return this.rebuild(Od(this.ast, e));
 		}
-		static extend(identifier) {
-			return (newFields, annotations) => {
-				const fields = {
-					...struct$1.fields,
-					...newFields
+		static extend(e) {
+			return (t, r) => {
+				let a = {
+					...n.fields,
+					...t
 				};
-				return makeClass(this, identifier, makeStruct(struct(fields, struct$1.ast.checks, { identifier }), fields), annotations, proto);
+				return jp(this, e, Xf(rd(a, n.ast.checks, { identifier: e }), a), r, i);
 			};
 		}
-		static mapFields(f, options) {
-			return struct$1.mapFields(f, options);
+		static mapFields(e, t) {
+			return n.mapFields(e, t);
 		}
 	};
-	if (proto !== void 0) Object.assign(out.prototype, proto(identifier));
-	return out;
+	return i !== void 0 && Object.assign(s.prototype, i(t)), s;
 }
-function getClassTransformation(self) {
-	return new Transformation(transform$1((input) => new self(input)), passthrough$1());
+function Mp(e) {
+	return new lu(tu((t) => new e(t)), eu());
 }
-function getClassTypeId(identifier) {
-	return `~effect/Schema/Class/${identifier}`;
+function Np(e) {
+	return `~effect/Schema/Class/${e}`;
 }
-function getClassSchemaFactory(from, identifier, annotations) {
-	let memo;
-	return (self) => {
-		if (memo === void 0) {
-			const transformation = getClassTransformation(self);
-			const to = make$4(new Declaration([from.ast], () => (input, ast) => {
-				return input instanceof self || hasProperty(input, getClassTypeId(identifier)) ? succeed(input) : fail(new InvalidType(ast, some(input)));
-			}, {
-				identifier,
-				[ClassTypeId]: ([from]) => new Link(from, transformation),
-				toCodec: ([from]) => new Link(from.ast, transformation),
-				toArbitrary: ([from]) => () => ({
-					arbitrary: from.arbitrary.map((args) => new self(args)),
-					terminal: from.terminal?.map((args) => new self(args))
+function Pp(e, t, n) {
+	let r;
+	return (i) => {
+		if (r === void 0) {
+			let a = Mp(i), o = Y(new Ou([e.ast], () => (e, n) => e instanceof i || N(e, Np(t)) ? Lc(e) : G(new Nl(n, V(e))), {
+				identifier: t,
+				[ff]: ([e]) => new K(e, a),
+				toCodec: ([e]) => new K(e.ast, a),
+				toArbitrary: ([e]) => () => ({
+					arbitrary: e.arbitrary.map((e) => new i(e)),
+					terminal: e.terminal?.map((e) => new i(e))
 				}),
-				toFormatter: ([from]) => (t) => `${self.identifier}(${from(t)})`,
-				"~sentinels": collectSentinels(from.ast),
-				...annotations
+				toFormatter: ([e]) => (t) => `${i.identifier}(${e(t)})`,
+				"~sentinels": cd(e.ast),
+				...n
 			}));
-			memo = from.pipe(decodeTo(to, transformation));
+			r = e.pipe(sp(o, a));
 		}
-		return memo;
+		return r;
 	};
 }
-function isStruct(schema) {
-	return isSchema(schema);
+function Fp(e) {
+	return Rf(e);
 }
-/**
-* Creates a schema-backed error class that can be used as a typed,
-* yieldable error in Effect programs. Combines {@link Class} validation with
-* the `YieldableError` interface so instances can be yielded directly inside
-* `Effect.gen`.
-*
-* **Example** (Schema-backed error)
-*
-* ```ts
-* import { Effect, Schema } from "effect"
-*
-* class NotFound extends Schema.ErrorClass<NotFound>("NotFound")({
-*   id: Schema.Number
-* }) {}
-*
-* const program = Effect.gen(function*() {
-*   yield* new NotFound({ id: 1 })
-* })
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var ErrorClass = (identifier) => (schema, annotations) => {
-	return makeClass(Error$1, identifier, isStruct(schema) ? schema : Struct(schema), annotations, (identifier) => ({ name: identifier }));
-};
-/**
-* Defines a schema-backed yieldable error class with an automatically populated
-* `_tag` field.
-*
-* **When to use**
-*
-* Use to define typed errors that are schema validated, yielded in `Effect.gen`,
-* and matched as tagged union members.
-*
-* **Example** (Tagged error class)
-*
-* ```ts
-* import { Effect, Schema } from "effect"
-*
-* class NotFound extends Schema.TaggedErrorClass<NotFound>()("NotFound", {
-*   id: Schema.Number
-* }) {}
-*
-* const program = Effect.gen(function*() {
-*   yield* new NotFound({ id: 42 })
-* })
-* ```
-*
-* @category constructors
-* @since 3.10.0
-*/
-var TaggedErrorClass = (identifier) => {
-	return (tagValue, schema, annotations) => {
-		const struct = isStruct(schema) ? schema.mapFields((fields) => ({
-			_tag: tag(tagValue),
-			...fields
-		}), { unsafePreserveChecks: true }) : TaggedStruct(tagValue, schema);
-		return ErrorClass(identifier ?? tagValue)(struct, annotations);
+var Ip = (e) => (t, n) => jp(Un, e, Fp(t) ? t : Zf(t), n, (e) => ({ name: e })), Lp = (e) => (t, n, r) => {
+	let i = Fp(n) ? n.mapFields((e) => ({
+		_tag: lp(t),
+		...e
+	}), { unsafePreserveChecks: !0 }) : up(t, n);
+	return Ip(e ?? t)(i, r);
+}, Rp = "~effect/ManagedRuntime", zp = (e, t) => {
+	let n = t?.memoMap ?? wc(), r = dc("parallel"), i = pc(r, "sequential"), a = { onFiberStart: hf(r) }, o = (e) => e ? {
+		...e,
+		onFiberStart: e.onFiberStart ? (t) => {
+			a.onFiberStart(t), e.onFiberStart(t);
+		} : a.onFiberStart
+	} : a, s, c = Wc((t) => (s ||= el(qc(Ec(e, n, i), (e) => Vc(() => {
+		l.cachedContext = e;
+	})), {
+		...a,
+		scheduler: t.currentScheduler
+	}), Kc(mf(s)))), l = {
+		[Rp]: Rp,
+		memoMap: n,
+		scope: r,
+		contextEffect: c,
+		cachedContext: void 0,
+		context() {
+			return l.cachedContext === void 0 ? il(l.contextEffect) : Promise.resolve(l.cachedContext);
+		},
+		dispose() {
+			return il(l.disposeEffect);
+		},
+		disposeEffect: Bc(() => (l.contextEffect = Uc("ManagedRuntime disposed"), l.cachedContext = void 0, mc(l.scope, ic))),
+		runFork(e, t) {
+			return l.cachedContext === void 0 ? el(Bp(l, e), o(t)) : tl(l.cachedContext)(e, o(t));
+		},
+		runCallback(e, t) {
+			return l.cachedContext === void 0 ? rl(Bp(l, e), o(t)) : nl(l.cachedContext)(e, o(t));
+		},
+		runSyncExit(e) {
+			return l.cachedContext === void 0 ? ul(Bp(l, e)) : dl(l.cachedContext)(e);
+		},
+		runSync(e) {
+			return l.cachedContext === void 0 ? cl(Bp(l, e)) : ll(l.cachedContext)(e);
+		},
+		runPromiseExit(e, t) {
+			return l.cachedContext === void 0 ? ol(Bp(l, e), o(t)) : sl(l.cachedContext)(e, o(t));
+		},
+		runPromise(e, t) {
+			return l.cachedContext === void 0 ? il(Bp(l, e), o(t)) : al(l.cachedContext)(e, o(t));
+		}
 	};
+	return l;
 };
-Struct({
-	id: String$1,
-	title: String$1,
-	body: String$1,
-	createdAt: Number$1,
-	updatedAt: Number$1
-});
-var CreateNoteInput = Struct({
-	title: String$1,
-	body: String$1
-});
-var UpdateNoteInput = Struct({
-	id: String$1,
-	title: String$1,
-	body: String$1
-});
-var DeleteNoteInput = Struct({ id: String$1 });
-var ProductCategory = Literals([
-	"medicine",
-	"cosmetics",
-	"general"
-]);
-Struct({
-	id: String$1,
-	name: String$1,
-	category: ProductCategory,
-	barcode: NullOr(String$1),
-	composition: NullOr(String$1),
-	strength: NullOr(String$1),
-	unitsPerPack: Number$1,
-	costPrice: NullOr(Number$1),
-	packPrice: NullOr(Number$1),
-	unitPrice: NullOr(Number$1),
-	createdAt: Number$1,
-	updatedAt: Number$1
-});
-Struct({
-	id: String$1,
-	...Struct({
-		name: String$1,
-		category: ProductCategory,
-		barcode: NullOr(String$1),
-		composition: NullOr(String$1),
-		strength: NullOr(String$1),
-		unitsPerPack: Number$1,
-		costPrice: NullOr(Number$1),
-		packPrice: NullOr(Number$1),
-		unitPrice: NullOr(Number$1)
-	}).fields
-});
-Struct({
-	id: String$1,
-	productId: String$1,
-	batchNumber: NullOr(String$1),
-	expiresAt: NullOr(Number$1),
-	quantity: Number$1,
-	createdAt: Number$1,
-	updatedAt: Number$1
-});
-Struct({
-	productId: String$1,
-	batchNumber: NullOr(String$1),
-	expiresAt: NullOr(Number$1),
-	quantity: Number$1
-});
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/entity.js
-var entityKind = Symbol.for("drizzle:entityKind");
-function is(value, type) {
-	if (!value || typeof value !== "object") return false;
-	if (value instanceof type) return true;
-	if (!Object.prototype.hasOwnProperty.call(type, entityKind)) throw new Error(`Class "${type.name ?? "<unknown>"}" doesn't look like a Drizzle entity. If this is incorrect and the class is provided by Drizzle, please report this as a bug.`);
-	let cls = Object.getPrototypeOf(value)?.constructor;
-	if (cls) while (cls) {
-		if (entityKind in cls && cls[entityKind] === type[entityKind]) return true;
-		cls = Object.getPrototypeOf(cls);
-	}
-	return false;
+function Bp(e, t) {
+	return Gc(e.contextEffect, (e) => Qc(t, e));
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/query-promise.js
-var QueryPromise = class {
-	static [entityKind] = "QueryPromise";
-	[Symbol.toStringTag] = "QueryPromise";
-	catch(onRejected) {
-		return this.then(void 0, onRejected);
-	}
-	finally(onFinally) {
-		return this.then((value) => {
-			onFinally?.();
-			return value;
-		}, (reason) => {
-			onFinally?.();
-			throw reason;
-		});
-	}
-	then(onFulfilled, onRejected) {
-		return this.execute().then(onFulfilled, onRejected);
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/column-common.js
-var OriginalColumn = Symbol.for("drizzle:OriginalColumn");
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/column.js
-var noop = (v) => v;
-noop.isNoop = true;
-var Column = class {
-	static [entityKind] = "Column";
-	/** @internal */
-	codec;
-	name;
-	keyAsName;
-	primary;
-	notNull;
-	default;
-	defaultFn;
-	onUpdateFn;
-	hasDefault;
-	isUnique;
-	uniqueName;
-	uniqueType;
-	dataType;
-	columnType;
-	enumValues = void 0;
-	generated = void 0;
-	generatedIdentity = void 0;
-	length;
-	isLengthExact;
-	isAlias;
-	/** @internal */
-	config;
-	/** @internal */
-	table;
-	/** @internal */
-	onInit() {}
-	constructor(table, config) {
-		this.config = config;
-		this.onInit();
-		this.table = table;
-		this.name = config.name;
-		this.isAlias = false;
-		this.keyAsName = config.keyAsName;
-		this.notNull = config.notNull;
-		this.default = config.default;
-		this.defaultFn = config.defaultFn;
-		this.onUpdateFn = config.onUpdateFn;
-		this.hasDefault = config.hasDefault;
-		this.primary = config.primaryKey;
-		this.isUnique = config.isUnique;
-		this.uniqueName = config.uniqueName;
-		this.uniqueType = config.uniqueType;
-		this.dataType = config.dataType;
-		this.columnType = config.columnType;
-		this.generated = config.generated;
-		this.generatedIdentity = config.generatedIdentity;
-		this.length = config["length"];
-		this.isLengthExact = config["isLengthExact"];
-	}
-	mapFromDriverValue = noop;
-	mapToDriverValue = noop;
-	/** @internal */
-	postBuild() {
-		return this;
-	}
-	/** @internal */
-	shouldDisableInsert() {
-		return this.config.generated !== void 0 && this.config.generated.type !== "byDefault";
-	}
-	/** @internal */
-	[OriginalColumn]() {
-		return this;
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/table.utils.js
-/** @internal */
-var TableName = Symbol.for("drizzle:Name");
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/table.js
-/** @internal */
-var TableSchema = Symbol.for("drizzle:Schema");
-/** @internal */
-var TableColumns = Symbol.for("drizzle:Columns");
-/** @internal */
-var ExtraConfigColumns = Symbol.for("drizzle:ExtraConfigColumns");
-/** @internal */
-var OriginalName = Symbol.for("drizzle:OriginalName");
-/** @internal */
-var BaseName = Symbol.for("drizzle:BaseName");
-/** @internal */
-var IsAlias = Symbol.for("drizzle:IsAlias");
-/** @internal */
-var ExtraConfigBuilder = Symbol.for("drizzle:ExtraConfigBuilder");
-var IsDrizzleTable = Symbol.for("drizzle:IsDrizzleTable");
-var Table = class {
-	static [entityKind] = "Table";
-	/** @internal */
-	static Symbol = {
-		Name: TableName,
-		Schema: TableSchema,
-		OriginalName,
-		Columns: TableColumns,
-		ExtraConfigColumns,
-		BaseName,
-		IsAlias,
-		ExtraConfigBuilder
-	};
-	/**
-	* @internal
-	* Can be changed if the table is aliased.
-	*/
-	[TableName];
-	/**
-	* @internal
-	* Used to store the original name of the table, before any aliasing.
-	*/
-	[OriginalName];
-	/** @internal */
-	[TableSchema];
-	/** @internal */
-	[TableColumns];
-	/** @internal */
-	[ExtraConfigColumns];
-	/**
-	*  @internal
-	* Used to store the table name before the transformation via the `tableCreator` functions.
-	*/
-	[BaseName];
-	/** @internal */
-	[IsAlias] = false;
-	/** @internal */
-	[IsDrizzleTable] = true;
-	/** @internal */
-	[ExtraConfigBuilder] = void 0;
-	constructor(name, schema, baseName) {
-		this[TableName] = this[OriginalName] = name;
-		this[TableSchema] = schema;
-		this[BaseName] = baseName;
-	}
-};
-function getTableName(table) {
-	return table[TableName];
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/subquery.js
-var Subquery = class {
-	static [entityKind] = "Subquery";
-	constructor(sql, fields, alias, isWith = false, usedTables = []) {
-		this._ = {
-			brand: "Subquery",
-			sql,
-			selectedFields: fields,
-			alias,
-			isWith,
-			usedTables
+//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Ref.js
+var Vp = {
+	"~effect/Ref": { _A: M },
+	...fn,
+	toJSON() {
+		return {
+			_id: "Ref",
+			ref: this.ref
 		};
 	}
-};
-var WithSubquery = class extends Subquery {
-	static [entityKind] = "WithSubquery";
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/tracing.js
-/** @internal */
-var tracer = { startActiveSpan(name, fn) {
-	return fn();
-} };
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/view-common.js
-var ViewBaseConfig = Symbol.for("drizzle:ViewBaseConfig");
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sql/sql.js
-function isSQLWrapper(value) {
-	return value !== null && value !== void 0 && typeof value.getSQL === "function";
+}, Hp = (e) => {
+	let t = Object.create(Vp);
+	return t.ref = vf(e), t;
+}, Up = (e) => Vc(() => Hp(e)), Wp = (e) => Vc(() => e.ref.current), Gp = /*#__PURE__*/ j(2, (e, t) => Vc(() => yf(e.ref, t))), Kp = /*#__PURE__*/ j(2, (e, t) => Vc(() => {
+	e.ref.current = t(e.ref.current);
+})), qp = rp([
+	rp([
+		Kf,
+		X,
+		qf,
+		Wf
+	]),
+	Qf(Kf, Hf),
+	tp(Hf)
+]), Jp = typeof Buffer > "u" ? Uf : dp(Buffer);
+function Yp(e) {
+	let t, n = e.dimensions;
+	if (typeof n == "number" && n > 0) return em(e, n);
+	let { type: r, constraint: i } = Le(e);
+	switch (r) {
+		case "array":
+			t = tm(e, i);
+			break;
+		case "object":
+			t = nm(e, i);
+			break;
+		case "number":
+			t = Xp(e, i);
+			break;
+		case "bigint":
+			t = $p(e, i);
+			break;
+		case "boolean":
+			t = qf;
+			break;
+		case "string":
+			t = rm(e, i);
+			break;
+		case "custom":
+			t = Hf;
+			break;
+		default: t = Hf;
+	}
+	return t;
 }
-function mergeQueries(queries) {
-	const result = {
-		sql: "",
-		params: []
-	};
-	for (const query of queries) {
-		result.sql += query.sql;
-		result.params.push(...query.params);
+function Xp(e, t) {
+	let n, r, i = !1;
+	switch (t) {
+		case "int8":
+			n = A.INT8_MIN, r = A.INT8_MAX, i = !0;
+			break;
+		case "uint8":
+			n = 0, r = A.INT8_UNSIGNED_MAX, i = !0;
+			break;
+		case "int16":
+			n = A.INT16_MIN, r = A.INT16_MAX, i = !0;
+			break;
+		case "uint16":
+			n = 0, r = A.INT16_UNSIGNED_MAX, i = !0;
+			break;
+		case "int24":
+			n = A.INT24_MIN, r = A.INT24_MAX, i = !0;
+			break;
+		case "uint24":
+			n = 0, r = A.INT24_UNSIGNED_MAX, i = !0;
+			break;
+		case "int32":
+			n = A.INT32_MIN, r = A.INT32_MAX, i = !0;
+			break;
+		case "uint32":
+			n = 0, r = A.INT32_UNSIGNED_MAX, i = !0;
+			break;
+		case "int53":
+			n = -(2 ** 53 - 1), r = 2 ** 53 - 1, i = !0;
+			break;
+		case "uint53":
+			n = 0, r = 2 ** 53 - 1, i = !0;
+			break;
+		case "float":
+			n = A.INT24_MIN, r = A.INT24_MAX;
+			break;
+		case "ufloat":
+			n = 0, r = A.INT24_UNSIGNED_MAX;
+			break;
+		case "double":
+			n = A.INT48_MIN, r = A.INT48_MAX;
+			break;
+		case "udouble":
+			n = 0, r = A.INT48_UNSIGNED_MAX;
+			break;
+		case "year":
+			n = 1901, r = 2155, i = !0;
+			break;
+		case "unsigned":
+			n = 0, r = 2 ** 53 - 1;
+			break;
+		default:
+			n = -(2 ** 53 - 1), r = 2 ** 53 - 1;
+			break;
 	}
-	return result;
+	let a = i ? kp : X;
+	return a = a.check(yp(n), bp(r)), a;
 }
-function _mergeQueries(queries) {
-	const result = {
-		sql: "",
-		params: []
-	};
-	const sqls = [];
-	for (const query of queries) {
-		sqls.push(query.sql);
-		result.params.push(...query.params);
+var Zp = Jf.check(Sp(A.INT64_MIN), Cp(A.INT64_MAX)), Qp = Jf.check(Sp(0n), Cp(A.INT64_UNSIGNED_MAX));
+function $p(e, t) {
+	let n, r;
+	switch (t) {
+		case "int64":
+			n = A.INT64_MIN, r = A.INT64_MAX;
+			break;
+		case "uint64":
+			n = 0n, r = A.INT64_UNSIGNED_MAX;
+			break;
 	}
-	result._sql = Object.assign(sqls, { raw: sqls });
-	return result;
+	let i = Jf;
+	return n !== void 0 && (i = i.check(Sp(n))), r !== void 0 && (i = i.check(Cp(r))), i;
 }
-var StringChunk = class {
-	static [entityKind] = "StringChunk";
-	value;
-	constructor(value) {
-		this.value = Array.isArray(value) ? value : [value];
+function em(e, t) {
+	let [n, r] = e.dataType.split(" "), i;
+	switch (n) {
+		case "number":
+			i = Xp(e, r);
+			break;
+		case "bigint":
+			i = $p(e, r);
+			break;
+		case "boolean":
+			i = qf;
+			break;
+		case "string":
+			i = rm(e, r);
+			break;
+		case "object":
+			i = nm(e, r);
+			break;
+		case "array":
+			i = tm(e, r);
+			break;
+		default: i = Hf;
 	}
-	getSQL() {
-		return new SQL([this]);
-	}
-};
-var SQL = class SQL {
-	static [entityKind] = "SQL";
-	/** @internal */
-	decoder = noopDecoder;
-	/** @internal */
-	shouldInlineParams = false;
-	/** @internal */
-	usedTables = [];
-	constructor(queryChunks) {
-		this.queryChunks = queryChunks;
-		for (const chunk of queryChunks) if (is(chunk, Table)) {
-			const schemaName = chunk[Table.Symbol.Schema];
-			this.usedTables.push(schemaName === void 0 ? chunk[Table.Symbol.Name] : schemaName + "." + chunk[Table.Symbol.Name]);
+	let a = tp(i);
+	for (let e = 1; e < t; e++) a = tp(a);
+	return a;
+}
+function tm(e, t) {
+	switch (t) {
+		case "geometry":
+		case "point": return ep([X, X]);
+		case "line": return ep([
+			X,
+			X,
+			X
+		]);
+		case "vector":
+		case "halfvector": {
+			let t = e.length, n = tp(X);
+			return t ? n.check(Tp(t, t)) : n;
 		}
+		case "int64vector": {
+			let t = e.length, n = tp(Jf.check(Sp(A.INT64_MIN), Cp(A.INT64_MAX)));
+			return t ? n.check(Tp(t, t)) : n;
+		}
+		case "basecolumn": {
+			let t = e.baseColumn;
+			if (t) {
+				let n = Yp(t), r = e.length, i = tp(n);
+				return r ? i.check(Tp(r, r)) : i;
+			}
+			return tp(Hf);
+		}
+		default: return tp(Hf);
 	}
-	append(query) {
-		this.queryChunks.push(...query.queryChunks);
-		return this;
-	}
-	toQuery(config) {
-		return tracer.startActiveSpan("drizzle.buildSQL", (span) => {
-			const query = this.buildQueryFromSourceParams(this.queryChunks, config);
-			span?.setAttributes({
-				"drizzle.query.text": query.sql,
-				"drizzle.query.params": JSON.stringify(query.params)
-			});
-			return query;
+}
+function nm(e, t) {
+	switch (t) {
+		case "buffer": return Jp;
+		case "date": return Op;
+		case "geometry":
+		case "point": return Zf({
+			x: X,
+			y: X
 		});
-	}
-	buildQueryFromSourceParams(chunks, _config) {
-		const config = Object.assign({}, _config, {
-			inlineParams: _config.inlineParams || this.shouldInlineParams,
-			paramStartIndex: _config.paramStartIndex || { value: 0 }
+		case "json": return qp;
+		case "line": return Zf({
+			a: X,
+			b: X,
+			c: X
 		});
-		const { escapeName, escapeParam, codecs, inlineParams, paramStartIndex, invokeSource } = config;
-		const mappedChunks = chunks.map((chunk) => {
-			if (is(chunk, StringChunk)) return {
-				sql: chunk.value.join(""),
-				params: []
-			};
-			if (is(chunk, Name)) return {
-				sql: escapeName(chunk.value),
-				params: []
-			};
-			if (chunk === void 0) return {
-				sql: "",
-				params: []
-			};
-			if (Array.isArray(chunk)) {
-				const result = [new StringChunk("(")];
-				for (const [i, p] of chunk.entries()) {
-					result.push(p);
-					if (i < chunk.length - 1) result.push(new StringChunk(", "));
-				}
-				result.push(new StringChunk(")"));
-				return this.buildQueryFromSourceParams(result, config);
-			}
-			if (is(chunk, SQL)) return this.buildQueryFromSourceParams(chunk.queryChunks, {
-				...config,
-				inlineParams: inlineParams || chunk.shouldInlineParams
-			});
-			if (is(chunk, Table)) {
-				const schemaName = chunk[Table.Symbol.Schema];
-				const tableName = chunk[Table.Symbol.Name];
-				if (invokeSource === "mssql-view-with-schemabinding") return {
-					sql: (schemaName === void 0 ? escapeName("dbo") : escapeName(schemaName)) + "." + escapeName(tableName),
-					params: []
-				};
-				return {
-					sql: schemaName === void 0 || chunk[IsAlias] ? escapeName(tableName) : escapeName(schemaName) + "." + escapeName(tableName),
-					params: []
-				};
-			}
-			if (is(chunk, Column)) {
-				const columnName = chunk.name;
-				if (_config.invokeSource === "indexes") return {
-					sql: escapeName(columnName),
-					params: []
-				};
-				const schemaName = invokeSource === "mssql-check" ? void 0 : chunk.table[Table.Symbol.Schema];
-				return {
-					sql: chunk.isAlias ? escapeName(chunk.name) : chunk.table[IsAlias] || schemaName === void 0 ? escapeName(chunk.table[Table.Symbol.Name]) + "." + escapeName(columnName) : escapeName(schemaName) + "." + escapeName(chunk.table[Table.Symbol.Name]) + "." + escapeName(columnName),
-					params: []
-				};
-			}
-			if (is(chunk, View)) {
-				const schemaName = chunk[ViewBaseConfig].schema;
-				const viewName = chunk[ViewBaseConfig].name;
-				return {
-					sql: schemaName === void 0 || chunk[ViewBaseConfig].isAlias ? escapeName(viewName) : escapeName(schemaName) + "." + escapeName(viewName),
-					params: []
-				};
-			}
-			if (is(chunk, Param)) {
-				if (is(chunk.value, SQL)) return this.buildQueryFromSourceParams([chunk.value], config);
-				const useCodecs = codecs && is(chunk.encoder, Column);
-				if (is(chunk.value, Placeholder)) {
-					const escaped = escapeParam(paramStartIndex.value++, chunk);
-					chunk.codec = useCodecs ? (value) => codecs.apply(chunk.encoder, "normalizeParam", value) : void 0;
-					return {
-						sql: useCodecs ? codecs.apply(chunk.encoder, "castParam", escaped) : escaped,
-						params: [chunk]
-					};
-				}
-				let mappedValue;
-				if (chunk.value === null) mappedValue = chunk.value;
-				else {
-					mappedValue = chunk.encoder.mapToDriverValue.isNoop ? chunk.value : chunk.encoder.mapToDriverValue(chunk.value);
-					if (is(mappedValue, SQL)) return this.buildQueryFromSourceParams([mappedValue], config);
-					if (useCodecs) mappedValue = codecs.apply(chunk.encoder, "normalizeParam", mappedValue);
-				}
-				if (inlineParams) return {
-					sql: this.mapInlineParam(mappedValue, config),
-					params: []
-				};
-				const escaped = escapeParam(paramStartIndex.value++, mappedValue);
-				return {
-					sql: useCodecs ? codecs.apply(chunk.encoder, "castParam", escaped) : escaped,
-					params: [mappedValue]
-				};
-			}
-			if (is(chunk, Placeholder)) return {
-				sql: escapeParam(paramStartIndex.value++, chunk),
-				params: [chunk]
-			};
-			if (is(chunk, SQL.Aliased) && chunk.fieldAlias !== void 0) return {
-				sql: (chunk.origin !== void 0 ? escapeName(chunk.origin) + "." : "") + escapeName(chunk.fieldAlias),
-				params: []
-			};
-			if (is(chunk, Subquery)) {
-				if (chunk._.isWith) return {
-					sql: escapeName(chunk._.alias),
-					params: []
-				};
-				return this.buildQueryFromSourceParams([
-					new StringChunk("("),
-					chunk._.sql,
-					new StringChunk(") "),
-					new Name(chunk._.alias)
-				], config);
-			}
-			if (typeof chunk === "function" && "enumName" in chunk) {
-				if ("schema" in chunk && chunk.schema) return {
-					sql: escapeName(chunk.schema) + "." + escapeName(chunk.enumName),
-					params: []
-				};
-				return {
-					sql: escapeName(chunk.enumName),
-					params: []
-				};
-			}
-			if (isSQLWrapper(chunk)) {
-				if (chunk.shouldOmitSQLParens?.()) return this.buildQueryFromSourceParams([chunk.getSQL()], config);
-				return this.buildQueryFromSourceParams([
-					new StringChunk("("),
-					chunk.getSQL(),
-					new StringChunk(")")
-				], config);
-			}
-			if (inlineParams) return {
-				sql: this.mapInlineParam(chunk, config),
-				params: []
-			};
+		default: return Yf;
+	}
+}
+function rm(e, t) {
+	let { name: n, length: r, isLengthExact: i } = e, a;
+	if (t === "binary" && (a = /^[01]*$/), t === "uuid") return Kf.check(gp());
+	if (t === "enum") {
+		let t = e.enumValues;
+		if (!t) throw Error(`Column "${re(g(e))}"."${n}" is of 'enum' type, but lacks enum values`);
+		return ip(t);
+	}
+	if (t === "int64") return Zp;
+	if (t === "uint64") return Qp;
+	let o = Kf;
+	return o = a ? o.check(mp(a)) : o, r && i ? o.check(Tp(r, r)) : r ? o.check(wp(r)) : o;
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/effect-schema/schema.js
+function im(e) {
+	return (typeof e != "object" || !e) && typeof e != "function" ? !1 : Rf(e) && e.ast?.context?.isOptional === !0;
+}
+function am(e) {
+	return Rf(e) ? !0 : im(e);
+}
+function om(e, t, n) {
+	let r = {};
+	for (let [i, a] of Object.entries(e)) {
+		if (!f(a, h) && !f(a, O) && !f(a, O.Aliased) && typeof a == "object") {
+			r[i] = om(ne(a) || ye(a) ? je(a) : a, t[i] ?? {}, n);
+			continue;
+		}
+		let e = t[i];
+		if (e !== void 0 && !(typeof e == "function" && !am(e))) {
+			r[i] = e;
+			continue;
+		}
+		let o = f(a, h) ? a : void 0, s = o ? Yp(o) : Hf, c = am(e) || typeof e != "function" ? s : e(s), l = im(c) ? c.schema : c;
+		n.never(o) || (r[i] = l, o && (n.nullable(o) && (r[i] = ap(r[i])), n.optional(o) && (r[i] = Bf(op(r[i])))));
+	}
+	return Zf(r);
+}
+function sm(e) {
+	return ip(e.enumValues);
+}
+var cm = {
+	never: () => !1,
+	optional: () => !1,
+	nullable: (e) => !e.notNull
+}, lm = {
+	never: (e) => e?.generated?.type === "always" || e?.generatedIdentity?.type === "always" || "identity" in (e ?? {}) && e?.identity !== void 0,
+	optional: (e) => !e.notNull || e.notNull && e.hasDefault,
+	nullable: (e) => !e.notNull
+}, um = (e, t) => Ie(e) ? sm(e) : om(je(e), t ?? {}, cm), dm = (e, t) => om(je(e), t ?? {}, lm), fm = class {
+	static [d] = "SQLiteForeignKeyBuilder";
+	reference;
+	_onUpdate;
+	_onDelete;
+	constructor(e, t) {
+		this.reference = () => {
+			let { name: t, columns: n, foreignColumns: r } = e();
 			return {
-				sql: escapeParam(paramStartIndex.value++, chunk),
-				params: [chunk]
+				name: t,
+				columns: n,
+				foreignTable: r[0].table,
+				foreignColumns: r
 			};
-		});
-		if (_config.tagged) return _mergeQueries(mappedChunks);
-		return mergeQueries(mappedChunks);
+		}, t && (this._onUpdate = t.onUpdate, this._onDelete = t.onDelete);
 	}
-	mapInlineParam(chunk, { escapeString }) {
-		if (chunk === null) return "null";
-		if (typeof chunk === "number" || typeof chunk === "boolean" || typeof chunk === "bigint") return chunk.toString();
-		if (typeof chunk === "string") return escapeString(chunk);
-		if (typeof chunk === "object") {
-			const mappedValueAsString = chunk.toString();
-			if (mappedValueAsString === "[object Object]") return escapeString(JSON.stringify(chunk));
-			return escapeString(mappedValueAsString);
-		}
-		throw new Error("Unexpected param value: " + chunk);
+	onUpdate(e) {
+		return this._onUpdate = e, this;
 	}
-	getSQL() {
-		return this;
+	onDelete(e) {
+		return this._onDelete = e, this;
 	}
-	as(alias) {
-		if (alias === void 0) return this;
-		return new SQL.Aliased(this, alias);
+	build(e) {
+		return new pm(e, this);
 	}
-	mapWith(decoder) {
-		this.decoder = typeof decoder === "function" ? { mapFromDriverValue: decoder } : decoder;
-		return this;
+}, pm = class {
+	static [d] = "SQLiteForeignKey";
+	reference;
+	onUpdate;
+	onDelete;
+	constructor(e, t) {
+		this.table = e, this.reference = t.reference, this.onUpdate = t._onUpdate, this.onDelete = t._onDelete;
 	}
-	nullable() {
-		return this;
+	getName() {
+		let { name: e, columns: t, foreignColumns: n } = this.reference(), r = t.map((e) => e.name), i = n.map((e) => e.name), a = [
+			this.table[_],
+			...r,
+			n[0].table[_],
+			...i
+		];
+		return e ?? `${a.join("_")}_fk`;
 	}
-	inlineParams() {
-		this.shouldInlineParams = true;
-		return this;
+	isNameExplicit() {
+		return !!this.reference().name;
 	}
-	/**
-	* This method is used to conditionally include a part of the query.
-	*
-	* @param condition - Condition to check
-	* @returns itself if the condition is `true`, otherwise `undefined`
-	*/
-	if(condition) {
-		return condition ? this : void 0;
+}, mm = class extends Re {
+	static [d] = "SQLiteColumnBuilder";
+	foreignKeyConfigs = [];
+	references(e, t = {}) {
+		return this.foreignKeyConfigs.push({
+			ref: e,
+			actions: t
+		}), this;
 	}
-};
-/**
-* Any DB name (table, column, index etc.)
-*/
-var Name = class {
-	static [entityKind] = "Name";
-	brand;
-	constructor(value) {
-		this.value = value;
+	unique(e) {
+		return this.config.isUnique = !0, this.config.uniqueName = e, this;
 	}
-	getSQL() {
-		return new SQL([this]);
+	generatedAlwaysAs(e, t) {
+		return this.config.generated = {
+			as: e,
+			type: "always",
+			mode: t?.mode ?? "virtual"
+		}, this;
 	}
-};
-function isDriverValueEncoder(value) {
-	return typeof value === "object" && value !== null && "mapToDriverValue" in value && typeof value.mapToDriverValue === "function";
-}
-var noopDecoder = { mapFromDriverValue: (value) => value };
-noopDecoder.mapFromDriverValue.isNoop = true;
-var noopEncoder = { mapToDriverValue: (value) => value };
-noopEncoder.mapToDriverValue.isNoop = true;
-({
-	...noopDecoder,
-	...noopEncoder
-});
-/** Parameter value that is optionally bound to an encoder (for example, a column). */
-var Param = class {
-	static [entityKind] = "Param";
-	brand;
-	/**
-	* @param value - Parameter value
-	* @param encoder - Encoder to convert the value to a driver parameter
-	*/
-	constructor(value, encoder = noopEncoder, codec) {
-		this.value = value;
-		this.encoder = encoder;
-		this.codec = codec;
+	buildForeignKeys(e, t) {
+		return this.foreignKeyConfigs.map(({ ref: n, actions: r }) => ((n, r) => {
+			let i = new fm(() => {
+				let t = n();
+				return {
+					columns: [e],
+					foreignColumns: [t]
+				};
+			});
+			return r.onUpdate && i.onUpdate(r.onUpdate), r.onDelete && i.onDelete(r.onDelete), i.build(t);
+		})(n, r));
 	}
-	getSQL() {
-		return new SQL([this]);
+}, hm = class extends h {
+	static [d] = "SQLiteColumn";
+	table;
+	constructor(e, t) {
+		super(e, t), this.table = e;
 	}
-};
-function sql(strings, ...params) {
-	const queryChunks = [];
-	if (params.length > 0 || strings.length > 0 && strings[0] !== "") queryChunks.push(new StringChunk(strings[0]));
-	for (const [paramIndex, param] of params.entries()) queryChunks.push(param, new StringChunk(strings[paramIndex + 1]));
-	return new SQL(queryChunks);
-}
-(function(_sql) {
-	function empty() {
-		return new SQL([]);
-	}
-	_sql.empty = empty;
-	function fromList(list) {
-		return new SQL(list);
-	}
-	_sql.fromList = fromList;
-	function raw(str) {
-		return new SQL([new StringChunk(str)]);
-	}
-	_sql.raw = raw;
-	function join(chunks, separator) {
-		const result = [];
-		for (const [i, chunk] of chunks.entries()) {
-			if (i > 0 && separator !== void 0) result.push(separator);
-			result.push(chunk);
-		}
-		return new SQL(result);
-	}
-	_sql.join = join;
-	function identifier(value) {
-		return new Name(value);
-	}
-	_sql.identifier = identifier;
-	function placeholder(name) {
-		return new Placeholder(name);
-	}
-	_sql.placeholder = placeholder;
-	function param(value, encoder) {
-		return new Param(value, encoder);
-	}
-	_sql.param = param;
-	function comment(input) {
-		const encoded = sqlCommenter(input);
-		if (!encoded.length) return void 0;
-		return sql.raw(encoded);
-	}
-	_sql.comment = comment;
-})(sql || (sql = {}));
-function sqlCommenter(input) {
-	const encoded = sqlCommenter.encodeInput(input);
-	if (!encoded.length) return "";
-	return `/*${encoded}*/`;
-}
-(function(_sqlCommenter) {
-	function merge(input1, input2) {
-		let encoded;
-		if (typeof input1 === "object" && typeof input2 === "object") encoded = encodeInput({
-			...input1,
-			...input2
-		});
-		else if (input1 && input2) encoded = [encodeInput(input1), encodeInput(input2)].filter((i) => i.length).join(",");
-		else if (input2) encoded = encodeInput(input2);
-		else if (input1) encoded = encodeInput(input1);
-		else return "";
-		if (!encoded.length) return "";
-		return `/*${encoded}*/`;
-	}
-	_sqlCommenter.merge = merge;
-	function encodeInput(input) {
-		if (typeof input === "string") {
-			if (!input.length) return input;
-			return sanitizeStringInput(input);
-		}
-		const parts = [];
-		for (const [key, value] of Object.entries(input)) {
-			if (value === null || value === void 0 || value === "") continue;
-			const encodedKey = sanitizeObjectElement(key);
-			const encodedValue = sanitizeObjectElement(String(value));
-			parts.push(`${encodedKey}='${encodedValue}'`);
-		}
-		if (!parts.length) return "";
-		return parts.sort().join(",");
-	}
-	_sqlCommenter.encodeInput = encodeInput;
-	function sanitizeObjectElement(key) {
-		return encodeURIComponent(key).replace(/'/g, `\\'`);
-	}
-	_sqlCommenter.sanitizeObjectElement = sanitizeObjectElement;
-	function sanitizeStringInput(input) {
-		return input.replace(/\/\*/g, "/ *").replace(/\*\//g, "* /");
-	}
-	_sqlCommenter.sanitizeStringInput = sanitizeStringInput;
-})(sqlCommenter || (sqlCommenter = {}));
-(function(_SQL) {
-	class Aliased {
-		static [entityKind] = "SQL.Aliased";
-		/** @internal */
-		isSelectionField = false;
-		/** @internal */
-		origin;
-		constructor(sql, fieldAlias) {
-			this.sql = sql;
-			this.fieldAlias = fieldAlias;
-		}
-		getSQL() {
-			return this.sql;
-		}
-		/** @internal */
-		clone() {
-			return new Aliased(this.sql, this.fieldAlias);
-		}
-	}
-	_SQL.Aliased = Aliased;
-})(SQL || (SQL = {}));
-var Placeholder = class {
-	static [entityKind] = "Placeholder";
-	constructor(name) {
-		this.name = name;
-	}
-	getSQL() {
-		return new SQL([this]);
-	}
-};
-function fillPlaceholders(params, values) {
-	return params.map((p) => {
-		if (is(p, Placeholder)) {
-			if (!(p.name in values)) throw new Error(`No value for placeholder "${p.name}" was provided`);
-			return values[p.name];
-		}
-		if (is(p, Param) && is(p.value, Placeholder)) {
-			if (!(p.value.name in values)) throw new Error(`No value for placeholder "${p.value.name}" was provided`);
-			const value = values[p.value.name];
-			if (value === null) return value;
-			const mapped = p.encoder.mapToDriverValue.isNoop ? value : p.encoder.mapToDriverValue(value);
-			return p.codec ? p.codec(mapped) : mapped;
-		}
-		return p;
-	});
-}
-var IsDrizzleView = Symbol.for("drizzle:IsDrizzleView");
-var View = class {
-	static [entityKind] = "View";
-	/** @internal */
-	[ViewBaseConfig];
-	/** @internal */
-	[IsDrizzleView] = true;
-	/** @internal */
-	get [TableName]() {
-		return this[ViewBaseConfig].name;
-	}
-	/** @internal */
-	get [TableSchema]() {
-		return this[ViewBaseConfig].schema;
-	}
-	/** @internal */
-	get [IsAlias]() {
-		return this[ViewBaseConfig].isAlias;
-	}
-	/** @internal */
-	get [OriginalName]() {
-		return this[ViewBaseConfig].originalName;
-	}
-	/** @internal */
-	get [TableColumns]() {
-		return this[ViewBaseConfig].selectedFields;
-	}
-	constructor({ name, schema, selectedFields, query }) {
-		this[ViewBaseConfig] = {
-			name,
-			originalName: name,
-			schema,
-			selectedFields,
-			query,
-			isExisting: !query,
-			isAlias: false
-		};
-	}
-};
-Column.prototype.getSQL = function() {
-	return new SQL([this]);
-};
-Subquery.prototype.getSQL = function() {
-	return new SQL([this]);
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/errors.js
-var DrizzleError = class extends Error {
-	static [entityKind] = "DrizzleError";
-	constructor({ message, cause }) {
-		super(message);
-		this.name = "DrizzleError";
-		this.cause = cause;
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/blob.js
+function gm(e) {
+	let t = "";
+	for (let n = 0; n < e.length; n += 2) {
+		let r = e.slice(n, n + 2), i = Number.parseInt(r, 16);
+		t += String.fromCodePoint(i);
+	}
+	return t;
+}
+var _m = class extends mm {
+	static [d] = "SQLiteBigIntBuilder";
+	constructor(e) {
+		super(e, "bigint int64", "SQLiteBigInt");
+	}
+	build(e) {
+		return new vm(e, this.config);
+	}
+}, vm = class extends hm {
+	static [d] = "SQLiteBigInt";
+	getSQLType() {
+		return "blob";
+	}
+	mapFromDriverValue = (e) => {
+		if (typeof e == "string") return BigInt(gm(e));
+		if (typeof Buffer < "u" && Buffer.from) {
+			let t = Buffer.isBuffer(e) ? e : e instanceof ArrayBuffer ? Buffer.from(e) : e.buffer ? Buffer.from(e.buffer, e.byteOffset, e.byteLength) : Buffer.from(e);
+			return BigInt(t.toString("utf8"));
+		}
+		return BigInt(Pe.decode(e));
+	};
+	mapToDriverValue = (e) => Buffer.from(e.toString());
+}, ym = class extends mm {
+	static [d] = "SQLiteBlobJsonBuilder";
+	constructor(e) {
+		super(e, "object json", "SQLiteBlobJson");
+	}
+	build(e) {
+		return new bm(e, this.config);
+	}
+}, bm = class extends hm {
+	static [d] = "SQLiteBlobJson";
+	getSQLType() {
+		return "blob";
+	}
+	mapFromDriverValue = (e) => {
+		if (typeof e == "string") return JSON.parse(gm(e));
+		if (typeof Buffer < "u" && Buffer.from) {
+			let t = Buffer.isBuffer(e) ? e : e instanceof ArrayBuffer ? Buffer.from(e) : e.buffer ? Buffer.from(e.buffer, e.byteOffset, e.byteLength) : Buffer.from(e);
+			return JSON.parse(t.toString("utf8"));
+		}
+		return JSON.parse(Pe.decode(e));
+	};
+	mapToDriverValue = (e) => Buffer.from(JSON.stringify(e));
+}, xm = class extends mm {
+	static [d] = "SQLiteBlobBufferBuilder";
+	constructor(e) {
+		super(e, "object buffer", "SQLiteBlobBuffer");
+	}
+	build(e) {
+		return new Sm(e, this.config);
+	}
+}, Sm = class extends hm {
+	static [d] = "SQLiteBlobBuffer";
+	mapFromDriverValue = (e) => Buffer.isBuffer(e) ? e : typeof e == "string" ? Buffer.from(e, "hex") : Buffer.from(e);
+	getSQLType() {
+		return "blob";
 	}
 };
-var DrizzleQueryError = class DrizzleQueryError extends Error {
-	static [entityKind] = "DrizzleQueryError";
-	constructor(query, params, cause) {
-		super(`Failed query: ${query}\nparams: ${params}`);
-		this.query = query;
-		this.params = params;
-		this.cause = cause;
-		this.name = "DrizzleQueryError";
-		Error.captureStackTrace(this, DrizzleQueryError);
-		if (cause) this.cause = cause;
+function Cm(e, t) {
+	let { name: n, config: r } = Ne(e, t);
+	return r?.mode === "bigint" ? new _m(n) : r?.mode === "buffer" ? new xm(n) : new ym(n);
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/custom.js
+var wm = class extends mm {
+	static [d] = "SQLiteCustomColumnBuilder";
+	constructor(e, t, n) {
+		super(e, "custom", "SQLiteCustomColumn"), this.config.fieldConfig = t, this.config.customTypeParams = n;
+	}
+	build(e) {
+		return new Tm(e, this.config);
+	}
+}, Tm = class extends hm {
+	static [d] = "SQLiteCustomColumn";
+	sqlName;
+	mapTo;
+	mapFrom;
+	mapJson;
+	forJsonSelect;
+	constructor(e, t) {
+		super(e, t), this.sqlName = t.customTypeParams.dataType(t.fieldConfig), this.mapTo = t.customTypeParams.toDriver, this.mapFrom = t.customTypeParams.fromDriver, this.mapJson = t.customTypeParams.fromJson, this.forJsonSelect = t.customTypeParams.forJsonSelect;
+	}
+	getSQLType() {
+		return this.sqlName;
+	}
+	mapFromDriverValue = (e) => typeof this.mapFrom == "function" ? this.mapFrom(e) : e;
+	mapFromJsonValue(e) {
+		return typeof this.mapJson == "function" ? this.mapJson(e) : this.mapFromDriverValue(e);
+	}
+	jsonSelectIdentifier(e, t) {
+		if (typeof this.forJsonSelect == "function") return this.forJsonSelect(e, t);
+		let n = this.getSQLType().toLowerCase(), r = n.indexOf("(");
+		switch (r + 1 ? n.slice(0, r) : n) {
+			case "numeric":
+			case "decimal":
+			case "bigint": return t`cast(${e} as text)`;
+			case "blob": return t`hex(${e})`;
+			default: return e;
+		}
+	}
+	mapToDriverValue = (e) => typeof this.mapTo == "function" ? this.mapTo(e) : e;
+};
+function Em(e) {
+	return (t, n) => {
+		let { name: r, config: i } = Ne(t, n);
+		return new wm(r, i, e);
+	};
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/integer.js
+var Dm = class extends mm {
+	static [d] = "SQLiteBaseIntegerBuilder";
+	constructor(e, t, n) {
+		super(e, t, n), this.config.autoIncrement = !1;
+	}
+	primaryKey(e) {
+		return e?.autoIncrement && (this.config.autoIncrement = !0), this.config.hasDefault = !0, super.primaryKey();
+	}
+}, Om = class extends hm {
+	static [d] = "SQLiteBaseInteger";
+	autoIncrement = this.config.autoIncrement;
+	getSQLType() {
+		return "integer";
+	}
+}, km = class extends Dm {
+	static [d] = "SQLiteIntegerBuilder";
+	constructor(e) {
+		super(e, "number int53", "SQLiteInteger");
+	}
+	build(e) {
+		return new Am(e, this.config);
+	}
+}, Am = class extends Om {
+	static [d] = "SQLiteInteger";
+}, jm = class extends Dm {
+	static [d] = "SQLiteTimestampBuilder";
+	constructor(e, t) {
+		super(e, "object date", "SQLiteTimestamp"), this.config.mode = t;
+	}
+	defaultNow() {
+		return this.default(k`(cast((julianday('now') - 2440587.5)*86400000 as integer))`);
+	}
+	build(e) {
+		return new Mm(e, this.config);
+	}
+}, Mm = class extends Om {
+	static [d] = "SQLiteTimestamp";
+	mode = this.config.mode;
+	mapFromDriverValue = (e) => typeof e == "string" ? new Date(e.replaceAll("\"", "")) : this.config.mode === "timestamp" ? /* @__PURE__ */ new Date(e * 1e3) : new Date(e);
+	mapToDriverValue = (e) => {
+		if (typeof e == "number") return e;
+		let t = e.getTime();
+		return this.config.mode === "timestamp" ? Math.floor(t / 1e3) : t;
+	};
+}, Nm = class extends Dm {
+	static [d] = "SQLiteBooleanBuilder";
+	constructor(e, t) {
+		super(e, "boolean", "SQLiteBoolean"), this.config.mode = t;
+	}
+	build(e) {
+		return new Pm(e, this.config);
+	}
+}, Pm = class extends Om {
+	static [d] = "SQLiteBoolean";
+	mode = this.config.mode;
+	mapFromDriverValue = (e) => Number(e) === 1;
+	mapToDriverValue = (e) => +!!e;
+};
+function Fm(e, t) {
+	let { name: n, config: r } = Ne(e, t);
+	return r?.mode === "timestamp" || r?.mode === "timestamp_ms" ? new jm(n, r.mode) : r?.mode === "boolean" ? new Nm(n, r.mode) : new km(n);
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/numeric.js
+var Im = class extends mm {
+	static [d] = "SQLiteNumericBuilder";
+	constructor(e) {
+		super(e, "string numeric", "SQLiteNumeric");
+	}
+	build(e) {
+		return new Lm(e, this.config);
+	}
+}, Lm = class extends hm {
+	static [d] = "SQLiteNumeric";
+	mapFromDriverValue = (e) => typeof e == "string" ? e : String(e);
+	getSQLType() {
+		return "numeric";
+	}
+}, Rm = class extends mm {
+	static [d] = "SQLiteNumericNumberBuilder";
+	constructor(e) {
+		super(e, "number", "SQLiteNumericNumber");
+	}
+	build(e) {
+		return new zm(e, this.config);
+	}
+}, zm = class extends hm {
+	static [d] = "SQLiteNumericNumber";
+	mapFromDriverValue = (e) => typeof e == "number" ? e : Number(e);
+	mapToDriverValue = String;
+	getSQLType() {
+		return "numeric";
+	}
+}, Bm = class extends mm {
+	static [d] = "SQLiteNumericBigIntBuilder";
+	constructor(e) {
+		super(e, "bigint int64", "SQLiteNumericBigInt");
+	}
+	build(e) {
+		return new Vm(e, this.config);
+	}
+}, Vm = class extends hm {
+	static [d] = "SQLiteNumericBigInt";
+	mapFromDriverValue = BigInt;
+	mapToDriverValue = String;
+	getSQLType() {
+		return "numeric";
 	}
 };
-var TransactionRollbackError = class extends DrizzleError {
-	static [entityKind] = "TransactionRollbackError";
+function Hm(e, t) {
+	let { name: n, config: r } = Ne(e, t), i = r?.mode;
+	return i === "number" ? new Rm(n) : i === "bigint" ? new Bm(n) : new Im(n);
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/real.js
+var Um = class extends mm {
+	static [d] = "SQLiteRealBuilder";
+	constructor(e) {
+		super(e, "number double", "SQLiteReal");
+	}
+	build(e) {
+		return new Wm(e, this.config);
+	}
+}, Wm = class extends hm {
+	static [d] = "SQLiteReal";
+	getSQLType() {
+		return "real";
+	}
+};
+function Gm(e) {
+	return new Um(e ?? "");
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/text.js
+var Km = class extends mm {
+	static [d] = "SQLiteTextBuilder";
+	constructor(e, t) {
+		super(e, t.enum?.length ? "string enum" : "string", "SQLiteText"), this.config.enumValues = t.enum, this.config.length = t.length;
+	}
+	build(e) {
+		return new qm(e, this.config);
+	}
+}, qm = class extends hm {
+	static [d] = "SQLiteText";
+	enumValues = this.config.enumValues;
+	constructor(e, t) {
+		super(e, t);
+	}
+	getSQLType() {
+		return `text${this.config.length ? `(${this.config.length})` : ""}`;
+	}
+}, Jm = class extends mm {
+	static [d] = "SQLiteTextJsonBuilder";
+	constructor(e) {
+		super(e, "object json", "SQLiteTextJson");
+	}
+	build(e) {
+		return new Ym(e, this.config);
+	}
+}, Ym = class extends hm {
+	static [d] = "SQLiteTextJson";
+	getSQLType() {
+		return "text";
+	}
+	mapFromDriverValue = (e) => JSON.parse(e);
+	mapToDriverValue = (e) => JSON.stringify(e);
+};
+function Xm(e, t = {}) {
+	let { name: n, config: r } = Ne(e, t);
+	return r.mode === "json" ? new Jm(n) : new Km(n, r);
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/all.js
+function Zm() {
+	return {
+		blob: Cm,
+		customType: Em,
+		integer: Fm,
+		numeric: Hm,
+		real: Gm,
+		text: Xm
+	};
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/casing.js
+function Qm(e) {
+	return (e.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).map((e) => e.toLowerCase()).join("_");
+}
+function $m(e) {
+	return (e.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).reduce((e, t, n) => e + (n === 0 ? t.toLowerCase() : `${t[0].toUpperCase()}${t.slice(1)}`), "");
+}
+function eh(e) {
+	return e === "snake_case" ? Qm : e === "camelCase" ? $m : (e) => e;
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/table.js
+var th = Symbol.for("drizzle:SQLiteInlineForeignKeys"), nh = class extends w {
+	static [d] = "SQLiteTable";
+	static Symbol = Object.assign({}, w.Symbol, { InlineForeignKeys: th });
+	[w.Symbol.Columns];
+	[th] = [];
+	[w.Symbol.ExtraConfigBuilder] = void 0;
+};
+function rh(e, t, n, r, i, a = e) {
+	let o = eh(i), s = new nh(e, r, a), c = typeof t == "function" ? t(Zm()) : t, l = Object.fromEntries(Object.entries(c).map(([e, t]) => {
+		let n = t;
+		n.setName(e, o);
+		let r = n.build(s).postBuild();
+		return s[th].push(...n.buildForeignKeys(r, s)), [e, r];
+	})), u = Object.assign(s, l);
+	return u[w.Symbol.Columns] = l, u[w.Symbol.ExtraConfigColumns] = l, n && (u[nh.Symbol.ExtraConfigBuilder] = n), u;
+}
+function ih(e) {
+	return (t, n, r) => rh(t, n, r, void 0, e);
+}
+var ah = ih(void 0);
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/utils.js
+function oh(e) {
+	return f(e, nh) ? [`${e[w.Symbol.BaseName]}`] : f(e, T) ? e._.usedTables ?? [] : f(e, O) ? e.usedTables ?? [] : [];
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/view-base.js
+var sh = class extends ve {
+	static [d] = "SQLiteViewBase";
+}, ch = class {
+	static [d] = "ColumnTableAliasProxyHandler";
+	constructor(e, t) {
+		this.table = e, this.ignoreColumnAlias = t;
+	}
+	get(e, t) {
+		return t === "table" ? this.table : t === "isAlias" && this.ignoreColumnAlias ? !1 : e[t];
+	}
+}, lh = class {
+	static [d] = "ViewSelectionAliasProxyHandler";
+	constructor(e, t, n) {
+		this.view = e, this.selection = t, this.ignoreColumnAlias = n;
+	}
+	get(e, t) {
+		let n = e[t];
+		return f(n, h) ? new Proxy(n, new ch(this.view, this.ignoreColumnAlias)) : f(n, T) || f(n, O) || f(n, O.Aliased) || oe(n) || typeof n != "object" || !n ? n : new Proxy(n, this);
+	}
+}, uh = class {
+	static [d] = "TableAliasProxyHandler";
+	constructor(e, t, n) {
+		this.alias = e, this.replaceOriginalName = t, this.ignoreColumnAlias = n;
+	}
+	get(e, t) {
+		if (t === w.Symbol.IsAlias) return !0;
+		if (t === w.Symbol.Name || this.replaceOriginalName && t === w.Symbol.OriginalName) return this.alias;
+		if (t === E) return {
+			...e[E],
+			name: this.alias,
+			isAlias: !0,
+			selectedFields: new Proxy(e[E].selectedFields, new lh(new Proxy(e, this), e[E].selectedFields, this.ignoreColumnAlias))
+		};
+		if (t === w.Symbol.Columns) {
+			let t = e[w.Symbol.Columns];
+			if (!t) return t;
+			if (f(e, ve)) return new Proxy(e[w.Symbol.Columns], new lh(new Proxy(e, this), e[w.Symbol.Columns], this.ignoreColumnAlias));
+			let n = {};
+			return Object.keys(t).map((r) => {
+				n[r] = new Proxy(t[r], new ch(new Proxy(e, this), this.ignoreColumnAlias));
+			}), n;
+		}
+		let n = e[t];
+		return f(n, h) ? new Proxy(n, new ch(new Proxy(e, this), this.ignoreColumnAlias)) : n;
+	}
+}, dh = class {
+	static [d] = "ColumnAliasProxyHandler";
+	constructor(e) {
+		this.alias = e;
+	}
+	get(e, t) {
+		return t === "isAlias" ? !0 : t === "name" ? this.alias : t === "keyAsName" ? !1 : t === p ? () => e : e[t];
+	}
+};
+function fh(e, t) {
+	return new Proxy(e, new uh(t, !1, !1));
+}
+function ph(e, t) {
+	return new Proxy(e, new dh(t));
+}
+h.prototype.as = function(e) {
+	return ph(this, e);
+};
+function mh(e) {
+	return e[p]();
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/selection-proxy.js
+var Z = class e {
+	static [d] = "SelectionProxyHandler";
+	config;
+	constructor(e) {
+		this.config = { ...e };
+	}
+	get(t, n) {
+		if (n === "_") return {
+			...t._,
+			selectedFields: new Proxy(t._.selectedFields, this)
+		};
+		if (n === E) return {
+			...t[E],
+			selectedFields: new Proxy(t[E].selectedFields, this)
+		};
+		if (typeof n == "symbol") return t[n];
+		let r = (f(t, T) ? t._.selectedFields : f(t, ve) ? t[E].selectedFields : t)[n];
+		if (f(r, O.Aliased)) {
+			if (this.config.sqlAliasedBehavior === "sql" && !r.isSelectionField) return r.sql;
+			let e = r.clone();
+			return e.isSelectionField = !0, e.origin = this.config.alias, e;
+		}
+		if (f(r, O)) {
+			if (this.config.sqlBehavior === "sql") return r;
+			throw Error(`You tried to reference "${n}" field from a subquery, which is a raw SQL field, but it doesn't have an alias declared. Please add an alias to the field using ".as('alias')" method.`);
+		}
+		return f(r, h) ? this.config.alias ? new Proxy(r, new ch(new Proxy(r.table, new uh(this.config.alias, this.config.replaceOriginalName ?? !1, !0)), !0)) : r : typeof r != "object" || !r ? r : new Proxy(r, new e(this.config));
+	}
+}, hh = class {
+	static [d] = "TypedQueryBuilder";
+	getSelectedFields() {
+		return this._.selectedFields;
+	}
+	withoutSelectionCastCodecs() {
+		return this;
+	}
+}, gh = class {
+	static [d] = "SQLiteSelectBuilder";
+	fields;
+	session;
+	dialect;
+	withList;
+	distinct;
+	constructor(e, t = _h) {
+		this.builder = t, this.fields = e.fields, this.session = e.session, this.dialect = e.dialect, this.withList = e.withList, this.distinct = e.distinct;
+	}
+	from(e) {
+		let t = !!this.fields, n;
+		return n = this.fields ? this.fields : f(e, T) ? Object.fromEntries(Object.keys(e._.selectedFields).map((t) => [t, e[t]])) : f(e, sh) ? e[E].selectedFields : f(e, O) ? {} : Ae(e), new this.builder({
+			table: e,
+			fields: n,
+			isPartialSelect: t,
+			session: this.session,
+			dialect: this.dialect,
+			withList: this.withList ?? [],
+			distinct: this.distinct
+		});
+	}
+}, _h = class extends hh {
+	static [d] = "SQLiteSelectQueryBuilder";
+	_;
+	config;
+	joinsNotNullableMap;
+	tableName;
+	isPartialSelect;
+	session;
+	dialect;
+	cacheConfig = void 0;
+	usedTables = /* @__PURE__ */ new Set();
+	constructor({ table: e, fields: t, isPartialSelect: n, session: r, dialect: i, withList: a, distinct: o }) {
+		super(), this.config = {
+			withList: a,
+			table: e,
+			fields: { ...t },
+			distinct: o,
+			setOperators: []
+		}, this.isPartialSelect = n, this.session = r, this.dialect = i, this._ = {
+			selectedFields: t,
+			config: this.config
+		}, this.tableName = Me(e), this.joinsNotNullableMap = typeof this.tableName == "string" ? { [this.tableName]: !0 } : {};
+		for (let t of oh(e)) this.usedTables.add(t);
+	}
+	getUsedTables() {
+		return [...this.usedTables];
+	}
+	createJoin(e) {
+		return (t, n) => {
+			let r = this.tableName, i = Me(t);
+			for (let e of oh(t)) this.usedTables.add(e);
+			if (typeof i == "string" && this.config.joins?.some((e) => e.alias === i)) throw Error(`Alias "${i}" is already used in this query`);
+			if (!this.isPartialSelect && (Object.keys(this.joinsNotNullableMap).length === 1 && typeof r == "string" && (this.config.fields = { [r]: this.config.fields }), typeof i == "string" && !f(t, O))) {
+				let e = f(t, T) ? t._.selectedFields : f(t, ve) ? t[E].selectedFields : t[w.Symbol.Columns];
+				this.config.fields[i] = e;
+			}
+			if (typeof n == "function" && (n = n(new Proxy(this.config.fields, new Z({
+				sqlAliasedBehavior: "sql",
+				sqlBehavior: "sql"
+			})))), this.config.joins || (this.config.joins = []), this.config.joins.push({
+				on: n,
+				table: t,
+				joinType: e,
+				alias: i
+			}), typeof i == "string") switch (e) {
+				case "left":
+					this.joinsNotNullableMap[i] = !1;
+					break;
+				case "right":
+					this.joinsNotNullableMap = Object.fromEntries(Object.entries(this.joinsNotNullableMap).map(([e]) => [e, !1])), this.joinsNotNullableMap[i] = !0;
+					break;
+				case "cross":
+				case "inner":
+					this.joinsNotNullableMap[i] = !0;
+					break;
+				case "full":
+					this.joinsNotNullableMap = Object.fromEntries(Object.entries(this.joinsNotNullableMap).map(([e]) => [e, !1])), this.joinsNotNullableMap[i] = !1;
+					break;
+			}
+			return this;
+		};
+	}
+	leftJoin = this.createJoin("left");
+	rightJoin = this.createJoin("right");
+	innerJoin = this.createJoin("inner");
+	fullJoin = this.createJoin("full");
+	crossJoin = this.createJoin("cross");
+	createSetOperator(e, t) {
+		return (n) => {
+			let r = typeof n == "function" ? n(yh()) : n;
+			if (!De(this.getSelectedFields(), r.getSelectedFields())) throw Error("Set operator error (union / intersect / except): selected fields are not the same or are in a different order");
+			return this.config.setOperators.push({
+				type: e,
+				isAll: t,
+				rightSelect: r
+			}), this;
+		};
+	}
+	union = this.createSetOperator("union", !1);
+	unionAll = this.createSetOperator("union", !0);
+	intersect = this.createSetOperator("intersect", !1);
+	except = this.createSetOperator("except", !1);
+	addSetOperators(e) {
+		return this.config.setOperators.push(...e), this;
+	}
+	where(e) {
+		return typeof e == "function" && (e = e(new Proxy(this.config.fields, new Z({
+			sqlAliasedBehavior: "sql",
+			sqlBehavior: "sql"
+		})))), this.config.where = e, this;
+	}
+	having(e) {
+		return typeof e == "function" && (e = e(new Proxy(this.config.fields, new Z({
+			sqlAliasedBehavior: "sql",
+			sqlBehavior: "sql"
+		})))), this.config.having = e, this;
+	}
+	groupBy(...e) {
+		if (typeof e[0] == "function") {
+			let t = e[0](new Proxy(this.config.fields, new Z({
+				sqlAliasedBehavior: "alias",
+				sqlBehavior: "sql"
+			})));
+			this.config.groupBy = Array.isArray(t) ? t : [t];
+		} else this.config.groupBy = e;
+		return this;
+	}
+	orderBy(...e) {
+		if (typeof e[0] == "function") {
+			let t = e[0](new Proxy(this.config.fields, new Z({
+				sqlAliasedBehavior: "alias",
+				sqlBehavior: "sql"
+			}))), n = Array.isArray(t) ? t : [t];
+			this.config.setOperators.length > 0 ? this.config.setOperators.at(-1).orderBy = n : this.config.orderBy = n;
+		} else {
+			let t = e;
+			this.config.setOperators.length > 0 ? this.config.setOperators.at(-1).orderBy = t : this.config.orderBy = t;
+		}
+		return this;
+	}
+	limit(e) {
+		return this.config.setOperators.length > 0 ? this.config.setOperators.at(-1).limit = e : this.config.limit = e, this;
+	}
+	offset(e) {
+		return this.config.setOperators.length > 0 ? this.config.setOperators.at(-1).offset = e : this.config.offset = e, this;
+	}
+	$withCache(e) {
+		return this.cacheConfig = e === void 0 ? {
+			config: {},
+			enabled: !0,
+			autoInvalidate: !0
+		} : e === !1 ? { enabled: !1 } : {
+			enabled: !0,
+			autoInvalidate: !0,
+			...e
+		}, this;
+	}
+	getSQL() {
+		return this.config.fieldsFlat = Te(this.config.fields), this.dialect.buildSelectQuery(this.config);
+	}
+	toSQL() {
+		return this.dialect.sqlToQuery(this.getSQL());
+	}
+	as(e) {
+		let t = [];
+		if (t.push(...oh(this.config.table)), this.config.joins) for (let e of this.config.joins) t.push(...oh(e.table));
+		return new Proxy(new T(this.getSQL(), this.config.fields, e, !1, [...new Set(t)]), new Z({
+			alias: e,
+			sqlAliasedBehavior: "alias",
+			sqlBehavior: "error"
+		}));
+	}
+	getSelectedFields() {
+		return new Proxy(this.config.fields, new Z({
+			alias: this.tableName,
+			sqlAliasedBehavior: "alias",
+			sqlBehavior: "error"
+		}));
+	}
+	withoutSelectionCastCodecs() {
+		return this;
+	}
+	$dynamic() {
+		return this;
+	}
+};
+function vh(e, t) {
+	return (n, r, ...i) => {
+		let a = [r, ...i].map((n) => ({
+			type: e,
+			isAll: t,
+			rightSelect: n
+		}));
+		for (let e of a) if (!De(n.getSelectedFields(), e.rightSelect.getSelectedFields())) throw Error("Set operator error (union / intersect / except): selected fields are not the same or are in a different order");
+		return n.addSetOperators(a);
+	};
+}
+var yh = () => ({
+	union: bh,
+	unionAll: xh,
+	intersect: Sh,
+	except: Ch
+}), bh = vh("union", !1), xh = vh("union", !0), Sh = vh("intersect", !1), Ch = vh("except", !1), wh = class extends Error {
+	static [d] = "DrizzleError";
+	constructor({ message: e, cause: t }) {
+		super(e), this.name = "DrizzleError", this.cause = t;
+	}
+}, Th = class e extends Error {
+	static [d] = "DrizzleQueryError";
+	constructor(t, n, r) {
+		super(`Failed query: ${t}\nparams: ${n}`), this.query = t, this.params = n, this.cause = r, this.name = "DrizzleQueryError", Error.captureStackTrace(this, e), r && (this.cause = r);
+	}
+}, Eh = class extends wh {
+	static [d] = "TransactionRollbackError";
 	constructor() {
-		super({ message: "Rollback" });
-		this.name = "TransactionRollbackError";
+		super({ message: "Rollback" }), this.name = "TransactionRollbackError";
 	}
 };
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sql/expressions/conditions.js
-function bindIfParam(value, column) {
-	if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) return new Param(value, column);
-	return value;
+function Q(e, t) {
+	return ue(t) && !oe(e) && !f(e, pe) && !f(e, he) && !f(e, h) && !f(e, w) && !f(e, ve) ? new pe(e, t) : e;
 }
-/**
-* Test that two values are equal.
-*
-* Remember that the SQL standard dictates that
-* two NULL values are not equal, so if you want to test
-* whether a value is null, you may want to use
-* `isNull` instead.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars made by Ford
-* db.select().from(cars)
-*   .where(eq(cars.make, 'Ford'))
-* ```
-*
-* @see isNull for a way to test equality to NULL.
-*/
-var eq = (left, right) => {
-	return sql`${left} = ${bindIfParam(right, left)}`;
-};
-/**
-* Test that two values are not equal.
-*
-* Remember that the SQL standard dictates that
-* two NULL values are not equal, so if you want to test
-* whether a value is not null, you may want to use
-* `isNotNull` instead.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars not made by Ford
-* db.select().from(cars)
-*   .where(ne(cars.make, 'Ford'))
-* ```
-*
-* @see isNotNull for a way to test whether a value is not null.
-*/
-var ne = (left, right) => {
-	return sql`${left} <> ${bindIfParam(right, left)}`;
-};
-function and(...unfilteredConditions) {
-	const conditions = unfilteredConditions.filter((c) => c !== void 0);
-	if (conditions.length === 0) return;
-	if (conditions.length === 1) return new SQL(conditions);
-	return new SQL([
-		new StringChunk("("),
-		sql.join(conditions.map((c) => sql`(${c})`), new StringChunk(" and ")),
-		new StringChunk(")")
+var Dh = (e, t) => k`${e} = ${Q(t, e)}`, Oh = (e, t) => k`${e} <> ${Q(t, e)}`;
+function kh(...e) {
+	let t = e.filter((e) => e !== void 0);
+	if (t.length !== 0) return t.length === 1 ? new O(t) : new O([
+		new D("("),
+		k.join(t.map((e) => k`(${e})`), new D(" and ")),
+		new D(")")
 	]);
 }
-function or(...unfilteredConditions) {
-	const conditions = unfilteredConditions.filter((c) => c !== void 0);
-	if (conditions.length === 0) return;
-	if (conditions.length === 1) return new SQL(conditions);
-	return new SQL([
-		new StringChunk("("),
-		sql.join(conditions.map((c) => sql`(${c})`), new StringChunk(" or ")),
-		new StringChunk(")")
+function Ah(...e) {
+	let t = e.filter((e) => e !== void 0);
+	if (t.length !== 0) return t.length === 1 ? new O(t) : new O([
+		new D("("),
+		k.join(t.map((e) => k`(${e})`), new D(" or ")),
+		new D(")")
 	]);
 }
-/**
-* Negate the meaning of an expression using the `not` keyword.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars _not_ made by GM or Ford.
-* db.select().from(cars)
-*   .where(not(inArray(cars.make, ['GM', 'Ford'])))
-* ```
-*/
-function not(condition) {
-	return is(condition, SQL) ? sql`not (${condition})` : sql`not ${condition}`;
+function jh(e) {
+	return f(e, O) ? k`not (${e})` : k`not ${e}`;
 }
-/**
-* Test that the first expression passed is greater than
-* the second expression.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars made after 2000.
-* db.select().from(cars)
-*   .where(gt(cars.year, 2000))
-* ```
-*
-* @see gte for greater-than-or-equal
-*/
-var gt = (left, right) => {
-	return sql`${left} > ${bindIfParam(right, left)}`;
-};
-/**
-* Test that the first expression passed is greater than
-* or equal to the second expression. Use `gt` to
-* test whether an expression is strictly greater
-* than another.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars made on or after 2000.
-* db.select().from(cars)
-*   .where(gte(cars.year, 2000))
-* ```
-*
-* @see gt for a strictly greater-than condition
-*/
-var gte = (left, right) => {
-	return sql`${left} >= ${bindIfParam(right, left)}`;
-};
-/**
-* Test that the first expression passed is less than
-* the second expression.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars made before 2000.
-* db.select().from(cars)
-*   .where(lt(cars.year, 2000))
-* ```
-*
-* @see lte for less-than-or-equal
-*/
-var lt = (left, right) => {
-	return sql`${left} < ${bindIfParam(right, left)}`;
-};
-/**
-* Test that the first expression passed is less than
-* or equal to the second expression.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars made before 2000.
-* db.select().from(cars)
-*   .where(lte(cars.year, 2000))
-* ```
-*
-* @see lt for a strictly less-than condition
-*/
-var lte = (left, right) => {
-	return sql`${left} <= ${bindIfParam(right, left)}`;
-};
-function inArray(column, values) {
-	if (Array.isArray(values)) {
-		if (values.length === 0) return sql`false`;
-		return sql`${column} in ${values.map((v) => bindIfParam(v, column))}`;
+var Mh = (e, t) => k`${e} > ${Q(t, e)}`, Nh = (e, t) => k`${e} >= ${Q(t, e)}`, Ph = (e, t) => k`${e} < ${Q(t, e)}`, Fh = (e, t) => k`${e} <= ${Q(t, e)}`;
+function Ih(e, t) {
+	return Array.isArray(t) ? t.length === 0 ? k`false` : k`${e} in ${t.map((t) => Q(t, e))}` : k`${e} in ${Q(t, e)}`;
+}
+function Lh(e, t) {
+	return Array.isArray(t) ? t.length === 0 ? k`true` : k`${e} not in ${t.map((t) => Q(t, e))}` : k`${e} not in ${Q(t, e)}`;
+}
+function Rh(e) {
+	return k`(${e} is null)`;
+}
+function zh(e) {
+	return k`(${e} is not null)`;
+}
+function Bh(e) {
+	return k`exists ${e}`;
+}
+function Vh(e) {
+	return k`not exists ${e}`;
+}
+function Hh(e, t, n) {
+	return k`${e} between ${Q(t, e)} and ${Q(n, e)}`;
+}
+function Uh(e, t, n) {
+	return k`${e} not between ${Q(t, e)} and ${Q(n, e)}`;
+}
+function Wh(e, t) {
+	return k`${e} like ${t}`;
+}
+function Gh(e, t) {
+	return k`${e} not like ${t}`;
+}
+function Kh(e, t) {
+	return k`${e} ilike ${t}`;
+}
+function qh(e, t) {
+	return k`${e} not ilike ${t}`;
+}
+function Jh(e, t) {
+	if (Array.isArray(t)) {
+		if (t.length === 0) throw Error("arrayContains requires at least one value");
+		let n = Q(t, e);
+		return k`${e} @> ${k`${Array.isArray(n) ? new pe(n) : n}`}`;
 	}
-	return sql`${column} in ${bindIfParam(values, column)}`;
+	return k`${e} @> ${Q(t, e)}`;
 }
-function notInArray(column, values) {
-	if (Array.isArray(values)) {
-		if (values.length === 0) return sql`true`;
-		return sql`${column} not in ${values.map((v) => bindIfParam(v, column))}`;
+function Yh(e, t) {
+	if (Array.isArray(t)) {
+		if (t.length === 0) throw Error("arrayContained requires at least one value");
+		let n = Q(t, e);
+		return k`${e} <@ ${k`${Array.isArray(n) ? new pe(n) : n}`}`;
 	}
-	return sql`${column} not in ${bindIfParam(values, column)}`;
+	return k`${e} <@ ${Q(t, e)}`;
 }
-/**
-* Test whether an expression is NULL. By the SQL standard,
-* NULL is neither equal nor not equal to itself, so
-* it's recommended to use `isNull` and `notIsNull` for
-* comparisons to NULL.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars that have no discontinuedAt date.
-* db.select().from(cars)
-*   .where(isNull(cars.discontinuedAt))
-* ```
-*
-* @see isNotNull for the inverse of this test
-*/
-function isNull(value) {
-	return sql`(${value} is null)`;
-}
-/**
-* Test whether an expression is not NULL. By the SQL standard,
-* NULL is neither equal nor not equal to itself, so
-* it's recommended to use `isNull` and `notIsNull` for
-* comparisons to NULL.
-*
-* ## Examples
-*
-* ```ts
-* // Select cars that have been discontinued.
-* db.select().from(cars)
-*   .where(isNotNull(cars.discontinuedAt))
-* ```
-*
-* @see isNull for the inverse of this test
-*/
-function isNotNull(value) {
-	return sql`(${value} is not null)`;
-}
-/**
-* Test whether a subquery evaluates to have any rows.
-*
-* ## Examples
-*
-* ```ts
-* // Users whose `homeCity` column has a match in a cities
-* // table.
-* db
-*   .select()
-*   .from(users)
-*   .where(
-*     exists(db.select()
-*       .from(cities)
-*       .where(eq(users.homeCity, cities.id))),
-*   );
-* ```
-*
-* @see notExists for the inverse of this test
-*/
-function exists(subquery) {
-	return sql`exists ${subquery}`;
-}
-/**
-* Test whether a subquery doesn't include any result
-* rows.
-*
-* ## Examples
-*
-* ```ts
-* // Users whose `homeCity` column doesn't match
-* // a row in the cities table.
-* db
-*   .select()
-*   .from(users)
-*   .where(
-*     notExists(db.select()
-*       .from(cities)
-*       .where(eq(users.homeCity, cities.id))),
-*   );
-* ```
-*
-* @see exists for the inverse of this test
-*/
-function notExists(subquery) {
-	return sql`not exists ${subquery}`;
-}
-function between(column, min, max) {
-	return sql`${column} between ${bindIfParam(min, column)} and ${bindIfParam(max, column)}`;
-}
-function notBetween(column, min, max) {
-	return sql`${column} not between ${bindIfParam(min, column)} and ${bindIfParam(max, column)}`;
-}
-/**
-* Compare a column to a pattern, which can include `%` and `_`
-* characters to match multiple variations. Including `%`
-* in the pattern matches zero or more characters, and including
-* `_` will match a single character.
-*
-* ## Examples
-*
-* ```ts
-* // Select all cars with 'Turbo' in their names.
-* db.select().from(cars)
-*   .where(like(cars.name, '%Turbo%'))
-* ```
-*
-* @see ilike for a case-insensitive version of this condition
-*/
-function like(column, value) {
-	return sql`${column} like ${value}`;
-}
-/**
-* The inverse of like - this tests that a given column
-* does not match a pattern, which can include `%` and `_`
-* characters to match multiple variations. Including `%`
-* in the pattern matches zero or more characters, and including
-* `_` will match a single character.
-*
-* ## Examples
-*
-* ```ts
-* // Select all cars that don't have "ROver" in their name.
-* db.select().from(cars)
-*   .where(notLike(cars.name, '%Rover%'))
-* ```
-*
-* @see like for the inverse condition
-* @see notIlike for a case-insensitive version of this condition
-*/
-function notLike(column, value) {
-	return sql`${column} not like ${value}`;
-}
-/**
-* Case-insensitively compare a column to a pattern,
-* which can include `%` and `_`
-* characters to match multiple variations. Including `%`
-* in the pattern matches zero or more characters, and including
-* `_` will match a single character.
-*
-* Unlike like, this performs a case-insensitive comparison.
-*
-* ## Examples
-*
-* ```ts
-* // Select all cars with 'Turbo' in their names.
-* db.select().from(cars)
-*   .where(ilike(cars.name, '%Turbo%'))
-* ```
-*
-* @see like for a case-sensitive version of this condition
-*/
-function ilike(column, value) {
-	return sql`${column} ilike ${value}`;
-}
-/**
-* The inverse of ilike - this case-insensitively tests that a given column
-* does not match a pattern, which can include `%` and `_`
-* characters to match multiple variations. Including `%`
-* in the pattern matches zero or more characters, and including
-* `_` will match a single character.
-*
-* ## Examples
-*
-* ```ts
-* // Select all cars that don't have "Rover" in their name.
-* db.select().from(cars)
-*   .where(notLike(cars.name, '%Rover%'))
-* ```
-*
-* @see ilike for the inverse condition
-* @see notLike for a case-sensitive version of this condition
-*/
-function notIlike(column, value) {
-	return sql`${column} not ilike ${value}`;
-}
-function arrayContains(column, values) {
-	if (Array.isArray(values)) {
-		if (values.length === 0) throw new Error("arrayContains requires at least one value");
-		const par = bindIfParam(values, column);
-		return sql`${column} @> ${sql`${Array.isArray(par) ? new Param(par) : par}`}`;
+function Xh(e, t) {
+	if (Array.isArray(t)) {
+		if (t.length === 0) throw Error("arrayOverlaps requires at least one value");
+		let n = Q(t, e);
+		return k`${e} && ${k`${Array.isArray(n) ? new pe(n) : n}`}`;
 	}
-	return sql`${column} @> ${bindIfParam(values, column)}`;
-}
-function arrayContained(column, values) {
-	if (Array.isArray(values)) {
-		if (values.length === 0) throw new Error("arrayContained requires at least one value");
-		const par = bindIfParam(values, column);
-		return sql`${column} <@ ${sql`${Array.isArray(par) ? new Param(par) : par}`}`;
-	}
-	return sql`${column} <@ ${bindIfParam(values, column)}`;
-}
-function arrayOverlaps(column, values) {
-	if (Array.isArray(values)) {
-		if (values.length === 0) throw new Error("arrayOverlaps requires at least one value");
-		const par = bindIfParam(values, column);
-		return sql`${column} && ${sql`${Array.isArray(par) ? new Param(par) : par}`}`;
-	}
-	return sql`${column} && ${bindIfParam(values, column)}`;
+	return k`${e} && ${Q(t, e)}`;
 }
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sql/expressions/select.js
-/**
-* Used in sorting, this specifies that the given
-* column or expression should be sorted in ascending
-* order. By the SQL standard, ascending order is the
-* default, so it is not usually necessary to specify
-* ascending sort order.
-*
-* ## Examples
-*
-* ```ts
-* // Return cars, starting with the oldest models
-* // and going in ascending order to the newest.
-* db.select().from(cars)
-*   .orderBy(asc(cars.year));
-* ```
-*
-* @see desc to sort in descending order
-*/
-function asc(column) {
-	return sql`${column} asc`;
+function Zh(e) {
+	return k`${e} asc`;
 }
-/**
-* Used in sorting, this specifies that the given
-* column or expression should be sorted in descending
-* order.
-*
-* ## Examples
-*
-* ```ts
-* // Select users, with the most recently created
-* // records coming first.
-* db.select().from(users)
-*   .orderBy(desc(users.createdAt));
-* ```
-*
-* @see asc to sort in ascending order
-*/
-function desc(column) {
-	return sql`${column} desc`;
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/alias.js
-var ColumnTableAliasProxyHandler = class {
-	static [entityKind] = "ColumnTableAliasProxyHandler";
-	constructor(table, ignoreColumnAlias) {
-		this.table = table;
-		this.ignoreColumnAlias = ignoreColumnAlias;
-	}
-	get(columnObj, prop) {
-		if (prop === "table") return this.table;
-		if (prop === "isAlias" && this.ignoreColumnAlias) return false;
-		return columnObj[prop];
-	}
-};
-var ViewSelectionAliasProxyHandler = class {
-	static [entityKind] = "ViewSelectionAliasProxyHandler";
-	constructor(view, selection, ignoreColumnAlias) {
-		this.view = view;
-		this.selection = selection;
-		this.ignoreColumnAlias = ignoreColumnAlias;
-	}
-	get(selection, prop) {
-		const value = selection[prop];
-		if (is(value, Column)) return new Proxy(value, new ColumnTableAliasProxyHandler(this.view, this.ignoreColumnAlias));
-		if (is(value, Subquery) || is(value, SQL) || is(value, SQL.Aliased) || isSQLWrapper(value) || typeof value !== "object" || value === null) return value;
-		return new Proxy(value, this);
-	}
-};
-var TableAliasProxyHandler = class {
-	static [entityKind] = "TableAliasProxyHandler";
-	constructor(alias, replaceOriginalName, ignoreColumnAlias) {
-		this.alias = alias;
-		this.replaceOriginalName = replaceOriginalName;
-		this.ignoreColumnAlias = ignoreColumnAlias;
-	}
-	get(target, prop) {
-		if (prop === Table.Symbol.IsAlias) return true;
-		if (prop === Table.Symbol.Name) return this.alias;
-		if (this.replaceOriginalName && prop === Table.Symbol.OriginalName) return this.alias;
-		if (prop === ViewBaseConfig) return {
-			...target[ViewBaseConfig],
-			name: this.alias,
-			isAlias: true,
-			selectedFields: new Proxy(target[ViewBaseConfig].selectedFields, new ViewSelectionAliasProxyHandler(new Proxy(target, this), target[ViewBaseConfig].selectedFields, this.ignoreColumnAlias))
-		};
-		if (prop === Table.Symbol.Columns) {
-			const columns = target[Table.Symbol.Columns];
-			if (!columns) return columns;
-			if (is(target, View)) return new Proxy(target[Table.Symbol.Columns], new ViewSelectionAliasProxyHandler(new Proxy(target, this), target[Table.Symbol.Columns], this.ignoreColumnAlias));
-			const proxiedColumns = {};
-			Object.keys(columns).map((key) => {
-				proxiedColumns[key] = new Proxy(columns[key], new ColumnTableAliasProxyHandler(new Proxy(target, this), this.ignoreColumnAlias));
-			});
-			return proxiedColumns;
-		}
-		const value = target[prop];
-		if (is(value, Column)) return new Proxy(value, new ColumnTableAliasProxyHandler(new Proxy(target, this), this.ignoreColumnAlias));
-		return value;
-	}
-};
-var ColumnAliasProxyHandler = class {
-	static [entityKind] = "ColumnAliasProxyHandler";
-	constructor(alias) {
-		this.alias = alias;
-	}
-	get(target, prop) {
-		if (prop === "isAlias") return true;
-		if (prop === "name") return this.alias;
-		if (prop === "keyAsName") return false;
-		if (prop === OriginalColumn) return () => target;
-		return target[prop];
-	}
-};
-function aliasedTable(table, tableAlias) {
-	return new Proxy(table, new TableAliasProxyHandler(tableAlias, false, false));
-}
-function aliasedColumn(column, alias) {
-	return new Proxy(column, new ColumnAliasProxyHandler(alias));
-}
-Column.prototype.as = function(alias) {
-	return aliasedColumn(this, alias);
-};
-function getOriginalColumnFromAlias(column) {
-	return column[OriginalColumn]();
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/utils.js
-/** @internal bypass bundle-time filtering */
-var FnConstructor = Object.getPrototypeOf(() => null).constructor;
-/** @internal */
-function makeJitQueryMapperInner(columns, joinsNotNullableMap = {}) {
-	const preFn = [];
-	const fn = [];
-	fn.push(`const [ ${columns.map((_, i) => `c${i}`).join(", ")} ] = rows[i];`);
-	const nullifyMap = {};
-	const objectIds = {};
-	const decodes = Array.from({ length: columns.length });
-	for (let idx = 0; idx < columns.length; ++idx) {
-		const { field, path, codec, arrayDimensions } = columns[idx];
-		let decoder;
-		let decoderStr;
-		let decoderFieldDestructure;
-		let isColumn = false;
-		if (is(field, Column)) {
-			isColumn = true;
-			decoder = field;
-			decoderFieldDestructure = `field: decoder${idx}`;
-		} else if (is(field, SQL)) {
-			decoder = field.decoder;
-			decoderFieldDestructure = `field: { decoder: decoder${idx} }`;
-		} else if (is(field, Subquery)) {
-			decoder = field._.sql.decoder;
-			decoderFieldDestructure = `field: { _: { sql: { decoder: decoder${idx} } } }`;
-		} else {
-			decoder = field.sql.decoder;
-			decoderFieldDestructure = `field: { sql: { decoder: decoder${idx} } }`;
-		}
-		decoderStr = `decoder${idx}.mapFromDriverValue`;
-		if (decoder.mapFromDriverValue.isNoop) decoderStr = "";
-		if (decoderStr) preFn.push(`const { ${decoderFieldDestructure}${codec ? `, codec: codec${idx}` : ""} } = columns[${idx}];`);
-		else if (codec) preFn.push(`const { codec: codec${idx} } = columns[${idx}];`);
-		const colStr = `c${idx}`;
-		let decodedValue = colStr;
-		if (codec) decodedValue = `codec${idx}(${decodedValue}, ${arrayDimensions})`;
-		if (decoderStr) decodedValue = `${decoderStr}(${decodedValue})`;
-		decodes[idx] = colStr === decodedValue ? `${colStr}` : `${colStr} === null ? ${colStr} : ${decodedValue}`;
-		if (path.length !== 2 || !isColumn) continue;
-		if (objectIds[path[0]] === void 0) objectIds[path[0]] = [`c${idx}`];
-		else objectIds[path[0]]?.push(`c${idx}`);
-		const [objectName] = path;
-		const tableName = getTableName(field.table);
-		nullifyMap[objectName] = joinsNotNullableMap[tableName] ? false : typeof nullifyMap[objectName] === "string" ? nullifyMap[objectName] === tableName ? tableName : false : tableName;
-	}
-	fn.push(`mapped[i] = {`);
-	let currentObjectPath = [];
-	for (let idx = 0; idx < columns.length; ++idx) {
-		const { path } = columns[idx];
-		const jsonPath = path.map((e) => JSON.stringify(e));
-		const decodedValue = decodes[idx];
-		const objectPath = path.slice(0, -1);
-		let commonLen = 0;
-		while (commonLen < currentObjectPath.length && commonLen < objectPath.length && currentObjectPath[commonLen] === objectPath[commonLen]) commonLen++;
-		for (let d = currentObjectPath.length - 1; d >= commonLen; --d) fn.push(`${"	".repeat(d + 1)}},`);
-		for (let d = commonLen; d < objectPath.length; ++d) fn.push(`${"	".repeat(d + 1)}${jsonPath[d]}: ${d === 0 && objectPath.length === 1 && typeof nullifyMap[path[0]] === "string" ? `${objectIds[path[0]]?.map((c) => `${c} === null`).join(" && ")} ? null : {` : "{"}`);
-		currentObjectPath = objectPath;
-		fn.push(`${"	".repeat(path.length)}${jsonPath[path.length - 1]}: ${decodedValue},`);
-	}
-	for (let d = currentObjectPath.length - 1; d >= 0; --d) fn.push(`${"	".repeat(d + 1)}},`);
-	fn.push(`};`);
-	return `${preFn.length ? `${preFn.join("\n	")}\n\t` : ""}for (let i = 0; i < length; ++i) {
-		${fn.join("\n		")}
-	}`;
-}
-function makeJitQueryMapper(columns, joinsNotNullableMap) {
-	const internals = `\t"use strict";
-	const { columns } = this;
-	const { length } = rows;
-	const mapped = Array.from({ length });
-	${makeJitQueryMapperInner(columns, joinsNotNullableMap)}
-	return mapped;
-	//# sourceURL=drizzle:jit-query-mapper`;
-	return Object.assign(new FnConstructor("rows", internals).bind({ columns }), { body: `function jitQueryMapper (rows) {\n${internals}\n}` });
-}
-/** @internal */
-function jitCompatCheck(isEnabled) {
-	if (!isEnabled) return false;
-	try {
-		const res = new FnConstructor("input", "\"use strict\"; return input;")(true);
-		if (res !== true) {
-			console.warn("Unable to use jit mappers due to incompatibility: corrupted jit function output.\nFalling back to premade mappers.\nError details:");
-			console.error(`Expected to receive \`true\`, got: ${res}`);
-		}
-		return true;
-	} catch (e) {
-		console.warn("Unable to use jit mappers due to incompatibility.\nFalling back to premade mappers.\nError details:");
-		console.error(e);
-		return false;
-	}
-}
-function makeDefaultQueryMapper(columns, joinsNotNullableMap) {
-	const interpretedData = columns.map(({ field, codec, arrayDimensions, path }) => {
-		let processNullifyMap;
-		let decoderSrc;
-		if (is(field, Column)) {
-			decoderSrc = field;
-			if (joinsNotNullableMap && path.length === 2) {
-				const objectName = path[0];
-				processNullifyMap = (nullifyMap, value) => {
-					if (!(objectName in nullifyMap)) nullifyMap[objectName] = value === null ? getTableName(field.table) : false;
-					else if (typeof nullifyMap[objectName] === "string" && nullifyMap[objectName] !== getTableName(field.table)) nullifyMap[objectName] = false;
-				};
-			}
-		} else if (is(field, SQL)) decoderSrc = field.decoder;
-		else if (is(field, Subquery)) decoderSrc = field._.sql.decoder;
-		else decoderSrc = field.sql.decoder;
-		let decoder;
-		if (decoderSrc.mapFromDriverValue.isNoop) decoder = codec ? (v) => codec(v, arrayDimensions) : void 0;
-		else decoder = codec ? (v) => decoderSrc.mapFromDriverValue(codec(v, arrayDimensions)) : (v) => decoderSrc.mapFromDriverValue(v);
-		return [decoder, processNullifyMap];
-	});
-	return ((rows) => rows.map((row) => {
-		const nullifyMap = {};
-		const result = columns.reduce((result, { path }, columnIndex) => {
-			let node = result;
-			for (const [pathChunkIndex, pathChunk] of path.entries()) if (pathChunkIndex < path.length - 1) {
-				if (!(pathChunk in node)) node[pathChunk] = {};
-				node = node[pathChunk];
-			} else {
-				const [decoder, processNullifyMap] = interpretedData[columnIndex];
-				const rawValue = row[columnIndex];
-				const value = node[pathChunk] = rawValue === null ? null : decoder ? decoder(rawValue) : rawValue;
-				processNullifyMap?.(nullifyMap, value);
-			}
-			return result;
-		}, {});
-		if (joinsNotNullableMap && Object.keys(nullifyMap).length > 0) {
-			for (const [objectName, tableName] of Object.entries(nullifyMap)) if (typeof tableName === "string" && !joinsNotNullableMap[tableName]) result[objectName] = null;
-		}
-		return result;
-	}));
-}
-/** @internal */
-function orderSelectedFields(fields, pathPrefix, codecs) {
-	return Object.entries(fields).reduce((result, [name, field]) => {
-		if (typeof name !== "string") return result;
-		const newPath = pathPrefix ? [...pathPrefix, name] : [name];
-		if (is(field, Column)) result.push({
-			path: newPath,
-			field,
-			codec: codecs?.get(field, "normalize"),
-			arrayDimensions: field.dimensions,
-			column: field
-		});
-		else if (is(field, SQL) || is(field, SQL.Aliased)) {
-			const col = getColumnFromDecoder(field);
-			result.push(col ? {
-				path: newPath,
-				field,
-				codec: codecs?.get(col, "normalize"),
-				arrayDimensions: col.dimensions,
-				column: col
-			} : {
-				path: newPath,
-				field
-			});
-		} else if (is(field, Subquery)) {
-			let column;
-			const entry = Object.values(field._.selectedFields)[0];
-			let fieldDecoder;
-			if (is(entry, Column)) {
-				column = entry;
-				fieldDecoder = entry;
-			} else if (is(entry, SQL)) {
-				column = getColumnFromDecoder(entry);
-				fieldDecoder = entry.decoder;
-			} else {
-				column = getColumnFromDecoder(entry);
-				fieldDecoder = entry.sql.decoder;
-			}
-			if (fieldDecoder) field._.sql.decoder = fieldDecoder;
-			result.push(column ? {
-				path: newPath,
-				field,
-				codec: codecs?.get(column, "normalize"),
-				arrayDimensions: column.dimensions,
-				column
-			} : {
-				path: newPath,
-				field
-			});
-		} else if (is(field, Table)) result.push(...orderSelectedFields(field[Table.Symbol.Columns], newPath, codecs));
-		else result.push(...orderSelectedFields(field, newPath, codecs));
-		return result;
-	}, []);
-}
-function getColumnFromDecoder(source) {
-	const query = source.getSQL();
-	if (is(query.decoder, Column)) return query.decoder;
-}
-function haveSameKeys(left, right) {
-	const leftKeys = Object.keys(left);
-	const rightKeys = Object.keys(right);
-	if (leftKeys.length !== rightKeys.length) return false;
-	for (const [index, key] of leftKeys.entries()) if (key !== rightKeys[index]) return false;
-	return true;
-}
-/** @internal */
-function mapUpdateSet(table, values) {
-	const entries = Object.entries(values).filter(([, value]) => value !== void 0).map(([key, value]) => {
-		if (is(value, SQL) || is(value, Column)) return [key, value];
-		else return [key, new Param(value, table[Table.Symbol.Columns][key])];
-	});
-	if (entries.length === 0) throw new Error("No values to set");
-	return Object.fromEntries(entries);
-}
-/** @internal */
-function applyMixins(baseClass, extendedClasses) {
-	for (const extendedClass of extendedClasses) for (const name of Object.getOwnPropertyNames(extendedClass.prototype)) {
-		if (name === "constructor") continue;
-		Object.defineProperty(baseClass.prototype, name, Object.getOwnPropertyDescriptor(extendedClass.prototype, name) || Object.create(null));
-	}
-}
-/**
-* @deprecated
-* Use `getColumns` instead
-*/
-function getTableColumns(table) {
-	return table[Table.Symbol.Columns];
-}
-/** @internal */
-function getTableLikeName(table) {
-	return is(table, Subquery) ? table._.alias : is(table, View) ? table[ViewBaseConfig].name : is(table, SQL) ? void 0 : table[Table.Symbol.IsAlias] ? table[Table.Symbol.Name] : table[Table.Symbol.BaseName];
-}
-/** @internal */
-function getColumnNameAndConfig(a, b) {
-	return {
-		name: typeof a === "string" && a.length > 0 ? a : "",
-		config: typeof a === "object" ? a : b
-	};
-}
-var textDecoder = typeof TextDecoder === "undefined" ? null : new TextDecoder();
-function assertUnreachable(_x) {
-	throw new Error("Didn't expect to get here");
+function Qh(e) {
+	return k`${e} desc`;
 }
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/relations.js
-var Relation = class {
-	static [entityKind] = "RelationV2";
+var $h = class {
+	static [d] = "RelationV2";
 	fieldName;
 	sourceColumns;
 	targetColumns;
@@ -13734,1437 +5451,833 @@ var Relation = class {
 	through;
 	throughTable;
 	isReversed;
-	/** @internal */
 	sourceColumnTableNames = [];
-	/** @internal */
 	targetColumnTableNames = [];
-	constructor(targetTable, targetTableName) {
-		this.targetTableName = targetTableName;
-		this.targetTable = targetTable;
+	constructor(e, t) {
+		this.targetTableName = t, this.targetTable = e;
 	}
-};
-var One = class extends Relation {
-	static [entityKind] = "OneV2";
+}, eg = class extends $h {
+	static [d] = "OneV2";
 	relationType = "one";
 	optional;
-	constructor(tables, targetTable, targetTableName, config) {
-		super(targetTable, targetTableName);
-		this.alias = config?.alias;
-		this.where = config?.where;
-		if (config?.from) this.sourceColumns = (Array.isArray(config.from) ? config.from : [config.from]).map((it) => {
-			this.throughTable ??= it._.through ? tables[it._.through._.tableName] : void 0;
-			this.sourceColumnTableNames.push(it._.tableName);
-			return it._.column;
-		});
-		if (config?.to) this.targetColumns = (Array.isArray(config.to) ? config.to : [config.to]).map((it) => {
-			this.throughTable ??= it._.through ? tables[it._.through._.tableName] : void 0;
-			this.targetColumnTableNames.push(it._.tableName);
-			return it._.column;
-		});
-		if (this.throughTable) this.through = {
-			source: (Array.isArray(config?.from) ? config.from : config?.from ? [config.from] : []).map((c) => c._.through),
-			target: (Array.isArray(config?.to) ? config.to : config?.to ? [config.to] : []).map((c) => c._.through)
-		};
-		this.optional = config?.optional ?? true;
+	constructor(e, t, n, r) {
+		super(t, n), this.alias = r?.alias, this.where = r?.where, r?.from && (this.sourceColumns = (Array.isArray(r.from) ? r.from : [r.from]).map((t) => (this.throughTable ??= t._.through ? e[t._.through._.tableName] : void 0, this.sourceColumnTableNames.push(t._.tableName), t._.column))), r?.to && (this.targetColumns = (Array.isArray(r.to) ? r.to : [r.to]).map((t) => (this.throughTable ??= t._.through ? e[t._.through._.tableName] : void 0, this.targetColumnTableNames.push(t._.tableName), t._.column))), this.throughTable && (this.through = {
+			source: (Array.isArray(r?.from) ? r.from : r?.from ? [r.from] : []).map((e) => e._.through),
+			target: (Array.isArray(r?.to) ? r.to : r?.to ? [r.to] : []).map((e) => e._.through)
+		}), this.optional = r?.optional ?? !0;
 	}
+}, tg = {
+	and: kh,
+	between: Hh,
+	eq: Dh,
+	exists: Bh,
+	gt: Mh,
+	gte: Nh,
+	ilike: Kh,
+	inArray: Ih,
+	arrayContains: Jh,
+	arrayContained: Yh,
+	arrayOverlaps: Xh,
+	isNull: Rh,
+	isNotNull: zh,
+	like: Wh,
+	lt: Ph,
+	lte: Fh,
+	ne: Oh,
+	not: jh,
+	notBetween: Uh,
+	notExists: Vh,
+	notLike: Gh,
+	notIlike: qh,
+	notInArray: Lh,
+	or: Ah,
+	sql: k
+}, ng = {
+	sql: k,
+	asc: Zh,
+	desc: Qh
 };
-var operators = {
-	and,
-	between,
-	eq,
-	exists,
-	gt,
-	gte,
-	ilike,
-	inArray,
-	arrayContains,
-	arrayContained,
-	arrayOverlaps,
-	isNull,
-	isNotNull,
-	like,
-	lt,
-	lte,
-	ne,
-	not,
-	notBetween,
-	notExists,
-	notLike,
-	notIlike,
-	notInArray,
-	or,
-	sql
-};
-var orderByOperators = {
-	sql,
-	asc,
-	desc
-};
-function mapRelationalRow(rows, isOne, buildQueryResultSelection, parseJson = false, parseJsonIfString = false, useJsonMappers = true) {
-	const maxIdx = isOne ? 1 : rows.length;
-	const decoders = buildQueryResultSelection.map(({ field, codec, arrayDimensions }) => {
-		let decoder;
-		if (is(field, Column)) decoder = field;
-		else if (is(field, SQL)) decoder = field.decoder;
-		else if (is(field, SQL.Aliased)) decoder = field.sql.decoder;
-		else if (is(field, Table) || is(field, View)) decoder = noopDecoder;
-		else decoder = field.getSQL().decoder;
-		if (useJsonMappers && field.mapFromJsonValue) return (v) => field.mapFromJsonValue(v);
-		return decoder.mapFromDriverValue.isNoop ? codec ? (value) => codec(value, arrayDimensions) : void 0 : codec ? (value) => decoder.mapFromDriverValue(codec(value, arrayDimensions)) : (value) => decoder.mapFromDriverValue(value);
+function rg(e, t, n, r = !1, i = !1, a = !0) {
+	let o = t ? 1 : e.length, s = n.map(({ field: e, codec: t, arrayDimensions: n }) => {
+		let r;
+		return r = f(e, h) ? e : f(e, O) ? e.decoder : f(e, O.Aliased) ? e.sql.decoder : f(e, w) || f(e, ve) ? de : e.getSQL().decoder, a && e.mapFromJsonValue ? (t) => e.mapFromJsonValue(t) : r.mapFromDriverValue.isNoop ? t ? (e) => t(e, n) : void 0 : t ? (e) => r.mapFromDriverValue(t(e, n)) : (e) => r.mapFromDriverValue(e);
 	});
-	for (let i = 0; i < maxIdx; ++i) {
-		const row = isOne ? rows : rows[i];
-		for (let selectionItemIdx = 0; selectionItemIdx < buildQueryResultSelection.length; ++selectionItemIdx) {
-			const selectionItem = buildQueryResultSelection[selectionItemIdx];
-			if (selectionItem.selection) {
-				if (row[selectionItem.key] === null) continue;
-				if (parseJson) {
-					row[selectionItem.key] = JSON.parse(row[selectionItem.key]);
-					if (row[selectionItem.key] === null) continue;
-				} else if (parseJsonIfString && typeof row[selectionItem.key] === "string") row[selectionItem.key] = JSON.parse(row[selectionItem.key]);
-				if (selectionItem.isArray) {
-					mapRelationalRow(row[selectionItem.key], false, selectionItem.selection, false, parseJsonIfString);
+	for (let a = 0; a < o; ++a) {
+		let o = t ? e : e[a];
+		for (let e = 0; e < n.length; ++e) {
+			let t = n[e];
+			if (t.selection) {
+				if (o[t.key] === null) continue;
+				if (r) {
+					if (o[t.key] = JSON.parse(o[t.key]), o[t.key] === null) continue;
+				} else i && typeof o[t.key] == "string" && (o[t.key] = JSON.parse(o[t.key]));
+				if (t.isArray) {
+					rg(o[t.key], !1, t.selection, !1, i);
 					continue;
 				}
-				mapRelationalRow(row[selectionItem.key], true, selectionItem.selection, false, parseJsonIfString);
+				rg(o[t.key], !0, t.selection, !1, i);
 				continue;
 			}
-			if (row[selectionItem.key] === null) continue;
-			const decoder = decoders[selectionItemIdx];
-			if (!decoder) continue;
-			row[selectionItem.key] = decoder(row[selectionItem.key]);
+			if (o[t.key] === null) continue;
+			let a = s[e];
+			a && (o[t.key] = a(o[t.key]));
 		}
 	}
-	return rows;
+	return e;
 }
-function mapRelationalRowFromArrays(rows, isOne, buildQueryResultSelection, parseJson = false, parseJsonIfString = false) {
-	const maxIdx = isOne ? 1 : rows.length;
-	const decoders = buildQueryResultSelection.map(({ field, codec, arrayDimensions }) => {
-		let decoder;
-		if (is(field, Column)) decoder = field;
-		else if (is(field, SQL)) decoder = field.decoder;
-		else if (is(field, SQL.Aliased)) decoder = field.sql.decoder;
-		else if (is(field, Table) || is(field, View)) decoder = noopDecoder;
-		else decoder = field.getSQL().decoder;
-		return decoder.mapFromDriverValue.isNoop ? codec ? (value) => codec(value, arrayDimensions) : void 0 : codec ? (value) => decoder.mapFromDriverValue(codec(value, arrayDimensions)) : (value) => decoder.mapFromDriverValue(value);
-	});
-	const results = Array.from({ length: maxIdx });
-	for (let i = 0; i < maxIdx; ++i) {
-		const row = isOne ? rows : rows[i];
-		const result = {};
-		for (let selectionItemIdx = 0; selectionItemIdx < buildQueryResultSelection.length; ++selectionItemIdx) {
-			const selectionItem = buildQueryResultSelection[selectionItemIdx];
-			let value = row[selectionItemIdx];
-			if (selectionItem.selection) {
-				if (value === null) {
-					result[selectionItem.key] = null;
+function ig(e, t, n, r = !1, i = !1) {
+	let a = t ? 1 : e.length, o = n.map(({ field: e, codec: t, arrayDimensions: n }) => {
+		let r;
+		return r = f(e, h) ? e : f(e, O) ? e.decoder : f(e, O.Aliased) ? e.sql.decoder : f(e, w) || f(e, ve) ? de : e.getSQL().decoder, r.mapFromDriverValue.isNoop ? t ? (e) => t(e, n) : void 0 : t ? (e) => r.mapFromDriverValue(t(e, n)) : (e) => r.mapFromDriverValue(e);
+	}), s = Array.from({ length: a });
+	for (let c = 0; c < a; ++c) {
+		let a = t ? e : e[c], l = {};
+		for (let e = 0; e < n.length; ++e) {
+			let t = n[e], s = a[e];
+			if (t.selection) {
+				if (s === null) {
+					l[t.key] = null;
 					continue;
 				}
-				if (parseJson) {
-					value = JSON.parse(value);
-					if (value === null) {
-						result[selectionItem.key] = null;
+				if (r) {
+					if (s = JSON.parse(s), s === null) {
+						l[t.key] = null;
 						continue;
 					}
-				} else if (parseJsonIfString && typeof value === "string") value = JSON.parse(value);
-				if (selectionItem.isArray) mapRelationalRow(value, false, selectionItem.selection, false, parseJsonIfString);
-				else mapRelationalRow(value, true, selectionItem.selection, false, parseJsonIfString);
-				result[selectionItem.key] = value;
+				} else i && typeof s == "string" && (s = JSON.parse(s));
+				t.isArray ? rg(s, !1, t.selection, !1, i) : rg(s, !0, t.selection, !1, i), l[t.key] = s;
 				continue;
 			}
-			if (value === null) {
-				result[selectionItem.key] = null;
+			if (s === null) {
+				l[t.key] = null;
 				continue;
 			}
-			const decoder = decoders[selectionItemIdx];
-			result[selectionItem.key] = decoder ? decoder(value) : value;
+			let c = o[e];
+			l[t.key] = c ? c(s) : s;
 		}
-		results[i] = result;
+		s[c] = l;
 	}
-	return isOne ? results[0] : results;
+	return t ? s[0] : s;
 }
-function makeDefaultRqbMapper({ selection, isFirst, parseJson, parseJsonIfString, rootJsonMappers, arrayModeRoot }) {
-	return ((rows) => {
-		if (isFirst && !rows[0]) return rows[0];
-		return arrayModeRoot ? mapRelationalRowFromArrays(isFirst ? rows[0] : rows, isFirst, selection, parseJson, parseJsonIfString) : mapRelationalRow(isFirst ? rows[0] : rows, isFirst, selection, parseJson, parseJsonIfString, rootJsonMappers);
-	});
+function ag({ selection: e, isFirst: t, parseJson: n, parseJsonIfString: r, rootJsonMappers: i, arrayModeRoot: a }) {
+	return ((o) => t && !o[0] ? o[0] : a ? ig(t ? o[0] : o, t, e, n, r) : rg(t ? o[0] : o, t, e, n, r, i));
 }
-function makeJitRqbMapperInner(selection, rowExpr, selectionVar, parseJson, parseJsonIfString, useJsonMappers, preFn, counter, accessByIdx) {
-	const bodyStmts = [];
-	const literalEntries = [];
-	let hasWork = false;
-	const fieldVars = selection.map(() => `c${counter.n++}`);
-	const destructurePieces = selection.map((item, idx) => accessByIdx ? fieldVars[idx] : `${JSON.stringify(item.key)}: ${fieldVars[idx]}`);
-	bodyStmts.push(accessByIdx ? `let [ ${destructurePieces.join(", ")} ] = ${rowExpr};` : `let { ${destructurePieces.join(", ")} } = ${rowExpr};`);
-	for (const [idx, { field, key, codec, isArray, selection: innerSelection, arrayDimensions }] of selection.entries()) {
-		const sel = `${selectionVar}[${idx}]`;
-		const keyStr = JSON.stringify(key);
-		const slot = fieldVars[idx];
-		if (innerSelection) {
-			if (parseJson) {
-				bodyStmts.push(`if (${slot} !== null) ${slot} = JSON.parse(${slot});`);
-				hasWork = true;
-			} else if (parseJsonIfString) {
-				bodyStmts.push(`if (typeof ${slot} === 'string') ${slot} = JSON.parse(${slot});`);
-				hasWork = true;
-			}
-			const nestedSelVar = `s${counter.n++}`;
-			const savedPreFnLen = preFn.length;
-			preFn.push(`const { selection: ${nestedSelVar} } = ${sel};`);
-			if (isArray) {
-				const j = `j${counter.n++}`;
-				const inner = makeJitRqbMapperInner(innerSelection, `${slot}[${j}]`, nestedSelVar, false, parseJsonIfString, true, preFn, counter, false);
-				if (inner.hasWork) {
-					hasWork = true;
-					bodyStmts.push(`if (${slot} !== null) {`);
-					bodyStmts.push(`\tfor (let ${j} = 0; ${j} < ${slot}.length; ++${j}) {`);
-					for (const s of inner.bodyStmts) bodyStmts.push(`\t\t${s}`);
-					bodyStmts.push(`\t\t${slot}[${j}] = ${inner.literal};`);
-					bodyStmts.push(`\t}`);
-					bodyStmts.push(`}`);
-				} else preFn.splice(savedPreFnLen, 1);
+function og(e, t, n, r, i, a, o, s, c) {
+	let l = [], u = [], d = !1, p = e.map(() => `c${s.n++}`), m = e.map((e, t) => c ? p[t] : `${JSON.stringify(e.key)}: ${p[t]}`);
+	l.push(c ? `let [ ${m.join(", ")} ] = ${t};` : `let { ${m.join(", ")} } = ${t};`);
+	for (let [t, { field: c, key: m, codec: g, isArray: _, selection: v, arrayDimensions: y }] of e.entries()) {
+		let e = `${n}[${t}]`, b = JSON.stringify(m), x = p[t];
+		if (v) {
+			r ? (l.push(`if (${x} !== null) ${x} = JSON.parse(${x});`), d = !0) : i && (l.push(`if (typeof ${x} === 'string') ${x} = JSON.parse(${x});`), d = !0);
+			let t = `s${s.n++}`, n = o.length;
+			if (o.push(`const { selection: ${t} } = ${e};`), _) {
+				let e = `j${s.n++}`, r = og(v, `${x}[${e}]`, t, !1, i, !0, o, s, !1);
+				if (r.hasWork) {
+					d = !0, l.push(`if (${x} !== null) {`), l.push(`\tfor (let ${e} = 0; ${e} < ${x}.length; ++${e}) {`);
+					for (let e of r.bodyStmts) l.push(`\t\t${e}`);
+					l.push(`\t\t${x}[${e}] = ${r.literal};`), l.push("	}"), l.push("}");
+				} else o.splice(n, 1);
 			} else {
-				const inner = makeJitRqbMapperInner(innerSelection, slot, nestedSelVar, false, parseJsonIfString, true, preFn, counter, false);
-				if (inner.hasWork) {
-					hasWork = true;
-					bodyStmts.push(`if (${slot} !== null) {`);
-					for (const s of inner.bodyStmts) bodyStmts.push(`\t${s}`);
-					bodyStmts.push(`\t${slot} = ${inner.literal};`);
-					bodyStmts.push(`}`);
-				} else preFn.splice(savedPreFnLen, 1);
+				let e = og(v, x, t, !1, i, !0, o, s, !1);
+				if (e.hasWork) {
+					d = !0, l.push(`if (${x} !== null) {`);
+					for (let t of e.bodyStmts) l.push(`\t${t}`);
+					l.push(`\t${x} = ${e.literal};`), l.push("}");
+				} else o.splice(n, 1);
 			}
-			literalEntries.push(`${keyStr}: ${slot}`);
+			u.push(`${b}: ${x}`);
 			continue;
 		}
-		let decoderExpr = "";
-		let destructure = "";
-		let bypassCodecs = false;
-		if (is(field, Column)) {
-			if (useJsonMappers && field.mapFromJsonValue) {
-				bypassCodecs = true;
-				const id = counter.n++;
-				destructure = `field: dec${id}`;
-				decoderExpr = `dec${id}.mapFromJsonValue`;
-			} else if (!field.mapFromDriverValue.isNoop) {
-				const id = counter.n++;
-				destructure = `field: dec${id}`;
-				decoderExpr = `dec${id}.mapFromDriverValue`;
+		let S = "", C = "", ee = !1;
+		if (f(c, h)) {
+			if (a && c.mapFromJsonValue) {
+				ee = !0;
+				let e = s.n++;
+				C = `field: dec${e}`, S = `dec${e}.mapFromJsonValue`;
+			} else if (!c.mapFromDriverValue.isNoop) {
+				let e = s.n++;
+				C = `field: dec${e}`, S = `dec${e}.mapFromDriverValue`;
 			}
-		} else if (is(field, SQL)) {
-			if (useJsonMappers && field.decoder.mapFromJsonValue) {
-				bypassCodecs = true;
-				const id = counter.n++;
-				destructure = `field: { decoder: dec${id} }`;
-				decoderExpr = `dec${id}.mapFromJsonValue`;
-			} else if (!field.decoder.mapFromDriverValue.isNoop) {
-				const id = counter.n++;
-				destructure = `field: { decoder: dec${id} }`;
-				decoderExpr = `dec${id}.mapFromDriverValue`;
+		} else if (f(c, O)) {
+			if (a && c.decoder.mapFromJsonValue) {
+				ee = !0;
+				let e = s.n++;
+				C = `field: { decoder: dec${e} }`, S = `dec${e}.mapFromJsonValue`;
+			} else if (!c.decoder.mapFromDriverValue.isNoop) {
+				let e = s.n++;
+				C = `field: { decoder: dec${e} }`, S = `dec${e}.mapFromDriverValue`;
 			}
-		} else if (is(field, SQL.Aliased)) {
-			if (useJsonMappers && field.sql.decoder.mapFromJsonValue) {
-				bypassCodecs = true;
-				const id = counter.n++;
-				destructure = `field: { sql: { decoder: dec${id} } }`;
-				decoderExpr = `dec${id}.mapFromJsonValue`;
-			} else if (!field.sql.decoder.mapFromDriverValue.isNoop) {
-				const id = counter.n++;
-				destructure = `field: { sql: { decoder: dec${id} } }`;
-				decoderExpr = `dec${id}.mapFromDriverValue`;
+		} else if (f(c, O.Aliased)) {
+			if (a && c.sql.decoder.mapFromJsonValue) {
+				ee = !0;
+				let e = s.n++;
+				C = `field: { sql: { decoder: dec${e} } }`, S = `dec${e}.mapFromJsonValue`;
+			} else if (!c.sql.decoder.mapFromDriverValue.isNoop) {
+				let e = s.n++;
+				C = `field: { sql: { decoder: dec${e} } }`, S = `dec${e}.mapFromDriverValue`;
 			}
-		} else if (is(field, Table) || is(field, View)) {} else {
-			const sqlExpr = field.getSQL();
-			if (useJsonMappers && sqlExpr.decoder.mapFromJsonValue) {
-				bypassCodecs = true;
-				const id = counter.n++;
-				preFn.push(`const dec${id} = ${sel}.field.getSQL().decoder;`);
-				decoderExpr = `dec${id}.mapFromJsonValue`;
-			} else if (!sqlExpr.decoder.mapFromDriverValue.isNoop) {
-				const id = counter.n++;
-				preFn.push(`const dec${id} = ${sel}.field.getSQL().decoder;`);
-				decoderExpr = `dec${id}.mapFromDriverValue`;
+		} else if (!(f(c, w) || f(c, ve))) {
+			let t = c.getSQL();
+			if (a && t.decoder.mapFromJsonValue) {
+				ee = !0;
+				let t = s.n++;
+				o.push(`const dec${t} = ${e}.field.getSQL().decoder;`), S = `dec${t}.mapFromJsonValue`;
+			} else if (!t.decoder.mapFromDriverValue.isNoop) {
+				let t = s.n++;
+				o.push(`const dec${t} = ${e}.field.getSQL().decoder;`), S = `dec${t}.mapFromDriverValue`;
 			}
 		}
-		let codecVar = "";
-		if (!bypassCodecs && codec) codecVar = `codec${counter.n++}`;
-		if (destructure || codecVar) {
-			const parts = [];
-			if (destructure) parts.push(destructure);
-			if (codecVar) parts.push(`codec: ${codecVar}`);
-			preFn.push(`const { ${parts.join(", ")} } = ${sel};`);
+		let te = "";
+		if (!ee && g && (te = `codec${s.n++}`), C || te) {
+			let t = [];
+			C && t.push(C), te && t.push(`codec: ${te}`), o.push(`const { ${t.join(", ")} } = ${e};`);
 		}
-		if (decoderExpr || codecVar) {
-			hasWork = true;
-			let decoded = slot;
-			if (codecVar) decoded = `${codecVar}(${decoded}, ${arrayDimensions})`;
-			if (decoderExpr) decoded = `${decoderExpr}(${decoded})`;
-			literalEntries.push(`${keyStr}: ${slot} === null ? null : ${decoded}`);
-		} else literalEntries.push(`${keyStr}: ${slot}`);
+		if (S || te) {
+			d = !0;
+			let e = x;
+			te && (e = `${te}(${e}, ${y})`), S && (e = `${S}(${e})`), u.push(`${b}: ${x} === null ? null : ${e}`);
+		} else u.push(`${b}: ${x}`);
 	}
 	return {
-		bodyStmts,
-		literal: `{ ${literalEntries.join(", ")} }`,
-		hasWork
+		bodyStmts: l,
+		literal: `{ ${u.join(", ")} }`,
+		hasWork: d
 	};
 }
-function makeJitRqbMapper({ selection, isFirst, parseJson, parseJsonIfString, rootJsonMappers, arrayModeRoot }) {
-	const preFn = [];
-	const inner = makeJitRqbMapperInner(selection, "row", "selection", parseJson, parseJsonIfString, arrayModeRoot ? false : rootJsonMappers, preFn, { n: 0 }, !!arrayModeRoot);
-	const lines = [];
-	lines.push(`\t"use strict";
-	const { selection } = this;`);
-	for (const p of preFn) lines.push(`\t${p}`);
-	if (arrayModeRoot) if (isFirst) {
-		lines.push(`\tconst row = rows[0];`);
-		lines.push(`\tif (!row) return undefined;`);
-		for (const s of inner.bodyStmts) lines.push(`\t${s}`);
-		lines.push(`\treturn ${inner.literal};`);
+function sg({ selection: e, isFirst: t, parseJson: n, parseJsonIfString: r, rootJsonMappers: i, arrayModeRoot: a }) {
+	let o = [], s = og(e, "row", "selection", n, r, a ? !1 : i, o, { n: 0 }, !!a), c = [];
+	c.push("	\"use strict\";\n	const { selection } = this;");
+	for (let e of o) c.push(`\t${e}`);
+	if (a) if (t) {
+		c.push("	const row = rows[0];"), c.push("	if (!row) return undefined;");
+		for (let e of s.bodyStmts) c.push(`\t${e}`);
+		c.push(`\treturn ${s.literal};`);
 	} else {
-		lines.push(`\tconst { length } = rows;`);
-		lines.push(`\tconst mapped = Array.from({ length });`);
-		lines.push(`\tfor (let i = 0; i < length; ++i) {`);
-		lines.push(`\t\tconst row = rows[i];`);
-		for (const s of inner.bodyStmts) lines.push(`\t\t${s}`);
-		lines.push(`\t\tmapped[i] = ${inner.literal};`);
-		lines.push(`\t}`);
-		lines.push(`\treturn mapped;`);
+		c.push("	const { length } = rows;"), c.push("	const mapped = Array.from({ length });"), c.push("	for (let i = 0; i < length; ++i) {"), c.push("		const row = rows[i];");
+		for (let e of s.bodyStmts) c.push(`\t\t${e}`);
+		c.push(`\t\tmapped[i] = ${s.literal};`), c.push("	}"), c.push("	return mapped;");
 	}
-	else if (!inner.hasWork) lines.push(isFirst ? `\treturn rows[0];` : `\treturn rows;`);
-	else if (isFirst) {
-		lines.push(`\tconst row = rows[0];`);
-		lines.push(`\tif (!row) return undefined;`);
-		for (const s of inner.bodyStmts) lines.push(`\t${s}`);
-		lines.push(`\trows[0] = ${inner.literal};`);
-		lines.push(`\treturn rows[0];`);
+	else if (!s.hasWork) c.push(t ? "	return rows[0];" : "	return rows;");
+	else if (t) {
+		c.push("	const row = rows[0];"), c.push("	if (!row) return undefined;");
+		for (let e of s.bodyStmts) c.push(`\t${e}`);
+		c.push(`\trows[0] = ${s.literal};`), c.push("	return rows[0];");
 	} else {
-		lines.push(`\tfor (let i = 0; i < rows.length; ++i) {`);
-		lines.push(`\t\tconst row = rows[i];`);
-		for (const s of inner.bodyStmts) lines.push(`\t\t${s}`);
-		lines.push(`\t\trows[i] = ${inner.literal};`);
-		lines.push(`\t}`);
-		lines.push(`\treturn rows;`);
+		c.push("	for (let i = 0; i < rows.length; ++i) {"), c.push("		const row = rows[i];");
+		for (let e of s.bodyStmts) c.push(`\t\t${e}`);
+		c.push(`\t\trows[i] = ${s.literal};`), c.push("	}"), c.push("	return rows;");
 	}
-	lines.push("	//# sourceURL=drizzle:jit-relational-query-mapper");
-	const compiled = lines.join("\n");
-	return Object.assign(new FnConstructor("rows", compiled).bind({ selection }), { body: `function jitRqbMapper (rows) {\n${compiled}\n}` });
+	c.push("	//# sourceURL=drizzle:jit-relational-query-mapper");
+	let l = c.join("\n");
+	return Object.assign(new be("rows", l).bind({ selection: e }), { body: `function jitRqbMapper (rows) {\n${l}\n}` });
 }
-/** @internal */
-function fieldSelectionToSQL(table, target) {
-	const field = table[TableColumns][target];
-	return field ? is(field, Column) ? field : is(field, SQL.Aliased) ? sql`${table}.${sql.identifier(field.fieldAlias)}` : sql`${table}.${sql.identifier(target)}` : sql`${table}.${sql.identifier(target)}`;
+function cg(e, t) {
+	let n = e[y][t];
+	return n ? f(n, h) ? n : f(n, O.Aliased) ? k`${e}.${k.identifier(n.fieldAlias)}` : k`${e}.${k.identifier(t)}` : k`${e}.${k.identifier(t)}`;
 }
-function relationsFieldFilterToSQL(column, filter) {
-	if (typeof filter !== "object" || is(filter, Placeholder)) return eq(column, filter);
-	const entries = Object.entries(filter);
-	if (!entries.length) return void 0;
-	const parts = [];
-	for (const [target, value] of entries) {
-		if (value === void 0) continue;
-		switch (target) {
-			case "NOT": {
-				const res = relationsFieldFilterToSQL(column, value);
-				if (!res) continue;
-				parts.push(not(res));
+function lg(e, t) {
+	if (typeof t != "object" || f(t, he)) return Dh(e, t);
+	let n = Object.entries(t);
+	if (!n.length) return;
+	let r = [];
+	for (let [t, i] of n) if (i !== void 0) switch (t) {
+		case "NOT": {
+			let t = lg(e, i);
+			if (!t) continue;
+			r.push(jh(t));
+			continue;
+		}
+		case "OR":
+			if (!i.length) continue;
+			r.push(Ah(...i.map((t) => lg(e, t))));
+			continue;
+		case "AND":
+			if (!i.length) continue;
+			r.push(kh(...i.map((t) => lg(e, t))));
+			continue;
+		case "isNotNull":
+		case "isNull":
+			if (!i) continue;
+			r.push(tg[t](e));
+			continue;
+		case "in":
+			r.push(tg.inArray(e, i));
+			continue;
+		case "notIn":
+			r.push(tg.notInArray(e, i));
+			continue;
+		default:
+			r.push(tg[t](e, i));
+			continue;
+	}
+	if (r.length) return kh(...r);
+}
+function ug(e, t, n = {}, r = {}, i = 0) {
+	let a = Object.entries(t);
+	if (!a.length) return;
+	let o = [];
+	for (let [t, s] of a) if (s !== void 0) switch (t) {
+		case "RAW": {
+			let t = typeof s == "function" ? s(e, tg) : s.getSQL();
+			o.push(t);
+			continue;
+		}
+		case "OR":
+			if (!s?.length) continue;
+			o.push(Ah(...s.map((t) => ug(e, t, n, r, i))));
+			continue;
+		case "AND":
+			if (!s?.length) continue;
+			o.push(kh(...s.map((t) => ug(e, t, n, r, i))));
+			continue;
+		case "NOT": {
+			if (s === void 0) continue;
+			let t = ug(e, s, n, r, i);
+			if (!t) continue;
+			o.push(jh(t));
+			continue;
+		}
+		default: {
+			if (e[y][t]) {
+				let n = lg(cg(e, t), s);
+				n && o.push(n);
 				continue;
 			}
-			case "OR":
-				if (!value.length) continue;
-				parts.push(or(...value.map((subFilter) => relationsFieldFilterToSQL(column, subFilter))));
-				continue;
-			case "AND":
-				if (!value.length) continue;
-				parts.push(and(...value.map((subFilter) => relationsFieldFilterToSQL(column, subFilter))));
-				continue;
-			case "isNotNull":
-			case "isNull":
-				if (!value) continue;
-				parts.push(operators[target](column));
-				continue;
-			case "in":
-				parts.push(operators.inArray(column, value));
-				continue;
-			case "notIn":
-				parts.push(operators.notInArray(column, value));
-				continue;
-			default:
-				parts.push(operators[target](column, value));
-				continue;
+			let a = n[t];
+			if (!a) throw new wh({ message: `Unknown relational filter field: "${t}"` });
+			let c = fh(a.targetTable, `f${i}`), l = a.throughTable ? fh(a.throughTable, `ft${i}`) : void 0, u = r[a.targetTableName], { filter: d, joinCondition: f } = pg(a, e, c, l), p = kh(d, typeof s == "boolean" ? void 0 : ug(c, s, u.relations, r, i + 1)), m = l ? k`(select * from ${mg(c)} inner join ${mg(l)} on ${f}${k` where ${p}`.if(p)} limit 1)` : k`(select * from ${mg(c)}${k` where ${p}`.if(p)} limit 1)`;
+			p && o.push((s ? Bh : Vh)(m));
 		}
 	}
-	if (!parts.length) return void 0;
-	return and(...parts);
+	return kh(...o);
 }
-function relationsFilterToSQL(table, filter, tableRelations = {}, tablesRelations = {}, depth = 0) {
-	const entries = Object.entries(filter);
-	if (!entries.length) return void 0;
-	const parts = [];
-	for (const [target, value] of entries) {
-		if (value === void 0) continue;
-		switch (target) {
-			case "RAW": {
-				const processed = typeof value === "function" ? value(table, operators) : value.getSQL();
-				parts.push(processed);
-				continue;
-			}
-			case "OR":
-				if (!value?.length) continue;
-				parts.push(or(...value.map((subFilter) => relationsFilterToSQL(table, subFilter, tableRelations, tablesRelations, depth))));
-				continue;
-			case "AND":
-				if (!value?.length) continue;
-				parts.push(and(...value.map((subFilter) => relationsFilterToSQL(table, subFilter, tableRelations, tablesRelations, depth))));
-				continue;
-			case "NOT": {
-				if (value === void 0) continue;
-				const built = relationsFilterToSQL(table, value, tableRelations, tablesRelations, depth);
-				if (!built) continue;
-				parts.push(not(built));
-				continue;
-			}
-			default: {
-				if (table[TableColumns][target]) {
-					const colFilter = relationsFieldFilterToSQL(fieldSelectionToSQL(table, target), value);
-					if (colFilter) parts.push(colFilter);
-					continue;
-				}
-				const relation = tableRelations[target];
-				if (!relation) throw new DrizzleError({ message: `Unknown relational filter field: "${target}"` });
-				const targetTable = aliasedTable(relation.targetTable, `f${depth}`);
-				const throughTable = relation.throughTable ? aliasedTable(relation.throughTable, `ft${depth}`) : void 0;
-				const targetConfig = tablesRelations[relation.targetTableName];
-				const { filter: relationFilter, joinCondition } = relationToSQL(relation, table, targetTable, throughTable);
-				const filter = and(relationFilter, typeof value === "boolean" ? void 0 : relationsFilterToSQL(targetTable, value, targetConfig.relations, tablesRelations, depth + 1));
-				const subquery = throughTable ? sql`(select * from ${getTableAsAliasSQL(targetTable)} inner join ${getTableAsAliasSQL(throughTable)} on ${joinCondition}${sql` where ${filter}`.if(filter)} limit 1)` : sql`(select * from ${getTableAsAliasSQL(targetTable)}${sql` where ${filter}`.if(filter)} limit 1)`;
-				if (filter) parts.push((value ? exists : notExists)(subquery));
-			}
-		}
+function dg(e, t) {
+	if (typeof t == "function") {
+		let n = t(e, ng);
+		return f(n, O) ? n : Array.isArray(n) ? n.length ? k.join(n.map((e) => f(e, O) ? e : Zh(e)), k`, `) : void 0 : f(n, h) ? Zh(n) : void 0;
 	}
-	return and(...parts);
+	let n = Object.entries(t).filter(([e, t]) => t);
+	if (n.length) return k.join(n.map(([t, n]) => (n === "asc" ? Zh : Qh)(cg(e, t))), k`, `);
 }
-function relationsOrderToSQL(table, orders) {
-	if (typeof orders === "function") {
-		const data = orders(table, orderByOperators);
-		return is(data, SQL) ? data : Array.isArray(data) ? data.length ? sql.join(data.map((o) => is(o, SQL) ? o : asc(o)), sql`, `) : void 0 : is(data, Column) ? asc(data) : void 0;
-	}
-	const entries = Object.entries(orders).filter(([_, value]) => value);
-	if (!entries.length) return void 0;
-	return sql.join(entries.map(([target, value]) => (value === "asc" ? asc : desc)(fieldSelectionToSQL(table, target))), sql`, `);
-}
-function relationExtrasToSQL(table, extras, codecs, inJson) {
-	const subqueries = [];
-	const selection = [];
-	for (const [key, field] of Object.entries(extras)) {
-		if (!field) continue;
-		const subq = (typeof field === "function" ? field(table, { sql: operators.sql }) : field).getSQL();
-		const column = codecs ? getColumnFromDecoder(subq) : void 0;
-		const query = column && (!inJson || !column.jsonSelectIdentifier) ? sql`${codecs.apply(column, inJson ? "castInJson" : "cast", sql`(${subq})`)} as ${sql.identifier(key)}` : sql`(${subq}) as ${sql.identifier(key)}`;
-		query.decoder = subq.decoder;
-		subqueries.push(query);
-		selection.push(column && (!inJson || !column.mapFromJsonValue) ? {
-			key,
-			field: query,
-			codec: codecs.get(column, inJson ? "normalizeInJson" : "normalize"),
-			arrayDimensions: column.dimensions
+function fg(e, t, n, r) {
+	let i = [], a = [];
+	for (let [o, s] of Object.entries(t)) {
+		if (!s) continue;
+		let t = (typeof s == "function" ? s(e, { sql: tg.sql }) : s).getSQL(), c = n ? Ee(t) : void 0, l = c && (!r || !c.jsonSelectIdentifier) ? k`${n.apply(c, r ? "castInJson" : "cast", k`(${t})`)} as ${k.identifier(o)}` : k`(${t}) as ${k.identifier(o)}`;
+		l.decoder = t.decoder, i.push(l), a.push(c && (!r || !c.mapFromJsonValue) ? {
+			key: o,
+			field: l,
+			codec: n.get(c, r ? "normalizeInJson" : "normalize"),
+			arrayDimensions: c.dimensions
 		} : {
-			key,
-			field: query
+			key: o,
+			field: l
 		});
 	}
 	return {
-		sql: subqueries.length ? sql.join(subqueries, sql`, `) : void 0,
-		selection
+		sql: i.length ? k.join(i, k`, `) : void 0,
+		selection: a
 	};
 }
-function relationToSQL(relation, sourceTable, targetTable, throughTable) {
-	if (relation.through) {
-		const outerColumnWhere = relation.sourceColumns.map((s, i) => {
-			const t = relation.through.source[i];
-			return eq(sql`${sourceTable}.${sql.identifier(s.name)}`, sql`${throughTable}.${sql.identifier(is(t._.column, Column) ? t._.column.name : t._.key)}`);
-		});
-		const innerColumnWhere = relation.targetColumns.map((s, i) => {
-			const t = relation.through.target[i];
-			return eq(sql`${throughTable}.${sql.identifier(is(t._.column, Column) ? t._.column.name : t._.key)}`, sql`${targetTable}.${sql.identifier(s.name)}`);
+function pg(e, t, n, r) {
+	if (e.through) {
+		let i = e.sourceColumns.map((n, i) => {
+			let a = e.through.source[i];
+			return Dh(k`${t}.${k.identifier(n.name)}`, k`${r}.${k.identifier(f(a._.column, h) ? a._.column.name : a._.key)}`);
+		}), a = e.targetColumns.map((t, i) => {
+			let a = e.through.target[i];
+			return Dh(k`${r}.${k.identifier(f(a._.column, h) ? a._.column.name : a._.key)}`, k`${n}.${k.identifier(t.name)}`);
 		});
 		return {
-			filter: and(relation.where ? relationsFilterToSQL(relation.isReversed ? sourceTable : targetTable, relation.where) : void 0, ...outerColumnWhere),
-			joinCondition: and(...innerColumnWhere)
+			filter: kh(e.where ? ug(e.isReversed ? t : n, e.where) : void 0, ...i),
+			joinCondition: kh(...a)
 		};
 	}
-	return { filter: and(...relation.sourceColumns.map((s, i) => {
-		const t = relation.targetColumns[i];
-		return eq(sql`${sourceTable}.${sql.identifier(s.name)}`, sql`${targetTable}.${sql.identifier(t.name)}`);
-	}), relation.where ? relationsFilterToSQL(relation.isReversed ? sourceTable : targetTable, relation.where) : void 0) };
+	return { filter: kh(...e.sourceColumns.map((r, i) => {
+		let a = e.targetColumns[i];
+		return Dh(k`${t}.${k.identifier(r.name)}`, k`${n}.${k.identifier(a.name)}`);
+	}), e.where ? ug(e.isReversed ? t : n, e.where) : void 0) };
 }
-function getTableAsAliasSQL(table) {
-	return sql`${table[IsAlias] ? sql`${sql`${sql.identifier(table[TableSchema] ?? "")}.`.if(table[TableSchema])}${sql.identifier(table[OriginalName])} as ${table}` : table}`;
+function mg(e) {
+	return k`${e[C] ? k`${k`${k.identifier(e[v] ?? "")}.`.if(e[v])}${k.identifier(e[x])} as ${e}` : e}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/column-builder.js
-var ColumnBuilder = class {
-	static [entityKind] = "ColumnBuilder";
-	/** @internal */
-	config;
-	constructor(name, dataType, columnType) {
-		this.config = {
-			name,
-			keyAsName: name === "",
-			notNull: false,
-			default: void 0,
-			hasDefault: false,
-			primaryKey: false,
-			isUnique: false,
-			uniqueName: void 0,
-			uniqueType: void 0,
-			dataType,
-			columnType,
-			generated: void 0
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/dialect.js
+var hg = class {
+	static [d] = "SQLiteDialect";
+	mapperGenerators;
+	constructor(e) {
+		this.mapperGenerators = e?.useJitMappers ? {
+			rows: Se,
+			relationalRows: sg
+		} : {
+			rows: we,
+			relationalRows: ag
 		};
 	}
-	/**
-	* Changes the data type of the column. Commonly used with `json` columns. Also, useful for branded types.
-	*
-	* @example
-	* ```ts
-	* const users = pgTable('users', {
-	* 	id: integer('id').$type<UserId>().primaryKey(),
-	* 	details: json('details').$type<UserDetails>().notNull(),
-	* });
-	* ```
-	*/
-	$type() {
-		return this;
+	escapeName(e) {
+		return `"${e.replace(/"/g, "\"\"")}"`;
 	}
-	/**
-	* Adds a `not null` clause to the column definition.
-	*
-	* Affects the `select` model of the table - columns *without* `not null` will be nullable on select.
-	*/
-	notNull() {
-		this.config.notNull = true;
-		return this;
+	escapeParam(e) {
+		return "?";
 	}
-	/**
-	* Adds a `default <value>` clause to the column definition.
-	*
-	* Affects the `insert` model of the table - columns *with* `default` are optional on insert.
-	*
-	* If you need to set a dynamic default value, use {@link $defaultFn} instead.
-	*/
-	default(value) {
-		this.config.default = value;
-		this.config.hasDefault = true;
-		return this;
+	escapeString(e) {
+		return `'${e.replace(/'/g, "''")}'`;
 	}
-	/**
-	* Adds a dynamic default value to the column.
-	* The function will be called when the row is inserted, and the returned value will be used as the column value.
-	*
-	* **Note:** This value does not affect the `drizzle-kit` behavior, it is only used at runtime in `drizzle-orm`.
-	*/
-	$defaultFn(fn) {
-		this.config.defaultFn = fn;
-		this.config.hasDefault = true;
-		return this;
+	buildWithCTE(e) {
+		if (!e?.length) return;
+		let t = [k`with `];
+		for (let [n, r] of e.entries()) t.push(k`${k.identifier(r._.alias)} as (${r._.sql})`), n < e.length - 1 && t.push(k`, `);
+		return t.push(k` `), k.join(t);
 	}
-	/**
-	* Alias for {@link $defaultFn}.
-	*/
-	$default = this.$defaultFn;
-	/**
-	* Adds a dynamic update value to the column.
-	* The function will be called when the row is updated, and the returned value will be used as the column value if none is provided.
-	* If no `default` (or `$defaultFn`) value is provided, the function will be called when the row is inserted as well, and the returned value will be used as the column value.
-	*
-	* **Note:** This value does not affect the `drizzle-kit` behavior, it is only used at runtime in `drizzle-orm`.
-	*/
-	$onUpdateFn(fn) {
-		this.config.onUpdateFn = fn;
-		this.config.hasDefault = true;
-		return this;
+	buildDeleteQuery({ table: e, where: t, returning: n, withList: r, limit: i, orderBy: a }) {
+		let o = this.buildWithCTE(r), s = n ? k` returning ${this.buildSelection(n, { isSingleTable: !0 })}` : void 0;
+		return k`${o}delete from ${e}${t ? k` where ${t}` : void 0}${s}${this.buildOrderBy(a)}${this.buildLimit(i)}`;
 	}
-	/**
-	* Alias for {@link $onUpdateFn}.
-	*/
-	$onUpdate = this.$onUpdateFn;
-	/**
-	* Adds a `primary key` clause to the column definition. This implicitly makes the column `not null`.
-	*
-	* In SQLite, `integer primary key` implicitly makes the column auto-incrementing.
-	*/
-	primaryKey() {
-		this.config.primaryKey = true;
-		this.config.notNull = true;
-		return this;
+	buildUpdateSet(e, t) {
+		let n = e[w.Symbol.Columns], r = Object.keys(n).filter((e) => t[e] !== void 0 || n[e]?.onUpdateFn !== void 0), i = r.length;
+		return k.join(r.flatMap((e, r) => {
+			let a = n[e], o = a.onUpdateFn?.(), s = t[e] ?? (f(o, O) ? o : k.param(o, a)), c = k`${k.identifier(a.name)} = ${s}`;
+			return r < i - 1 ? [c, k.raw(", ")] : [c];
+		}));
 	}
-	/** @internal Sets the name of the column to the key within the table definition if a name was not given. */
-	setName(name, casingFn) {
-		if (this.config.name !== "") return;
-		this.config.name = casingFn(name);
+	buildUpdateQuery({ table: e, set: t, where: n, returning: r, withList: i, joins: a, from: o, limit: s, orderBy: c }) {
+		let l = this.buildWithCTE(i), u = this.buildUpdateSet(e, t), d = o && k.join([k.raw(" from "), this.buildFromTable(o)]), f = this.buildJoins(a), p = r ? k` returning ${this.buildSelection(r, { isSingleTable: !0 })}` : void 0;
+		return k`${l}update ${e} set ${u}${d}${f}${n ? k` where ${n}` : void 0}${p}${this.buildOrderBy(c)}${this.buildLimit(s)}`;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/logger.js
-var ConsoleLogWriter = class {
-	static [entityKind] = "ConsoleLogWriter";
-	write(message) {
-		console.log(message);
-	}
-};
-var DefaultLogger = class {
-	static [entityKind] = "DefaultLogger";
-	writer;
-	constructor(config) {
-		this.writer = config?.writer ?? new ConsoleLogWriter();
-	}
-	logQuery(query, params) {
-		const stringifiedParams = params.map((p) => {
-			try {
-				return JSON.stringify(p);
-			} catch {
-				return String(p);
+	buildSelection(e, { isSingleTable: t = !1 } = {}) {
+		let n = e.length, r = e.flatMap(({ field: e }, r) => {
+			let i = [];
+			if (f(e, O.Aliased)) if (e.isSelectionField) !t && e.origin !== void 0 && i.push(k.identifier(e.origin), k.raw(".")), i.push(k.identifier(e.fieldAlias));
+			else {
+				let n = e.sql;
+				if (t) {
+					let e = new O(n.queryChunks.map((e) => f(e, h) ? k.identifier(e.name) : e));
+					i.push(n.shouldInlineParams ? e.inlineParams() : e);
+				} else i.push(n);
+				i.push(k` as ${k.identifier(e.fieldAlias)}`);
 			}
+			else if (f(e, O)) {
+				let n = e;
+				if (t) {
+					let e = new O(n.queryChunks.map((e) => f(e, h) ? k.identifier(e.name) : e));
+					i.push(n.shouldInlineParams ? e.inlineParams() : e);
+				} else i.push(n);
+			} else f(e, h) ? e.columnType === "SQLiteNumericBigInt" || e.columnType === "SQLiteNumeric" ? t ? i.push(e.isAlias ? k`cast(${k.identifier(mh(e).name)} as text) as ${e}` : k`cast(${k.identifier(e.name)} as text)`) : i.push(e.isAlias ? k`cast(${mh(e)} as text) as ${e}` : k`cast(${e} as text)`) : t ? i.push(e.isAlias ? k`${k.identifier(mh(e).name)} as ${e}` : k.identifier(e.name)) : i.push(e.isAlias ? k`${mh(e)} as ${e}` : e) : f(e, T) && (e._.isWith ? i.push(e) : i.push(k`(${e._.sql}) ${k.identifier(e._.alias)}`));
+			return r < n - 1 && i.push(k`, `), i;
 		});
-		const paramsStr = stringifiedParams.length ? ` -- params: [${stringifiedParams.join(", ")}]` : "";
-		this.writer.write(`Query: ${query}${paramsStr}`);
+		return k.join(r);
 	}
-};
-var NoopLogger = class {
-	static [entityKind] = "NoopLogger";
-	logQuery() {}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/count.js
-var SQLiteCountBuilder = class SQLiteCountBuilder extends SQL {
-	static [entityKind] = "SQLiteCountBuilder";
+	buildJoins(e) {
+		if (!e || e.length === 0) return;
+		let t = [];
+		if (e) for (let [n, r] of e.entries()) {
+			n === 0 && t.push(k` `);
+			let i = r.table, a = r.on ? k` on ${r.on}` : void 0;
+			if (f(i, nh)) {
+				let e = i[nh.Symbol.Name], n = i[nh.Symbol.Schema], o = i[nh.Symbol.OriginalName], s = e === o ? void 0 : r.alias;
+				t.push(k`${k.raw(r.joinType)} join ${n ? k`${k.identifier(n)}.` : void 0}${k.identifier(o)}${s && k` ${k.identifier(s)}`}${a}`);
+			} else t.push(k`${k.raw(r.joinType)} join ${i}${a}`);
+			n < e.length - 1 && t.push(k` `);
+		}
+		return k.join(t);
+	}
+	buildLimit(e) {
+		return typeof e == "object" || typeof e == "number" && e >= 0 ? k` limit ${e}` : void 0;
+	}
+	buildOrderBy(e) {
+		let t = [];
+		if (e) for (let [n, r] of e.entries()) t.push(r), n < e.length - 1 && t.push(k`, `);
+		return t.length > 0 ? k` order by ${k.join(t)}` : void 0;
+	}
+	buildFromTable(e) {
+		if (f(e, w) && e[w.Symbol.IsAlias]) return k`${k`${k.identifier(e[w.Symbol.Schema] ?? "")}.`.if(e[w.Symbol.Schema])}${k.identifier(e[w.Symbol.OriginalName])} ${k.identifier(e[w.Symbol.Name])}`;
+		if (f(e, ve) && e[E].isAlias) {
+			let t = k`${k.identifier(e[E].originalName)}`;
+			return e[E].schema && (t = k`${k.identifier(e[E].schema)}.${t}`), k`${t} ${k.identifier(e[E].name)}`;
+		}
+		return e;
+	}
+	buildSelectQuery({ withList: e, fields: t, fieldsFlat: n, where: r, having: i, table: a, joins: o, orderBy: s, groupBy: c, limit: l, offset: u, distinct: d, setOperators: p }) {
+		let m = n ?? Te(t);
+		for (let e of m) if (f(e.field, h) && re(e.field.table) !== (f(a, T) ? a._.alias : f(a, sh) ? a[E].name : f(a, O) ? void 0 : re(a)) && !((e) => o?.some(({ alias: t }) => t === (e[w.Symbol.IsAlias] ? re(e) : e[w.Symbol.BaseName])))(e.field.table)) {
+			let t = re(e.field.table);
+			throw Error(`Your "${e.path.join("->")}" field references a column "${t}"."${e.field.name}", but the table "${t}" is not part of the query! Did you forget to join it?`);
+		}
+		let g = !o || o.length === 0, _ = this.buildWithCTE(e), v = d ? k` distinct` : void 0, y = this.buildSelection(m, { isSingleTable: g }), b = this.buildFromTable(a), x = this.buildJoins(o), S = r ? k` where ${r}` : void 0, C = i ? k` having ${i}` : void 0, ee = [];
+		if (c) for (let [e, t] of c.entries()) ee.push(t), e < c.length - 1 && ee.push(k`, `);
+		let te = k`${_}select${v} ${y} from ${b}${x}${S}${ee.length > 0 ? k` group by ${k.join(ee)}` : void 0}${C}${this.buildOrderBy(s)}${this.buildLimit(l)}${u ? k` offset ${u}` : void 0}`;
+		return p.length > 0 ? this.buildSetOperations(te, p) : te;
+	}
+	buildSetOperations(e, t) {
+		let [n, ...r] = t;
+		if (!n) throw Error("Cannot pass undefined values to any set operator");
+		return r.length === 0 ? this.buildSetOperationQuery({
+			leftSelect: e,
+			setOperator: n
+		}) : this.buildSetOperations(this.buildSetOperationQuery({
+			leftSelect: e,
+			setOperator: n
+		}), r);
+	}
+	buildSetOperationQuery({ leftSelect: e, setOperator: { type: t, isAll: n, rightSelect: r, limit: i, orderBy: a, offset: o } }) {
+		let s = k`${e.getSQL()} `, c = k`${r.getSQL()}`, l;
+		if (a && a.length > 0) {
+			let e = [];
+			for (let t of a) if (f(t, hm)) e.push(k.identifier(t.name));
+			else if (f(t, O)) {
+				for (let e = 0; e < t.queryChunks.length; e++) {
+					let n = t.queryChunks[e];
+					f(n, hm) && (t.queryChunks[e] = k.identifier(n.name));
+				}
+				e.push(k`${t}`);
+			} else e.push(k`${t}`);
+			l = k` order by ${k.join(e, k`, `)}`;
+		}
+		let u = typeof i == "object" || typeof i == "number" && i >= 0 ? k` limit ${i}` : void 0, d = k.raw(`${t} ${n ? "all " : ""}`), p = o ? k` offset ${o}` : void 0;
+		return k`${s}${d}${c}${l}${u}${p}`;
+	}
+	buildInsertQuery({ table: e, values: t, onConflict: n, returning: r, withList: i, select: a }) {
+		let o = [], s = e[w.Symbol.Columns], c = Object.entries(s), l = a && !f(t, O) ? Object.keys(t.getSelectedFields()).map((e) => [e, s[e]]) : c.filter(([e, t]) => !t.shouldDisableInsert()), u = l.map(([, e]) => k.identifier(e.name));
+		if (a) {
+			let e = t;
+			f(e, O) ? o.push(e) : o.push(e.getSQL());
+		} else {
+			let e = t;
+			o.push(k.raw("values "));
+			for (let [t, n] of e.entries()) {
+				let r = [];
+				for (let [e, t] of l) {
+					let i = n[e];
+					if (i === void 0 || f(i, pe) && i.value === void 0) {
+						let e;
+						if (t.default !== null && t.default !== void 0) e = f(t.default, O) ? t.default : k.param(t.default, t);
+						else if (t.defaultFn !== void 0) {
+							let n = t.defaultFn();
+							e = f(n, O) ? n : k.param(n, t);
+						} else if (!t.default && t.onUpdateFn !== void 0) {
+							let n = t.onUpdateFn();
+							e = f(n, O) ? n : k.param(n, t);
+						} else e = k`null`;
+						r.push(e);
+					} else r.push(i);
+				}
+				o.push(r), t < e.length - 1 && o.push(k`, `);
+			}
+		}
+		let d = this.buildWithCTE(i), p = k.join(o), m = r ? k` returning ${this.buildSelection(r, { isSingleTable: !0 })}` : void 0;
+		return k`${d}insert into ${e} ${u} ${p}${n?.length ? k.join(n) : void 0}${m}`;
+	}
+	sqlToQuery(e, t) {
+		return e.toQuery({
+			escapeName: this.escapeName,
+			escapeParam: this.escapeParam,
+			escapeString: this.escapeString,
+			invokeSource: t
+		});
+	}
+	nestedSelectionerror() {
+		throw new wh({ message: "Views with nested selections are not supported by the relational query builder" });
+	}
+	buildRqbColumn(e, t, n, r) {
+		if (f(t, h)) {
+			let i = k`${e}.${k.identifier(t.name)}`;
+			switch (t.columnType) {
+				case "SQLiteBigInt":
+				case "SQLiteBlobJson":
+				case "SQLiteBlobBuffer": return r ? k`hex(${i}) as ${k.identifier(n)}` : k`${i} as ${k.identifier(n)}`;
+				case "SQLiteNumeric":
+				case "SQLiteNumericNumber":
+				case "SQLiteNumericBigInt": return k`cast(${i} as text) as ${k.identifier(n)}`;
+				case "SQLiteCustomColumn": return r ? k`${t.jsonSelectIdentifier(i, k)} as ${k.identifier(n)}` : k`${i} as ${k.identifier(n)}`;
+				default: return k`${i} as ${k.identifier(n)}`;
+			}
+		}
+		return k`${e}.${f(t, O.Aliased) ? k.identifier(t.fieldAlias) : oe(t) ? k.identifier(n) : this.nestedSelectionerror()} as ${k.identifier(n)}`;
+	}
+	unwrapAllColumns = (e, t, n) => k.join(Object.entries(e[y]).map(([r, i]) => (t.push({
+		key: r,
+		field: i
+	}), this.buildRqbColumn(e, i, r, n))), k`, `);
+	getSelectedTableColumns = (e, t) => {
+		let n = [], r = e[y], i = Object.entries(t), a;
+		for (let [e, t] of i) if (t !== void 0 && (a ||= t, t)) {
+			let t = r[e];
+			n.push({
+				column: t,
+				tsName: e
+			});
+		}
+		if (a === !1) for (let [e, i] of Object.entries(r)) t[e] !== !1 && n.push({
+			column: i,
+			tsName: e
+		});
+		return n;
+	};
+	buildColumns = (e, t, n, r) => r?.columns ? (() => {
+		let i = [], a = this.getSelectedTableColumns(e, r?.columns);
+		for (let { column: r, tsName: o } of a) i.push(this.buildRqbColumn(e, r, o, n)), t.push({
+			key: o,
+			field: r
+		});
+		return i.length ? k.join(i, k`, `) : void 0;
+	})() : this.unwrapAllColumns(e, t, n);
+	buildRelationalQuery({ schema: e, table: t, tableConfig: n, queryConfig: r, relationWhere: i, mode: a, isNested: o, errorPath: s, depth: c, throughJoin: l, jsonb: u }) {
+		let d = [], p = a === "first", m = r === !0 ? void 0 : r, h = s ?? "", g = c ?? 0;
+		g || (t = fh(t, `d${g}`));
+		let _ = p ? 1 : m?.limit, v = m?.offset, y = this.buildColumns(t, d, !!o, m), b = m?.where && i ? kh(ug(t, m.where, n.relations, e), i) : m?.where ? ug(t, m.where, n.relations, e) : i, x = m?.orderBy ? dg(t, m.orderBy) : void 0, S = m?.extras ? fg(t, m.extras) : void 0;
+		S && d.push(...S.selection);
+		let C = m ? (() => {
+			let { with: r } = m;
+			if (!r) return;
+			let i = Object.entries(r).filter(([e, t]) => t);
+			if (i.length) return k.join(i.map(([r, i]) => {
+				let a = n.relations[r], s = f(a, eg), c = fh(a.targetTable, `d${g + 1}`), l = a.throughTable ? fh(a.throughTable, `tr${g}`) : void 0, { filter: p, joinCondition: m } = pg(a, t, c, l), _ = l ? k` inner join ${mg(l)} on ${m}` : void 0, v = this.buildRelationalQuery({
+					table: c,
+					mode: s ? "first" : "many",
+					schema: e,
+					queryConfig: i,
+					tableConfig: e[a.targetTableName],
+					relationWhere: p,
+					isNested: !0,
+					errorPath: `${h.length ? `${h}.` : ""}${r}`,
+					depth: g + 1,
+					throughJoin: _,
+					jsonb: u
+				});
+				d.push({
+					field: c,
+					key: r,
+					selection: v.selection,
+					isArray: !s,
+					isOptional: (a.optional ?? !1) || i !== !0 && !!i.where
+				});
+				let y = k.join(v.selection.map((e) => k`${k.raw(this.escapeString(e.key))}, ${e.selection ? k`${u}(${k.identifier(e.key)})` : k.identifier(e.key)}`), k`, `), b = o ? u : k`json`;
+				return s ? k`(select ${b}_object(${y}) as ${k.identifier("r")} from (${v.sql}) as ${k.identifier("t")}) as ${k.identifier(r)}` : k`coalesce((select ${b}_group_array(json_object(${y})) as ${k.identifier("r")} from (${v.sql}) as ${k.identifier("t")}), ${u}_array()) as ${k.identifier(r)}`;
+			}), k`, `);
+		})() : void 0, ee = [
+			y,
+			S?.sql,
+			C
+		].filter((e) => e !== void 0);
+		if (!ee.length) throw new wh({ message: `No fields selected for table "${n.name}"${h ? ` ("${h}")` : ""}` });
+		return {
+			sql: k`select ${k.join(ee, k`, `)} from ${mg(t)}${l}${k` where ${b}`.if(b)}${k` order by ${x}`.if(x)}${k` limit ${_}`.if(_ !== void 0)}${k` offset ${v}`.if(v !== void 0)}`,
+			selection: d
+		};
+	}
+}, gg = class {
+	static [d] = "SQLiteQueryBuilder";
+	dialect;
+	dialectConfig;
+	constructor(e) {
+		this.dialect = f(e, hg) ? e : void 0, this.dialectConfig = f(e, hg) ? void 0 : e;
+	}
+	$with = (e, t) => {
+		let n = this;
+		return { as: (r) => (typeof r == "function" && (r = r(n)), new Proxy(new ie(r.getSQL(), t ?? ("getSelectedFields" in r ? r.getSelectedFields() ?? {} : {}), e, !0), new Z({
+			alias: e,
+			sqlAliasedBehavior: "alias",
+			sqlBehavior: "error"
+		}))) };
+	};
+	with(...e) {
+		let t = this;
+		function n(n) {
+			return new gh({
+				fields: n ?? void 0,
+				session: void 0,
+				dialect: t.getDialect(),
+				withList: e
+			});
+		}
+		function r(n) {
+			return new gh({
+				fields: n ?? void 0,
+				session: void 0,
+				dialect: t.getDialect(),
+				withList: e,
+				distinct: !0
+			});
+		}
+		return {
+			select: n,
+			selectDistinct: r
+		};
+	}
+	select(e) {
+		return new gh({
+			fields: e ?? void 0,
+			session: void 0,
+			dialect: this.getDialect()
+		});
+	}
+	selectDistinct(e) {
+		return new gh({
+			fields: e ?? void 0,
+			session: void 0,
+			dialect: this.getDialect(),
+			distinct: !0
+		});
+	}
+	getDialect() {
+		return this.dialect ||= new hg(this.dialectConfig), this.dialect;
+	}
+}, _g = class {
+	static [d] = "QueryPromise";
+	[Symbol.toStringTag] = "QueryPromise";
+	catch(e) {
+		return this.then(void 0, e);
+	}
+	finally(e) {
+		return this.then((t) => (e?.(), t), (t) => {
+			throw e?.(), t;
+		});
+	}
+	then(e, t) {
+		return this.execute().then(e, t);
+	}
+}, vg = class e extends O {
+	static [d] = "SQLiteCountBuilder";
 	dialect;
 	session;
-	static buildCount(source, filters, parens) {
-		const query = sql`select count(*) from ${source}${sql` where ${filters}`.if(filters)}`;
-		return parens ? sql`(${query})` : query;
+	static buildCount(e, t, n) {
+		let r = k`select count(*) from ${e}${k` where ${t}`.if(t)}`;
+		return n ? k`(${r})` : r;
 	}
-	constructor(countConfig) {
-		super(SQLiteCountBuilder.buildCount(countConfig.source, countConfig.filters, true).queryChunks);
-		this.countConfig = countConfig;
-		this.dialect = countConfig.dialect;
-		this.session = countConfig.session;
-		this.mapWith((e) => {
-			if (typeof e === "number") return e;
-			return Number(e ?? 0);
-		});
+	constructor(t) {
+		super(e.buildCount(t.source, t.filters, !0).queryChunks), this.countConfig = t, this.dialect = t.dialect, this.session = t.session, this.mapWith((e) => typeof e == "number" ? e : Number(e ?? 0));
 	}
 	executableSql;
 	build() {
 		if (!this.executableSql) {
-			const { source, filters } = this.countConfig;
-			this.executableSql = SQLiteCountBuilder.buildCount(source, filters);
+			let { source: t, filters: n } = this.countConfig;
+			this.executableSql = e.buildCount(t, n);
 		}
 		return this.dialect.sqlToQuery(this.executableSql);
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/count.js
-var SQLiteAsyncCountBuilder = class extends SQLiteCountBuilder {
-	static [entityKind] = "SQLiteAsyncCountBuilder";
-	constructor(countConfig) {
-		super(countConfig);
+}, yg = class extends vg {
+	static [d] = "SQLiteAsyncCountBuilder";
+	constructor(e) {
+		super(e);
 	}
-	/** @internal */
-	executeRaw(placeholderValues) {
-		return this.session.prepareQuery(this.build(), "arrays", false, "all", (rows) => {
-			const v = rows[0]?.[0];
-			if (typeof v === "number") return v;
-			return v ? Number(v) : 0;
-		}).execute(placeholderValues);
+	executeRaw(e) {
+		return this.session.prepareQuery(this.build(), "arrays", !1, "all", (e) => {
+			let t = e[0]?.[0];
+			return typeof t == "number" ? t : t ? Number(t) : 0;
+		}).execute(e);
 	}
-	async execute(placeholderValues) {
-		return await this.executeRaw(placeholderValues);
+	async execute(e) {
+		return await this.executeRaw(e);
 	}
 };
-applyMixins(SQLiteAsyncCountBuilder, [QueryPromise]);
-var SQLiteSyncCountBuilder = class extends SQLiteAsyncCountBuilder {
-	static [entityKind] = "SQLiteSyncCountBuilder";
-	sync(placeholderValues) {
-		return this.executeRaw(placeholderValues).sync();
+ke(yg, [_g]);
+var bg = class extends yg {
+	static [d] = "SQLiteSyncCountBuilder";
+	sync(e) {
+		return this.executeRaw(e).sync();
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/query.js
-var RelationalQueryBuilder = class {
-	static [entityKind] = "SQLiteRelationalQueryBuilderV2";
-	constructor(mode, schema, table, tableConfig, dialect, session, forbidJsonb, builder = SQLiteRelationalQuery) {
-		this.mode = mode;
-		this.schema = schema;
-		this.table = table;
-		this.tableConfig = tableConfig;
-		this.dialect = dialect;
-		this.session = session;
-		this.forbidJsonb = forbidJsonb;
-		this.builder = builder;
+}, xg = class {
+	static [d] = "SQLiteRelationalQueryBuilderV2";
+	constructor(e, t, n, r, i, a, o, s = Sg) {
+		this.mode = e, this.schema = t, this.table = n, this.tableConfig = r, this.dialect = i, this.session = a, this.forbidJsonb = o, this.builder = s;
 	}
-	findMany(config) {
-		return new this.builder(this.mode, this.schema, this.table, this.tableConfig, this.dialect, this.session, config ?? true, "many", this.forbidJsonb);
+	findMany(e) {
+		return new this.builder(this.mode, this.schema, this.table, this.tableConfig, this.dialect, this.session, e ?? !0, "many", this.forbidJsonb);
 	}
-	findFirst(config) {
-		return new this.builder(this.mode, this.schema, this.table, this.tableConfig, this.dialect, this.session, config ?? true, "first", this.forbidJsonb);
+	findFirst(e) {
+		return new this.builder(this.mode, this.schema, this.table, this.tableConfig, this.dialect, this.session, e ?? !0, "first", this.forbidJsonb);
 	}
-};
-var SQLiteRelationalQuery = class {
-	static [entityKind] = "SQLiteRelationalQueryV2";
-	/** @internal */
+}, Sg = class {
+	static [d] = "SQLiteRelationalQueryV2";
 	mode;
-	/** @internal */
 	table;
-	/** @internal */
 	resultKind;
-	constructor(resultKind, schema, table, tableConfig, dialect, session, config, mode, forbidJsonb) {
-		this.schema = schema;
-		this.tableConfig = tableConfig;
-		this.dialect = dialect;
-		this.session = session;
-		this.config = config;
-		this.forbidJsonb = forbidJsonb;
-		this.resultKind = resultKind;
-		this.mode = mode;
-		this.table = table;
+	constructor(e, t, n, r, i, a, o, s, c) {
+		this.schema = t, this.tableConfig = r, this.dialect = i, this.session = a, this.config = o, this.forbidJsonb = c, this.resultKind = e, this.mode = s, this.table = n;
 	}
 	getSQL() {
 		return this._getQuery().sql;
 	}
 	_getQuery() {
-		const jsonb = this.forbidJsonb ? sql`json` : sql`jsonb`;
+		let e = this.forbidJsonb ? k`json` : k`jsonb`;
 		return this.dialect.buildRelationalQuery({
 			schema: this.schema,
 			table: this.table,
 			tableConfig: this.tableConfig,
 			queryConfig: this.config,
 			mode: this.mode,
-			jsonb
+			jsonb: e
 		});
 	}
 	_toSQL() {
-		const query = this._getQuery();
+		let e = this._getQuery();
 		return {
-			query,
-			builtQuery: this.dialect.sqlToQuery(query.sql)
+			query: e,
+			builtQuery: this.dialect.sqlToQuery(e.sql)
 		};
 	}
 	toSQL() {
 		return this._toSQL().builtQuery;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/query.js
-var SQLiteAsyncRelationalQuery = class extends SQLiteRelationalQuery {
-	static [entityKind] = "SQLiteAsyncRelationalQueryV2";
-	/** @internal */
-	_prepare(prepare = false) {
-		const { query, builtQuery } = this._toSQL();
-		const mapper = this.dialect.mapperGenerators.relationalRows({
+}, Cg = class extends Sg {
+	static [d] = "SQLiteAsyncRelationalQueryV2";
+	_prepare(e = !1) {
+		let { query: t, builtQuery: n } = this._toSQL(), r = this.dialect.mapperGenerators.relationalRows({
 			isFirst: this.mode === "first",
-			parseJson: true,
-			parseJsonIfString: false,
-			rootJsonMappers: false,
-			selection: query.selection,
-			arrayModeRoot: true
+			parseJson: !0,
+			parseJsonIfString: !1,
+			rootJsonMappers: !1,
+			selection: t.selection,
+			arrayModeRoot: !0
 		});
-		return this.session.prepareQuery(builtQuery, "arrays", prepare, "all", mapper);
+		return this.session.prepareQuery(n, "arrays", e, "all", r);
 	}
 	prepare() {
-		return this._prepare(true);
+		return this._prepare(!0);
 	}
-	async execute(placeholderValues) {
-		return this._prepare().execute(placeholderValues);
+	async execute(e) {
+		return this._prepare().execute(e);
 	}
-};
-var SQLiteSyncRelationalQuery = class extends SQLiteAsyncRelationalQuery {
-	static [entityKind] = "SQLiteSyncRelationalQueryV2";
-	sync(placeholderValues) {
-		return this._prepare().execute(placeholderValues).sync();
-	}
-};
-applyMixins(SQLiteAsyncRelationalQuery, [QueryPromise]);
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/selection-proxy.js
-var SelectionProxyHandler = class SelectionProxyHandler {
-	static [entityKind] = "SelectionProxyHandler";
-	config;
-	constructor(config) {
-		this.config = { ...config };
-	}
-	get(subquery, prop) {
-		if (prop === "_") return {
-			...subquery["_"],
-			selectedFields: new Proxy(subquery._.selectedFields, this)
-		};
-		if (prop === ViewBaseConfig) return {
-			...subquery[ViewBaseConfig],
-			selectedFields: new Proxy(subquery[ViewBaseConfig].selectedFields, this)
-		};
-		if (typeof prop === "symbol") return subquery[prop];
-		const value = (is(subquery, Subquery) ? subquery._.selectedFields : is(subquery, View) ? subquery[ViewBaseConfig].selectedFields : subquery)[prop];
-		if (is(value, SQL.Aliased)) {
-			if (this.config.sqlAliasedBehavior === "sql" && !value.isSelectionField) return value.sql;
-			const newValue = value.clone();
-			newValue.isSelectionField = true;
-			newValue.origin = this.config.alias;
-			return newValue;
-		}
-		if (is(value, SQL)) {
-			if (this.config.sqlBehavior === "sql") return value;
-			throw new Error(`You tried to reference "${prop}" field from a subquery, which is a raw SQL field, but it doesn't have an alias declared. Please add an alias to the field using ".as('alias')" method.`);
-		}
-		if (is(value, Column)) {
-			if (this.config.alias) return new Proxy(value, new ColumnTableAliasProxyHandler(new Proxy(value.table, new TableAliasProxyHandler(this.config.alias, this.config.replaceOriginalName ?? false, true)), true));
-			return value;
-		}
-		if (typeof value !== "object" || value === null) return value;
-		return new Proxy(value, new SelectionProxyHandler(this.config));
+}, wg = class extends Cg {
+	static [d] = "SQLiteSyncRelationalQueryV2";
+	sync(e) {
+		return this._prepare().execute(e).sync();
 	}
 };
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/foreign-keys.js
-var ForeignKeyBuilder = class {
-	static [entityKind] = "SQLiteForeignKeyBuilder";
-	/** @internal */
-	reference;
-	/** @internal */
-	_onUpdate;
-	/** @internal */
-	_onDelete;
-	constructor(config, actions) {
-		this.reference = () => {
-			const { name, columns, foreignColumns } = config();
-			return {
-				name,
-				columns,
-				foreignTable: foreignColumns[0].table,
-				foreignColumns
-			};
-		};
-		if (actions) {
-			this._onUpdate = actions.onUpdate;
-			this._onDelete = actions.onDelete;
-		}
-	}
-	onUpdate(action) {
-		this._onUpdate = action;
-		return this;
-	}
-	onDelete(action) {
-		this._onDelete = action;
-		return this;
-	}
-	/** @internal */
-	build(table) {
-		return new ForeignKey(table, this);
-	}
-};
-var ForeignKey = class {
-	static [entityKind] = "SQLiteForeignKey";
-	reference;
-	onUpdate;
-	onDelete;
-	constructor(table, builder) {
-		this.table = table;
-		this.reference = builder.reference;
-		this.onUpdate = builder._onUpdate;
-		this.onDelete = builder._onDelete;
-	}
-	getName() {
-		const { name, columns, foreignColumns } = this.reference();
-		const columnNames = columns.map((column) => column.name);
-		const foreignColumnNames = foreignColumns.map((column) => column.name);
-		const chunks = [
-			this.table[TableName],
-			...columnNames,
-			foreignColumns[0].table[TableName],
-			...foreignColumnNames
-		];
-		return name ?? `${chunks.join("_")}_fk`;
-	}
-	isNameExplicit() {
-		return !!this.reference().name;
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/common.js
-var SQLiteColumnBuilder = class extends ColumnBuilder {
-	static [entityKind] = "SQLiteColumnBuilder";
-	foreignKeyConfigs = [];
-	references(ref, actions = {}) {
-		this.foreignKeyConfigs.push({
-			ref,
-			actions
-		});
-		return this;
-	}
-	unique(name) {
-		this.config.isUnique = true;
-		this.config.uniqueName = name;
-		return this;
-	}
-	generatedAlwaysAs(as, config) {
-		this.config.generated = {
-			as,
-			type: "always",
-			mode: config?.mode ?? "virtual"
-		};
-		return this;
-	}
-	/** @internal */
-	buildForeignKeys(column, table) {
-		return this.foreignKeyConfigs.map(({ ref, actions }) => {
-			return ((ref, actions) => {
-				const builder = new ForeignKeyBuilder(() => {
-					const foreignColumn = ref();
-					return {
-						columns: [column],
-						foreignColumns: [foreignColumn]
-					};
-				});
-				if (actions.onUpdate) builder.onUpdate(actions.onUpdate);
-				if (actions.onDelete) builder.onDelete(actions.onDelete);
-				return builder.build(table);
-			})(ref, actions);
-		});
-	}
-};
-var SQLiteColumn = class extends Column {
-	static [entityKind] = "SQLiteColumn";
-	/** @internal */
-	table;
-	constructor(table, config) {
-		super(table, config);
-		this.table = table;
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/blob.js
-function hexToText(hexString) {
-	let result = "";
-	for (let i = 0; i < hexString.length; i += 2) {
-		const hexPair = hexString.slice(i, i + 2);
-		const decimalValue = Number.parseInt(hexPair, 16);
-		result += String.fromCodePoint(decimalValue);
-	}
-	return result;
-}
-var SQLiteBigIntBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteBigIntBuilder";
-	constructor(name) {
-		super(name, "bigint int64", "SQLiteBigInt");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteBigInt(table, this.config);
-	}
-};
-var SQLiteBigInt = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteBigInt";
-	getSQLType() {
-		return "blob";
-	}
-	mapFromDriverValue = (value) => {
-		if (typeof value === "string") return BigInt(hexToText(value));
-		if (typeof Buffer !== "undefined" && Buffer.from) {
-			const buf = Buffer.isBuffer(value) ? value : value instanceof ArrayBuffer ? Buffer.from(value) : value.buffer ? Buffer.from(value.buffer, value.byteOffset, value.byteLength) : Buffer.from(value);
-			return BigInt(buf.toString("utf8"));
-		}
-		return BigInt(textDecoder.decode(value));
-	};
-	mapToDriverValue = (value) => {
-		return Buffer.from(value.toString());
-	};
-};
-var SQLiteBlobJsonBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteBlobJsonBuilder";
-	constructor(name) {
-		super(name, "object json", "SQLiteBlobJson");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteBlobJson(table, this.config);
-	}
-};
-var SQLiteBlobJson = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteBlobJson";
-	getSQLType() {
-		return "blob";
-	}
-	mapFromDriverValue = (value) => {
-		if (typeof value === "string") return JSON.parse(hexToText(value));
-		if (typeof Buffer !== "undefined" && Buffer.from) {
-			const buf = Buffer.isBuffer(value) ? value : value instanceof ArrayBuffer ? Buffer.from(value) : value.buffer ? Buffer.from(value.buffer, value.byteOffset, value.byteLength) : Buffer.from(value);
-			return JSON.parse(buf.toString("utf8"));
-		}
-		return JSON.parse(textDecoder.decode(value));
-	};
-	mapToDriverValue = (value) => {
-		return Buffer.from(JSON.stringify(value));
-	};
-};
-var SQLiteBlobBufferBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteBlobBufferBuilder";
-	constructor(name) {
-		super(name, "object buffer", "SQLiteBlobBuffer");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteBlobBuffer(table, this.config);
-	}
-};
-var SQLiteBlobBuffer = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteBlobBuffer";
-	mapFromDriverValue = (value) => {
-		if (Buffer.isBuffer(value)) return value;
-		if (typeof value === "string") return Buffer.from(value, "hex");
-		return Buffer.from(value);
-	};
-	getSQLType() {
-		return "blob";
-	}
-};
-function blob(a, b) {
-	const { name, config } = getColumnNameAndConfig(a, b);
-	if (config?.mode === "bigint") return new SQLiteBigIntBuilder(name);
-	if (config?.mode === "buffer") return new SQLiteBlobBufferBuilder(name);
-	return new SQLiteBlobJsonBuilder(name);
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/custom.js
-var SQLiteCustomColumnBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteCustomColumnBuilder";
-	constructor(name, fieldConfig, customTypeParams) {
-		super(name, "custom", "SQLiteCustomColumn");
-		this.config.fieldConfig = fieldConfig;
-		this.config.customTypeParams = customTypeParams;
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteCustomColumn(table, this.config);
-	}
-};
-var SQLiteCustomColumn = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteCustomColumn";
-	sqlName;
-	mapTo;
-	mapFrom;
-	mapJson;
-	forJsonSelect;
-	constructor(table, config) {
-		super(table, config);
-		this.sqlName = config.customTypeParams.dataType(config.fieldConfig);
-		this.mapTo = config.customTypeParams.toDriver;
-		this.mapFrom = config.customTypeParams.fromDriver;
-		this.mapJson = config.customTypeParams.fromJson;
-		this.forJsonSelect = config.customTypeParams.forJsonSelect;
-	}
-	getSQLType() {
-		return this.sqlName;
-	}
-	mapFromDriverValue = (value) => {
-		return typeof this.mapFrom === "function" ? this.mapFrom(value) : value;
-	};
-	mapFromJsonValue(value) {
-		return typeof this.mapJson === "function" ? this.mapJson(value) : this.mapFromDriverValue(value);
-	}
-	jsonSelectIdentifier(identifier, sql) {
-		if (typeof this.forJsonSelect === "function") return this.forJsonSelect(identifier, sql);
-		const rawType = this.getSQLType().toLowerCase();
-		const parenPos = rawType.indexOf("(");
-		switch (parenPos + 1 ? rawType.slice(0, parenPos) : rawType) {
-			case "numeric":
-			case "decimal":
-			case "bigint": return sql`cast(${identifier} as text)`;
-			case "blob": return sql`hex(${identifier})`;
-			default: return identifier;
-		}
-	}
-	mapToDriverValue = (value) => {
-		return typeof this.mapTo === "function" ? this.mapTo(value) : value;
-	};
-};
-/**
-* Custom sqlite database data type generator
-*/
-function customType(customTypeParams) {
-	return (a, b) => {
-		const { name, config } = getColumnNameAndConfig(a, b);
-		return new SQLiteCustomColumnBuilder(name, config, customTypeParams);
-	};
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/integer.js
-var SQLiteBaseIntegerBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteBaseIntegerBuilder";
-	constructor(name, dataType, columnType) {
-		super(name, dataType, columnType);
-		this.config.autoIncrement = false;
-	}
-	primaryKey(config) {
-		if (config?.autoIncrement) this.config.autoIncrement = true;
-		this.config.hasDefault = true;
-		return super.primaryKey();
-	}
-};
-var SQLiteBaseInteger = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteBaseInteger";
-	autoIncrement = this.config.autoIncrement;
-	getSQLType() {
-		return "integer";
-	}
-};
-var SQLiteIntegerBuilder = class extends SQLiteBaseIntegerBuilder {
-	static [entityKind] = "SQLiteIntegerBuilder";
-	constructor(name) {
-		super(name, "number int53", "SQLiteInteger");
-	}
-	build(table) {
-		return new SQLiteInteger(table, this.config);
-	}
-};
-var SQLiteInteger = class extends SQLiteBaseInteger {
-	static [entityKind] = "SQLiteInteger";
-};
-var SQLiteTimestampBuilder = class extends SQLiteBaseIntegerBuilder {
-	static [entityKind] = "SQLiteTimestampBuilder";
-	constructor(name, mode) {
-		super(name, "object date", "SQLiteTimestamp");
-		this.config.mode = mode;
-	}
-	/**
-	* @deprecated Use `default()` with your own expression instead.
-	*
-	* Adds `DEFAULT (cast((julianday('now') - 2440587.5)*86400000 as integer))` to the column, which is the current epoch timestamp in milliseconds.
-	*/
-	defaultNow() {
-		return this.default(sql`(cast((julianday('now') - 2440587.5)*86400000 as integer))`);
-	}
-	build(table) {
-		return new SQLiteTimestamp(table, this.config);
-	}
-};
-var SQLiteTimestamp = class extends SQLiteBaseInteger {
-	static [entityKind] = "SQLiteTimestamp";
-	mode = this.config.mode;
-	mapFromDriverValue = (value) => {
-		if (typeof value === "string") return new Date(value.replaceAll("\"", ""));
-		if (this.config.mode === "timestamp") return /* @__PURE__ */ new Date(value * 1e3);
-		return new Date(value);
-	};
-	mapToDriverValue = (value) => {
-		if (typeof value === "number") return value;
-		const unix = value.getTime();
-		if (this.config.mode === "timestamp") return Math.floor(unix / 1e3);
-		return unix;
-	};
-};
-var SQLiteBooleanBuilder = class extends SQLiteBaseIntegerBuilder {
-	static [entityKind] = "SQLiteBooleanBuilder";
-	constructor(name, mode) {
-		super(name, "boolean", "SQLiteBoolean");
-		this.config.mode = mode;
-	}
-	build(table) {
-		return new SQLiteBoolean(table, this.config);
-	}
-};
-var SQLiteBoolean = class extends SQLiteBaseInteger {
-	static [entityKind] = "SQLiteBoolean";
-	mode = this.config.mode;
-	mapFromDriverValue = (value) => {
-		return Number(value) === 1;
-	};
-	mapToDriverValue = (value) => {
-		return value ? 1 : 0;
-	};
-};
-function integer(a, b) {
-	const { name, config } = getColumnNameAndConfig(a, b);
-	if (config?.mode === "timestamp" || config?.mode === "timestamp_ms") return new SQLiteTimestampBuilder(name, config.mode);
-	if (config?.mode === "boolean") return new SQLiteBooleanBuilder(name, config.mode);
-	return new SQLiteIntegerBuilder(name);
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/numeric.js
-var SQLiteNumericBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteNumericBuilder";
-	constructor(name) {
-		super(name, "string numeric", "SQLiteNumeric");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteNumeric(table, this.config);
-	}
-};
-var SQLiteNumeric = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteNumeric";
-	mapFromDriverValue = (value) => {
-		if (typeof value === "string") return value;
-		return String(value);
-	};
-	getSQLType() {
-		return "numeric";
-	}
-};
-var SQLiteNumericNumberBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteNumericNumberBuilder";
-	constructor(name) {
-		super(name, "number", "SQLiteNumericNumber");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteNumericNumber(table, this.config);
-	}
-};
-var SQLiteNumericNumber = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteNumericNumber";
-	mapFromDriverValue = (value) => {
-		if (typeof value === "number") return value;
-		return Number(value);
-	};
-	mapToDriverValue = String;
-	getSQLType() {
-		return "numeric";
-	}
-};
-var SQLiteNumericBigIntBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteNumericBigIntBuilder";
-	constructor(name) {
-		super(name, "bigint int64", "SQLiteNumericBigInt");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteNumericBigInt(table, this.config);
-	}
-};
-var SQLiteNumericBigInt = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteNumericBigInt";
-	mapFromDriverValue = BigInt;
-	mapToDriverValue = String;
-	getSQLType() {
-		return "numeric";
-	}
-};
-function numeric(a, b) {
-	const { name, config } = getColumnNameAndConfig(a, b);
-	const mode = config?.mode;
-	return mode === "number" ? new SQLiteNumericNumberBuilder(name) : mode === "bigint" ? new SQLiteNumericBigIntBuilder(name) : new SQLiteNumericBuilder(name);
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/real.js
-var SQLiteRealBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteRealBuilder";
-	constructor(name) {
-		super(name, "number double", "SQLiteReal");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteReal(table, this.config);
-	}
-};
-var SQLiteReal = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteReal";
-	getSQLType() {
-		return "real";
-	}
-};
-function real(name) {
-	return new SQLiteRealBuilder(name ?? "");
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/text.js
-var SQLiteTextBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteTextBuilder";
-	constructor(name, config) {
-		super(name, config.enum?.length ? "string enum" : "string", "SQLiteText");
-		this.config.enumValues = config.enum;
-		this.config.length = config.length;
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteText(table, this.config);
-	}
-};
-var SQLiteText = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteText";
-	enumValues = this.config.enumValues;
-	constructor(table, config) {
-		super(table, config);
-	}
-	getSQLType() {
-		return `text${this.config.length ? `(${this.config.length})` : ""}`;
-	}
-};
-var SQLiteTextJsonBuilder = class extends SQLiteColumnBuilder {
-	static [entityKind] = "SQLiteTextJsonBuilder";
-	constructor(name) {
-		super(name, "object json", "SQLiteTextJson");
-	}
-	/** @internal */
-	build(table) {
-		return new SQLiteTextJson(table, this.config);
-	}
-};
-var SQLiteTextJson = class extends SQLiteColumn {
-	static [entityKind] = "SQLiteTextJson";
-	getSQLType() {
-		return "text";
-	}
-	mapFromDriverValue = (value) => {
-		return JSON.parse(value);
-	};
-	mapToDriverValue = (value) => {
-		return JSON.stringify(value);
-	};
-};
-function text(a, b = {}) {
-	const { name, config } = getColumnNameAndConfig(a, b);
-	if (config.mode === "json") return new SQLiteTextJsonBuilder(name);
-	return new SQLiteTextBuilder(name, config);
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/columns/all.js
-function getSQLiteColumnBuilders() {
-	return {
-		blob,
-		customType,
-		integer,
-		numeric,
-		real,
-		text
-	};
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/casing.js
-function toSnakeCase(input) {
-	return (input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).map((word) => word.toLowerCase()).join("_");
-}
-function toCamelCase(input) {
-	return (input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).reduce((acc, word, i) => {
-		return acc + (i === 0 ? word.toLowerCase() : `${word[0].toUpperCase()}${word.slice(1)}`);
-	}, "");
-}
-function getCasingFn(casing) {
-	if (casing === "snake_case") return toSnakeCase;
-	if (casing === "camelCase") return toCamelCase;
-	return (name) => name;
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/table.js
-/** @internal */
-var InlineForeignKeys = Symbol.for("drizzle:SQLiteInlineForeignKeys");
-var SQLiteTable = class extends Table {
-	static [entityKind] = "SQLiteTable";
-	/** @internal */
-	static Symbol = Object.assign({}, Table.Symbol, { InlineForeignKeys });
-	/** @internal */
-	[Table.Symbol.Columns];
-	/** @internal */
-	[InlineForeignKeys] = [];
-	/** @internal */
-	[Table.Symbol.ExtraConfigBuilder] = void 0;
-};
-/** @internal */
-function sqliteTableBase(name, columns, extraConfig, schema, casing, baseName = name) {
-	const casingFn = getCasingFn(casing);
-	const rawTable = new SQLiteTable(name, schema, baseName);
-	const parsedColumns = typeof columns === "function" ? columns(getSQLiteColumnBuilders()) : columns;
-	const builtColumns = Object.fromEntries(Object.entries(parsedColumns).map(([name, colBuilderBase]) => {
-		const colBuilder = colBuilderBase;
-		colBuilder.setName(name, casingFn);
-		const column = colBuilder.build(rawTable).postBuild();
-		rawTable[InlineForeignKeys].push(...colBuilder.buildForeignKeys(column, rawTable));
-		return [name, column];
-	}));
-	const table = Object.assign(rawTable, builtColumns);
-	table[Table.Symbol.Columns] = builtColumns;
-	table[Table.Symbol.ExtraConfigColumns] = builtColumns;
-	if (extraConfig) table[SQLiteTable.Symbol.ExtraConfigBuilder] = extraConfig;
-	return table;
-}
-/** @internal */
-function sqliteTableWithCasing(casing) {
-	return (name, columns, extraConfig) => sqliteTableBase(name, columns, extraConfig, void 0, casing);
-}
-var sqliteTable = sqliteTableWithCasing(void 0);
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/utils.js
-function extractUsedTable(table) {
-	if (is(table, SQLiteTable)) return [`${table[Table.Symbol.BaseName]}`];
-	if (is(table, Subquery)) return table._.usedTables ?? [];
-	if (is(table, SQL)) return table.usedTables ?? [];
-	return [];
-}
+ke(Cg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/delete.js
-var SQLiteDeleteBase = class {
-	static [entityKind] = "SQLiteDelete";
-	/** @internal */
+var Tg = class {
+	static [d] = "SQLiteDelete";
 	config;
-	constructor(table, session, dialect, withList) {
-		this.table = table;
-		this.session = session;
-		this.dialect = dialect;
-		this.config = {
-			table,
-			withList
+	constructor(e, t, n, r) {
+		this.table = e, this.session = t, this.dialect = n, this.config = {
+			table: e,
+			withList: r
 		};
 	}
-	/**
-	* Adds a `where` clause to the query.
-	*
-	* Calling this method will delete only those rows that fulfill a specified condition.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/delete}
-	*
-	* @param where the `where` clause.
-	*
-	* @example
-	* You can use conditional operators and `sql function` to filter the rows to be deleted.
-	*
-	* ```ts
-	* // Delete all cars with green color
-	* db.delete(cars).where(eq(cars.color, 'green'));
-	* // or
-	* db.delete(cars).where(sql`${cars.color} = 'green'`)
-	* ```
-	*
-	* You can logically combine conditional operators with `and()` and `or()` operators:
-	*
-	* ```ts
-	* // Delete all BMW cars with a green color
-	* db.delete(cars).where(and(eq(cars.color, 'green'), eq(cars.brand, 'BMW')));
-	*
-	* // Delete all cars with the green or blue color
-	* db.delete(cars).where(or(eq(cars.color, 'green'), eq(cars.color, 'blue')));
-	* ```
-	*/
-	where(where) {
-		this.config.where = where;
-		return this;
+	where(e) {
+		return this.config.where = e, this;
 	}
-	orderBy(...columns) {
-		if (typeof columns[0] === "function") {
-			const orderBy = columns[0](new Proxy(this.config.table[Table.Symbol.Columns], new SelectionProxyHandler({
+	orderBy(...e) {
+		if (typeof e[0] == "function") {
+			let t = e[0](new Proxy(this.config.table[w.Symbol.Columns], new Z({
 				sqlAliasedBehavior: "alias",
 				sqlBehavior: "sql"
-			})));
-			const orderByArray = Array.isArray(orderBy) ? orderBy : [orderBy];
-			this.config.orderBy = orderByArray;
+			}))), n = Array.isArray(t) ? t : [t];
+			this.config.orderBy = n;
 		} else {
-			const orderByArray = columns;
-			this.config.orderBy = orderByArray;
+			let t = e;
+			this.config.orderBy = t;
 		}
 		return this;
 	}
-	limit(limit) {
-		this.config.limit = limit;
-		return this;
+	limit(e) {
+		return this.config.limit = e, this;
 	}
-	returning(fields = this.table[SQLiteTable.Symbol.Columns]) {
-		this.config.returning = orderSelectedFields(fields);
-		return this;
+	returning(e = this.table[nh.Symbol.Columns]) {
+		return this.config.returning = Te(e), this;
 	}
 	getSQL() {
 		return this.dialect.buildDeleteQuery(this.config);
@@ -15175,1306 +6288,80 @@ var SQLiteDeleteBase = class {
 	$dynamic() {
 		return this;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/delete.js
-var SQLiteAsyncDeleteBase = class extends SQLiteDeleteBase {
-	static [entityKind] = "SQLiteAsyncDelete";
-	/** @internal */
-	_prepare(prepare = false) {
-		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", prepare, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
+}, Eg = class extends Tg {
+	static [d] = "SQLiteAsyncDelete";
+	_prepare(e = !1) {
+		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", e, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
 			type: "delete",
-			tables: extractUsedTable(this.config.table)
+			tables: oh(this.config.table)
 		});
 	}
 	prepare() {
-		return this._prepare(true);
+		return this._prepare(!0);
 	}
-	run = (placeholderValues) => {
-		return this._prepare().run(placeholderValues);
-	};
-	all = (placeholderValues) => {
-		return this._prepare().all(placeholderValues);
-	};
-	get = (placeholderValues) => {
-		return this._prepare().get(placeholderValues);
-	};
-	values = (placeholderValues) => {
-		return this._prepare().values(placeholderValues);
-	};
-	async execute(placeholderValues) {
-		return this._prepare().execute(placeholderValues);
+	run = (e) => this._prepare().run(e);
+	all = (e) => this._prepare().all(e);
+	get = (e) => this._prepare().get(e);
+	values = (e) => this._prepare().values(e);
+	async execute(e) {
+		return this._prepare().execute(e);
 	}
 };
-applyMixins(SQLiteAsyncDeleteBase, [QueryPromise]);
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/view-base.js
-var SQLiteViewBase = class extends View {
-	static [entityKind] = "SQLiteViewBase";
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/query-builders/query-builder.js
-var TypedQueryBuilder = class {
-	static [entityKind] = "TypedQueryBuilder";
-	/** @internal */
-	getSelectedFields() {
-		return this._.selectedFields;
-	}
-	/** @internal */
-	withoutSelectionCastCodecs() {
-		return this;
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/select.js
-var SQLiteSelectBuilder = class {
-	static [entityKind] = "SQLiteSelectBuilder";
-	fields;
-	session;
-	dialect;
-	withList;
-	distinct;
-	constructor(config, builder = SQLiteSelectBase) {
-		this.builder = builder;
-		this.fields = config.fields;
-		this.session = config.session;
-		this.dialect = config.dialect;
-		this.withList = config.withList;
-		this.distinct = config.distinct;
-	}
-	from(source) {
-		const isPartialSelect = !!this.fields;
-		let fields;
-		if (this.fields) fields = this.fields;
-		else if (is(source, Subquery)) fields = Object.fromEntries(Object.keys(source._.selectedFields).map((key) => [key, source[key]]));
-		else if (is(source, SQLiteViewBase)) fields = source[ViewBaseConfig].selectedFields;
-		else if (is(source, SQL)) fields = {};
-		else fields = getTableColumns(source);
-		return new this.builder({
-			table: source,
-			fields,
-			isPartialSelect,
-			session: this.session,
-			dialect: this.dialect,
-			withList: this.withList ?? [],
-			distinct: this.distinct
-		});
-	}
-};
-var SQLiteSelectBase = class extends TypedQueryBuilder {
-	static [entityKind] = "SQLiteSelectQueryBuilder";
-	_;
-	/** @internal */
-	config;
-	joinsNotNullableMap;
-	tableName;
-	isPartialSelect;
-	session;
-	dialect;
-	cacheConfig = void 0;
-	usedTables = /* @__PURE__ */ new Set();
-	constructor({ table, fields, isPartialSelect, session, dialect, withList, distinct }) {
-		super();
-		this.config = {
-			withList,
-			table,
-			fields: { ...fields },
-			distinct,
-			setOperators: []
-		};
-		this.isPartialSelect = isPartialSelect;
-		this.session = session;
-		this.dialect = dialect;
-		this._ = {
-			selectedFields: fields,
-			config: this.config
-		};
-		this.tableName = getTableLikeName(table);
-		this.joinsNotNullableMap = typeof this.tableName === "string" ? { [this.tableName]: true } : {};
-		for (const item of extractUsedTable(table)) this.usedTables.add(item);
-	}
-	/** @internal */
-	getUsedTables() {
-		return [...this.usedTables];
-	}
-	createJoin(joinType) {
-		return (table, on) => {
-			const baseTableName = this.tableName;
-			const tableName = getTableLikeName(table);
-			for (const item of extractUsedTable(table)) this.usedTables.add(item);
-			if (typeof tableName === "string" && this.config.joins?.some((join) => join.alias === tableName)) throw new Error(`Alias "${tableName}" is already used in this query`);
-			if (!this.isPartialSelect) {
-				if (Object.keys(this.joinsNotNullableMap).length === 1 && typeof baseTableName === "string") this.config.fields = { [baseTableName]: this.config.fields };
-				if (typeof tableName === "string" && !is(table, SQL)) {
-					const selection = is(table, Subquery) ? table._.selectedFields : is(table, View) ? table[ViewBaseConfig].selectedFields : table[Table.Symbol.Columns];
-					this.config.fields[tableName] = selection;
-				}
-			}
-			if (typeof on === "function") on = on(new Proxy(this.config.fields, new SelectionProxyHandler({
-				sqlAliasedBehavior: "sql",
-				sqlBehavior: "sql"
-			})));
-			if (!this.config.joins) this.config.joins = [];
-			this.config.joins.push({
-				on,
-				table,
-				joinType,
-				alias: tableName
-			});
-			if (typeof tableName === "string") switch (joinType) {
-				case "left":
-					this.joinsNotNullableMap[tableName] = false;
-					break;
-				case "right":
-					this.joinsNotNullableMap = Object.fromEntries(Object.entries(this.joinsNotNullableMap).map(([key]) => [key, false]));
-					this.joinsNotNullableMap[tableName] = true;
-					break;
-				case "cross":
-				case "inner":
-					this.joinsNotNullableMap[tableName] = true;
-					break;
-				case "full":
-					this.joinsNotNullableMap = Object.fromEntries(Object.entries(this.joinsNotNullableMap).map(([key]) => [key, false]));
-					this.joinsNotNullableMap[tableName] = false;
-					break;
-			}
-			return this;
-		};
-	}
-	/**
-	* Executes a `left join` operation by adding another table to the current query.
-	*
-	* Calling this method associates each row of the table with the corresponding row from the joined table, if a match is found. If no matching row exists, it sets all columns of the joined table to null.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/joins#left-join}
-	*
-	* @param table the table to join.
-	* @param on the `on` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all users and their pets
-	* const usersWithPets: { user: User; pets: Pet | null; }[] = await db.select()
-	*   .from(users)
-	*   .leftJoin(pets, eq(users.id, pets.ownerId))
-	*
-	* // Select userId and petId
-	* const usersIdsAndPetIds: { userId: number; petId: number | null; }[] = await db.select({
-	*   userId: users.id,
-	*   petId: pets.id,
-	* })
-	*   .from(users)
-	*   .leftJoin(pets, eq(users.id, pets.ownerId))
-	* ```
-	*/
-	leftJoin = this.createJoin("left");
-	/**
-	* Executes a `right join` operation by adding another table to the current query.
-	*
-	* Calling this method associates each row of the joined table with the corresponding row from the main table, if a match is found. If no matching row exists, it sets all columns of the main table to null.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/joins#right-join}
-	*
-	* @param table the table to join.
-	* @param on the `on` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all users and their pets
-	* const usersWithPets: { user: User | null; pets: Pet; }[] = await db.select()
-	*   .from(users)
-	*   .rightJoin(pets, eq(users.id, pets.ownerId))
-	*
-	* // Select userId and petId
-	* const usersIdsAndPetIds: { userId: number | null; petId: number; }[] = await db.select({
-	*   userId: users.id,
-	*   petId: pets.id,
-	* })
-	*   .from(users)
-	*   .rightJoin(pets, eq(users.id, pets.ownerId))
-	* ```
-	*/
-	rightJoin = this.createJoin("right");
-	/**
-	* Executes an `inner join` operation, creating a new table by combining rows from two tables that have matching values.
-	*
-	* Calling this method retrieves rows that have corresponding entries in both joined tables. Rows without matching entries in either table are excluded, resulting in a table that includes only matching pairs.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/joins#inner-join}
-	*
-	* @param table the table to join.
-	* @param on the `on` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all users and their pets
-	* const usersWithPets: { user: User; pets: Pet; }[] = await db.select()
-	*   .from(users)
-	*   .innerJoin(pets, eq(users.id, pets.ownerId))
-	*
-	* // Select userId and petId
-	* const usersIdsAndPetIds: { userId: number; petId: number; }[] = await db.select({
-	*   userId: users.id,
-	*   petId: pets.id,
-	* })
-	*   .from(users)
-	*   .innerJoin(pets, eq(users.id, pets.ownerId))
-	* ```
-	*/
-	innerJoin = this.createJoin("inner");
-	/**
-	* Executes a `full join` operation by combining rows from two tables into a new table.
-	*
-	* Calling this method retrieves all rows from both main and joined tables, merging rows with matching values and filling in `null` for non-matching columns.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/joins#full-join}
-	*
-	* @param table the table to join.
-	* @param on the `on` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all users and their pets
-	* const usersWithPets: { user: User | null; pets: Pet | null; }[] = await db.select()
-	*   .from(users)
-	*   .fullJoin(pets, eq(users.id, pets.ownerId))
-	*
-	* // Select userId and petId
-	* const usersIdsAndPetIds: { userId: number | null; petId: number | null; }[] = await db.select({
-	*   userId: users.id,
-	*   petId: pets.id,
-	* })
-	*   .from(users)
-	*   .fullJoin(pets, eq(users.id, pets.ownerId))
-	* ```
-	*/
-	fullJoin = this.createJoin("full");
-	/**
-	* Executes a `cross join` operation by combining rows from two tables into a new table.
-	*
-	* Calling this method retrieves all rows from both main and joined tables, merging all rows from each table.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/joins#cross-join}
-	*
-	* @param table the table to join.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all users, each user with every pet
-	* const usersWithPets: { user: User; pets: Pet; }[] = await db.select()
-	*   .from(users)
-	*   .crossJoin(pets)
-	*
-	* // Select userId and petId
-	* const usersIdsAndPetIds: { userId: number; petId: number; }[] = await db.select({
-	*   userId: users.id,
-	*   petId: pets.id,
-	* })
-	*   .from(users)
-	*   .crossJoin(pets)
-	* ```
-	*/
-	crossJoin = this.createJoin("cross");
-	createSetOperator(type, isAll) {
-		return (rightSelection) => {
-			const rightSelect = typeof rightSelection === "function" ? rightSelection(getSQLiteSetOperators()) : rightSelection;
-			if (!haveSameKeys(this.getSelectedFields(), rightSelect.getSelectedFields())) throw new Error("Set operator error (union / intersect / except): selected fields are not the same or are in a different order");
-			this.config.setOperators.push({
-				type,
-				isAll,
-				rightSelect
-			});
-			return this;
-		};
-	}
-	/**
-	* Adds `union` set operator to the query.
-	*
-	* Calling this method will combine the result sets of the `select` statements and remove any duplicate rows that appear across them.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/set-operations#union}
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all unique names from customers and users tables
-	* await db.select({ name: users.name })
-	*   .from(users)
-	*   .union(
-	*     db.select({ name: customers.name }).from(customers)
-	*   );
-	* // or
-	* import { union } from 'drizzle-orm/sqlite-core'
-	*
-	* await union(
-	*   db.select({ name: users.name }).from(users),
-	*   db.select({ name: customers.name }).from(customers)
-	* );
-	* ```
-	*/
-	union = this.createSetOperator("union", false);
-	/**
-	* Adds `union all` set operator to the query.
-	*
-	* Calling this method will combine the result-set of the `select` statements and keep all duplicate rows that appear across them.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/set-operations#union-all}
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all transaction ids from both online and in-store sales
-	* await db.select({ transaction: onlineSales.transactionId })
-	*   .from(onlineSales)
-	*   .unionAll(
-	*     db.select({ transaction: inStoreSales.transactionId }).from(inStoreSales)
-	*   );
-	* // or
-	* import { unionAll } from 'drizzle-orm/sqlite-core'
-	*
-	* await unionAll(
-	*   db.select({ transaction: onlineSales.transactionId }).from(onlineSales),
-	*   db.select({ transaction: inStoreSales.transactionId }).from(inStoreSales)
-	* );
-	* ```
-	*/
-	unionAll = this.createSetOperator("union", true);
-	/**
-	* Adds `intersect` set operator to the query.
-	*
-	* Calling this method will retain only the rows that are present in both result sets and eliminate duplicates.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/set-operations#intersect}
-	*
-	* @example
-	*
-	* ```ts
-	* // Select course names that are offered in both departments A and B
-	* await db.select({ courseName: depA.courseName })
-	*   .from(depA)
-	*   .intersect(
-	*     db.select({ courseName: depB.courseName }).from(depB)
-	*   );
-	* // or
-	* import { intersect } from 'drizzle-orm/sqlite-core'
-	*
-	* await intersect(
-	*   db.select({ courseName: depA.courseName }).from(depA),
-	*   db.select({ courseName: depB.courseName }).from(depB)
-	* );
-	* ```
-	*/
-	intersect = this.createSetOperator("intersect", false);
-	/**
-	* Adds `except` set operator to the query.
-	*
-	* Calling this method will retrieve all unique rows from the left query, except for the rows that are present in the result set of the right query.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/set-operations#except}
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all courses offered in department A but not in department B
-	* await db.select({ courseName: depA.courseName })
-	*   .from(depA)
-	*   .except(
-	*     db.select({ courseName: depB.courseName }).from(depB)
-	*   );
-	* // or
-	* import { except } from 'drizzle-orm/sqlite-core'
-	*
-	* await except(
-	*   db.select({ courseName: depA.courseName }).from(depA),
-	*   db.select({ courseName: depB.courseName }).from(depB)
-	* );
-	* ```
-	*/
-	except = this.createSetOperator("except", false);
-	/** @internal */
-	addSetOperators(setOperators) {
-		this.config.setOperators.push(...setOperators);
-		return this;
-	}
-	/**
-	* Adds a `where` clause to the query.
-	*
-	* Calling this method will select only those rows that fulfill a specified condition.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#filtering}
-	*
-	* @param where the `where` clause.
-	*
-	* @example
-	* You can use conditional operators and `sql function` to filter the rows to be selected.
-	*
-	* ```ts
-	* // Select all cars with green color
-	* await db.select().from(cars).where(eq(cars.color, 'green'));
-	* // or
-	* await db.select().from(cars).where(sql`${cars.color} = 'green'`)
-	* ```
-	*
-	* You can logically combine conditional operators with `and()` and `or()` operators:
-	*
-	* ```ts
-	* // Select all BMW cars with a green color
-	* await db.select().from(cars).where(and(eq(cars.color, 'green'), eq(cars.brand, 'BMW')));
-	*
-	* // Select all cars with the green or blue color
-	* await db.select().from(cars).where(or(eq(cars.color, 'green'), eq(cars.color, 'blue')));
-	* ```
-	*/
-	where(where) {
-		if (typeof where === "function") where = where(new Proxy(this.config.fields, new SelectionProxyHandler({
-			sqlAliasedBehavior: "sql",
-			sqlBehavior: "sql"
-		})));
-		this.config.where = where;
-		return this;
-	}
-	/**
-	* Adds a `having` clause to the query.
-	*
-	* Calling this method will select only those rows that fulfill a specified condition. It is typically used with aggregate functions to filter the aggregated data based on a specified condition.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#aggregations}
-	*
-	* @param having the `having` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Select all brands with more than one car
-	* await db.select({
-	* 	brand: cars.brand,
-	* 	count: sql<number>`cast(count(${cars.id}) as int)`,
-	* })
-	*   .from(cars)
-	*   .groupBy(cars.brand)
-	*   .having(({ count }) => gt(count, 1));
-	* ```
-	*/
-	having(having) {
-		if (typeof having === "function") having = having(new Proxy(this.config.fields, new SelectionProxyHandler({
-			sqlAliasedBehavior: "sql",
-			sqlBehavior: "sql"
-		})));
-		this.config.having = having;
-		return this;
-	}
-	groupBy(...columns) {
-		if (typeof columns[0] === "function") {
-			const groupBy = columns[0](new Proxy(this.config.fields, new SelectionProxyHandler({
-				sqlAliasedBehavior: "alias",
-				sqlBehavior: "sql"
-			})));
-			this.config.groupBy = Array.isArray(groupBy) ? groupBy : [groupBy];
-		} else this.config.groupBy = columns;
-		return this;
-	}
-	orderBy(...columns) {
-		if (typeof columns[0] === "function") {
-			const orderBy = columns[0](new Proxy(this.config.fields, new SelectionProxyHandler({
-				sqlAliasedBehavior: "alias",
-				sqlBehavior: "sql"
-			})));
-			const orderByArray = Array.isArray(orderBy) ? orderBy : [orderBy];
-			if (this.config.setOperators.length > 0) this.config.setOperators.at(-1).orderBy = orderByArray;
-			else this.config.orderBy = orderByArray;
-		} else {
-			const orderByArray = columns;
-			if (this.config.setOperators.length > 0) this.config.setOperators.at(-1).orderBy = orderByArray;
-			else this.config.orderBy = orderByArray;
-		}
-		return this;
-	}
-	/**
-	* Adds a `limit` clause to the query.
-	*
-	* Calling this method will set the maximum number of rows that will be returned by this query.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#limit--offset}
-	*
-	* @param limit the `limit` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Get the first 10 people from this query.
-	* await db.select().from(people).limit(10);
-	* ```
-	*/
-	limit(limit) {
-		if (this.config.setOperators.length > 0) this.config.setOperators.at(-1).limit = limit;
-		else this.config.limit = limit;
-		return this;
-	}
-	/**
-	* Adds an `offset` clause to the query.
-	*
-	* Calling this method will skip a number of rows when returning results from this query.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#limit--offset}
-	*
-	* @param offset the `offset` clause.
-	*
-	* @example
-	*
-	* ```ts
-	* // Get the 10th-20th people from this query.
-	* await db.select().from(people).offset(10).limit(10);
-	* ```
-	*/
-	offset(offset) {
-		if (this.config.setOperators.length > 0) this.config.setOperators.at(-1).offset = offset;
-		else this.config.offset = offset;
-		return this;
-	}
-	$withCache(config) {
-		this.cacheConfig = config === void 0 ? {
-			config: {},
-			enabled: true,
-			autoInvalidate: true
-		} : config === false ? { enabled: false } : {
-			enabled: true,
-			autoInvalidate: true,
-			...config
-		};
-		return this;
-	}
-	getSQL() {
-		this.config.fieldsFlat = orderSelectedFields(this.config.fields);
-		return this.dialect.buildSelectQuery(this.config);
-	}
-	toSQL() {
-		return this.dialect.sqlToQuery(this.getSQL());
-	}
-	as(alias) {
-		const usedTables = [];
-		usedTables.push(...extractUsedTable(this.config.table));
-		if (this.config.joins) for (const it of this.config.joins) usedTables.push(...extractUsedTable(it.table));
-		return new Proxy(new Subquery(this.getSQL(), this.config.fields, alias, false, [...new Set(usedTables)]), new SelectionProxyHandler({
-			alias,
-			sqlAliasedBehavior: "alias",
-			sqlBehavior: "error"
-		}));
-	}
-	/** @internal */
-	getSelectedFields() {
-		return new Proxy(this.config.fields, new SelectionProxyHandler({
-			alias: this.tableName,
-			sqlAliasedBehavior: "alias",
-			sqlBehavior: "error"
-		}));
-	}
-	/** @internal */
-	withoutSelectionCastCodecs() {
-		return this;
-	}
-	$dynamic() {
-		return this;
-	}
-};
-function createSetOperator(type, isAll) {
-	return (leftSelect, rightSelect, ...restSelects) => {
-		const setOperators = [rightSelect, ...restSelects].map((select) => ({
-			type,
-			isAll,
-			rightSelect: select
-		}));
-		for (const setOperator of setOperators) if (!haveSameKeys(leftSelect.getSelectedFields(), setOperator.rightSelect.getSelectedFields())) throw new Error("Set operator error (union / intersect / except): selected fields are not the same or are in a different order");
-		return leftSelect.addSetOperators(setOperators);
-	};
-}
-var getSQLiteSetOperators = () => ({
-	union,
-	unionAll,
-	intersect,
-	except
-});
-/**
-* Adds `union` set operator to the query.
-*
-* Calling this method will combine the result sets of the `select` statements and remove any duplicate rows that appear across them.
-*
-* See docs: {@link https://orm.drizzle.team/docs/set-operations#union}
-*
-* @example
-*
-* ```ts
-* // Select all unique names from customers and users tables
-* import { union } from 'drizzle-orm/sqlite-core'
-*
-* await union(
-*   db.select({ name: users.name }).from(users),
-*   db.select({ name: customers.name }).from(customers)
-* );
-* // or
-* await db.select({ name: users.name })
-*   .from(users)
-*   .union(
-*     db.select({ name: customers.name }).from(customers)
-*   );
-* ```
-*/
-var union = createSetOperator("union", false);
-/**
-* Adds `union all` set operator to the query.
-*
-* Calling this method will combine the result-set of the `select` statements and keep all duplicate rows that appear across them.
-*
-* See docs: {@link https://orm.drizzle.team/docs/set-operations#union-all}
-*
-* @example
-*
-* ```ts
-* // Select all transaction ids from both online and in-store sales
-* import { unionAll } from 'drizzle-orm/sqlite-core'
-*
-* await unionAll(
-*   db.select({ transaction: onlineSales.transactionId }).from(onlineSales),
-*   db.select({ transaction: inStoreSales.transactionId }).from(inStoreSales)
-* );
-* // or
-* await db.select({ transaction: onlineSales.transactionId })
-*   .from(onlineSales)
-*   .unionAll(
-*     db.select({ transaction: inStoreSales.transactionId }).from(inStoreSales)
-*   );
-* ```
-*/
-var unionAll = createSetOperator("union", true);
-/**
-* Adds `intersect` set operator to the query.
-*
-* Calling this method will retain only the rows that are present in both result sets and eliminate duplicates.
-*
-* See docs: {@link https://orm.drizzle.team/docs/set-operations#intersect}
-*
-* @example
-*
-* ```ts
-* // Select course names that are offered in both departments A and B
-* import { intersect } from 'drizzle-orm/sqlite-core'
-*
-* await intersect(
-*   db.select({ courseName: depA.courseName }).from(depA),
-*   db.select({ courseName: depB.courseName }).from(depB)
-* );
-* // or
-* await db.select({ courseName: depA.courseName })
-*   .from(depA)
-*   .intersect(
-*     db.select({ courseName: depB.courseName }).from(depB)
-*   );
-* ```
-*/
-var intersect = createSetOperator("intersect", false);
-/**
-* Adds `except` set operator to the query.
-*
-* Calling this method will retrieve all unique rows from the left query, except for the rows that are present in the result set of the right query.
-*
-* See docs: {@link https://orm.drizzle.team/docs/set-operations#except}
-*
-* @example
-*
-* ```ts
-* // Select all courses offered in department A but not in department B
-* import { except } from 'drizzle-orm/sqlite-core'
-*
-* await except(
-*   db.select({ courseName: depA.courseName }).from(depA),
-*   db.select({ courseName: depB.courseName }).from(depB)
-* );
-* // or
-* await db.select({ courseName: depA.courseName })
-*   .from(depA)
-*   .except(
-*     db.select({ courseName: depB.courseName }).from(depB)
-*   );
-* ```
-*/
-var except = createSetOperator("except", false);
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/dialect.js
-var SQLiteDialect = class {
-	static [entityKind] = "SQLiteDialect";
-	mapperGenerators;
-	constructor(config) {
-		this.mapperGenerators = config?.useJitMappers ? {
-			rows: makeJitQueryMapper,
-			relationalRows: makeJitRqbMapper
-		} : {
-			rows: makeDefaultQueryMapper,
-			relationalRows: makeDefaultRqbMapper
-		};
-	}
-	escapeName(name) {
-		return `"${name.replace(/"/g, "\"\"")}"`;
-	}
-	escapeParam(_num) {
-		return "?";
-	}
-	escapeString(str) {
-		return `'${str.replace(/'/g, "''")}'`;
-	}
-	buildWithCTE(queries) {
-		if (!queries?.length) return void 0;
-		const withSqlChunks = [sql`with `];
-		for (const [i, w] of queries.entries()) {
-			withSqlChunks.push(sql`${sql.identifier(w._.alias)} as (${w._.sql})`);
-			if (i < queries.length - 1) withSqlChunks.push(sql`, `);
-		}
-		withSqlChunks.push(sql` `);
-		return sql.join(withSqlChunks);
-	}
-	buildDeleteQuery({ table, where, returning, withList, limit, orderBy }) {
-		const withSql = this.buildWithCTE(withList);
-		const returningSql = returning ? sql` returning ${this.buildSelection(returning, { isSingleTable: true })}` : void 0;
-		return sql`${withSql}delete from ${table}${where ? sql` where ${where}` : void 0}${returningSql}${this.buildOrderBy(orderBy)}${this.buildLimit(limit)}`;
-	}
-	buildUpdateSet(table, set) {
-		const tableColumns = table[Table.Symbol.Columns];
-		const columnNames = Object.keys(tableColumns).filter((colName) => set[colName] !== void 0 || tableColumns[colName]?.onUpdateFn !== void 0);
-		const setLength = columnNames.length;
-		return sql.join(columnNames.flatMap((colName, i) => {
-			const col = tableColumns[colName];
-			const onUpdateFnResult = col.onUpdateFn?.();
-			const value = set[colName] ?? (is(onUpdateFnResult, SQL) ? onUpdateFnResult : sql.param(onUpdateFnResult, col));
-			const res = sql`${sql.identifier(col.name)} = ${value}`;
-			if (i < setLength - 1) return [res, sql.raw(", ")];
-			return [res];
-		}));
-	}
-	buildUpdateQuery({ table, set, where, returning, withList, joins, from, limit, orderBy }) {
-		const withSql = this.buildWithCTE(withList);
-		const setSql = this.buildUpdateSet(table, set);
-		const fromSql = from && sql.join([sql.raw(" from "), this.buildFromTable(from)]);
-		const joinsSql = this.buildJoins(joins);
-		const returningSql = returning ? sql` returning ${this.buildSelection(returning, { isSingleTable: true })}` : void 0;
-		return sql`${withSql}update ${table} set ${setSql}${fromSql}${joinsSql}${where ? sql` where ${where}` : void 0}${returningSql}${this.buildOrderBy(orderBy)}${this.buildLimit(limit)}`;
-	}
-	/**
-	* Builds selection SQL with provided fields/expressions
-	*
-	* Examples:
-	*
-	* `select <selection> from`
-	*
-	* `insert ... returning <selection>`
-	*
-	* If `isSingleTable` is true, then columns won't be prefixed with table name
-	*/
-	buildSelection(fields, { isSingleTable = false } = {}) {
-		const columnsLen = fields.length;
-		const chunks = fields.flatMap(({ field }, i) => {
-			const chunk = [];
-			if (is(field, SQL.Aliased)) if (field.isSelectionField) {
-				if (!isSingleTable && field.origin !== void 0) chunk.push(sql.identifier(field.origin), sql.raw("."));
-				chunk.push(sql.identifier(field.fieldAlias));
-			} else {
-				const query = field.sql;
-				if (isSingleTable) {
-					const newSql = new SQL(query.queryChunks.map((c) => {
-						if (is(c, Column)) return sql.identifier(c.name);
-						return c;
-					}));
-					chunk.push(query.shouldInlineParams ? newSql.inlineParams() : newSql);
-				} else chunk.push(query);
-				chunk.push(sql` as ${sql.identifier(field.fieldAlias)}`);
-			}
-			else if (is(field, SQL)) {
-				const query = field;
-				if (isSingleTable) {
-					const newSql = new SQL(query.queryChunks.map((c) => {
-						if (is(c, Column)) return sql.identifier(c.name);
-						return c;
-					}));
-					chunk.push(query.shouldInlineParams ? newSql.inlineParams() : newSql);
-				} else chunk.push(query);
-			} else if (is(field, Column)) if (field.columnType === "SQLiteNumericBigInt" || field.columnType === "SQLiteNumeric") if (isSingleTable) chunk.push(field.isAlias ? sql`cast(${sql.identifier(getOriginalColumnFromAlias(field).name)} as text) as ${field}` : sql`cast(${sql.identifier(field.name)} as text)`);
-			else chunk.push(field.isAlias ? sql`cast(${getOriginalColumnFromAlias(field)} as text) as ${field}` : sql`cast(${field} as text)`);
-			else if (isSingleTable) chunk.push(field.isAlias ? sql`${sql.identifier(getOriginalColumnFromAlias(field).name)} as ${field}` : sql.identifier(field.name));
-			else chunk.push(field.isAlias ? sql`${getOriginalColumnFromAlias(field)} as ${field}` : field);
-			else if (is(field, Subquery)) if (!field._.isWith) chunk.push(sql`(${field._.sql}) ${sql.identifier(field._.alias)}`);
-			else chunk.push(field);
-			if (i < columnsLen - 1) chunk.push(sql`, `);
-			return chunk;
-		});
-		return sql.join(chunks);
-	}
-	buildJoins(joins) {
-		if (!joins || joins.length === 0) return;
-		const joinsArray = [];
-		if (joins) for (const [index, joinMeta] of joins.entries()) {
-			if (index === 0) joinsArray.push(sql` `);
-			const table = joinMeta.table;
-			const onSql = joinMeta.on ? sql` on ${joinMeta.on}` : void 0;
-			if (is(table, SQLiteTable)) {
-				const tableName = table[SQLiteTable.Symbol.Name];
-				const tableSchema = table[SQLiteTable.Symbol.Schema];
-				const origTableName = table[SQLiteTable.Symbol.OriginalName];
-				const alias = tableName === origTableName ? void 0 : joinMeta.alias;
-				joinsArray.push(sql`${sql.raw(joinMeta.joinType)} join ${tableSchema ? sql`${sql.identifier(tableSchema)}.` : void 0}${sql.identifier(origTableName)}${alias && sql` ${sql.identifier(alias)}`}${onSql}`);
-			} else joinsArray.push(sql`${sql.raw(joinMeta.joinType)} join ${table}${onSql}`);
-			if (index < joins.length - 1) joinsArray.push(sql` `);
-		}
-		return sql.join(joinsArray);
-	}
-	buildLimit(limit) {
-		return typeof limit === "object" || typeof limit === "number" && limit >= 0 ? sql` limit ${limit}` : void 0;
-	}
-	buildOrderBy(orderBy) {
-		const orderByList = [];
-		if (orderBy) for (const [index, orderByValue] of orderBy.entries()) {
-			orderByList.push(orderByValue);
-			if (index < orderBy.length - 1) orderByList.push(sql`, `);
-		}
-		return orderByList.length > 0 ? sql` order by ${sql.join(orderByList)}` : void 0;
-	}
-	buildFromTable(table) {
-		if (is(table, Table) && table[Table.Symbol.IsAlias]) return sql`${sql`${sql.identifier(table[Table.Symbol.Schema] ?? "")}.`.if(table[Table.Symbol.Schema])}${sql.identifier(table[Table.Symbol.OriginalName])} ${sql.identifier(table[Table.Symbol.Name])}`;
-		if (is(table, View) && table[ViewBaseConfig].isAlias) {
-			let fullName = sql`${sql.identifier(table[ViewBaseConfig].originalName)}`;
-			if (table[ViewBaseConfig].schema) fullName = sql`${sql.identifier(table[ViewBaseConfig].schema)}.${fullName}`;
-			return sql`${fullName} ${sql.identifier(table[ViewBaseConfig].name)}`;
-		}
-		return table;
-	}
-	buildSelectQuery({ withList, fields, fieldsFlat, where, having, table, joins, orderBy, groupBy, limit, offset, distinct, setOperators }) {
-		const fieldsList = fieldsFlat ?? orderSelectedFields(fields);
-		for (const f of fieldsList) if (is(f.field, Column) && getTableName(f.field.table) !== (is(table, Subquery) ? table._.alias : is(table, SQLiteViewBase) ? table[ViewBaseConfig].name : is(table, SQL) ? void 0 : getTableName(table)) && !((table) => joins?.some(({ alias }) => alias === (table[Table.Symbol.IsAlias] ? getTableName(table) : table[Table.Symbol.BaseName])))(f.field.table)) {
-			const tableName = getTableName(f.field.table);
-			throw new Error(`Your "${f.path.join("->")}" field references a column "${tableName}"."${f.field.name}", but the table "${tableName}" is not part of the query! Did you forget to join it?`);
-		}
-		const isSingleTable = !joins || joins.length === 0;
-		const withSql = this.buildWithCTE(withList);
-		const distinctSql = distinct ? sql` distinct` : void 0;
-		const selection = this.buildSelection(fieldsList, { isSingleTable });
-		const tableSql = this.buildFromTable(table);
-		const joinsSql = this.buildJoins(joins);
-		const whereSql = where ? sql` where ${where}` : void 0;
-		const havingSql = having ? sql` having ${having}` : void 0;
-		const groupByList = [];
-		if (groupBy) for (const [index, groupByValue] of groupBy.entries()) {
-			groupByList.push(groupByValue);
-			if (index < groupBy.length - 1) groupByList.push(sql`, `);
-		}
-		const finalQuery = sql`${withSql}select${distinctSql} ${selection} from ${tableSql}${joinsSql}${whereSql}${groupByList.length > 0 ? sql` group by ${sql.join(groupByList)}` : void 0}${havingSql}${this.buildOrderBy(orderBy)}${this.buildLimit(limit)}${offset ? sql` offset ${offset}` : void 0}`;
-		if (setOperators.length > 0) return this.buildSetOperations(finalQuery, setOperators);
-		return finalQuery;
-	}
-	buildSetOperations(leftSelect, setOperators) {
-		const [setOperator, ...rest] = setOperators;
-		if (!setOperator) throw new Error("Cannot pass undefined values to any set operator");
-		if (rest.length === 0) return this.buildSetOperationQuery({
-			leftSelect,
-			setOperator
-		});
-		return this.buildSetOperations(this.buildSetOperationQuery({
-			leftSelect,
-			setOperator
-		}), rest);
-	}
-	buildSetOperationQuery({ leftSelect, setOperator: { type, isAll, rightSelect, limit, orderBy, offset } }) {
-		const leftChunk = sql`${leftSelect.getSQL()} `;
-		const rightChunk = sql`${rightSelect.getSQL()}`;
-		let orderBySql;
-		if (orderBy && orderBy.length > 0) {
-			const orderByValues = [];
-			for (const singleOrderBy of orderBy) if (is(singleOrderBy, SQLiteColumn)) orderByValues.push(sql.identifier(singleOrderBy.name));
-			else if (is(singleOrderBy, SQL)) {
-				for (let i = 0; i < singleOrderBy.queryChunks.length; i++) {
-					const chunk = singleOrderBy.queryChunks[i];
-					if (is(chunk, SQLiteColumn)) singleOrderBy.queryChunks[i] = sql.identifier(chunk.name);
-				}
-				orderByValues.push(sql`${singleOrderBy}`);
-			} else orderByValues.push(sql`${singleOrderBy}`);
-			orderBySql = sql` order by ${sql.join(orderByValues, sql`, `)}`;
-		}
-		const limitSql = typeof limit === "object" || typeof limit === "number" && limit >= 0 ? sql` limit ${limit}` : void 0;
-		const operatorChunk = sql.raw(`${type} ${isAll ? "all " : ""}`);
-		const offsetSql = offset ? sql` offset ${offset}` : void 0;
-		return sql`${leftChunk}${operatorChunk}${rightChunk}${orderBySql}${limitSql}${offsetSql}`;
-	}
-	buildInsertQuery({ table, values: valuesOrSelect, onConflict, returning, withList, select }) {
-		const valuesSqlList = [];
-		const columns = table[Table.Symbol.Columns];
-		const colEntries = Object.entries(columns);
-		const colEntriesFiltered = select && !is(valuesOrSelect, SQL) ? Object.keys(valuesOrSelect.getSelectedFields()).map((key) => [key, columns[key]]) : colEntries.filter(([_, col]) => !col.shouldDisableInsert());
-		const insertOrder = colEntriesFiltered.map(([, column]) => sql.identifier(column.name));
-		if (select) {
-			const select = valuesOrSelect;
-			if (is(select, SQL)) valuesSqlList.push(select);
-			else valuesSqlList.push(select.getSQL());
-		} else {
-			const values = valuesOrSelect;
-			valuesSqlList.push(sql.raw("values "));
-			for (const [valueIndex, value] of values.entries()) {
-				const valueList = [];
-				for (const [fieldName, col] of colEntriesFiltered) {
-					const colValue = value[fieldName];
-					if (colValue === void 0 || is(colValue, Param) && colValue.value === void 0) {
-						let defaultValue;
-						if (col.default !== null && col.default !== void 0) defaultValue = is(col.default, SQL) ? col.default : sql.param(col.default, col);
-						else if (col.defaultFn !== void 0) {
-							const defaultFnResult = col.defaultFn();
-							defaultValue = is(defaultFnResult, SQL) ? defaultFnResult : sql.param(defaultFnResult, col);
-						} else if (!col.default && col.onUpdateFn !== void 0) {
-							const onUpdateFnResult = col.onUpdateFn();
-							defaultValue = is(onUpdateFnResult, SQL) ? onUpdateFnResult : sql.param(onUpdateFnResult, col);
-						} else defaultValue = sql`null`;
-						valueList.push(defaultValue);
-					} else valueList.push(colValue);
-				}
-				valuesSqlList.push(valueList);
-				if (valueIndex < values.length - 1) valuesSqlList.push(sql`, `);
-			}
-		}
-		const withSql = this.buildWithCTE(withList);
-		const valuesSql = sql.join(valuesSqlList);
-		const returningSql = returning ? sql` returning ${this.buildSelection(returning, { isSingleTable: true })}` : void 0;
-		return sql`${withSql}insert into ${table} ${insertOrder} ${valuesSql}${onConflict?.length ? sql.join(onConflict) : void 0}${returningSql}`;
-	}
-	sqlToQuery(sql, invokeSource) {
-		return sql.toQuery({
-			escapeName: this.escapeName,
-			escapeParam: this.escapeParam,
-			escapeString: this.escapeString,
-			invokeSource
-		});
-	}
-	nestedSelectionerror() {
-		throw new DrizzleError({ message: `Views with nested selections are not supported by the relational query builder` });
-	}
-	buildRqbColumn(table, column, key, inJson) {
-		if (is(column, Column)) {
-			const name = sql`${table}.${sql.identifier(column.name)}`;
-			switch (column.columnType) {
-				case "SQLiteBigInt":
-				case "SQLiteBlobJson":
-				case "SQLiteBlobBuffer":
-					if (!inJson) return sql`${name} as ${sql.identifier(key)}`;
-					return sql`hex(${name}) as ${sql.identifier(key)}`;
-				case "SQLiteNumeric":
-				case "SQLiteNumericNumber":
-				case "SQLiteNumericBigInt": return sql`cast(${name} as text) as ${sql.identifier(key)}`;
-				case "SQLiteCustomColumn":
-					if (!inJson) return sql`${name} as ${sql.identifier(key)}`;
-					return sql`${column.jsonSelectIdentifier(name, sql)} as ${sql.identifier(key)}`;
-				default: return sql`${name} as ${sql.identifier(key)}`;
-			}
-		}
-		return sql`${table}.${is(column, SQL.Aliased) ? sql.identifier(column.fieldAlias) : isSQLWrapper(column) ? sql.identifier(key) : this.nestedSelectionerror()} as ${sql.identifier(key)}`;
-	}
-	unwrapAllColumns = (table, selection, inJson) => {
-		return sql.join(Object.entries(table[TableColumns]).map(([k, v]) => {
-			selection.push({
-				key: k,
-				field: v
-			});
-			return this.buildRqbColumn(table, v, k, inJson);
-		}), sql`, `);
-	};
-	getSelectedTableColumns = (table, columns) => {
-		const selectedColumns = [];
-		const columnContainer = table[TableColumns];
-		const entries = Object.entries(columns);
-		let colSelectionMode;
-		for (const [k, v] of entries) {
-			if (v === void 0) continue;
-			colSelectionMode = colSelectionMode || v;
-			if (v) {
-				const column = columnContainer[k];
-				selectedColumns.push({
-					column,
-					tsName: k
-				});
-			}
-		}
-		if (colSelectionMode === false) for (const [k, v] of Object.entries(columnContainer)) {
-			if (columns[k] === false) continue;
-			selectedColumns.push({
-				column: v,
-				tsName: k
-			});
-		}
-		return selectedColumns;
-	};
-	buildColumns = (table, selection, inJson, params) => params?.columns ? (() => {
-		const columnIdentifiers = [];
-		const selectedColumns = this.getSelectedTableColumns(table, params?.columns);
-		for (const { column, tsName } of selectedColumns) {
-			columnIdentifiers.push(this.buildRqbColumn(table, column, tsName, inJson));
-			selection.push({
-				key: tsName,
-				field: column
-			});
-		}
-		return columnIdentifiers.length ? sql.join(columnIdentifiers, sql`, `) : void 0;
-	})() : this.unwrapAllColumns(table, selection, inJson);
-	buildRelationalQuery({ schema, table, tableConfig, queryConfig: config, relationWhere, mode, isNested, errorPath, depth, throughJoin, jsonb }) {
-		const selection = [];
-		const isSingle = mode === "first";
-		const params = config === true ? void 0 : config;
-		const currentPath = errorPath ?? "";
-		const currentDepth = depth ?? 0;
-		if (!currentDepth) table = aliasedTable(table, `d${currentDepth}`);
-		const limit = isSingle ? 1 : params?.limit;
-		const offset = params?.offset;
-		const columns = this.buildColumns(table, selection, !!isNested, params);
-		const where = params?.where && relationWhere ? and(relationsFilterToSQL(table, params.where, tableConfig.relations, schema), relationWhere) : params?.where ? relationsFilterToSQL(table, params.where, tableConfig.relations, schema) : relationWhere;
-		const order = params?.orderBy ? relationsOrderToSQL(table, params.orderBy) : void 0;
-		const extras = params?.extras ? relationExtrasToSQL(table, params.extras) : void 0;
-		if (extras) selection.push(...extras.selection);
-		const joins = params ? (() => {
-			const { with: joins } = params;
-			if (!joins) return;
-			const withEntries = Object.entries(joins).filter(([_, v]) => v);
-			if (!withEntries.length) return;
-			return sql.join(withEntries.map(([k, join]) => {
-				const relation = tableConfig.relations[k];
-				const isSingle = is(relation, One);
-				const targetTable = aliasedTable(relation.targetTable, `d${currentDepth + 1}`);
-				const throughTable = relation.throughTable ? aliasedTable(relation.throughTable, `tr${currentDepth}`) : void 0;
-				const { filter, joinCondition } = relationToSQL(relation, table, targetTable, throughTable);
-				const throughJoin = throughTable ? sql` inner join ${getTableAsAliasSQL(throughTable)} on ${joinCondition}` : void 0;
-				const innerQuery = this.buildRelationalQuery({
-					table: targetTable,
-					mode: isSingle ? "first" : "many",
-					schema,
-					queryConfig: join,
-					tableConfig: schema[relation.targetTableName],
-					relationWhere: filter,
-					isNested: true,
-					errorPath: `${currentPath.length ? `${currentPath}.` : ""}${k}`,
-					depth: currentDepth + 1,
-					throughJoin,
-					jsonb
-				});
-				selection.push({
-					field: targetTable,
-					key: k,
-					selection: innerQuery.selection,
-					isArray: !isSingle,
-					isOptional: (relation.optional ?? false) || join !== true && !!join.where
-				});
-				const jsonColumns = sql.join(innerQuery.selection.map((s) => {
-					return sql`${sql.raw(this.escapeString(s.key))}, ${s.selection ? sql`${jsonb}(${sql.identifier(s.key)})` : sql.identifier(s.key)}`;
-				}), sql`, `);
-				const json = isNested ? jsonb : sql`json`;
-				return isSingle ? sql`(select ${json}_object(${jsonColumns}) as ${sql.identifier("r")} from (${innerQuery.sql}) as ${sql.identifier("t")}) as ${sql.identifier(k)}` : sql`coalesce((select ${json}_group_array(json_object(${jsonColumns})) as ${sql.identifier("r")} from (${innerQuery.sql}) as ${sql.identifier("t")}), ${jsonb}_array()) as ${sql.identifier(k)}`;
-			}), sql`, `);
-		})() : void 0;
-		const selectionArr = [
-			columns,
-			extras?.sql,
-			joins
-		].filter((e) => e !== void 0);
-		if (!selectionArr.length) throw new DrizzleError({ message: `No fields selected for table "${tableConfig.name}"${currentPath ? ` ("${currentPath}")` : ""}` });
-		return {
-			sql: sql`select ${sql.join(selectionArr, sql`, `)} from ${getTableAsAliasSQL(table)}${throughJoin}${sql` where ${where}`.if(where)}${sql` order by ${order}`.if(order)}${sql` limit ${limit}`.if(limit !== void 0)}${sql` offset ${offset}`.if(offset !== void 0)}`,
-			selection
-		};
-	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/query-builder.js
-var QueryBuilder = class {
-	static [entityKind] = "SQLiteQueryBuilder";
-	dialect;
-	dialectConfig;
-	constructor(dialect) {
-		this.dialect = is(dialect, SQLiteDialect) ? dialect : void 0;
-		this.dialectConfig = is(dialect, SQLiteDialect) ? void 0 : dialect;
-	}
-	$with = (alias, selection) => {
-		const queryBuilder = this;
-		const as = (qb) => {
-			if (typeof qb === "function") qb = qb(queryBuilder);
-			return new Proxy(new WithSubquery(qb.getSQL(), selection ?? ("getSelectedFields" in qb ? qb.getSelectedFields() ?? {} : {}), alias, true), new SelectionProxyHandler({
-				alias,
-				sqlAliasedBehavior: "alias",
-				sqlBehavior: "error"
-			}));
-		};
-		return { as };
-	};
-	with(...queries) {
-		const self = this;
-		function select(fields) {
-			return new SQLiteSelectBuilder({
-				fields: fields ?? void 0,
-				session: void 0,
-				dialect: self.getDialect(),
-				withList: queries
-			});
-		}
-		function selectDistinct(fields) {
-			return new SQLiteSelectBuilder({
-				fields: fields ?? void 0,
-				session: void 0,
-				dialect: self.getDialect(),
-				withList: queries,
-				distinct: true
-			});
-		}
-		return {
-			select,
-			selectDistinct
-		};
-	}
-	select(fields) {
-		return new SQLiteSelectBuilder({
-			fields: fields ?? void 0,
-			session: void 0,
-			dialect: this.getDialect()
-		});
-	}
-	selectDistinct(fields) {
-		return new SQLiteSelectBuilder({
-			fields: fields ?? void 0,
-			session: void 0,
-			dialect: this.getDialect(),
-			distinct: true
-		});
-	}
-	getDialect() {
-		if (!this.dialect) this.dialect = new SQLiteDialect(this.dialectConfig);
-		return this.dialect;
-	}
-};
+ke(Eg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/insert.js
-var SQLiteInsertBuilder = class {
-	static [entityKind] = "SQLiteInsertBuilder";
-	constructor(table, session, dialect, withList, builder = SQLiteInsertBase) {
-		this.table = table;
-		this.session = session;
-		this.dialect = dialect;
-		this.withList = withList;
-		this.builder = builder;
+var Dg = class {
+	static [d] = "SQLiteInsertBuilder";
+	constructor(e, t, n, r, i = Og) {
+		this.table = e, this.session = t, this.dialect = n, this.withList = r, this.builder = i;
 	}
-	values(values) {
-		values = Array.isArray(values) ? values : [values];
-		if (values.length === 0) throw new Error("values() must be called with at least one value");
-		const mappedValues = values.map((entry) => {
-			const result = {};
-			const cols = this.table[Table.Symbol.Columns];
-			for (const colKey of Object.keys(entry)) {
-				const colValue = entry[colKey];
-				result[colKey] = is(colValue, SQL) ? colValue : new Param(colValue, cols[colKey]);
+	values(e) {
+		if (e = Array.isArray(e) ? e : [e], e.length === 0) throw Error("values() must be called with at least one value");
+		let t = e.map((e) => {
+			let t = {}, n = this.table[w.Symbol.Columns];
+			for (let r of Object.keys(e)) {
+				let i = e[r];
+				t[r] = f(i, O) ? i : new pe(i, n[r]);
 			}
-			return result;
+			return t;
 		});
-		return new this.builder(this.table, mappedValues, this.session, this.dialect, this.withList);
+		return new this.builder(this.table, t, this.session, this.dialect, this.withList);
 	}
-	select(selectQuery) {
-		const select = typeof selectQuery === "function" ? selectQuery(new QueryBuilder()) : selectQuery;
-		if (!is(select, SQL)) {
-			const insertCols = Object.keys(this.table[Table.Symbol.Columns]);
-			const selected = Object.keys(select._.selectedFields);
-			for (const col of selected) if (!insertCols.includes(col)) throw new Error(`Insert select error: column "${col}" does not exist in table "${this.table[Table.Symbol.Name]}"`);
+	select(e) {
+		let t = typeof e == "function" ? e(new gg()) : e;
+		if (!f(t, O)) {
+			let e = Object.keys(this.table[w.Symbol.Columns]), n = Object.keys(t._.selectedFields);
+			for (let t of n) if (!e.includes(t)) throw Error(`Insert select error: column "${t}" does not exist in table "${this.table[w.Symbol.Name]}"`);
 		}
-		return new this.builder(this.table, select, this.session, this.dialect, this.withList, true);
+		return new this.builder(this.table, t, this.session, this.dialect, this.withList, !0);
 	}
-};
-var SQLiteInsertBase = class {
-	static [entityKind] = "SQLiteInsert";
-	/** @internal */
+}, Og = class {
+	static [d] = "SQLiteInsert";
 	config;
-	constructor(table, values, session, dialect, withList, select) {
-		this.session = session;
-		this.dialect = dialect;
-		this.config = {
-			table,
-			values,
-			withList,
-			select
+	constructor(e, t, n, r, i, a) {
+		this.session = n, this.dialect = r, this.config = {
+			table: e,
+			values: t,
+			withList: i,
+			select: a
 		};
 	}
-	returning(fields = this.config.table[SQLiteTable.Symbol.Columns]) {
-		this.config.returning = orderSelectedFields(fields);
-		return this;
+	returning(e = this.config.table[nh.Symbol.Columns]) {
+		return this.config.returning = Te(e), this;
 	}
-	/**
-	* Adds an `on conflict do nothing` clause to the query.
-	*
-	* Calling this method simply avoids inserting a row as its alternative action.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/insert#on-conflict-do-nothing}
-	*
-	* @param config The `target` and `where` clauses.
-	*
-	* @example
-	* ```ts
-	* // Insert one row and cancel the insert if there's a conflict
-	* await db.insert(cars)
-	*   .values({ id: 1, brand: 'BMW' })
-	*   .onConflictDoNothing();
-	*
-	* // Explicitly specify conflict target
-	* await db.insert(cars)
-	*   .values({ id: 1, brand: 'BMW' })
-	*   .onConflictDoNothing({ target: cars.id });
-	* ```
-	*/
-	onConflictDoNothing(config = {}) {
-		if (!this.config.onConflict) this.config.onConflict = [];
-		if (config.target === void 0) this.config.onConflict.push(sql` on conflict do nothing`);
+	onConflictDoNothing(e = {}) {
+		if (this.config.onConflict || (this.config.onConflict = []), e.target === void 0) this.config.onConflict.push(k` on conflict do nothing`);
 		else {
-			const targetSql = Array.isArray(config.target) ? sql`${config.target}` : sql`${[config.target]}`;
-			const whereSql = config.where ? sql` where ${config.where}` : sql``;
-			this.config.onConflict.push(sql` on conflict ${targetSql} do nothing${whereSql}`);
+			let t = Array.isArray(e.target) ? k`${e.target}` : k`${[e.target]}`, n = e.where ? k` where ${e.where}` : k``;
+			this.config.onConflict.push(k` on conflict ${t} do nothing${n}`);
 		}
 		return this;
 	}
-	/**
-	* Adds an `on conflict do update` clause to the query.
-	*
-	* Calling this method will update the existing row that conflicts with the row proposed for insertion as its alternative action.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/insert#upserts-and-conflicts}
-	*
-	* @param config The `target`, `set` and `where` clauses.
-	*
-	* @example
-	* ```ts
-	* // Update the row if there's a conflict
-	* await db.insert(cars)
-	*   .values({ id: 1, brand: 'BMW' })
-	*   .onConflictDoUpdate({
-	*     target: cars.id,
-	*     set: { brand: 'Porsche' }
-	*   });
-	*
-	* // Upsert with 'where' clause
-	* await db.insert(cars)
-	*   .values({ id: 1, brand: 'BMW' })
-	*   .onConflictDoUpdate({
-	*     target: cars.id,
-	*     set: { brand: 'newBMW' },
-	*     where: sql`${cars.createdAt} > '2023-01-01'::date`,
-	*   });
-	* ```
-	*/
-	onConflictDoUpdate(config) {
-		if (config.where && (config.targetWhere || config.setWhere)) throw new Error("You cannot use both \"where\" and \"targetWhere\"/\"setWhere\" at the same time - \"where\" is deprecated, use \"targetWhere\" or \"setWhere\" instead.");
-		if (!this.config.onConflict) this.config.onConflict = [];
-		const whereSql = config.where ? sql` where ${config.where}` : void 0;
-		const targetWhereSql = config.targetWhere ? sql` where ${config.targetWhere}` : void 0;
-		const setWhereSql = config.setWhere ? sql` where ${config.setWhere}` : void 0;
-		const targetSql = Array.isArray(config.target) ? sql`${config.target}` : sql`${[config.target]}`;
-		const setSql = this.dialect.buildUpdateSet(this.config.table, mapUpdateSet(this.config.table, config.set));
-		this.config.onConflict.push(sql` on conflict ${targetSql}${targetWhereSql} do update set ${setSql}${whereSql}${setWhereSql}`);
-		return this;
+	onConflictDoUpdate(e) {
+		if (e.where && (e.targetWhere || e.setWhere)) throw Error("You cannot use both \"where\" and \"targetWhere\"/\"setWhere\" at the same time - \"where\" is deprecated, use \"targetWhere\" or \"setWhere\" instead.");
+		this.config.onConflict || (this.config.onConflict = []);
+		let t = e.where ? k` where ${e.where}` : void 0, n = e.targetWhere ? k` where ${e.targetWhere}` : void 0, r = e.setWhere ? k` where ${e.setWhere}` : void 0, i = Array.isArray(e.target) ? k`${e.target}` : k`${[e.target]}`, a = this.dialect.buildUpdateSet(this.config.table, Oe(this.config.table, e.set));
+		return this.config.onConflict.push(k` on conflict ${i}${n} do update set ${a}${t}${r}`), this;
 	}
 	getSQL() {
 		return this.dialect.buildInsertQuery(this.config);
@@ -16485,46 +6372,32 @@ var SQLiteInsertBase = class {
 	$dynamic() {
 		return this;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/insert.js
-var SQLiteAsyncInsertBase = class extends SQLiteInsertBase {
-	static [entityKind] = "SQLiteAsyncInsert";
-	/** @internal */
-	_prepare(prepare = false) {
-		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", prepare, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
+}, kg = class extends Og {
+	static [d] = "SQLiteAsyncInsert";
+	_prepare(e = !1) {
+		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", e, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
 			type: "insert",
-			tables: extractUsedTable(this.config.table)
+			tables: oh(this.config.table)
 		});
 	}
 	prepare() {
-		return this._prepare(true);
+		return this._prepare(!0);
 	}
-	run = (placeholderValues) => {
-		return this._prepare().run(placeholderValues);
-	};
-	all = (placeholderValues) => {
-		return this._prepare().all(placeholderValues);
-	};
-	get = (placeholderValues) => {
-		return this._prepare().get(placeholderValues);
-	};
-	values = (placeholderValues) => {
-		return this._prepare().values(placeholderValues);
-	};
+	run = (e) => this._prepare().run(e);
+	all = (e) => this._prepare().all(e);
+	get = (e) => this._prepare().get(e);
+	values = (e) => this._prepare().values(e);
 	async execute() {
 		return this._prepare().execute();
 	}
 };
-applyMixins(SQLiteAsyncInsertBase, [QueryPromise]);
+ke(kg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/raw.js
-var SQLiteRaw = class {
-	static [entityKind] = "SQLiteRaw";
-	constructor(prepared, sql, query) {
-		this.prepared = prepared;
-		this.sql = sql;
-		this.query = query;
+var Ag = class {
+	static [d] = "SQLiteRaw";
+	constructor(e, t, n) {
+		this.prepared = e, this.sql = t, this.query = n;
 	}
 	getSQL() {
 		return this.sql;
@@ -16535,171 +6408,110 @@ var SQLiteRaw = class {
 	_prepare() {
 		return this.prepared;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/raw.js
-var SQLiteAsyncRaw = class extends SQLiteRaw {
-	static [entityKind] = "SQLiteAsyncRaw";
-	constructor(prepared, sql, query) {
-		super(prepared, sql, query);
+}, jg = class extends Ag {
+	static [d] = "SQLiteAsyncRaw";
+	constructor(e, t, n) {
+		super(e, t, n);
 	}
-	execute(placeholderValues) {
-		return this.prepared.execute(placeholderValues);
+	execute(e) {
+		return this.prepared.execute(e);
 	}
 };
-applyMixins(SQLiteAsyncRaw, [QueryPromise]);
+ke(jg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/select.js
-var SQLiteAsyncSelectBase = class extends SQLiteSelectBase {
-	static [entityKind] = "SQLiteAsyncSelect";
-	/** @internal */
-	_prepare(prepare = false) {
-		const query = this.dialect.sqlToQuery(this.getSQL());
-		const fieldsList = this.config.fieldsFlat;
-		const mapper = this.dialect.mapperGenerators.rows(fieldsList, this.joinsNotNullableMap);
-		return this.session.prepareQuery(query, "arrays", prepare, "all", mapper, {
+var Mg = class extends _h {
+	static [d] = "SQLiteAsyncSelect";
+	_prepare(e = !1) {
+		let t = this.dialect.sqlToQuery(this.getSQL()), n = this.config.fieldsFlat, r = this.dialect.mapperGenerators.rows(n, this.joinsNotNullableMap);
+		return this.session.prepareQuery(t, "arrays", e, "all", r, {
 			type: "select",
 			tables: [...this.usedTables]
 		}, this.cacheConfig);
 	}
 	prepare() {
-		return this._prepare(true);
+		return this._prepare(!0);
 	}
-	run = (placeholderValues) => {
-		return this._prepare().run(placeholderValues);
-	};
-	all = (placeholderValues) => {
-		return this._prepare().all(placeholderValues);
-	};
-	get = (placeholderValues) => {
-		return this._prepare().get(placeholderValues);
-	};
-	values = (placeholderValues) => {
-		return this._prepare().values(placeholderValues);
-	};
+	run = (e) => this._prepare().run(e);
+	all = (e) => this._prepare().all(e);
+	get = (e) => this._prepare().get(e);
+	values = (e) => this._prepare().values(e);
 	async execute() {
 		return this._prepare().execute();
 	}
 };
-applyMixins(SQLiteAsyncSelectBase, [QueryPromise]);
+ke(Mg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/query-builders/update.js
-var SQLiteUpdateBuilder = class {
-	static [entityKind] = "SQLiteUpdateBuilder";
-	constructor(table, session, dialect, withList, builder = SQLiteUpdateBase) {
-		this.table = table;
-		this.session = session;
-		this.dialect = dialect;
-		this.withList = withList;
-		this.builder = builder;
+var Ng = class {
+	static [d] = "SQLiteUpdateBuilder";
+	constructor(e, t, n, r, i = Pg) {
+		this.table = e, this.session = t, this.dialect = n, this.withList = r, this.builder = i;
 	}
-	set(values) {
-		return new this.builder(this.table, mapUpdateSet(this.table, values), this.session, this.dialect, this.withList);
+	set(e) {
+		return new this.builder(this.table, Oe(this.table, e), this.session, this.dialect, this.withList);
 	}
-};
-var SQLiteUpdateBase = class {
-	static [entityKind] = "SQLiteUpdate";
-	/** @internal */
+}, Pg = class {
+	static [d] = "SQLiteUpdate";
 	config;
-	constructor(table, set, session, dialect, withList) {
-		this.session = session;
-		this.dialect = dialect;
-		this.config = {
-			set,
-			table,
-			withList,
+	constructor(e, t, n, r, i) {
+		this.session = n, this.dialect = r, this.config = {
+			set: t,
+			table: e,
+			withList: i,
 			joins: []
 		};
 	}
-	from(source) {
-		this.config.from = source;
-		return this;
+	from(e) {
+		return this.config.from = e, this;
 	}
-	createJoin(joinType) {
-		return ((table, on) => {
-			const tableName = getTableLikeName(table);
-			if (typeof tableName === "string" && this.config.joins.some((join) => join.alias === tableName)) throw new Error(`Alias "${tableName}" is already used in this query`);
-			if (typeof on === "function") {
-				const from = this.config.from ? is(table, SQLiteTable) ? table[Table.Symbol.Columns] : is(table, Subquery) ? table._.selectedFields : is(table, SQLiteViewBase) ? table[ViewBaseConfig].selectedFields : void 0 : void 0;
-				on = on(new Proxy(this.config.table[Table.Symbol.Columns], new SelectionProxyHandler({
+	createJoin(e) {
+		return ((t, n) => {
+			let r = Me(t);
+			if (typeof r == "string" && this.config.joins.some((e) => e.alias === r)) throw Error(`Alias "${r}" is already used in this query`);
+			if (typeof n == "function") {
+				let e = this.config.from ? f(t, nh) ? t[w.Symbol.Columns] : f(t, T) ? t._.selectedFields : f(t, sh) ? t[E].selectedFields : void 0 : void 0;
+				n = n(new Proxy(this.config.table[w.Symbol.Columns], new Z({
 					sqlAliasedBehavior: "sql",
 					sqlBehavior: "sql"
-				})), from && new Proxy(from, new SelectionProxyHandler({
+				})), e && new Proxy(e, new Z({
 					sqlAliasedBehavior: "sql",
 					sqlBehavior: "sql"
 				})));
 			}
-			this.config.joins.push({
-				on,
-				table,
-				joinType,
-				alias: tableName
-			});
-			return this;
+			return this.config.joins.push({
+				on: n,
+				table: t,
+				joinType: e,
+				alias: r
+			}), this;
 		});
 	}
 	leftJoin = this.createJoin("left");
 	rightJoin = this.createJoin("right");
 	innerJoin = this.createJoin("inner");
 	fullJoin = this.createJoin("full");
-	/**
-	* Adds a 'where' clause to the query.
-	*
-	* Calling this method will update only those rows that fulfill a specified condition.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/update}
-	*
-	* @param where the 'where' clause.
-	*
-	* @example
-	* You can use conditional operators and `sql function` to filter the rows to be updated.
-	*
-	* ```ts
-	* // Update all cars with green color
-	* db.update(cars).set({ color: 'red' })
-	*   .where(eq(cars.color, 'green'));
-	* // or
-	* db.update(cars).set({ color: 'red' })
-	*   .where(sql`${cars.color} = 'green'`)
-	* ```
-	*
-	* You can logically combine conditional operators with `and()` and `or()` operators:
-	*
-	* ```ts
-	* // Update all BMW cars with a green color
-	* db.update(cars).set({ color: 'red' })
-	*   .where(and(eq(cars.color, 'green'), eq(cars.brand, 'BMW')));
-	*
-	* // Update all cars with the green or blue color
-	* db.update(cars).set({ color: 'red' })
-	*   .where(or(eq(cars.color, 'green'), eq(cars.color, 'blue')));
-	* ```
-	*/
-	where(where) {
-		this.config.where = where;
-		return this;
+	where(e) {
+		return this.config.where = e, this;
 	}
-	orderBy(...columns) {
-		if (typeof columns[0] === "function") {
-			const orderBy = columns[0](new Proxy(this.config.table[Table.Symbol.Columns], new SelectionProxyHandler({
+	orderBy(...e) {
+		if (typeof e[0] == "function") {
+			let t = e[0](new Proxy(this.config.table[w.Symbol.Columns], new Z({
 				sqlAliasedBehavior: "alias",
 				sqlBehavior: "sql"
-			})));
-			const orderByArray = Array.isArray(orderBy) ? orderBy : [orderBy];
-			this.config.orderBy = orderByArray;
+			}))), n = Array.isArray(t) ? t : [t];
+			this.config.orderBy = n;
 		} else {
-			const orderByArray = columns;
-			this.config.orderBy = orderByArray;
+			let t = e;
+			this.config.orderBy = t;
 		}
 		return this;
 	}
-	limit(limit) {
-		this.config.limit = limit;
-		return this;
+	limit(e) {
+		return this.config.limit = e, this;
 	}
-	returning(fields = this.config.table[SQLiteTable.Symbol.Columns]) {
-		this.config.returning = orderSelectedFields(fields);
-		return this;
+	returning(e = this.config.table[nh.Symbol.Columns]) {
+		return this.config.returning = Te(e), this;
 	}
 	getSQL() {
 		return this.dialect.buildUpdateQuery(this.config);
@@ -16710,446 +6522,258 @@ var SQLiteUpdateBase = class {
 	$dynamic() {
 		return this;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/update.js
-var SQLiteAsyncUpdateBase = class extends SQLiteUpdateBase {
-	static [entityKind] = "SQLiteAsyncUpdate";
-	/** @internal */
-	_prepare(prepare = false) {
-		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", prepare, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
+}, Fg = class extends Pg {
+	static [d] = "SQLiteAsyncUpdate";
+	_prepare(e = !1) {
+		return this.session.prepareQuery(this.dialect.sqlToQuery(this.getSQL()), "arrays", e, this.config.returning ? "all" : "run", this.config.returning ? this.dialect.mapperGenerators.rows(this.config.returning, void 0) : void 0, {
 			type: "update",
-			tables: extractUsedTable(this.config.table)
+			tables: oh(this.config.table)
 		});
 	}
 	prepare() {
-		return this._prepare(true);
+		return this._prepare(!0);
 	}
-	run = (placeholderValues) => {
-		return this._prepare().run(placeholderValues);
-	};
-	all = (placeholderValues) => {
-		return this._prepare().all(placeholderValues);
-	};
-	get = (placeholderValues) => {
-		return this._prepare().get(placeholderValues);
-	};
-	values = (placeholderValues) => {
-		return this._prepare().values(placeholderValues);
-	};
+	run = (e) => this._prepare().run(e);
+	all = (e) => this._prepare().all(e);
+	get = (e) => this._prepare().get(e);
+	values = (e) => this._prepare().values(e);
 	async execute() {
 		return this.config.returning ? this.all() : this.run();
 	}
 };
-applyMixins(SQLiteAsyncUpdateBase, [QueryPromise]);
+ke(Fg, [_g]);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/db.js
-var SQLiteAsyncDatabase = class {
-	static [entityKind] = "BaseSQLiteDatabase";
+var Ig = class {
+	static [d] = "BaseSQLiteDatabase";
 	query;
-	constructor(resultKind, dialect, session, relations, forbidJsonb) {
-		this.resultKind = resultKind;
-		this.dialect = dialect;
-		this.session = session;
-		this.forbidJsonb = forbidJsonb;
-		this._ = {
-			relations,
-			session,
-			resultKind
-		};
-		this.query = {};
-		for (const [tableName, relation] of Object.entries(relations)) this.query[tableName] = new RelationalQueryBuilder(resultKind, relations, relations[relation.name].table, relation, dialect, session, forbidJsonb, resultKind === "sync" ? SQLiteSyncRelationalQuery : SQLiteAsyncRelationalQuery);
-		this.$cache = { invalidate: async (_params) => {} };
+	constructor(e, t, n, r, i) {
+		this.resultKind = e, this.dialect = t, this.session = n, this.forbidJsonb = i, this._ = {
+			relations: r,
+			session: n,
+			resultKind: e
+		}, this.query = {};
+		for (let [a, o] of Object.entries(r)) this.query[a] = new xg(e, r, r[o.name].table, o, t, n, i, e === "sync" ? wg : Cg);
+		this.$cache = { invalidate: async (e) => {} };
 	}
-	/**
-	* Creates a subquery that defines a temporary named result set as a CTE.
-	*
-	* It is useful for breaking down complex queries into simpler parts and for reusing the result set in subsequent parts of the query.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#with-clause}
-	*
-	* @param alias The alias for the subquery.
-	*
-	* Failure to provide an alias will result in a DrizzleTypeError, preventing the subquery from being referenced in other queries.
-	*
-	* @example
-	*
-	* ```ts
-	* // Create a subquery with alias 'sq' and use it in the select query
-	* const sq = db.$with('sq').as(db.select().from(users).where(eq(users.id, 42)));
-	*
-	* const result = await db.with(sq).select().from(sq);
-	* ```
-	*
-	* To select arbitrary SQL values as fields in a CTE and reference them in other CTEs or in the main query, you need to add aliases to them:
-	*
-	* ```ts
-	* // Select an arbitrary SQL value as a field in a CTE and reference it in the main query
-	* const sq = db.$with('sq').as(db.select({
-	*   name: sql<string>`upper(${users.name})`.as('name'),
-	* })
-	* .from(users));
-	*
-	* const result = await db.with(sq).select({ name: sq.name }).from(sq);
-	* ```
-	*/
-	$with = (alias, selection) => {
-		const self = this;
-		const as = (qb) => {
-			if (typeof qb === "function") qb = qb(new QueryBuilder(self.dialect));
-			return new Proxy(new WithSubquery(qb.getSQL(), selection ?? ("getSelectedFields" in qb ? qb.getSelectedFields() ?? {} : {}), alias, true), new SelectionProxyHandler({
-				alias,
-				sqlAliasedBehavior: "alias",
-				sqlBehavior: "error"
-			}));
-		};
-		return { as };
+	$with = (e, t) => {
+		let n = this;
+		return { as: (r) => (typeof r == "function" && (r = r(new gg(n.dialect))), new Proxy(new ie(r.getSQL(), t ?? ("getSelectedFields" in r ? r.getSelectedFields() ?? {} : {}), e, !0), new Z({
+			alias: e,
+			sqlAliasedBehavior: "alias",
+			sqlBehavior: "error"
+		}))) };
 	};
-	$count(source, filters) {
-		return this.resultKind === "async" ? new SQLiteAsyncCountBuilder({
-			source,
-			filters,
+	$count(e, t) {
+		return this.resultKind === "async" ? new yg({
+			source: e,
+			filters: t,
 			session: this.session,
 			dialect: this.dialect
-		}) : new SQLiteSyncCountBuilder({
-			source,
-			filters,
+		}) : new bg({
+			source: e,
+			filters: t,
 			session: this.session,
 			dialect: this.dialect
 		});
 	}
-	/**
-	* Incorporates a previously defined CTE (using `$with`) into the main query.
-	*
-	* This method allows the main query to reference a temporary named result set.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/select#with-clause}
-	*
-	* @param queries The CTEs to incorporate into the main query.
-	*
-	* @example
-	*
-	* ```ts
-	* // Define a subquery 'sq' as a CTE using $with
-	* const sq = db.$with('sq').as(db.select().from(users).where(eq(users.id, 42)));
-	*
-	* // Incorporate the CTE 'sq' into the main query and select from it
-	* const result = await db.with(sq).select().from(sq);
-	* ```
-	*/
-	with(...queries) {
-		const self = this;
-		function select(fields) {
-			return new SQLiteSelectBuilder({
-				fields: fields ?? void 0,
-				session: self.session,
-				dialect: self.dialect,
-				withList: queries
-			}, SQLiteAsyncSelectBase);
+	with(...e) {
+		let t = this;
+		function n(n) {
+			return new gh({
+				fields: n ?? void 0,
+				session: t.session,
+				dialect: t.dialect,
+				withList: e
+			}, Mg);
 		}
-		function selectDistinct(fields) {
-			return new SQLiteSelectBuilder({
-				fields: fields ?? void 0,
-				session: self.session,
-				dialect: self.dialect,
-				withList: queries,
-				distinct: true
-			}, SQLiteAsyncSelectBase);
+		function r(n) {
+			return new gh({
+				fields: n ?? void 0,
+				session: t.session,
+				dialect: t.dialect,
+				withList: e,
+				distinct: !0
+			}, Mg);
 		}
-		/**
-		* Creates an update query.
-		*
-		* Calling this method without `.where()` clause will update all rows in a table. The `.where()` clause specifies which rows should be updated.
-		*
-		* Use `.set()` method to specify which values to update.
-		*
-		* See docs: {@link https://orm.drizzle.team/docs/update}
-		*
-		* @param table The table to update.
-		*
-		* @example
-		*
-		* ```ts
-		* // Update all rows in the 'cars' table
-		* await db.update(cars).set({ color: 'red' });
-		*
-		* // Update rows with filters and conditions
-		* await db.update(cars).set({ color: 'red' }).where(eq(cars.brand, 'BMW'));
-		*
-		* // Update with returning clause
-		* const updatedCar: Car[] = await db.update(cars)
-		*   .set({ color: 'red' })
-		*   .where(eq(cars.id, 1))
-		*   .returning();
-		* ```
-		*/
-		function update(table) {
-			return new SQLiteUpdateBuilder(table, self.session, self.dialect, queries, SQLiteAsyncUpdateBase);
+		function i(n) {
+			return new Ng(n, t.session, t.dialect, e, Fg);
 		}
-		/**
-		* Creates an insert query.
-		*
-		* Calling this method will create new rows in a table. Use `.values()` method to specify which values to insert.
-		*
-		* See docs: {@link https://orm.drizzle.team/docs/insert}
-		*
-		* @param table The table to insert into.
-		*
-		* @example
-		*
-		* ```ts
-		* // Insert one row
-		* await db.insert(cars).values({ brand: 'BMW' });
-		*
-		* // Insert multiple rows
-		* await db.insert(cars).values([{ brand: 'BMW' }, { brand: 'Porsche' }]);
-		*
-		* // Insert with returning clause
-		* const insertedCar: Car[] = await db.insert(cars)
-		*   .values({ brand: 'BMW' })
-		*   .returning();
-		* ```
-		*/
-		function insert(into) {
-			return new SQLiteInsertBuilder(into, self.session, self.dialect, queries, SQLiteAsyncInsertBase);
+		function a(n) {
+			return new Dg(n, t.session, t.dialect, e, kg);
 		}
-		/**
-		* Creates a delete query.
-		*
-		* Calling this method without `.where()` clause will delete all rows in a table. The `.where()` clause specifies which rows should be deleted.
-		*
-		* See docs: {@link https://orm.drizzle.team/docs/delete}
-		*
-		* @param table The table to delete from.
-		*
-		* @example
-		*
-		* ```ts
-		* // Delete all rows in the 'cars' table
-		* await db.delete(cars);
-		*
-		* // Delete rows with filters and conditions
-		* await db.delete(cars).where(eq(cars.color, 'green'));
-		*
-		* // Delete with returning clause
-		* const deletedCar: Car[] = await db.delete(cars)
-		*   .where(eq(cars.id, 1))
-		*   .returning();
-		* ```
-		*/
-		function delete_(from) {
-			return new SQLiteAsyncDeleteBase(from, self.session, self.dialect, queries);
+		function o(n) {
+			return new Eg(n, t.session, t.dialect, e);
 		}
 		return {
-			select,
-			selectDistinct,
-			update,
-			insert,
-			delete: delete_
+			select: n,
+			selectDistinct: r,
+			update: i,
+			insert: a,
+			delete: o
 		};
 	}
-	select(fields) {
-		return new SQLiteSelectBuilder({
-			fields: fields ?? void 0,
+	select(e) {
+		return new gh({
+			fields: e ?? void 0,
 			session: this.session,
 			dialect: this.dialect
-		}, SQLiteAsyncSelectBase);
+		}, Mg);
 	}
-	selectDistinct(fields) {
-		return new SQLiteSelectBuilder({
-			fields: fields ?? void 0,
+	selectDistinct(e) {
+		return new gh({
+			fields: e ?? void 0,
 			session: this.session,
 			dialect: this.dialect,
-			distinct: true
-		}, SQLiteAsyncSelectBase);
+			distinct: !0
+		}, Mg);
 	}
-	/**
-	* Creates an update query.
-	*
-	* Calling this method without `.where()` clause will update all rows in a table. The `.where()` clause specifies which rows should be updated.
-	*
-	* Use `.set()` method to specify which values to update.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/update}
-	*
-	* @param table The table to update.
-	*
-	* @example
-	*
-	* ```ts
-	* // Update all rows in the 'cars' table
-	* await db.update(cars).set({ color: 'red' });
-	*
-	* // Update rows with filters and conditions
-	* await db.update(cars).set({ color: 'red' }).where(eq(cars.brand, 'BMW'));
-	*
-	* // Update with returning clause
-	* const updatedCar: Car[] = await db.update(cars)
-	*   .set({ color: 'red' })
-	*   .where(eq(cars.id, 1))
-	*   .returning();
-	* ```
-	*/
-	update(table) {
-		return new SQLiteUpdateBuilder(table, this.session, this.dialect, void 0, SQLiteAsyncUpdateBase);
+	update(e) {
+		return new Ng(e, this.session, this.dialect, void 0, Fg);
 	}
 	$cache;
-	/**
-	* Creates an insert query.
-	*
-	* Calling this method will create new rows in a table. Use `.values()` method to specify which values to insert.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/insert}
-	*
-	* @param table The table to insert into.
-	*
-	* @example
-	*
-	* ```ts
-	* // Insert one row
-	* await db.insert(cars).values({ brand: 'BMW' });
-	*
-	* // Insert multiple rows
-	* await db.insert(cars).values([{ brand: 'BMW' }, { brand: 'Porsche' }]);
-	*
-	* // Insert with returning clause
-	* const insertedCar: Car[] = await db.insert(cars)
-	*   .values({ brand: 'BMW' })
-	*   .returning();
-	* ```
-	*/
-	insert(into) {
-		return new SQLiteInsertBuilder(into, this.session, this.dialect, void 0, SQLiteAsyncInsertBase);
+	insert(e) {
+		return new Dg(e, this.session, this.dialect, void 0, kg);
 	}
-	/**
-	* Creates a delete query.
-	*
-	* Calling this method without `.where()` clause will delete all rows in a table. The `.where()` clause specifies which rows should be deleted.
-	*
-	* See docs: {@link https://orm.drizzle.team/docs/delete}
-	*
-	* @param table The table to delete from.
-	*
-	* @example
-	*
-	* ```ts
-	* // Delete all rows in the 'cars' table
-	* await db.delete(cars);
-	*
-	* // Delete rows with filters and conditions
-	* await db.delete(cars).where(eq(cars.color, 'green'));
-	*
-	* // Delete with returning clause
-	* const deletedCar: Car[] = await db.delete(cars)
-	*   .where(eq(cars.id, 1))
-	*   .returning();
-	* ```
-	*/
-	delete(from) {
-		return new SQLiteAsyncDeleteBase(from, this.session, this.dialect);
+	delete(e) {
+		return new Eg(e, this.session, this.dialect);
 	}
-	run(query) {
-		const sequel = typeof query === "string" ? sql.raw(query) : query.getSQL();
-		const builtQuery = this.dialect.sqlToQuery(sequel);
-		const prepared = this.session.prepareQuery(builtQuery, "raw", false, "run");
-		if (this.resultKind === "async") return new SQLiteAsyncRaw(prepared, sequel, builtQuery);
-		return this.session.run(sequel);
+	run(e) {
+		let t = typeof e == "string" ? k.raw(e) : e.getSQL(), n = this.dialect.sqlToQuery(t), r = this.session.prepareQuery(n, "raw", !1, "run");
+		return this.resultKind === "async" ? new jg(r, t, n) : this.session.run(t);
 	}
-	all(query) {
-		const sequel = typeof query === "string" ? sql.raw(query) : query.getSQL();
-		const builtQuery = this.dialect.sqlToQuery(sequel);
-		const prepared = this.session.prepareQuery(builtQuery, "objects", false, "all");
-		if (this.resultKind === "async") return new SQLiteAsyncRaw(prepared, sequel, builtQuery);
-		return this.session.objects(sequel);
+	all(e) {
+		let t = typeof e == "string" ? k.raw(e) : e.getSQL(), n = this.dialect.sqlToQuery(t), r = this.session.prepareQuery(n, "objects", !1, "all");
+		return this.resultKind === "async" ? new jg(r, t, n) : this.session.objects(t);
 	}
-	get(query) {
-		const sequel = typeof query === "string" ? sql.raw(query) : query.getSQL();
-		const builtQuery = this.dialect.sqlToQuery(sequel);
-		const prepared = this.session.prepareQuery(builtQuery, "objects", false, "get");
-		if (this.resultKind === "async") return new SQLiteAsyncRaw(prepared, sequel, builtQuery);
-		return this.session.object(sequel);
+	get(e) {
+		let t = typeof e == "string" ? k.raw(e) : e.getSQL(), n = this.dialect.sqlToQuery(t), r = this.session.prepareQuery(n, "objects", !1, "get");
+		return this.resultKind === "async" ? new jg(r, t, n) : this.session.object(t);
 	}
-	values(query) {
-		const sequel = typeof query === "string" ? sql.raw(query) : query.getSQL();
-		const builtQuery = this.dialect.sqlToQuery(sequel);
-		const prepared = this.session.prepareQuery(builtQuery, "objects", false, "values");
-		if (this.resultKind === "async") return new SQLiteAsyncRaw(prepared, sequel, builtQuery);
-		return this.session.arrays(sequel);
+	values(e) {
+		let t = typeof e == "string" ? k.raw(e) : e.getSQL(), n = this.dialect.sqlToQuery(t), r = this.session.prepareQuery(n, "objects", !1, "values");
+		return this.resultKind === "async" ? new jg(r, t, n) : this.session.arrays(t);
 	}
-	transaction(transaction, config) {
-		return this.session.transaction(transaction, config);
+	transaction(e, t) {
+		return this.session.transaction(e, t);
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/cache/core/cache.js
-var Cache = class {
-	static [entityKind] = "Cache";
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/migrator.utils.js
+function Lg(e) {
+	let t = parseInt(e.slice(0, 4), 10), n = parseInt(e.slice(4, 6), 10) - 1, r = parseInt(e.slice(6, 8), 10), i = parseInt(e.slice(8, 10), 10), a = parseInt(e.slice(10, 12), 10), o = parseInt(e.slice(12, 14), 10);
+	return Date.UTC(t, n, r, i, a, o);
+}
+function Rg(e) {
+	let { localMigrations: t, dbMigrations: n } = e, r = new Set(n.map((e) => e.name).filter((e) => e !== null));
+	return t.filter((e) => !e.name || !r.has(e.name));
+}
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/up-migrations/utils.js
+var zg = {
+	sqlite: 1,
+	pg: 1,
+	effect: 1,
+	mysql: 1,
+	mssql: 1,
+	cockroach: 1,
+	singlestore: 1
+}, Bg = {
+	mysql: (e) => +!!e.includes("name"),
+	pg: (e) => +!!e.includes("name"),
+	effect: (e) => +!!e.includes("name"),
+	mssql: (e) => +!!e.includes("name"),
+	cockroach: (e) => +!!e.includes("name"),
+	singlestore: (e) => +!!e.includes("name"),
+	sqlite: (e) => +!!e.includes("name")
 };
-var NoopCache = class extends Cache {
-	static [entityKind] = "NoopCache";
+//#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/up-migrations/sqlite.js
+async function Vg(e, t, n) {
+	if ((await t.session.objects(k`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${e}`)).length === 0) return { newDb: !0 };
+	let r = await t.session.objects(k`SELECT name as column_name FROM pragma_table_info(${e})`), i = Bg.sqlite(r.map((e) => e.column_name));
+	for (let r = i; r < zg.sqlite; r++) {
+		let i = Hg[r];
+		if (!i) throw Error(`No upgrade path from migration table version ${r} to ${r + 1}`);
+		await i(e, t, n);
+	}
+	return { newDb: !1 };
+}
+var Hg = { 0: async (e, t, n) => {
+	let r = k`${k.identifier(e)}`, i = await t.session.objects(k`SELECT id, hash, created_at FROM ${r} ORDER BY id ASC`);
+	n.sort((e, t) => e.folderMillis === t.folderMillis ? (e.name ?? "").localeCompare(t.name ?? "") : e.folderMillis - t.folderMillis);
+	let a = /* @__PURE__ */ new Map(), o = /* @__PURE__ */ new Map();
+	for (let e of n) a.has(e.folderMillis) || a.set(e.folderMillis, []), a.get(e.folderMillis).push(e), o.set(e.hash, e);
+	let s = [], c = [];
+	for (let e of i) {
+		let t = String(e.created_at), n = Number(t.substring(0, t.length - 3) + "000"), r = a.get(n), i, l = null;
+		r && r.length === 1 ? (i = r[0], l = "millis") : r && r.length > 1 ? (i = r.find((t) => t.hash && e.hash && t.hash === e.hash), i && (l = "hash")) : (i = o.get(e.hash), i && (l = "hash")), i ? s.push({
+			id: e.id,
+			name: i.name,
+			hash: e.hash,
+			created_at: t,
+			matchedBy: e.id ? "id" : l
+		}) : c.push(e);
+	}
+	if (c.length > 0) throw Error(`While upgrading your database migrations table we found ${c.length} (${c.map((e) => `[id: ${e.id}, created_at: ${e.created_at}]`).join(", ")}) migrations in the database that do not match any local migration. This means that some migrations were applied to the database but are missing from the local environment`);
+	let l = [k`ALTER TABLE ${r} ADD COLUMN ${k.identifier("name")} text`, k`ALTER TABLE ${r} ADD COLUMN ${k.identifier("applied_at")} TEXT`];
+	for (let e of s) {
+		let t = k`UPDATE ${r} SET ${k.identifier("name")} = ${e.name}, ${k.identifier("applied_at")} = NULL WHERE`;
+		e.id ? t.append(k` ${k.identifier("id")} = ${e.id}`) : e.matchedBy === "millis" ? t.append(k` ${k.identifier("created_at")} = ${e.created_at}`) : t.append(k` ${k.identifier("hash")} = ${e.hash}`), l.push(t);
+	}
+	await t.transaction(async (e) => {
+		for (let t of l) await e.run(t);
+	});
+} }, Ug = class {
+	static [d] = "Cache";
+}, Wg = class extends Ug {
+	static [d] = "NoopCache";
 	strategy() {
 		return "all";
 	}
-	async get(_key) {}
-	async put(_hashedQuery, _response, _tables, _config) {}
-	async onMutate(_params) {}
-};
-var strategyFor = async (query, params, queryMetadata, withCacheConfig) => {
-	if (!queryMetadata) return { type: "skip" };
-	const { type, tables } = queryMetadata;
-	if ((type === "insert" || type === "update" || type === "delete") && tables.length > 0) return {
+	async get(e) {}
+	async put(e, t, n, r) {}
+	async onMutate(e) {}
+}, Gg = async (e, t, n, r) => {
+	if (!n) return { type: "skip" };
+	let { type: i, tables: a } = n;
+	return (i === "insert" || i === "update" || i === "delete") && a.length > 0 ? {
 		type: "invalidate",
-		tables
-	};
-	if (!withCacheConfig) return { type: "skip" };
-	if (!withCacheConfig.enabled) return { type: "skip" };
-	if (type === "select") return {
+		tables: a
+	} : !r || !r.enabled ? { type: "skip" } : i === "select" ? {
 		type: "try",
-		key: withCacheConfig.tag ?? await hashQuery(query, params),
-		isTag: typeof withCacheConfig.tag !== "undefined",
-		autoInvalidate: withCacheConfig.autoInvalidate,
-		tables: queryMetadata.tables,
-		config: withCacheConfig.config
-	};
-	return { type: "skip" };
+		key: r.tag ?? await Kg(e, t),
+		isTag: r.tag !== void 0,
+		autoInvalidate: r.autoInvalidate,
+		tables: n.tables,
+		config: r.config
+	} : { type: "skip" };
 };
-async function hashQuery(sql, params) {
-	const dataToHash = `${sql}-${JSON.stringify(params, (_, v) => typeof v === "bigint" ? `${v}n` : v)}`;
-	const data = new TextEncoder().encode(dataToHash);
-	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	return [...new Uint8Array(hashBuffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function Kg(e, t) {
+	let n = `${e}-${JSON.stringify(t, (e, t) => typeof t == "bigint" ? `${t}n` : t)}`, r = new TextEncoder().encode(n), i = await crypto.subtle.digest("SHA-256", r);
+	return [...new Uint8Array(i)].map((e) => e.toString(16).padStart(2, "0")).join("");
 }
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/session.js
-var SQLitePreparedQuery = class {
-	static [entityKind] = "SQLiteBasePreparedQuery";
-	/** @internal */
+var qg = class {
+	static [d] = "SQLiteBasePreparedQuery";
 	mapper;
-	/** @internal */
 	executeMethod;
-	constructor(executeMethod, query, mapper, mode) {
-		this.query = query;
-		this.mode = mode;
-		this.mapper = mapper;
-		this.executeMethod = executeMethod;
+	constructor(e, t, n, r) {
+		this.query = t, this.mode = r, this.mapper = n, this.executeMethod = e;
 	}
 	getQuery() {
 		return this.query;
 	}
-};
-var SQLiteSession = class {
-	static [entityKind] = "SQLiteSession";
-	constructor(dialect) {
-		this.dialect = dialect;
+}, Jg = class {
+	static [d] = "SQLiteSession";
+	constructor(e) {
+		this.dialect = e;
 	}
-};
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sqlite-core/async/session.js
-var ExecuteResultSync = class extends QueryPromise {
-	static [entityKind] = "ExecuteResultSync";
-	constructor(resultCb) {
-		super();
-		this.resultCb = resultCb;
+}, Yg = class extends _g {
+	static [d] = "ExecuteResultSync";
+	constructor(e) {
+		super(), this.resultCb = e;
 	}
 	async execute() {
 		return this.resultCb();
@@ -17157,977 +6781,446 @@ var ExecuteResultSync = class extends QueryPromise {
 	sync() {
 		return this.resultCb();
 	}
-};
-var SQLiteAsyncPreparedQuery = class extends SQLitePreparedQuery {
-	static [entityKind] = "SQLiteAsyncPreparedQuery";
+}, Xg = class extends qg {
+	static [d] = "SQLiteAsyncPreparedQuery";
 	fastPath;
-	constructor(resultKind, executeMethod = "all", executors, query, mapper, mode, logger, cache, queryMetadata, cacheConfig) {
-		super(executeMethod, query, mapper, mode);
-		this.resultKind = resultKind;
-		this.executors = executors;
-		this.logger = logger;
-		this.cache = cache;
-		this.queryMetadata = queryMetadata;
-		this.cacheConfig = cacheConfig;
-		if (cache && cache.strategy() === "all" && cacheConfig === void 0) this.cacheConfig = {
-			enabled: true,
-			autoInvalidate: true
-		};
-		if (!this.cacheConfig?.enabled) this.cacheConfig = void 0;
-		this.fastPath = cacheConfig === void 0 && (cache === void 0 || is(cache, NoopCache));
+	constructor(e, t = "all", n, r, i, a, o, s, c, l) {
+		super(t, r, i, a), this.resultKind = e, this.executors = n, this.logger = o, this.cache = s, this.queryMetadata = c, this.cacheConfig = l, s && s.strategy() === "all" && l === void 0 && (this.cacheConfig = {
+			enabled: !0,
+			autoInvalidate: !0
+		}), this.cacheConfig?.enabled || (this.cacheConfig = void 0), this.fastPath = l === void 0 && (s === void 0 || f(s, Wg));
 	}
-	/** @internal */
-	async queryWithCache(queryString, params, executeMethod, query) {
-		const cacheStrat = this.cache !== void 0 && !is(this.cache, NoopCache) ? await strategyFor(queryString, params, this.queryMetadata, this.cacheConfig) : { type: "skip" };
-		if (cacheStrat.type === "skip") return query().catch((e) => {
-			throw new DrizzleQueryError(queryString, params, e);
+	async queryWithCache(e, t, n, r) {
+		let i = this.cache !== void 0 && !f(this.cache, Wg) ? await Gg(e, t, this.queryMetadata, this.cacheConfig) : { type: "skip" };
+		if (i.type === "skip") return r().catch((n) => {
+			throw new Th(e, t, n);
 		});
-		const cache = this.cache;
-		if (cacheStrat.type === "invalidate") return Promise.all([query(), cache.onMutate({ tables: cacheStrat.tables })]).then((res) => res[0]).catch((e) => {
-			throw new DrizzleQueryError(queryString, params, e);
+		let a = this.cache;
+		if (i.type === "invalidate") return Promise.all([r(), a.onMutate({ tables: i.tables })]).then((e) => e[0]).catch((n) => {
+			throw new Th(e, t, n);
 		});
-		if (cacheStrat.type === "try") {
-			const { tables, key: _key, isTag, autoInvalidate, config } = cacheStrat;
-			const key = `${executeMethod}_${_key}`;
-			const fromCache = await cache.get(key, tables, isTag, autoInvalidate);
-			if (fromCache === void 0) {
-				const result = await query().catch((e) => {
-					throw new DrizzleQueryError(queryString, params, e);
+		if (i.type === "try") {
+			let { tables: o, key: s, isTag: c, autoInvalidate: l, config: u } = i, d = `${n}_${s}`, f = await a.get(d, o, c, l);
+			if (f === void 0) {
+				let n = await r().catch((n) => {
+					throw new Th(e, t, n);
 				});
-				await cache.put(key, result, autoInvalidate ? tables : [], isTag, config);
-				return result;
+				return await a.put(d, n, l ? o : [], c, u), n;
 			}
-			return fromCache;
+			return f;
 		}
-		assertUnreachable(cacheStrat);
+		Fe(i);
 	}
-	run(placeholderValues = {}) {
-		const { query, logger, executors, fastPath, resultKind } = this;
-		const sql = query._sql ? query._sql.join(" ") : query.sql;
-		const params = query.params.length === 0 ? query.params : fillPlaceholders(query.params, placeholderValues);
-		logger.logQuery(sql, params);
-		if (resultKind === "sync") try {
-			return executors.run(params);
+	run(e = {}) {
+		let { query: t, logger: n, executors: r, fastPath: i, resultKind: a } = this, o = t._sql ? t._sql.join(" ") : t.sql, s = t.params.length === 0 ? t.params : ge(t.params, e);
+		if (n.logQuery(o, s), a === "sync") try {
+			return r.run(s);
 		} catch (e) {
-			throw new DrizzleQueryError(sql, params, e);
+			throw new Th(o, s, e);
 		}
-		return fastPath ? executors.run(params).catch((e) => {
-			throw new DrizzleQueryError(sql, params, e);
-		}) : this.queryWithCache(sql, params, "run", () => executors.run(params));
+		return i ? r.run(s).catch((e) => {
+			throw new Th(o, s, e);
+		}) : this.queryWithCache(o, s, "run", () => r.run(s));
 	}
-	all(placeholderValues = {}) {
-		const { query, logger, executors, mapper, fastPath, resultKind } = this;
-		const sql = query._sql ? query._sql.join(" ") : query.sql;
-		const params = query.params.length === 0 ? query.params : fillPlaceholders(query.params, placeholderValues);
-		logger.logQuery(sql, params);
-		if (resultKind === "sync") {
-			let res;
+	all(e = {}) {
+		let { query: t, logger: n, executors: r, mapper: i, fastPath: a, resultKind: o } = this, s = t._sql ? t._sql.join(" ") : t.sql, c = t.params.length === 0 ? t.params : ge(t.params, e);
+		if (n.logQuery(s, c), o === "sync") {
+			let e;
 			try {
-				res = executors.all(params);
+				e = r.all(c);
 			} catch (e) {
-				throw new DrizzleQueryError(sql, params, e);
+				throw new Th(s, c, e);
 			}
-			if (!mapper) return res;
-			return mapper(res);
+			return i ? i(e) : e;
 		}
-		const res = fastPath ? executors.all(params).catch((e) => {
-			throw new DrizzleQueryError(sql, params, e);
-		}) : this.queryWithCache(sql, params, "all", () => executors.all(params));
-		if (!mapper) return res;
-		return res.then((rows) => mapper(rows));
+		let l = a ? r.all(c).catch((e) => {
+			throw new Th(s, c, e);
+		}) : this.queryWithCache(s, c, "all", () => r.all(c));
+		return i ? l.then((e) => i(e)) : l;
 	}
-	get(placeholderValues = {}) {
-		const { query, logger, executors, mapper, fastPath, resultKind } = this;
-		const sql = query._sql ? query._sql.join(" ") : query.sql;
-		const params = query.params.length === 0 ? query.params : fillPlaceholders(query.params, placeholderValues);
-		logger.logQuery(sql, params);
-		if (resultKind === "sync") {
-			let res;
+	get(e = {}) {
+		let { query: t, logger: n, executors: r, mapper: i, fastPath: a, resultKind: o } = this, s = t._sql ? t._sql.join(" ") : t.sql, c = t.params.length === 0 ? t.params : ge(t.params, e);
+		if (n.logQuery(s, c), o === "sync") {
+			let e;
 			try {
-				res = executors.get(params);
+				e = r.get(c);
 			} catch (e) {
-				throw new DrizzleQueryError(sql, params, e);
+				throw new Th(s, c, e);
 			}
-			if (!res) return void 0;
-			if (!mapper) return res;
-			return mapper([res])[0];
+			return e ? i ? i([e])[0] : e : void 0;
 		}
-		const res = fastPath ? executors.get(params).catch((e) => {
-			throw new DrizzleQueryError(sql, params, e);
-		}) : this.queryWithCache(sql, params, "get", () => executors.get(params));
-		if (!mapper) return res.then((row) => row ? row : void 0);
-		return res.then((row) => row ? mapper([row])[0] : void 0);
+		let l = a ? r.get(c).catch((e) => {
+			throw new Th(s, c, e);
+		}) : this.queryWithCache(s, c, "get", () => r.get(c));
+		return i ? l.then((e) => e ? i([e])[0] : void 0) : l.then((e) => e || void 0);
 	}
-	values(placeholderValues = {}) {
-		const { query, logger, executors, fastPath, resultKind } = this;
-		const sql = query._sql ? query._sql.join(" ") : query.sql;
-		const params = query.params.length === 0 ? query.params : fillPlaceholders(query.params, placeholderValues);
-		logger.logQuery(sql, params);
-		if (resultKind === "sync") try {
-			return executors.values(params);
+	values(e = {}) {
+		let { query: t, logger: n, executors: r, fastPath: i, resultKind: a } = this, o = t._sql ? t._sql.join(" ") : t.sql, s = t.params.length === 0 ? t.params : ge(t.params, e);
+		if (n.logQuery(o, s), a === "sync") try {
+			return r.values(s);
 		} catch (e) {
-			throw new DrizzleQueryError(sql, params, e);
+			throw new Th(o, s, e);
 		}
-		return fastPath ? executors.values(params).catch((e) => {
-			throw new DrizzleQueryError(sql, params, e);
-		}) : this.queryWithCache(sql, params, "values", () => executors.values(params));
+		return i ? r.values(s).catch((e) => {
+			throw new Th(o, s, e);
+		}) : this.queryWithCache(o, s, "values", () => r.values(s));
 	}
-	execute(placeholderValues) {
-		if (this.resultKind === "async") return this[this.executeMethod](placeholderValues);
-		return new ExecuteResultSync(() => this[this.executeMethod](placeholderValues));
+	execute(e) {
+		return this.resultKind === "async" ? this[this.executeMethod](e) : new Yg(() => this[this.executeMethod](e));
 	}
-};
-var SQLiteAsyncSession = class extends SQLiteSession {
-	static [entityKind] = "SQLiteAsyncSession";
-	constructor(dialect, resultKind) {
-		super(dialect);
-		this.resultKind = resultKind;
+}, Zg = class extends Jg {
+	static [d] = "SQLiteAsyncSession";
+	constructor(e, t) {
+		super(e), this.resultKind = t;
 	}
-	run(query) {
-		return this.prepareQuery(this.dialect.sqlToQuery(query), "raw", false).run();
+	run(e) {
+		return this.prepareQuery(this.dialect.sqlToQuery(e), "raw", !1).run();
 	}
-	objects(query) {
-		return this.prepareQuery(this.dialect.sqlToQuery(query), "objects", false).all();
+	objects(e) {
+		return this.prepareQuery(this.dialect.sqlToQuery(e), "objects", !1).all();
 	}
-	object(query) {
-		return this.prepareQuery(this.dialect.sqlToQuery(query), "objects", false).get();
+	object(e) {
+		return this.prepareQuery(this.dialect.sqlToQuery(e), "objects", !1).get();
 	}
-	arrays(query) {
-		return this.prepareQuery(this.dialect.sqlToQuery(query), "arrays", false).all();
+	arrays(e) {
+		return this.prepareQuery(this.dialect.sqlToQuery(e), "arrays", !1).all();
 	}
-	array(query) {
-		return this.prepareQuery(this.dialect.sqlToQuery(query), "arrays", false).get();
+	array(e) {
+		return this.prepareQuery(this.dialect.sqlToQuery(e), "arrays", !1).get();
 	}
-};
-var SQLiteAsyncTransaction = class extends SQLiteAsyncDatabase {
-	static [entityKind] = "SQLiteAsyncTransaction";
-	constructor(resultType, dialect, session, relations, nestedIndex = 0, forbidJsonb) {
-		super(resultType, dialect, session, relations, forbidJsonb);
-		this.nestedIndex = nestedIndex;
+}, Qg = class extends Ig {
+	static [d] = "SQLiteAsyncTransaction";
+	constructor(e, t, n, r, i = 0, a) {
+		super(e, t, n, r, a), this.nestedIndex = i;
 	}
 	rollback() {
-		throw new TransactionRollbackError();
+		throw new Eh();
 	}
 };
+async function $g(e, t, n) {
+	let r = n === void 0 || typeof n == "string" ? "__drizzle_migrations" : n.migrationsTable ?? "__drizzle_migrations", { newDb: i } = await Vg(r, t, e);
+	if (i) {
+		let e = k`
+			CREATE TABLE IF NOT EXISTS ${k.identifier(r)} (
+				id INTEGER PRIMARY KEY,
+				hash text NOT NULL,
+				created_at numeric,
+				name text,
+				applied_at TEXT
+			)
+		`;
+		await t.session.run(e);
+	}
+	let a = await t.session.objects(k`SELECT id, hash, created_at, name FROM ${k.identifier(r)};`);
+	if (typeof n == "object" && n.init) {
+		if (a.length) return { exitCode: "databaseMigrations" };
+		if (e.length > 1) return { exitCode: "localMigrations" };
+		let [n] = e;
+		if (!n) return;
+		await t.session.run(k`insert into ${k.identifier(r)} ("hash", "created_at", "name", "applied_at") values(${n.hash}, ${n.folderMillis}, ${n.name}, ${(/* @__PURE__ */ new Date()).toISOString()})`);
+		return;
+	}
+	let o = Rg({
+		localMigrations: e,
+		dbMigrations: a
+	});
+	await t.session.transaction(async (e) => {
+		for (let t of o) {
+			for (let n of t.sql) await e.run(k.raw(n));
+			await e.run(k`insert into ${k.identifier(r)} ("hash", "created_at", "name", "applied_at") values(${t.hash}, ${t.folderMillis}, ${t.name}, ${(/* @__PURE__ */ new Date()).toISOString()})`);
+		}
+	});
+}
+var $ = ah("products", {
+	id: Xm("id").primaryKey(),
+	name: Xm("name").notNull(),
+	category: Xm("category", { enum: [
+		"medicine",
+		"cosmetics",
+		"general"
+	] }).notNull().default("general"),
+	barcode: Xm("barcode"),
+	composition: Xm("composition"),
+	strength: Xm("strength"),
+	unitsPerPack: Fm("units_per_pack").notNull().default(1),
+	costPrice: Fm("cost_price"),
+	packPrice: Fm("pack_price"),
+	unitPrice: Fm("unit_price"),
+	createdAt: Fm("created_at").notNull(),
+	updatedAt: Fm("updated_at").notNull(),
+	deletedAt: Fm("deleted_at")
+}), e_ = ah("batches", {
+	id: Xm("id").primaryKey(),
+	productId: Xm("product_id").notNull().references(() => $.id),
+	batchNumber: Xm("batch_number"),
+	expiresAt: Fm("expires_at"),
+	quantity: Fm("quantity").notNull().default(0),
+	createdAt: Fm("created_at").notNull(),
+	updatedAt: Fm("updated_at").notNull(),
+	deletedAt: Fm("deleted_at")
+}), t_ = um($), n_ = dm($), { deletedAt: r_, ...i_ } = t_.fields;
+Zf(i_);
+var { id: a_, createdAt: o_, updatedAt: s_, deletedAt: c_, ...l_ } = n_.fields, u_ = Zf(l_), d_ = Zf({
+	id: Kf,
+	...l_
+}), f_ = Zf({ id: Kf }), p_ = um(e_), m_ = dm(e_), { deletedAt: h_, ...g_ } = p_.fields;
+Zf(g_);
+var { id: __, createdAt: v_, updatedAt: y_, deletedAt: b_, ...x_ } = m_.fields;
+Zf(x_);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/tursodatabase-sync/session.js
-var TursoDatabaseSyncSession = class TursoDatabaseSyncSession extends SQLiteAsyncSession {
-	static [entityKind] = "TursoDatabaseSyncSession";
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/logger.js
+var S_ = class {
+	static [d] = "ConsoleLogWriter";
+	write(e) {
+		console.log(e);
+	}
+}, C_ = class {
+	static [d] = "DefaultLogger";
+	writer;
+	constructor(e) {
+		this.writer = e?.writer ?? new S_();
+	}
+	logQuery(e, t) {
+		let n = t.map((e) => {
+			try {
+				return JSON.stringify(e);
+			} catch {
+				return String(e);
+			}
+		}), r = n.length ? ` -- params: [${n.join(", ")}]` : "";
+		this.writer.write(`Query: ${e}${r}`);
+	}
+}, w_ = class {
+	static [d] = "NoopLogger";
+	logQuery() {}
+}, T_ = class e extends Zg {
+	static [d] = "TursoDatabaseSyncSession";
 	logger;
 	cache;
-	constructor(client, dialect, relations, options) {
-		super(dialect, "async");
-		this.client = client;
-		this.relations = relations;
-		this.options = options;
-		this.logger = options.logger ?? new NoopLogger();
-		this.cache = options.cache ?? new NoopCache();
+	constructor(e, t, n, r) {
+		super(t, "async"), this.client = e, this.relations = n, this.options = r, this.logger = r.logger ?? new w_(), this.cache = r.cache ?? new Wg();
 	}
-	prepareQuery(query, mode, prepare, executeMethod, mapper, queryMetadata, cacheConfig) {
-		let stmt;
-		return new SQLiteAsyncPreparedQuery("async", executeMethod, prepare ? {
-			all: async (params) => {
-				stmt ??= await this.client.prepare(query.sql);
-				return stmt.raw(mode === "arrays").all(params);
-			},
-			get: async (params) => {
-				stmt ??= await this.client.prepare(query.sql);
-				return stmt.raw(mode === "arrays").get(params);
-			},
-			run: async (params) => {
-				stmt ??= await this.client.prepare(query.sql);
-				return stmt.run(params);
-			},
-			values: async (params) => {
-				stmt ??= await this.client.prepare(query.sql);
-				return stmt.raw(true).all(params);
-			}
+	prepareQuery(e, t, n, r, i, a, o) {
+		let s;
+		return new Xg("async", r, n ? {
+			all: async (n) => (s ??= await this.client.prepare(e.sql), s.raw(t === "arrays").all(n)),
+			get: async (n) => (s ??= await this.client.prepare(e.sql), s.raw(t === "arrays").get(n)),
+			run: async (t) => (s ??= await this.client.prepare(e.sql), s.run(t)),
+			values: async (t) => (s ??= await this.client.prepare(e.sql), s.raw(!0).all(t))
 		} : {
-			all: async (params) => {
-				if (stmt || mode === "arrays") {
-					stmt ??= await this.client.prepare(query.sql);
-					return stmt.raw(mode === "arrays").all(params);
-				}
-				return this.client.all(query.sql, ...params);
-			},
-			get: async (params) => {
-				if (stmt || mode === "arrays") {
-					stmt ??= await this.client.prepare(query.sql);
-					return stmt.raw(mode === "arrays").get(params);
-				}
-				return this.client.get(query.sql, ...params);
-			},
-			run: (params) => stmt ? stmt.run(params) : this.client.run(query.sql, ...params),
-			values: async (params) => {
-				stmt ??= await this.client.prepare(query.sql);
-				return stmt.raw(true).all(params);
-			}
-		}, query, mapper, mode, this.logger, this.cache, queryMetadata, cacheConfig);
+			all: async (n) => s || t === "arrays" ? (s ??= await this.client.prepare(e.sql), s.raw(t === "arrays").all(n)) : this.client.all(e.sql, ...n),
+			get: async (n) => s || t === "arrays" ? (s ??= await this.client.prepare(e.sql), s.raw(t === "arrays").get(n)) : this.client.get(e.sql, ...n),
+			run: (t) => s ? s.run(t) : this.client.run(e.sql, ...t),
+			values: async (t) => (s ??= await this.client.prepare(e.sql), s.raw(!0).all(t))
+		}, e, i, t, this.logger, this.cache, a, o);
 	}
-	async transaction(transaction, _config) {
-		const session = new TursoDatabaseSyncSession(this.client, this.dialect, this.relations, this.options);
-		const tx = new TursoDatabaseSyncTransaction("async", this.dialect, session, this.relations);
-		return await this.client.transaction(async () => await transaction(tx))();
+	async transaction(t, n) {
+		let r = new e(this.client, this.dialect, this.relations, this.options), i = new E_("async", this.dialect, r, this.relations);
+		return await this.client.transaction(async () => await t(i))();
 	}
-};
-var TursoDatabaseSyncTransaction = class TursoDatabaseSyncTransaction extends SQLiteAsyncTransaction {
-	static [entityKind] = "TursoDatabaseSyncTransaction";
-	async transaction(transaction) {
-		const savepointName = `sp${this.nestedIndex}`;
-		const tx = new TursoDatabaseSyncTransaction("async", this.dialect, this.session, this._.relations, this.nestedIndex + 1);
-		await this.session.run(sql.raw(`savepoint ${savepointName}`));
+}, E_ = class e extends Qg {
+	static [d] = "TursoDatabaseSyncTransaction";
+	async transaction(t) {
+		let n = `sp${this.nestedIndex}`, r = new e("async", this.dialect, this.session, this._.relations, this.nestedIndex + 1);
+		await this.session.run(k.raw(`savepoint ${n}`));
 		try {
-			const result = await transaction(tx);
-			await this.session.run(sql.raw(`release savepoint ${savepointName}`));
-			return result;
-		} catch (err) {
-			await this.session.run(sql.raw(`rollback to savepoint ${savepointName}`));
-			throw err;
+			let e = await t(r);
+			return await this.session.run(k.raw(`release savepoint ${n}`)), e;
+		} catch (e) {
+			throw await this.session.run(k.raw(`rollback to savepoint ${n}`)), e;
 		}
 	}
+}, D_ = class extends Ig {
+	static [d] = "TursoDatabaseSyncDatabase";
 };
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/tursodatabase-sync/driver.js
-var TursoDatabaseSyncDatabase = class extends SQLiteAsyncDatabase {
-	static [entityKind] = "TursoDatabaseSyncDatabase";
-};
-function construct(client, config = {}) {
-	const dialect = new SQLiteDialect({ useJitMappers: jitCompatCheck(config.jit) });
-	let logger;
-	if (config.logger === true) logger = new DefaultLogger();
-	else if (config.logger !== false) logger = config.logger;
-	const relations = config.relations ?? {};
-	const db = new TursoDatabaseSyncDatabase("async", dialect, new TursoDatabaseSyncSession(client, dialect, relations, {
-		logger,
-		cache: config.cache
-	}), relations);
-	db.$client = client;
-	db.$cache = config.cache;
-	if (db.$cache) db.$cache["invalidate"] = config.cache?.onMutate;
-	return db;
+function O_(e, t = {}) {
+	let n = new hg({ useJitMappers: Ce(t.jit) }), r;
+	t.logger === !0 ? r = new C_() : t.logger !== !1 && (r = t.logger);
+	let i = t.relations ?? {}, a = new D_("async", n, new T_(e, n, i, {
+		logger: r,
+		cache: t.cache
+	}), i);
+	return a.$client = e, a.$cache = t.cache, a.$cache && (a.$cache.invalidate = t.cache?.onMutate), a;
 }
-function drizzle(...params) {
-	if (typeof params[0] === "string") return construct(new Database({ path: params[0] }), params[1]);
-	const { connection, client, ...drizzleConfig } = params[0];
-	if (client) return construct(client, drizzleConfig);
-	return construct(typeof connection === "string" ? new Database({ path: connection }) : new Database(connection), drizzleConfig);
+function k_(...t) {
+	if (typeof t[0] == "string") return O_(new e({ path: t[0] }), t[1]);
+	let { connection: n, client: r, ...i } = t[0];
+	return O_(r || (typeof n == "string" ? new e({ path: n }) : new e(n)), i);
 }
-(function(_drizzle) {
-	function mock(config) {
-		return construct({}, config);
+(function(e) {
+	function t(e) {
+		return O_({}, e);
 	}
-	_drizzle.mock = mock;
-})(drizzle || (drizzle = {}));
+	e.mock = t;
+})(k_ ||= {});
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/MutableRef.js
-var TypeId$1 = "~effect/MutableRef";
-var MutableRefProto = {
-	[TypeId$1]: TypeId$1,
-	...PipeInspectableProto,
-	toJSON() {
-		return {
-			_id: "MutableRef",
-			current: toJson(this.current)
-		};
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/migrator.js
+function A_(e) {
+	if (n.existsSync(`${e.migrationsFolder}/meta/_journal.json`)) throw Error("We detected that you have old drizzle-kit migration folders. You must upgrade drizzle-kit and run \"drizzle-kit up\"");
+	let a = e.migrationsFolder, s = [], c = i(a).map((e) => ({
+		path: o(a, e, "migration.sql"),
+		name: e
+	})).filter((e) => r(e.path));
+	c.sort((e, t) => e.name.localeCompare(t.name));
+	for (let e of c) {
+		let r = e.path, i = e.name.slice(0, 14), a = n.readFileSync(r).toString(), o = a.split("--> statement-breakpoint").map((e) => e), c = Lg(i);
+		s.push({
+			sql: o,
+			bps: !0,
+			folderMillis: c,
+			hash: t.createHash("sha256").update(a).digest("hex"),
+			name: e.name
+		});
 	}
-};
-/**
-* Creates a new MutableRef with the specified initial value.
-*
-* **When to use**
-*
-* Use to create a synchronous `MutableRef` initialized with a value.
-*
-* **Example** (Creating mutable refs)
-*
-* ```ts
-* import { MutableRef } from "effect"
-*
-* // Create a counter reference
-* const counter = MutableRef.make(0)
-* console.log(MutableRef.get(counter)) // 0
-*
-* // Create a configuration reference
-* const config = MutableRef.make({ debug: false, timeout: 5000 })
-* console.log(MutableRef.get(config)) // { debug: false, timeout: 5000 }
-*
-* // Create a string reference
-* const status = MutableRef.make("idle")
-* MutableRef.set(status, "running")
-* console.log(MutableRef.get(status)) // "running"
-* ```
-*
-* @category constructors
-* @since 2.0.0
-*/
-var make$3 = (value) => {
-	const ref = Object.create(MutableRefProto);
-	ref.current = value;
-	return ref;
-};
-/**
-* Sets the MutableRef to a new value and returns the reference.
-*
-* **When to use**
-*
-* Use when you need an in-place `MutableRef` replacement that returns the same
-* `MutableRef`.
-*
-* **Example** (Setting values)
-*
-* ```ts
-* import { MutableRef } from "effect"
-*
-* const ref = MutableRef.make("initial")
-*
-* // Set a new value
-* MutableRef.set(ref, "updated")
-* console.log(MutableRef.get(ref)) // "updated"
-*
-* // Chain set operations (since it returns the ref)
-* const result = MutableRef.set(ref, "final")
-* console.log(result === ref) // true (same reference)
-* console.log(MutableRef.get(ref)) // "final"
-*
-* // Set complex objects
-* const config = MutableRef.make({ debug: false, verbose: false })
-* MutableRef.set(config, { debug: true, verbose: true })
-* console.log(MutableRef.get(config)) // { debug: true, verbose: true }
-*
-* // Pipe-able version
-* const setValue = MutableRef.set("new value")
-* setValue(ref)
-* console.log(MutableRef.get(ref)) // "new value"
-*
-* // Useful for state management
-* const state = MutableRef.make<"idle" | "loading" | "success" | "error">("idle")
-* MutableRef.set(state, "loading")
-* // ... perform async operation
-* MutableRef.set(state, "success")
-* ```
-*
-* @category general
-* @since 2.0.0
-*/
-var set$1 = /*#__PURE__*/ dual(2, (self, value) => {
-	self.current = value;
-	return self;
-});
+	return s;
+}
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Ref.js
-/**
-* Stores fiber-safe mutable state inside Effect programs.
-*
-* A `Ref<A>` holds one value and exposes reads, writes, and atomic
-* transformations as effects, so state changes compose with Effect's
-* concurrency model. This module includes constructors, safe and unsafe reads,
-* set and get-and-set helpers, update and modify helpers, and conditional
-* update variants that leave the value unchanged when an `Option.none` result
-* is returned.
-*
-* @since 2.0.0
-*/
-var RefProto = {
-	["~effect/Ref"]: { _A: identity },
-	...PipeInspectableProto,
-	toJSON() {
-		return {
-			_id: "Ref",
-			ref: this.ref
-		};
-	}
-};
-/**
-* Creates a new Ref with the specified initial value (unsafe version).
-*
-* **When to use**
-*
-* Use when you need immediate synchronous construction and can guarantee
-* that creating the `Ref` outside of `Effect` is safe.
-*
-* **Gotchas**
-*
-* Prefer `Ref.make` for Effect-wrapped creation in Effect programs.
-*
-* **Example** (Creating a ref unsafely)
-*
-* ```ts
-* import { Ref } from "effect"
-*
-* // Create a ref directly without Effect
-* const counter = Ref.makeUnsafe(0)
-*
-* // Get the current value
-* const value = Ref.getUnsafe(counter)
-* console.log(value) // 0
-*
-* // Note: This is unsafe and should be used carefully
-* // Prefer Ref.make for Effect-wrapped creation
-* ```
-*
-* @category constructors
-* @since 4.0.0
-*/
-var makeUnsafe = (value) => {
-	const self = Object.create(RefProto);
-	self.ref = make$3(value);
-	return self;
-};
-/**
-* Creates a new Ref with the specified initial value.
-*
-* **When to use**
-*
-* Use to create a `Ref` for shared mutable state inside an Effect program.
-*
-* **Example** (Creating a ref)
-*
-* ```ts
-* import { Effect, Ref } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const ref = yield* Ref.make(42)
-*   const value = yield* Ref.get(ref)
-*   console.log(value) // 42
-* })
-* ```
-*
-* @see {@link makeUnsafe} for synchronous construction outside Effect code
-*
-* @category constructors
-* @since 2.0.0
-*/
-var make$2 = (value) => sync(() => makeUnsafe(value));
-/**
-* Gets the current value of the Ref.
-*
-* **When to use**
-*
-* Use to read the current `Ref` value without changing it.
-*
-* **Example** (Getting the current value)
-*
-* ```ts
-* import { Effect, Ref } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const ref = yield* Ref.make(42)
-*   const value = yield* Ref.get(ref)
-*   console.log(value) // 42
-* })
-* ```
-*
-* @see {@link set} for replacing the current value
-*
-* @category getters
-* @since 2.0.0
-*/
-var get = (self) => sync(() => self.ref.current);
-/**
-* Sets the value of the Ref to the specified value.
-*
-* **When to use**
-*
-* Use to replace the current `Ref` value with a known value.
-*
-* **Example** (Setting a value)
-*
-* ```ts
-* import { Effect, Ref } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const ref = yield* Ref.make(0)
-*   yield* Ref.set(ref, 42)
-*   const value = yield* Ref.get(ref)
-*   console.log(value) // 42
-* })
-*
-* // Using multiple operations
-* const program2 = Effect.gen(function*() {
-*   const ref = yield* Ref.make(0)
-*   yield* Ref.set(ref, 100)
-*   const value = yield* Ref.get(ref)
-*   console.log(value) // 100
-* })
-* ```
-*
-* @see {@link getAndSet} for setting while returning the previous value
-* @see {@link setAndGet} for setting while returning the new value
-*
-* @category setters
-* @since 2.0.0
-*/
-var set = /*#__PURE__*/ dual(2, (self, value) => sync(() => set$1(self.ref, value)));
-/**
-* Updates the value of the Ref atomically using the given function.
-*
-* **When to use**
-*
-* Use to apply a `Ref` state transition without returning a value.
-*
-* **Example** (Updating a value)
-*
-* ```ts
-* import { Effect, Ref } from "effect"
-*
-* const program = Effect.gen(function*() {
-*   const counter = yield* Ref.make(5)
-*
-*   // Update the value
-*   yield* Ref.update(counter, (n) => n * 2)
-*
-*   const value = yield* Ref.get(counter)
-*   console.log(value) // 10
-* })
-*
-* // Using multiple operations
-* const program2 = Effect.gen(function*() {
-*   const counter = yield* Ref.make(5)
-*   yield* Ref.update(counter, (n: number) => n + 10)
-*   const value = yield* Ref.get(counter)
-*   console.log(value) // 15
-* })
-* ```
-*
-* @see {@link updateAndGet} for returning the new value
-* @see {@link getAndUpdate} for returning the previous value
-*
-* @category setters
-* @since 2.0.0
-*/
-var update = /*#__PURE__*/ dual(2, (self, f) => sync(() => {
-	self.ref.current = f(self.ref.current);
-}));
-//#endregion
-//#region ../../packages/persistence/src/schema.ts
-var products = sqliteTable("products", {
-	id: text("id").primaryKey(),
-	name: text("name").notNull(),
-	category: text("category").notNull().default("general"),
-	barcode: text("barcode"),
-	composition: text("composition"),
-	strength: text("strength"),
-	unitsPerPack: integer("units_per_pack").notNull().default(1),
-	costPrice: integer("cost_price"),
-	packPrice: integer("pack_price"),
-	unitPrice: integer("unit_price"),
-	createdAt: integer("created_at").notNull(),
-	updatedAt: integer("updated_at").notNull(),
-	deletedAt: integer("deleted_at")
-});
-sqliteTable("batches", {
-	id: text("id").primaryKey(),
-	productId: text("product_id").notNull().references(() => products.id),
-	batchNumber: text("batch_number"),
-	expiresAt: integer("expires_at"),
-	quantity: integer("quantity").notNull().default(0),
-	createdAt: integer("created_at").notNull(),
-	updatedAt: integer("updated_at").notNull(),
-	deletedAt: integer("deleted_at")
-});
-var notes = sqliteTable("notes", {
-	id: text("id").primaryKey(),
-	title: text("title").notNull(),
-	body: text("body").notNull(),
-	createdAt: integer("created_at").notNull(),
-	updatedAt: integer("updated_at").notNull(),
-	deletedAt: integer("deleted_at")
-});
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/tursodatabase-sync/migrator.js
+async function j_(e, t) {
+	return $g(A_(t), e, t);
+}
 //#endregion
 //#region ../../packages/persistence/src/index.ts
-var PersistenceError = class extends TaggedErrorClass()("PersistenceError", {
-	operation: String$1,
-	message: String$1
-}) {};
-var NoteNotFoundError = class extends TaggedErrorClass()("NoteNotFoundError", { id: String$1 }) {};
-var OfflineStore = class extends Service()("@store/persistence/OfflineStore") {};
-var messageOf = (cause) => cause instanceof Error ? cause.message : String(cause);
-var attempt = (operation, evaluate) => tryPromise({
-	try: () => Promise.resolve(evaluate()),
-	catch: (cause) => new PersistenceError({
-		operation,
-		message: messageOf(cause)
+var M_ = class extends Lp()("PersistenceError", {
+	operation: Kf,
+	message: Kf
+}) {}, N_ = class extends Lp()("ProductNotFoundError", { id: Kf }) {}, P_ = class extends oi()("@store/persistence/OfflineStore") {}, F_ = (e) => e instanceof Error ? e.message : String(e), I_ = (e, t) => Ic({
+	try: () => Promise.resolve(t()),
+	catch: (t) => new M_({
+		operation: e,
+		message: F_(t)
 	})
-});
-var make$1 = (config) => gen(function* () {
-	const configured = Boolean(config.syncUrl);
-	let syncEnabled = false;
-	const db = drizzle({ connection: configured ? {
-		path: config.path,
-		url: () => syncEnabled ? config.syncUrl : null,
-		...config.authToken ? { authToken: config.authToken } : {},
+}), L_ = ({ deletedAt: e, ...t }) => t, R_ = (e) => Hc(function* () {
+	let t = !!e.syncUrl, n = !1, r = k_({ connection: t ? {
+		path: e.path,
+		url: () => n ? e.syncUrl : null,
+		...e.authToken ? { authToken: e.authToken } : {},
 		clientName: "store-electron"
-	} : { path: config.path } });
-	yield* attempt("connect database", () => db.$client.connect());
-	yield* attempt("initialize database", () => db.run(sql`
-        CREATE TABLE IF NOT EXISTS notes (
-          id TEXT PRIMARY KEY NOT NULL,
-          title TEXT NOT NULL,
-          body TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `));
-	yield* attempt("initialize products table", () => db.run(sql`
-        CREATE TABLE IF NOT EXISTS products (
-          id TEXT PRIMARY KEY NOT NULL,
-          name TEXT NOT NULL,
-          category TEXT NOT NULL DEFAULT 'general',
-          barcode TEXT,
-          composition TEXT,
-          strength TEXT,
-          units_per_pack INTEGER NOT NULL DEFAULT 1,
-          cost_price INTEGER,
-          pack_price INTEGER,
-          unit_price INTEGER,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `));
-	yield* attempt("initialize batches table", () => db.run(sql`
-        CREATE TABLE IF NOT EXISTS batches (
-          id TEXT PRIMARY KEY NOT NULL,
-          product_id TEXT NOT NULL REFERENCES products(id),
-          batch_number TEXT,
-          expires_at INTEGER,
-          quantity INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          deleted_at INTEGER
-        )
-      `));
-	const status = yield* make$2({
-		phase: configured ? "idle" : "local-only",
-		configured,
+	} : { path: e.path } });
+	yield* I_("connect database", () => r.$client.connect()), yield* I_("migrate database", () => j_(r, { migrationsFolder: e.migrationsFolder }));
+	let i = yield* Up({
+		phase: t ? "idle" : "local-only",
+		configured: t,
 		lastSyncedAt: null,
-		message: configured ? "Ready to sync" : "Add Turso credentials to enable cloud sync"
+		message: t ? "Ready to sync" : "Add Turso credentials to enable cloud sync"
 	});
-	yield* addFinalizer(() => attempt("close database", () => db.$client.close()).pipe(orDie));
-	const listNotes = attempt("list notes", () => db.select({
-		id: notes.id,
-		title: notes.title,
-		body: notes.body,
-		createdAt: notes.createdAt,
-		updatedAt: notes.updatedAt
-	}).from(notes).where(isNull(notes.deletedAt)).orderBy(desc(notes.updatedAt)).all());
-	const createNote = fn("OfflineStore.createNote")(function* (input) {
-		const now = Date.now();
-		const note = {
+	yield* $c(() => I_("close database", () => r.$client.close()).pipe(Zc));
+	let a = I_("list products", () => r.select().from($).where(Rh($.deletedAt)).orderBy(Zh($.name)).all()).pipe(Xc((e) => e.map(L_))), o = fl("OfflineStore.getProduct")(function* (e) {
+		let t = yield* I_("find product", () => r.select().from($).where(kh(Dh($.id, e), Rh($.deletedAt))).get());
+		return t ? L_(t) : yield* new N_({ id: e });
+	}), s = fl("OfflineStore.createProduct")(function* (e) {
+		let t = Date.now();
+		return L_(yield* I_("create product", () => r.insert($).values({
+			...e,
 			id: crypto.randomUUID(),
-			title: input.title.trim(),
-			body: input.body.trim(),
-			createdAt: now,
-			updatedAt: now
-		};
-		yield* attempt("create note", () => db.insert(notes).values(note).run());
-		return note;
-	});
-	const updateNote = fn("OfflineStore.updateNote")(function* (input) {
-		const existing = yield* attempt("find note", () => db.select().from(notes).where(eq(notes.id, input.id)).get());
-		if (!existing || existing.deletedAt !== null) return yield* new NoteNotFoundError({ id: input.id });
-		const note = {
-			id: existing.id,
-			title: input.title.trim(),
-			body: input.body.trim(),
-			createdAt: existing.createdAt,
+			name: e.name.trim(),
+			createdAt: t,
+			updatedAt: t
+		}).returning().get()));
+	}), c = fl("OfflineStore.updateProduct")(function* (e) {
+		let { id: t, ...n } = e, i = yield* I_("update product", () => r.update($).set({
+			...n,
+			name: n.name.trim(),
 			updatedAt: Date.now()
-		};
-		yield* attempt("update note", () => db.update(notes).set({
-			title: note.title,
-			body: note.body,
-			updatedAt: note.updatedAt
-		}).where(eq(notes.id, note.id)).run());
-		return note;
-	});
-	const deleteNote = fn("OfflineStore.deleteNote")(function* (id) {
-		if (!(yield* attempt("find note", () => db.select({ id: notes.id }).from(notes).where(eq(notes.id, id)).get()))) return yield* new NoteNotFoundError({ id });
-		yield* attempt("delete note", () => db.update(notes).set({
+		}).where(kh(Dh($.id, t), Rh($.deletedAt))).returning().get());
+		return i ? L_(i) : yield* new N_({ id: t });
+	}), l = fl("OfflineStore.deleteProduct")(function* (e) {
+		if (!(yield* I_("delete product", () => r.update($).set({
 			deletedAt: Date.now(),
 			updatedAt: Date.now()
-		}).where(eq(notes.id, id)).run());
-	});
-	const sync = fn("OfflineStore.sync")(function* () {
-		if (!configured) return yield* get(status);
-		yield* update(status, (current) => ({
-			...current,
+		}).where(kh(Dh($.id, e), Rh($.deletedAt))).returning({ id: $.id }).get()))) return yield* new N_({ id: e });
+	}), u = fl("OfflineStore.sync")(function* () {
+		if (!t) return yield* Wp(i);
+		yield* Kp(i, (e) => ({
+			...e,
 			phase: "syncing",
 			message: "Pushing local changes…"
-		}));
-		syncEnabled = true;
-		const result$2 = yield* attempt("sync with Turso", async () => {
-			await db.$client.push();
-			await db.$client.pull();
-		}).pipe(result);
-		if (result$2._tag === "Failure") {
-			yield* update(status, (current) => ({
-				...current,
-				phase: "error",
-				message: result$2.failure.message
-			}));
-			return yield* result$2.failure;
-		}
-		const next = {
+		})), n = !0;
+		let e = yield* I_("sync with Turso", async () => {
+			await r.$client.push(), await r.$client.pull();
+		}).pipe(Jc);
+		if (e._tag === "Failure") return yield* Kp(i, (t) => ({
+			...t,
+			phase: "error",
+			message: e.failure.message
+		})), yield* e.failure;
+		let a = {
 			phase: "idle",
-			configured: true,
+			configured: !0,
 			lastSyncedAt: Date.now(),
 			message: "Local and cloud data are in sync"
 		};
-		yield* set(status, next);
-		return next;
+		return yield* Gp(i, a), a;
 	});
-	return OfflineStore.of({
-		listNotes,
-		createNote,
-		updateNote,
-		deleteNote,
-		getSyncStatus: get(status),
-		sync: sync()
+	return P_.of({
+		listProducts: a,
+		getProduct: o,
+		createProduct: s,
+		updateProduct: c,
+		deleteProduct: l,
+		getSyncStatus: Wp(i),
+		sync: u()
 	});
-});
-var layer = (config) => effect(OfflineStore, make$1(config));
-var program = {
-	listNotes: flatMap(OfflineStore, (store) => store.listNotes),
-	createNote: (input) => flatMap(OfflineStore, (store) => store.createNote(input)),
-	updateNote: (input) => flatMap(OfflineStore, (store) => store.updateNote(input)),
-	deleteNote: (id) => flatMap(OfflineStore, (store) => store.deleteNote(id)),
-	getSyncStatus: flatMap(OfflineStore, (store) => store.getSyncStatus),
-	sync: flatMap(OfflineStore, (store) => store.sync)
-};
-var await_ = fiberAwait;
-/**
-* Adds a fiber to a `Scope` and returns the same fiber.
-*
-* **When to use**
-*
-* Use when a manually managed fiber should be interrupted when a Scope closes.
-*
-* **Details**
-*
-* When the scope is closed, the fiber is interrupted. If the scope is already
-* closed, the fiber is interrupted immediately.
-*
-* **Gotchas**
-*
-* This does not wait for the fiber to complete. It only registers the
-* interruption finalizer and returns the same fiber.
-*
-* @see {@link interrupt} for interrupting and waiting for completion
-*
-* @category resource management
-* @since 4.0.0
-*/
-var runIn = fiberRunIn;
-//#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/ManagedRuntime.js
-var TypeId = "~effect/ManagedRuntime";
-/**
-* Creates a `ManagedRuntime` from a layer.
-*
-* **When to use**
-*
-* Use to create a reusable runtime from a `Layer` for application entry points
-* or integration code that runs many effects without rebuilding services.
-*
-* **Details**
-*
-* The layer is built lazily on first use and its context is cached for
-* subsequent runs. Resources acquired by the layer are owned by the runtime and
-* are released when `dispose` or `disposeEffect` is run. `options.memoMap` can
-* be used to share layer memoization with other layer builds.
-*
-* **Gotchas**
-*
-* Dispose the runtime when it is no longer needed. A runtime cannot be reused
-* after disposal.
-*
-* **Example** (Creating a managed runtime)
-*
-* ```ts
-* import { Context, Effect, Layer, ManagedRuntime } from "effect"
-*
-* class Notifications extends Context.Service<Notifications, {
-*   readonly notify: (message: string) => Effect.Effect<void>
-* }>()("Notifications") {
-*   static readonly layer = Layer.succeed(this)({
-*     notify: Effect.fn("Notifications.notify")((message) =>
-*       Effect.sync(() => console.log(message))
-*     )
-*   })
-* }
-*
-* const runtime = ManagedRuntime.make(Notifications.layer)
-*
-* const program = Effect.flatMap(
-*   Notifications,
-*   (_) => _.notify("Hello, world!")
-* ).pipe(Effect.ensuring(runtime.disposeEffect))
-*
-* runtime.runPromise(program)
-* // Hello, world!
-* ```
-*
-* @see {@link ManagedRuntime} for the returned runtime interface
-* @see {@link Layer.MemoMap} for shared layer memoization
-* @see {@link Layer.build} for lower-level scoped layer construction
-*
-* @category runtime class
-* @since 2.0.0
-*/
-var make = (layer, options) => {
-	const memoMap = options?.memoMap ?? makeMemoMapUnsafe();
-	const scope = makeUnsafe$2("parallel");
-	const layerScope = forkUnsafe(scope, "sequential");
-	const defaultRunOptions = { onFiberStart: runIn(scope) };
-	const mergeRunOptions = (options) => options ? {
-		...options,
-		onFiberStart: options.onFiberStart ? (fiber) => {
-			defaultRunOptions.onFiberStart(fiber);
-			options.onFiberStart(fiber);
-		} : defaultRunOptions.onFiberStart
-	} : defaultRunOptions;
-	let buildFiber;
-	const contextEffect = withFiber((fiber) => {
-		if (!buildFiber) buildFiber = runFork(tap(buildWithMemoMap(layer, memoMap, layerScope), (context) => sync(() => {
-			self.cachedContext = context;
-		})), {
-			...defaultRunOptions,
-			scheduler: fiber.currentScheduler
-		});
-		return flatten(await_(buildFiber));
-	});
-	const self = {
-		[TypeId]: TypeId,
-		memoMap,
-		scope,
-		contextEffect,
-		cachedContext: void 0,
-		context() {
-			return self.cachedContext === void 0 ? runPromise(self.contextEffect) : Promise.resolve(self.cachedContext);
-		},
-		dispose() {
-			return runPromise(self.disposeEffect);
-		},
-		disposeEffect: suspend(() => {
-			self.contextEffect = die("ManagedRuntime disposed");
-			self.cachedContext = void 0;
-			return close(self.scope, void_);
-		}),
-		runFork(effect, options) {
-			return self.cachedContext === void 0 ? runFork(provide(self, effect), mergeRunOptions(options)) : runForkWith(self.cachedContext)(effect, mergeRunOptions(options));
-		},
-		runCallback(effect, options) {
-			return self.cachedContext === void 0 ? runCallback(provide(self, effect), mergeRunOptions(options)) : runCallbackWith(self.cachedContext)(effect, mergeRunOptions(options));
-		},
-		runSyncExit(effect) {
-			return self.cachedContext === void 0 ? runSyncExit(provide(self, effect)) : runSyncExitWith(self.cachedContext)(effect);
-		},
-		runSync(effect) {
-			return self.cachedContext === void 0 ? runSync(provide(self, effect)) : runSyncWith(self.cachedContext)(effect);
-		},
-		runPromiseExit(effect, options) {
-			return self.cachedContext === void 0 ? runPromiseExit(provide(self, effect), mergeRunOptions(options)) : runPromiseExitWith(self.cachedContext)(effect, mergeRunOptions(options));
-		},
-		runPromise(effect, options) {
-			return self.cachedContext === void 0 ? runPromise(provide(self, effect), mergeRunOptions(options)) : runPromiseWith(self.cachedContext)(effect, mergeRunOptions(options));
-		}
-	};
-	return self;
-};
-function provide(managed, effect) {
-	return flatMap(managed.contextEffect, (context) => provideContext(effect, context));
-}
-//#endregion
-//#region electron/main.ts
-var __dirname = path.dirname(fileURLToPath(import.meta.url));
-process.env.APP_ROOT = path.join(__dirname, "..");
-var VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-var MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-var RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
-var envFiles = [
-	path.join(process.env.APP_ROOT, ".env"),
-	path.join(process.env.APP_ROOT, "..", "..", ".env"),
-	path.join(process.env.APP_ROOT, "..", "..", "packages", "persistence", ".env")
+}), z_ = (e) => Dc(P_, R_(e)), B_ = {
+	listProducts: Gc(P_, (e) => e.listProducts),
+	getProduct: (e) => Gc(P_, (t) => t.getProduct(e)),
+	createProduct: (e) => Gc(P_, (t) => t.createProduct(e)),
+	updateProduct: (e) => Gc(P_, (t) => t.updateProduct(e)),
+	deleteProduct: (e) => Gc(P_, (t) => t.deleteProduct(e)),
+	getSyncStatus: Gc(P_, (e) => e.getSyncStatus),
+	sync: Gc(P_, (e) => e.sync)
+}, V_ = a.dirname(u(import.meta.url));
+process.env.APP_ROOT = a.join(V_, "..");
+var H_ = process.env.VITE_DEV_SERVER_URL, U_ = a.join(process.env.APP_ROOT, "dist-electron"), W_ = a.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = H_ ? a.join(process.env.APP_ROOT, "public") : W_;
+var G_ = [
+	a.join(process.env.APP_ROOT, ".env"),
+	a.join(process.env.APP_ROOT, "..", "..", ".env"),
+	a.join(process.env.APP_ROOT, "..", "..", "packages", "persistence", ".env")
 ];
-for (const file of envFiles) try {
-	process.loadEnvFile(file);
+for (let e of G_) try {
+	process.loadEnvFile(e);
 } catch {}
-var win;
-var runtime;
-var runStore = (effect) => {
-	if (!runtime) return Promise.reject(/* @__PURE__ */ new Error("The local store is not ready"));
-	return runtime.runPromise(effect).catch((cause) => {
-		const message = typeof cause === "object" && cause !== null && "message" in cause ? String(cause.message) : String(cause);
-		throw new Error(message);
-	});
-};
-function registerStoreIpc() {
-	ipcMain.handle("store:notes:list", () => runStore(program.listNotes));
-	ipcMain.handle("store:notes:create", (_event, input) => runStore(decodeUnknownEffect(CreateNoteInput)(input).pipe(flatMap(program.createNote))));
-	ipcMain.handle("store:notes:update", (_event, input) => runStore(decodeUnknownEffect(UpdateNoteInput)(input).pipe(flatMap(program.updateNote))));
-	ipcMain.handle("store:notes:delete", (_event, input) => runStore(decodeUnknownEffect(DeleteNoteInput)(input).pipe(flatMap(({ id }) => program.deleteNote(id)))));
-	ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
-	ipcMain.handle("store:sync:run", () => runStore(program.sync));
+var K_, q_, J_ = (e) => q_ ? q_.runPromise(e).catch((e) => {
+	let t = typeof e == "object" && e && "message" in e ? String(e.message) : String(e);
+	throw Error(t);
+}) : Promise.reject(/* @__PURE__ */ Error("The local store is not ready"));
+function Y_() {
+	l.handle("store:products:list", () => J_(B_.listProducts)), l.handle("store:products:get", (e, t) => J_(Lf(f_)(t).pipe(Gc(({ id: e }) => B_.getProduct(e))))), l.handle("store:products:create", (e, t) => J_(Lf(u_)(t).pipe(Gc(B_.createProduct)))), l.handle("store:products:update", (e, t) => J_(Lf(d_)(t).pipe(Gc(B_.updateProduct)))), l.handle("store:products:delete", (e, t) => J_(Lf(f_)(t).pipe(Gc(({ id: e }) => B_.deleteProduct(e))))), l.handle("store:sync:status", () => J_(B_.getSyncStatus)), l.handle("store:sync:run", () => J_(B_.sync));
 }
-function createWindow() {
-	win = new BrowserWindow({
-		icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
-		frame: false,
-		webPreferences: { preload: path.join(__dirname, "preload.mjs") }
-	});
-	win.webContents.on("did-finish-load", () => {
-		win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-	});
-	win.on("enter-full-screen", () => {
-		win?.webContents.send("window-controls:full-screen-changed", true);
-	});
-	win.on("leave-full-screen", () => {
-		win?.webContents.send("window-controls:full-screen-changed", false);
-	});
-	if (VITE_DEV_SERVER_URL) win.loadURL(VITE_DEV_SERVER_URL);
-	else win.loadFile(path.join(RENDERER_DIST, "index.html"));
+function X_() {
+	K_ = new s({
+		icon: a.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+		frame: !1,
+		webPreferences: { preload: a.join(V_, "preload.mjs") }
+	}), K_.webContents.on("did-finish-load", () => {
+		K_?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+	}), K_.on("enter-full-screen", () => {
+		K_?.webContents.send("window-controls:full-screen-changed", !0);
+	}), K_.on("leave-full-screen", () => {
+		K_?.webContents.send("window-controls:full-screen-changed", !1);
+	}), H_ ? K_.loadURL(H_) : K_.loadFile(a.join(W_, "index.html"));
 }
-ipcMain.on("window-controls:minimize", (event) => {
-	BrowserWindow.fromWebContents(event.sender)?.minimize();
-});
-ipcMain.handle("window-controls:toggle-maximize", (event) => {
-	const window = BrowserWindow.fromWebContents(event.sender);
-	if (!window) return false;
-	if (window.isMaximized()) window.unmaximize();
-	else window.maximize();
-	return window.isMaximized();
-});
-ipcMain.handle("window-controls:is-maximized", (event) => {
-	return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
-});
-ipcMain.handle("window-controls:is-full-screen", (event) => {
-	return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
-});
-ipcMain.on("window-controls:close", (event) => {
-	BrowserWindow.fromWebContents(event.sender)?.close();
-});
-app.on("window-all-closed", () => {
-	if (process.platform !== "darwin") {
-		app.quit();
-		win = null;
-	}
-});
-app.on("activate", () => {
-	if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-app.on("before-quit", () => {
-	if (runtime) runtime.dispose();
-});
-app.whenReady().then(() => {
-	runtime = make(layer({
-		path: path.join(app.getPath("userData"), "offline-store.db"),
-		syncUrl: process.env["TURSO_SYNC_URL"] ?? process.env["TURSO_DATABASE_URL"],
-		authToken: process.env["TURSO_AUTH_TOKEN"]
-	}));
-	registerStoreIpc();
-	createWindow();
+l.on("window-controls:minimize", (e) => {
+	s.fromWebContents(e.sender)?.minimize();
+}), l.handle("window-controls:toggle-maximize", (e) => {
+	let t = s.fromWebContents(e.sender);
+	return t ? (t.isMaximized() ? t.unmaximize() : t.maximize(), t.isMaximized()) : !1;
+}), l.handle("window-controls:is-maximized", (e) => s.fromWebContents(e.sender)?.isMaximized() ?? !1), l.handle("window-controls:is-full-screen", (e) => s.fromWebContents(e.sender)?.isFullScreen() ?? !1), l.on("window-controls:close", (e) => {
+	s.fromWebContents(e.sender)?.close();
+}), c.on("window-all-closed", () => {
+	process.platform !== "darwin" && (c.quit(), K_ = null);
+}), c.on("activate", () => {
+	s.getAllWindows().length === 0 && X_();
+}), c.on("before-quit", () => {
+	q_ && q_.dispose();
+}), c.whenReady().then(() => {
+	q_ = zp(z_({
+		path: a.join(c.getPath("userData"), "store-v2.db"),
+		migrationsFolder: c.isPackaged ? a.join(process.resourcesPath, "database-migrations") : a.join(process.env.APP_ROOT, "..", "..", "packages", "database", "drizzle"),
+		syncUrl: process.env.TURSO_SYNC_URL ?? process.env.TURSO_DATABASE_URL,
+		authToken: process.env.TURSO_AUTH_TOKEN
+	})), Y_(), X_();
 });
 //#endregion
-export { MAIN_DIST, RENDERER_DIST, VITE_DEV_SERVER_URL };
+export { U_ as MAIN_DIST, W_ as RENDERER_DIST, H_ as VITE_DEV_SERVER_URL };
