@@ -1,8 +1,10 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NotFound } from "@/components/not-found";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar-shell";
-import { WindowControls } from "@/components/window-controls";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -11,15 +13,19 @@ export const Route = createRootRoute({
 
 export function RootLayout() {
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="window-drag-region sticky top-0 z-30 flex h-10 items-center gap-3 border-b bg-background/90 pl-4 backdrop-blur">
-          <SidebarTrigger className="window-no-drag -ml-1" />
-          <WindowControls />
-        </header>
-        <Outlet />
-      </SidebarInset>
-    </SidebarProvider>
+    <TooltipProvider>
+      <div className="[--footer-height:calc(--spacing(8))] [--header-height:calc(--spacing(10))]">
+        <SidebarProvider className="h-svh flex flex-col overflow-hidden">
+          <SiteHeader />
+          <div className="flex min-h-0 flex-1">
+            <AppSidebar />
+            <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+              <Outlet />
+            </SidebarInset>
+          </div>
+          <SiteFooter />
+        </SidebarProvider>
+      </div>
+    </TooltipProvider>
   );
 }

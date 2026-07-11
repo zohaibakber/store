@@ -34,6 +34,21 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
+// Turbo runs tasks with a filtered environment, so Turso credentials are read
+// from .env files instead. Earlier files and pre-set shell variables win.
+const envFiles = [
+  path.join(process.env.APP_ROOT, ".env"),
+  path.join(process.env.APP_ROOT, "..", "..", ".env"),
+  path.join(process.env.APP_ROOT, "..", "..", "packages", "persistence", ".env"),
+];
+for (const file of envFiles) {
+  try {
+    process.loadEnvFile(file);
+  } catch {
+    // file does not exist
+  }
+}
+
 let win: BrowserWindow | null;
 let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 
@@ -157,7 +172,7 @@ void app.whenReady().then(() => {
   runtime = ManagedRuntime.make(
     persistenceLayer({
       path: databasePath,
-      syncUrl: process.env["TURSO_DATABASE_URL"],
+      syncUrl: process.env["TURSO_SYNC_URL"] ?? process.env["TURSO_DATABASE_URL"],
       authToken: process.env["TURSO_AUTH_TOKEN"],
     }),
   );

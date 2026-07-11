@@ -14,3 +14,22 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+## Typography
+
+These rules apply to all UI work in `apps/desktop`. The tokens enforcing them
+live in `apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
+
+- **Font**: Inter (`"Inter Variable"`, loaded via `@fontsource-variable/inter`).
+  Geist Mono for code only.
+- **Weights**: regular (400) and medium (500) only — medium is the maximum.
+  Never use `font-semibold` or `font-bold`; the theme clamps both to 500, so
+  reaching for them is always a mistake.
+- **Font sizes**: 12px and 14px are the base sizes (body text is 14px, small
+  text is 12px). The full scale is 12 / 14 / 16 / 18 / 24, and 24px is the
+  biggest — nothing renders larger. Use Tailwind utilities: `text-xs` (12),
+  `text-sm` (14, body default), `text-base` (16), `text-lg` (18), `text-2xl`
+  (24). `text-xl` and `text-3xl`+ are clamped into the scale; don't introduce
+  new sizes.
+- **Icons**: Lucide icons use a 1.2 stroke width, applied globally via the
+  `.lucide` rule in `styles.css` — don't pass a `strokeWidth` prop.

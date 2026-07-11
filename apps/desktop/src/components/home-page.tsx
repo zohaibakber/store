@@ -5,7 +5,6 @@ import {
   FileTextIcon,
   PencilIcon,
   PlusIcon,
-  RefreshCwIcon,
   Trash2Icon,
   TriangleAlertIcon,
   WifiOffIcon,
@@ -17,10 +16,10 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
-  CardPanel,
   CardTitle,
 } from "@/components/ui/card";
 import {
@@ -32,6 +31,7 @@ import {
 } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 
 const initialStatus: SyncStatus = {
@@ -43,12 +43,20 @@ const initialStatus: SyncStatus = {
 
 const phaseBadge: Record<
   SyncPhase,
-  { label: string; variant: "outline" | "info" | "warning" | "error" }
+  { label: string; variant: "outline" | "secondary" | "destructive"; className?: string }
 > = {
   "local-only": { label: "Local only", variant: "outline" },
-  idle: { label: "Cloud ready", variant: "info" },
-  syncing: { label: "Syncing", variant: "warning" },
-  error: { label: "Sync paused", variant: "error" },
+  idle: {
+    label: "Cloud ready",
+    variant: "secondary",
+    className: "bg-info/10 text-info-foreground",
+  },
+  syncing: {
+    label: "Syncing",
+    variant: "secondary",
+    className: "bg-warning/10 text-warning-foreground",
+  },
+  error: { label: "Sync paused", variant: "destructive" },
 };
 
 const errorMessage = (cause: unknown) =>
@@ -77,6 +85,15 @@ export function HomePage() {
     refresh()
       .catch((cause: unknown) => setError(errorMessage(cause)))
       .finally(() => setLoading(false));
+  }, [refresh]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      void refresh().catch((cause: unknown) => setError(errorMessage(cause)));
+    };
+
+    window.addEventListener("offline-store:sync", handleSync);
+    return () => window.removeEventListener("offline-store:sync", handleSync);
   }, [refresh]);
 
   const clearForm = () => {
@@ -125,27 +142,12 @@ export function HomePage() {
     }
   };
 
-  const sync = async () => {
-    setBusy(true);
-    setError(null);
-    setStatus((current) => ({ ...current, phase: "syncing", message: "Syncing changes…" }));
-    try {
-      setStatus(await window.offlineStore.sync());
-      await refresh();
-    } catch (cause) {
-      setError(errorMessage(cause));
-      setStatus(await window.offlineStore.getSyncStatus());
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const badge = phaseBadge[status.phase];
 
   return (
     <main className="p-6 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
           <div>
             <p className="font-medium text-primary text-sm">Offline-first demo</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">Local notes</h1>
@@ -154,16 +156,6 @@ export function HomePage() {
               and never blocks local work.
             </p>
           </div>
-          <Button
-            disabled={!status.configured || loading}
-            loading={busy && status.phase === "syncing"}
-            onClick={sync}
-            type="button"
-            variant="outline"
-          >
-            <RefreshCwIcon aria-hidden="true" />
-            Sync now
-          </Button>
         </div>
 
         <Card>
@@ -178,10 +170,12 @@ export function HomePage() {
             </CardTitle>
             <CardDescription>{status.message}</CardDescription>
             <CardAction>
-              <Badge variant={badge.variant}>{badge.label}</Badge>
+              <Badge className={badge.className} variant={badge.variant}>
+                {badge.label}
+              </Badge>
             </CardAction>
           </CardHeader>
-          <CardPanel className="flex flex-wrap gap-x-8 gap-y-2 border-t pt-4 text-sm">
+          <CardContent className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span>
               <strong className="font-medium">Storage:</strong>{" "}
               <span className="text-muted-foreground">local database</span>
@@ -192,11 +186,11 @@ export function HomePage() {
                 {status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString() : "Never"}
               </span>
             </span>
-          </CardPanel>
+          </CardContent>
         </Card>
 
         {error && (
-          <Alert variant="error">
+          <Alert variant="destructive">
             <TriangleAlertIcon aria-hidden="true" />
             <AlertTitle>Operation failed</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
@@ -210,10 +204,11 @@ export function HomePage() {
                 <CardTitle>{editingId ? "Edit note" : "New note"}</CardTitle>
                 <CardDescription>Saved locally as soon as you submit.</CardDescription>
               </CardHeader>
-              <CardPanel className="space-y-4">
-                <Field name="title">
-                  <FieldLabel>Title</FieldLabel>
+              <CardContent className="space-y-4">
+                <Field>
+                  <FieldLabel htmlFor="note-title">Title</FieldLabel>
                   <Input
+                    id="note-title"
                     onChange={(event) => setTitle(event.target.value)}
                     placeholder="What should you remember?"
                     required
@@ -221,9 +216,10 @@ export function HomePage() {
                     value={title}
                   />
                 </Field>
-                <Field name="body">
-                  <FieldLabel>Details</FieldLabel>
+                <Field>
+                  <FieldLabel htmlFor="note-body">Details</FieldLabel>
                   <Textarea
+                    id="note-body"
                     onChange={(event) => setBody(event.target.value)}
                     placeholder="Add a little context…"
                     rows={5}
@@ -231,15 +227,21 @@ export function HomePage() {
                   />
                   <FieldDescription>Works without a network connection.</FieldDescription>
                 </Field>
-              </CardPanel>
+              </CardContent>
               <CardFooter className="justify-end gap-2">
                 {editingId && (
                   <Button onClick={clearForm} type="button" variant="ghost">
                     Cancel
                   </Button>
                 )}
-                <Button disabled={!title.trim()} loading={busy} type="submit">
-                  {editingId ? <PencilIcon aria-hidden="true" /> : <PlusIcon aria-hidden="true" />}
+                <Button disabled={!title.trim() || busy} type="submit">
+                  {busy ? (
+                    <Spinner />
+                  ) : editingId ? (
+                    <PencilIcon aria-hidden="true" />
+                  ) : (
+                    <PlusIcon aria-hidden="true" />
+                  )}
                   {editingId ? "Save changes" : "Create note"}
                 </Button>
               </CardFooter>
@@ -298,9 +300,9 @@ export function HomePage() {
                     </CardAction>
                   </CardHeader>
                   {note.body && (
-                    <CardPanel>
+                    <CardContent>
                       <p className="whitespace-pre-wrap text-sm leading-6">{note.body}</p>
-                    </CardPanel>
+                    </CardContent>
                   )}
                 </Card>
               ))

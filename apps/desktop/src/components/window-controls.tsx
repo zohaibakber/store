@@ -1,4 +1,11 @@
-import { Maximize2, Minus, Shrink, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  ArrowExpand01Icon,
+  ArrowShrink02Icon,
+  Cancel01Icon,
+  MinusSignIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
 
 export function WindowControls() {
@@ -15,37 +22,40 @@ export function WindowControls() {
   if (isFullScreen) return null;
 
   return (
-    <div className="window-controls ml-auto flex h-full self-stretch" aria-label="Window controls">
-      <button
+    <div className="window-controls ml-auto flex items-center gap-1" aria-label="Window controls">
+      <Button
         type="button"
-        className="grid w-11 place-items-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        variant="ghost"
+        size="icon-sm"
         aria-label="Minimize window"
         onClick={() => window.windowControls.minimize()}
       >
-        <Minus className="size-4" strokeWidth={1.5} />
-      </button>
-      <button
+        <HugeiconsIcon icon={MinusSignIcon} />
+      </Button>
+      <Button
         type="button"
-        className="grid w-11 place-items-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        variant="ghost"
+        size="icon-sm"
         aria-label={isMaximized ? "Restore window" : "Maximize window"}
         onClick={() => {
           void window.windowControls.toggleMaximize().then(setIsMaximized);
         }}
       >
         {isMaximized ? (
-          <Shrink className="size-3.5" strokeWidth={1.5} />
+          <HugeiconsIcon icon={ArrowShrink02Icon} />
         ) : (
-          <Maximize2 className="size-3.5" strokeWidth={1.5} />
+          <HugeiconsIcon icon={ArrowExpand01Icon} />
         )}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        className="grid w-11 place-items-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        variant="ghost"
+        size="icon-sm"
         aria-label="Close window"
         onClick={() => window.windowControls.close()}
       >
-        <X className="size-4" strokeWidth={1.5} />
-      </button>
+        <HugeiconsIcon icon={Cancel01Icon} />
+      </Button>
     </div>
   );
 }

@@ -1,66 +1,180 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { HomeIcon, SettingsIcon, StoreIcon } from "lucide-react";
+import * as React from "react";
+
+import { NavMain } from "@/components/nav-main";
+import { NavProjects } from "@/components/nav-projects";
+import { NavSecondary } from "@/components/nav-secondary";
+import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar-shell";
-import { Separator } from "@/components/ui/separator";
-import { ThemeToggle } from "@/components/theme-provider";
+} from "@/components/ui/sidebar";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ComputerTerminalIcon,
+  RoboticIcon,
+  BookOpen02Icon,
+  Settings05Icon,
+  ChartRingIcon,
+  SentIcon,
+  CropIcon,
+  PieChartIcon,
+  MapsIcon,
+  CommandIcon,
+} from "@hugeicons/core-free-icons";
 
-const navigation = [
-  { icon: HomeIcon, label: "Home", to: "/" },
-  { icon: SettingsIcon, label: "Settings", to: "/settings" },
-] as const;
-
-export function AppSidebar() {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-
+const data = {
+  user: {
+    name: "shadcn",
+    email: "m@example.com",
+    avatar: "/avatars/shadcn.jpg",
+  },
+  navMain: [
+    {
+      title: "Playground",
+      url: "#",
+      icon: <HugeiconsIcon icon={ComputerTerminalIcon} strokeWidth={2} />,
+      isActive: true,
+      items: [
+        {
+          title: "History",
+          url: "#",
+        },
+        {
+          title: "Starred",
+          url: "#",
+        },
+        {
+          title: "Settings",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Models",
+      url: "#",
+      icon: <HugeiconsIcon icon={RoboticIcon} strokeWidth={2} />,
+      items: [
+        {
+          title: "Genesis",
+          url: "#",
+        },
+        {
+          title: "Explorer",
+          url: "#",
+        },
+        {
+          title: "Quantum",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Documentation",
+      url: "#",
+      icon: <HugeiconsIcon icon={BookOpen02Icon} strokeWidth={2} />,
+      items: [
+        {
+          title: "Introduction",
+          url: "#",
+        },
+        {
+          title: "Get Started",
+          url: "#",
+        },
+        {
+          title: "Tutorials",
+          url: "#",
+        },
+        {
+          title: "Changelog",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Settings",
+      url: "#",
+      icon: <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />,
+      items: [
+        {
+          title: "General",
+          url: "#",
+        },
+        {
+          title: "Team",
+          url: "#",
+        },
+        {
+          title: "Billing",
+          url: "#",
+        },
+        {
+          title: "Limits",
+          url: "#",
+        },
+      ],
+    },
+  ],
+  navSecondary: [
+    {
+      title: "Support",
+      url: "#",
+      icon: <HugeiconsIcon icon={ChartRingIcon} strokeWidth={2} />,
+    },
+    {
+      title: "Feedback",
+      url: "#",
+      icon: <HugeiconsIcon icon={SentIcon} strokeWidth={2} />,
+    },
+  ],
+  projects: [
+    {
+      name: "Design Engineering",
+      url: "#",
+      icon: <HugeiconsIcon icon={CropIcon} strokeWidth={2} />,
+    },
+    {
+      name: "Sales & Marketing",
+      url: "#",
+      icon: <HugeiconsIcon icon={PieChartIcon} strokeWidth={2} />,
+    },
+    {
+      name: "Travel",
+      url: "#",
+      icon: <HugeiconsIcon icon={MapsIcon} strokeWidth={2} />,
+    },
+  ],
+};
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar>
-      <SidebarHeader className="h-16 justify-center px-4 py-0">
-        <div className="flex items-center gap-3">
-          <div className="grid size-9 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-xs">
-            <StoreIcon className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-sidebar-accent-foreground">Store</p>
-            <p className="truncate text-xs text-sidebar-foreground">Desktop workspace</p>
-          </div>
-        </div>
+    <Sidebar className="top-(--header-height) bottom-(--footer-height) h-auto!" {...props}>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" render={<a href="#" />}>
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <HugeiconsIcon icon={CommandIcon} strokeWidth={2} className="size-4" />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">Acme Inc</span>
+                <span className="truncate text-xs">Enterprise</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
-      <Separator className="bg-sidebar-border" />
-
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Application</SidebarGroupLabel>
-          <SidebarMenu>
-            {navigation.map((item) => (
-              <SidebarMenuItem key={item.to}>
-                <SidebarMenuButton
-                  active={pathname === item.to}
-                  render={<Link to={item.to} activeOptions={{ exact: item.to === "/" }} />}
-                  size={"sm"}
-                >
-                  <item.icon />
-                  <span>{item.label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        <NavMain items={data.navMain} />
+        <NavProjects projects={data.projects} />
+        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
-
-      <Separator className="bg-sidebar-border" />
       <SidebarFooter>
-        <ThemeToggle />
-        <p className="px-2 text-xs text-sidebar-foreground/50">Store Electron · v0.0.0</p>
+        <NavUser user={data.user} />
       </SidebarFooter>
     </Sidebar>
   );
