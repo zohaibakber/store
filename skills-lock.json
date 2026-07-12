@@ -13,6 +13,12 @@
       "skillPath": "apps/ui/skills/coss-particles/SKILL.md",
       "computedHash": "44c9d1c501a8f76c5332740795a2fa0f07dc814cd1a2c4a6103a971eb982db79"
     },
+    "improve": {
+      "source": "shadcn/improve",
+      "sourceType": "github",
+      "skillPath": "skills/improve/SKILL.md",
+      "computedHash": "39a9358732dcff385e9e4d3e60b4547856f834e54a58b35e455aa9bd49928c13"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",
