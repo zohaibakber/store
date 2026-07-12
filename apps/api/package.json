@@ -1,0 +1,22 @@
+{
+  "name": "@store/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vercel:dev": "vercel dev --listen 8787",
+    "deploy": "vercel --prod",
+    "check": "tsc --noEmit",
+    "build": "true"
+  },
+  "dependencies": {
+    "@store/services": "workspace:*",
+    "effect": "4.0.0-beta.83",
+    "hono": "^4.12.29"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3",
+    "vercel": "^55.0.0"
+  }
+}

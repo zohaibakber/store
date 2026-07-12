@@ -6,7 +6,7 @@ import {
   invoices,
   products,
   stockMovements,
-} from "@store/database/schema";
+} from "@store/db/schema";
 import * as Schema from "effect/Schema";
 
 // Wire schemas are derived from the drizzle tables so the database schema stays

@@ -10,7 +10,7 @@ import type {
   SyncStatus,
   UpdateProductInput,
 } from "@store/contracts";
-import { relations } from "@store/database/relations";
+import { relations } from "@store/db/relations";
 import {
   batches,
   categories,
@@ -18,7 +18,7 @@ import {
   invoices,
   products,
   stockMovements,
-} from "@store/database/schema";
+} from "@store/db/schema";
 import { and, eq, isNull, max } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/tursodatabase-sync";
 import { migrate } from "drizzle-orm/tursodatabase-sync/migrator";

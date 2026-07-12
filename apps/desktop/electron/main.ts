@@ -219,7 +219,7 @@ void app.whenReady().then(() => {
   const databasePath = path.join(app.getPath("userData"), "store-v5.db");
   const migrationsFolder = app.isPackaged
     ? path.join(process.resourcesPath, "database-migrations")
-    : path.join(process.env.APP_ROOT, "..", "..", "packages", "database", "drizzle");
+    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle");
   runtime = ManagedRuntime.make(
     persistenceLayer({
       path: databasePath,

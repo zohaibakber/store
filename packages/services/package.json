@@ -1,0 +1,25 @@
+{
+  "name": "@store/services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --outDir dist"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.16",
+    "ai": "^7.0.22",
+    "effect": "4.0.0-beta.83",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

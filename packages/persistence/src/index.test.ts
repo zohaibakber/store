@@ -5,7 +5,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 import { layer, program } from "./index";
 
-const migrationsFolder = path.resolve(import.meta.dirname, "../../database/drizzle");
+const migrationsFolder = path.resolve(import.meta.dirname, "../../db/drizzle");
 
 test("product CRUD remains available without sync configuration", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
