@@ -4,9 +4,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 const acceptedFile = (file: File) =>
-  file.name.toLowerCase().endsWith(".csv") ||
-  file.name.toLowerCase().endsWith(".pdf") ||
-  file.type.startsWith("image/");
+  file.name.toLowerCase().endsWith(".csv") || file.name.toLowerCase().endsWith(".pdf");
 
 const defaultModel = "openai/gpt-4.1-mini";
 const isGatewayModel = (value: string) => /^[a-z0-9][a-z0-9._/-]{1,160}$/i.test(value);
@@ -33,10 +31,9 @@ api.post("/uploads", async (c) => {
   const files = (Array.isArray(body.files) ? body.files : [body.files]).filter(
     (value): value is File => value instanceof File,
   );
-  if (!files.length)
-    return c.json({ error: "Attach at least one CSV, PDF, or image invoice." }, 400);
+  if (!files.length) return c.json({ error: "Attach at least one CSV or PDF invoice." }, 400);
   if (files.some((file) => !acceptedFile(file)))
-    return c.json({ error: "Only CSV, PDF, and image invoices are supported." }, 415);
+    return c.json({ error: "Only CSV and PDF invoices are supported." }, 415);
   const model =
     typeof body.model === "string" && isGatewayModel(body.model) ? body.model : defaultModel;
   try {

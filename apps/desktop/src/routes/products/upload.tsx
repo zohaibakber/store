@@ -56,7 +56,6 @@ import {
 
 type ExtractedLine = {
   name: string;
-  barcode: string | null;
   batchNumber: string | null;
   expiresAt: string | null;
   packQuantity: number;
@@ -123,13 +122,11 @@ const groupModelsByProvider = (models: GatewayModel[]): ModelGroup[] => {
   }));
 };
 const fileDescription = (file: File) => {
-  const kind =
-    file.type === "application/pdf" ? "PDF" : file.type.startsWith("image/") ? "Image" : "CSV";
+  const kind = file.type === "application/pdf" ? "PDF" : "CSV";
   return `${kind} · ${Math.max(1, Math.ceil(file.size / 1024))} KB`;
 };
-const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name) || file.type.startsWith("image/");
+const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
 const sameProduct = (line: ExtractedLine, product: Product) =>
-  Boolean(line.barcode && product.barcode === line.barcode) ||
   product.name.trim().toLocaleLowerCase() === line.name.trim().toLocaleLowerCase();
 const validTimestamp = (date: string | null) => {
   const timestamp = date ? Date.parse(date) : Number.NaN;
@@ -175,7 +172,7 @@ function UploadInvoicesPage() {
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
     if (valid.length !== Array.from(incoming).length)
-      toast.error("Only PDF, CSV, and image invoice files can be uploaded.");
+      toast.error("Only PDF and CSV invoice files can be uploaded.");
     setFiles((current) =>
       [...current, ...valid].filter(
         (file, index, list) =>
@@ -231,7 +228,7 @@ function UploadInvoicesPage() {
       if (!generalCategory) throw new Error("Create a category before importing inventory.");
       const createdProducts = new Map<string, string>();
       for (const change of changes) {
-        const productKey = `${change.barcode ?? ""}:${change.name.trim().toLocaleLowerCase()}`;
+        const productKey = change.name.trim().toLocaleLowerCase();
         const productId =
           change.productId ??
           createdProducts.get(productKey) ??
@@ -239,7 +236,6 @@ function UploadInvoicesPage() {
             await window.offlineStore.createProduct({
               name: change.name,
               categoryId: generalCategory.id,
-              barcode: change.barcode,
               aisle: null,
               composition: null,
               strength: null,
@@ -277,8 +273,8 @@ function UploadInvoicesPage() {
       <PageHeader>
         <PageHeading>Upload invoices</PageHeading>
         <PageDescription>
-          Upload supplier CSVs, PDFs, and invoice photos. AI extracts stock, then you approve every
-          local inventory change.
+          Upload supplier CSVs and PDFs. AI extracts stock, then you approve every local inventory
+          change.
         </PageDescription>
         <PageAction>
           <Button disabled={processing || !files.length} onClick={() => void analyse()}>
@@ -301,7 +297,7 @@ function UploadInvoicesPage() {
           <CardHeader>
             <CardTitle>Attachments</CardTitle>
             <CardDescription>
-              Choose one or more supplier invoices in PDF, CSV, or image format.
+              Choose one or more supplier invoices in PDF or CSV format.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -338,7 +334,7 @@ function UploadInvoicesPage() {
             </Field>
             <input
               ref={inputRef}
-              accept=".csv,application/pdf,image/*"
+              accept=".csv,application/pdf"
               className="sr-only"
               multiple
               onChange={(event) => event.target.files && addFiles(event.target.files)}
@@ -356,9 +352,7 @@ function UploadInvoicesPage() {
             >
               <HugeiconsIcon icon={FileAttachmentIcon} />
               <span className="font-medium">Drop invoices here or browse</span>
-              <span className="text-xs text-muted-foreground">
-                PDF, CSV, PNG, JPG, and other images
-              </span>
+              <span className="text-xs text-muted-foreground">PDF and CSV files</span>
             </button>
             {files.length > 0 && (
               <AttachmentGroup>

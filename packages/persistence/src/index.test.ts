@@ -18,7 +18,6 @@ test("product CRUD remains available without sync configuration", async () => {
       program.createProduct({
         name: "  Panadol  ",
         categoryId: "medicine",
-        barcode: null,
         aisle: "A3",
         composition: "Paracetamol",
         strength: "500mg",
@@ -38,7 +37,6 @@ test("product CRUD remains available without sync configuration", async () => {
         id: created.id,
         name: "Panadol Extra",
         categoryId: "medicine",
-        barcode: "123456",
         aisle: "A4",
         composition: "Paracetamol + Caffeine",
         strength: "500mg",
@@ -73,7 +71,6 @@ test("category and units default when omitted", async () => {
     const created = await runtime.runPromise(
       program.createProduct({
         name: "Baby Shampoo",
-        barcode: null,
         aisle: null,
         composition: null,
         strength: null,
@@ -99,7 +96,6 @@ test("selling draws stock from batches, earliest expiry first", async () => {
     const product = await runtime.runPromise(
       program.createProduct({
         name: "Panadol",
-        barcode: null,
         aisle: null,
         composition: null,
         strength: null,
@@ -239,7 +235,6 @@ test("sealed packs and loose units remain distinct through sales", async () => {
       program.createProduct({
         name: "Tablet box",
         aisle: "B2",
-        barcode: null,
         composition: null,
         strength: null,
         unitsPerPack: 30,
@@ -314,7 +309,6 @@ test("migrations are idempotent and preserve existing products", async () => {
     const created = await firstRuntime.runPromise(
       program.createProduct({
         name: "Aspirin",
-        barcode: null,
         aisle: null,
         composition: null,
         strength: null,

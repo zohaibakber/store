@@ -10,7 +10,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PageAction,
   PageContent,
@@ -19,16 +19,19 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/product-batches";
+import { EditProductDialog } from "@/components/product-form";
+import { ProductVisibilityCard } from "@/components/product-visibility";
 import { formatDate, formatPrice } from "@/lib/format";
 
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ params }) => {
     const input = { id: params.productId };
-    const [product, movements] = await Promise.all([
+    const [product, movements, categories] = await Promise.all([
       window.offlineStore.getProduct(input),
       window.offlineStore.listStockMovements(input),
+      window.offlineStore.listCategories(),
     ]);
-    return { product, movements };
+    return { product, movements, categories };
   },
   component: ProductDetailPage,
   errorComponent: ProductDetailError,
@@ -60,10 +63,9 @@ function BackToProducts() {
 }
 
 function ProductDetailPage() {
-  const { product, movements } = Route.useLoaderData();
+  const { product, movements, categories } = Route.useLoaderData();
 
   const details: Array<{ label: string; value: React.ReactNode }> = [
-    { label: "Barcode", value: product.barcode ?? "—" },
     { label: "Aisle", value: product.aisle ?? "—" },
     { label: "Composition", value: product.composition ?? "—" },
     { label: "Strength", value: product.strength ?? "—" },
@@ -75,7 +77,7 @@ function ProductDetailPage() {
   ];
 
   return (
-    <PageLayout contentClassName="max-w-3xl">
+    <PageLayout>
       <PageHeader>
         <div className="flex items-center gap-1">
           <BackToProducts />
@@ -95,25 +97,34 @@ function ProductDetailPage() {
         </PageAction>
       </PageHeader>
 
-      <PageContent>
-        <Card>
-          <CardHeader>
-            <CardTitle>Details</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
-              {details.map((detail) => (
-                <div className="flex items-baseline justify-between gap-4" key={detail.label}>
-                  <dt className="text-muted-foreground">{detail.label}</dt>
-                  <dd className="text-right">{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </CardContent>
-        </Card>
+      <PageContent className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_1fr]">
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Details</CardTitle>
+              <CardAction>
+                <EditProductDialog categories={categories} product={product} />
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+                {details.map((detail) => (
+                  <div className="flex items-baseline justify-between gap-4" key={detail.label}>
+                    <dt className="text-muted-foreground">{detail.label}</dt>
+                    <dd className="text-right">{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
 
-        <ProductBatchesCard product={product} />
-        <ProductStockMovementsCard movements={movements} />
+          <ProductBatchesCard product={product} />
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <ProductVisibilityCard product={product} />
+          <ProductStockMovementsCard product={product} movements={movements} />
+        </div>
       </PageContent>
     </PageLayout>
   );

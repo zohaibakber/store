@@ -1,9 +1,23 @@
-import { useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
-import type { Category } from "@store/contracts";
+import { useState } from "react";
+import { formOptions, useForm } from "@tanstack/react-form";
+import { useNavigate, useRouter } from "@tanstack/react-router";
+import type { Category, Product } from "@store/contracts";
+import { PencilEdit02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import * as z from "zod";
+import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
@@ -33,7 +48,6 @@ const optionalPrice = z
 const productFormSchema = z.object({
   name: z.string().trim().min(1, "Product name is required.").max(120),
   categoryId: z.string().min(1, "Category is required."),
-  barcode: z.string().trim().max(64),
   aisle: z.string().trim().max(64),
   composition: z.string().trim().max(160),
   strength: z.string().trim().max(20),
@@ -49,6 +63,7 @@ const productFormSchema = z.object({
 
 const nullableText = (value: string) => value.trim() || null;
 const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
+const priceFromPaisa = (value: number | null) => (value == null ? "" : String(value / 100));
 const numberFieldValue = (value: string) => (value === "" ? null : Number(value));
 
 const computeUnitPrice = (unitsPerPack: string, packPrice: string) => {
@@ -60,31 +75,63 @@ const computeUnitPrice = (unitsPerPack: string, packPrice: string) => {
   return String(Math.round(pack / units));
 };
 
+const parseStrength = (value: string | null) => {
+  const match = value?.match(/^([\d.]+)\s*(mg|mcg|g|ml|l)$/i);
+  if (!match)
+    return { strength: value ?? "", strengthUnit: "mg" as (typeof strengthUnits)[number] };
+  return {
+    strength: match[1],
+    strengthUnit: match[2].toLowerCase() as (typeof strengthUnits)[number],
+  };
+};
+
+// Shared shape and validation for both the create and edit flows — each hook
+// below spreads this in and only differs in defaultValues and onSubmit.
+const productFormOpts = formOptions({
+  defaultValues: {
+    name: "",
+    categoryId: "",
+    aisle: "",
+    composition: "",
+    strength: "",
+    strengthUnit: "mg" as (typeof strengthUnits)[number],
+    unitsPerPack: "1",
+    packPrice: "",
+    unitPrice: "",
+  },
+  validators: { onSubmit: productFormSchema },
+});
+
+const defaultCategoryId = (categories: ReadonlyArray<Category>) =>
+  categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "";
+
+const productToFormValues = (product: Product) => {
+  const { strength, strengthUnit } = parseStrength(product.strength);
+  return {
+    name: product.name,
+    categoryId: product.categoryId,
+    aisle: product.aisle ?? "",
+    composition: product.composition ?? "",
+    strength,
+    strengthUnit,
+    unitsPerPack: String(product.unitsPerPack),
+    packPrice: priceFromPaisa(product.packPrice),
+    unitPrice: priceFromPaisa(product.unitPrice),
+  };
+};
+
 function useProductCreateForm(categories: ReadonlyArray<Category>) {
   const navigate = useNavigate();
 
   return useForm({
-    defaultValues: {
-      name: "",
-      categoryId:
-        categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "",
-      barcode: "",
-      aisle: "",
-      composition: "",
-      strength: "",
-      strengthUnit: "mg" as (typeof strengthUnits)[number],
-      unitsPerPack: "1",
-      packPrice: "",
-      unitPrice: "",
-    },
-    validators: { onSubmit: productFormSchema },
+    ...productFormOpts,
+    defaultValues: { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
     onSubmit: async ({ value }) => {
       try {
         const strengthValue = value.strength.trim();
         const product = await window.offlineStore.createProduct({
           name: value.name.trim(),
           categoryId: value.categoryId,
-          barcode: nullableText(value.barcode),
           aisle: nullableText(value.aisle),
           composition: nullableText(value.composition),
           strength: strengthValue ? `${strengthValue}${value.strengthUnit}` : null,
@@ -101,16 +148,45 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
   });
 }
 
-function ProductsCreateForm({
+function useProductUpdateForm(product: Product, onUpdated: () => void) {
+  return useForm({
+    ...productFormOpts,
+    defaultValues: productToFormValues(product),
+    onSubmit: async ({ value }) => {
+      try {
+        const strengthValue = value.strength.trim();
+        await window.offlineStore.updateProduct({
+          id: product.id,
+          name: value.name.trim(),
+          categoryId: value.categoryId,
+          aisle: nullableText(value.aisle),
+          composition: nullableText(value.composition),
+          strength: strengthValue ? `${strengthValue}${value.strengthUnit}` : null,
+          unitsPerPack: Number(value.unitsPerPack),
+          packPrice: priceInPaisa(value.packPrice),
+          unitPrice: priceInPaisa(value.unitPrice),
+        });
+        toast.success("Product updated");
+        onUpdated();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not update the product.");
+      }
+    },
+  });
+}
+
+function ProductForm({
   categories,
   form,
+  formId,
 }: {
   categories: ReadonlyArray<Category>;
   form: ReturnType<typeof useProductCreateForm>;
+  formId: string;
 }) {
   return (
     <form
-      id="new-product-form"
+      id={formId}
       onSubmit={(event) => {
         event.preventDefault();
         void form.handleSubmit();
@@ -140,7 +216,7 @@ function ProductsCreateForm({
           }}
         />
 
-        <FieldGroup className="grid gap-4 sm:grid-cols-3">
+        <FieldGroup className="grid gap-4 sm:grid-cols-2">
           <form.Field
             name="categoryId"
             children={(field) => {
@@ -166,28 +242,6 @@ function ProductsCreateForm({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          />
-          <form.Field
-            name="barcode"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Barcode</FieldLabel>
-                  <Input
-                    aria-invalid={invalid}
-                    id={field.name}
-                    inputMode="numeric"
-                    name={field.name}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder="Optional"
-                    value={field.state.value}
-                  />
                   {invalid && <FieldError errors={field.state.meta.errors} />}
                 </Field>
               );
@@ -426,4 +480,68 @@ function ProductsCreateForm({
   );
 }
 
-export { ProductsCreateForm, useProductCreateForm };
+function EditProductFields({
+  categories,
+  onUpdated,
+  product,
+}: {
+  categories: ReadonlyArray<Category>;
+  onUpdated: () => void;
+  product: Product;
+}) {
+  const form = useProductUpdateForm(product, onUpdated);
+
+  return (
+    <>
+      <ProductForm categories={categories} form={form} formId="edit-product-form" />
+      <DialogFooter>
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
+          {([canSubmit, isSubmitting]) => (
+            <Button disabled={!canSubmit || isSubmitting} form="edit-product-form" type="submit">
+              {isSubmitting && <Spinner data-icon="inline-start" />}
+              Save changes
+            </Button>
+          )}
+        </form.Subscribe>
+      </DialogFooter>
+    </>
+  );
+}
+
+function EditProductDialog({
+  categories,
+  product,
+}: {
+  categories: ReadonlyArray<Category>;
+  product: Product;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog onOpenChange={setOpen} open={open}>
+      <DialogTrigger render={<Button size="icon" variant="ghost" />}>
+        <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+      </DialogTrigger>
+      <DialogContent className={"min-w-[50vw]"}>
+        <DialogHeader>
+          <DialogTitle>Edit product</DialogTitle>
+          <DialogDescription>Update the catalog details for this product.</DialogDescription>
+        </DialogHeader>
+        {open && (
+          <EditProductFields
+            categories={categories}
+            onUpdated={() => {
+              setOpen(false);
+              void router.invalidate();
+            }}
+            product={product}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export { EditProductDialog, ProductForm, useProductCreateForm };

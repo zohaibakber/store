@@ -30,13 +30,13 @@ export const products = sqliteTable(
       .notNull()
       .default("general")
       .references(() => categories.id),
-    barcode: text(),
     aisle: text(),
     composition: text(),
     strength: text(),
     unitsPerPack: integer().notNull().default(1),
     packPrice: integer(),
     unitPrice: integer(),
+    visible: integer({ mode: "boolean" }).notNull().default(true),
     ...timestamps,
   },
   (table) => [index("products_category_id_idx").on(table.categoryId)],

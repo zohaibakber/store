@@ -68,14 +68,6 @@ const columns = columnHelper.columns([
     cell: ({ getValue }) => <Badge variant="outline">{getValue()}</Badge>,
     meta: { label: "Category" },
   }),
-  columnHelper.accessor("barcode", {
-    header: "Barcode",
-    cell: ({ getValue }) => (
-      <span className="font-mono text-muted-foreground">{getValue() ?? "—"}</span>
-    ),
-    enableSorting: false,
-    meta: { label: "Barcode" },
-  }),
   columnHelper.accessor("aisle", {
     header: "Aisle",
     cell: ({ getValue }) => getValue() ?? "—",
@@ -122,7 +114,7 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
     data: products,
     getRowId: (product) => product.id,
     initialState: {
-      columnVisibility: { barcode: false, composition: false },
+      columnVisibility: { composition: false },
       pagination: { pageIndex: 0, pageSize: 10 },
       sorting: [{ id: "name", desc: false }],
     },

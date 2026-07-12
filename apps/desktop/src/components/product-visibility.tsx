@@ -1,0 +1,78 @@
+import { useState } from "react";
+import type { Product } from "@store/contracts";
+import { useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const visibilityOptions = [
+  { value: "visible", label: "Visible" },
+  { value: "hidden", label: "Hidden" },
+] as const;
+
+export function ProductVisibilityCard({ product }: { product: Product }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  const setVisible = async (next: boolean) => {
+    if (next === product.visible) return;
+    setPending(true);
+    try {
+      const {
+        id,
+        createdAt: _createdAt,
+        updatedAt: _updatedAt,
+        category: _category,
+        batches: _batches,
+        ...rest
+      } = product;
+      await window.offlineStore.updateProduct({ id, ...rest, visible: next });
+      toast.success(next ? "Product is visible to customers" : "Product hidden from customers");
+      await router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update visibility.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Visibility</CardTitle>
+        <CardDescription>
+          {product.visible
+            ? "Shown in the catalog and at checkout."
+            : "Hidden from the catalog and checkout."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Select
+          disabled={pending}
+          onValueChange={(value) => value && void setVisible(value === "visible")}
+          value={product.visible ? "visible" : "hidden"}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {visibilityOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </CardContent>
+    </Card>
+  );
+}

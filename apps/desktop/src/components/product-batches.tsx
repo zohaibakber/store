@@ -1,15 +1,22 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Product, StockMovement } from "@store/contracts";
 import { productLooseUnitStock, productPackStock, productStock } from "@store/contracts";
 import { Add01Icon, PackageIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "@tanstack/react-router";
+import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import { toast } from "sonner";
 import * as z from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  type ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import {
   Dialog,
   DialogClose,
@@ -31,7 +38,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
 const stockQuantity = z
   .string()
@@ -253,29 +260,54 @@ export function ProductBatchesCard({ product }: { product: Product }) {
   );
 }
 
-const movementLabel = (movement: StockMovement) => {
-  switch (movement.type) {
-    case "stock_in":
-      return "Stock received";
-    case "sale":
-      return "Sale";
-    case "open_pack":
-      return "Pack opened";
-    case "adjustment":
-      return "Adjustment";
+const movementsChartConfig = {
+  net: { label: "Net units" },
+} satisfies ChartConfig;
+
+const stockInColor = "var(--chart-2)";
+const stockOutColor = "var(--chart-4)";
+
+type DayTotal = { date: string; net: number };
+
+const dayKey = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
+
+const formatDayTick = (value: unknown) =>
+  new Date(String(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+function stockMovementsByDay(
+  movements: readonly StockMovement[],
+  unitsPerPack: number,
+): DayTotal[] {
+  const totals = new Map<string, number>();
+  for (const movement of movements) {
+    const date = dayKey(movement.createdAt);
+    const netUnits = movement.packDelta * unitsPerPack + movement.unitDelta;
+    totals.set(date, (totals.get(date) ?? 0) + netUnits);
   }
-};
+  return Array.from(totals.entries())
+    .map(([date, net]) => ({ date, net }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
-const signed = (value: number) => (value > 0 ? `+${value}` : String(value));
+export function ProductStockMovementsCard({
+  product,
+  movements,
+}: {
+  product: Product;
+  movements: readonly StockMovement[];
+}) {
+  const data = useMemo(
+    () => stockMovementsByDay(movements, product.unitsPerPack),
+    [movements, product.unitsPerPack],
+  );
 
-export function ProductStockMovementsCard({ movements }: { movements: readonly StockMovement[] }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Stock movements</CardTitle>
       </CardHeader>
       <CardContent>
-        {movements.length === 0 ? (
+        {data.length === 0 ? (
           <Empty className="border border-dashed">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -286,21 +318,39 @@ export function ProductStockMovementsCard({ movements }: { movements: readonly S
             </EmptyHeader>
           </Empty>
         ) : (
-          <ItemGroup className="gap-2">
-            {movements.map((movement) => (
-              <Item key={movement.id} variant="outline">
-                <ItemContent>
-                  <ItemTitle>{movementLabel(movement)}</ItemTitle>
-                  <ItemDescription>
-                    {movement.note ?? "Inventory updated"} · {formatDateTime(movement.createdAt)}
-                  </ItemDescription>
-                </ItemContent>
-                <Badge variant="secondary">
-                  {signed(movement.packDelta)} packs · {signed(movement.unitDelta)} units
-                </Badge>
-              </Item>
-            ))}
-          </ItemGroup>
+          <>
+            <ChartContainer className="aspect-auto h-56 w-full" config={movementsChartConfig}>
+              <BarChart data={data}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  axisLine={false}
+                  dataKey="date"
+                  tickFormatter={formatDayTick}
+                  tickLine={false}
+                  tickMargin={8}
+                />
+                <ChartTooltip
+                  content={<ChartTooltipContent labelFormatter={formatDayTick} />}
+                  cursor={false}
+                />
+                <Bar dataKey="net" radius={4}>
+                  {data.map((entry) => (
+                    <Cell fill={entry.net >= 0 ? stockInColor : stockOutColor} key={entry.date} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+            <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockInColor }} />
+                Stock in
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockOutColor }} />
+                Stock out
+              </span>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

@@ -18,7 +18,7 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductsCreateForm, useProductCreateForm } from "@/components/products-create-form";
+import { ProductForm, useProductCreateForm } from "@/components/product-form";
 
 export const Route = createFileRoute("/products/new")({
   loader: () => window.offlineStore.listCategories(),
@@ -47,7 +47,7 @@ function NewProductPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ProductsCreateForm categories={categories} form={form} />
+            <ProductForm categories={categories} form={form} formId="new-product-form" />
           </CardContent>
           <CardFooter className="justify-end gap-2 border-t">
             <Link className={buttonVariants({ variant: "outline" })} to="/products">

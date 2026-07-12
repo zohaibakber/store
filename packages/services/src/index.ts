@@ -31,7 +31,6 @@ const nameField = z
 
 export const InvoiceLine = z.object({
   name: nameField,
-  barcode: nullableStringField,
   batchNumber: nullableStringField,
   expiresAt: nullableStringField,
   packQuantity: countField(0, 0),
@@ -67,7 +66,6 @@ const parseCsv = (contents: string): InvoiceExtraction => {
       return InvoiceLine.parse({
         name:
           valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
-        barcode: valueAt(values, "barcode") || null,
         batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
         expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
         packQuantity: Number(valueAt(values, "packs") || valueAt(values, "pack quantity") || 0),
@@ -103,7 +101,7 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
               return {
                 type: "file" as const,
                 data,
-                mediaType: file.type.startsWith("image/") ? file.type : "application/pdf",
+                mediaType: "application/pdf",
                 filename: file.name,
               };
             }),
