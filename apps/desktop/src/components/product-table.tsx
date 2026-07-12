@@ -76,6 +76,11 @@ const columns = columnHelper.columns([
     enableSorting: false,
     meta: { label: "Barcode" },
   }),
+  columnHelper.accessor("aisle", {
+    header: "Aisle",
+    cell: ({ getValue }) => getValue() ?? "—",
+    meta: { label: "Aisle" },
+  }),
   columnHelper.accessor("composition", {
     header: "Composition",
     cell: ({ getValue }) => <span className="text-muted-foreground">{getValue() ?? "—"}</span>,

@@ -16,7 +16,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 
-type AppRoute = "/" | "/products" | "/settings";
+type AppRoute = "/" | "/products" | "/invoices" | "/settings";
 
 export type NavMainItem = {
   title: string;

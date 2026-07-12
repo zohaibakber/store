@@ -57,6 +57,11 @@ const offlineStore: OfflineStoreApi = {
   createProduct: (input) => ipcRenderer.invoke("store:products:create", input),
   updateProduct: (input) => ipcRenderer.invoke("store:products:update", input),
   deleteProduct: (input) => ipcRenderer.invoke("store:products:delete", input),
+  createBatch: (input) => ipcRenderer.invoke("store:batches:create", input),
+  listStockMovements: (input) => ipcRenderer.invoke("store:stock-movements:list", input),
+  listInvoices: () => ipcRenderer.invoke("store:invoices:list"),
+  getInvoice: (input) => ipcRenderer.invoke("store:invoices:get", input),
+  createInvoice: (input) => ipcRenderer.invoke("store:invoices:create", input),
   getSyncStatus: () => ipcRenderer.invoke("store:sync:status"),
   sync: () => ipcRenderer.invoke("store:sync:run"),
 };

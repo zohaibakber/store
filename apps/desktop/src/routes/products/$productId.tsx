@@ -18,10 +18,18 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
+import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/product-batches";
 import { formatDate, formatPrice } from "@/lib/format";
 
 export const Route = createFileRoute("/products/$productId")({
-  loader: ({ params }) => window.offlineStore.getProduct({ id: params.productId }),
+  loader: async ({ params }) => {
+    const input = { id: params.productId };
+    const [product, movements] = await Promise.all([
+      window.offlineStore.getProduct(input),
+      window.offlineStore.listStockMovements(input),
+    ]);
+    return { product, movements };
+  },
   component: ProductDetailPage,
   errorComponent: ProductDetailError,
 });
@@ -52,14 +60,14 @@ function BackToProducts() {
 }
 
 function ProductDetailPage() {
-  const product = Route.useLoaderData();
+  const { product, movements } = Route.useLoaderData();
 
   const details: Array<{ label: string; value: React.ReactNode }> = [
     { label: "Barcode", value: product.barcode ?? "—" },
+    { label: "Aisle", value: product.aisle ?? "—" },
     { label: "Composition", value: product.composition ?? "—" },
     { label: "Strength", value: product.strength ?? "—" },
     { label: "Units per pack", value: product.unitsPerPack },
-    { label: "Cost price", value: formatPrice(product.costPrice) },
     { label: "Pack price", value: formatPrice(product.packPrice) },
     { label: "Unit price", value: formatPrice(product.unitPrice) },
     { label: "Created", value: formatDate(product.createdAt) },
@@ -103,6 +111,9 @@ function ProductDetailPage() {
             </dl>
           </CardContent>
         </Card>
+
+        <ProductBatchesCard product={product} />
+        <ProductStockMovementsCard movements={movements} />
       </PageContent>
     </PageLayout>
   );

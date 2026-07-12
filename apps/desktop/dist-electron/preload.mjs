@@ -49,6 +49,11 @@ electron.contextBridge.exposeInMainWorld("offlineStore", {
 	createProduct: (input) => electron.ipcRenderer.invoke("store:products:create", input),
 	updateProduct: (input) => electron.ipcRenderer.invoke("store:products:update", input),
 	deleteProduct: (input) => electron.ipcRenderer.invoke("store:products:delete", input),
+	createBatch: (input) => electron.ipcRenderer.invoke("store:batches:create", input),
+	listStockMovements: (input) => electron.ipcRenderer.invoke("store:stock-movements:list", input),
+	listInvoices: () => electron.ipcRenderer.invoke("store:invoices:list"),
+	getInvoice: (input) => electron.ipcRenderer.invoke("store:invoices:get", input),
+	createInvoice: (input) => electron.ipcRenderer.invoke("store:invoices:create", input),
 	getSyncStatus: () => electron.ipcRenderer.invoke("store:sync:status"),
 	sync: () => electron.ipcRenderer.invoke("store:sync:run")
 });

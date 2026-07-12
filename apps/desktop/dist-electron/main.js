@@ -17314,6 +17314,21 @@ function desc(column) {
 	return sql`${column} desc`;
 }
 //#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/sql/functions/aggregate.js
+/**
+* Returns the maximum value in `expression`.
+*
+* ## Examples
+*
+* ```ts
+* // The employee with the highest salary
+* db.select({ value: max(employees.salary) }).from(employees)
+* ```
+*/
+function max(expression) {
+	return sql`max(${expression})`.mapWith(is(expression, Column) ? expression : String);
+}
+//#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/relations.js
 function processRelations(tablesConfig, tables) {
 	for (const tableConfig of Object.values(tablesConfig)) for (const [relationFieldName, relation] of Object.entries(tableConfig.relations)) {
@@ -19865,7 +19880,10 @@ function nanoid(size = 21) {
 var schema_exports = /* @__PURE__ */ __exportAll({
 	batches: () => batches,
 	categories: () => categories,
-	products: () => products
+	invoiceItems: () => invoiceItems,
+	invoices: () => invoices,
+	products: () => products,
+	stockMovements: () => stockMovements
 });
 var timestamps = {
 	createdAt: integer().notNull(),
@@ -19883,10 +19901,10 @@ var products = sqliteTable("products", {
 	name: text().notNull(),
 	categoryId: text().notNull().default("general").references(() => categories.id),
 	barcode: text(),
+	aisle: text(),
 	composition: text(),
 	strength: text(),
 	unitsPerPack: integer().notNull().default(1),
-	costPrice: integer(),
 	packPrice: integer(),
 	unitPrice: integer(),
 	...timestamps
@@ -19896,19 +19914,67 @@ var batches = sqliteTable("batches", {
 	productId: text().notNull().references(() => products.id),
 	batchNumber: text(),
 	expiresAt: integer(),
-	quantity: integer().notNull().default(0),
+	packQuantity: integer().notNull().default(0),
+	unitQuantity: integer().notNull().default(0),
 	...timestamps
-});
+}, (table) => [index("batches_product_id_idx").on(table.productId)]);
+var invoices = sqliteTable("invoices", {
+	id: primaryId,
+	invoiceNumber: integer().notNull(),
+	customerName: text(),
+	total: integer().notNull().default(0),
+	...timestamps
+}, (table) => [uniqueIndex("invoices_invoice_number_idx").on(table.invoiceNumber)]);
+var invoiceItems = sqliteTable("invoice_items", {
+	id: primaryId,
+	invoiceId: text().notNull().references(() => invoices.id),
+	productId: text().notNull().references(() => products.id),
+	batchId: text().notNull().references(() => batches.id),
+	productName: text().notNull(),
+	batchNumber: text(),
+	quantity: integer().notNull(),
+	quantityType: text({ enum: ["unit", "pack"] }).notNull().default("unit"),
+	baseUnitQuantity: integer().notNull(),
+	salePrice: integer().notNull(),
+	...timestamps
+}, (table) => [index("invoice_items_invoice_id_idx").on(table.invoiceId)]);
+var stockMovements = sqliteTable("stock_movements", {
+	id: primaryId,
+	productId: text().notNull().references(() => products.id),
+	batchId: text().notNull().references(() => batches.id),
+	invoiceId: text().references(() => invoices.id),
+	type: text({ enum: [
+		"stock_in",
+		"sale",
+		"open_pack",
+		"adjustment"
+	] }).notNull(),
+	packDelta: integer().notNull().default(0),
+	unitDelta: integer().notNull().default(0),
+	note: text(),
+	createdAt: integer().notNull()
+}, (table) => [
+	index("stock_movements_product_id_idx").on(table.productId),
+	index("stock_movements_batch_id_idx").on(table.batchId),
+	index("stock_movements_invoice_id_idx").on(table.invoiceId)
+]);
 //#endregion
 //#region ../../packages/contracts/src/index.ts
 var productRow = createSelectSchema(products);
 var productInsert = createInsertSchema(products);
 var { deletedAt: _categoryDeletedAt, ...categoryFields } = createSelectSchema(categories).fields;
 var Category = Struct(categoryFields);
+var batchRow = createSelectSchema(batches);
+var batchInsert = createInsertSchema(batches);
+var { deletedAt: _batchDeletedAt, ...batchFields } = batchRow.fields;
+var Batch = Struct(batchFields);
+var { id: _batchId, createdAt: _batchCreatedAt, updatedAt: _batchUpdatedAt, deletedAt: _batchInsertDeletedAt, ...createBatchFields } = batchInsert.fields;
+var CreateBatchInput = Struct(createBatchFields);
 var { deletedAt: _productDeletedAt, ...productFields } = productRow.fields;
 Struct({
 	...productFields,
-	category: Category
+	category: Category,
+	batches: ArraySchema(Batch)
 });
 var { id: _productId, createdAt: _productCreatedAt, updatedAt: _productUpdatedAt, deletedAt: _productInsertDeletedAt, ...createProductFields } = productInsert.fields;
 var CreateProductInput = Struct(createProductFields);
@@ -19917,12 +19983,27 @@ var UpdateProductInput = Struct({
 	...createProductFields
 });
 var ProductIdInput = Struct({ id: String$1 });
-var batchRow = createSelectSchema(batches);
-var batchInsert = createInsertSchema(batches);
-var { deletedAt: _batchDeletedAt, ...batchFields } = batchRow.fields;
-Struct(batchFields);
-var { id: _batchId, createdAt: _batchCreatedAt, updatedAt: _batchUpdatedAt, deletedAt: _batchInsertDeletedAt, ...createBatchFields } = batchInsert.fields;
-Struct(createBatchFields);
+var invoiceRow = createSelectSchema(invoices);
+var { deletedAt: _invoiceItemDeletedAt, ...invoiceItemFields } = createSelectSchema(invoiceItems).fields;
+var InvoiceItem = Struct(invoiceItemFields);
+var { deletedAt: _invoiceDeletedAt, ...invoiceFields } = invoiceRow.fields;
+Struct({
+	...invoiceFields,
+	items: ArraySchema(InvoiceItem)
+});
+var CreateInvoiceLineInput = Struct({
+	productId: String$1,
+	batchId: NullOr(String$1),
+	quantity: Number$1,
+	quantityType: Literals(["unit", "pack"]),
+	salePrice: Number$1
+});
+var CreateInvoiceInput = Struct({
+	customerName: NullOr(String$1),
+	items: ArraySchema(CreateInvoiceLineInput)
+});
+var InvoiceIdInput = Struct({ id: String$1 });
+Struct(createSelectSchema(stockMovements).fields);
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/logger.js
 var ConsoleLogWriter = class {
@@ -19963,13 +20044,55 @@ var relations = defineRelations(schema_exports, (r) => ({
 			to: r.categories.id,
 			optional: false
 		}),
-		batches: r.many.batches()
+		batches: r.many.batches(),
+		stockMovements: r.many.stockMovements()
 	},
-	batches: { product: r.one.products({
-		from: r.batches.productId,
-		to: r.products.id,
-		optional: false
-	}) }
+	batches: {
+		product: r.one.products({
+			from: r.batches.productId,
+			to: r.products.id,
+			optional: false
+		}),
+		stockMovements: r.many.stockMovements()
+	},
+	invoices: {
+		items: r.many.invoiceItems(),
+		stockMovements: r.many.stockMovements()
+	},
+	invoiceItems: {
+		invoice: r.one.invoices({
+			from: r.invoiceItems.invoiceId,
+			to: r.invoices.id,
+			optional: false
+		}),
+		product: r.one.products({
+			from: r.invoiceItems.productId,
+			to: r.products.id,
+			optional: false
+		}),
+		batch: r.one.batches({
+			from: r.invoiceItems.batchId,
+			to: r.batches.id,
+			optional: false
+		})
+	},
+	stockMovements: {
+		product: r.one.products({
+			from: r.stockMovements.productId,
+			to: r.products.id,
+			optional: false
+		}),
+		batch: r.one.batches({
+			from: r.stockMovements.batchId,
+			to: r.batches.id,
+			optional: false
+		}),
+		invoice: r.one.invoices({
+			from: r.stockMovements.invoiceId,
+			to: r.invoices.id,
+			optional: true
+		})
+	}
 }));
 //#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+aec6109dbc861c24/node_modules/drizzle-orm/tursodatabase-sync/session.js
@@ -20121,6 +20244,7 @@ var PersistenceError = class extends TaggedErrorClass()("PersistenceError", {
 	message: String$1
 }) {};
 var ProductNotFoundError = class extends TaggedErrorClass()("ProductNotFoundError", { id: String$1 }) {};
+var InvoiceNotFoundError = class extends TaggedErrorClass()("InvoiceNotFoundError", { id: String$1 }) {};
 var OfflineStore = class extends Service()("@store/persistence/OfflineStore") {};
 var messageOf = (cause) => cause instanceof Error ? cause.message : String(cause);
 var attempt = (operation, evaluate) => tryPromise({
@@ -20131,10 +20255,18 @@ var attempt = (operation, evaluate) => tryPromise({
 	})
 });
 var toCategory = ({ deletedAt: _deletedAt, ...category }) => category;
-var toProduct = ({ deletedAt: _deletedAt, category, ...product }) => ({
+var toBatch = ({ deletedAt: _deletedAt, ...batch }) => batch;
+var toProduct = ({ deletedAt: _deletedAt, category, batches: batchRows, ...product }) => ({
 	...product,
-	category: toCategory(category)
+	category: toCategory(category),
+	batches: batchRows.map(toBatch)
 });
+var toInvoice = ({ deletedAt: _deletedAt, items, ...invoice }) => ({
+	...invoice,
+	items: items.map(({ deletedAt: _itemDeletedAt, ...item }) => item)
+});
+var toStockMovement = (movement) => movement;
+var byEarliestExpiry = (a, b) => (a.expiresAt ?? Number.POSITIVE_INFINITY) - (b.expiresAt ?? Number.POSITIVE_INFINITY) || a.createdAt - b.createdAt;
 var make = (config) => gen(function* () {
 	const configured = Boolean(config.syncUrl);
 	let syncEnabled = false;
@@ -20160,17 +20292,27 @@ var make = (config) => gen(function* () {
 		orderBy: { name: "asc" },
 		where: { deletedAt: { isNull: true } }
 	})).pipe(map((rows) => rows.map(toCategory)));
+	const withProductRelations = {
+		category: true,
+		batches: {
+			where: { deletedAt: { isNull: true } },
+			orderBy: {
+				expiresAt: "asc",
+				createdAt: "asc"
+			}
+		}
+	};
 	const findProduct = (id) => db.query.products.findFirst({
 		where: {
 			id,
 			deletedAt: { isNull: true }
 		},
-		with: { category: true }
+		with: withProductRelations
 	});
 	const listProducts = attempt("list products", () => db.query.products.findMany({
 		orderBy: { name: "asc" },
 		where: { deletedAt: { isNull: true } },
-		with: { category: true }
+		with: withProductRelations
 	})).pipe(map((rows) => rows.map(toProduct)));
 	const getProduct = fn("OfflineStore.getProduct")(function* (id) {
 		const row = yield* attempt("find product", () => findProduct(id));
@@ -20212,6 +20354,181 @@ var make = (config) => gen(function* () {
 			updatedAt: Date.now()
 		}).where(and(eq(products.id, id), isNull(products.deletedAt))).returning({ id: products.id }).get()))) return yield* new ProductNotFoundError({ id });
 	});
+	const createBatch = fn("OfflineStore.createBatch")(function* (input) {
+		const packQuantity = input.packQuantity ?? 0;
+		const unitQuantity = input.unitQuantity ?? 0;
+		if (!Number.isInteger(packQuantity) || !Number.isInteger(unitQuantity) || packQuantity < 0 || unitQuantity < 0 || packQuantity + unitQuantity < 1) return yield* new PersistenceError({
+			operation: "create batch",
+			message: "Pack and unit quantities must be non-negative whole numbers with some stock"
+		});
+		if (!(yield* attempt("find product", () => findProduct(input.productId)))) return yield* new ProductNotFoundError({ id: input.productId });
+		const now = Date.now();
+		return toBatch(yield* attempt("create batch", async () => {
+			const id = crypto.randomUUID();
+			return db.transaction(async (tx) => {
+				await tx.insert(batches).values({
+					...input,
+					id,
+					packQuantity,
+					unitQuantity,
+					createdAt: now,
+					updatedAt: now
+				}).run();
+				await tx.insert(stockMovements).values({
+					id: crypto.randomUUID(),
+					productId: input.productId,
+					batchId: id,
+					invoiceId: null,
+					type: "stock_in",
+					packDelta: packQuantity,
+					unitDelta: unitQuantity,
+					note: "Initial batch stock",
+					createdAt: now
+				}).run();
+				const created = await tx.query.batches.findFirst({ where: { id } });
+				if (!created) throw new Error("Created batch could not be loaded");
+				return created;
+			});
+		}));
+	});
+	const listStockMovements = (productId) => attempt("list stock movements", () => db.query.stockMovements.findMany({
+		orderBy: { createdAt: "desc" },
+		where: { productId }
+	})).pipe(map((rows) => rows.map(toStockMovement)));
+	const listInvoices = attempt("list invoices", () => db.query.invoices.findMany({
+		orderBy: { createdAt: "desc" },
+		where: { deletedAt: { isNull: true } },
+		with: { items: true }
+	})).pipe(map((rows) => rows.map(toInvoice)));
+	const getInvoice = fn("OfflineStore.getInvoice")(function* (id) {
+		const row = yield* attempt("find invoice", () => db.query.invoices.findFirst({
+			where: {
+				id,
+				deletedAt: { isNull: true }
+			},
+			with: { items: true }
+		}));
+		if (!row) return yield* new InvoiceNotFoundError({ id });
+		return toInvoice(row);
+	});
+	const createInvoice = fn("OfflineStore.createInvoice")(function* (input) {
+		const invalid = (message) => new PersistenceError({
+			operation: "create invoice",
+			message
+		});
+		if (input.items.length === 0) return yield* invalid("Add at least one item to the sale");
+		for (const line of input.items) {
+			if (!Number.isInteger(line.quantity) || line.quantity < 1) return yield* invalid("Quantities must be whole numbers of 1 or more");
+			if (!Number.isInteger(line.salePrice) || line.salePrice < 0) return yield* invalid("Sale prices cannot be negative");
+		}
+		const now = Date.now();
+		return toInvoice(yield* attempt("create invoice", () => db.transaction(async (tx) => {
+			const allocations = [];
+			const latest = await tx.select({ value: max(invoices.invoiceNumber) }).from(invoices).get();
+			const id = crypto.randomUUID();
+			const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
+			await tx.insert(invoices).values({
+				id,
+				invoiceNumber: (latest?.value ?? 0) + 1,
+				customerName: input.customerName?.trim() || null,
+				total,
+				createdAt: now,
+				updatedAt: now
+			}).run();
+			for (const line of input.items) {
+				const product = await tx.query.products.findFirst({ where: {
+					id: line.productId,
+					deletedAt: { isNull: true }
+				} });
+				if (!product) throw new Error("One of the products no longer exists");
+				const productBatches = await tx.query.batches.findMany({ where: {
+					productId: line.productId,
+					deletedAt: { isNull: true }
+				} });
+				const open = line.batchId ? productBatches.filter((batch) => batch.id === line.batchId) : productBatches.sort(byEarliestExpiry).filter((batch) => line.quantityType === "pack" ? batch.packQuantity > 0 : batch.packQuantity * product.unitsPerPack + batch.unitQuantity > 0);
+				if (line.batchId && open.length === 0) throw new Error(`The selected batch for ${product.name} no longer exists`);
+				const available = open.reduce((sum, batch) => sum + (line.quantityType === "pack" ? batch.packQuantity : batch.packQuantity * product.unitsPerPack + batch.unitQuantity), 0);
+				if (available < line.quantity) throw new Error(`Not enough stock for ${product.name}: ${available} in stock, ${line.quantity} requested`);
+				let remaining = line.quantity;
+				for (const batch of open) {
+					if (remaining === 0) break;
+					const batchAvailable = line.quantityType === "pack" ? batch.packQuantity : batch.packQuantity * product.unitsPerPack + batch.unitQuantity;
+					const taken = Math.min(batchAvailable, remaining);
+					remaining -= taken;
+					allocations.push({
+						productId: product.id,
+						productName: product.name,
+						batchId: batch.id,
+						batchNumber: batch.batchNumber,
+						quantity: taken,
+						quantityType: line.quantityType,
+						baseUnitQuantity: taken * (line.quantityType === "pack" ? product.unitsPerPack : 1),
+						salePrice: line.salePrice
+					});
+					if (line.quantityType === "pack") {
+						await tx.update(batches).set({
+							packQuantity: batch.packQuantity - taken,
+							updatedAt: now
+						}).where(eq(batches.id, batch.id)).run();
+						await tx.insert(stockMovements).values({
+							id: crypto.randomUUID(),
+							productId: product.id,
+							batchId: batch.id,
+							invoiceId: id,
+							type: "sale",
+							packDelta: -taken,
+							unitDelta: 0,
+							note: `Invoice #${(latest?.value ?? 0) + 1}`,
+							createdAt: now
+						}).run();
+					} else {
+						const packsOpened = Math.max(0, Math.ceil((taken - batch.unitQuantity) / product.unitsPerPack));
+						const looseUnits = batch.unitQuantity + packsOpened * product.unitsPerPack;
+						await tx.update(batches).set({
+							packQuantity: batch.packQuantity - packsOpened,
+							unitQuantity: looseUnits - taken,
+							updatedAt: now
+						}).where(eq(batches.id, batch.id)).run();
+						if (packsOpened > 0) await tx.insert(stockMovements).values({
+							id: crypto.randomUUID(),
+							productId: product.id,
+							batchId: batch.id,
+							invoiceId: id,
+							type: "open_pack",
+							packDelta: -packsOpened,
+							unitDelta: packsOpened * product.unitsPerPack,
+							note: `Opened for invoice #${(latest?.value ?? 0) + 1}`,
+							createdAt: now
+						}).run();
+						await tx.insert(stockMovements).values({
+							id: crypto.randomUUID(),
+							productId: product.id,
+							batchId: batch.id,
+							invoiceId: id,
+							type: "sale",
+							packDelta: 0,
+							unitDelta: -taken,
+							note: `Invoice #${(latest?.value ?? 0) + 1}`,
+							createdAt: now
+						}).run();
+					}
+				}
+			}
+			for (const allocation of allocations) await tx.insert(invoiceItems).values({
+				...allocation,
+				id: crypto.randomUUID(),
+				invoiceId: id,
+				createdAt: now,
+				updatedAt: now
+			}).run();
+			const created = await tx.query.invoices.findFirst({
+				where: { id },
+				with: { items: true }
+			});
+			if (!created) throw new Error("Created invoice could not be loaded");
+			return created;
+		})));
+	});
 	const sync = fn("OfflineStore.sync")(function* () {
 		if (!configured) return yield* get(status);
 		yield* update(status, (current) => ({
@@ -20248,6 +20565,11 @@ var make = (config) => gen(function* () {
 		createProduct,
 		updateProduct,
 		deleteProduct,
+		createBatch,
+		listStockMovements,
+		listInvoices,
+		getInvoice,
+		createInvoice,
 		getSyncStatus: get(status),
 		sync: sync()
 	});
@@ -20260,6 +20582,11 @@ var program = {
 	createProduct: (input) => flatMap(OfflineStore, (store) => store.createProduct(input)),
 	updateProduct: (input) => flatMap(OfflineStore, (store) => store.updateProduct(input)),
 	deleteProduct: (id) => flatMap(OfflineStore, (store) => store.deleteProduct(id)),
+	createBatch: (input) => flatMap(OfflineStore, (store) => store.createBatch(input)),
+	listStockMovements: (productId) => flatMap(OfflineStore, (store) => store.listStockMovements(productId)),
+	listInvoices: flatMap(OfflineStore, (store) => store.listInvoices),
+	getInvoice: (id) => flatMap(OfflineStore, (store) => store.getInvoice(id)),
+	createInvoice: (input) => flatMap(OfflineStore, (store) => store.createInvoice(input)),
 	getSyncStatus: flatMap(OfflineStore, (store) => store.getSyncStatus),
 	sync: flatMap(OfflineStore, (store) => store.sync)
 };
@@ -20295,6 +20622,11 @@ function registerStoreIpc() {
 	ipcMain.handle("store:products:create", (_event, input) => runStore(decodeUnknownEffect(CreateProductInput)(input).pipe(flatMap(program.createProduct))));
 	ipcMain.handle("store:products:update", (_event, input) => runStore(decodeUnknownEffect(UpdateProductInput)(input).pipe(flatMap(program.updateProduct))));
 	ipcMain.handle("store:products:delete", (_event, input) => runStore(decodeUnknownEffect(ProductIdInput)(input).pipe(flatMap(({ id }) => program.deleteProduct(id)))));
+	ipcMain.handle("store:batches:create", (_event, input) => runStore(decodeUnknownEffect(CreateBatchInput)(input).pipe(flatMap(program.createBatch))));
+	ipcMain.handle("store:stock-movements:list", (_event, input) => runStore(decodeUnknownEffect(ProductIdInput)(input).pipe(flatMap(({ id }) => program.listStockMovements(id)))));
+	ipcMain.handle("store:invoices:list", () => runStore(program.listInvoices));
+	ipcMain.handle("store:invoices:get", (_event, input) => runStore(decodeUnknownEffect(InvoiceIdInput)(input).pipe(flatMap(({ id }) => program.getInvoice(id)))));
+	ipcMain.handle("store:invoices:create", (_event, input) => runStore(decodeUnknownEffect(CreateInvoiceInput)(input).pipe(flatMap(program.createInvoice))));
 	ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
 	ipcMain.handle("store:sync:run", () => runStore(program.sync));
 }

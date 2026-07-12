@@ -1,4 +1,11 @@
-import { CreateProductInput, ProductIdInput, UpdateProductInput } from "@store/contracts";
+import {
+  CreateBatchInput,
+  CreateInvoiceInput,
+  CreateProductInput,
+  InvoiceIdInput,
+  ProductIdInput,
+  UpdateProductInput,
+} from "@store/contracts";
 import {
   OfflineStore,
   PersistenceError,
@@ -91,6 +98,33 @@ function registerStoreIpc() {
     runStore(
       Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
         Effect.flatMap(({ id }) => program.deleteProduct(id)),
+      ),
+    ),
+  );
+  ipcMain.handle("store:batches:create", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(CreateBatchInput)(input).pipe(Effect.flatMap(program.createBatch)),
+    ),
+  );
+  ipcMain.handle("store:stock-movements:list", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
+        Effect.flatMap(({ id }) => program.listStockMovements(id)),
+      ),
+    ),
+  );
+  ipcMain.handle("store:invoices:list", () => runStore(program.listInvoices));
+  ipcMain.handle("store:invoices:get", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(InvoiceIdInput)(input).pipe(
+        Effect.flatMap(({ id }) => program.getInvoice(id)),
+      ),
+    ),
+  );
+  ipcMain.handle("store:invoices:create", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(CreateInvoiceInput)(input).pipe(
+        Effect.flatMap(program.createInvoice),
       ),
     ),
   );

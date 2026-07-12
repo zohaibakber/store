@@ -1,5 +1,12 @@
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/effect-schema";
-import { batches, categories, products } from "@store/database/schema";
+import {
+  batches,
+  categories,
+  invoiceItems,
+  invoices,
+  products,
+  stockMovements,
+} from "@store/database/schema";
 import * as Schema from "effect/Schema";
 
 // Wire schemas are derived from the drizzle tables so the database schema stays
@@ -15,9 +22,39 @@ const { deletedAt: _categoryDeletedAt, ...categoryFields } = categoryRow.fields;
 export const Category = Schema.Struct(categoryFields);
 export type Category = typeof Category.Type;
 
+const batchRow = createSelectSchema(batches);
+const batchInsert = createInsertSchema(batches);
+
+const { deletedAt: _batchDeletedAt, ...batchFields } = batchRow.fields;
+export const Batch = Schema.Struct(batchFields);
+export type Batch = typeof Batch.Type;
+
+const {
+  id: _batchId,
+  createdAt: _batchCreatedAt,
+  updatedAt: _batchUpdatedAt,
+  deletedAt: _batchInsertDeletedAt,
+  ...createBatchFields
+} = batchInsert.fields;
+export const CreateBatchInput = Schema.Struct(createBatchFields);
+export type CreateBatchInput = typeof CreateBatchInput.Type;
+
 const { deletedAt: _productDeletedAt, ...productFields } = productRow.fields;
-export const Product = Schema.Struct({ ...productFields, category: Category });
+export const Product = Schema.Struct({
+  ...productFields,
+  category: Category,
+  batches: Schema.Array(Batch),
+});
 export type Product = typeof Product.Type;
+
+export const productPackStock = (product: Pick<Product, "batches">) =>
+  product.batches.reduce((sum, batch) => sum + batch.packQuantity, 0);
+
+export const productLooseUnitStock = (product: Pick<Product, "batches">) =>
+  product.batches.reduce((sum, batch) => sum + batch.unitQuantity, 0);
+
+export const productStock = (product: Pick<Product, "batches" | "unitsPerPack">) =>
+  productPackStock(product) * product.unitsPerPack + productLooseUnitStock(product);
 
 const {
   id: _productId,
@@ -38,22 +75,40 @@ export type UpdateProductInput = typeof UpdateProductInput.Type;
 export const ProductIdInput = Schema.Struct({ id: Schema.String });
 export type ProductIdInput = typeof ProductIdInput.Type;
 
-const batchRow = createSelectSchema(batches);
-const batchInsert = createInsertSchema(batches);
+const invoiceRow = createSelectSchema(invoices);
+const invoiceItemRow = createSelectSchema(invoiceItems);
 
-const { deletedAt: _batchDeletedAt, ...batchFields } = batchRow.fields;
-export const Batch = Schema.Struct(batchFields);
-export type Batch = typeof Batch.Type;
+const { deletedAt: _invoiceItemDeletedAt, ...invoiceItemFields } = invoiceItemRow.fields;
+export const InvoiceItem = Schema.Struct(invoiceItemFields);
+export type InvoiceItem = typeof InvoiceItem.Type;
 
-const {
-  id: _batchId,
-  createdAt: _batchCreatedAt,
-  updatedAt: _batchUpdatedAt,
-  deletedAt: _batchInsertDeletedAt,
-  ...createBatchFields
-} = batchInsert.fields;
-export const CreateBatchInput = Schema.Struct(createBatchFields);
-export type CreateBatchInput = typeof CreateBatchInput.Type;
+const { deletedAt: _invoiceDeletedAt, ...invoiceFields } = invoiceRow.fields;
+export const Invoice = Schema.Struct({ ...invoiceFields, items: Schema.Array(InvoiceItem) });
+export type Invoice = typeof Invoice.Type;
+
+// A sale line names the product and quantity; the batch is optional — when it
+// is omitted the store draws stock from open batches, earliest expiry first.
+export const CreateInvoiceLineInput = Schema.Struct({
+  productId: Schema.String,
+  batchId: Schema.NullOr(Schema.String),
+  quantity: Schema.Number,
+  quantityType: Schema.Literals(["unit", "pack"]),
+  salePrice: Schema.Number,
+});
+export type CreateInvoiceLineInput = typeof CreateInvoiceLineInput.Type;
+
+export const CreateInvoiceInput = Schema.Struct({
+  customerName: Schema.NullOr(Schema.String),
+  items: Schema.Array(CreateInvoiceLineInput),
+});
+export type CreateInvoiceInput = typeof CreateInvoiceInput.Type;
+
+export const InvoiceIdInput = Schema.Struct({ id: Schema.String });
+export type InvoiceIdInput = typeof InvoiceIdInput.Type;
+
+const stockMovementRow = createSelectSchema(stockMovements);
+export const StockMovement = Schema.Struct(stockMovementRow.fields);
+export type StockMovement = typeof StockMovement.Type;
 
 export type SyncPhase = "local-only" | "idle" | "syncing" | "error";
 
@@ -71,6 +126,11 @@ export interface OfflineStoreApi {
   readonly createProduct: (input: CreateProductInput) => Promise<Product>;
   readonly updateProduct: (input: UpdateProductInput) => Promise<Product>;
   readonly deleteProduct: (input: ProductIdInput) => Promise<void>;
+  readonly createBatch: (input: CreateBatchInput) => Promise<Batch>;
+  readonly listStockMovements: (input: ProductIdInput) => Promise<ReadonlyArray<StockMovement>>;
+  readonly listInvoices: () => Promise<ReadonlyArray<Invoice>>;
+  readonly getInvoice: (input: InvoiceIdInput) => Promise<Invoice>;
+  readonly createInvoice: (input: CreateInvoiceInput) => Promise<Invoice>;
   readonly getSyncStatus: () => Promise<SyncStatus>;
   readonly sync: () => Promise<SyncStatus>;
 }

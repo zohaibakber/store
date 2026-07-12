@@ -7,3 +7,5 @@ export const formatPrice = (value: number | null) =>
   value == null ? "—" : currency.format(value / 100);
 
 export const formatDate = (value: number) => format(value, "d MMM yyyy");
+
+export const formatDateTime = (value: number) => format(value, "d MMM yyyy, h:mm a");

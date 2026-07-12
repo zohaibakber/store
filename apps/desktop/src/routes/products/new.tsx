@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import * as z from "zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Card,
   CardContent,
@@ -14,6 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  NumberField,
+  NumberFieldAddon,
+  NumberFieldGroup,
+  NumberFieldInput,
+} from "@/components/ui/number-field";
 import {
   Select,
   SelectContent,
@@ -31,6 +38,9 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 
+const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
+const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
+
 const optionalPrice = z
   .string()
   .refine((value) => value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0), {
@@ -41,20 +51,31 @@ const productFormSchema = z.object({
   name: z.string().trim().min(1, "Product name is required.").max(120),
   categoryId: z.string().min(1, "Category is required."),
   barcode: z.string().trim().max(64),
+  aisle: z.string().trim().max(64),
   composition: z.string().trim().max(160),
-  strength: z.string().trim().max(80),
+  strength: z.string().trim().max(20),
+  strengthUnit: z.enum(strengthUnits),
   unitsPerPack: z
     .string()
     .refine((value) => Number.isInteger(Number(value)) && Number(value) >= 1, {
       message: "Units per pack must be a whole number of 1 or more.",
     }),
-  costPrice: optionalPrice,
   packPrice: optionalPrice,
   unitPrice: optionalPrice,
 });
 
 const nullableText = (value: string) => value.trim() || null;
 const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
+const numberFieldValue = (value: string) => (value === "" ? null : Number(value));
+
+const computeUnitPrice = (unitsPerPack: string, packPrice: string) => {
+  const units = Number(unitsPerPack);
+  const pack = Number(packPrice);
+  if (packPrice === "" || !Number.isFinite(units) || units < 1 || !Number.isFinite(pack)) {
+    return null;
+  }
+  return String(Math.round(pack / units));
+};
 
 export const Route = createFileRoute("/products/new")({
   loader: () => window.offlineStore.listCategories(),
@@ -70,24 +91,26 @@ function NewProductPage() {
       categoryId:
         categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "",
       barcode: "",
+      aisle: "",
       composition: "",
       strength: "",
+      strengthUnit: "mg" as (typeof strengthUnits)[number],
       unitsPerPack: "1",
-      costPrice: "",
       packPrice: "",
       unitPrice: "",
     },
     validators: { onSubmit: productFormSchema },
     onSubmit: async ({ value }) => {
       try {
+        const strengthValue = value.strength.trim();
         const product = await window.offlineStore.createProduct({
           name: value.name.trim(),
           categoryId: value.categoryId,
           barcode: nullableText(value.barcode),
+          aisle: nullableText(value.aisle),
           composition: nullableText(value.composition),
-          strength: nullableText(value.strength),
+          strength: strengthValue ? `${strengthValue}${value.strengthUnit}` : null,
           unitsPerPack: Number(value.unitsPerPack),
-          costPrice: priceInPaisa(value.costPrice),
           packPrice: priceInPaisa(value.packPrice),
           unitPrice: priceInPaisa(value.unitPrice),
         });
@@ -113,7 +136,7 @@ function NewProductPage() {
           <CardHeader>
             <CardTitle>Product details</CardTitle>
             <CardDescription>
-              Name and units per pack are required. Medicine details and prices are optional.
+              Name and units per pack are required. Pack and unit prices can be set independently.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -148,7 +171,7 @@ function NewProductPage() {
                   }}
                 />
 
-                <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                <FieldGroup className="grid gap-4 sm:grid-cols-3">
                   <form.Field
                     name="categoryId"
                     children={(field) => {
@@ -205,6 +228,27 @@ function NewProductPage() {
                       );
                     }}
                   />
+                  <form.Field
+                    name="aisle"
+                    children={(field) => {
+                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={invalid}>
+                          <FieldLabel htmlFor={field.name}>Aisle</FieldLabel>
+                          <Input
+                            aria-invalid={invalid}
+                            id={field.name}
+                            name={field.name}
+                            onBlur={field.handleBlur}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder="e.g. A3"
+                            value={field.state.value}
+                          />
+                          {invalid && <FieldError errors={field.state.meta.errors} />}
+                        </Field>
+                      );
+                    }}
+                  />
                 </FieldGroup>
 
                 <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -236,15 +280,53 @@ function NewProductPage() {
                       return (
                         <Field data-invalid={invalid}>
                           <FieldLabel htmlFor={field.name}>Strength</FieldLabel>
-                          <Input
-                            aria-invalid={invalid}
-                            id={field.name}
-                            name={field.name}
-                            onBlur={field.handleBlur}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            placeholder="e.g. 500mg"
-                            value={field.state.value}
-                          />
+                          <ButtonGroup aria-label="Strength" className="w-full">
+                            <NumberField
+                              className="flex-1"
+                              format={{ maximumFractionDigits: 2 }}
+                              id={field.name}
+                              min={0}
+                              onValueChange={(value) =>
+                                field.handleChange(value === null ? "" : String(value))
+                              }
+                              value={numberFieldValue(field.state.value)}
+                            >
+                              <NumberFieldGroup>
+                                <NumberFieldInput
+                                  aria-invalid={invalid}
+                                  aria-label="Strength value"
+                                  className="text-left"
+                                  name={field.name}
+                                  onBlur={field.handleBlur}
+                                  placeholder="e.g. 500"
+                                />
+                              </NumberFieldGroup>
+                            </NumberField>
+                            <form.Field
+                              name="strengthUnit"
+                              children={(unitField) => (
+                                <Select
+                                  items={strengthUnitItems}
+                                  name={unitField.name}
+                                  onValueChange={(value) => value && unitField.handleChange(value)}
+                                  value={unitField.state.value}
+                                >
+                                  <SelectTrigger aria-label="Strength unit">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent alignItemWithTrigger={false}>
+                                    <SelectGroup>
+                                      {strengthUnitItems.map((item) => (
+                                        <SelectItem key={item.value} value={item.value}>
+                                          {item.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            />
+                          </ButtonGroup>
                           {invalid && <FieldError errors={field.state.meta.errors} />}
                         </Field>
                       );
@@ -252,66 +334,127 @@ function NewProductPage() {
                   />
                 </FieldGroup>
 
-                <form.Field
-                  name="unitsPerPack"
-                  children={(field) => {
-                    const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={invalid}>
-                        <FieldLabel htmlFor={field.name}>Units per pack</FieldLabel>
-                        <Input
-                          aria-invalid={invalid}
-                          className="max-w-40"
-                          id={field.name}
-                          min="1"
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          step="1"
-                          type="number"
-                          value={field.state.value}
-                        />
-                        <FieldDescription>Use 1 when the item is sold as-is.</FieldDescription>
-                        {invalid && <FieldError errors={field.state.meta.errors} />}
-                      </Field>
-                    );
-                  }}
-                />
-
-                <FieldGroup className="grid gap-4 sm:grid-cols-3">
-                  {(["costPrice", "packPrice", "unitPrice"] as const).map((name) => (
+                <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                  <FieldGroup className="grid grid-cols-2 gap-4">
                     <form.Field
-                      key={name}
-                      name={name}
+                      listeners={{
+                        onChange: ({ value, fieldApi }) => {
+                          const packPrice = fieldApi.form.getFieldValue("packPrice");
+                          const unitPrice = computeUnitPrice(value, packPrice);
+                          if (unitPrice !== null) {
+                            fieldApi.form.setFieldValue("unitPrice", unitPrice);
+                          }
+                        },
+                      }}
+                      name="unitsPerPack"
                       children={(field) => {
                         const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                        const labels = {
-                          costPrice: "Cost price",
-                          packPrice: "Pack price",
-                          unitPrice: "Unit price",
-                        } as const;
                         return (
                           <Field data-invalid={invalid}>
-                            <FieldLabel htmlFor={field.name}>{labels[name]}</FieldLabel>
-                            <Input
-                              aria-invalid={invalid}
+                            <FieldLabel htmlFor={field.name}>Units per pack</FieldLabel>
+                            <NumberField
+                              format={{ maximumFractionDigits: 0 }}
                               id={field.name}
-                              inputMode="decimal"
-                              min="0"
-                              name={field.name}
-                              onBlur={field.handleBlur}
-                              onChange={(event) => field.handleChange(event.target.value)}
-                              placeholder="PKR 0.00"
-                              step="0.01"
-                              type="number"
-                              value={field.state.value}
-                            />
+                              min={1}
+                              onValueChange={(value) =>
+                                field.handleChange(value === null ? "" : String(value))
+                              }
+                              step={1}
+                              value={numberFieldValue(field.state.value)}
+                            >
+                              <NumberFieldGroup>
+                                <NumberFieldInput
+                                  aria-invalid={invalid}
+                                  className="text-left"
+                                  name={field.name}
+                                  onBlur={field.handleBlur}
+                                />
+                              </NumberFieldGroup>
+                            </NumberField>
+                            <FieldDescription>Use 1 when the item is sold as-is.</FieldDescription>
                             {invalid && <FieldError errors={field.state.meta.errors} />}
                           </Field>
                         );
                       }}
                     />
-                  ))}
+                    <form.Field
+                      listeners={{
+                        onChange: ({ value, fieldApi }) => {
+                          const unitsPerPack = fieldApi.form.getFieldValue("unitsPerPack");
+                          const unitPrice = computeUnitPrice(unitsPerPack, value);
+                          if (unitPrice !== null) {
+                            fieldApi.form.setFieldValue("unitPrice", unitPrice);
+                          }
+                        },
+                      }}
+                      name="packPrice"
+                      children={(field) => {
+                        const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                        return (
+                          <Field data-invalid={invalid}>
+                            <FieldLabel htmlFor={field.name}>Pack price</FieldLabel>
+                            <NumberField
+                              format={{ maximumFractionDigits: 2 }}
+                              id={field.name}
+                              min={0}
+                              onValueChange={(value) =>
+                                field.handleChange(value === null ? "" : String(value))
+                              }
+                              step={0.01}
+                              value={numberFieldValue(field.state.value)}
+                            >
+                              <NumberFieldGroup>
+                                <NumberFieldInput
+                                  aria-invalid={invalid}
+                                  className="text-left"
+                                  name={field.name}
+                                  onBlur={field.handleBlur}
+                                />
+                                <NumberFieldAddon align="inline-end">PKR</NumberFieldAddon>
+                              </NumberFieldGroup>
+                            </NumberField>
+                            {invalid && <FieldError errors={field.state.meta.errors} />}
+                          </Field>
+                        );
+                      }}
+                    />
+                  </FieldGroup>
+
+                  <form.Field
+                    name="unitPrice"
+                    children={(field) => {
+                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={invalid}>
+                          <FieldLabel htmlFor={field.name}>Unit price</FieldLabel>
+                          <NumberField
+                            format={{ maximumFractionDigits: 0 }}
+                            id={field.name}
+                            min={0}
+                            onValueChange={(value) =>
+                              field.handleChange(value === null ? "" : String(value))
+                            }
+                            step={1}
+                            value={numberFieldValue(field.state.value)}
+                          >
+                            <NumberFieldGroup>
+                              <NumberFieldInput
+                                aria-invalid={invalid}
+                                className="text-left"
+                                name={field.name}
+                                onBlur={field.handleBlur}
+                              />
+                              <NumberFieldAddon align="inline-end">PKR</NumberFieldAddon>
+                            </NumberFieldGroup>
+                          </NumberField>
+                          <FieldDescription>
+                            Auto-filled from pack price ÷ units per pack, rounded. Edit to override.
+                          </FieldDescription>
+                          {invalid && <FieldError errors={field.state.meta.errors} />}
+                        </Field>
+                      );
+                    }}
+                  />
                 </FieldGroup>
               </FieldGroup>
             </form>

@@ -13,7 +13,13 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { HomeIcon, MedicineBottle01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
+import {
+  HomeIcon,
+  Invoice01Icon,
+  MedicineBottle01Icon,
+  SettingsIcon,
+  TagIcon,
+} from "@hugeicons/core-free-icons";
 
 const data = {
   user: {
@@ -31,6 +37,11 @@ const data = {
       title: "Products",
       url: "/products",
       icon: <HugeiconsIcon icon={TagIcon} />,
+    },
+    {
+      title: "Invoices",
+      url: "/invoices",
+      icon: <HugeiconsIcon icon={Invoice01Icon} />,
     },
     {
       title: "Settings",
