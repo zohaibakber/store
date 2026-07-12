@@ -21,6 +21,7 @@
     "@shadcn/react": "^0.2.1",
     "@store/contracts": "workspace:*",
     "@store/persistence": "workspace:*",
+    "@tanstack/match-sorter-utils": "^8.19.4",
     "@tanstack/react-form": "^1.33.1",
     "@tanstack/react-router": "^1.170.17",
     "@tanstack/react-table": "^9.0.0-beta.38",

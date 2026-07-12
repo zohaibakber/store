@@ -1,5 +1,6 @@
 import type { Product } from "@store/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { rankItem } from "@tanstack/match-sorter-utils";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
@@ -7,7 +8,8 @@ import {
   createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
-  filterFns,
+  filterFns as builtInFilterFns,
+  type FilterFn,
   rowPaginationFeature,
   rowSortingFeature,
   sortFns,
@@ -25,10 +27,21 @@ import {
   DataTablePagination,
   DataTableViewOptions,
 } from "@/components/data-table";
-import { Badge } from "@/components/ui/badge";
 
 // v9: features, row models and fn registries are stitched together statically
 // so the bundle only carries what this table uses.
+
+// Fuzzy-ranks name and composition together so a search matches on either
+// field and tolerates typos, per TanStack's fuzzy filtering guide.
+const fuzzyProductFilter: FilterFn<any, Product> = (row, _columnId, filterValue) => {
+  const { passed } = rankItem(row.original, String(filterValue ?? ""), {
+    accessors: [
+      (product: Product) => product.name,
+      (product: Product) => product.composition ?? "",
+    ],
+  });
+  return passed;
+};
 
 const features = tableFeatures({
   columnFilteringFeature,
@@ -38,7 +51,7 @@ const features = tableFeatures({
   filteredRowModel: createFilteredRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
   sortedRowModel: createSortedRowModel(),
-  filterFns,
+  filterFns: { ...builtInFilterFns, fuzzy: fuzzyProductFilter },
   sortFns,
   columnMeta: {} as { label?: string },
 });
@@ -59,13 +72,12 @@ const columns = columnHelper.columns([
       </Link>
     ),
     enableHiding: false,
-    filterFn: "includesString",
+    filterFn: "fuzzy",
     meta: { label: "Name" },
   }),
   columnHelper.accessor((product) => product.category.name, {
     id: "category",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-    cell: ({ getValue }) => <Badge variant="outline">{getValue()}</Badge>,
     meta: { label: "Category" },
   }),
   columnHelper.accessor("aisle", {
@@ -75,7 +87,7 @@ const columns = columnHelper.columns([
   }),
   columnHelper.accessor("composition", {
     header: "Composition",
-    cell: ({ getValue }) => <span className="text-muted-foreground">{getValue() ?? "—"}</span>,
+    cell: ({ getValue }) => <span>{getValue() ?? "—"}</span>,
     enableSorting: false,
     meta: { label: "Composition" },
   }),
@@ -114,7 +126,7 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
     data: products,
     getRowId: (product) => product.id,
     initialState: {
-      columnVisibility: { composition: false },
+      columnVisibility: { unitsPerPack: false, updatedAt: false },
       pagination: { pageIndex: 0, pageSize: 10 },
       sorting: [{ id: "name", desc: false }],
     },
@@ -125,7 +137,7 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
       table={table}
     >
       <DataTableHeader>
-        <DataTableFilter columnId="name" placeholder="Filter by name…" />
+        <DataTableFilter columnId="name" placeholder="Search" />
         <DataTableViewOptions />
       </DataTableHeader>
       <DataTableContent />
