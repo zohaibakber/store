@@ -8,6 +8,7 @@ import { useRouter } from "@tanstack/react-router";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import { toast } from "sonner";
 import * as z from "zod";
+import { DatePicker } from "@/components/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,17 @@ import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/format";
+
+const parseISODate = (value: string): Date | undefined => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+};
+
+const formatISODate = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
 
 const stockQuantity = z
   .string()
@@ -139,14 +151,14 @@ function AddBatchDialog({ productId }: { productId: string }) {
                   return (
                     <Field data-invalid={invalid}>
                       <FieldLabel htmlFor={field.name}>Expiry date</FieldLabel>
-                      <Input
-                        aria-invalid={invalid}
+                      <DatePicker
                         id={field.name}
-                        name={field.name}
+                        value={field.state.value ? parseISODate(field.state.value) : undefined}
+                        onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
                         onBlur={field.handleBlur}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        type="date"
-                        value={field.state.value}
+                        placeholder="No expiry"
+                        startMonth={new Date(new Date().getFullYear() - 1, 0)}
+                        endMonth={new Date(new Date().getFullYear() + 15, 11)}
                       />
                       {invalid && <FieldError errors={field.state.meta.errors} />}
                     </Field>
