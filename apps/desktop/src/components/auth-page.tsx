@@ -1,17 +1,10 @@
 import * as React from "react";
+import { Voronoi } from "@paper-design/shaders-react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MedicineBottle01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
@@ -25,6 +18,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(bridgeError ?? null);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -50,27 +44,36 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
     }
   }
 
+  function toggleMode() {
+    setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+    setError(null);
+  }
+
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/30 p-4">
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <HugeiconsIcon icon={MedicineBottle01Icon} />
-          </div>
-          <span className="text-base font-medium">Tabaaq</span>
+    <div className="grid min-h-svh lg:grid-cols-2">
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="flex justify-center gap-2 md:justify-start">
+          <span className="flex items-center gap-2 font-medium">
+            <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <HugeiconsIcon icon={MedicineBottle01Icon} className="size-4" />
+            </div>
+            ZENO
+          </span>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>{mode === "sign-in" ? "Welcome back" : "Set up your store"}</CardTitle>
-            <CardDescription>
-              {mode === "sign-in"
-                ? "Sign in to open your organization and sync shared data."
-                : "Create your account, then set up your organization."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-xs">
             <form id="auth-form" onSubmit={submit}>
               <FieldGroup>
+                <div className="flex flex-col items-center gap-1 text-center">
+                  <h1 className="text-2xl font-bold">
+                    {mode === "sign-in" ? "Welcome back" : "Set up your store"}
+                  </h1>
+                  <p className="text-sm text-balance text-muted-foreground">
+                    {mode === "sign-in"
+                      ? "Sign in to open your organization and sync shared data."
+                      : "Create your account, then set up your organization."}
+                  </p>
+                </div>
                 {mode === "sign-up" && (
                   <Field>
                     <FieldLabel htmlFor="name">Your name</FieldLabel>
@@ -83,6 +86,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                     id="email"
                     name="email"
                     type="email"
+                    placeholder="m@example.com"
                     autoComplete="email"
                     required
                     aria-invalid={Boolean(error)}
@@ -101,34 +105,62 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                   />
                   {error && <FieldError>{error}</FieldError>}
                 </Field>
+                <Field>
+                  <Button type="submit" disabled={pending}>
+                    {pending && <Spinner data-icon="inline-start" />}
+                    {mode === "sign-in" ? "Sign in" : "Create account"}
+                  </Button>
+                  <FieldDescription className="text-center">
+                    {mode === "sign-in" ? (
+                      <>
+                        Don&apos;t have an account?{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-4"
+                          onClick={toggleMode}
+                        >
+                          Sign up
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        Already have an account?{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-4"
+                          onClick={toggleMode}
+                        >
+                          Sign in
+                        </button>
+                      </>
+                    )}
+                  </FieldDescription>
+                </Field>
               </FieldGroup>
             </form>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-2">
-            <Button className="w-full" form="auth-form" type="submit" disabled={pending}>
-              {pending && <Spinner data-icon="inline-start" />}
-              {mode === "sign-in" ? "Sign in" : "Create account"}
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full"
-              type="button"
-              onClick={() => {
-                setMode(mode === "sign-in" ? "sign-up" : "sign-in");
-                setError(null);
-              }}
-            >
-              {mode === "sign-in" ? "Create a new account" : "I already have an account"}
-            </Button>
-          </CardFooter>
-        </Card>
-        {bridgeError && (
-          <Alert>
-            <AlertTitle>Offline sign-in is not ready</AlertTitle>
-            <AlertDescription>{bridgeError}</AlertDescription>
-          </Alert>
-        )}
+            {bridgeError && (
+              <Alert className="mt-6">
+                <AlertTitle>Offline sign-in is not ready</AlertTitle>
+                <AlertDescription>{bridgeError}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </div>
       </div>
-    </main>
+      <div className="relative hidden overflow-hidden lg:flex lg:items-center lg:justify-center">
+        <Voronoi
+          className="absolute inset-0 h-full w-full"
+          colors={["#ffffff"]}
+          colorGlow="#ffffff"
+          colorGap="#000000"
+          stepsPerColor={1}
+          distortion={0.5}
+          gap={0.03}
+          glow={0.8}
+          speed={0.5}
+          scale={0.5}
+        />
+      </div>
+    </div>
   );
 }

@@ -1,7 +1,6 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NotFound } from "@/components/not-found";
-import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -29,17 +28,14 @@ function AuthenticatedLayout() {
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (
     <TooltipProvider>
-      <div className="[--footer-height:calc(--spacing(8))] [--header-height:calc(--spacing(10))]">
-        <SidebarProvider className="h-svh flex flex-col overflow-hidden">
-          <SiteHeader />
-          <div className="flex min-h-0 flex-1">
-            <AppSidebar />
-            <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
-              <Outlet />
-              <Toaster />
-            </SidebarInset>
-          </div>
-          <SiteFooter />
+      <div className="[--header-height:calc(--spacing(12))]">
+        <SidebarProvider className="h-svh overflow-hidden">
+          <AppSidebar />
+          <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+            <SiteHeader />
+            <Outlet />
+            <Toaster />
+          </SidebarInset>
         </SidebarProvider>
       </div>
     </TooltipProvider>

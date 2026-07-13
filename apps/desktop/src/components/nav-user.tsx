@@ -1,4 +1,3 @@
-import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -15,9 +14,9 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Spinner } from "@/components/ui/spinner";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { CheckmarkBadgeIcon, LogoutIcon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import { LogoutIcon, Moon02Icon, Sun02Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import { useTheme } from "@/components/theme-provider";
 import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
 import { toast } from "sonner";
 
@@ -31,23 +30,10 @@ const initials = (name: string) =>
 
 export function NavUser() {
   const { isMobile } = useSidebar();
+  const { theme, setTheme } = useTheme();
   const { snapshot } = useAuth();
-  const [pendingOrganization, setPendingOrganization] = React.useState<string | null>(null);
   if (!snapshot?.user) return null;
-  const { user, organizations, activeOrganization } = snapshot;
-
-  async function switchOrganization(organizationId: string) {
-    if (!window.auth || organizationId === activeOrganization?.id) return;
-    setPendingOrganization(organizationId);
-    try {
-      const next = await window.auth.switchOrganization({ organizationId });
-      window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    } finally {
-      setPendingOrganization(null);
-    }
-  }
+  const { user } = snapshot;
 
   async function signOut() {
     try {
@@ -86,13 +72,13 @@ export function NavUser() {
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{user.name}</span>
-              <span className="truncate text-xs">{activeOrganization?.name ?? user.email}</span>
+              <span className="truncate text-xs">{user.email}</span>
             </div>
             <HugeiconsIcon icon={UnfoldMoreIcon} className="ml-auto" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
+            side={isMobile ? "bottom" : "top"}
             align="end"
             sideOffset={4}
           >
@@ -106,28 +92,17 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-              {organizations.map((organization) => (
-                <DropdownMenuItem
-                  key={organization.id}
-                  onClick={() => void switchOrganization(organization.id)}
-                  disabled={pendingOrganization !== null}
-                >
-                  {pendingOrganization === organization.id ? (
-                    <Spinner />
-                  ) : (
-                    <HugeiconsIcon icon={CheckmarkBadgeIcon} />
-                  )}
-                  <span className="flex-1 truncate">{organization.name}</span>
-                  {organization.id === activeOrganization?.id && (
-                    <span className="text-xs text-muted-foreground">Active</span>
-                  )}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuItem
+                closeOnClick={false}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                <HugeiconsIcon icon={theme === "dark" ? Sun02Icon : Moon02Icon} />
+                {theme === "dark" ? "Light mode" : "Dark mode"}
+              </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => void signOut()}>
+              <DropdownMenuItem onClick={() => void signOut()} variant="destructive">
                 <HugeiconsIcon icon={LogoutIcon} />
                 Log out
               </DropdownMenuItem>
