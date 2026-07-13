@@ -1,74 +1,75 @@
-# Store invoice API
+# Store API Worker
 
-A Hono app, deployed to Vercel as a Vercel Function, that accepts invoice attachments and returns
-structured inventory lines.
+The API is a Cloudflare Worker with three public surfaces:
+
+- `GET /api/health`
+- `GET|POST /api/auth/*`
+- `POST /api/sync`
+
+Authentication and sync use the same remote PostgreSQL database through the `HYPERDRIVE`
+binding. The Worker never reads a development `DATABASE_URL`, and database credentials are never
+sent to Electron. The only required Worker secret is `BETTER_AUTH_SECRET`.
+
+The entry point is a native Hono Cloudflare app (`export default app`). Wrangler generates the
+`CloudflareBindings` type, request middleware reads bindings from `c.env`, and deferred database
+cleanup uses Hono's `c.executionCtx.waitUntil` integration.
+
+The Worker intentionally does not host invoice upload or model-catalog routes. AI extraction and
+catalog integrations live in `packages/services` so they can be attached to a dedicated runtime
+later without adding Vercel-specific code to the sync API.
+
+## Cloudflare setup
+
+`wrangler.jsonc` contains the existing Hyperdrive configuration id and enables `nodejs_compat`,
+which is required by the PostgreSQL drivers. Set the auth secret once for the Worker:
 
 ```sh
-bunx vercel --prod
+cd apps/api
+vp run typegen
+wrangler secret put BETTER_AUTH_SECRET
 ```
 
-Set `AI_GATEWAY_API_KEY` in the Vercel project. The service uses AI SDK through Vercel AI Gateway,
-so the selected model can come from any supported provider. Run `bun run vercel:dev` for local
-development — it serves `src/index.ts` directly with Vercel's local emulation and automatically
-refreshed Gateway development credentials.
+Run the remote-backed development Worker on the desktop app's default API port:
 
-Set `STORE_API_URL` (preferred) or `VITE_API_URL` in the desktop app to the deployed API origin.
-Values ending in `/api` are also accepted. During local development, `http://localhost:8787` is
-used by default.
+```sh
+vp run dev
+```
+
+Deploy it with:
+
+```sh
+vp run deploy
+```
+
+Set `STORE_API_URL` (preferred) or `VITE_API_URL` in the desktop environment to the deployed
+Worker origin. Values ending in `/api` are accepted.
 
 ## Authentication and organizations
 
-Better Auth lives in the shared `@store/auth` package (`packages/auth`) — email/password,
-organization, signed bearer, and Electron plugins, backed by Postgres (Neon's serverless HTTP
-driver). This API mounts it in-process at `/api/auth/*` (`app.on(["GET","POST"], "/api/auth/*", ...)`
-in `src/index.ts`) and calls `auth.api.getSession`/`auth.api.getActiveMember` directly — no network
-hop. Sign-in and sign-up responses expose the session token in the `set-auth-token` header.
-Electron must keep that token in main-process secure storage and send it as
-`Authorization: Bearer <token>`; never expose it to the renderer. `GET /api/models`,
-`POST /api/uploads`, and `POST /api/sync` require a valid session, an active organization, and
-current membership in that organization.
+Better Auth logic lives in `packages/auth`; its PostgreSQL schema lives in `packages/db`. The API
+constructs Better Auth per request from the Hyperdrive connection string and mounts it in-process
+at `/api/auth/*`. The official Better Auth Electron client encrypts its session cookies with
+Electron `safeStorage`; only the main process can access them, and the renderer receives narrow IPC
+results rather than credentials.
 
-Production requires these server-only variables:
+`POST /api/sync` requires a valid session, an active organization, and current membership. The
+authenticated session is authoritative for both organization and user. The server validates those
+claims and each operation's canonical SHA-256 hash before applying a bounded request in one
+PostgreSQL transaction.
 
-- `BETTER_AUTH_SECRET`: high-entropy secret of at least 32 bytes.
-- `BETTER_AUTH_URL`: public API origin, such as `https://api.example.com`.
-- `DATABASE_URL`: PostgreSQL connection string for the single auth and store database.
-- `AUTH_TRUSTED_ORIGINS`: comma-separated exact browser origins. Never use `*`.
-- `ELECTRON_PROTOCOL`: reverse-domain application protocol; defaults locally to `com.tabaaq.desktop`.
+Operation receipts in `sync_inbox` make retries idempotent. Accepted snapshots and tombstones are
+written to `sync_change_log`, and responses return at most 500 organization-scoped changes after
+the supplied cursor. The Effect runtime and PostgreSQL pools are request-scoped; Worker resource
+cleanup is attached to `ExecutionContext.waitUntil`.
 
-The API never sends database credentials to Electron. `POST /api/sync` accepts a device id, a
-change-log cursor, and a bounded batch of locally committed operations. The authenticated session
-is authoritative for the organization and actor; matching identity claims and each operation's
-canonical SHA-256 payload hash are validated before any write.
+## Schema migrations
 
-The server applies a request in one PostgreSQL transaction. Operation receipts in `sync_inbox`
-make retries idempotent by organization and operation id, while the payload hash prevents an id
-from being reused with different content. Entity input is copied through explicit field allowlists,
-tenant ownership is always supplied by the server, and accepted row snapshots or tombstones are
-appended to `sync_change_log`. Responses contain acknowledgements and at most 500 organization-
-scoped changes after the requested cursor; callers continue while `hasMore` is true.
-
-The sync database boundary uses `@effect/sql-pg` through Drizzle's Effect PostgreSQL adapter.
-`DATABASE_URL` is required through Effect `Config.redacted`; there is no local development database
-fallback in the runtime.
-
-Stock movements are immutable ledger facts. A sync transaction locks affected batches in stable
-order and recomputes their quantities from movement deltas before publishing a canonical batch
-snapshot. This lets concurrent offline sales converge without one device's absolute quantity
-silently replacing another's.
-
-The same `DATABASE_URL` must contain both migration sets before the API serves traffic:
+The remote database must contain the unified auth, store, and sync migrations from `packages/db`.
+Only the migration command needs a direct operator connection string:
 
 ```sh
-cd packages/auth && vp run db:migrate
-cd ../db && vp run db:migrate
+cd packages/db
+DATABASE_URL='postgresql://...' vp run db:migrate
 ```
 
-The auth package owns Better Auth tables; `packages/db` owns store and sync tables. Run
-`vp run auth:generate` in `packages/auth` only after changing Better Auth plugins/schema, and run
-the corresponding package's `db:generate` command after changing either Drizzle schema.
-
-`POST /uploads` accepts at most five multipart `files` (PDF or CSV), limits each file to 10 MB and
-the request to 25 MB, and returns the extraction
-review. The desktop applies approved changes to its filesystem-backed PGlite database first, then
-its durable outbox triggers the authenticated PostgreSQL sync endpoint.
+Runtime traffic always uses Hyperdrive.

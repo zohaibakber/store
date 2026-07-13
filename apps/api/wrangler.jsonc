@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "store-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "341f49c9178a47e59a73a5ef5b296bea",
+    },
+  ],
+  "vars": {
+    "AUTH_TRUSTED_ORIGINS": "http://localhost:5173",
+    "ELECTRON_PROTOCOL": "com.tabaaq.desktop",
+  },
+  "observability": {
+    "enabled": true,
+  },
+}

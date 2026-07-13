@@ -20,6 +20,7 @@
     "@hugeicons/core-free-icons": "^4.2.2",
     "@hugeicons/react": "^1.1.9",
     "@shadcn/react": "^0.2.1",
+    "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/persistence": "workspace:*",
     "@tanstack/match-sorter-utils": "^8.19.4",

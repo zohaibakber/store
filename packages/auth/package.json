@@ -4,20 +4,23 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/auth.ts"
+    ".": "./src/auth.ts",
+    "./electron-client": "./src/electron-client.ts"
   },
   "scripts": {
-    "auth:generate": "better-auth generate --config src/auth.ts --output ../db/src/auth.schema.ts --yes",
     "check": "tsc --noEmit"
   },
   "dependencies": {
     "@better-auth/electron": "^1.6.23",
     "@store/db": "workspace:*",
-    "better-auth": "^1.6.23"
+    "better-auth": "^1.6.23",
+    "conf": "^15.1.0"
   },
   "devDependencies": {
-    "@better-auth/cli": "1.4.21",
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "electron": "^43.1.0"
   }
 }

@@ -1,6 +1,7 @@
 import type { SyncEntityChange, SyncRequest } from "@store/contracts";
 import { vi } from "vitest";
 import { createApp } from "./app";
+import { factory } from "./factory";
 import { operationPayloadHash } from "./sync/hash";
 import type { SyncActor } from "./sync/service";
 
@@ -61,13 +62,16 @@ export const appFor = (
     acknowledgements: [],
     changes: [],
   })),
-) =>
-  createApp({
-    authApi: {
+) => {
+  const runtime = factory.createMiddleware(async (c, next) => {
+    c.set("authApi", {
       getSession: async () => (authenticated ? session : null),
       getActiveMember: async () => (member ? { id: "member-1" } : null),
-    },
-    authHandler: async () => new Response(null, { status: 404 }),
-    runSync,
-    trustedOrigins: ["http://localhost:5173"],
+    });
+    c.set("authHandler", async () => new Response(null, { status: 404 }));
+    c.set("runSync", runSync);
+    c.set("trustedOrigins", ["http://localhost:5173"]);
+    await next();
   });
+  return createApp(runtime);
+};

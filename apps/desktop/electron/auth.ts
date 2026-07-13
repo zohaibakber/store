@@ -1,4 +1,5 @@
-import { app, safeStorage } from "electron";
+import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
+import { app, net, safeStorage } from "electron";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -25,7 +26,6 @@ export interface AuthSnapshot {
 }
 
 interface PersistedAuth {
-  readonly token: string;
   readonly snapshot: AuthSnapshot;
 }
 
@@ -39,6 +39,9 @@ class RequestError extends Error {
     super(message);
   }
 }
+
+const requestError = (error: { readonly message?: string; readonly status: number }) =>
+  new RequestError(error.message ?? "Authentication request failed.", error.status);
 
 const unauthenticated = (isOnline: boolean): AuthSnapshot => ({
   status: "unauthenticated",
@@ -58,22 +61,26 @@ const slugOf = (name: string) =>
 
 export class AuthBroker {
   readonly #baseUrl: string;
+  readonly #client: ElectronAuthClient;
   readonly #electronOrigin: string;
   readonly #listeners = new Set<(snapshot: AuthSnapshot) => void>();
-  #token = "";
   #snapshot: AuthSnapshot = unauthenticated(false);
 
   constructor(baseUrl: string, electronProtocol = "com.tabaaq.desktop") {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
     this.#electronOrigin = `${electronProtocol.replace(/:\/?$/, "")}:/`;
+    this.#client = makeElectronAuthClient({
+      baseURL: this.#baseUrl,
+      protocol: electronProtocol.replace(/:\/?$/, ""),
+    });
   }
 
   get snapshot() {
     return this.#snapshot;
   }
 
-  get authorizationHeader() {
-    return this.#token ? `Bearer ${this.#token}` : undefined;
+  setupMain() {
+    this.#client.setupMain({ bridges: false, csp: true, scheme: false });
   }
 
   onChange(listener: (snapshot: AuthSnapshot) => void) {
@@ -84,21 +91,20 @@ export class AuthBroker {
   async initialize() {
     const persisted = await this.#readPersisted();
     if (persisted) {
-      this.#token = persisted.token;
       this.#snapshot = { ...persisted.snapshot, isOnline: false };
     }
     return this.refresh();
   }
 
   async refresh() {
-    if (!this.#token) return this.#publish(unauthenticated(navigatorOnline()));
     try {
-      const session = await this.#request<{ user?: AuthUser | null }>("/api/auth/get-session");
-      if (!session.user) {
+      const { data, error } = await this.#client.getSession();
+      if (error) throw requestError(error);
+      if (!data?.user) {
         await this.#clear();
         return this.#publish(unauthenticated(true));
       }
-      return this.#loadOrganizations(session.user);
+      return this.#loadOrganizations(data.user);
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
         await this.#clear();
@@ -109,30 +115,23 @@ export class AuthBroker {
   }
 
   async signIn(input: { email: string; password: string }) {
-    const response = await this.#requestWithResponse<{ user: AuthUser }>(
-      "/api/auth/sign-in/email",
-      { method: "POST", body: input },
-      false,
-    );
-    this.#captureToken(response.response);
-    if (!this.#token) throw new Error("The server did not return a desktop session token.");
-    return this.#loadOrganizations(response.data.user);
+    const { data, error } = await this.#client.signIn.email(input);
+    if (error) throw requestError(error);
+    if (!data?.user) throw new Error("The server did not return an authenticated user.");
+    return this.#loadOrganizations(data.user);
   }
 
   async signUp(input: { name: string; email: string; password: string }) {
-    const response = await this.#requestWithResponse<{ user: AuthUser }>(
-      "/api/auth/sign-up/email",
-      { method: "POST", body: { name: input.name, email: input.email, password: input.password } },
-      false,
-    );
-    this.#captureToken(response.response);
-    if (!this.#token) throw new Error("The server did not return a desktop session token.");
-    return this.#loadOrganizations(response.data.user);
+    const { data, error } = await this.#client.signUp.email(input);
+    if (error) throw requestError(error);
+    if (!data?.user) throw new Error("The server did not return an authenticated user.");
+    return this.#loadOrganizations(data.user);
   }
 
   async signOut() {
     try {
-      await this.#request("/api/auth/sign-out", { method: "POST" });
+      const { error } = await this.#client.signOut();
+      if (error) throw requestError(error);
     } finally {
       await this.#clear();
       this.#publish(unauthenticated(navigatorOnline()));
@@ -140,14 +139,12 @@ export class AuthBroker {
   }
 
   async switchOrganization(input: { organizationId: string }) {
-    await this.#request("/api/auth/organization/set-active", {
-      method: "POST",
-      body: { organizationId: input.organizationId },
-    });
+    const selectedResult = await this.#client.organization.setActive(input);
+    if (selectedResult.error) throw requestError(selectedResult.error);
     const selected = this.#snapshot.organizations.find((org) => org.id === input.organizationId);
-    const member = await this.#request<{ role?: string }>(
-      "/api/auth/organization/get-active-member",
-    );
+    const memberResult = await this.#client.organization.getActiveMember();
+    if (memberResult.error) throw requestError(memberResult.error);
+    const member = memberResult.data;
     const active = selected ? { ...selected, role: member.role ?? selected.role } : undefined;
     if (!active) throw new Error("That organization is not available to this account.");
     return this.#persistAndPublish({
@@ -158,17 +155,17 @@ export class AuthBroker {
   }
 
   async createOrganization(input: { name: string }) {
-    const created = await this.#request<{ id: string; name: string; slug?: string }>(
-      "/api/auth/organization/create",
-      {
-        method: "POST",
-        body: { name: input.name.trim(), slug: slugOf(input.name) },
-      },
-    );
-    await this.#request("/api/auth/organization/set-active", {
-      method: "POST",
-      body: { organizationId: created.id },
+    const createdResult = await this.#client.organization.create({
+      name: input.name.trim(),
+      slug: slugOf(input.name),
     });
+    if (createdResult.error) throw requestError(createdResult.error);
+    const created = createdResult.data;
+    if (!created) throw new Error("The server did not return the created organization.");
+    const selectedResult = await this.#client.organization.setActive({
+      organizationId: created.id,
+    });
+    if (selectedResult.error) throw requestError(selectedResult.error);
     const organization = { ...created, role: "owner" };
     return this.#persistAndPublish({
       ...this.#snapshot,
@@ -183,9 +180,9 @@ export class AuthBroker {
   }
 
   async #loadOrganizations(user: AuthUser) {
-    const rows = await this.#request<Array<{ id: string; name: string; slug?: string }>>(
-      "/api/auth/organization/list",
-    );
+    const listResult = await this.#client.organization.list();
+    if (listResult.error) throw requestError(listResult.error);
+    const rows = listResult.data ?? [];
     let organizations = rows.map((organization) => ({ ...organization, role: "member" }));
     const previousId = this.#snapshot.activeOrganization?.id;
     const activeOrganization =
@@ -193,15 +190,15 @@ export class AuthBroker {
       organizations[0] ??
       null;
     if (activeOrganization && activeOrganization.id !== previousId) {
-      await this.#request("/api/auth/organization/set-active", {
-        method: "POST",
-        body: { organizationId: activeOrganization.id },
+      const selectedResult = await this.#client.organization.setActive({
+        organizationId: activeOrganization.id,
       });
+      if (selectedResult.error) throw requestError(selectedResult.error);
     }
     if (activeOrganization) {
-      const member = await this.#request<{ role?: string }>(
-        "/api/auth/organization/get-active-member",
-      );
+      const memberResult = await this.#client.organization.getActiveMember();
+      if (memberResult.error) throw requestError(memberResult.error);
+      const member = memberResult.data;
       if (member.role) {
         organizations = organizations.map((organization) =>
           organization.id === activeOrganization.id
@@ -225,21 +222,17 @@ export class AuthBroker {
     return (await this.#requestWithResponse<T>(pathname, init)).data;
   }
 
-  async #requestWithResponse<T>(
-    pathname: string,
-    init?: JsonRequestInit,
-    includeAuthorization = true,
-  ) {
+  async #requestWithResponse<T>(pathname: string, init?: JsonRequestInit) {
     const headers = new Headers(init?.headers);
     headers.set("electron-origin", this.#electronOrigin);
-    if (includeAuthorization && this.authorizationHeader)
-      headers.set("authorization", this.authorizationHeader);
+    const cookie = this.#client.getCookie();
+    if (cookie) headers.set("cookie", cookie);
     let body = init?.body as BodyInit | null | undefined;
     if (body && !(body instanceof FormData) && typeof body !== "string") {
       headers.set("content-type", "application/json");
       body = JSON.stringify(body);
     }
-    const response = await fetch(`${this.#baseUrl}${pathname}`, { ...init, headers, body });
+    const response = await net.fetch(`${this.#baseUrl}${pathname}`, { ...init, headers, body });
     const payload = (await response.json().catch(() => null)) as
       | (T & { message?: string; error?: string | { message?: string } })
       | null;
@@ -254,10 +247,6 @@ export class AuthBroker {
     return { data: payload as T, response };
   }
 
-  #captureToken(response: Response) {
-    this.#token = response.headers.get("set-auth-token") ?? "";
-  }
-
   #publish(snapshot: AuthSnapshot) {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener(snapshot);
@@ -266,12 +255,11 @@ export class AuthBroker {
 
   async #persistAndPublish(snapshot: AuthSnapshot) {
     this.#publish(snapshot);
-    await this.#writePersisted({ token: this.#token, snapshot });
+    await this.#writePersisted({ snapshot });
     return snapshot;
   }
 
   async #clear() {
-    this.#token = "";
     this.#snapshot = unauthenticated(navigatorOnline());
     await rm(this.#storagePath(), { force: true });
   }

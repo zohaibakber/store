@@ -1,6 +1,12 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalPassThroughEnv": ["DATABASE_URL", "STORE_API_URL", "VITE_API_URL", "AI_GATEWAY_API_KEY"],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "STORE_API_URL",
+    "VITE_API_URL",
+    "AI_GATEWAY_API_KEY",
+    "BETTER_AUTH_SECRET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -68,6 +68,7 @@ const authBroker = new AuthBroker(
   process.env["STORE_API_URL"] ?? process.env["VITE_API_URL"] ?? "http://localhost:8787",
   process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
 );
+authBroker.setupMain();
 
 const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
   if (!runtime) return Promise.reject(new Error("The local store is not ready"));

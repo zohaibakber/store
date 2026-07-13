@@ -8,6 +8,7 @@ export default defineConfig({
       "**/dist-electron/**",
       "**/release/**",
       "**/src/routeTree.gen.ts",
+      "**/worker-configuration.d.ts",
     ],
   },
   staged: {
@@ -24,6 +25,7 @@ export default defineConfig({
       "**/dist-electron/**",
       "**/release/**",
       "**/src/routeTree.gen.ts",
+      "**/worker-configuration.d.ts",
     ],
     options: {
       typeAware: true,

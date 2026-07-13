@@ -1,29 +1,21 @@
-import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
-import { type AppEnv, type AuthApi, requireOrganization } from "./auth-client";
-import { modelsRoute } from "./routes/models";
-import { syncRoute, type SyncRunner } from "./routes/sync";
-import { uploadsRoute } from "./routes/uploads";
+import { type AppEnv, requireOrganization } from "./auth-client";
+import { factory } from "./factory";
+import { syncRoute } from "./routes/sync";
 
-export interface AppDependencies {
-  readonly authApi: AuthApi;
-  readonly authHandler: (request: Request) => Promise<Response>;
-  readonly runSync: SyncRunner;
-  readonly trustedOrigins: ReadonlyArray<string>;
-}
+export const createApp = (runtime: MiddlewareHandler<AppEnv>) => {
+  const app = factory.createApp();
+  const api = factory.createApp();
 
-export const createApp = (dependencies: AppDependencies) => {
-  const app = new Hono<AppEnv>();
-  const api = app.basePath("/api");
-  const corsOrigins = dependencies.trustedOrigins.filter((origin) => origin.startsWith("http"));
-
-  app.use(
-    "/api/*",
+  app.use("*", runtime);
+  api.use(
+    "*",
     cors({
-      origin: corsOrigins,
+      origin: (origin, c) => (c.var.trustedOrigins.includes(origin) ? origin : ""),
       allowHeaders: ["Content-Type", "Authorization"],
       allowMethods: ["GET", "POST", "OPTIONS"],
-      exposeHeaders: ["Content-Length", "set-auth-token"],
+      exposeHeaders: ["Content-Length"],
       maxAge: 600,
       credentials: true,
     }),
@@ -32,22 +24,17 @@ export const createApp = (dependencies: AppDependencies) => {
   app.get("/", (c) =>
     c.json({
       service: "Store Invoice API",
-      endpoints: ["/api/health", "/api/auth/*", "/api/models", "/api/uploads", "/api/sync/*"],
+      endpoints: ["/api/health", "/api/auth/*", "/api/sync/*"],
     }),
   );
   api.get("/", (c) => c.json({ service: "Store Invoice API", ok: true }));
   api.get("/health", (c) => c.json({ ok: true }));
-  app.on(["GET", "POST"], "/api/auth/*", (c) => dependencies.authHandler(c.req.raw));
+  api.on(["GET", "POST"], "/auth/*", (c) => c.var.authHandler(c.req.raw));
 
-  const authorized = requireOrganization(dependencies.authApi);
-  api.use("/models", authorized);
-  api.use("/uploads", authorized);
-  api.use("/sync", authorized);
-  api.use("/sync/*", authorized);
-
-  api.route("/models", modelsRoute);
-  api.route("/uploads", uploadsRoute);
-  api.route("/sync", syncRoute(dependencies.runSync));
+  api.use("/sync", requireOrganization);
+  api.use("/sync/*", requireOrganization);
+  api.route("/sync", syncRoute);
+  app.route("/api", api);
 
   return app;
 };
