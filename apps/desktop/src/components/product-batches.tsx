@@ -38,7 +38,6 @@ import {
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
-import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/format";
 
 const parseISODate = (value: string): Date | undefined => {
@@ -200,10 +199,9 @@ function AddBatchDialog({ productId }: { productId: string }) {
         </form>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-            {([canSubmit, isSubmitting]) => (
-              <Button disabled={!canSubmit || isSubmitting} form="add-batch-form" type="submit">
-                {isSubmitting && <Spinner data-icon="inline-start" />}
+          <form.Subscribe selector={(state) => state.canSubmit}>
+            {(canSubmit) => (
+              <Button disabled={!canSubmit} form="add-batch-form" type="submit">
                 Add batch
               </Button>
             )}

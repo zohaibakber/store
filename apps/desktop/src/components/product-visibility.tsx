@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -19,11 +18,9 @@ const visibilityOptions = [
 
 export function ProductVisibilityCard({ product }: { product: Product }) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
 
   const setVisible = async (next: boolean) => {
     if (next === product.visible) return;
-    setPending(true);
     try {
       const {
         id,
@@ -38,8 +35,6 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
       await router.invalidate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update visibility.");
-    } finally {
-      setPending(false);
     }
   };
 
@@ -55,7 +50,6 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
       </CardHeader>
       <CardContent>
         <Select
-          disabled={pending}
           onValueChange={(value) => value && void setVisible(value === "visible")}
           value={product.visible ? "visible" : "hidden"}
         >

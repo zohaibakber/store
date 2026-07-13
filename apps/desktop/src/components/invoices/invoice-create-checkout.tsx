@@ -10,13 +10,12 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "@/components/ui/number-field";
-import { Spinner } from "@/components/ui/spinner";
 import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
 function InvoiceCheckout() {
   const {
-    state: { bulkDiscount, customerName, isSubmitting },
+    state: { bulkDiscount, customerName },
     actions: { completeSale, setBulkDiscount, setCustomerName },
     meta: { canSubmit, discountTotal, subtotal, total, validBulkDiscount },
   } = useInvoiceCreate();
@@ -65,7 +64,6 @@ function InvoiceCheckout() {
         </div>
         <div className="flex items-center gap-2">
           <Button disabled={!canSubmit} onClick={() => void completeSale()}>
-            {isSubmitting && <Spinner data-icon="inline-start" />}
             Complete sale
           </Button>
         </div>

@@ -34,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
@@ -496,10 +495,9 @@ function EditProductFields({
       <ProductForm categories={categories} form={form} formId="edit-product-form" />
       <DialogFooter>
         <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-          {([canSubmit, isSubmitting]) => (
-            <Button disabled={!canSubmit || isSubmitting} form="edit-product-form" type="submit">
-              {isSubmitting && <Spinner data-icon="inline-start" />}
+        <form.Subscribe selector={(state) => state.canSubmit}>
+          {(canSubmit) => (
+            <Button disabled={!canSubmit} form="edit-product-form" type="submit">
               Save changes
             </Button>
           )}

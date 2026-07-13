@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-import { Spinner } from "@/components/ui/spinner";
 import {
   PageContent,
   PageDescription,
@@ -53,10 +52,9 @@ function NewProductPage() {
             <Link className={buttonVariants({ variant: "outline" })} to="/products">
               Cancel
             </Link>
-            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-              {([canSubmit, isSubmitting]) => (
-                <Button disabled={!canSubmit || isSubmitting} form="new-product-form" type="submit">
-                  {isSubmitting && <Spinner data-icon="inline-start" />}
+            <form.Subscribe selector={(state) => state.canSubmit}>
+              {(canSubmit) => (
+                <Button disabled={!canSubmit} form="new-product-form" type="submit">
                   Create product
                 </Button>
               )}

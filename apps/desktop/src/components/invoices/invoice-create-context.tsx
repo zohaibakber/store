@@ -21,7 +21,6 @@ interface InvoiceCreateState {
   lines: SaleLine[];
   bulkDiscount: number | null;
   pickerKey: number;
-  isSubmitting: boolean;
 }
 
 interface InvoiceCreateActions {
@@ -133,7 +132,6 @@ function InvoiceCreateProvider({
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
   const [pickerKey, setPickerKey] = useState(0);
-  const [isSubmitting, setSubmitting] = useState(false);
 
   const addProduct = (product: Product) => {
     setPickerKey((key) => key + 1);
@@ -197,13 +195,9 @@ function InvoiceCreateProvider({
     : subtotal;
   const discountTotal = subtotal - total;
   const canSubmit =
-    lines.length > 0 &&
-    errors.every((error) => error === null) &&
-    validBulkDiscount &&
-    !isSubmitting;
+    lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
   const completeSale = async () => {
-    setSubmitting(true);
     try {
       const invoice = await window.offlineStore.createInvoice({
         customerName: customerName.trim() || null,
@@ -219,14 +213,13 @@ function InvoiceCreateProvider({
       await navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not complete the sale.");
-      setSubmitting(false);
     }
   };
 
   return (
     <InvoiceCreateContext
       value={{
-        state: { customerName, lines, bulkDiscount, pickerKey, isSubmitting },
+        state: { customerName, lines, bulkDiscount, pickerKey },
         actions: {
           addProduct,
           updateLine,
