@@ -137,7 +137,7 @@ test("selling draws stock from batches, earliest expiry first", async () => {
         ],
       }),
     );
-    expect(invoice.invoiceNumber).toBe(1);
+    expect(invoice.invoiceNumber).toMatch(/^local-[0-9a-f-]{36}$/);
     expect(invoice.total).toBe(6000);
     expect(invoice.items).toHaveLength(2);
     expect(invoice.items[0]).toMatchObject({
@@ -200,7 +200,8 @@ test("selling draws stock from batches, earliest expiry first", async () => {
         ],
       }),
     );
-    expect(fromBatch.invoiceNumber).toBe(2);
+    expect(fromBatch.invoiceNumber).toMatch(/^local-[0-9a-f-]{36}$/);
+    expect(fromBatch.invoiceNumber).not.toBe(invoice.invoiceNumber);
     expect(fromBatch.items).toEqual([
       expect.objectContaining({
         batchId: later.id,
@@ -216,8 +217,90 @@ test("selling draws stock from batches, earliest expiry first", async () => {
     expect(movements.some((movement) => movement.type === "sale")).toBe(true);
 
     const invoicesList = await runtime.runPromise(program.listInvoices);
-    expect(invoicesList.map((row) => row.invoiceNumber)).toEqual([2, 1]);
+    expect(invoicesList.map((row) => row.invoiceNumber)).toEqual([
+      fromBatch.invoiceNumber,
+      invoice.invoiceNumber,
+    ]);
     expect(await runtime.runPromise(program.getInvoice(invoice.id))).toEqual(invoice);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline mutations keep immutable organization, actor, device, and operation attribution", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
+  const context = {
+    organizationId: "org-pharmacy",
+    userId: "user-owner",
+    deviceId: "device-counter-one",
+  };
+  const runtime = ManagedRuntime.make(
+    layer({
+      path: path.join(directory, "store.db"),
+      migrationsFolder,
+      mutationContext: () => context,
+    }),
+  );
+
+  try {
+    const product = await runtime.runPromise(
+      program.createProduct({
+        name: "Attributed product",
+        aisle: null,
+        composition: null,
+        strength: null,
+        unitsPerPack: 1,
+        packPrice: null,
+        unitPrice: 100,
+      }),
+    );
+    const batch = await runtime.runPromise(
+      program.createBatch({
+        productId: product.id,
+        batchNumber: null,
+        expiresAt: null,
+        packQuantity: 0,
+        unitQuantity: 2,
+      }),
+    );
+    const invoice = await runtime.runPromise(
+      program.createInvoice({
+        customerName: null,
+        items: [
+          {
+            productId: product.id,
+            batchId: batch.id,
+            quantity: 1,
+            quantityType: "unit",
+            salePrice: 100,
+          },
+        ],
+      }),
+    );
+
+    expect(invoice).toMatchObject({
+      organizationId: context.organizationId,
+      createdByUserId: context.userId,
+      deviceId: context.deviceId,
+    });
+    expect(invoice.invoiceNumber).toBe(`deviceco-${invoice.operationId}`);
+
+    const movements = await runtime.runPromise(program.listStockMovements(product.id));
+    const saleMovements = movements.filter((movement) => movement.invoiceId === invoice.id);
+    expect(saleMovements.length).toBeGreaterThan(0);
+    expect(saleMovements.every((movement) => movement.operationId === invoice.operationId)).toBe(
+      true,
+    );
+    expect(saleMovements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          organizationId: context.organizationId,
+          actorUserId: context.userId,
+          deviceId: context.deviceId,
+        }),
+      ]),
+    );
   } finally {
     await runtime.dispose();
     await rm(directory, { recursive: true, force: true });

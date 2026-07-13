@@ -1,8 +1,9 @@
-import crypto$1, { webcrypto } from "node:crypto";
+import crypto$1, { createHash, webcrypto } from "node:crypto";
 import { Database } from "@tursodatabase/sync";
 import fs, { existsSync, readdirSync } from "node:fs";
 import path, { join } from "node:path";
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, app, ipcMain, safeStorage } from "electron";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 //#region \0rolldown/runtime.js
 var __defProp = Object.defineProperty;
@@ -16,7 +17,7 @@ var __exportAll = (all, no_symbols) => {
 	return target;
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/entity.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/entity.js
 var entityKind = Symbol.for("drizzle:entityKind");
 function is(value, type) {
 	if (!value || typeof value !== "object") return false;
@@ -30,10 +31,10 @@ function is(value, type) {
 	return false;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/column-common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/column-common.js
 var OriginalColumn = Symbol.for("drizzle:OriginalColumn");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/column.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/column.js
 var noop = (v) => v;
 noop.isNoop = true;
 var Column = class {
@@ -107,11 +108,11 @@ function getColumnTable(column) {
 	return column.table;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/table.utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/table.utils.js
 /** @internal */
 var TableName = Symbol.for("drizzle:Name");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/table.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/table.js
 /** @internal */
 var TableSchema = Symbol.for("drizzle:Schema");
 /** @internal */
@@ -180,7 +181,7 @@ function getTableName(table) {
 	return table[TableName];
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/subquery.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/subquery.js
 var Subquery = class {
 	static [entityKind] = "Subquery";
 	constructor(sql, fields, alias, isWith = false, usedTables = []) {
@@ -198,16 +199,16 @@ var WithSubquery = class extends Subquery {
 	static [entityKind] = "WithSubquery";
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/tracing.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/tracing.js
 /** @internal */
 var tracer = { startActiveSpan(name, fn) {
 	return fn();
 } };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/view-common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/view-common.js
 var ViewBaseConfig = Symbol.for("drizzle:ViewBaseConfig");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sql/sql.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sql/sql.js
 function isSQLWrapper(value) {
 	return value !== null && value !== void 0 && typeof value.getSQL === "function";
 }
@@ -683,7 +684,7 @@ Subquery.prototype.getSQL = function() {
 	return new SQL([this]);
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/utils.js
 /** @internal bypass bundle-time filtering */
 var FnConstructor = Object.getPrototypeOf(() => null).constructor;
 /** @internal */
@@ -948,7 +949,7 @@ var CONSTANTS = {
 	INT64_UNSIGNED_MAX: 18446744073709551615n
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/column-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/column-builder.js
 function extractExtendedColumnType(column) {
 	const [type, constraint] = column.dataType.split(" ");
 	return {
@@ -15377,7 +15378,7 @@ function stringColumnToSchema(column, constraint) {
 	return length && isLengthExact ? schema.check(isLengthBetween(length, length)) : length ? schema.check(isMaxLength(length)) : schema;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/effect-schema/schema.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/effect-schema/schema.js
 function isOptional(schema) {
 	if ((typeof schema !== "object" || schema === null) && typeof schema !== "function") return false;
 	return isSchema(schema) && schema.ast?.context?.isOptional === true;
@@ -15432,7 +15433,7 @@ var createInsertSchema = (entity, refine) => {
 	return handleColumns(getColumns(entity), refine ?? {}, insertConditions);
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/foreign-keys.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/foreign-keys.js
 var ForeignKeyBuilder = class {
 	static [entityKind] = "SQLiteForeignKeyBuilder";
 	/** @internal */
@@ -15497,7 +15498,7 @@ var ForeignKey = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/common.js
 var SQLiteColumnBuilder = class extends ColumnBuilder {
 	static [entityKind] = "SQLiteColumnBuilder";
 	foreignKeyConfigs = [];
@@ -15549,7 +15550,7 @@ var SQLiteColumn = class extends Column {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/blob.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/blob.js
 function hexToText(hexString) {
 	let result = "";
 	for (let i = 0; i < hexString.length; i += 2) {
@@ -15641,7 +15642,7 @@ function blob(a, b) {
 	return new SQLiteBlobJsonBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/custom.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/custom.js
 var SQLiteCustomColumnBuilder = class extends SQLiteColumnBuilder {
 	static [entityKind] = "SQLiteCustomColumnBuilder";
 	constructor(name, fieldConfig, customTypeParams) {
@@ -15704,7 +15705,7 @@ function customType(customTypeParams) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/integer.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/integer.js
 var SQLiteBaseIntegerBuilder = class extends SQLiteColumnBuilder {
 	static [entityKind] = "SQLiteBaseIntegerBuilder";
 	constructor(name, dataType, columnType) {
@@ -15796,7 +15797,7 @@ function integer(a, b) {
 	return new SQLiteIntegerBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/numeric.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/numeric.js
 var SQLiteNumericBuilder = class extends SQLiteColumnBuilder {
 	static [entityKind] = "SQLiteNumericBuilder";
 	constructor(name) {
@@ -15862,7 +15863,7 @@ function numeric(a, b) {
 	return mode === "number" ? new SQLiteNumericNumberBuilder(name) : mode === "bigint" ? new SQLiteNumericBigIntBuilder(name) : new SQLiteNumericBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/real.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/real.js
 var SQLiteRealBuilder = class extends SQLiteColumnBuilder {
 	static [entityKind] = "SQLiteRealBuilder";
 	constructor(name) {
@@ -15883,7 +15884,7 @@ function real(name) {
 	return new SQLiteRealBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/text.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/text.js
 var SQLiteTextBuilder = class extends SQLiteColumnBuilder {
 	static [entityKind] = "SQLiteTextBuilder";
 	constructor(name, config) {
@@ -15934,7 +15935,7 @@ function text(a, b = {}) {
 	return new SQLiteTextBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/columns/all.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/columns/all.js
 function getSQLiteColumnBuilders() {
 	return {
 		blob,
@@ -15946,7 +15947,7 @@ function getSQLiteColumnBuilders() {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/casing.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
 	return (input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).map((word) => word.toLowerCase()).join("_");
 }
@@ -15961,7 +15962,7 @@ function getCasingFn(casing) {
 	return (name) => name;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/table.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/table.js
 /** @internal */
 var InlineForeignKeys = Symbol.for("drizzle:SQLiteInlineForeignKeys");
 var SQLiteTable = class extends Table {
@@ -15999,7 +16000,7 @@ function sqliteTableWithCasing(casing) {
 }
 var sqliteTable = sqliteTableWithCasing(void 0);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/indexes.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/indexes.js
 var IndexBuilderOn = class {
 	static [entityKind] = "SQLiteIndexBuilderOn";
 	constructor(name, unique) {
@@ -16053,7 +16054,7 @@ function uniqueIndex(name) {
 	return new IndexBuilderOn(name, true);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/utils.js
 function extractUsedTable(table) {
 	if (is(table, SQLiteTable)) return [`${table[Table.Symbol.BaseName]}`];
 	if (is(table, Subquery)) return table._.usedTables ?? [];
@@ -16061,12 +16062,12 @@ function extractUsedTable(table) {
 	return [];
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/view-base.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/view-base.js
 var SQLiteViewBase = class extends View {
 	static [entityKind] = "SQLiteViewBase";
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/alias.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/alias.js
 var ColumnTableAliasProxyHandler = class {
 	static [entityKind] = "ColumnTableAliasProxyHandler";
 	constructor(table, ignoreColumnAlias) {
@@ -16151,7 +16152,7 @@ function getOriginalColumnFromAlias(column) {
 	return column[OriginalColumn]();
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/selection-proxy.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/selection-proxy.js
 var SelectionProxyHandler = class SelectionProxyHandler {
 	static [entityKind] = "SelectionProxyHandler";
 	config;
@@ -16189,7 +16190,7 @@ var SelectionProxyHandler = class SelectionProxyHandler {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/query-builders/query-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/query-builders/query-builder.js
 var TypedQueryBuilder = class {
 	static [entityKind] = "TypedQueryBuilder";
 	/** @internal */
@@ -16202,7 +16203,7 @@ var TypedQueryBuilder = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/select.js
 var SQLiteSelectBuilder = class {
 	static [entityKind] = "SQLiteSelectBuilder";
 	fields;
@@ -16879,7 +16880,7 @@ var intersect = createSetOperator("intersect", false);
 */
 var except = createSetOperator("except", false);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/errors.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/errors.js
 var DrizzleError = class extends Error {
 	static [entityKind] = "DrizzleError";
 	constructor({ message, cause }) {
@@ -16908,7 +16909,7 @@ var TransactionRollbackError = class extends DrizzleError {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sql/expressions/conditions.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sql/expressions/conditions.js
 function bindIfParam(value, column) {
 	if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) return new Param(value, column);
 	return value;
@@ -17272,7 +17273,7 @@ function arrayOverlaps(column, values) {
 	return sql`${column} && ${bindIfParam(values, column)}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sql/expressions/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sql/expressions/select.js
 /**
 * Used in sorting, this specifies that the given
 * column or expression should be sorted in ascending
@@ -17314,22 +17315,7 @@ function desc(column) {
 	return sql`${column} desc`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sql/functions/aggregate.js
-/**
-* Returns the maximum value in `expression`.
-*
-* ## Examples
-*
-* ```ts
-* // The employee with the highest salary
-* db.select({ value: max(employees.salary) }).from(employees)
-* ```
-*/
-function max(expression) {
-	return sql`max(${expression})`.mapWith(is(expression, Column) ? expression : String);
-}
-//#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/relations.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/relations.js
 function processRelations(tablesConfig, tables) {
 	for (const tableConfig of Object.values(tablesConfig)) for (const [relationFieldName, relation] of Object.entries(tableConfig.relations)) {
 		if (!is(relation, Relation)) continue;
@@ -17994,7 +17980,7 @@ function getTableAsAliasSQL(table) {
 	return sql`${table[IsAlias] ? sql`${sql`${sql.identifier(table[TableSchema] ?? "")}.`.if(table[TableSchema])}${sql.identifier(table[OriginalName])} as ${table}` : table}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/dialect.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/dialect.js
 var SQLiteDialect = class {
 	static [entityKind] = "SQLiteDialect";
 	mapperGenerators;
@@ -18377,7 +18363,7 @@ var SQLiteDialect = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/query-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/query-builder.js
 var QueryBuilder = class {
 	static [entityKind] = "SQLiteQueryBuilder";
 	dialect;
@@ -18443,7 +18429,7 @@ var QueryBuilder = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/query-promise.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/query-promise.js
 var QueryPromise = class {
 	static [entityKind] = "QueryPromise";
 	[Symbol.toStringTag] = "QueryPromise";
@@ -18464,7 +18450,7 @@ var QueryPromise = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/count.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/count.js
 var SQLiteCountBuilder = class SQLiteCountBuilder extends SQL {
 	static [entityKind] = "SQLiteCountBuilder";
 	dialect;
@@ -18493,7 +18479,7 @@ var SQLiteCountBuilder = class SQLiteCountBuilder extends SQL {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/count.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/count.js
 var SQLiteAsyncCountBuilder = class extends SQLiteCountBuilder {
 	static [entityKind] = "SQLiteAsyncCountBuilder";
 	constructor(countConfig) {
@@ -18519,7 +18505,7 @@ var SQLiteSyncCountBuilder = class extends SQLiteAsyncCountBuilder {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/query.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/query.js
 var RelationalQueryBuilder = class {
 	static [entityKind] = "SQLiteRelationalQueryBuilderV2";
 	constructor(mode, schema, table, tableConfig, dialect, session, forbidJsonb, builder = SQLiteRelationalQuery) {
@@ -18584,7 +18570,7 @@ var SQLiteRelationalQuery = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/query.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/query.js
 var SQLiteAsyncRelationalQuery = class extends SQLiteRelationalQuery {
 	static [entityKind] = "SQLiteAsyncRelationalQueryV2";
 	/** @internal */
@@ -18615,7 +18601,7 @@ var SQLiteSyncRelationalQuery = class extends SQLiteAsyncRelationalQuery {
 };
 applyMixins(SQLiteAsyncRelationalQuery, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/delete.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/delete.js
 var SQLiteDeleteBase = class {
 	static [entityKind] = "SQLiteDelete";
 	/** @internal */
@@ -18695,7 +18681,7 @@ var SQLiteDeleteBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/delete.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/delete.js
 var SQLiteAsyncDeleteBase = class extends SQLiteDeleteBase {
 	static [entityKind] = "SQLiteAsyncDelete";
 	/** @internal */
@@ -18726,7 +18712,7 @@ var SQLiteAsyncDeleteBase = class extends SQLiteDeleteBase {
 };
 applyMixins(SQLiteAsyncDeleteBase, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/insert.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/insert.js
 var SQLiteInsertBuilder = class {
 	static [entityKind] = "SQLiteInsertBuilder";
 	constructor(table, session, dialect, withList, builder = SQLiteInsertBase) {
@@ -18861,7 +18847,7 @@ var SQLiteInsertBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/insert.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/insert.js
 var SQLiteAsyncInsertBase = class extends SQLiteInsertBase {
 	static [entityKind] = "SQLiteAsyncInsert";
 	/** @internal */
@@ -18892,7 +18878,7 @@ var SQLiteAsyncInsertBase = class extends SQLiteInsertBase {
 };
 applyMixins(SQLiteAsyncInsertBase, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/raw.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/raw.js
 var SQLiteRaw = class {
 	static [entityKind] = "SQLiteRaw";
 	constructor(prepared, sql, query) {
@@ -18911,7 +18897,7 @@ var SQLiteRaw = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/raw.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/raw.js
 var SQLiteAsyncRaw = class extends SQLiteRaw {
 	static [entityKind] = "SQLiteAsyncRaw";
 	constructor(prepared, sql, query) {
@@ -18923,7 +18909,7 @@ var SQLiteAsyncRaw = class extends SQLiteRaw {
 };
 applyMixins(SQLiteAsyncRaw, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/select.js
 var SQLiteAsyncSelectBase = class extends SQLiteSelectBase {
 	static [entityKind] = "SQLiteAsyncSelect";
 	/** @internal */
@@ -18957,7 +18943,7 @@ var SQLiteAsyncSelectBase = class extends SQLiteSelectBase {
 };
 applyMixins(SQLiteAsyncSelectBase, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/query-builders/update.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/query-builders/update.js
 var SQLiteUpdateBuilder = class {
 	static [entityKind] = "SQLiteUpdateBuilder";
 	constructor(table, session, dialect, withList, builder = SQLiteUpdateBase) {
@@ -19086,7 +19072,7 @@ var SQLiteUpdateBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/update.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/update.js
 var SQLiteAsyncUpdateBase = class extends SQLiteUpdateBase {
 	static [entityKind] = "SQLiteAsyncUpdate";
 	/** @internal */
@@ -19117,7 +19103,7 @@ var SQLiteAsyncUpdateBase = class extends SQLiteUpdateBase {
 };
 applyMixins(SQLiteAsyncUpdateBase, [QueryPromise]);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/db.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/db.js
 var SQLiteAsyncDatabase = class {
 	static [entityKind] = "BaseSQLiteDatabase";
 	query;
@@ -19455,7 +19441,7 @@ var SQLiteAsyncDatabase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/migrator.utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/migrator.utils.js
 function formatToMillis(dateStr) {
 	const year = parseInt(dateStr.slice(0, 4), 10);
 	const month = parseInt(dateStr.slice(4, 6), 10) - 1;
@@ -19471,7 +19457,7 @@ function getMigrationsToRun(params) {
 	return localMigrations.filter((lm) => !lm.name || !dbNamesSet.has(lm.name));
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/up-migrations/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/up-migrations/utils.js
 var MIGRATIONS_TABLE_VERSIONS = {
 	sqlite: 1,
 	pg: 1,
@@ -19512,7 +19498,7 @@ var GET_VERSION_FOR = {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/up-migrations/sqlite.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/up-migrations/sqlite.js
 /**
 * Detects the current version of the migrations table schema and upgrades it if needed.
 *
@@ -19582,7 +19568,7 @@ var upgradeAsyncFunctions = { 0: async (migrationsTable, db, localMigrations) =>
 	});
 } };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/cache/core/cache.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/cache/core/cache.js
 var Cache = class {
 	static [entityKind] = "Cache";
 };
@@ -19621,7 +19607,7 @@ async function hashQuery(sql, params) {
 	return [...new Uint8Array(hashBuffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/session.js
 var SQLitePreparedQuery = class {
 	static [entityKind] = "SQLiteBasePreparedQuery";
 	/** @internal */
@@ -19645,7 +19631,7 @@ var SQLiteSession = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/sqlite-core/async/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/sqlite-core/async/session.js
 var ExecuteResultSync = class extends QueryPromise {
 	static [entityKind] = "ExecuteResultSync";
 	constructor(resultCb) {
@@ -19920,11 +19906,15 @@ var batches = sqliteTable("batches", {
 }, (table) => [index("batches_product_id_idx").on(table.productId)]);
 var invoices = sqliteTable("invoices", {
 	id: primaryId,
-	invoiceNumber: integer().notNull(),
+	invoiceNumber: text().notNull(),
 	customerName: text(),
 	total: integer().notNull().default(0),
+	organizationId: text().notNull().default("local"),
+	createdByUserId: text().notNull().default("local"),
+	deviceId: text().notNull().default("local"),
+	operationId: text().notNull(),
 	...timestamps
-}, (table) => [uniqueIndex("invoices_invoice_number_idx").on(table.invoiceNumber)]);
+}, (table) => [uniqueIndex("invoices_invoice_number_idx").on(table.invoiceNumber), uniqueIndex("invoices_operation_id_idx").on(table.operationId)]);
 var invoiceItems = sqliteTable("invoice_items", {
 	id: primaryId,
 	invoiceId: text().notNull().references(() => invoices.id),
@@ -19952,6 +19942,10 @@ var stockMovements = sqliteTable("stock_movements", {
 	packDelta: integer().notNull().default(0),
 	unitDelta: integer().notNull().default(0),
 	note: text(),
+	organizationId: text().notNull().default("local"),
+	actorUserId: text().notNull().default("local"),
+	deviceId: text().notNull().default("local"),
+	operationId: text().notNull(),
 	createdAt: integer().notNull()
 }, (table) => [
 	index("stock_movements_product_id_idx").on(table.productId),
@@ -20005,7 +19999,7 @@ var CreateInvoiceInput = Struct({
 var InvoiceIdInput = Struct({ id: String$1 });
 Struct(createSelectSchema(stockMovements).fields);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/logger.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/logger.js
 var ConsoleLogWriter = class {
 	static [entityKind] = "ConsoleLogWriter";
 	write(message) {
@@ -20095,7 +20089,7 @@ var relations = defineRelations(schema_exports, (r) => ({
 	}
 }));
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/tursodatabase-sync/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/tursodatabase-sync/session.js
 var TursoDatabaseSyncSession = class TursoDatabaseSyncSession extends SQLiteAsyncSession {
 	static [entityKind] = "TursoDatabaseSyncSession";
 	logger;
@@ -20172,7 +20166,7 @@ var TursoDatabaseSyncTransaction = class TursoDatabaseSyncTransaction extends SQ
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/tursodatabase-sync/driver.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/tursodatabase-sync/driver.js
 var TursoDatabaseSyncDatabase = class extends SQLiteAsyncDatabase {
 	static [entityKind] = "TursoDatabaseSyncDatabase";
 };
@@ -20204,7 +20198,7 @@ function drizzle(...params) {
 	_drizzle.mock = mock;
 })(drizzle || (drizzle = {}));
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/migrator.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/migrator.js
 function readMigrationFiles(config) {
 	if (fs.existsSync(`${config.migrationsFolder}/meta/_journal.json`)) throw Error("We detected that you have old drizzle-kit migration folders. You must upgrade drizzle-kit and run \"drizzle-kit up\"");
 	const migrationFolderTo = config.migrationsFolder;
@@ -20233,7 +20227,7 @@ function readMigrationFiles(config) {
 	return migrationQueries;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+1359778068b43c74/node_modules/drizzle-orm/tursodatabase-sync/migrator.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+79b2656292c36c89/node_modules/drizzle-orm/tursodatabase-sync/migrator.js
 async function migrate(db, config) {
 	return migrateAsync(readMigrationFiles(config), db, config);
 }
@@ -20268,6 +20262,11 @@ var toInvoice = ({ deletedAt: _deletedAt, items, ...invoice }) => ({
 var toStockMovement = (movement) => movement;
 var byEarliestExpiry = (a, b) => (a.expiresAt ?? Number.POSITIVE_INFINITY) - (b.expiresAt ?? Number.POSITIVE_INFINITY) || a.createdAt - b.createdAt;
 var make = (config) => gen(function* () {
+	const mutationContext = () => config.mutationContext?.() ?? {
+		organizationId: "local",
+		userId: "local",
+		deviceId: "local"
+	};
 	const configured = Boolean(config.syncUrl);
 	let syncEnabled = false;
 	const db = drizzle({
@@ -20363,6 +20362,8 @@ var make = (config) => gen(function* () {
 		});
 		if (!(yield* attempt("find product", () => findProduct(input.productId)))) return yield* new ProductNotFoundError({ id: input.productId });
 		const now = Date.now();
+		const actor = mutationContext();
+		const operationId = crypto.randomUUID();
 		return toBatch(yield* attempt("create batch", async () => {
 			const id = crypto.randomUUID();
 			return db.transaction(async (tx) => {
@@ -20383,6 +20384,10 @@ var make = (config) => gen(function* () {
 					packDelta: packQuantity,
 					unitDelta: unitQuantity,
 					note: "Initial batch stock",
+					organizationId: actor.organizationId,
+					actorUserId: actor.userId,
+					deviceId: actor.deviceId,
+					operationId,
 					createdAt: now
 				}).run();
 				const created = await tx.query.batches.findFirst({ where: { id } });
@@ -20422,16 +20427,22 @@ var make = (config) => gen(function* () {
 			if (!Number.isInteger(line.salePrice) || line.salePrice < 0) return yield* invalid("Sale prices cannot be negative");
 		}
 		const now = Date.now();
+		const actor = mutationContext();
+		const operationId = crypto.randomUUID();
 		return toInvoice(yield* attempt("create invoice", () => db.transaction(async (tx) => {
 			const allocations = [];
-			const latest = await tx.select({ value: max(invoices.invoiceNumber) }).from(invoices).get();
 			const id = crypto.randomUUID();
+			const invoiceNumber = `${actor.deviceId.replace(/-/g, "").slice(0, 8) || "local"}-${operationId}`;
 			const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
 			await tx.insert(invoices).values({
 				id,
-				invoiceNumber: (latest?.value ?? 0) + 1,
+				invoiceNumber,
 				customerName: input.customerName?.trim() || null,
 				total,
+				organizationId: actor.organizationId,
+				createdByUserId: actor.userId,
+				deviceId: actor.deviceId,
+				operationId,
 				createdAt: now,
 				updatedAt: now
 			}).run();
@@ -20478,7 +20489,11 @@ var make = (config) => gen(function* () {
 							type: "sale",
 							packDelta: -taken,
 							unitDelta: 0,
-							note: `Invoice #${(latest?.value ?? 0) + 1}`,
+							note: `Invoice #${invoiceNumber}`,
+							organizationId: actor.organizationId,
+							actorUserId: actor.userId,
+							deviceId: actor.deviceId,
+							operationId,
 							createdAt: now
 						}).run();
 					} else {
@@ -20497,7 +20512,11 @@ var make = (config) => gen(function* () {
 							type: "open_pack",
 							packDelta: -packsOpened,
 							unitDelta: packsOpened * product.unitsPerPack,
-							note: `Opened for invoice #${(latest?.value ?? 0) + 1}`,
+							note: `Opened for invoice #${invoiceNumber}`,
+							organizationId: actor.organizationId,
+							actorUserId: actor.userId,
+							deviceId: actor.deviceId,
+							operationId,
 							createdAt: now
 						}).run();
 						await tx.insert(stockMovements).values({
@@ -20508,7 +20527,11 @@ var make = (config) => gen(function* () {
 							type: "sale",
 							packDelta: 0,
 							unitDelta: -taken,
-							note: `Invoice #${(latest?.value ?? 0) + 1}`,
+							note: `Invoice #${invoiceNumber}`,
+							organizationId: actor.organizationId,
+							actorUserId: actor.userId,
+							deviceId: actor.deviceId,
+							operationId,
 							createdAt: now
 						}).run();
 					}
@@ -20591,6 +20614,248 @@ var program = {
 	sync: flatMap(OfflineStore, (store) => store.sync)
 };
 //#endregion
+//#region electron/auth.ts
+var RequestError = class extends Error {
+	status;
+	constructor(message, status) {
+		super(message);
+		this.status = status;
+	}
+};
+var unauthenticated = (isOnline) => ({
+	status: "unauthenticated",
+	user: null,
+	activeOrganization: null,
+	organizations: [],
+	isOnline
+});
+var slugOf = (name) => name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `organization-${crypto.randomUUID().slice(0, 8)}`;
+var AuthBroker = class {
+	#baseUrl;
+	#electronOrigin;
+	#listeners = /* @__PURE__ */ new Set();
+	#token = "";
+	#snapshot = unauthenticated(false);
+	constructor(baseUrl, electronProtocol = "com.tabaaq.desktop") {
+		this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
+		this.#electronOrigin = `${electronProtocol.replace(/:\/?$/, "")}:/`;
+	}
+	get snapshot() {
+		return this.#snapshot;
+	}
+	get authorizationHeader() {
+		return this.#token ? `Bearer ${this.#token}` : void 0;
+	}
+	onChange(listener) {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
+	}
+	async initialize() {
+		const persisted = await this.#readPersisted();
+		if (persisted) {
+			this.#token = persisted.token;
+			this.#snapshot = {
+				...persisted.snapshot,
+				isOnline: false
+			};
+		}
+		return this.refresh();
+	}
+	async refresh() {
+		if (!this.#token) return this.#publish(unauthenticated(navigatorOnline()));
+		try {
+			const session = await this.#request("/api/auth/get-session");
+			if (!session.user) {
+				await this.#clear();
+				return this.#publish(unauthenticated(true));
+			}
+			return this.#loadOrganizations(session.user);
+		} catch (error) {
+			if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
+				await this.#clear();
+				return this.#publish(unauthenticated(true));
+			}
+			return this.#publish({
+				...this.#snapshot,
+				isOnline: false
+			});
+		}
+	}
+	async signIn(input) {
+		const response = await this.#requestWithResponse("/api/auth/sign-in/email", {
+			method: "POST",
+			body: input
+		}, false);
+		this.#captureToken(response.response);
+		if (!this.#token) throw new Error("The server did not return a desktop session token.");
+		return this.#loadOrganizations(response.data.user);
+	}
+	async signUp(input) {
+		const response = await this.#requestWithResponse("/api/auth/sign-up/email", {
+			method: "POST",
+			body: {
+				name: input.name,
+				email: input.email,
+				password: input.password
+			}
+		}, false);
+		this.#captureToken(response.response);
+		if (!this.#token) throw new Error("The server did not return a desktop session token.");
+		return this.#loadOrganizations(response.data.user);
+	}
+	async signOut() {
+		try {
+			await this.#request("/api/auth/sign-out", { method: "POST" });
+		} finally {
+			await this.#clear();
+			this.#publish(unauthenticated(navigatorOnline()));
+		}
+	}
+	async switchOrganization(input) {
+		await this.#request("/api/auth/organization/set-active", {
+			method: "POST",
+			body: { organizationId: input.organizationId }
+		});
+		const selected = this.#snapshot.organizations.find((org) => org.id === input.organizationId);
+		const member = await this.#request("/api/auth/organization/get-active-member");
+		const active = selected ? {
+			...selected,
+			role: member.role ?? selected.role
+		} : void 0;
+		if (!active) throw new Error("That organization is not available to this account.");
+		return this.#persistAndPublish({
+			...this.#snapshot,
+			activeOrganization: active,
+			isOnline: true
+		});
+	}
+	async createOrganization(input) {
+		const created = await this.#request("/api/auth/organization/create", {
+			method: "POST",
+			body: {
+				name: input.name.trim(),
+				slug: slugOf(input.name)
+			}
+		});
+		await this.#request("/api/auth/organization/set-active", {
+			method: "POST",
+			body: { organizationId: created.id }
+		});
+		const organization = {
+			...created,
+			role: "owner"
+		};
+		return this.#persistAndPublish({
+			...this.#snapshot,
+			activeOrganization: organization,
+			organizations: [...this.#snapshot.organizations, organization],
+			isOnline: true
+		});
+	}
+	async apiRequest(pathname, init) {
+		return this.#request(pathname, init);
+	}
+	async #loadOrganizations(user) {
+		let organizations = (await this.#request("/api/auth/organization/list")).map((organization) => ({
+			...organization,
+			role: "member"
+		}));
+		const previousId = this.#snapshot.activeOrganization?.id;
+		const activeOrganization = organizations.find((organization) => organization.id === previousId) ?? organizations[0] ?? null;
+		if (activeOrganization && activeOrganization.id !== previousId) await this.#request("/api/auth/organization/set-active", {
+			method: "POST",
+			body: { organizationId: activeOrganization.id }
+		});
+		if (activeOrganization) {
+			const member = await this.#request("/api/auth/organization/get-active-member");
+			if (member.role) organizations = organizations.map((organization) => organization.id === activeOrganization.id ? {
+				...organization,
+				role: member.role
+			} : organization);
+		}
+		const resolvedActive = organizations.find((organization) => organization.id === activeOrganization?.id) ?? null;
+		return this.#persistAndPublish({
+			status: "authenticated",
+			user,
+			activeOrganization: resolvedActive,
+			organizations,
+			isOnline: true
+		});
+	}
+	async #request(pathname, init) {
+		return (await this.#requestWithResponse(pathname, init)).data;
+	}
+	async #requestWithResponse(pathname, init, includeAuthorization = true) {
+		const headers = new Headers(init?.headers);
+		headers.set("electron-origin", this.#electronOrigin);
+		if (includeAuthorization && this.authorizationHeader) headers.set("authorization", this.authorizationHeader);
+		let body = init?.body;
+		if (body && !(body instanceof FormData) && typeof body !== "string") {
+			headers.set("content-type", "application/json");
+			body = JSON.stringify(body);
+		}
+		const response = await fetch(`${this.#baseUrl}${pathname}`, {
+			...init,
+			headers,
+			body
+		});
+		const payload = await response.json().catch(() => null);
+		if (!response.ok) {
+			const nested = payload?.error;
+			throw new RequestError(payload?.message ?? (typeof nested === "string" ? nested : nested?.message) ?? `Request failed (${response.status})`, response.status);
+		}
+		return {
+			data: payload,
+			response
+		};
+	}
+	#captureToken(response) {
+		this.#token = response.headers.get("set-auth-token") ?? "";
+	}
+	#publish(snapshot) {
+		this.#snapshot = snapshot;
+		for (const listener of this.#listeners) listener(snapshot);
+		return snapshot;
+	}
+	async #persistAndPublish(snapshot) {
+		this.#publish(snapshot);
+		await this.#writePersisted({
+			token: this.#token,
+			snapshot
+		});
+		return snapshot;
+	}
+	async #clear() {
+		this.#token = "";
+		this.#snapshot = unauthenticated(navigatorOnline());
+		await rm(this.#storagePath(), { force: true });
+	}
+	#storagePath() {
+		return path.join(app.getPath("userData"), "auth", "session.bin");
+	}
+	async #readPersisted() {
+		try {
+			const encrypted = await readFile(this.#storagePath());
+			if (!safeStorage.isEncryptionAvailable()) return null;
+			return JSON.parse(safeStorage.decryptString(encrypted));
+		} catch {
+			return null;
+		}
+	}
+	async #writePersisted(value) {
+		if (!safeStorage.isEncryptionAvailable()) {
+			if (!app.isPackaged) {
+				await rm(this.#storagePath(), { force: true });
+				return;
+			}
+			throw new Error("Secure credential storage is unavailable on this system.");
+		}
+		await mkdir(path.dirname(this.#storagePath()), { recursive: true });
+		await writeFile(this.#storagePath(), safeStorage.encryptString(JSON.stringify(value)), { mode: 384 });
+	}
+};
+var navigatorOnline = () => true;
+//#endregion
 //#region electron/main.ts
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
@@ -20608,6 +20873,9 @@ for (const file of envFiles) try {
 } catch {}
 var win;
 var runtime;
+var activeOrganizationId = null;
+var deviceId = "local";
+var authBroker = new AuthBroker(process.env["STORE_API_URL"] ?? process.env["VITE_API_URL"] ?? "http://localhost:8787", process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop");
 var runStore = (effect) => {
 	if (!runtime) return Promise.reject(/* @__PURE__ */ new Error("The local store is not ready"));
 	return runtime.runPromise(effect).catch((cause) => {
@@ -20628,16 +20896,125 @@ function registerStoreIpc() {
 	ipcMain.handle("store:invoices:get", (_event, input) => runStore(decodeUnknownEffect(InvoiceIdInput)(input).pipe(flatMap(({ id }) => program.getInvoice(id)))));
 	ipcMain.handle("store:invoices:create", (_event, input) => runStore(decodeUnknownEffect(CreateInvoiceInput)(input).pipe(flatMap(program.createInvoice))));
 	ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
-	ipcMain.handle("store:sync:run", () => runStore(program.sync));
+	ipcMain.handle("store:sync:run", async () => {
+		if (activeOrganizationId) await activateOrganization(activeOrganizationId, true);
+		return runStore(program.sync);
+	});
+}
+var organizationKey = (organizationId) => createHash("sha256").update(organizationId).digest("hex").slice(0, 32);
+var migrationsFolder = () => app.isPackaged ? path.join(process.resourcesPath, "database-migrations") : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle");
+async function loadDeviceId() {
+	const file = path.join(app.getPath("userData"), "device-id");
+	try {
+		return (await readFile(file, "utf8")).trim();
+	} catch {
+		const created = crypto.randomUUID();
+		await mkdir(path.dirname(file), { recursive: true });
+		await writeFile(file, created, { mode: 384 });
+		return created;
+	}
+}
+async function disposeRuntime() {
+	const current = runtime;
+	runtime = void 0;
+	activeOrganizationId = null;
+	if (current) await current.dispose();
+}
+async function activateLockedRuntime() {
+	await disposeRuntime();
+	const databasePath = path.join(app.getPath("userData"), "locked", "store.db");
+	await mkdir(path.dirname(databasePath), { recursive: true });
+	runtime = make$2(layer({
+		path: databasePath,
+		migrationsFolder: migrationsFolder()
+	}));
+}
+async function activateOrganization(organizationId, refreshCredentials = false) {
+	if (activeOrganizationId === organizationId && runtime && !refreshCredentials) return;
+	let credentials;
+	try {
+		credentials = await authBroker.apiRequest("/api/sync/credentials", { method: "POST" });
+		if (credentials.organizationId !== organizationId) throw new Error("The sync credential does not match the active organization.");
+	} catch {}
+	await disposeRuntime();
+	const key = organizationKey(organizationId);
+	const databasePath = path.join(app.getPath("userData"), "organizations", key, "store.db");
+	await mkdir(path.dirname(databasePath), { recursive: true });
+	runtime = make$2(layer({
+		path: databasePath,
+		migrationsFolder: migrationsFolder(),
+		syncUrl: credentials?.url,
+		authToken: credentials?.authToken,
+		mutationContext: () => ({
+			organizationId,
+			userId: authBroker.snapshot.user?.id ?? "offline",
+			deviceId
+		})
+	}));
+	activeOrganizationId = organizationId;
+}
+async function applyAuthSnapshot(snapshot) {
+	if (snapshot.status === "authenticated" && snapshot.activeOrganization) await activateOrganization(snapshot.activeOrganization.id);
+	else await activateLockedRuntime();
+	win?.webContents.send("auth:session-changed", snapshot);
+	return snapshot;
+}
+var inputString = (input, key, maximum = 160) => {
+	if (!input || typeof input !== "object") throw new Error("Invalid authentication request.");
+	const value = Reflect.get(input, key);
+	if (typeof value !== "string" || !value.trim() || value.length > maximum) throw new Error(`Invalid ${key}.`);
+	return value.trim();
+};
+function registerAuthIpc() {
+	ipcMain.handle("auth:get-session", () => authBroker.snapshot);
+	ipcMain.handle("auth:sign-in", async (_event, input) => applyAuthSnapshot(await authBroker.signIn({
+		email: inputString(input, "email"),
+		password: inputString(input, "password", 256)
+	})));
+	ipcMain.handle("auth:sign-up", async (_event, input) => applyAuthSnapshot(await authBroker.signUp({
+		name: inputString(input, "name"),
+		email: inputString(input, "email"),
+		password: inputString(input, "password", 256)
+	})));
+	ipcMain.handle("auth:sign-out", async () => {
+		await authBroker.signOut();
+		await applyAuthSnapshot(authBroker.snapshot);
+	});
+	ipcMain.handle("auth:organization:switch", async (_event, input) => applyAuthSnapshot(await authBroker.switchOrganization({ organizationId: inputString(input, "organizationId") })));
+	ipcMain.handle("auth:organization:create", async (_event, input) => applyAuthSnapshot(await authBroker.createOrganization({ name: inputString(input, "name") })));
+}
+function registerServerIpc() {
+	ipcMain.handle("server:models", () => authBroker.apiRequest("/api/models"));
+	ipcMain.handle("server:uploads", async (_event, input) => {
+		if (!input || !Array.isArray(input.files) || typeof input.model !== "string") throw new Error("Invalid invoice upload request.");
+		const body = new FormData();
+		for (const file of input.files) {
+			if (!file || typeof file.name !== "string" || typeof file.type !== "string" || !(file.bytes instanceof ArrayBuffer)) throw new Error("Invalid invoice attachment.");
+			const inferredType = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/csv";
+			body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
+		}
+		body.append("model", input.model);
+		return authBroker.apiRequest("/api/uploads", {
+			method: "POST",
+			body
+		});
+	});
 }
 function createWindow() {
 	win = new BrowserWindow({
 		icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
 		frame: false,
-		webPreferences: { preload: path.join(__dirname, "preload.mjs") }
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: true
+		}
 	});
-	win.webContents.on("did-finish-load", () => {
-		win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+	win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+	win.webContents.on("will-navigate", (event, url) => {
+		const expected = VITE_DEV_SERVER_URL ?? `file://${RENDERER_DIST}`;
+		if (!url.startsWith(expected)) event.preventDefault();
 	});
 	win.on("enter-full-screen", () => {
 		win?.webContents.send("window-controls:full-screen-changed", true);
@@ -20677,16 +21054,16 @@ app.on("activate", () => {
 	if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 app.on("before-quit", () => {
-	if (runtime) runtime.dispose();
+	disposeRuntime();
 });
-app.whenReady().then(() => {
-	runtime = make$2(layer({
-		path: path.join(app.getPath("userData"), "store-v5.db"),
-		migrationsFolder: app.isPackaged ? path.join(process.resourcesPath, "database-migrations") : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle"),
-		syncUrl: process.env["TURSO_SYNC_URL"] ?? process.env["TURSO_DATABASE_URL"],
-		authToken: process.env["TURSO_AUTH_TOKEN"]
-	}));
+app.whenReady().then(async () => {
+	deviceId = await loadDeviceId();
+	const snapshot = await authBroker.initialize();
 	registerStoreIpc();
+	registerAuthIpc();
+	registerServerIpc();
+	if (snapshot.status === "authenticated" && snapshot.activeOrganization) await activateOrganization(snapshot.activeOrganization.id);
+	else await activateLockedRuntime();
 	createWindow();
 });
 //#endregion

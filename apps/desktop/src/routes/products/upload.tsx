@@ -82,7 +82,6 @@ export const Route = createFileRoute("/products/upload")({
   component: UploadInvoicesPage,
 });
 
-const apiUrl = () => import.meta.env.VITE_API_URL ?? "http://localhost:8787/api";
 const defaultModel = "openai/gpt-4.1-mini";
 const fallbackModels: GatewayModel[] = [
   { id: defaultModel, name: "GPT-4.1 mini" },
@@ -148,18 +147,16 @@ function UploadInvoicesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadModels = async (url: string) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Could not load AI Gateway models.");
-      const payload = (await response.json()) as { data?: GatewayModel[] };
+    const loadModels = async () => {
+      if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
+      const payload = (await window.serverApi.getModels()) as { data?: GatewayModel[] };
       const available = (payload.data ?? []).filter(
         (candidate) => candidate.type === "language" && candidate.id.includes("/"),
       );
       if (available.length === 0) throw new Error("No language models were returned.");
       return available;
     };
-    void loadModels(`${apiUrl()}/models`)
-      .catch(() => loadModels("https://ai-gateway.vercel.sh/v1/models"))
+    void loadModels()
       .then((available) => {
         if (!cancelled) setModels(available);
       })
@@ -194,12 +191,17 @@ function UploadInvoicesPage() {
     }
     setState("processing");
     try {
-      const body = new FormData();
-      files.forEach((file) => body.append("files", file));
-      body.append("model", model);
-      const response = await fetch(`${apiUrl()}/uploads`, { method: "POST", body });
-      const payload = (await response.json()) as Extraction & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Invoice analysis failed.");
+      if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
+      const payload = (await window.serverApi.analyseInvoices({
+        model,
+        files: await Promise.all(
+          files.map(async (file) => ({
+            name: file.name,
+            type: file.type,
+            bytes: await file.arrayBuffer(),
+          })),
+        ),
+      })) as Extraction;
       setChanges(
         payload.lines.map((line) => {
           const product = products.find((candidate) => sameProduct(line, candidate));

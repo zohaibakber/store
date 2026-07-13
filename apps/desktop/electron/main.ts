@@ -16,8 +16,11 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { AuthBroker, type AuthSnapshot } from "./auth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +61,12 @@ for (const file of envFiles) {
 
 let win: BrowserWindow | null;
 let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
+let activeOrganizationId: string | null = null;
+let deviceId = "local";
+const authBroker = new AuthBroker(
+  process.env["STORE_API_URL"] ?? process.env["VITE_API_URL"] ?? "http://localhost:8787",
+  process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
+);
 
 const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
   if (!runtime) return Promise.reject(new Error("The local store is not ready"));
@@ -129,7 +138,172 @@ function registerStoreIpc() {
     ),
   );
   ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
-  ipcMain.handle("store:sync:run", () => runStore(program.sync));
+  ipcMain.handle("store:sync:run", async () => {
+    if (activeOrganizationId) await activateOrganization(activeOrganizationId, true);
+    return runStore(program.sync);
+  });
+}
+
+const organizationKey = (organizationId: string) =>
+  createHash("sha256").update(organizationId).digest("hex").slice(0, 32);
+
+const migrationsFolder = () =>
+  app.isPackaged
+    ? path.join(process.resourcesPath, "database-migrations")
+    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle");
+
+async function loadDeviceId() {
+  const file = path.join(app.getPath("userData"), "device-id");
+  try {
+    return (await readFile(file, "utf8")).trim();
+  } catch {
+    const created = crypto.randomUUID();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, created, { mode: 0o600 });
+    return created;
+  }
+}
+
+async function disposeRuntime() {
+  const current = runtime;
+  runtime = undefined;
+  activeOrganizationId = null;
+  if (current) await current.dispose();
+}
+
+async function activateLockedRuntime() {
+  await disposeRuntime();
+  const databasePath = path.join(app.getPath("userData"), "locked", "store.db");
+  await mkdir(path.dirname(databasePath), { recursive: true });
+  runtime = ManagedRuntime.make(
+    persistenceLayer({
+      path: databasePath,
+      migrationsFolder: migrationsFolder(),
+    }),
+  );
+}
+
+async function activateOrganization(organizationId: string, refreshCredentials = false) {
+  if (activeOrganizationId === organizationId && runtime && !refreshCredentials) return;
+  let credentials:
+    | { organizationId: string; url: string; authToken: string; expiresAt: string }
+    | undefined;
+  try {
+    credentials = await authBroker.apiRequest<{
+      organizationId: string;
+      url: string;
+      authToken: string;
+      expiresAt: string;
+    }>("/api/sync/credentials", { method: "POST" });
+    if (credentials.organizationId !== organizationId)
+      throw new Error("The sync credential does not match the active organization.");
+  } catch {
+    // A cached organization remains fully usable offline. Synchronization is
+    // enabled again after membership and credentials can be refreshed.
+  }
+  await disposeRuntime();
+  const key = organizationKey(organizationId);
+  const databasePath = path.join(app.getPath("userData"), "organizations", key, "store.db");
+  await mkdir(path.dirname(databasePath), { recursive: true });
+  runtime = ManagedRuntime.make(
+    persistenceLayer({
+      path: databasePath,
+      migrationsFolder: migrationsFolder(),
+      syncUrl: credentials?.url,
+      authToken: credentials?.authToken,
+      mutationContext: () => ({
+        organizationId,
+        userId: authBroker.snapshot.user?.id ?? "offline",
+        deviceId,
+      }),
+    }),
+  );
+  activeOrganizationId = organizationId;
+}
+
+async function applyAuthSnapshot(snapshot: AuthSnapshot) {
+  if (snapshot.status === "authenticated" && snapshot.activeOrganization)
+    await activateOrganization(snapshot.activeOrganization.id);
+  else await activateLockedRuntime();
+  win?.webContents.send("auth:session-changed", snapshot);
+  return snapshot;
+}
+
+const inputString = (input: unknown, key: string, maximum = 160) => {
+  if (!input || typeof input !== "object") throw new Error("Invalid authentication request.");
+  const value = Reflect.get(input, key);
+  if (typeof value !== "string" || !value.trim() || value.length > maximum)
+    throw new Error(`Invalid ${key}.`);
+  return value.trim();
+};
+
+function registerAuthIpc() {
+  ipcMain.handle("auth:get-session", () => authBroker.snapshot);
+  ipcMain.handle("auth:sign-in", async (_event, input: unknown) =>
+    applyAuthSnapshot(
+      await authBroker.signIn({
+        email: inputString(input, "email"),
+        password: inputString(input, "password", 256),
+      }),
+    ),
+  );
+  ipcMain.handle("auth:sign-up", async (_event, input: unknown) =>
+    applyAuthSnapshot(
+      await authBroker.signUp({
+        name: inputString(input, "name"),
+        email: inputString(input, "email"),
+        password: inputString(input, "password", 256),
+      }),
+    ),
+  );
+  ipcMain.handle("auth:sign-out", async () => {
+    await authBroker.signOut();
+    await applyAuthSnapshot(authBroker.snapshot);
+  });
+  ipcMain.handle("auth:organization:switch", async (_event, input: unknown) =>
+    applyAuthSnapshot(
+      await authBroker.switchOrganization({ organizationId: inputString(input, "organizationId") }),
+    ),
+  );
+  ipcMain.handle("auth:organization:create", async (_event, input: unknown) =>
+    applyAuthSnapshot(await authBroker.createOrganization({ name: inputString(input, "name") })),
+  );
+}
+
+function registerServerIpc() {
+  ipcMain.handle("server:models", () => authBroker.apiRequest("/api/models"));
+  ipcMain.handle(
+    "server:uploads",
+    async (
+      _event,
+      input: {
+        model: string;
+        files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
+      },
+    ) => {
+      if (!input || !Array.isArray(input.files) || typeof input.model !== "string")
+        throw new Error("Invalid invoice upload request.");
+      const body = new FormData();
+      for (const file of input.files) {
+        if (
+          !file ||
+          typeof file.name !== "string" ||
+          typeof file.type !== "string" ||
+          !(file.bytes instanceof ArrayBuffer)
+        )
+          throw new Error("Invalid invoice attachment.");
+        const inferredType = file.name.toLowerCase().endsWith(".pdf")
+          ? "application/pdf"
+          : "text/csv";
+        body.append(
+          "files",
+          new File([file.bytes], file.name, { type: file.type || inferredType }),
+        );
+      }
+      body.append("model", input.model);
+      return authBroker.apiRequest("/api/uploads", { method: "POST", body });
+    },
+  );
 }
 
 function createWindow() {
@@ -138,12 +312,16 @@ function createWindow() {
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
 
-  // Test active push message to Renderer-process.
-  win.webContents.on("did-finish-load", () => {
-    win?.webContents.send("main-process-message", new Date().toLocaleString());
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, url) => {
+    const expected = VITE_DEV_SERVER_URL ?? `file://${RENDERER_DIST}`;
+    if (!url.startsWith(expected)) event.preventDefault();
   });
 
   win.on("enter-full-screen", () => {
@@ -210,24 +388,17 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  if (runtime) void runtime.dispose();
+  void disposeRuntime();
 });
 
-void app.whenReady().then(() => {
-  // Earlier replicas use explicitly named columns. A new replica starts from
-  // the inferred-column schema and matching sync log.
-  const databasePath = path.join(app.getPath("userData"), "store-v5.db");
-  const migrationsFolder = app.isPackaged
-    ? path.join(process.resourcesPath, "database-migrations")
-    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle");
-  runtime = ManagedRuntime.make(
-    persistenceLayer({
-      path: databasePath,
-      migrationsFolder,
-      syncUrl: process.env["TURSO_SYNC_URL"] ?? process.env["TURSO_DATABASE_URL"],
-      authToken: process.env["TURSO_AUTH_TOKEN"],
-    }),
-  );
+void app.whenReady().then(async () => {
+  deviceId = await loadDeviceId();
+  const snapshot = await authBroker.initialize();
   registerStoreIpc();
+  registerAuthIpc();
+  registerServerIpc();
+  if (snapshot.status === "authenticated" && snapshot.activeOrganization)
+    await activateOrganization(snapshot.activeOrganization.id);
+  else await activateLockedRuntime();
   createWindow();
 });

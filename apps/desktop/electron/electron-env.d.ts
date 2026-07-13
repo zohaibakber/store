@@ -24,7 +24,28 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
   offlineStore: import("@store/contracts").OfflineStoreApi;
-  ipcRenderer: import("electron").IpcRenderer;
+  auth: {
+    getSession: () => Promise<import("./auth").AuthSnapshot>;
+    signIn: (input: { email: string; password: string }) => Promise<import("./auth").AuthSnapshot>;
+    signUp: (input: {
+      name: string;
+      email: string;
+      password: string;
+    }) => Promise<import("./auth").AuthSnapshot>;
+    signOut: () => Promise<void>;
+    switchOrganization: (input: {
+      organizationId: string;
+    }) => Promise<import("./auth").AuthSnapshot>;
+    createOrganization: (input: { name: string }) => Promise<import("./auth").AuthSnapshot>;
+    onSessionChange: (callback: (snapshot: import("./auth").AuthSnapshot) => void) => () => void;
+  };
+  serverApi: {
+    getModels: () => Promise<unknown>;
+    analyseInvoices: (input: {
+      model: string;
+      files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
+    }) => Promise<unknown>;
+  };
   windowControls: {
     minimize: () => void;
     toggleMaximize: () => Promise<boolean>;

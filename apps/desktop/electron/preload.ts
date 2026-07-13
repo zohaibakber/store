@@ -1,27 +1,32 @@
 import { ipcRenderer, contextBridge } from "electron";
 import type { OfflineStoreApi } from "@store/contracts";
+import type { AuthSnapshot } from "./auth";
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld("ipcRenderer", {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args;
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args));
+contextBridge.exposeInMainWorld("auth", {
+  getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<AuthSnapshot>,
+  signIn: (input: { email: string; password: string }) =>
+    ipcRenderer.invoke("auth:sign-in", input) as Promise<AuthSnapshot>,
+  signUp: (input: { name: string; email: string; password: string }) =>
+    ipcRenderer.invoke("auth:sign-up", input) as Promise<AuthSnapshot>,
+  signOut: () => ipcRenderer.invoke("auth:sign-out") as Promise<void>,
+  switchOrganization: (input: { organizationId: string }) =>
+    ipcRenderer.invoke("auth:organization:switch", input) as Promise<AuthSnapshot>,
+  createOrganization: (input: { name: string }) =>
+    ipcRenderer.invoke("auth:organization:create", input) as Promise<AuthSnapshot>,
+  onSessionChange(callback: (snapshot: AuthSnapshot) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: AuthSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on("auth:session-changed", listener);
+    return () => ipcRenderer.off("auth:session-changed", listener);
   },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.off(channel, ...omit);
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.send(channel, ...omit);
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.invoke(channel, ...omit);
-  },
+});
 
-  // You can expose other APTs you need here.
-  // ...
+contextBridge.exposeInMainWorld("serverApi", {
+  getModels: () => ipcRenderer.invoke("server:models"),
+  analyseInvoices: (input: {
+    model: string;
+    files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
+  }) => ipcRenderer.invoke("server:uploads", input),
 });
 
 contextBridge.exposeInMainWorld("windowControls", {

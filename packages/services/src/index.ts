@@ -19,12 +19,22 @@ const priceField = z
   .preprocess((value) => (value == null ? null : toFiniteNumber(value)), z.number().nullable())
   .transform((value) => (value == null ? null : Math.max(0, Math.round(value))));
 const nullableStringField = z.preprocess(
-  (value) => (value === null || value === undefined ? null : String(value).trim() || null),
+  (value) =>
+    typeof value === "string"
+      ? value.trim() || null
+      : typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+        ? String(value)
+        : null,
   z.string().nullable(),
 );
 const nameField = z
   .preprocess(
-    (value) => (typeof value === "string" ? value : value == null ? "" : String(value)),
+    (value) =>
+      typeof value === "string"
+        ? value
+        : typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+          ? String(value)
+          : "",
     z.string(),
   )
   .transform((value) => value.trim() || "Unspecified item");

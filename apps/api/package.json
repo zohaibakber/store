@@ -7,9 +7,11 @@
     "vercel:dev": "vercel dev --listen 8787",
     "deploy": "vercel --prod",
     "check": "tsc --noEmit",
+    "test": "vitest run",
     "build": "true"
   },
   "dependencies": {
+    "@store/auth": "workspace:*",
     "@store/services": "workspace:*",
     "effect": "4.0.0-beta.83",
     "hono": "^4.12.29"
@@ -17,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3",
-    "vercel": "^55.0.0"
+    "vercel": "^55.0.0",
+    "vitest": "^4.0.18"
   }
 }

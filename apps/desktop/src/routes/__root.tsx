@@ -6,6 +6,9 @@ import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthPage } from "@/components/auth-page";
+import { CreateOrganizationPage } from "@/components/create-organization-page";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -13,6 +16,17 @@ export const Route = createRootRoute({
 });
 
 export function RootLayout() {
+  return (
+    <AuthProvider>
+      <AuthenticatedLayout />
+    </AuthProvider>
+  );
+}
+
+function AuthenticatedLayout() {
+  const { snapshot, error } = useAuth();
+  if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
+  if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (
     <TooltipProvider>
       <div className="[--footer-height:calc(--spacing(8))] [--header-height:calc(--spacing(10))]">

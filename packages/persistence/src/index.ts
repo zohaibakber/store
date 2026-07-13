@@ -19,7 +19,7 @@ import {
   products,
   stockMovements,
 } from "@store/db/schema";
-import { and, eq, isNull, max } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/tursodatabase-sync";
 import { migrate } from "drizzle-orm/tursodatabase-sync/migrator";
 import type { DatabaseOpts } from "@tursodatabase/sync";
@@ -34,6 +34,13 @@ export interface PersistenceConfig {
   readonly migrationsFolder: string;
   readonly syncUrl?: string;
   readonly authToken?: string;
+  readonly mutationContext?: () => MutationContext;
+}
+
+export interface MutationContext {
+  readonly organizationId: string;
+  readonly userId: string;
+  readonly deviceId: string;
 }
 
 export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>()(
@@ -120,6 +127,12 @@ const byEarliestExpiry = (a: BatchRow, b: BatchRow) =>
 
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
+    const mutationContext = () =>
+      config.mutationContext?.() ?? {
+        organizationId: "local",
+        userId: "local",
+        deviceId: "local",
+      };
     const configured = Boolean(config.syncUrl);
     let syncEnabled = false;
     const connection: DatabaseOpts = configured
@@ -256,6 +269,8 @@ const make = (config: PersistenceConfig) =>
       const productRow = yield* attempt("find product", () => findProduct(input.productId));
       if (!productRow) return yield* new ProductNotFoundError({ id: input.productId });
       const now = Date.now();
+      const actor = mutationContext();
+      const operationId = crypto.randomUUID();
       const row = yield* attempt("create batch", async () => {
         const id = crypto.randomUUID();
         return db.transaction(async (tx) => {
@@ -274,6 +289,10 @@ const make = (config: PersistenceConfig) =>
               packDelta: packQuantity,
               unitDelta: unitQuantity,
               note: "Initial batch stock",
+              organizationId: actor.organizationId,
+              actorUserId: actor.userId,
+              deviceId: actor.deviceId,
+              operationId,
               createdAt: now,
             })
             .run();
@@ -328,6 +347,8 @@ const make = (config: PersistenceConfig) =>
           return yield* invalid("Sale prices cannot be negative");
       }
       const now = Date.now();
+      const actor = mutationContext();
+      const operationId = crypto.randomUUID();
       const row = yield* attempt("create invoice", () =>
         db.transaction(async (tx) => {
           const allocations: Array<{
@@ -340,19 +361,23 @@ const make = (config: PersistenceConfig) =>
             baseUnitQuantity: number;
             salePrice: number;
           }> = [];
-          const latest = await tx
-            .select({ value: max(invoices.invoiceNumber) })
-            .from(invoices)
-            .get();
           const id = crypto.randomUUID();
+          const devicePrefix = actor.deviceId.replace(/-/g, "").slice(0, 8) || "local";
+          // The operation UUID makes independently-created offline invoices
+          // collision resistant even if clocks, counters, or device labels match.
+          const invoiceNumber = `${devicePrefix}-${operationId}`;
           const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
           await tx
             .insert(invoices)
             .values({
               id,
-              invoiceNumber: (latest?.value ?? 0) + 1,
+              invoiceNumber,
               customerName: input.customerName?.trim() || null,
               total,
+              organizationId: actor.organizationId,
+              createdByUserId: actor.userId,
+              deviceId: actor.deviceId,
+              operationId,
               createdAt: now,
               updatedAt: now,
             })
@@ -424,7 +449,11 @@ const make = (config: PersistenceConfig) =>
                     type: "sale",
                     packDelta: -taken,
                     unitDelta: 0,
-                    note: `Invoice #${(latest?.value ?? 0) + 1}`,
+                    note: `Invoice #${invoiceNumber}`,
+                    organizationId: actor.organizationId,
+                    actorUserId: actor.userId,
+                    deviceId: actor.deviceId,
+                    operationId,
                     createdAt: now,
                   })
                   .run();
@@ -454,7 +483,11 @@ const make = (config: PersistenceConfig) =>
                       type: "open_pack",
                       packDelta: -packsOpened,
                       unitDelta: packsOpened * product.unitsPerPack,
-                      note: `Opened for invoice #${(latest?.value ?? 0) + 1}`,
+                      note: `Opened for invoice #${invoiceNumber}`,
+                      organizationId: actor.organizationId,
+                      actorUserId: actor.userId,
+                      deviceId: actor.deviceId,
+                      operationId,
                       createdAt: now,
                     })
                     .run();
@@ -469,7 +502,11 @@ const make = (config: PersistenceConfig) =>
                     type: "sale",
                     packDelta: 0,
                     unitDelta: -taken,
-                    note: `Invoice #${(latest?.value ?? 0) + 1}`,
+                    note: `Invoice #${invoiceNumber}`,
+                    organizationId: actor.organizationId,
+                    actorUserId: actor.userId,
+                    deviceId: actor.deviceId,
+                    operationId,
                     createdAt: now,
                   })
                   .run();

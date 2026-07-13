@@ -1,15 +1,27 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   $schema: "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  appId: "YourAppID",
+  appId: "com.tabaaq.desktop",
   executableName: "store-electron",
   asar: true,
   asarUnpack: ["**/*.node"],
-  productName: "YourAppName",
+  productName: "Tabaaq",
+  protocols: [
+    {
+      name: "Tabaaq",
+      schemes: ["com.tabaaq.desktop"],
+    },
+  ],
   directories: {
     output: "release/${version}",
   },
   files: ["dist", "dist-electron"],
+  extraResources: [
+    {
+      from: "../../packages/db/drizzle",
+      to: "database-migrations",
+    },
+  ],
   mac: {
     target: ["dmg"],
     artifactName: "${productName}-Mac-${version}-Installer.${ext}",

@@ -62,12 +62,21 @@ export const invoices = sqliteTable(
   "invoices",
   {
     id: primaryId,
-    invoiceNumber: integer().notNull(),
+    // Invoice numbers are generated independently by offline devices. A text
+    // prefix keeps them unique without requiring a server round-trip.
+    invoiceNumber: text().notNull(),
     customerName: text(),
     total: integer().notNull().default(0),
+    organizationId: text().notNull().default("local"),
+    createdByUserId: text().notNull().default("local"),
+    deviceId: text().notNull().default("local"),
+    operationId: text().notNull(),
     ...timestamps,
   },
-  (table) => [uniqueIndex("invoices_invoice_number_idx").on(table.invoiceNumber)],
+  (table) => [
+    uniqueIndex("invoices_invoice_number_idx").on(table.invoiceNumber),
+    uniqueIndex("invoices_operation_id_idx").on(table.operationId),
+  ],
 );
 
 // Line items snapshot the product name, batch number, sale unit, and price at
@@ -114,6 +123,10 @@ export const stockMovements = sqliteTable(
     packDelta: integer().notNull().default(0),
     unitDelta: integer().notNull().default(0),
     note: text(),
+    organizationId: text().notNull().default("local"),
+    actorUserId: text().notNull().default("local"),
+    deviceId: text().notNull().default("local"),
+    operationId: text().notNull(),
     createdAt: integer().notNull(),
   },
   (table) => [

@@ -1,58 +1,69 @@
-import { InvoiceExtractionService, invoiceExtractionLayer } from "@store/services";
-import * as Effect from "effect/Effect";
+import { auth } from "@store/auth";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import {
+  type AppEnv,
+  type AuthApi,
+  authApi,
+  requireOrganization,
+  trustedOrigins,
+} from "./auth-client";
+import { modelsRoute } from "./routes/models";
+import { syncRoute } from "./routes/sync";
+import { uploadsRoute } from "./routes/uploads";
+import { issueTursoCredentials, type SyncCredentials } from "./turso";
 
-const acceptedFile = (file: File) =>
-  file.name.toLowerCase().endsWith(".csv") || file.name.toLowerCase().endsWith(".pdf");
+export { issueTursoCredentials };
 
-const defaultModel = "openai/gpt-4.1-mini";
-const isGatewayModel = (value: string) => /^[a-z0-9][a-z0-9._/-]{1,160}$/i.test(value);
+type AppDependencies = {
+  authApi: AuthApi;
+  authHandler: (request: Request) => Promise<Response>;
+  issueSyncCredentials: (organizationId: string) => Promise<SyncCredentials>;
+};
 
-const app = new Hono();
-const api = app.basePath("/api");
+export const createApp = (
+  dependencies: AppDependencies = {
+    authApi,
+    authHandler: (request) => auth.handler(request),
+    issueSyncCredentials: issueTursoCredentials,
+  },
+) => {
+  const app = new Hono<AppEnv>();
+  const api = app.basePath("/api");
+  const corsOrigins = trustedOrigins.filter((origin) => origin.startsWith("http"));
 
-app.get("/", (c) =>
-  c.json({
-    service: "Store Invoice API",
-    endpoints: ["/api/health", "/api/models", "/api/uploads"],
-  }),
-);
-api.use("/*", cors());
-api.get("/", (c) => c.json({ service: "Store Invoice API", ok: true }));
-api.get("/health", (c) => c.json({ ok: true }));
-api.get("/models", async (c) => {
-  const response = await fetch("https://ai-gateway.vercel.sh/v1/models");
-  if (!response.ok) return c.json({ error: "Could not load AI Gateway models." }, 502);
-  return c.json(await response.json());
-});
-api.post("/uploads", async (c) => {
-  const body = await c.req.parseBody({ all: true });
-  const files = (Array.isArray(body.files) ? body.files : [body.files]).filter(
-    (value): value is File => value instanceof File,
+  app.use(
+    "/api/*",
+    cors({
+      origin: corsOrigins,
+      allowHeaders: ["Content-Type", "Authorization"],
+      allowMethods: ["GET", "POST", "OPTIONS"],
+      exposeHeaders: ["Content-Length", "set-auth-token"],
+      maxAge: 600,
+      credentials: true,
+    }),
   );
-  if (!files.length) return c.json({ error: "Attach at least one CSV or PDF invoice." }, 400);
-  if (files.some((file) => !acceptedFile(file)))
-    return c.json({ error: "Only CSV and PDF invoices are supported." }, 415);
-  const model =
-    typeof body.model === "string" && isGatewayModel(body.model) ? body.model : defaultModel;
-  try {
-    const extraction = await Effect.runPromise(
-      Effect.flatMap(InvoiceExtractionService, (service) => service.extract(files)).pipe(
-        Effect.provide(
-          invoiceExtractionLayer({
-            model,
-          }),
-        ),
-      ),
-    );
-    return c.json(extraction);
-  } catch (error) {
-    return c.json(
-      { error: error instanceof Error ? error.message : "Invoice parsing failed" },
-      422,
-    );
-  }
-});
 
-export default app;
+  app.get("/", (c) =>
+    c.json({
+      service: "Store Invoice API",
+      endpoints: ["/api/health", "/api/auth/*", "/api/models", "/api/uploads", "/api/sync/*"],
+    }),
+  );
+  api.get("/", (c) => c.json({ service: "Store Invoice API", ok: true }));
+  api.get("/health", (c) => c.json({ ok: true }));
+  app.on(["GET", "POST"], "/api/auth/*", (c) => dependencies.authHandler(c.req.raw));
+
+  const authorized = requireOrganization(dependencies.authApi);
+  api.use("/models", authorized);
+  api.use("/uploads", authorized);
+  api.use("/sync/*", authorized);
+
+  api.route("/models", modelsRoute);
+  api.route("/uploads", uploadsRoute);
+  api.route("/sync", syncRoute(dependencies.issueSyncCredentials));
+
+  return app;
+};
+
+export default createApp();
