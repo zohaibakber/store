@@ -1,0 +1,30 @@
+import type {
+  Batch,
+  Category,
+  CreateBatchInput,
+  CreateInvoiceInput,
+  CreateProductInput,
+  Invoice,
+  InvoiceIdInput,
+  Product,
+  ProductIdInput,
+  StockMovement,
+  UpdateProductInput,
+} from "./store.schema";
+import type { SyncStatus } from "./sync.schema";
+
+export interface OfflineStoreApi {
+  readonly listCategories: () => Promise<ReadonlyArray<Category>>;
+  readonly listProducts: () => Promise<ReadonlyArray<Product>>;
+  readonly getProduct: (input: ProductIdInput) => Promise<Product>;
+  readonly createProduct: (input: CreateProductInput) => Promise<Product>;
+  readonly updateProduct: (input: UpdateProductInput) => Promise<Product>;
+  readonly deleteProduct: (input: ProductIdInput) => Promise<void>;
+  readonly createBatch: (input: CreateBatchInput) => Promise<Batch>;
+  readonly listStockMovements: (input: ProductIdInput) => Promise<ReadonlyArray<StockMovement>>;
+  readonly listInvoices: () => Promise<ReadonlyArray<Invoice>>;
+  readonly getInvoice: (input: InvoiceIdInput) => Promise<Invoice>;
+  readonly createInvoice: (input: CreateInvoiceInput) => Promise<Invoice>;
+  readonly getSyncStatus: () => Promise<SyncStatus>;
+  readonly sync: () => Promise<SyncStatus>;
+}

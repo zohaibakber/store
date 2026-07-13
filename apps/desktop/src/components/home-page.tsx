@@ -79,8 +79,8 @@ export function HomePage() {
         <p className="font-medium text-primary text-sm">Offline-first store</p>
         <PageHeading>Welcome back</PageHeading>
         <PageDescription className="max-w-2xl">
-          Every edit is written to the on-device Turso database first. Cloud sync is explicit and
-          never blocks local work.
+          Every edit is committed to the on-device PostgreSQL database first. Background sync never
+          blocks local work.
         </PageDescription>
       </PageHeader>
 

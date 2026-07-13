@@ -1,13 +1,15 @@
 import { defineConfig } from "drizzle-kit";
 
-process.loadEnvFile(new URL("../persistence/.env", import.meta.url));
+const databaseUrl = process.env["DATABASE_URL"]?.trim();
+const databaseCredentials = databaseUrl ? { dbCredentials: { url: databaseUrl } } : {};
 
 export default defineConfig({
-  dialect: "turso",
-  schema: "./src/schema.ts",
-  out: "./drizzle",
-  dbCredentials: {
-    url: process.env["TURSO_SYNC_URL"]!,
-    authToken: process.env["TURSO_AUTH_TOKEN"]!,
+  dialect: "postgresql",
+  schema: ["./src/auth.schema.ts", "./src/store.schema.ts", "./src/sync.schema.ts"],
+  out: "./migrations",
+  migrations: {
+    schema: "store_migrations",
+    table: "__store_drizzle_migrations",
   },
+  ...databaseCredentials,
 });

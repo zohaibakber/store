@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./canonical-json": "./src/canonical-json.ts",
+    "./offline-store.api": "./src/offline-store.api.ts",
+    "./store.schema": "./src/store.schema.ts",
+    "./sync.schema": "./src/sync.schema.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

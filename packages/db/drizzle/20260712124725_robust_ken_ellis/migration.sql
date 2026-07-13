@@ -1,1 +1,0 @@
-ALTER TABLE `products` ADD `visible` integer DEFAULT true NOT NULL;

@@ -1,11 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalPassThroughEnv": [
-    "TURSO_SYNC_URL",
-    "TURSO_DATABASE_URL",
-    "TURSO_AUTH_TOKEN",
-    "AI_GATEWAY_API_KEY"
-  ],
+  "globalPassThroughEnv": ["DATABASE_URL", "STORE_API_URL", "VITE_API_URL", "AI_GATEWAY_API_KEY"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

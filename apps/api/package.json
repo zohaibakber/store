@@ -11,12 +11,17 @@
     "build": "true"
   },
   "dependencies": {
+    "@effect/sql-pg": "4.0.0-beta.83",
     "@store/auth": "workspace:*",
+    "@store/contracts": "workspace:*",
+    "@store/db": "workspace:*",
     "@store/services": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.83",
     "hono": "^4.12.29"
   },
   "devDependencies": {
+    "@effect/vitest": "4.0.0-beta.83",
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3",
     "vercel": "^55.0.0",

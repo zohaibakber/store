@@ -4,7 +4,7 @@
   appId: "com.tabaaq.desktop",
   executableName: "store-electron",
   asar: true,
-  asarUnpack: ["**/*.node"],
+  asarUnpack: ["**/*.node", "**/*.wasm", "**/*.data"],
   productName: "Tabaaq",
   protocols: [
     {
@@ -18,7 +18,7 @@
   files: ["dist", "dist-electron"],
   extraResources: [
     {
-      from: "../../packages/db/drizzle",
+      from: "../../packages/db/migrations",
       to: "database-migrations",
     },
   ],

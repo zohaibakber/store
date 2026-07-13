@@ -1,8 +1,6 @@
-import { auth, trustedOrigins, type AuthSession } from "@store/auth";
+import type { AuthSession } from "@store/auth";
 import type { MiddlewareHandler } from "hono";
 import { publicError } from "./errors";
-
-export { trustedOrigins };
 
 export type AuthApi = {
   getSession(options: { headers: Headers }): Promise<AuthSession | null>;
@@ -12,8 +10,6 @@ export type AuthApi = {
 export type AppEnv = {
   Variables: { user: AuthSession["user"]; session: AuthSession["session"]; organizationId: string };
 };
-
-export const authApi: AuthApi = auth.api;
 
 export const requireOrganization =
   (authApi: AuthApi): MiddlewareHandler<AppEnv> =>

@@ -4,11 +4,13 @@ import {
   CreateProductInput,
   InvoiceIdInput,
   ProductIdInput,
+  type SyncResponse,
   UpdateProductInput,
 } from "@store/contracts";
 import {
   OfflineStore,
   PersistenceError,
+  SyncTransportError,
   layer as persistenceLayer,
   program,
 } from "@store/persistence";
@@ -44,12 +46,11 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
-// Turbo runs tasks with a filtered environment, so Turso credentials are read
-// from .env files instead. Earlier files and pre-set shell variables win.
+// Turbo runs tasks with a filtered environment, so local API configuration is
+// also read from .env files. Earlier files and pre-set shell variables win.
 const envFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
-  path.join(process.env.APP_ROOT, "..", "..", "packages", "persistence", ".env"),
 ];
 for (const file of envFiles) {
   try {
@@ -138,10 +139,7 @@ function registerStoreIpc() {
     ),
   );
   ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
-  ipcMain.handle("store:sync:run", async () => {
-    if (activeOrganizationId) await activateOrganization(activeOrganizationId, true);
-    return runStore(program.sync);
-  });
+  ipcMain.handle("store:sync:run", () => runStore(program.sync));
 }
 
 const organizationKey = (organizationId: string) =>
@@ -150,7 +148,7 @@ const organizationKey = (organizationId: string) =>
 const migrationsFolder = () =>
   app.isPackaged
     ? path.join(process.resourcesPath, "database-migrations")
-    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "drizzle");
+    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations");
 
 async function loadDeviceId() {
   const file = path.join(app.getPath("userData"), "device-id");
@@ -173,44 +171,40 @@ async function disposeRuntime() {
 
 async function activateLockedRuntime() {
   await disposeRuntime();
-  const databasePath = path.join(app.getPath("userData"), "locked", "store.db");
-  await mkdir(path.dirname(databasePath), { recursive: true });
+  const dataDir = path.join(app.getPath("userData"), "locked", "pglite");
+  await mkdir(path.dirname(dataDir), { recursive: true });
   runtime = ManagedRuntime.make(
     persistenceLayer({
-      path: databasePath,
+      dataDir,
       migrationsFolder: migrationsFolder(),
     }),
   );
 }
 
-async function activateOrganization(organizationId: string, refreshCredentials = false) {
-  if (activeOrganizationId === organizationId && runtime && !refreshCredentials) return;
-  let credentials:
-    | { organizationId: string; url: string; authToken: string; expiresAt: string }
-    | undefined;
-  try {
-    credentials = await authBroker.apiRequest<{
-      organizationId: string;
-      url: string;
-      authToken: string;
-      expiresAt: string;
-    }>("/api/sync/credentials", { method: "POST" });
-    if (credentials.organizationId !== organizationId)
-      throw new Error("The sync credential does not match the active organization.");
-  } catch {
-    // A cached organization remains fully usable offline. Synchronization is
-    // enabled again after membership and credentials can be refreshed.
-  }
+async function activateOrganization(organizationId: string) {
+  if (activeOrganizationId === organizationId && runtime) return;
   await disposeRuntime();
   const key = organizationKey(organizationId);
-  const databasePath = path.join(app.getPath("userData"), "organizations", key, "store.db");
-  await mkdir(path.dirname(databasePath), { recursive: true });
+  const dataDir = path.join(app.getPath("userData"), "organizations", key, "pglite");
+  await mkdir(path.dirname(dataDir), { recursive: true });
   runtime = ManagedRuntime.make(
     persistenceLayer({
-      path: databasePath,
+      dataDir,
       migrationsFolder: migrationsFolder(),
-      syncUrl: credentials?.url,
-      authToken: credentials?.authToken,
+      syncTransport: {
+        exchange: (request) =>
+          Effect.tryPromise({
+            try: () =>
+              authBroker.apiRequest<SyncResponse>("/api/sync", {
+                method: "POST",
+                body: request,
+              }),
+            catch: (cause) =>
+              new SyncTransportError({
+                message: cause instanceof Error ? cause.message : String(cause),
+              }),
+          }),
+      },
       mutationContext: () => ({
         organizationId,
         userId: authBroker.snapshot.user?.id ?? "offline",

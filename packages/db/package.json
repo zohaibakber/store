@@ -5,16 +5,21 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./auth.database": "./src/auth.database.ts",
+    "./auth.schema": "./src/auth.schema.ts",
     "./relations": "./src/relations.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./store.schema": "./src/store.schema.ts",
+    "./sync.schema": "./src/sync.schema.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "check": "tsc --noEmit && drizzle-kit check",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "check": "tsc --noEmit && node scripts/drizzle-kit.cjs check",
+    "db:generate": "node scripts/drizzle-kit.cjs generate",
+    "db:migrate": "node scripts/drizzle-kit.cjs migrate"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "1.0.0-rc.4",
     "nanoid": "^5.1.16"
   },

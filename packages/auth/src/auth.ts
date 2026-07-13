@@ -1,12 +1,17 @@
 import { electron } from "@better-auth/electron";
-import { neon } from "@neondatabase/serverless";
+import { createAuthDatabase } from "@store/db/auth.database";
+import * as schema from "@store/db/auth.schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization } from "better-auth/plugins";
-import { drizzle } from "drizzle-orm/neon-http";
-import * as schema from "./auth-schema";
 
 const isProduction = process.env.NODE_ENV === "production";
+
+const required = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  throw new Error(`${name} must be configured.`);
+};
 
 const requiredInProduction = (name: string, developmentValue: string) => {
   const value = process.env[name]?.trim();
@@ -15,10 +20,7 @@ const requiredInProduction = (name: string, developmentValue: string) => {
   throw new Error(`${name} must be configured in production.`);
 };
 
-const databaseUrl = requiredInProduction(
-  "DATABASE_URL",
-  "postgres://user:password@localhost:5432/store_auth_dev",
-);
+const databaseUrl = required("DATABASE_URL");
 const secret = requiredInProduction(
   "BETTER_AUTH_SECRET",
   "development-only-store-auth-secret-change-before-deploying",
@@ -30,8 +32,7 @@ const browserOrigins = (process.env.AUTH_TRUSTED_ORIGINS ?? "http://localhost:51
   .filter(Boolean);
 const electronProtocol = process.env.ELECTRON_PROTOCOL?.trim() || "com.tabaaq.desktop";
 
-const client = neon(databaseUrl);
-const database = drizzle(client, { schema });
+const database = createAuthDatabase(databaseUrl);
 
 export const trustedOrigins = [...browserOrigins, `${electronProtocol}:/`];
 

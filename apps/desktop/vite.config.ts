@@ -40,11 +40,12 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: "electron/main.ts",
-        // Keep the native Turso loader and its platform package intact for electron-builder.
+        // PGlite loads its PostgreSQL WASM and data assets at runtime, so keep the
+        // package intact for electron-builder instead of folding it into main.js.
         vite: {
           build: {
             rolldownOptions: {
-              external: ["@tursodatabase/sync"],
+              external: ["@electric-sql/pglite"],
             },
           },
         },
