@@ -4,6 +4,7 @@ import {
   CreateProductInput,
   InvoiceIdInput,
   ProductIdInput,
+  SearchProductsInput,
   type SyncResponse,
   UpdateProductInput,
 } from "@store/contracts";
@@ -84,6 +85,13 @@ const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
 function registerStoreIpc() {
   ipcMain.handle("store:categories:list", () => runStore(program.listCategories));
   ipcMain.handle("store:products:list", () => runStore(program.listProducts));
+  ipcMain.handle("store:products:search", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(SearchProductsInput)(input).pipe(
+        Effect.flatMap(program.searchProducts),
+      ),
+    ),
+  );
   ipcMain.handle("store:products:get", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(

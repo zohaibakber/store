@@ -4,11 +4,12 @@ import type {
   CreateBatchInput,
   CreateProductInput,
   Product,
+  SearchProductsInput,
   StockMovement,
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, products, stockMovements } from "@store/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";
 import type { StoreDatabase } from "./database";
@@ -19,6 +20,9 @@ import { enqueueOperation } from "./outbox";
 export interface ProductStore {
   readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
   readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
+  readonly searchProducts: (
+    input: SearchProductsInput,
+  ) => Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
   readonly getProduct: (
     id: string,
   ) => Effect.Effect<Product, PersistenceError | ProductNotFoundError>;
@@ -84,6 +88,77 @@ export const makeProductStore = (
         mapPersistenceError("list products"),
       );
   });
+
+  // Typo- and phonetic-tolerant search over product name and composition. Pure
+  // trigram similarity misses cases like "pendal" -> "panadol" (they share
+  // almost no trigrams), so the ranking blends trigram similarity, prefix match,
+  // Levenshtein distance, and phonetics (dmetaphone/soundex) — phonetics do the
+  // heavy lifting for that class of misspelling. Runs entirely on the local
+  // PGlite database against the pg_trgm/fuzzystrmatch/unaccent extensions.
+  const searchProducts = (input: SearchProductsInput) =>
+    Effect.suspend(() => {
+      const actor = mutationContext();
+      const raw = input.query.trim();
+      if (raw.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
+      const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+
+      const normalized = sql`lower(unaccent(${raw}))`;
+      const nameNorm = sql`lower(unaccent(${products.name}))`;
+      const compNorm = sql`lower(unaccent(coalesce(${products.composition}, '')))`;
+      const score = sql<number>`(
+          0.45 * similarity(${nameNorm}, ${normalized})
+        + 0.25 * word_similarity(${normalized}, ${compNorm})
+        + (CASE WHEN ${nameNorm} LIKE ${normalized} || '%' THEN 0.30 ELSE 0 END)
+        + (CASE WHEN dmetaphone(${products.name}) = dmetaphone(${raw}) THEN 0.40 ELSE 0 END)
+        + (CASE WHEN soundex(${products.name}) = soundex(${raw}) THEN 0.25 ELSE 0 END)
+        + (CASE WHEN levenshtein(${nameNorm}, ${normalized}) <= 2 THEN 0.20 ELSE 0 END)
+      )`;
+      const matches = sql`(
+           similarity(${nameNorm}, ${normalized}) > 0.15
+        OR word_similarity(${normalized}, ${compNorm}) > 0.4
+        OR dmetaphone(${products.name}) = dmetaphone(${raw})
+        OR soundex(${products.name}) = soundex(${raw})
+        OR levenshtein(${nameNorm}, ${normalized}) <= 2
+        OR ${nameNorm} LIKE '%' || ${normalized} || '%'
+      )`;
+
+      return database
+        .select({ id: products.id })
+        .from(products)
+        .where(
+          and(
+            eq(products.organizationId, actor.organizationId),
+            isNull(products.deletedAt),
+            matches,
+          ),
+        )
+        .orderBy(sql`${score} DESC`)
+        .limit(limit)
+        .pipe(
+          Effect.flatMap((ranked) => {
+            const ids = ranked.map((row) => row.id);
+            if (ids.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
+            return database.query.products
+              .findMany({
+                where: {
+                  organizationId: actor.organizationId,
+                  id: { in: ids },
+                  deletedAt: { isNull: true },
+                },
+                with: productRelations,
+              })
+              .pipe(
+                Effect.map((rows) => {
+                  const rank = new Map(ids.map((id, index) => [id, index] as const));
+                  return rows
+                    .map(toProduct)
+                    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+                }),
+              );
+          }),
+          mapPersistenceError("search products"),
+        );
+    });
 
   const getProduct = Effect.fn("OfflineStore.getProduct")(function* (id: string) {
     const actor = mutationContext();
@@ -351,6 +426,7 @@ export const makeProductStore = (
   return {
     listCategories,
     listProducts,
+    searchProducts,
     getProduct,
     createProduct,
     updateProduct,

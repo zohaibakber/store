@@ -44,6 +44,7 @@ electron.contextBridge.exposeInMainWorld("windowControls", {
 electron.contextBridge.exposeInMainWorld("offlineStore", {
 	listCategories: () => electron.ipcRenderer.invoke("store:categories:list"),
 	listProducts: () => electron.ipcRenderer.invoke("store:products:list"),
+	searchProducts: (input) => electron.ipcRenderer.invoke("store:products:search", input),
 	getProduct: (input) => electron.ipcRenderer.invoke("store:products:get", input),
 	createProduct: (input) => electron.ipcRenderer.invoke("store:products:create", input),
 	updateProduct: (input) => electron.ipcRenderer.invoke("store:products:update", input),

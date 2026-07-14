@@ -8,6 +8,7 @@ import type {
   InvoiceIdInput,
   Product,
   ProductIdInput,
+  SearchProductsInput,
   StockMovement,
   UpdateProductInput,
 } from "./store.schema";
@@ -16,6 +17,7 @@ import type { SyncStatus } from "./sync.schema";
 export interface OfflineStoreApi {
   readonly listCategories: () => Promise<ReadonlyArray<Category>>;
   readonly listProducts: () => Promise<ReadonlyArray<Product>>;
+  readonly searchProducts: (input: SearchProductsInput) => Promise<ReadonlyArray<Product>>;
   readonly getProduct: (input: ProductIdInput) => Promise<Product>;
   readonly createProduct: (input: CreateProductInput) => Promise<Product>;
   readonly updateProduct: (input: UpdateProductInput) => Promise<Product>;

@@ -6,6 +6,7 @@ import type {
   CreateProductInput,
   Invoice,
   Product,
+  SearchProductsInput,
   StockMovement,
   SyncStatus,
   UpdateProductInput,
@@ -16,7 +17,7 @@ import * as Layer from "effect/Layer";
 import { initializeDatabase } from "./bootstrap";
 import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
-import { clientLayer, makeDatabase } from "./database";
+import { clientLayer, ensureLocalSearchIndexes, makeDatabase } from "./database";
 import {
   InvoiceNotFoundError,
   PersistenceError,
@@ -32,6 +33,9 @@ export class OfflineStore extends Context.Service<
   {
     readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
     readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
+    readonly searchProducts: (
+      input: SearchProductsInput,
+    ) => Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
     readonly getProduct: (id: string) => Effect.Effect<Product, StoreError>;
     readonly createProduct: (input: CreateProductInput) => Effect.Effect<Product, PersistenceError>;
     readonly updateProduct: (input: UpdateProductInput) => Effect.Effect<Product, StoreError>;
@@ -52,6 +56,7 @@ const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
     const mutationContext = mutationContextFrom(config);
     const database = yield* makeDatabase(config.migrationsFolder);
+    yield* ensureLocalSearchIndexes(database);
     yield* initializeDatabase(database, mutationContext());
     const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
     const productStore = makeProductStore(database, mutationContext, syncEngine.signal);
@@ -71,6 +76,8 @@ export const layer = (config: PersistenceConfig) =>
 export const program = {
   listCategories: Effect.flatMap(OfflineStore, (store) => store.listCategories),
   listProducts: Effect.flatMap(OfflineStore, (store) => store.listProducts),
+  searchProducts: (input: SearchProductsInput) =>
+    Effect.flatMap(OfflineStore, (store) => store.searchProducts(input)),
   getProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.getProduct(id)),
   createProduct: (input: CreateProductInput) =>
     Effect.flatMap(OfflineStore, (store) => store.createProduct(input)),

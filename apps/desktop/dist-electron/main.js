@@ -2,8 +2,13 @@ import crypto$1, { createHash, webcrypto } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import fs, { existsSync, readdirSync } from "node:fs";
 import path, { join, resolve } from "node:path";
+import { fuzzystrmatch } from "@electric-sql/pglite/contrib/fuzzystrmatch";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
+import { unaccent } from "@electric-sql/pglite/contrib/unaccent";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { PGlite as PGlite$1 } from "pglite-04";
+import { pgDump } from "pglite-tools-04/pg_dump";
 import electron, { BrowserWindow, app, ipcMain, net, safeStorage, shell } from "electron";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { Buffer as Buffer$1 } from "node:buffer";
@@ -64,7 +69,7 @@ var canonicalizeJson = (value) => {
 };
 var canonicalJson = (value) => JSON.stringify(canonicalizeJson(value));
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/entity.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/entity.js
 var entityKind = Symbol.for("drizzle:entityKind");
 function is(value, type) {
 	if (!value || typeof value !== "object") return false;
@@ -78,10 +83,10 @@ function is(value, type) {
 	return false;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/column-common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/column-common.js
 var OriginalColumn = Symbol.for("drizzle:OriginalColumn");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/column.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/column.js
 var noop = (v) => v;
 noop.isNoop = true;
 var Column = class {
@@ -155,11 +160,11 @@ function getColumnTable(column) {
 	return column.table;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/table.utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/table.utils.js
 /** @internal */
 var TableName = Symbol.for("drizzle:Name");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/table.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/table.js
 /** @internal */
 var TableSchema = Symbol.for("drizzle:Schema");
 /** @internal */
@@ -228,7 +233,7 @@ function getTableName(table) {
 	return table[TableName];
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/subquery.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/subquery.js
 var Subquery = class {
 	static [entityKind] = "Subquery";
 	constructor(sql, fields, alias, isWith = false, usedTables = []) {
@@ -246,21 +251,21 @@ var WithSubquery = class extends Subquery {
 	static [entityKind] = "WithSubquery";
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/tracing-utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/tracing-utils.js
 function iife(fn, ...args) {
 	return fn(...args);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/tracing.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/tracing.js
 /** @internal */
 var tracer = { startActiveSpan(name, fn) {
 	return fn();
 } };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/view-common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/view-common.js
 var ViewBaseConfig = Symbol.for("drizzle:ViewBaseConfig");
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/sql/sql.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/sql/sql.js
 function isSQLWrapper(value) {
 	return value !== null && value !== void 0 && typeof value.getSQL === "function";
 }
@@ -736,7 +741,7 @@ Subquery.prototype.getSQL = function() {
 	return new SQL([this]);
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/utils.js
 /** @internal bypass bundle-time filtering */
 var FnConstructor = Object.getPrototypeOf(() => null).constructor;
 /** @internal */
@@ -1002,7 +1007,7 @@ function base64ToUint8Array(base64) {
 	return bytes;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/column-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/column-builder.js
 function extractExtendedColumnType(column) {
 	const [type, constraint] = column.dataType.split(" ");
 	return {
@@ -1011,7 +1016,7 @@ function extractExtendedColumnType(column) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Pipeable.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Pipeable.js
 /**
 * The `Pipeable` module defines the shared interface and implementation helpers
 * for values that support Effect-style method chaining with `.pipe(...)`.
@@ -1113,7 +1118,7 @@ var Class$2 = /*#__PURE__*/ function() {
 	return PipeableBase;
 }();
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Function.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Function.js
 /**
 * Creates a function that can be called in data-first style or data-last
 * (`pipe`-friendly) style.
@@ -1129,7 +1134,7 @@ var Class$2 = /*#__PURE__*/ function() {
 * whether the current call is data-first. Arity is the common case. Use a
 * predicate when optional arguments make arity ambiguous.
 *
-* **Example** (Using arity to determine data-first or data-last style)
+* **Example** (Selecting data-first or data-last style by arity)
 *
 * ```ts
 * import { Function, pipe } from "effect"
@@ -1143,7 +1148,7 @@ var Class$2 = /*#__PURE__*/ function() {
 * console.log(pipe(2, sum(3))) // 5
 * ```
 *
-* **Example** (Using call signatures to define the overloads)
+* **Example** (Defining overloads with call signatures)
 *
 * ```ts
 * import { Function, pipe } from "effect"
@@ -1157,7 +1162,7 @@ var Class$2 = /*#__PURE__*/ function() {
 * console.log(pipe(2, sum(3))) // 5
 * ```
 *
-* **Example** (Using a predicate to determine data-first or data-last style)
+* **Example** (Selecting data-first or data-last style with a predicate)
 *
 * ```ts
 * import { Function, pipe } from "effect"
@@ -1393,7 +1398,7 @@ function memoize(f) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/equal.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/equal.js
 /** @internal */
 var getAllObjectKeys = (obj) => {
 	const keys = new Set(Reflect.ownKeys(obj));
@@ -1412,7 +1417,7 @@ var getAllObjectKeys = (obj) => {
 /** @internal */
 var byReferenceInstances = /*#__PURE__*/ new WeakSet();
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Predicate.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Predicate.js
 /**
 * Defines runtime checks for values.
 *
@@ -1436,7 +1441,7 @@ var byReferenceInstances = /*#__PURE__*/ new WeakSet();
 *
 * Uses `typeof input === "string"`.
 *
-* **Example** (Guard string)
+* **Example** (Guarding strings)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1469,7 +1474,7 @@ function isString$1(input) {
 *
 * Uses `typeof input === "number"` and does not exclude `NaN` or `Infinity`.
 *
-* **Example** (Guard number)
+* **Example** (Guarding numbers)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1501,7 +1506,7 @@ function isNumber(input) {
 *
 * Uses `typeof input === "boolean"`.
 *
-* **Example** (Guard boolean)
+* **Example** (Guarding booleans)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1533,7 +1538,7 @@ function isBoolean(input) {
 *
 * Uses `typeof input === "bigint"`.
 *
-* **Example** (Guard bigint)
+* **Example** (Guarding bigints)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1564,7 +1569,7 @@ function isBigInt(input) {
 *
 * Uses `typeof input === "symbol"`.
 *
-* **Example** (Guard symbol)
+* **Example** (Guarding symbols)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1595,7 +1600,7 @@ function isSymbol(input) {
 *
 * Uses `isString`, `isNumber`, and `isSymbol`.
 *
-* **Example** (Guard property key)
+* **Example** (Guarding property keys)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1629,7 +1634,7 @@ function isPropertyKey(u) {
 *
 * Uses `typeof input === "function"`.
 *
-* **Example** (Guard function)
+* **Example** (Guarding functions)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1660,7 +1665,7 @@ function isFunction$1(input) {
 *
 * Returns a refinement that excludes `undefined`.
 *
-* **Example** (Filter undefined)
+* **Example** (Filtering undefined values)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1691,7 +1696,7 @@ function isNotUndefined(input) {
 *
 * Uses `input != null`.
 *
-* **Example** (Filter non-nullish)
+* **Example** (Filtering non-nullish values)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1718,7 +1723,7 @@ function isNotNullish(input) {
 *
 * Use when you need a `Predicate` that always accepts, e.g. as a placeholder.
 *
-* **Example** (Always matches)
+* **Example** (Matching every value)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1747,7 +1752,7 @@ function isUnknown(_) {
 * also accepts object instances such as `Date`, `Map`, class instances, and
 * typed arrays. It excludes `null` and arrays.
 *
-* **Example** (Guard object)
+* **Example** (Guarding objects)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1776,7 +1781,7 @@ function isObject$3(input) {
 *
 * Returns `true` for arrays and functions, and `false` for `null`.
 *
-* **Example** (Object keyword)
+* **Example** (Checking object keywords)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1806,7 +1811,7 @@ function isObjectKeyword(input) {
 * Uses the `in` operator and `isObjectKeyword`. This does not check property
 * value types.
 *
-* **Example** (Guard property)
+* **Example** (Guarding object properties)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1836,7 +1841,7 @@ var hasProperty$1 = /*#__PURE__*/ dual(2, (self, property) => isObjectKeyword(se
 *
 * Uses `instanceof Error`.
 *
-* **Example** (Guard error)
+* **Example** (Guarding errors)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1864,7 +1869,7 @@ function isError(input) {
 *
 * Accepts strings as iterable and uses `hasProperty` for `Symbol.iterator`.
 *
-* **Example** (Guard iterable)
+* **Example** (Guarding iterables)
 *
 * ```ts
 * import { Predicate } from "effect"
@@ -1883,7 +1888,7 @@ function isIterable(input) {
 	return hasProperty$1(input, Symbol.iterator) || isString$1(input);
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Hash.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Hash.js
 /**
 * Computes Effect hash values and defines the interface for objects that want
 * to provide their own hash implementation. Hashes are small numeric
@@ -2320,7 +2325,7 @@ function withVisitedTracking$1(obj, fn) {
 	return result;
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Equal.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Equal.js
 /**
 * Defines the unique string identifier for the `Equal` interface.
 *
@@ -2333,7 +2338,7 @@ function withVisitedTracking$1(obj, fn) {
 *
 * This is a pure constant with no allocation or side effects.
 *
-* **Example** (Implementing Equal on a Class)
+* **Example** (Implementing Equal on a class)
 *
 * ```ts
 * import { Equal, Hash } from "effect"
@@ -2497,7 +2502,7 @@ var compareSets = /*#__PURE__*/ makeCompareSet(compareBoth);
 *   {@link symbol}.
 * - Acts as a TypeScript type guard, narrowing the input to {@link Equal}.
 *
-* **Example** (Type Guard)
+* **Example** (Checking Equal values)
 *
 * ```ts
 * import { Equal, Hash } from "effect"
@@ -2537,7 +2542,7 @@ var isEqual = (u) => hasProperty$1(u, symbol$1);
 *   {@link equals}.
 * - Pure; allocates a thin wrapper on each call.
 *
-* **Example** (Deduplicating with Equal Semantics)
+* **Example** (Deduplicating with Equal semantics)
 *
 * ```ts
 * import { Array, Equal } from "effect"
@@ -2553,7 +2558,7 @@ var isEqual = (u) => hasProperty$1(u, symbol$1);
 */
 var asEquivalence = () => equals$2;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Equivalence.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Equivalence.js
 /**
 * Creates a custom equivalence relation with an optimized reference equality check.
 *
@@ -2586,7 +2591,7 @@ var asEquivalence = () => equals$2;
 * console.log(caseInsensitive(str, str)) // true (fast path)
 * ```
 *
-* **Example** (Numeric tolerance equivalence)
+* **Example** (Comparing numbers with tolerance)
 *
 * ```ts
 * import { Equivalence } from "effect"
@@ -2604,14 +2609,14 @@ var asEquivalence = () => equals$2;
 */
 var make$26 = (isEquivalent) => (self, that) => self === that || isEquivalent(self, that);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/array.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/array.js
 /**
 * @since 2.0.0
 */
 /** @internal */
 var isArrayNonEmpty$1 = (self) => self.length > 0;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Redactable.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Redactable.js
 /**
 * Defines the symbol used to identify objects that implement the {@link Redactable}
 * protocol.
@@ -2725,7 +2730,7 @@ var emptyContext$1 = {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Formatter.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Formatter.js
 /**
 * Formats JavaScript values into readable strings.
 *
@@ -2767,7 +2772,7 @@ var emptyContext$1 = {
 *   `"\t"`). Defaults to `0` (compact).
 * - `ignoreToString` — skip calling `toString()`. Defaults to `false`.
 *
-* **Example** (Compact output)
+* **Example** (Formatting compact output)
 *
 * ```ts
 * import { Formatter } from "effect"
@@ -2791,7 +2796,7 @@ var emptyContext$1 = {
 * // }
 * ```
 *
-* **Example** (Circular reference handling)
+* **Example** (Handling circular references)
 *
 * ```ts
 * import { Formatter } from "effect"
@@ -2911,7 +2916,7 @@ function safeToString(input) {
 * `Symbol`, `undefined`, and functions, follow standard `JSON.stringify`
 * behavior. The `space` parameter controls indentation and defaults to `0`.
 *
-* **Example** (Compact JSON)
+* **Example** (Formatting compact JSON)
 *
 * ```ts
 * import { Formatter } from "effect"
@@ -2920,7 +2925,7 @@ function safeToString(input) {
 * // {"name":"Alice","age":30}
 * ```
 *
-* **Example** (Circular reference handling)
+* **Example** (Handling circular references)
 *
 * ```ts
 * import { Formatter } from "effect"
@@ -2960,7 +2965,7 @@ function formatJson(input, options) {
 	}, options?.space);
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Inspectable.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Inspectable.js
 /**
 * Controls how values appear in logs and debugging output.
 *
@@ -3060,7 +3065,7 @@ var toStringUnknown = (u, whitespace = 2) => {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Utils.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Utils.js
 /**
 * Yields its wrapped value exactly once through an `IterableIterator`.
 *
@@ -3151,7 +3156,7 @@ var pickInternalCall = () => {
 /** @internal */
 var internalCall = /*#__PURE__*/ pickInternalCall();
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/core.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/core.js
 /** @internal */
 var EffectTypeId = `~effect/Effect`;
 /** @internal */
@@ -3304,7 +3309,7 @@ var Fail = class extends ReasonBase {
 		};
 	}
 	[symbol$1](that) {
-		return isFailReason(that) && equals$2(this.error, that.error) && equals$2(this.annotations, that.annotations);
+		return isFailReason$1(that) && equals$2(this.error, that.error) && equals$2(this.annotations, that.annotations);
 	}
 	[symbol$2]() {
 		return combine(string$4(this._tag))(combine(hash(this.error))(hash(this.annotations)));
@@ -3347,7 +3352,7 @@ var causeAnnotate = /*#__PURE__*/ dual((args) => isCause(args[0]), (self, annota
 	return new CauseImpl(self.reasons.map((f) => f.annotate(annotations, options)));
 });
 /** @internal */
-var isFailReason = (self) => self._tag === "Fail";
+var isFailReason$1 = (self) => self._tag === "Fail";
 /** @internal */
 var isDieReason = (self) => self._tag === "Die";
 /** @internal */
@@ -3514,13 +3519,13 @@ var done$2 = (value) => {
 	return exitFail(Done(value));
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/option.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/option.js
 /**
 * @since 2.0.0
 */
-var TypeId$20 = "~effect/data/Option";
+var TypeId$21 = "~effect/data/Option";
 var CommonProto$1 = {
-	[TypeId$20]: { _A: (_) => _ },
+	[TypeId$21]: { _A: (_) => _ },
 	...PipeInspectableProto,
 	[Symbol.iterator]() {
 		return new SingleShotGen(this);
@@ -3570,7 +3575,7 @@ var NoneProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonPr
 	}
 });
 /** @internal */
-var isOption = (input) => hasProperty$1(input, TypeId$20);
+var isOption = (input) => hasProperty$1(input, TypeId$21);
 /** @internal */
 var isNone$1 = (fa) => fa._tag === "None";
 /** @internal */
@@ -3584,10 +3589,10 @@ var some$1 = (value) => {
 	return a;
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/result.js
-var TypeId$19 = "~effect/data/Result";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/result.js
+var TypeId$20 = "~effect/data/Result";
 var CommonProto = {
-	[TypeId$19]: {
+	[TypeId$20]: {
 		/* v8 ignore next 2 */
 		_A: (_) => _,
 		_E: (_) => _
@@ -3638,7 +3643,7 @@ var FailureProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(Commo
 	}
 });
 /** @internal */
-var isResult = (input) => hasProperty$1(input, TypeId$19);
+var isResult = (input) => hasProperty$1(input, TypeId$20);
 /** @internal */
 var isFailure$1 = (result) => result._tag === "Failure";
 /** @internal */
@@ -3656,7 +3661,7 @@ var succeed$5 = (success) => {
 	return a;
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Order.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Order.js
 /**
 * Defines comparison functions for ordered values.
 *
@@ -3720,7 +3725,7 @@ function make$25(compare) {
 * each other, and any `NaN` is considered less than any non-`NaN` number. All
 * other values use standard numeric comparison.
 *
-* **Example** (Number Ordering)
+* **Example** (Ordering numbers)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3756,7 +3761,7 @@ var Number$4 = /*#__PURE__*/ make$25((self, that) => {
 * Uses standard numeric comparison for bigint values and handles arbitrarily
 * large integers.
 *
-* **Example** (BigInt Ordering)
+* **Example** (Ordering BigInts)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3818,7 +3823,7 @@ var mapInput = /*#__PURE__*/ dual(2, (self, f) => make$25((b1, b2) => self(f(b1)
 * Earlier dates are less than later dates. Invalid dates are compared through
 * their `getTime()` result.
 *
-* **Example** (Date Ordering)
+* **Example** (Ordering Dates)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3848,7 +3853,7 @@ var Date$3 = /*#__PURE__*/ mapInput(Number$4, (date) => date.getTime());
 * Returns `true` if the order returns `1`, meaning the first value is greater
 * than the second. Equal or lesser values return `false`.
 *
-* **Example** (Greater Than)
+* **Example** (Checking greater-than comparisons)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3878,7 +3883,7 @@ var isGreaterThan$1 = (O) => dual(2, (self, that) => O(self, that) === 1);
 * Returns `true` if the order returns `-1` or `0`, and returns `false` only if
 * the order returns `1`.
 *
-* **Example** (Less Than Or Equal)
+* **Example** (Checking less-than-or-equal comparisons)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3909,7 +3914,7 @@ var isLessThanOrEqualTo$1 = (O) => dual(2, (self, that) => O(self, that) !== 1);
 * Returns `true` if the order returns `1` or `0`, and returns `false` only if
 * the order returns `-1`.
 *
-* **Example** (Greater Than Or Equal)
+* **Example** (Checking greater-than-or-equal comparisons)
 *
 * ```ts
 * import { Order } from "effect"
@@ -3928,7 +3933,7 @@ var isLessThanOrEqualTo$1 = (O) => dual(2, (self, that) => O(self, that) !== 1);
 */
 var isGreaterThanOrEqualTo$1 = (O) => dual(2, (self, that) => O(self, that) !== -1);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Option.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Option.js
 /**
 * Creates an `Option` representing the absence of a value.
 *
@@ -4116,7 +4121,7 @@ var match$3 = /*#__PURE__*/ dual(2, (self, { onNone, onSome }) => isNone(self) ?
 * @category getters
 * @since 2.0.0
 */
-var getOrUndefined = /*#__PURE__*/ (/* @__PURE__ */ dual(2, (self, onNone) => isNone(self) ? onNone() : self.value))(constUndefined);
+var getOrUndefined$1 = /*#__PURE__*/ (/* @__PURE__ */ dual(2, (self, onNone) => isNone(self) ? onNone() : self.value))(constUndefined);
 /**
 * Transforms the value inside a `Some` using the provided function, leaving
 * `None` unchanged.
@@ -4149,7 +4154,7 @@ var getOrUndefined = /*#__PURE__*/ (/* @__PURE__ */ dual(2, (self, onNone) => is
 * @category mapping
 * @since 2.0.0
 */
-var map$3 = /*#__PURE__*/ dual(2, (self, f) => isNone(self) ? none() : some(f(self.value)));
+var map$4 = /*#__PURE__*/ dual(2, (self, f) => isNone(self) ? none() : some(f(self.value)));
 /**
 * Filters an `Option` using a predicate. Returns `None` if the predicate is
 * not satisfied or the input is `None`.
@@ -4192,7 +4197,7 @@ var map$3 = /*#__PURE__*/ dual(2, (self, f) => isNone(self) ? none() : some(f(se
 */
 var filter = /*#__PURE__*/ dual(2, (self, predicate) => isNone(self) ? none() : predicate(self.value) ? some(self.value) : none());
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Result.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Result.js
 /**
 * Creates a `Result` holding a `Success` value.
 *
@@ -4260,7 +4265,7 @@ var fail$4 = fail$5;
 * - Acts as a TypeScript type guard, narrowing to `Failure<A, E>`
 * - After narrowing, you can access `.failure` to read the error value
 *
-* **Example** (Narrowing to Failure)
+* **Example** (Narrowing to failure)
 *
 * ```ts
 * import { Result } from "effect"
@@ -4281,7 +4286,7 @@ var fail$4 = fail$5;
 */
 var isFailure = isFailure$1;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Array.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Array.js
 /**
 * Works with JavaScript arrays, readonly arrays, and non-empty arrays.
 *
@@ -4301,7 +4306,7 @@ var isFailure = isFailure$1;
 * Use to access native JavaScript array constructor methods such as `isArray`
 * or `from` from the Effect module namespace.
 *
-* **Example** (Using the Array constructor)
+* **Example** (Accessing the Array constructor)
 *
 * ```ts
 * import { Array } from "effect"
@@ -4508,7 +4513,7 @@ var tailNonEmpty = (self) => self.slice(1);
 * Use when you need the union of two arrays but duplicate detection must use a
 * custom equivalence instead of the default `Equal.equivalence()`.
 *
-* **Example** (Union with custom equality)
+* **Example** (Computing unions with custom equality)
 *
 * ```ts
 * import { Array } from "effect"
@@ -4536,7 +4541,7 @@ var unionWith = /*#__PURE__*/ dual(3, (self, that, isEquivalent) => {
 * Computes the union of two arrays, removing duplicates using
 * `Equal.equivalence()`.
 *
-* **Example** (Array union)
+* **Example** (Computing array unions)
 *
 * ```ts
 * import { Array } from "effect"
@@ -4600,7 +4605,7 @@ var empty$3 = () => [];
 * @category mapping
 * @since 2.0.0
 */
-var map$2 = /*#__PURE__*/ dual(2, (self, f) => self.map(f));
+var map$3 = /*#__PURE__*/ dual(2, (self, f) => self.map(f));
 /**
 * Removes duplicates using a custom equivalence, preserving the order of the
 * first occurrence.
@@ -4635,7 +4640,7 @@ var dedupeWith = /*#__PURE__*/ dual(2, (self, isEquivalent) => {
 	return [];
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/BigDecimal.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/BigDecimal.js
 /**
 * Decimal numbers and arithmetic for cases where JavaScript `number` rounding
 * is not precise enough. A `BigDecimal` stores digits as a `bigint` plus a
@@ -4645,9 +4650,9 @@ var dedupeWith = /*#__PURE__*/ dual(2, (self, isEquivalent) => {
 *
 * @since 2.0.0
 */
-var TypeId$18 = "~effect/BigDecimal";
+var TypeId$19 = "~effect/BigDecimal";
 var BigDecimalProto = {
-	[TypeId$18]: TypeId$18,
+	[TypeId$19]: TypeId$19,
 	[symbol$2]() {
 		const normalized = normalize(this);
 		return combine(hash(normalized.value), number$3(normalized.scale));
@@ -4693,7 +4698,7 @@ var BigDecimalProto = {
 * @category guards
 * @since 2.0.0
 */
-var isBigDecimal = (u) => hasProperty$1(u, TypeId$18);
+var isBigDecimal = (u) => hasProperty$1(u, TypeId$19);
 /**
 * Creates a `BigDecimal` from a `bigint` value and a scale.
 *
@@ -5027,7 +5032,7 @@ var isZero = (n) => n.value === bigint0$2;
 */
 var isNegative = (n) => n.value < bigint0$2;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Effectable.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Effectable.js
 /**
 * Create a low-level `Effect` prototype.
 *
@@ -5051,7 +5056,42 @@ var Prototype = (options) => makePrimitiveProto({
 	[evaluate]: options.evaluate
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Context.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/stackTraceLimit.js
+var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+var ObjectPrototypeHasOwnProperty = Object.prototype.hasOwnProperty;
+var ObjectIsExtensible = Object.isExtensible;
+/**
+* Check if `Error.stackTraceLimit` is writable.
+* Returns `false` if the property is frozen, non-writable, or `Error` is non-extensible.
+*
+* @internal
+*/
+var isStackTraceLimitWritable = () => {
+	const desc = ObjectGetOwnPropertyDescriptor(Error, "stackTraceLimit");
+	if (desc === void 0) return ObjectIsExtensible(Error);
+	return ObjectPrototypeHasOwnProperty.call(desc, "writable") ? desc.writable === true : desc.set !== void 0;
+};
+var canWriteStackTraceLimit = /*#__PURE__*/ isStackTraceLimitWritable();
+/**
+* Get the current `Error.stackTraceLimit` value.
+* Returns `undefined` if the property doesn't exist.
+*
+* @internal
+*/
+var getStackTraceLimit = () => Error.stackTraceLimit;
+/**
+* Safely set `Error.stackTraceLimit` if possible, otherwise no-op.
+*
+* Accepts `undefined` so a value read via {@link getStackTraceLimit} can be
+* restored faithfully.
+*
+* @internal
+*/
+var setStackTraceLimit = (value) => {
+	if (canWriteStackTraceLimit) Error.stackTraceLimit = value;
+};
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Context.js
 /**
 * Runtime type identifier attached to `Context` service keys and used by
 * `isKey` to recognize them.
@@ -5109,10 +5149,10 @@ var ServiceTypeId = "~effect/Context/Service";
 * @since 4.0.0
 */
 var Service = function() {
-	const prevLimit = Error.stackTraceLimit;
-	Error.stackTraceLimit = 2;
+	const prevLimit = getStackTraceLimit();
+	setStackTraceLimit(2);
 	const err = /* @__PURE__ */ new Error();
-	Error.stackTraceLimit = prevLimit;
+	setStackTraceLimit(prevLimit);
 	function KeyClass() {}
 	const self = KeyClass;
 	Object.setPrototypeOf(self, ServiceProto);
@@ -5162,7 +5202,7 @@ var ServiceProto = {
 	}
 };
 var ReferenceTypeId = "~effect/Context/Reference";
-var TypeId$17 = "~effect/Context";
+var TypeId$18 = "~effect/Context";
 /**
 * Creates a `Context` from an existing service map.
 *
@@ -5201,7 +5241,7 @@ var makeUnsafe$6 = (mapUnsafe) => {
 };
 var Proto$1 = {
 	...PipeInspectableProto,
-	[TypeId$17]: { _Services: (_) => _ },
+	[TypeId$18]: { _Services: (_) => _ },
 	toJSON() {
 		return {
 			_id: "Context",
@@ -5253,7 +5293,7 @@ var Proto$1 = {
 * @category guards
 * @since 2.0.0
 */
-var isContext = (u) => hasProperty$1(u, TypeId$17);
+var isContext = (u) => hasProperty$1(u, TypeId$18);
 /**
 * Checks whether the provided argument is a `Reference`.
 *
@@ -5353,58 +5393,25 @@ var add = /*#__PURE__*/ dual(3, (self, key, service) => withMapUnsafe(self, (map
 	map.set(key.key, service);
 }));
 /**
-* Gets the service for a key, or evaluates the fallback when a non-reference
-* key is absent.
+* Returns the service currently stored for a key, or `undefined` when the key
+* is absent.
 *
 * **When to use**
 *
-* Use when you need a fallback for a missing `Context.Service` key while still
-* resolving `Context.Reference` defaults.
-*
-* **Details**
-*
-* If the key is a `Context.Reference` and no override is stored in the
-* context, its cached default value is returned instead of the fallback.
+* Use when you need to read the service stored for a key without resolving
+* `Context.Reference` defaults.
 *
 * **Gotchas**
 *
-* The fallback is not evaluated for missing `Context.Reference` keys because
-* references resolve to their default value.
+* This is a raw lookup and does not resolve default values for
+* `Context.Reference` keys.
 *
-* **Example** (Falling back for missing services)
-*
-* ```ts
-* import { Context } from "effect"
-*
-* const Logger = Context.Service<{ log: (msg: string) => void }>("Logger")
-* const Database = Context.Service<{ query: (sql: string) => string }>(
-*   "Database"
-* )
-*
-* const context = Context.make(Logger, {
-*   log: (msg: string) => console.log(msg)
-* })
-*
-* const logger = Context.getOrElse(context, Logger, () => ({ log: () => {} }))
-* const database = Context.getOrElse(
-*   context,
-*   Database,
-*   () => ({ query: () => "fallback" })
-* )
-*
-* console.log(logger === Context.get(context, Logger)) // true
-* console.log(database.query("SELECT 1")) // "fallback"
-* ```
-*
-* @see {@link getOption} for returning `Option.none` when a non-reference key is missing
+* @see {@link getOption} for a reference-aware optional lookup
 *
 * @category getters
-* @since 3.7.0
+* @since 4.0.0
 */
-var getOrElse = /*#__PURE__*/ dual(3, (self, key, orElse) => {
-	if (self.mapUnsafe.has(key.key)) return self.mapUnsafe.get(key.key);
-	return isReference(key) ? getDefaultValue(key) : orElse();
-});
+var getOrUndefined = /*#__PURE__*/ dual(2, (self, key) => self.mapUnsafe.get(key.key));
 /**
 * Gets the service for a key, throwing if an absent non-reference key cannot be
 * resolved.
@@ -5756,8 +5763,8 @@ var withMapUnsafe = (self, f) => {
 */
 var Reference = Service;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Duration.js
-var TypeId$16 = "~effect/time/Duration";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Duration.js
+var TypeId$17 = "~effect/time/Duration";
 var bigint0$1 = /*#__PURE__*/ BigInt(0);
 var bigint1 = /*#__PURE__*/ BigInt(1);
 var bigint1e3 = /*#__PURE__*/ BigInt(1e3);
@@ -5822,7 +5829,7 @@ var fromInputUnsafe = (input) => {
 		}
 		case "object": {
 			if (input === null) break;
-			if (TypeId$16 in input) return input;
+			if (TypeId$17 in input) return input;
 			if (Array.isArray(input)) {
 				if (input.length !== 2 || !input.every(isNumber)) return invalid(input);
 				if (Number.isNaN(input[0]) || Number.isNaN(input[1])) return zero;
@@ -5854,7 +5861,7 @@ var zeroDurationValue = {
 var infinityDurationValue = { _tag: "Infinity" };
 var negativeInfinityDurationValue = { _tag: "NegativeInfinity" };
 var DurationProto = {
-	[TypeId$16]: TypeId$16,
+	[TypeId$17]: TypeId$17,
 	[symbol$2]() {
 		return structure(this.value);
 	},
@@ -5932,11 +5939,11 @@ var make$22 = (input) => {
 * @category guards
 * @since 2.0.0
 */
-var isDuration = (u) => hasProperty$1(u, TypeId$16);
+var isDuration = (u) => hasProperty$1(u, TypeId$17);
 /**
 * A Duration representing zero time.
 *
-* **Example** (Using the zero duration)
+* **Example** (Referencing the zero duration)
 *
 * ```ts
 * import { Duration } from "effect"
@@ -5951,7 +5958,7 @@ var zero = /*#__PURE__*/ make$22(0);
 /**
 * A Duration representing infinite time.
 *
-* **Example** (Using infinite duration)
+* **Example** (Referencing infinite duration)
 *
 * ```ts
 * import { Duration } from "effect"
@@ -5966,7 +5973,7 @@ var infinity = /*#__PURE__*/ make$22(Infinity);
 /**
 * A Duration representing negative infinite time.
 *
-* **Example** (Using negative infinite duration)
+* **Example** (Referencing negative infinite duration)
 *
 * ```ts
 * import { Duration } from "effect"
@@ -6247,7 +6254,7 @@ var Equivalence$2 = (self, that) => matchPair(self, that, {
 */
 var equals = /*#__PURE__*/ dual(2, (self, that) => Equivalence$2(self, that));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scheduler.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Scheduler.js
 /**
 * Controls how runnable Effect fiber tasks are dispatched.
 *
@@ -6445,7 +6452,7 @@ var MaxOpsBeforeYield = /*#__PURE__*/ Reference("effect/Scheduler/MaxOpsBeforeYi
 */
 var PreventSchedulerYield = /*#__PURE__*/ Reference("effect/Scheduler/PreventSchedulerYield", { defaultValue: () => false });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Tracer.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Tracer.js
 /**
 * Defines the low-level tracing model used by Effect.
 *
@@ -6673,7 +6680,7 @@ var NativeSpan = class {
 			startTime: options.startTime
 		};
 		this.attributes = /* @__PURE__ */ new Map();
-		this.traceId = getOrUndefined(options.parent)?.traceId ?? randomHexString(32);
+		this.traceId = getOrUndefined$1(options.parent)?.traceId ?? randomHexString(32);
 		this.spanId = randomHexString(16);
 	}
 	end(endTime, exit) {
@@ -6708,11 +6715,11 @@ var randomHexString = /*#__PURE__*/ function() {
 	};
 }();
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/metric.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/metric.js
 /** @internal */
 var FiberRuntimeMetricsKey = "effect/observability/Metric/FiberRuntimeMetricsKey";
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/references.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/references.js
 /** @internal */
 var CurrentConcurrency = /*#__PURE__*/ Reference("effect/References/CurrentConcurrency", { defaultValue: () => "unbounded" });
 /** @internal */
@@ -6734,15 +6741,15 @@ var MinimumLogLevel = /*#__PURE__*/ Reference("effect/References/MinimumLogLevel
 /** @internal */
 var CurrentLogSpans = /*#__PURE__*/ Reference("effect/References/CurrentLogSpans", { defaultValue: () => [] });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/tracer.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/tracer.js
 /** @internal */
 var addSpanStackTrace = (options) => {
 	if (options?.captureStackTrace === false) return options;
 	else if (options?.captureStackTrace !== void 0 && typeof options.captureStackTrace !== "boolean") return options;
-	const limit = Error.stackTraceLimit;
-	Error.stackTraceLimit = 3;
+	const limit = getStackTraceLimit();
+	setStackTraceLimit(3);
 	const traceError = /* @__PURE__ */ new Error();
-	Error.stackTraceLimit = limit;
+	setStackTraceLimit(limit);
 	return {
 		...options,
 		captureStackTrace: spanCleaner(() => traceError.stack)
@@ -6764,7 +6771,7 @@ var makeStackCleaner = (line) => (stack) => {
 };
 var spanCleaner = /*#__PURE__*/ makeStackCleaner(3);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/effect.js
 /** @internal */
 var Interrupt = class extends ReasonBase {
 	fiberId;
@@ -6791,7 +6798,7 @@ var Interrupt = class extends ReasonBase {
 /** @internal */
 var causeInterrupt = (fiberId) => new CauseImpl([new Interrupt(fiberId)]);
 /** @internal */
-var findError$1 = (self) => {
+var findError = (self) => {
 	for (let i = 0; i < self.reasons.length; i++) {
 		const reason = self.reasons[i];
 		if (reason._tag === "Fail") return succeed$4(reason.error);
@@ -6806,6 +6813,18 @@ var causeCombine = /*#__PURE__*/ dual(2, (self, that) => {
 	else if (that.reasons.length === 0) return self;
 	const newCause = new CauseImpl(union$3(self.reasons, that.reasons));
 	return equals$2(self, newCause) ? self : newCause;
+});
+/** @internal */
+var causeMap = /*#__PURE__*/ dual(2, (self, f) => {
+	let hasFail = false;
+	const failures = self.reasons.map((failure) => {
+		if (isFailReason$1(failure)) {
+			hasFail = true;
+			return new Fail(f(failure.error));
+		}
+		return failure;
+	});
+	return hasFail ? causeFromReasons(failures) : self;
 });
 /** @internal */
 var causePartition = (self) => {
@@ -6826,18 +6845,18 @@ var causeSquash = (self) => {
 	return new globalThis.Error("Empty cause");
 };
 /** @internal */
-var causePrettyErrors = (self) => {
+var causePrettyErrors = (self, options) => {
 	const errors = [];
 	const interrupts = [];
 	if (self.reasons.length === 0) return errors;
-	const prevStackLimit = Error.stackTraceLimit;
-	Error.stackTraceLimit = 1;
+	const prevStackLimit = getStackTraceLimit();
+	setStackTraceLimit(1);
 	for (const failure of self.reasons) {
 		if (failure._tag === "Interrupt") {
 			interrupts.push(failure);
 			continue;
 		}
-		errors.push(causePrettyError(failure._tag === "Die" ? failure.defect : failure.error, failure.annotations));
+		errors.push(causePrettyError(failure._tag === "Die" ? failure.defect : failure.error, failure.annotations, options));
 	}
 	if (errors.length === 0) {
 		const cause = /* @__PURE__ */ new Error("The fiber was interrupted by:");
@@ -6846,13 +6865,13 @@ var causePrettyErrors = (self) => {
 		const error = new globalThis.Error("All fibers interrupted without error", { cause });
 		error.name = "InterruptError";
 		error.stack = `${error.name}: ${error.message}`;
-		errors.push(causePrettyError(error, interrupts[0].annotations));
+		errors.push(causePrettyError(error, interrupts[0].annotations, options));
 	}
-	Error.stackTraceLimit = prevStackLimit;
+	setStackTraceLimit(prevStackLimit);
 	return errors;
 };
 /** @internal */
-var causePrettyError = (original, annotations) => {
+var causePrettyError = (original, annotations, options) => {
 	const kind = typeof original;
 	let error;
 	if (original && kind === "object") {
@@ -6863,6 +6882,7 @@ var causePrettyError = (original, annotations) => {
 			const stack = `${error.name}: ${error.message}`;
 			error.stack = annotations ? addStackAnnotations(stack, annotations) : stack;
 		}
+		if (options?.includeCauseInStack) error.stack = renderPrettyError(error);
 		for (const key of Object.keys(original)) if (!(key in error)) error[key] = original[key];
 	} else error = new globalThis.Error(!original ? `Unknown error: ${original}` : kind === "string" ? original : formatJson(original));
 	return error;
@@ -6921,7 +6941,8 @@ var currentStackTrace = (frame) => {
 	return out.join("\n");
 };
 /** @internal */
-var causePretty = (cause) => causePrettyErrors(cause).map((e) => e.cause ? `${e.stack} {\n${renderErrorCause(e.cause, "  ")}\n}` : e.stack).join("\n");
+var causePretty = (cause) => causePrettyErrors(cause).map(renderPrettyError).join("\n");
+var renderPrettyError = (e) => e.cause ? `${e.stack} {\n${renderErrorCause(e.cause, "  ")}\n}` : e.stack;
 var renderErrorCause = (cause, prefix) => {
 	const lines = cause.stack.split("\n");
 	let stack = `${prefix}[cause]: ${lines[0]}`;
@@ -7001,7 +7022,7 @@ var FiberImpl = class {
 		if (this.currentStackFrame) cause = causeAnnotate(cause, make$23(StackTraceKey, this.currentStackFrame));
 		if (annotations) cause = causeAnnotate(cause, annotations);
 		this._interruptedCause = this._interruptedCause ? causeCombine(this._interruptedCause, cause) : cause;
-		if (this.interruptible) this.evaluate(failCause$1(this._interruptedCause));
+		if (this.interruptible) this.evaluate(failCause$2(this._interruptedCause));
 	}
 	pollUnsafe() {
 		return this._exit;
@@ -7016,7 +7037,7 @@ var FiberImpl = class {
 		const exit = this.runLoop(effect);
 		if (exit === Yield) return;
 		const interruptChildren = fiberMiddleware.interruptChildren && fiberMiddleware.interruptChildren(this);
-		if (interruptChildren !== void 0) return this.evaluate(flatMap$1(interruptChildren, () => exit));
+		if (interruptChildren !== void 0) return this.evaluate(flatMap$2(interruptChildren, () => exit));
 		this._exit = exit;
 		this.runtimeMetrics?.recordFiberEnd(this.context, this._exit);
 		for (let i = 0; i < this._observers.length; i++) this._observers[i](exit);
@@ -7035,7 +7056,7 @@ var FiberImpl = class {
 				if (!yielding && !this.currentPreventYield && this.currentScheduler.shouldYield(this)) {
 					yielding = true;
 					const prev = current;
-					current = flatMap$1(yieldNow, () => prev);
+					current = flatMap$2(yieldNow, () => prev);
 				}
 				current = this.currentTracerContext ? this.currentTracerContext(current, this) : current[evaluate](this);
 				if (currentLoop !== this.currentLoopCount) return Yield;
@@ -7156,7 +7177,7 @@ var fiberInterruptAll = (fibers) => withFiber$1((parent) => {
 /** @internal */
 var succeed$3 = exitSucceed;
 /** @internal */
-var failCause$1 = exitFailCause;
+var failCause$2 = exitFailCause;
 /** @internal */
 var fail$3 = exitFail;
 /** @internal */
@@ -7194,6 +7215,8 @@ var succeedSome$1 = (a) => succeed$3(some(a));
 /** @internal */
 var succeedNone$1 = /*#__PURE__*/ succeed$3(/*#__PURE__*/ none());
 /** @internal */
+var failCauseSync$1 = (evaluate) => suspend$1(() => failCause$2(internalCall(evaluate)));
+/** @internal */
 var die$1 = (defect) => exitDie(defect);
 /** @internal */
 var failSync = (error) => suspend$1(() => fail$3(internalCall(error)));
@@ -7208,12 +7231,19 @@ var tryPromise$1 = (options) => {
 	const f = typeof options === "function" ? options : options.try;
 	const catcher = typeof options === "function" ? (cause) => new UnknownError$1(cause, "An error occurred in Effect.tryPromise") : options.catch;
 	return callbackOptions(function(resume, signal) {
+		const failWithCatch = (cause) => {
+			try {
+				resume(fail$3(internalCall(() => catcher(cause))));
+			} catch (err) {
+				resume(die$1(err));
+			}
+		};
 		try {
-			internalCall(() => f(signal)).then((a) => resume(succeed$3(a)), (e) => resume(fail$3(internalCall(() => catcher(e)))));
+			internalCall(() => f(signal)).then((a) => resume(succeed$3(a)), failWithCatch);
 		} catch (err) {
-			resume(fail$3(internalCall(() => catcher(err))));
+			failWithCatch(err);
 		}
-	}, eval.length !== 0);
+	}, f.length !== 0);
 };
 /** @internal */
 var withFiberId = (f) => withFiber$1((fiber) => f(fiber.id));
@@ -7254,11 +7284,13 @@ var asyncFinalizer = /*#__PURE__*/ makePrimitive({
 		}
 	},
 	[contE](cause, _fiber) {
-		return hasInterrupts(cause) ? flatMap$1(this[args](), () => failCause$1(cause)) : failCause$1(cause);
+		return hasInterrupts(cause) ? flatMap$2(this[args](), () => failCause$2(cause)) : failCause$2(cause);
 	}
 });
 /** @internal */
 var callback$1 = (register) => callbackOptions(register, register.length >= 2);
+/** @internal */
+var never$1 = /*#__PURE__*/ callback$1(constVoid);
 /** @internal */
 var gen$1 = (...args) => suspend$1(() => fromIteratorUnsafe(args.length === 1 ? args[0]() : args[1].call(args[0].self)));
 /** @internal */
@@ -7282,10 +7314,10 @@ var fn$1 = function() {
 	const nameFirst = typeof arguments[0] === "string";
 	const name = nameFirst ? arguments[0] : "Effect.fn";
 	const spanOptions = nameFirst ? arguments[1] : void 0;
-	const prevLimit = globalThis.Error.stackTraceLimit;
-	globalThis.Error.stackTraceLimit = 2;
+	const prevLimit = getStackTraceLimit();
+	setStackTraceLimit(2);
 	const defError = new globalThis.Error();
-	globalThis.Error.stackTraceLimit = prevLimit;
+	setStackTraceLimit(prevLimit);
 	if (nameFirst) return (body, ...pipeables) => makeFn(name, body, defError, pipeables, nameFirst, spanOptions);
 	return makeFn(name, arguments[0], defError, Array.prototype.slice.call(arguments, 1), nameFirst, spanOptions);
 };
@@ -7298,10 +7330,10 @@ var makeFn = (name, bodyOrOptions, defError, pipeables, addSpan, spanOptions) =>
 		});
 		for (let i = 0; i < pipeables.length; i++) result = pipeables[i](result, ...args);
 		if (!isEffect$1(result)) return result;
-		const prevLimit = globalThis.Error.stackTraceLimit;
-		globalThis.Error.stackTraceLimit = 2;
+		const prevLimit = getStackTraceLimit();
+		setStackTraceLimit(2);
 		const callError = new globalThis.Error();
-		globalThis.Error.stackTraceLimit = prevLimit;
+		setStackTraceLimit(prevLimit);
 		return updateService(addSpan ? useSpan$1(name, spanOptions, (span) => provideParentSpan(result, span)) : result, CurrentStackFrame, (prev) => ({
 			name,
 			stack: fnStackCleaner(() => callError.stack),
@@ -7338,7 +7370,7 @@ var fromIteratorEagerUnsafe = (evaluate) => {
 				return suspend$1(() => {
 					if (isFirstExecution) {
 						isFirstExecution = false;
-						return flatMap$1(state.value, (value) => fromIteratorUnsafe(iterator, value));
+						return flatMap$2(state.value, (value) => fromIteratorUnsafe(iterator, value));
 					} else return suspend$1(() => fromIteratorUnsafe(evaluate()));
 				});
 			}
@@ -7369,23 +7401,23 @@ var fromIteratorUnsafe = /*#__PURE__*/ makePrimitive({
 /** @internal */
 var as$1 = /*#__PURE__*/ dual(2, (self, value) => {
 	const b = succeed$3(value);
-	return flatMap$1(self, (_) => b);
+	return flatMap$2(self, (_) => b);
 });
 /** @internal */
-var asSome = (self) => map$1(self, some);
+var asSome = (self) => map$2(self, some);
 /** @internal */
-var andThen = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => isEffect$1(f) ? f : internalCall(() => f(a))));
+var andThen = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => isEffect$1(f) ? f : internalCall(() => f(a))));
 /** @internal */
-var tap$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => as$1(isEffect$1(f) ? f : internalCall(() => f(a)), a)));
+var tap$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => as$1(isEffect$1(f) ? f : internalCall(() => f(a)), a)));
 /** @internal */
-var asVoid$1 = (self) => flatMap$1(self, (_) => exitVoid);
+var asVoid$1 = (self) => flatMap$2(self, (_) => exitVoid);
 /** @internal */
 var raceAllFirst = (all, options) => withFiber$1((parent) => callback$1((resume) => {
 	let done = false;
 	const fibers = /* @__PURE__ */ new Set();
 	const onExit = (exit) => {
 		done = true;
-		resume(fibers.size === 0 ? exit : flatMap$1(uninterruptible(fiberInterruptAll(fibers)), () => exit));
+		resume(fibers.size === 0 ? exit : flatMap$2(uninterruptible(fiberInterruptAll(fibers)), () => exit));
 	};
 	let i = 0;
 	for (const effect of all) {
@@ -7409,7 +7441,7 @@ var raceAllFirst = (all, options) => withFiber$1((parent) => callback$1((resume)
 /** @internal */
 var raceFirst = /*#__PURE__*/ dual((args) => isEffect$1(args[1]), (self, that, options) => raceAllFirst([self, that], options));
 /** @internal */
-var flatMap$1 = /*#__PURE__*/ dual(2, (self, f) => {
+var flatMap$2 = /*#__PURE__*/ dual(2, (self, f) => {
 	const onSuccess = Object.create(OnSuccessProto);
 	onSuccess[args] = self;
 	onSuccess[contA] = f.length !== 1 ? (a) => f(a) : f;
@@ -7427,26 +7459,14 @@ var effectIsExit = (effect) => ExitTypeId in effect;
 /** @internal */
 var flatMapEager$1 = /*#__PURE__*/ dual(2, (self, f) => {
 	if (effectIsExit(self)) return self._tag === "Success" ? f(self.value) : self;
-	return flatMap$1(self, f);
+	return flatMap$2(self, f);
 });
 /** @internal */
-var flatten$1 = (self) => flatMap$1(self, identity);
+var flatten$1 = (self) => flatMap$2(self, identity);
 /** @internal */
-var map$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => succeed$3(internalCall(() => f(a)))));
+var map$2 = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => succeed$3(internalCall(() => f(a)))));
 /** @internal */
-var mapEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMap(self, f) : map$1(self, f));
-/** @internal */
-var mapErrorEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMapError(self, f) : mapError$1(self, f));
-/** @internal */
-var catchEager$1 = /*#__PURE__*/ dual(2, (self, f) => {
-	if (effectIsExit(self)) {
-		if (self._tag === "Success") return self;
-		const error = findError$1(self.cause);
-		if (isFailure(error)) return self;
-		return f(error.success);
-	}
-	return catch_$1(self, f);
-});
+var mapEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMap(self, f) : map$2(self, f));
 /** @internal */
 var exitInterrupt$1 = (fiberId) => exitFailCause(causeInterrupt(fiberId));
 /** @internal */
@@ -7456,13 +7476,6 @@ var exitVoid = /*#__PURE__*/ exitSucceed(void 0);
 /** @internal */
 var exitMap = /*#__PURE__*/ dual(2, (self, f) => self._tag === "Success" ? exitSucceed(f(self.value)) : self);
 /** @internal */
-var exitMapError = /*#__PURE__*/ dual(2, (self, f) => {
-	if (self._tag === "Success") return self;
-	const error = findError$1(self.cause);
-	if (isFailure(error)) return self;
-	return exitFail(f(error.success));
-});
-/** @internal */
 var exitZipRight = /*#__PURE__*/ dual(2, (self, that) => exitIsSuccess(self) ? that : self);
 /** @internal */
 var exitAsVoidAll = (exits) => {
@@ -7470,8 +7483,6 @@ var exitAsVoidAll = (exits) => {
 	for (const exit of exits) if (exit._tag === "Failure") failures.push(...exit.cause.reasons);
 	return failures.length === 0 ? exitVoid : exitFailCause(causeFromReasons(failures));
 };
-/** @internal */
-var exitGetSuccess = (self) => exitIsSuccess(self) ? some(self.value) : none();
 /** @internal */
 var serviceOption$1 = (service) => withFiber$1((fiber) => succeed$3(getOption(fiber.context, service)));
 /** @internal */
@@ -7527,18 +7538,18 @@ var OnFailureProto = /*#__PURE__*/ makePrimitiveProto({
 /** @internal */
 var catchCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause$1(self, (cause) => {
 	const eb = filter(cause);
-	return isFailure(eb) ? failCause$1(eb.failure) : internalCall(() => f(eb.success, cause));
+	return isFailure(eb) ? failCause$2(eb.failure) : internalCall(() => f(eb.success, cause));
 }));
 /** @internal */
-var catch_$1 = /*#__PURE__*/ dual(2, (self, f) => catchCauseFilter(self, findError$1, (e) => f(e)));
+var catch_$1 = /*#__PURE__*/ dual(2, (self, f) => catchCauseFilter(self, findError, (e) => f(e)));
 /** @internal */
 var tapCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause$1(self, (cause) => {
 	const result = filter(cause);
-	if (isFailure(result)) return failCause$1(cause);
-	return andThen(internalCall(() => f(result.success, cause)), failCause$1(cause));
+	if (isFailure(result)) return failCause$2(cause);
+	return andThen(internalCall(() => f(result.success, cause)), failCause$2(cause));
 }));
 /** @internal */
-var tapError$1 = /*#__PURE__*/ dual(2, (self, f) => tapCauseFilter(self, findError$1, (e) => f(e)));
+var tapError$1 = /*#__PURE__*/ dual(2, (self, f) => tapCauseFilter(self, findError, (e) => f(e)));
 /** @internal */
 var mapError$1 = /*#__PURE__*/ dual(2, (self, f) => catch_$1(self, (error) => failSync(() => f(error))));
 /** @internal */
@@ -7566,8 +7577,8 @@ var OnSuccessAndFailureProto = /*#__PURE__*/ makePrimitiveProto({
 /** @internal */
 var matchEffect = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self, {
 	onFailure: (cause) => {
-		const fail = cause.reasons.find(isFailReason);
-		return fail ? internalCall(() => options.onFailure(fail.error)) : failCause$1(cause);
+		const fail = cause.reasons.find(isFailReason$1);
+		return fail ? internalCall(() => options.onFailure(fail.error)) : failCause$2(cause);
 	},
 	onSuccess: options.onSuccess
 }));
@@ -7580,7 +7591,7 @@ var match = /*#__PURE__*/ dual(2, (self, options) => matchEffect(self, {
 var matchEager = /*#__PURE__*/ dual(2, (self, options) => {
 	if (effectIsExit(self)) {
 		if (self._tag === "Success") return exitSucceed(options.onSuccess(self.value));
-		const error = findError$1(self.cause);
+		const error = findError(self.cause);
 		if (isFailure(error)) return self;
 		return exitSucceed(options.onFailure(error.success));
 	}
@@ -7705,7 +7716,7 @@ var scopedWith = (f) => suspend$1(() => {
 	return onExit$1(f(scope), (exit) => suspend$1(() => scopeCloseUnsafe(scope, exit) ?? void_$2));
 });
 /** @internal */
-var acquireRelease$1 = (acquire, release, options) => contextWith$1((context) => uninterruptibleMask$1((restore) => flatMap$1(scope, (scope) => tap$1(options?.interruptible ? restore(acquire) : acquire, (a) => scopeAddFinalizerExit(scope, (exit) => provideContext$1(release(a, exit), context))))));
+var acquireRelease$1 = (acquire, release, options) => contextWith$1((context) => uninterruptibleMask$1((restore) => flatMap$2(scope, (scope) => tap$1(options?.interruptible ? restore(acquire) : acquire, (a) => scopeAddFinalizerExit(scope, (exit) => provideContext$1(release(a, exit), context))))));
 /** @internal */
 var onExitPrimitive = /*#__PURE__*/ makePrimitive({
 	op: "OnExit",
@@ -7723,12 +7734,12 @@ var onExitPrimitive = /*#__PURE__*/ makePrimitive({
 	[contA](value, _, exit) {
 		exit ??= exitSucceed(value);
 		const eff = this[args][1](exit);
-		return eff ? flatMap$1(eff, (_) => exit) : exit;
+		return eff ? flatMap$2(eff, (_) => exit) : exit;
 	},
 	[contE](cause, _, exit) {
 		exit ??= exitFailCause(cause);
 		const eff = this[args][1](exit);
-		return eff ? flatMap$1(eff, (_) => exit) : exit;
+		return eff ? flatMap$2(eff, (_) => exit) : exit;
 	}
 });
 /** @internal */
@@ -7746,7 +7757,7 @@ var setInterruptible = /*#__PURE__*/ makePrimitive({
 	op: "SetInterruptible",
 	[contAll](fiber) {
 		fiber.interruptible = this[args];
-		if (fiber._interruptedCause && fiber.interruptible) return () => failCause$1(fiber._interruptedCause);
+		if (fiber._interruptedCause && fiber.interruptible) return () => failCause$2(fiber._interruptedCause);
 	}
 });
 var setInterruptibleTrue = /*#__PURE__*/ setInterruptible(true);
@@ -7756,7 +7767,7 @@ var interruptible = (self) => withFiber$1((fiber) => {
 	if (fiber.interruptible) return self;
 	fiber.interruptible = true;
 	fiber._stack.push(setInterruptibleFalse);
-	if (fiber._interruptedCause) return failCause$1(fiber._interruptedCause);
+	if (fiber._interruptedCause) return failCause$2(fiber._interruptedCause);
 	return self;
 });
 /** @internal */
@@ -7772,7 +7783,7 @@ var all$1 = (arg, options) => {
 	else if (options?.discard) return options.mode === "result" ? forEach(Object.values(arg), result$1, options) : forEach(Object.values(arg), identity, options);
 	return suspend$1(() => {
 		const out = {};
-		return as$1(forEach(Object.entries(arg), ([key, effect]) => map$1(options?.mode === "result" ? result$1(effect) : effect, (value) => {
+		return as$1(forEach(Object.entries(arg), ([key, effect]) => map$2(options?.mode === "result" ? result$1(effect) : effect, (value) => {
 			out[key] = value;
 		}), {
 			discard: true,
@@ -7835,6 +7846,7 @@ var iterateEagerImpl = (options) => {
 		let index = opts?.start ?? 0;
 		const end = opts?.end ?? items.length;
 		const concurrency = opts?.concurrency ?? 1;
+		const orderedStep = opts?.orderedStep === true && concurrency > 1;
 		let done = false;
 		let parentFiber;
 		let fibers;
@@ -7842,16 +7854,31 @@ var iterateEagerImpl = (options) => {
 		let interrupted = false;
 		let terminal;
 		let effect;
+		let nextIndex = index;
+		const exits = orderedStep ? new Array(end) : void 0;
+		const runStep = (item, exit, currentIndex) => {
+			if (!orderedStep) return step(state, item, exit, currentIndex);
+			if (terminal) return terminal;
+			exits[currentIndex] = exit;
+			while (nextIndex < end) {
+				const nextExit = exits[nextIndex];
+				if (nextExit === void 0) return;
+				exits[nextIndex] = void 0;
+				const index = nextIndex++;
+				const result = step(state, items[index], nextExit, index);
+				if (result) return result;
+			}
+		};
 		const go = () => {
 			let paused = false;
 			for (; !terminal && index < end; index++) {
 				const item = items[index];
 				const eff = effect ?? onItem(state, item, index);
 				if (effectIsExit(eff)) {
-					terminal = step(state, item, eff, index);
+					terminal = runStep(item, eff, index);
 					if (terminal) break;
-				} else if (concurrency === 1) return flatMap$1(exit$1(eff), (exit) => {
-					terminal = step(state, item, exit, index);
+				} else if (concurrency === 1) return flatMap$2(exit$1(eff), (exit) => {
+					terminal = runStep(item, exit, index);
 					index++;
 					return terminal ?? go() ?? void_$2;
 				});
@@ -7871,7 +7898,7 @@ var iterateEagerImpl = (options) => {
 					effect = void 0;
 					const fiber = forkUnsafe$1(parentFiber, eff, true, true, "inherit");
 					if (fiber._exit) {
-						terminal = step(state, item, fiber._exit, index);
+						terminal = runStep(item, fiber._exit, index);
 						if (terminal) break;
 						continue;
 					}
@@ -7885,7 +7912,7 @@ var iterateEagerImpl = (options) => {
 							else if (terminal._tag === "Failure") terminal.cause.reasons.push(reason);
 							else terminal = exitFailCause(causeFromReasons([reason]));
 						} else {
-							const result = step(state, item, exit, currentIndex);
+							const result = runStep(item, exit, currentIndex);
 							if (result) {
 								terminal = result._tag === "Failure" ? exitFailCause(causeFromReasons(result.cause.reasons.slice())) : result;
 								go();
@@ -7953,7 +7980,7 @@ var forkIn$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, scope, o
 	return succeed$3(fiber);
 }));
 /** @internal */
-var forkScoped$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, options) => flatMap$1(scope, (scope) => forkIn$1(self, scope, options)));
+var forkScoped$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, options) => flatMap$2(scope, (scope) => forkIn$1(self, scope, options)));
 /** @internal */
 var runForkWith$1 = (context) => (effect, options) => {
 	const fiber = new FiberImpl(options?.scheduler ? add(context, Scheduler, options.scheduler) : context, options?.uninterruptible !== true);
@@ -8065,7 +8092,7 @@ var NoopSpanProto = {
 var noopSpan = (options) => Object.assign(Object.create(NoopSpanProto), options);
 var filterDisablePropagation = (span) => {
 	if (!span) return none();
-	return get$1(span.annotations, DisablePropagation) ? span._tag === "Span" ? filterDisablePropagation(getOrUndefined(span.parent)) : none() : some(span);
+	return get$1(span.annotations, DisablePropagation) ? span._tag === "Span" ? filterDisablePropagation(getOrUndefined$1(span.parent)) : none() : some(span);
 };
 /** @internal */
 var makeSpanUnsafe = (fiber, name, options) => {
@@ -8174,11 +8201,14 @@ var ClockImpl = class {
 	}
 	currentTimeNanos = /*#__PURE__*/ sync$1(() => this.currentTimeNanosUnsafe());
 	sleep(duration) {
-		const millis = toMillis(duration);
+		return this.sleepMillis(toMillis(duration));
+	}
+	sleepMillis(millis) {
 		if (millis <= 0) return yieldNow;
+		else if (!Number.isFinite(millis)) return never$1;
 		return callback$1((resume) => {
-			if (millis > MAX_TIMER_MILLIS) return;
-			const handle = setTimeout(() => resume(void_$2), millis);
+			const continuation = millis > MAX_TIMER_MILLIS ? this.sleepMillis(millis - MAX_TIMER_MILLIS) : void_$2;
+			const handle = setTimeout(() => resume(continuation), Math.min(millis, MAX_TIMER_MILLIS));
 			return sync$1(() => clearTimeout(handle));
 		});
 	}
@@ -8186,14 +8216,16 @@ var ClockImpl = class {
 var performanceNowNanos = /*#__PURE__*/ function() {
 	const bigint1e6 = /*#__PURE__*/ BigInt(1e6);
 	if (typeof performance === "undefined" || typeof performance.now === "undefined") return () => BigInt(Date.now()) * bigint1e6;
-	else if (typeof performance.timeOrigin === "number" && performance.timeOrigin === 0) return () => BigInt(Math.round(performance.now() * 1e6));
-	const origin = /*#__PURE__*/ BigInt(/*#__PURE__*/ Date.now()) * bigint1e6 - /*#__PURE__*/ BigInt(/*#__PURE__*/ Math.round(/*#__PURE__*/ performance.now() * 1e6));
-	return () => origin + BigInt(Math.round(performance.now() * 1e6));
+	let origin;
+	return () => {
+		origin ??= BigInt(Date.now()) * bigint1e6 - BigInt(Math.round(performance.now() * 1e6));
+		return origin + BigInt(Math.round(performance.now() * 1e6));
+	};
 }();
 var processOrPerformanceNow = /*#__PURE__*/ function() {
 	const processHrtime = typeof process === "object" && "hrtime" in process && typeof process.hrtime.bigint === "function" ? process.hrtime : void 0;
 	if (!processHrtime) return performanceNowNanos;
-	const origin = /*#__PURE__*/ performanceNowNanos() - /*#__PURE__*/ processHrtime.bigint();
+	const origin = /*#__PURE__*/ BigInt(/*#__PURE__*/ Date.now()) * /*#__PURE__*/ BigInt(1e6) - /*#__PURE__*/ processHrtime.bigint();
 	return () => origin + processHrtime.bigint();
 }();
 /** @internal */
@@ -8350,7 +8382,7 @@ var tracerLogger = /*#__PURE__*/ loggerMake(({ cause, fiber, logLevel, message }
 	span.event(toStringUnknown(Array.isArray(message) && message.length === 1 ? message[0] : message), clock.currentTimeNanosUnsafe(), attributes);
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Cause.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Cause.js
 /**
 * Records the full reason an `Effect` failed.
 *
@@ -8363,6 +8395,31 @@ var tracerLogger = /*#__PURE__*/ loggerMake(({ cause, fiber, logLevel, message }
 * @since 2.0.0
 */
 /**
+* Narrows a `Reason` to `Fail`.
+*
+* **When to use**
+*
+* Use as a predicate for `Array.filter` to pick out typed `Fail` reasons when
+* iterating over `cause.reasons`.
+*
+* **Example** (Filtering fail reasons)
+*
+* ```ts
+* import { Cause } from "effect"
+*
+* const cause = Cause.fail("error")
+* const fails = cause.reasons.filter(Cause.isFailReason)
+* console.log(fails[0].error) // "error"
+* ```
+*
+* @see {@link isDieReason} — narrow to `Die`
+* @see {@link isInterruptReason} — narrow to `Interrupt`
+*
+* @category guards
+* @since 4.0.0
+*/
+var isFailReason = isFailReason$1;
+/**
 * Creates a `Cause` containing a single `Fail` reason with the
 * given typed error.
 *
@@ -8370,7 +8427,7 @@ var tracerLogger = /*#__PURE__*/ loggerMake(({ cause, fiber, logLevel, message }
 *
 * Use to construct a cause from an expected typed error.
 *
-* **Example** (creating a fail cause)
+* **Example** (Creating a fail cause)
 *
 * ```ts
 * import { Cause } from "effect"
@@ -8388,38 +8445,42 @@ var tracerLogger = /*#__PURE__*/ loggerMake(({ cause, fiber, logLevel, message }
 */
 var fail$2 = causeFail;
 /**
-* Returns a `Result` whose success value is the first typed error value `E`
-* from a `Fail` reason in the cause. If the cause has no `Fail` reason,
-* the failure value is the original cause narrowed to `Cause<never>`, because
-* it contains no typed error reasons.
+* Transforms the typed error values inside a `Cause` using the
+* provided function. Only `Fail` reasons are affected; `Die` and `Interrupt`
+* reasons pass through unchanged.
 *
 * **When to use**
 *
-* Use when you need the first typed error value from a `Cause` as a `Result`
-* that preserves the original cause when no match is found.
+* Use to transform expected typed failures while preserving defects and
+* interruptions unchanged.
 *
-* **Example** (extracting the first error value)
+* **Details**
+*
+* If at least one `Fail` reason exists, this returns a new `Cause`
+* containing the mapped failures. If the cause has no `Fail` reasons, the
+* original cause is returned unchanged.
+*
+* **Example** (Mapping errors to uppercase)
 *
 * ```ts
-* import { Cause, Result } from "effect"
+* import { Cause } from "effect"
 *
-* const result = Cause.findError(Cause.fail("error"))
-* if (!Result.isFailure(result)) {
-*   console.log(result.success) // "error"
+* const cause = Cause.fail("error")
+* const mapped = Cause.map(cause, (e) => e.toUpperCase())
+* const reason = mapped.reasons[0]
+* if (Cause.isFailReason(reason)) {
+*   console.log(reason.error) // "ERROR"
 * }
 * ```
 *
-* @see {@link findFail} — extract the full `Fail` reason
-* @see {@link findErrorOption} — `Option`-based variant
-*
-* @category filtering
-* @since 4.0.0
+* @category mapping
+* @since 2.0.0
 */
-var findError = findError$1;
+var map$1 = causeMap;
 /**
 * Checks whether an arbitrary value is a `Done` signal.
 *
-* **Example** (runtime type check)
+* **Example** (Checking the runtime type)
 *
 * ```ts
 * import { Cause } from "effect"
@@ -8440,7 +8501,7 @@ var isDone = isDone$1;
 *
 * Use when you model stream or queue completion through the error channel.
 *
-* **Example** (failing with Done)
+* **Example** (Failing with Done)
 *
 * ```ts
 * import { Cause, Effect } from "effect"
@@ -8461,7 +8522,38 @@ var done$1 = done$2;
 Service()("effect/Cause/StackTrace");
 Service()("effect/Cause/InterruptorStackTrace");
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Exit.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Exit.js
+/**
+* Creates a failed Exit from a Cause.
+*
+* **When to use**
+*
+* Use when you already have a `Cause<E>` and want to wrap it in an Exit
+* for advanced error handling where you need full control over the Cause
+* structure.
+*
+* **Details**
+*
+* Returns a `Failure<never, E>`. If you only have an error value, use
+* {@link fail} instead.
+*
+* **Example** (Creating a failed Exit from a Cause)
+*
+* ```ts
+* import { Cause, Exit } from "effect"
+*
+* const cause = Cause.fail("Something went wrong")
+* const exit = Exit.failCause(cause)
+* console.log(Exit.isFailure(exit)) // true
+* ```
+*
+* @see {@link fail} to create a Failure from a plain error value
+* @see {@link die} to create a Failure from a defect
+*
+* @category constructors
+* @since 2.0.0
+*/
+var failCause$1 = exitFailCause;
 /**
 * Creates a failed Exit from a typed error value.
 *
@@ -8501,7 +8593,7 @@ var void_$1 = exitVoid;
 * Use as a type guard to narrow `Exit<A, E>` to `Success<A, E>` and access the
 * `value` property.
 *
-* **Example** (Narrowing to Success)
+* **Example** (Narrowing to success)
 *
 * ```ts
 * import { Exit } from "effect"
@@ -8520,34 +8612,6 @@ var void_$1 = exitVoid;
 * @since 2.0.0
 */
 var isSuccess = exitIsSuccess;
-/**
-* Returns the success value of an Exit as an Option.
-*
-* **When to use**
-*
-* Use when you need the success value from an `Exit` as an `Option` instead of
-* pattern matching.
-*
-* **Details**
-*
-* Returns `Option.some(value)` for a Success and `Option.none()` for a Failure.
-*
-* **Example** (Getting the success value)
-*
-* ```ts
-* import { Exit } from "effect"
-*
-* console.log(Exit.getSuccess(Exit.succeed(42))) // { _tag: "Some", value: 42 }
-* console.log(Exit.getSuccess(Exit.fail("err"))) // { _tag: "None" }
-* ```
-*
-* @see {@link getCause} to extract the Cause of a failure
-* @see {@link filterValue} for filter-pipeline usage
-*
-* @category accessors
-* @since 4.0.0
-*/
-var getSuccess = exitGetSuccess;
 var DeferredProto = {
 	["~effect/Deferred"]: {
 		_A: identity,
@@ -8666,7 +8730,7 @@ var doneUnsafe = (self, effect) => {
 	return true;
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/References.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/References.js
 /**
 * Context reference for managing log annotations that are automatically added to all log entries.
 * These annotations provide contextual metadata that appears in every log message.
@@ -8776,7 +8840,7 @@ var CurrentLogAnnotations = CurrentLogAnnotations$1;
 */
 var TracerTimingEnabled = TracerTimingEnabled$1;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Scope.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Scope.js
 /**
 * Controls how long resources stay open.
 *
@@ -9017,15 +9081,15 @@ var forkUnsafe = scopeForkUnsafe;
 */
 var close = scopeClose;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Layer.js
-var TypeId$14 = "~effect/Layer";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Layer.js
+var TypeId$15 = "~effect/Layer";
 var MemoMapTypeId = "~effect/Layer/MemoMap";
 var memoMapReuse = (entry, scope) => {
 	entry.observers++;
 	return andThen(scopeAddFinalizerExit(scope, (exit) => entry.finalizer(exit)), entry.effect);
 };
 var LayerProto = {
-	[TypeId$14]: {
+	[TypeId$15]: {
 		_ROut: identity,
 		_E: identity,
 		_RIn: identity
@@ -9123,7 +9187,7 @@ var memoMapBuild = (memoMap, layer, scope, build) => {
 		})
 	};
 	memoMap.map.set(layer, entry);
-	return scopeAddFinalizerExit(scope, entry.finalizer).pipe(flatMap$1(() => build(memoMap, layerScope)), onExit$1((exit) => {
+	return scopeAddFinalizerExit(scope, entry.finalizer).pipe(flatMap$2(() => build(memoMap, layerScope)), onExit$1((exit) => {
 		entry.effect = exit;
 		return done(deferred, exit);
 	}));
@@ -9179,6 +9243,24 @@ var MemoMapImpl = class {
 */
 var makeMemoMapUnsafe = () => new MemoMapImpl();
 /**
+* Constructs a child `MemoMap` synchronously, allowing it to reuse layers
+* already memoized in the parent while isolating any new layer allocations to
+* the child map.
+*
+* **When to use**
+*
+* Use to synchronously fork a memo map for manual layer building when child
+* builds should see parent memoized layers without writing newly built layers
+* back to the parent.
+*
+* @see {@link forkMemoMap} for allocating the child memo map inside `Effect`
+* @see {@link makeMemoMapUnsafe} for creating a root memo map without a parent
+*
+* @category memo map
+* @since 4.0.0
+*/
+var forkMemoMapUnsafe = (parent) => new MemoMapImpl(parent);
+/**
 * Context service for the current `MemoMap` used in layer construction.
 *
 * **When to use**
@@ -9196,8 +9278,11 @@ var makeMemoMapUnsafe = () => new MemoMapImpl();
 * @category models
 * @since 3.13.0
 */
-var CurrentMemoMap = class extends Service()("effect/Layer/CurrentMemoMap") {
-	static getOrCreate = /*#__PURE__*/ getOrElse(this, makeMemoMapUnsafe);
+var CurrentMemoMap = class CurrentMemoMap extends Service()("effect/Layer/CurrentMemoMap") {
+	static forkOrCreate(self) {
+		const current = getOrUndefined(self, CurrentMemoMap);
+		return current ? forkMemoMapUnsafe(current) : makeMemoMapUnsafe();
+	}
 };
 /**
 * Builds a layer into an `Effect` value, using the specified `MemoMap` to memoize
@@ -9247,7 +9332,7 @@ var CurrentMemoMap = class extends Service()("effect/Layer/CurrentMemoMap") {
 * @category memo map
 * @since 2.0.0
 */
-var buildWithMemoMap = /*#__PURE__*/ dual(3, (self, memoMap, scope) => provideService$1(map$1(self.build(memoMap, scope), add(CurrentMemoMap, memoMap)), CurrentMemoMap, memoMap));
+var buildWithMemoMap = /*#__PURE__*/ dual(3, (self, memoMap, scope) => provideService$1(map$2(self.build(memoMap, scope), add(CurrentMemoMap, memoMap)), CurrentMemoMap, memoMap));
 /**
 * Builds a layer using an explicit scope.
 *
@@ -9295,7 +9380,7 @@ var buildWithMemoMap = /*#__PURE__*/ dual(3, (self, memoMap, scope) => provideSe
 * @category destructors
 * @since 2.0.0
 */
-var buildWithScope = /*#__PURE__*/ dual(2, (self, scope) => withFiber$1((fiber) => buildWithMemoMap(self, CurrentMemoMap.getOrCreate(fiber.context), scope)));
+var buildWithScope = /*#__PURE__*/ dual(2, (self, scope) => withFiber$1((fiber) => buildWithMemoMap(self, CurrentMemoMap.forkOrCreate(fiber.context), scope)));
 /**
 * Constructs a layer that provides a single service from an already available
 * value.
@@ -9412,7 +9497,7 @@ var effect = function() {
 	if (arguments.length === 1) return (effect) => effectImpl(arguments[0], effect);
 	return effectImpl(arguments[0], arguments[1]);
 };
-var effectImpl = (service, effect) => effectContext(map$1(effect, (value) => make$23(service, value)));
+var effectImpl = (service, effect) => effectContext(map$2(effect, (value) => make$23(service, value)));
 /**
 * Constructs a layer from an effect that produces all services in a `Context`.
 *
@@ -9450,9 +9535,45 @@ var effectImpl = (service, effect) => effectContext(map$1(effect, (value) => mak
 * @since 2.0.0
 */
 var effectContext = (effect) => fromBuildMemo((_, scope) => provide$4(effect, scope));
+/**
+* Unwraps a `Layer` from an `Effect`, flattening the nested structure.
+*
+* **When to use**
+*
+* Use when you have an `Effect` that produces a `Layer` and you want to
+* use that layer directly.
+*
+* **Details**
+*
+* The resulting Layer will have the combined error and dependency types from
+* both the outer Effect and the inner Layer.
+*
+* **Example** (Unwrapping an effectful layer)
+*
+* ```ts
+* import { Context, Effect, Layer } from "effect"
+*
+* class Database extends Context.Service<Database, {
+*   readonly query: (sql: string) => Effect.Effect<string>
+* }>()("Database") {}
+*
+* const layerEffect = Effect.succeed(
+*   Layer.succeed(Database, { query: Effect.fn("Database.query")((sql: string) => Effect.succeed("result")) })
+* )
+*
+* const unwrappedLayer = Layer.unwrap(layerEffect)
+* ```
+*
+* @category converting
+* @since 4.0.0
+*/
+var unwrap$5 = (self) => {
+	const service = Service("effect/Layer/unwrap");
+	return flatMap$1(effect(service)(self), get$1(service));
+};
 var mergeAllEffect = (layers, memoMap, scope) => {
 	const parentScope = forkUnsafe(scope, "parallel");
-	return forEach(layers, (layer) => layer.build(memoMap, forkUnsafe(parentScope, "sequential")), { concurrency: layers.length }).pipe(map$1((context) => mergeAll$1(...context)));
+	return forEach(layers, (layer) => layer.build(memoMap, forkUnsafe(parentScope, "sequential")), { concurrency: layers.length }).pipe(map$2((context) => mergeAll$1(...context)));
 };
 /**
 * Combines all the provided layers concurrently, creating a new layer with
@@ -9543,7 +9664,7 @@ var mergeAll = (...layers) => fromBuild((memoMap, scope) => mergeAllEffect(layer
 * @since 2.0.0
 */
 var merge$1 = /*#__PURE__*/ dual(2, (self, that) => mergeAll(self, ...Array.isArray(that) ? that : [that]));
-var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$1(Array.isArray(that) ? mergeAllEffect(that, memoMap, scope) : that.build(memoMap, scope), (context) => self.build(memoMap, scope).pipe(provideContext$1(context), map$1((merged) => f(merged, context)))));
+var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$2(Array.isArray(that) ? mergeAllEffect(that, memoMap, scope) : that.build(memoMap, scope), (context) => self.build(memoMap, scope).pipe(provideContext$1(context), map$2((merged) => f(merged, context)))));
 /**
 * Feeds the output services of the dependency layer into the requirements of
 * this layer, returning a layer that only provides the services from this layer.
@@ -9622,8 +9743,80 @@ var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$1(Arr
 * @since 2.0.0
 */
 var provide$3 = /*#__PURE__*/ dual(2, (self, that) => provideWith(self, that, identity));
+/**
+* Constructs a layer dynamically based on the output of this layer.
+*
+* **Example** (Creating services from layer output)
+*
+* ```ts
+* import { Context, Effect, Layer } from "effect"
+*
+* class Config extends Context.Service<Config, {
+*   readonly dbUrl: string
+*   readonly logLevel: string
+* }>()("Config") {}
+*
+* class Database extends Context.Service<Database, {
+*   readonly query: (sql: string) => Effect.Effect<string>
+* }>()("Database") {}
+*
+* class Logger extends Context.Service<Logger, {
+*   readonly log: (msg: string) => Effect.Effect<void>
+* }>()("Logger") {}
+*
+* // Base config layer
+* const configLayer = Layer.succeed(Config, {
+*   dbUrl: "postgres://localhost:5432/mydb",
+*   logLevel: "debug"
+* })
+*
+* // Dynamically create services based on config
+* const dynamicServiceLayer = configLayer.pipe(
+*   Layer.flatMap((context) => {
+*     const config = Context.get(context, Config)
+*
+*     // Create database layer based on config
+*     const dbLayer = Layer.succeed(Database, {
+*       query: Effect.fn("Database.query")((sql: string) =>
+*         Effect.succeed(
+*           `Querying ${config.dbUrl}: ${sql}`
+*         ))
+*     })
+*
+*     // Create logger layer based on config
+*     const loggerLayer = Layer.succeed(Logger, {
+*       log: Effect.fn("Logger.log")((msg: string) =>
+*         config.logLevel === "debug"
+*           ? Effect.sync(() => console.log(`[DEBUG] ${msg}`))
+*           : Effect.sync(() => console.log(msg))
+*       )
+*     })
+*
+*     // Return combined layer
+*     return Layer.mergeAll(dbLayer, loggerLayer)
+*   })
+* )
+*
+* // Use the dynamic services
+* const program = Effect.gen(function*() {
+*   const database = yield* Database
+*   const logger = yield* Logger
+*
+*   yield* logger.log("Starting database query")
+*   const result = yield* database.query("SELECT * FROM users")
+*
+*   return result
+* }).pipe(
+*   Effect.provide(dynamicServiceLayer)
+* )
+* ```
+*
+* @category sequencing
+* @since 2.0.0
+*/
+var flatMap$1 = /*#__PURE__*/ dual(2, (self, f) => fromBuild((memoMap, scope) => flatMap$2(self.build(memoMap, scope), (context) => f(context).build(memoMap, scope))));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Data.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Data.js
 /**
 * Provides a base class for immutable data types.
 *
@@ -9677,7 +9870,7 @@ var Class$1 = class extends Class$2 {
 * The `_tag` is excluded from the constructor argument. Yielding an instance
 * inside `Effect.gen` fails the effect with this error.
 *
-* **Example** (Tag-based error recovery)
+* **Example** (Recovering by tag)
 *
 * ```ts
 * import { Data, Effect } from "effect"
@@ -9708,7 +9901,7 @@ var Class$1 = class extends Class$2 {
 */
 var TaggedError = TaggedError$1;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Clock.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Clock.js
 /**
 * Context reference for the active time service in the environment.
 *
@@ -9737,13 +9930,13 @@ var TaggedError = TaggedError$1;
 */
 var Clock = ClockRef;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/dateTime.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/dateTime.js
 /** @internal */
-var TypeId$13 = "~effect/time/DateTime";
+var TypeId$14 = "~effect/time/DateTime";
 /** @internal */
 var TimeZoneTypeId = "~effect/time/DateTime/TimeZone";
 var Proto = {
-	[TypeId$13]: TypeId$13,
+	[TypeId$14]: TypeId$14,
 	pipe() {
 		return pipeArguments(this, arguments);
 	},
@@ -9767,7 +9960,7 @@ var ProtoTimeZone = {
 /** @internal */
 var toDateUtc$1 = (self) => new Date(self.epochMilliseconds);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Pull.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Pull.js
 /**
 * Models one low-level pull step for stream-like consumers.
 *
@@ -9813,12 +10006,12 @@ var isDoneCause = (cause) => cause.reasons.some(isDoneFailure);
 */
 var isDoneFailure = (failure) => failure._tag === "Fail" && isDone(failure.error);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/layer.js
-var provideLayer = (self, layer, options) => scopedWith((scope) => flatMap$1(options?.local ? buildWithMemoMap(layer, makeMemoMapUnsafe(), scope) : buildWithScope(layer, scope), (context) => provideContext$1(self, context)));
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/layer.js
+var provideLayer = (self, layer, options) => scopedWith((scope) => flatMap$2(options?.local ? buildWithMemoMap(layer, makeMemoMapUnsafe(), scope) : buildWithScope(layer, scope), (context) => provideContext$1(self, context)));
 /** @internal */
 var provide$2 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, source, options) => isContext(source) ? provideContext$1(self, source) : provideLayer(self, Array.isArray(source) ? mergeAll(...source) : source, options));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Effect.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Effect.js
 /**
 * Checks whether a value is an `Effect`.
 *
@@ -10017,8 +10210,8 @@ var all = all$1;
 */
 var promise = promise$1;
 /**
-* Creates an `Effect` that represents an asynchronous computation that might
-* fail.
+* Creates an `Effect` from an asynchronous computation that may throw or
+* reject, mapping failures into the error channel.
 *
 * **When to use**
 *
@@ -10028,19 +10221,24 @@ var promise = promise$1;
 *
 * **Details**
 *
-* Error Handling:
+* The promise thunk is evaluated when the effect runs. If it returns a promise
+* that resolves, the resolved value becomes the success value. If the thunk
+* throws before returning a promise, or if the returned promise rejects, the
+* thrown or rejected value is mapped into the error channel.
 *
-* There are two ways to handle errors with `tryPromise`:
+* Passing the thunk directly maps failures to {@link Cause.UnknownError}.
+* Passing `{ try, catch }` uses `catch` to map failures to an error of type
+* `E`.
 *
-* 1. If you don't provide a `catch` function, the error is caught and the
-*    effect fails with an `UnknownError`.
-* 2. If you provide a `catch` function, the error is caught and the `catch`
-*    function maps it to an error of type `E`.
+* The thunk receives an `AbortSignal` that is aborted if the effect is
+* interrupted. The underlying asynchronous operation only stops if it observes
+* that signal.
 *
-* Interruptions:
+* **Gotchas**
 *
-* An optional `AbortSignal` can be provided to allow for interruption of the
-* wrapped `Promise` API.
+* If `catch` throws while mapping the error, that thrown value is treated as a
+* defect. Return the error value you want in the error channel instead of
+* throwing it.
 *
 * **Example** (Wrapping a fetch request that may fail)
 *
@@ -10382,7 +10580,35 @@ var fail = fail$3;
 * @category constructors
 * @since 2.0.0
 */
-var failCause = failCause$1;
+var failCause = failCause$2;
+/**
+* Creates an `Effect` that represents a failure with a `Cause` computed lazily.
+*
+* **When to use**
+*
+* Use to defer computing a full `Cause` until the effect is run.
+*
+* **Details**
+*
+* The cause-producing function is evaluated each time the effect is executed.
+*
+* **Example** (Lazily creating a Cause)
+*
+* ```ts
+* import { Cause, Effect } from "effect"
+*
+* const program = Effect.failCauseSync(() =>
+*   Cause.fail("Error computed at runtime")
+* )
+*
+* Effect.runPromiseExit(program).then(console.log)
+* // Output: { _id: 'Exit', _tag: 'Failure', cause: ... }
+* ```
+*
+* @category constructors
+* @since 2.0.0
+*/
+var failCauseSync = failCauseSync$1;
 /**
 * Creates an effect that terminates a fiber with a specified error.
 *
@@ -10400,7 +10626,7 @@ var failCause = failCause$1;
 * The error channel of the resulting effect is of type `never`, indicating that
 * it cannot recover from this failure.
 *
-* **Example** (Failing when division by zero)
+* **Example** (Failing on division by zero)
 *
 * ```ts
 * import { Effect } from "effect"
@@ -10464,7 +10690,7 @@ var withFiber = withFiber$1;
 * Since effects are immutable, `flatMap` always returns a new effect instead of
 * changing the original one.
 *
-* **Example** (Syntax)
+* **Example** (Choosing flatMap syntax variants)
 *
 * ```ts
 * import { Effect, pipe } from "effect"
@@ -10510,7 +10736,7 @@ var withFiber = withFiber$1;
 * @category sequencing
 * @since 2.0.0
 */
-var flatMap = flatMap$1;
+var flatMap = flatMap$2;
 /**
 * Flattens an `Effect` that produces another `Effect` into a single effect.
 *
@@ -10700,7 +10926,7 @@ var exit = exit$1;
 * effect is not modified. Instead, a new effect is returned with the updated
 * value.
 *
-* **Example** (Syntax)
+* **Example** (Choosing map syntax variants)
 *
 * ```ts
 * import { Effect, pipe } from "effect"
@@ -10737,7 +10963,7 @@ var exit = exit$1;
 * @category mapping
 * @since 2.0.0
 */
-var map = map$1;
+var map = map$2;
 /**
 * Replaces the value inside an effect with a constant value.
 *
@@ -12473,42 +12699,6 @@ Service()("effect/Effect/Transaction");
 */
 var mapEager = mapEager$1;
 /**
-* Applies `mapError` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved failed effect should apply an error
-* transformation immediately while pending effects still use regular error
-* mapping.
-*
-* **Details**
-*
-* Success effects pass through unchanged because there is no error to
-* transform. Failure effects apply the mapping function immediately, and
-* pending effects fall back to regular `mapError` behavior.
-*
-* **Example** (Mapping errors eagerly when possible)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved failure effects, the error mapping is applied immediately
-* const failed = Effect.fail("original error")
-* const mapped = Effect.mapErrorEager(failed, (err: string) => `mapped: ${err}`) // Applied eagerly
-*
-* // For pending effects, behaves like regular mapError
-* const pending = Effect.delay(Effect.fail("error"), "100 millis")
-* const mappedPending = Effect.mapErrorEager(
-*   pending,
-*   (err: string) => `mapped: ${err}`
-* ) // Uses regular mapError
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var mapErrorEager = mapErrorEager$1;
-/**
 * Applies `flatMap` eagerly when an effect is already resolved.
 *
 * **When to use**
@@ -12544,51 +12734,6 @@ var mapErrorEager = mapErrorEager$1;
 */
 var flatMapEager = flatMapEager$1;
 /**
-* Applies `catch` eagerly when an effect is already resolved.
-*
-* **When to use**
-*
-* Use when an already-resolved failed effect should recover immediately while
-* pending effects still use regular error recovery.
-*
-* **Details**
-*
-* Success effects pass through unchanged because there is no error to catch.
-* Failure effects apply the catch function immediately, and pending effects
-* fall back to regular `catch` behavior.
-*
-* **Example** (Catching failures eagerly when possible)
-*
-* ```ts
-* import { Effect } from "effect"
-*
-* // For resolved failure effects, the catch function is applied immediately
-* const failed = Effect.fail("original error")
-* const recovered = Effect.catchEager(
-*   failed,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Applied eagerly
-*
-* // For success effects, returns success as-is
-* const success = Effect.succeed(42)
-* const unchanged = Effect.catchEager(
-*   success,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Returns success as-is
-*
-* // For pending effects, behaves like regular catch
-* const pending = Effect.delay(Effect.fail("error"), "100 millis")
-* const recoveredPending = Effect.catchEager(
-*   pending,
-*   (err: string) => Effect.succeed(`recovered from: ${err}`)
-* ) // Uses regular catch
-* ```
-*
-* @category eager
-* @since 4.0.0
-*/
-var catchEager = catchEager$1;
-/**
 * Creates untraced function effects with eager evaluation optimization.
 *
 * **Details**
@@ -12615,7 +12760,7 @@ var catchEager = catchEager$1;
 */
 var fnUntracedEager = fnUntracedEager$1;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/record.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/record.js
 /**
 * @since 4.0.0
 */
@@ -12631,7 +12776,7 @@ function set$2(self, key, value) {
 	return self;
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/annotations.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/schema/annotations.js
 /** @internal */
 function resolve$1(ast) {
 	return ast.checks ? ast.checks[ast.checks.length - 1].annotations : ast.annotations;
@@ -12648,32 +12793,9 @@ var getExpected = /*#__PURE__*/ memoize((ast) => {
 	if (typeof identifier === "string") return identifier;
 	return ast.getExpected(getExpected);
 });
-globalThis.RegExp;
-/**
-* Escapes special characters in a regular expression pattern.
-*
-* **When to use**
-*
-* Use to turn literal text into a safe regular expression pattern fragment.
-*
-* **Example** (Escaping a pattern string)
-*
-* ```ts
-* import { RegExp } from "effect"
-* import * as assert from "node:assert"
-*
-* assert.deepStrictEqual(RegExp.escape("a*b"), "a\\*b")
-* ```
-*
-* @category RegExp
-* @since 2.0.0
-*/
-var escape$2 = (string) => string.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
-Service()("effect/DateTime/CurrentTimeZone");
-TaggedError("EncodingError");
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaIssue.js
-var TypeId$12 = "~effect/SchemaIssue/Issue";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaIssue.js
+var TypeId$13 = "~effect/SchemaIssue/Issue";
 /**
 * Returns `true` if the given value is an {@link Issue}.
 *
@@ -12705,10 +12827,10 @@ var TypeId$12 = "~effect/SchemaIssue/Issue";
 * @since 4.0.0
 */
 function isIssue(u) {
-	return hasProperty$1(u, TypeId$12);
+	return hasProperty$1(u, TypeId$13);
 }
 var Base$1 = class {
-	[TypeId$12] = TypeId$12;
+	[TypeId$13] = TypeId$13;
 	toString() {
 		return defaultFormatter(this);
 	}
@@ -12972,7 +13094,7 @@ var Composite = class extends Base$1 {
 *   `Option.none()` when no value was provided.
 * - The default formatter renders this as `"Expected <type>, got <actual>"`.
 *
-* **Example** (Formatted output)
+* **Example** (Formatting output)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -13025,7 +13147,7 @@ var InvalidType = class extends Base$1 {
 * - The default formatter renders this as `"Invalid data <actual>"` unless a
 *   custom `message` annotation is provided.
 *
-* **Example** (Custom filter returning InvalidValue)
+* **Example** (Returning InvalidValue from a custom filter)
 *
 * ```ts
 * import { Option, SchemaIssue } from "effect"
@@ -13158,11 +13280,11 @@ function makeSingle(input, out) {
 	return makeFilterIssue(input, out);
 }
 /** @internal */
-function make$17(input, ast, out) {
+function make$18(input, ast, out) {
 	if (Array.isArray(out)) {
 		if (isReadonlyArrayNonEmpty(out)) {
 			if (out.length === 1) return makeFilterIssue(input, out[0]);
-			return new Composite(ast, some(input), map$2(out, (entry) => makeFilterIssue(input, entry)));
+			return new Composite(ast, some(input), map$3(out, (entry) => makeFilterIssue(input, entry)));
 		}
 		return;
 	}
@@ -13186,7 +13308,7 @@ function make$17(input, ast, out) {
 *   - `Forbidden` → `"Forbidden operation"`
 *   - `OneOf` → `"Expected exactly one member to match the input <actual>"`
 *
-* **Example** (Using defaultLeafHook with Standard Schema formatter)
+* **Example** (Formatting Standard Schema issues with defaultLeafHook)
 *
 * ```ts
 * import { SchemaIssue } from "effect"
@@ -13355,7 +13477,26 @@ function formatOption(actual) {
 	return format$1(actual.value);
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaGetter.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/schema/cause.js
+/** @internal */
+function getSchemaIssue(cause) {
+	let issue;
+	for (const reason of cause.reasons) {
+		if (!isFailReason(reason) || !isIssue(reason.error)) return;
+		issue ??= reason.error;
+	}
+	return issue;
+}
+/** @internal */
+function getSchemaIssueOrThrow(cause, message) {
+	const issue = getSchemaIssue(cause);
+	if (issue === void 0) throw new Error(message, { cause });
+	return issue;
+}
+Service()("effect/DateTime/CurrentTimeZone");
+TaggedError("EncodingError");
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaGetter.js
 /**
 * Builds one-way conversions used by schemas.
 *
@@ -13413,7 +13554,7 @@ var Getter = class Getter extends Class$2 {
 		this.run = run;
 	}
 	map(f) {
-		return new Getter((oe, options) => this.run(oe, options).pipe(mapEager(map$3(f))));
+		return new Getter((oe, options) => this.run(oe, options).pipe(mapEager(map$4(f))));
 	}
 	compose(other) {
 		if (isPassthrough(this)) return other;
@@ -13444,7 +13585,7 @@ function passthrough$1() {
 * - Skips `None` inputs — only called when a value is present.
 * - Never fails.
 *
-* **Example** (String to number transformation pair)
+* **Example** (Transforming strings to numbers)
 *
 * ```ts
 * import { Schema, SchemaGetter } from "effect"
@@ -13465,7 +13606,7 @@ function passthrough$1() {
 * @since 4.0.0
 */
 function transform$3(f) {
-	return transformOptional(map$3(f));
+	return transformOptional(map$4(f));
 }
 /**
 * Creates a getter that transforms the full `Option` — both present and absent values.
@@ -13480,7 +13621,7 @@ function transform$3(f) {
 * must return `Option<T>`, so it can turn a present value into absent or an
 * absent value into present.
 *
-* **Example** (Filter out empty strings)
+* **Example** (Filtering out empty strings)
 *
 * ```ts
 * import { Option, SchemaGetter } from "effect"
@@ -13513,7 +13654,7 @@ function transformOptional(f) {
 * - If the input is `Some(value)` where value is not `undefined`, passes it through.
 * - `defaultValue` is an `Effect` that will be executed each time a default is needed.
 *
-* **Example** (Default value for optional field)
+* **Example** (Providing a default value for an optional field)
 *
 * ```ts
 * import { Effect, SchemaGetter } from "effect"
@@ -13546,7 +13687,7 @@ function withDefault(defaultValue) {
 *
 * The getter is pure, never fails, and delegates to `globalThis.String`.
 *
-* **Example** (Coerce to string)
+* **Example** (Coercing to a string)
 *
 * ```ts
 * import { SchemaGetter } from "effect"
@@ -13576,7 +13717,7 @@ function String$3() {
 * The getter is pure, never fails, and delegates to `globalThis.Number`. It may
 * produce `NaN` for non-numeric inputs.
 *
-* **Example** (Coerce to number)
+* **Example** (Coercing to a number)
 *
 * ```ts
 * import { SchemaGetter } from "effect"
@@ -13606,7 +13747,7 @@ function Number$3() {
 * - Delegates to `globalThis.BigInt`.
 * - Throws at runtime if the input cannot be converted (e.g. non-numeric string).
 *
-* **Example** (Coerce to bigint)
+* **Example** (Coercing to a bigint)
 *
 * ```ts
 * import { SchemaGetter } from "effect"
@@ -13634,7 +13775,7 @@ function BigInt$3() {
 * - Delegates to `new globalThis.Date(input)`.
 * - Does not validate the result — may produce an invalid Date.
 *
-* **Example** (Coerce to Date)
+* **Example** (Coercing to a Date)
 *
 * ```ts
 * import { SchemaGetter } from "effect"
@@ -13652,8 +13793,8 @@ function Date$2() {
 	return transform$3((u) => new globalThis.Date(u));
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaTransformation.js
-var TypeId$11 = "~effect/SchemaTransformation/Transformation";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaTransformation.js
+var TypeId$12 = "~effect/SchemaTransformation/Transformation";
 /**
 * Represents a bidirectional transformation between a decoded type `T` and an encoded
 * type `E`, built from a pair of `Getter`s.
@@ -13697,7 +13838,7 @@ var TypeId$11 = "~effect/SchemaTransformation/Transformation";
 * @since 4.0.0
 */
 var Transformation = class Transformation {
-	[TypeId$11] = TypeId$11;
+	[TypeId$12] = TypeId$12;
 	_tag = "Transformation";
 	decode;
 	encode;
@@ -13744,7 +13885,7 @@ var Transformation = class Transformation {
 * @since 4.0.0
 */
 function isTransformation(u) {
-	return hasProperty$1(u, TypeId$11);
+	return hasProperty$1(u, TypeId$12);
 }
 /**
 * Constructs a `Transformation` from an object with `decode` and `encode`
@@ -13843,7 +13984,7 @@ function passthrough() {
 * result is finite; combine with `Schema.Finite` or `Schema.Int` for stricter
 * checks.
 *
-* **Example** (Number from string)
+* **Example** (Converting a string to a number)
 *
 * ```ts
 * import { Schema, SchemaTransformation } from "effect"
@@ -13875,7 +14016,7 @@ var numberFromString = /*#__PURE__*/ new Transformation(/*#__PURE__*/ Number$3()
 * the bigint to a string like `String(n)`. Decoding fails if the string is not
 * a valid bigint representation.
 *
-* **Example** (BigInt from string)
+* **Example** (Converting a string to a BigInt)
 *
 * ```ts
 * import { Schema, SchemaTransformation } from "effect"
@@ -13906,7 +14047,7 @@ var bigintFromString = /*#__PURE__*/ new Transformation(/*#__PURE__*/ BigInt$3()
 * converts the `Date` to an ISO string like `date.toISOString()`, returning
 * `"Invalid Date"` for invalid dates.
 *
-* **Example** (Date from string)
+* **Example** (Converting a string to a Date)
 *
 * ```ts
 * import { Schema, SchemaTransformation } from "effect"
@@ -13916,7 +14057,7 @@ var bigintFromString = /*#__PURE__*/ new Transformation(/*#__PURE__*/ BigInt$3()
 * )
 * ```
 *
-* @see {@link numberFromString}
+* @see {@link dateFromMillis}
 * @see {@link dateTimeUtcFromString}
 *
 * @category Coercions
@@ -13968,7 +14109,7 @@ var defectFromJson = (options) => transform$2({
 	encode: makeEncodeDefect(options)
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaAST.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaAST.js
 /**
 * Represents Effect schemas as runtime trees.
 *
@@ -14056,13 +14197,6 @@ var isArrays = /*#__PURE__*/ makeGuard("Arrays");
 */
 var isObjects = /*#__PURE__*/ makeGuard("Objects");
 /**
-* Narrows an {@link AST} to {@link Union}.
-*
-* @category guards
-* @since 3.10.0
-*/
-var isUnion = /*#__PURE__*/ makeGuard("Union");
-/**
 * Represents a single step in an {@link Encoding} chain.
 *
 * **Details**
@@ -14125,7 +14259,7 @@ var Context = class {
 		this.annotations = annotations;
 	}
 };
-var TypeId$10 = "~effect/Schema";
+var TypeId$11 = "~effect/Schema";
 /**
 * Represents the abstract base class for all {@link AST} node variants.
 *
@@ -14147,7 +14281,7 @@ var TypeId$10 = "~effect/Schema";
 * @since 4.0.0
 */
 var Base = class {
-	[TypeId$10] = TypeId$10;
+	[TypeId$11] = TypeId$11;
 	annotations;
 	checks;
 	encoding;
@@ -14200,17 +14334,17 @@ var Declaration = class Declaration extends Base {
 			return mapEager(run(oinput.value, this, options), some);
 		};
 	}
-	rebuild(recur, checks, encodingChecks) {
+	_rebuild(recur, checks, encodingChecks) {
 		const tps = mapOrSame(this.typeParameters, recur);
-		return tps === this.typeParameters ? this : new Declaration(tps, this.run, this.annotations, checks, void 0, this.context, encodingChecks);
+		return tps === this.typeParameters && checks === this.checks && encodingChecks === this.encodingChecks ? this : new Declaration(tps, this.run, this.annotations, checks, void 0, this.context, encodingChecks);
 	}
 	/** @internal */
 	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+		return this._rebuild(recur, this.checks, this.encodingChecks);
 	}
 	/** @internal */
 	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+		return this._rebuild(recur, this.encodingChecks, this.checks);
 	}
 	/** @internal */
 	getExpected() {
@@ -14417,6 +14551,10 @@ var Literal$1 = class extends Base {
 		return fromConst(this, this.literal);
 	}
 	/** @internal */
+	matchPart(s, _options) {
+		return s === globalThis.String(this.literal) ? this.literal : void 0;
+	}
+	/** @internal */
 	toCodecJson() {
 		return typeof this.literal === "bigint" ? literalToString(this) : this;
 	}
@@ -14447,6 +14585,10 @@ var String$2 = class extends Base {
 	/** @internal */
 	getParser() {
 		return fromRefinement(this, isString$1);
+	}
+	/** @internal */
+	matchPart(s, options) {
+		return applyTemplateLiteralPartChecks(this, s, options);
 	}
 	/** @internal */
 	getExpected() {
@@ -14491,6 +14633,17 @@ var Number$2 = class extends Base {
 	/** @internal */
 	getParser() {
 		return fromRefinement(this, isNumber);
+	}
+	/** @internal */
+	matchKey(s, options) {
+		return this._match(isStringNumberRegExp, s, options);
+	}
+	/** @internal */
+	matchPart(s, options) {
+		return this._match(isStringFiniteRegExp, s, options);
+	}
+	_match(regexp, s, options) {
+		return regexp.test(s) ? applyTemplateLiteralPartChecks(this, globalThis.Number(s), options) : void 0;
 	}
 	/** @internal */
 	toCodecJson() {
@@ -14583,6 +14736,10 @@ var BigInt$2 = class extends Base {
 	/** @internal */
 	getParser() {
 		return fromRefinement(this, isBigInt);
+	}
+	/** @internal */
+	matchPart(s, options) {
+		return isStringBigIntRegExp.test(s) ? applyTemplateLiteralPartChecks(this, globalThis.BigInt(s), options) : void 0;
 	}
 	/** @internal */
 	toCodecStringTree() {
@@ -14716,18 +14873,18 @@ var Arrays = class Arrays extends Base {
 			return some(state.output);
 		});
 	}
-	rebuild(recur, checks, encodingChecks) {
+	_rebuild(recur, checks, encodingChecks) {
 		const elements = mapOrSame(this.elements, recur);
 		const rest = mapOrSame(this.rest, recur);
-		return elements === this.elements && rest === this.rest ? this : new Arrays(this.isMutable, elements, rest, this.annotations, checks, void 0, this.context, encodingChecks);
+		return elements === this.elements && rest === this.rest && checks === this.checks && encodingChecks === this.encodingChecks ? this : new Arrays(this.isMutable, elements, rest, this.annotations, checks, void 0, this.context, encodingChecks);
 	}
 	/** @internal */
 	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+		return this._rebuild(recur, this.checks, this.encodingChecks);
 	}
 	/** @internal */
 	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+		return this._rebuild(recur, this.encodingChecks, this.checks);
 	}
 	/** @internal */
 	getExpected() {
@@ -14760,36 +14917,37 @@ var resolveConcurrency = (value) => {
 	return value > 1 ? { concurrency: value } : void 0;
 };
 var wrapPropertyKeyIssue = (s, ast, key, exit) => {
-	const issueResult = findError(exit.cause);
-	if (isFailure(issueResult)) return exit;
-	const issue = new Pointer([key], issueResult.success);
-	if (s.options.errors === "all") if (s.issues) s.issues.push(issue);
-	else s.issues = [issue];
-	else return fail$1(new Composite(ast, s.oinput, [issue]));
+	if (exit.cause.reasons.length === 0) return exit;
+	const issue = getSchemaIssue(exit.cause);
+	if (issue === void 0) return failCause$1(map$1(exit.cause, (issue) => new Composite(ast, s.oinput, [new Pointer([key], issue)])));
+	const pointer = new Pointer([key], issue);
+	if (s.options.errors === "all") if (s.issues) s.issues.push(pointer);
+	else s.issues = [pointer];
+	else return fail$1(new Composite(ast, s.oinput, [pointer]));
 };
 /**
 * floating point or integer, with optional exponent
 * @internal
 */
 var FINITE_PATTERN = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?";
-var isNumberStringRegExp = /*#__PURE__*/ new globalThis.RegExp(`(?:${FINITE_PATTERN}|Infinity|-Infinity|NaN)`);
 /**
 * Returns the object keys that match the index signature parameter schema.
 * @internal
 */
-function getIndexSignatureKeys(input, parameter) {
-	const encoded = toEncoded(parameter);
-	switch (encoded._tag) {
-		case "String": return Object.keys(input);
-		case "TemplateLiteral": {
-			const regExp = getTemplateLiteralRegExp(encoded);
-			return Object.keys(input).filter((k) => regExp.test(k));
+function getIndexSignatureKeys(input, parameter, options = defaultParseOptions) {
+	let stringKeys;
+	let symbolKeys;
+	function go(parameter) {
+		switch (parameter._tag) {
+			case "String":
+			case "TemplateLiteral": return (stringKeys ??= Object.keys(input)).filter((k) => parameter.matchPart(k, options) !== void 0);
+			case "Number": return (stringKeys ??= Object.keys(input)).filter((k) => parameter.matchKey(k, options) !== void 0);
+			case "Symbol": return (symbolKeys ??= Object.getOwnPropertySymbols(input)).filter((k) => parameter.matchKey(k, options) !== void 0);
+			case "Union": return [...new Set(parameter.types.flatMap(go))];
+			default: return [];
 		}
-		case "Symbol": return Object.getOwnPropertySymbols(input);
-		case "Number": return Object.keys(input).filter((k) => isNumberStringRegExp.test(k));
-		case "Union": return [...new Set(encoded.types.flatMap((t) => getIndexSignatureKeys(input, t)))];
-		default: return [];
 	}
+	return go(parameterFromPropertyKey(toEncoded(parameter)));
 }
 /**
 * Represents a named property within an {@link Objects} node.
@@ -14838,6 +14996,19 @@ var KeyValueCombiner = class KeyValueCombiner {
 		return new KeyValueCombiner(this.encode, this.decode);
 	}
 };
+function isIndexSignatureParameterSide(ast) {
+	switch (ast._tag) {
+		case "String":
+		case "Number":
+		case "Symbol":
+		case "TemplateLiteral": return true;
+		case "Union": return ast.types.every(isIndexSignatureParameterSide);
+		default: return false;
+	}
+}
+function isIndexSignatureParameter(ast) {
+	return isIndexSignatureParameterSide(ast) && isIndexSignatureParameterSide(toEncoded(ast));
+}
 /**
 * Represents an index signature entry within an {@link Objects} node.
 *
@@ -14868,6 +15039,7 @@ var IndexSignature = class {
 	type;
 	merge;
 	constructor(parameter, type, merge) {
+		if (!isIndexSignatureParameter(parameter)) throw new Error(`Invalid index signature parameter ${parameter._tag}`);
 		this.parameter = parameter;
 		this.type = type;
 		this.merge = merge;
@@ -14952,7 +15124,7 @@ var Objects = class Objects extends Base {
 		if (ast.propertySignatures.length === 0 && ast.indexSignatures.length === 0) return fromRefinement(ast, isNotNullish);
 		const parseIndexes = indexCount > 0 ? iterateEager()({
 			onItem: fnUntracedEager(function* (s, [key, is]) {
-				const effKey = recur(indexSignatureParameterFromString(is.parameter))(some(key), s.options);
+				const effKey = recur(parameterFromPropertyKey(is.parameter))(some(key), s.options);
 				const exitKey = effectIsExit(effKey) ? effKey : yield* exit(effKey);
 				if (exitKey._tag === "Failure") {
 					const eff = wrapPropertyKeyIssue(s, ast, key, exitKey);
@@ -15016,7 +15188,7 @@ var Objects = class Objects extends Base {
 				const keyPairs = empty$3();
 				for (let i = 0; i < indexCount; i++) {
 					const is = ast.indexSignatures[i];
-					const keys = getIndexSignatureKeys(input, is.parameter);
+					const keys = getIndexSignatureKeys(input, is.parameter, options);
 					for (let j = 0; j < keys.length; j++) {
 						const key = keys[j];
 						keyPairs.push([key, is]);
@@ -15035,26 +15207,26 @@ var Objects = class Objects extends Base {
 			return some(out);
 		});
 	}
-	rebuild(recur, flipMerge, checks, encodingChecks) {
+	_rebuild(recur, recurParameter, flipMerge, checks, encodingChecks) {
 		const props = mapOrSame(this.propertySignatures, (ps) => {
 			const t = recur(ps.type);
 			return t === ps.type ? ps : new PropertySignature(ps.name, t);
 		});
 		const indexes = mapOrSame(this.indexSignatures, (is) => {
-			const p = recur(is.parameter);
+			const p = recurParameter(is.parameter);
 			const t = recur(is.type);
 			const merge = flipMerge ? is.merge?.flip() : is.merge;
 			return p === is.parameter && t === is.type && merge === is.merge ? is : new IndexSignature(p, t, merge);
 		});
-		return props === this.propertySignatures && indexes === this.indexSignatures ? this : new Objects(props, indexes, this.annotations, checks, void 0, this.context, encodingChecks);
+		return props === this.propertySignatures && indexes === this.indexSignatures && checks === this.checks && encodingChecks === this.encodingChecks ? this : new Objects(props, indexes, this.annotations, checks, void 0, this.context, encodingChecks);
 	}
 	/** @internal */
 	flip(recur) {
-		return this.rebuild(recur, true, this.encodingChecks, this.checks);
+		return this._rebuild(recur, recur, true, this.encodingChecks, this.checks);
 	}
 	/** @internal */
-	recur(recur) {
-		return this.rebuild(recur, false, this.checks, this.encodingChecks);
+	recur(recur, recurParameter = recur) {
+		return this._rebuild(recur, recurParameter, false, this.checks, this.encodingChecks);
 	}
 	/** @internal */
 	getExpected() {
@@ -15080,6 +15252,11 @@ var parseProperties = /*#__PURE__*/ iterateEager()({
 		}
 	}
 });
+function combineChecks(a, b) {
+	if (!a) return b;
+	if (!b) return a;
+	return [...a, ...b];
+}
 /** @internal */
 function struct(fields, checks, annotations) {
 	return new Objects(Reflect.ownKeys(fields).map((key) => {
@@ -15101,8 +15278,7 @@ function union$2(members, mode, checks) {
 function getCandidateTypes(ast) {
 	switch (ast._tag) {
 		case "Null": return ["null"];
-		case "Undefined":
-		case "Void": return ["undefined"];
+		case "Undefined": return ["undefined"];
 		case "String":
 		case "TemplateLiteral": return ["string"];
 		case "Number": return ["number"];
@@ -15170,13 +15346,14 @@ function getIndex(types) {
 	let idx = candidateIndexCache.get(types);
 	if (idx) return idx;
 	idx = {};
-	for (const a of types) {
+	for (let i = 0; i < types.length; i++) {
+		const a = types[i];
 		const encoded = toEncoded(a);
 		if (isNever(encoded)) continue;
-		const types = getCandidateTypes(encoded);
+		const candidateTypes = getCandidateTypes(encoded);
 		const sentinels = collectSentinels(encoded);
 		idx.byType ??= {};
-		for (const t of types) (idx.byType[t] ??= []).push(a);
+		for (const t of candidateTypes) (idx.byType[t] ??= []).push(i);
 		if (sentinels.length > 0) {
 			idx.bySentinel ??= /* @__PURE__ */ new Map();
 			for (const { key, literal } of sentinels) {
@@ -15184,11 +15361,11 @@ function getIndex(types) {
 				if (!m) idx.bySentinel.set(key, m = /* @__PURE__ */ new Map());
 				let arr = m.get(literal);
 				if (!arr) m.set(literal, arr = []);
-				arr.push(a);
+				arr.push(i);
 			}
 		} else {
 			idx.otherwise ??= {};
-			for (const t of types) (idx.otherwise[t] ??= []).push(a);
+			for (const t of candidateTypes) (idx.otherwise[t] ??= []).push(i);
 		}
 	}
 	candidateIndexCache.set(types, idx);
@@ -15212,14 +15389,16 @@ function getCandidates(input, types) {
 	if (idx.bySentinel) {
 		const base = idx.otherwise?.[runtimeType] ?? [];
 		if (runtimeType === "object" || runtimeType === "array") {
+			const selected = new Set(base);
 			for (const [k, m] of idx.bySentinel) if (Object.hasOwn(input, k)) {
 				const match = m.get(input[k]);
-				if (match) return [...match, ...base].filter(filterLiterals(input));
+				if (match) for (const candidate of match) selected.add(candidate);
 			}
+			return Array.from(selected).sort((a, b) => a - b).map((i) => types[i]).filter(filterLiterals(input));
 		}
-		return base;
+		return base.map((i) => types[i]);
 	}
-	return (idx.byType?.[runtimeType] ?? []).filter(filterLiterals(input));
+	return (idx.byType?.[runtimeType] ?? []).map((i) => types[i]).filter(filterLiterals(input));
 }
 /**
 * AST node representing a union of schemas.
@@ -15280,24 +15459,35 @@ var Union$1 = class Union$1 extends Base {
 				issues: void 0,
 				options
 			};
-			const eff = parseUnion(state, candidates, resolveConcurrency(options?.concurrency));
+			const concurrency = resolveConcurrency(options?.concurrency);
+			const eff = parseUnion(state, candidates, concurrency ? {
+				...concurrency,
+				orderedStep: true
+			} : void 0);
 			if (!eff) return state.out ? succeed$1(state.out) : fail(new AnyOf(ast, input, state.issues ?? []));
 			return flatMap(eff, (_) => {
 				return state.out ? succeed$1(state.out) : fail(new AnyOf(ast, input, state.issues ?? []));
 			});
 		};
 	}
-	rebuild(recur, checks, encodingChecks) {
+	_rebuild(recur, checks, encodingChecks) {
 		const types = mapOrSame(this.types, recur);
-		return types === this.types ? this : new Union$1(types, this.mode, this.annotations, checks, void 0, this.context, encodingChecks);
+		return types === this.types && checks === this.checks && encodingChecks === this.encodingChecks ? this : new Union$1(types, this.mode, this.annotations, checks, void 0, this.context, encodingChecks);
 	}
 	/** @internal */
 	recur(recur) {
-		return this.rebuild(recur, this.checks, this.encodingChecks);
+		return this._rebuild(recur, this.checks, this.encodingChecks);
 	}
 	/** @internal */
 	flip(recur) {
-		return this.rebuild(recur, this.encodingChecks, this.checks);
+		return this._rebuild(recur, this.encodingChecks, this.checks);
+	}
+	/** @internal */
+	matchPart(s, options) {
+		for (const type of this.types) {
+			const out = type.matchPart(s, options);
+			if (out !== void 0) return out;
+		}
 	}
 	/** @internal */
 	getExpected(getExpected) {
@@ -15329,10 +15519,10 @@ var parseUnion = /*#__PURE__*/ iterateEager()({
 	},
 	step(s, candidate, exit) {
 		if (exit._tag === "Failure") {
-			const issueResult = findError(exit.cause);
-			if (isFailure(issueResult)) return exit;
-			if (s.issues) s.issues.push(issueResult.success);
-			else s.issues = [issueResult.success];
+			const issue = getSchemaIssue(exit.cause);
+			if (issue === void 0) return exit;
+			if (s.issues) s.issues.push(issue);
+			else s.issues = [issue];
 		} else {
 			if (s.out && s.ast.mode === "oneOf") {
 				s.successes.push(candidate);
@@ -15355,16 +15545,6 @@ function formatIsMutable(isMutable) {
 }
 function formatIsOptional(isOptional) {
 	return isOptional ? "?" : "";
-}
-/** @internal */
-function getEncodingChecks(ast) {
-	switch (ast._tag) {
-		case "Declaration":
-		case "Arrays":
-		case "Objects":
-		case "Union": return ast.encodingChecks;
-		default: return;
-	}
 }
 /**
 * Represents a single validation check attached to an AST node.
@@ -15449,7 +15629,7 @@ var FilterGroup = class FilterGroup extends Class$2 {
 };
 /** @internal */
 function makeFilter$1(filter, annotations, aborted = false) {
-	return new Filter((input, ast, options) => make$17(input, ast, filter(input, ast, options)), annotations, aborted);
+	return new Filter((input, ast, options) => make$18(input, ast, filter(input, ast, options)), annotations, aborted);
 }
 /**
 * Creates a {@link Filter} that validates strings by running `RegExp.test`.
@@ -15537,7 +15717,7 @@ function replaceChecks(ast, checks) {
 }
 /** @internal */
 function appendChecks(ast, checks) {
-	return replaceChecks(ast, ast.checks ? [...ast.checks, ...checks] : checks);
+	return replaceChecks(ast, combineChecks(ast.checks, checks));
 }
 function updateLastLink(encoding, f) {
 	const links = encoding;
@@ -15549,6 +15729,13 @@ function updateLastLink(encoding, f) {
 /** @internal */
 function applyToLastLink(f) {
 	return (ast) => ast.encoding ? replaceEncoding(ast, updateLastLink(ast.encoding, f)) : ast;
+}
+/** @internal */
+function applyToSelfOrLastLinkEncoding(f) {
+	function out(ast) {
+		return ast.encoding ? replaceEncoding(ast, updateLastLink(ast.encoding, out)) : f(ast);
+	}
+	return memoize(out);
 }
 function appendTransformation(from, transformation, to) {
 	const link = new Link(from, transformation);
@@ -15618,38 +15805,27 @@ function decodeTo$1(from, to, transformation) {
 	return appendTransformation(from, transformation, to);
 }
 function parseParameter(ast) {
-	switch (ast._tag) {
-		case "Literal": return {
-			literals: isPropertyKey(ast.literal) ? [ast.literal] : [],
-			parameters: []
-		};
-		case "UniqueSymbol": return {
-			literals: [ast.symbol],
-			parameters: []
-		};
-		case "String":
-		case "Number":
-		case "Symbol":
-		case "TemplateLiteral": return {
-			literals: [],
-			parameters: [ast]
-		};
-		case "Union": {
-			const out = {
-				literals: [],
-				parameters: []
-			};
-			for (let i = 0; i < ast.types.length; i++) {
-				const parsed = parseParameter(ast.types[i]);
-				out.literals = out.literals.concat(parsed.literals);
-				out.parameters = out.parameters.concat(parsed.parameters);
-			}
-			return out;
+	const literals = [];
+	const parameters = [];
+	function go(ast) {
+		switch (ast._tag) {
+			case "Literal":
+				if (isPropertyKey(ast.literal)) literals.push(ast.literal);
+				return;
+			case "UniqueSymbol":
+				literals.push(ast.symbol);
+				return;
+			case "Never": return;
+			case "Union":
+				for (let i = 0; i < ast.types.length; i++) go(ast.types[i]);
+				return;
+			default: parameters.push(ast);
 		}
 	}
+	go(ast);
 	return {
-		literals: [],
-		parameters: []
+		literals,
+		parameters
 	};
 }
 /** @internal */
@@ -15702,8 +15878,10 @@ var toType = /*#__PURE__*/ memoize((ast) => {
 	if (ast.encoding) return toType(replaceEncoding(ast, void 0));
 	const out = ast;
 	const type = out.recur?.(toType) ?? out;
-	if (getEncodingChecks(type)) return modifyOwnPropertyDescriptors(type, (d) => {
+	const encodingChecks = type.encodingChecks;
+	if (encodingChecks) return modifyOwnPropertyDescriptors(type, (d) => {
 		d.encodingChecks.value = void 0;
+		if (type === ast) d.checks.value = combineChecks(type.checks, encodingChecks);
 	});
 	return type;
 });
@@ -15776,29 +15954,6 @@ function containsUndefined(ast) {
 		default: return false;
 	}
 }
-function getTemplateLiteralSource(ast, top) {
-	return ast.encodedParts.map((part) => handleTemplateLiteralASTPartParens(part, getTemplateLiteralASTPartPattern(part), top)).join("");
-}
-/** @internal */
-var getTemplateLiteralRegExp = /*#__PURE__*/ memoize((ast) => {
-	return new globalThis.RegExp(`^${getTemplateLiteralSource(ast, true)}$`);
-});
-function getTemplateLiteralASTPartPattern(part) {
-	switch (part._tag) {
-		case "Literal": return escape$2(globalThis.String(part.literal));
-		case "String": return STRING_PATTERN;
-		case "Number": return FINITE_PATTERN;
-		case "BigInt": return BIGINT_PATTERN;
-		case "TemplateLiteral": return getTemplateLiteralSource(part, false);
-		case "Union": return part.types.map(getTemplateLiteralASTPartPattern).join("|");
-	}
-}
-function handleTemplateLiteralASTPartParens(part, s, top) {
-	if (isUnion(part)) {
-		if (!top) return `(?:${s})`;
-	} else if (!top) return s;
-	return `(${s})`;
-}
 function fromConst(ast, value) {
 	const succeed = succeedSome(value);
 	return (oinput) => {
@@ -15812,26 +15967,21 @@ function fromRefinement(ast, refinement) {
 		return refinement(oinput.value) ? succeed$1(oinput) : fail(new InvalidType(ast, oinput));
 	};
 }
-/** @internal */
-function toCodec(f) {
-	function out(ast) {
-		return ast.encoding ? replaceEncoding(ast, updateLastLink(ast.encoding, out)) : f(ast);
-	}
-	return memoize(out);
+function applyTemplateLiteralPartChecks(ast, value, options) {
+	if (options?.disableChecks || ast.checks === void 0) return value;
+	const issues = [];
+	collectIssues(ast.checks, value, issues, ast, options);
+	return issues.length === 0 ? value : void 0;
 }
-var indexSignatureParameterFromString = /*#__PURE__*/ toCodec((ast) => {
+var parameterFromPropertyKey = /*#__PURE__*/ applyToSelfOrLastLinkEncoding((ast) => {
 	switch (ast._tag) {
 		default: return ast;
 		case "Number": return ast.toCodecStringTree();
-		case "Union": return ast.recur(indexSignatureParameterFromString);
+		case "Union": return ast.recur(parameterFromPropertyKey);
 	}
 });
-/**
-* any string, including newlines
-* @internal
-*/
-var STRING_PATTERN = "[\\s\\S]*?";
 var isStringFiniteRegExp = /*#__PURE__*/ new globalThis.RegExp(`^${FINITE_PATTERN}$`);
+var isStringNumberRegExp = /*#__PURE__*/ new globalThis.RegExp(`(?:${FINITE_PATTERN}|Infinity|-Infinity|NaN)`);
 /** @internal */
 function isStringFinite(annotations) {
 	return isPattern$1(isStringFiniteRegExp, {
@@ -15846,11 +15996,7 @@ function isStringFinite(annotations) {
 var finiteString = /*#__PURE__*/ appendChecks(string$3, [/*#__PURE__*/ isStringFinite()]);
 var finiteToString = /*#__PURE__*/ new Link(finiteString, numberFromString);
 var numberToString = /*#__PURE__*/ new Link(/*#__PURE__*/ new Union$1([finiteString, nonFiniteLiterals], "anyOf"), numberFromString);
-/**
-* signed integer only (no leading "+" because TypeScript doesn't support it)
-*/
-var BIGINT_PATTERN = "-?\\d+";
-var isStringBigIntRegExp = /*#__PURE__*/ new globalThis.RegExp(`^${BIGINT_PATTERN}$`);
+var isStringBigIntRegExp = /*#__PURE__*/ new globalThis.RegExp(`^-?\\d+$`);
 /** @internal */
 function isStringBigInt(annotations) {
 	return isPattern$1(isStringBigIntRegExp, {
@@ -15898,8 +16044,13 @@ function isJson(u) {
 		if (typeof u !== "object" || u === void 0) return false;
 		if (onPath.has(u)) return false;
 		if (validated.has(u)) return true;
+		const isArray = Array.isArray(u);
+		if (!isArray) {
+			const prototype = Object.getPrototypeOf(u);
+			if (prototype !== null && Object.getPrototypeOf(prototype) !== null) return false;
+		}
 		onPath.add(u);
-		const ok = Array.isArray(u) ? u.every(recur) : Object.keys(u).every((key) => recur(u[key]));
+		const ok = isArray ? u.every(recur) : Object.keys(u).every((key) => recur(u[key]));
 		onPath.delete(u);
 		if (ok) validated.add(u);
 		return ok;
@@ -15972,7 +16123,7 @@ var getCurrent = getCurrentFiber;
 */
 var runIn = fiberRunIn;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/MutableList.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/MutableList.js
 /**
 * Defines the unique symbol used to represent an empty result when taking elements from a MutableList.
 * This symbol is returned by `take` when the list is empty, allowing for safe type checking.
@@ -16262,10 +16413,10 @@ var take$1 = (self) => {
 	return message;
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/MutableRef.js
-var TypeId$9 = "~effect/MutableRef";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/MutableRef.js
+var TypeId$10 = "~effect/MutableRef";
 var MutableRefProto = {
-	[TypeId$9]: TypeId$9,
+	[TypeId$10]: TypeId$10,
 	...PipeInspectableProto,
 	toJSON() {
 		return {
@@ -16357,8 +16508,8 @@ var set$1 = /*#__PURE__*/ dual(2, (self, value) => {
 	return self;
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Queue.js
-var TypeId$8 = "~effect/Queue";
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Queue.js
+var TypeId$9 = "~effect/Queue";
 var EnqueueTypeId = "~effect/Queue/Enqueue";
 var DequeueTypeId = "~effect/Queue/Dequeue";
 var variance = {
@@ -16366,7 +16517,7 @@ var variance = {
 	_E: identity
 };
 var QueueProto = {
-	[TypeId$8]: variance,
+	[TypeId$9]: variance,
 	[EnqueueTypeId]: variance,
 	[DequeueTypeId]: variance,
 	...PipeInspectableProto,
@@ -16988,7 +17139,7 @@ var finalize$1 = (self, exit) => {
 	openState.awaiters.clear();
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Semaphore.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Semaphore.js
 /**
 * Creates a `Semaphore` synchronously with the specified total
 * number of permits.
@@ -17087,7 +17238,7 @@ var SemaphoreImpl = class {
 		return this.updateTaken((_) => 0);
 	}
 	withPermits(n) {
-		return (self) => uninterruptibleMask$1((restore) => flatMap$1(restore(this.take(n)), (permits) => onExitPrimitive(restore(self), () => {
+		return (self) => uninterruptibleMask$1((restore) => flatMap$2(restore(this.take(n)), (permits) => onExitPrimitive(restore(self), () => {
 			this.updateTakenUnsafe(getCurrentFiber(), (taken) => taken - permits);
 		}, true)));
 	}
@@ -17245,7 +17396,7 @@ var succeed = (value) => fromEffect(succeed$1(value));
 /**
 * Represents a `Channel` that emits no elements.
 *
-* **Example** (Using empty channels)
+* **Example** (Creating empty channels)
 *
 * ```ts
 * import { Channel } from "effect"
@@ -17390,7 +17541,7 @@ var unwrap$4 = (channel) => fromTransform((upstream, scope) => {
 	}));
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Struct.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Struct.js
 /**
 * Wraps a plain function as a {@link Lambda} value so it can be used with
 * {@link map}, {@link mapPick}, and {@link mapOmit}.
@@ -17429,7 +17580,7 @@ var unwrap$4 = (channel) => fromTransform((upstream, scope) => {
 */
 var lambda = (f) => f;
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/SchemaParser.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaParser.js
 /**
 * Runs schemas against real values.
 *
@@ -17491,12 +17642,18 @@ function makeEffect(schema) {
 }
 /**
 * Creates a synchronous maker that returns `Option.some` with the constructed
-* value on success, or `Option.none` when construction fails.
+* value on success, or `Option.none` when construction fails with schema issues.
 *
 * **When to use**
 *
 * Use when you need to validate schema constructor input and only care whether
 * construction succeeds, without exposing `SchemaIssue.Issue` details.
+*
+* **Gotchas**
+*
+* Only causes made entirely of schema issues are converted to `Option.none`.
+* Causes that contain defects, interruptions, or asynchronous work at this
+* synchronous boundary throw an `Error` whose cause is the underlying `Cause`.
 *
 * @category constructors
 * @since 4.0.0
@@ -17504,7 +17661,10 @@ function makeEffect(schema) {
 function makeOption(schema) {
 	const parser = makeEffect(schema);
 	return (input, options) => {
-		return getSuccess(runSyncExit(parser(input, options)));
+		const exit = runSyncExit(parser(input, options));
+		if (isSuccess(exit)) return some(exit.value);
+		getSchemaIssueOrThrow(exit.cause, "Option adapter can only return none for schema issues");
+		return none();
 	};
 }
 /**
@@ -17520,13 +17680,22 @@ function makeOption(schema) {
 * The returned function constructs a value from constructor input and throws an
 * `Error` with the `SchemaIssue.Issue` in its `cause` when construction fails.
 *
+* **Gotchas**
+*
+* Causes that contain defects, interruptions, or asynchronous work at this
+* synchronous boundary throw an `Error` whose cause is the underlying `Cause`,
+* instead of being converted to a schema validation error.
+*
 * @category constructors
 * @since 4.0.0
 */
 function make$11(schema) {
 	const parser = makeEffect(schema);
 	return (input, options) => {
-		return runSync(mapErrorEager(parser(input, options), (issue) => new Error(issue.toString(), { cause: issue })));
+		const exit = runSyncExit(parser(input, options));
+		if (isSuccess(exit)) return exit.value;
+		const issue = getSchemaIssueOrThrow(exit.cause, "Constructor adapter can only throw schema issues");
+		throw new Error(issue.toString(), { cause: issue });
 	};
 }
 /**
@@ -17566,12 +17735,18 @@ function run(ast) {
 		return succeed$1(oa.value);
 	});
 }
+function mapSchemaIssueEffect(self, f) {
+	return catchCause(self, (cause) => failCauseSync(() => map$1(cause, f)));
+}
 var recur = /*#__PURE__*/ memoize((ast) => {
 	let parser;
-	const encodingChecks = getEncodingChecks(ast);
-	const resolvedChecks = ast.checks ?? encodingChecks;
-	const astOptions = (resolvedChecks ? resolvedChecks[resolvedChecks.length - 1].annotations : ast.annotations)?.["parseOptions"];
-	if (!ast.context && !ast.encoding && !ast.checks && !encodingChecks) return (ou, options) => {
+	const checks = ast.checks;
+	const encoding = ast.encoding;
+	const links = encoding;
+	const len = links?.length ?? 0;
+	const encodingChecks = ast.encodingChecks;
+	const astOptions = (checks ? checks[checks.length - 1].annotations : ast.annotations)?.["parseOptions"];
+	if (!ast.context && !encoding && !checks && !encodingChecks) return (ou, options) => {
 		parser ??= ast.getParser(recur);
 		if (astOptions) options = {
 			...options,
@@ -17580,16 +17755,14 @@ var recur = /*#__PURE__*/ memoize((ast) => {
 		return parser(ou, options);
 	};
 	const isStructural = isArrays(ast) || isObjects(ast) || isDeclaration(ast) && ast.typeParameters.length > 0;
+	const structuralChecks = checks && isStructural ? checks.filter((check) => check.annotations?.[STRUCTURAL_ANNOTATION_KEY]) : void 0;
 	return (ou, options) => {
 		if (astOptions) options = {
 			...options,
 			...astOptions
 		};
-		const encoding = ast.encoding;
 		let srou;
-		if (encoding) {
-			const links = encoding;
-			const len = links.length;
+		if (links) {
 			for (let i = len - 1; i >= 0; i--) {
 				const link = links[i];
 				const to = link.to;
@@ -17600,40 +17773,91 @@ var recur = /*#__PURE__*/ memoize((ast) => {
 					srou = flatMapEager(srou, (ou) => getter.run(ou, options));
 				} else srou = link.transformation.decode(srou, options);
 			}
-			srou = mapErrorEager(srou, (issue) => new Encoding(ast, ou, issue));
+			srou = mapSchemaIssueEffect(srou, (issue) => new Encoding(ast, ou, issue));
 		}
 		parser ??= ast.getParser(recur);
-		let sroa = srou ? flatMapEager(srou, (ou) => parser(ou, options)) : parser(ou, options);
-		if (encodingChecks && !options?.disableChecks) sroa = flatMapEager(sroa, (oa) => {
-			if (isSome(ou) && isSome(oa)) {
-				const issues = [];
-				collectIssues(encodingChecks, ou.value, issues, ast, options);
-				if (isArrayNonEmpty(issues)) return fail(new Composite(ast, ou, issues));
-			}
-			return succeed$1(oa);
-		});
-		if (ast.checks && !options?.disableChecks) {
-			const checks = ast.checks;
-			if (options?.errors === "all" && isStructural && isSome(ou)) sroa = catchEager(sroa, (issue) => {
-				const issues = [];
-				collectIssues(checks.filter((check) => check.annotations?.[STRUCTURAL_ANNOTATION_KEY]), ou.value, issues, ast, options);
-				return fail(isArrayNonEmpty(issues) ? issue._tag === "Composite" && issue.ast === ast ? new Composite(ast, issue.actual, [...issue.issues, ...issues]) : new Composite(ast, ou, [issue, ...issues]) : issue);
-			});
-			sroa = flatMapEager(sroa, (oa) => {
-				if (isSome(oa)) {
-					const value = oa.value;
+		const parseLocal = (localOu) => {
+			let sroa = parser(localOu, options);
+			if (encodingChecks && !options?.disableChecks) sroa = flatMapEager(sroa, (oa) => {
+				if (isSome(localOu) && isSome(oa)) {
 					const issues = [];
-					collectIssues(checks, value, issues, ast, options);
-					if (isArrayNonEmpty(issues)) return fail(new Composite(ast, oa, issues));
+					collectIssues(encodingChecks, localOu.value, issues, ast, options);
+					if (isArrayNonEmpty(issues)) return fail(new Composite(ast, localOu, issues));
 				}
 				return succeed$1(oa);
 			});
-		}
-		return sroa;
+			if (checks && !options?.disableChecks) {
+				if (options?.errors === "all" && structuralChecks && structuralChecks.length > 0 && isSome(localOu)) sroa = mapSchemaIssueEffect(sroa, (issue) => {
+					const issues = [];
+					collectIssues(structuralChecks, localOu.value, issues, ast, options);
+					return isArrayNonEmpty(issues) ? issue._tag === "Composite" && issue.ast === ast ? new Composite(ast, issue.actual, [...issue.issues, ...issues]) : new Composite(ast, localOu, [issue, ...issues]) : issue;
+				});
+				sroa = flatMapEager(sroa, (oa) => {
+					if (isSome(oa)) {
+						const value = oa.value;
+						const issues = [];
+						collectIssues(checks, value, issues, ast, options);
+						if (isArrayNonEmpty(issues)) return fail(new Composite(ast, oa, issues));
+					}
+					return succeed$1(oa);
+				});
+			}
+			return sroa;
+		};
+		return srou ? flatMapEager(srou, parseLocal) : parseLocal(ou);
 	};
 });
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/schema/schema.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/SchemaError.js
+/**
+* @since 4.0.0
+*/
+var TypeId$7 = "~effect/SchemaError/SchemaError";
+/**
+* Error thrown (or returned as the error channel value) when schema decoding
+* or encoding fails.
+*
+* **Details**
+*
+* The `issue` field contains a structured {@link Issue} tree describing
+* every validation failure, including the path to the problematic value,
+* expected types, and actual values received. `message` renders the issue tree
+* as a human-readable string.
+*
+* Use {@link isSchemaError} to narrow an unknown value to `SchemaError`.
+*
+* **Example** (Catching a SchemaError)
+*
+* ```ts
+* import { Schema } from "effect"
+*
+* try {
+*   Schema.decodeUnknownSync(Schema.Number)("not a number")
+* } catch (err) {
+*   if (Schema.isSchemaError(err)) {
+*     console.log(err.message)
+*     // Expected number, actual "not a number"
+*   }
+* }
+* ```
+*
+* @category errors
+* @since 4.0.0
+*/
+var SchemaError = class extends TaggedError("SchemaError") {
+	[TypeId$7] = TypeId$7;
+	constructor(issue) {
+		super({ issue });
+	}
+	get message() {
+		return this.issue.toString();
+	}
+	toString() {
+		return `SchemaError(${this.message})`;
+	}
+};
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/schema/schema.js
 /** @internal */
 var TypeId$6 = "~effect/Schema/Schema";
 var SchemaProto = {
@@ -17657,30 +17881,18 @@ function make$10(ast, options) {
 	if (options) Object.assign(self, options);
 	self.ast = ast;
 	self.rebuild = (ast) => make$10(ast, options);
-	self.makeEffect = flow(makeEffect(self), mapErrorEager((issue) => new SchemaError(issue)));
+	const makeEffect$1 = makeEffect(self);
+	self.makeEffect = (input, options) => fromIssueEffect(makeEffect$1(input, options));
 	self.make = make$11(self);
 	self.makeOption = makeOption(self);
 	return self;
 }
 /** @internal */
-var SchemaErrorTypeId = "~effect/Schema/SchemaError";
-var SchemaError = class {
-	[SchemaErrorTypeId] = SchemaErrorTypeId;
-	_tag = "SchemaError";
-	name = "SchemaError";
-	issue;
-	constructor(issue) {
-		this.issue = issue;
-	}
-	get message() {
-		return this.issue.toString();
-	}
-	toString() {
-		return `SchemaError(${this.message})`;
-	}
-};
+function fromIssueEffect(self) {
+	return catchCause(self, (cause) => failCauseSync(() => map$1(cause, (issue) => new SchemaError(issue))));
+}
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Schema.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Schema.js
 var TypeId$5 = TypeId$6;
 /**
 * Creates a schema for a **parametric** type (a generic container such as
@@ -17715,7 +17927,7 @@ var TypeId$5 = TypeId$6;
 * const isBox = (u: unknown): u is Box<unknown> =>
 *   typeof u === "object" && u !== null && "value" in u
 *
-* const Box = <A extends Schema.Top>(item: A) =>
+* const Box = <A extends Schema.Constraint>(item: A) =>
 *   Schema.declareConstructor<Box<A["Type"]>, Box<A["Encoded"]>>()(
 *     [item],
 *     ([itemCodec]) =>
@@ -17751,7 +17963,7 @@ function declareConstructor() {
 * Use when you are defining a schema for an opaque type with no type parameters
 * and validation can be expressed as a type guard.
 *
-* **Example** (Schema for a custom `UserId` branded type)
+* **Example** (Defining a schema for a custom `UserId` branded type)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -17799,7 +18011,7 @@ function declare(is, annotations) {
 function decodeUnknownEffect(schema, options) {
 	const parser = decodeUnknownEffect$1(schema, options);
 	return (input, options) => {
-		return mapErrorEager(parser(input, options), (issue) => new SchemaError(issue));
+		return fromIssueEffect(parser(input, options));
 	};
 }
 /**
@@ -17864,7 +18076,7 @@ var optionalKey = /*#__PURE__*/ lambda((schema) => make$9(optionalKey$1(schema.a
 * Use {@link optionalKey} instead if you want exact optional semantics (absent
 * only, not `undefined`).
 *
-* **Example** (Optional field accepting undefined)
+* **Example** (Defining an optional field accepting undefined)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -17885,7 +18097,7 @@ var optional$1 = /*#__PURE__*/ lambda((self) => optionalKey(UndefinedOr(self)));
 /**
 * Creates a schema for a single literal value (string, number, bigint, boolean, or null).
 *
-* **Example** (String literal)
+* **Example** (Defining a string literal)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18026,7 +18238,7 @@ function makeStruct(ast, fields) {
 * The resulting schema's `Type` is a readonly object type with the fields'
 * decoded types. The `Encoded` form mirrors the field schemas' encoded types.
 *
-* **Example** (Basic struct)
+* **Example** (Defining a basic struct)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18052,9 +18264,20 @@ function Struct(fields) {
 	return makeStruct(struct(fields, void 0), fields);
 }
 /**
-* Defines a record (dictionary) schema with typed keys and values.
+* Defines a record schema whose dynamic properties are selected by a key schema
+* and decoded with a value schema.
 *
-* **Example** (String-keyed record of numbers)
+* **Details**
+*
+* For dynamic keys, the key schema selects matching own properties and the
+* value schema decodes or encodes only those selected properties. Checks on
+* string, number, symbol, and template literal key schemas narrow which
+* properties are selected.
+*
+* For transformed key schemas, property selection is based on encoded property
+* names before the selected key is decoded.
+*
+* **Example** (Defining a string-keyed record of numbers)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18091,7 +18314,7 @@ function makeTuple(ast, elements) {
 /**
 * Defines a fixed-length tuple schema from an array of element schemas.
 *
-* **Example** (Pair of string and number)
+* **Example** (Defining a pair of string and number)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18117,7 +18340,7 @@ var ArraySchema = /*#__PURE__*/ lambda((schema) => make$9(new Arrays(false, [], 
 /**
 * Makes an array or tuple schema mutable, removing the `readonly` modifier.
 *
-* **Example** (Mutable array)
+* **Example** (Defining mutable arrays)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18153,7 +18376,7 @@ function makeUnion(ast, members) {
 * - `"anyOf"` (default) — matches if any member matches.
 * - `"oneOf"` — matches if exactly one member matches.
 *
-* **Example** (String or number union)
+* **Example** (Defining a string or number union)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18173,7 +18396,7 @@ function Union(members, options) {
 /**
 * Creates a union schema from an array of literal values.
 *
-* **Example** (Status codes)
+* **Example** (Defining status codes)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18232,7 +18455,7 @@ function decodeTo(to, transformation) {
 * Constructor defaults are applied only during `make*`, not during decoding or
 * encoding.
 *
-* **Example** (Optional field with a static default)
+* **Example** (Defining an optional field with a static default)
 *
 * ```ts
 * import { Effect, Schema } from "effect"
@@ -18252,14 +18475,17 @@ function decodeTo(to, transformation) {
 * @since 3.10.0
 */
 function withConstructorDefault(defaultValue) {
-	return (schema) => make$9(withConstructorDefault$1(schema.ast, mapErrorEager(defaultValue, (e) => e.issue)), { schema });
+	return (schema) => make$9(withConstructorDefault$1(schema.ast, toIssueEffect(defaultValue)), { schema });
+}
+function toIssueEffect(self) {
+	return catchCause(self, (cause) => failCauseSync(() => map$1(cause, (error) => error.issue)));
 }
 /**
 * Combines a {@link Literal} schema with {@link withConstructorDefault}, making it ideal
 * for discriminator fields in tagged unions. When constructing via `make`, the
 * `_tag` field can be omitted and will be filled automatically.
 *
-* **Example** (Discriminated union tag)
+* **Example** (Defining a discriminated union tag)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18292,7 +18518,7 @@ function tag$1(literal) {
 * added automatically. However, when decoding or encoding, the `_tag` field
 * must be present in the input.
 *
-* **Example** (Tagged struct as a shorthand for a struct with a `_tag` field)
+* **Example** (Defining a tagged struct shorthand)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18335,7 +18561,7 @@ function TaggedStruct(value, fields) {
 * Creates a schema that validates values using `instanceof`.
 * Decoding and encoding pass the value through unchanged.
 *
-* **Example** (Schema for a built-in class)
+* **Example** (Defining a schema for a built-in class)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18378,7 +18604,7 @@ function link() {
 * When `abort` is `true`, parsing stops after this filter fails instead of
 * collecting later check failures.
 *
-* **Example** (Failure at a nested path)
+* **Example** (Reporting failure at a nested path)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18822,7 +19048,7 @@ var DateString = /*#__PURE__*/ String$1.annotate({ expected: "a string in ISO 86
 * JSON serializer encodes valid dates as ISO 8601 strings; invalid dates encode
 * as `"Invalid Date"`.
 *
-* **Example** (Date schema)
+* **Example** (Defining a Date schema)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -18832,6 +19058,8 @@ var DateString = /*#__PURE__*/ String$1.annotate({ expected: "a string in ISO 86
 * ```
 *
 * @see {@link DateValid} for accepting only valid Date instances
+* @see {@link DateFromString} for decoding strings into Date instances
+* @see {@link DateFromMillis} for decoding epoch milliseconds into Date instances
 *
 * @category Date
 * @since 4.0.0
@@ -18858,19 +19086,21 @@ globalThis.URLSearchParams;
 var Int = /*#__PURE__*/ Number$1.check(/*#__PURE__*/ isInt());
 globalThis.Uint8Array;
 var immerable = /*#__PURE__*/ globalThis.Symbol.for("immer-draftable");
+var payloadToken = {};
 function makeClass(Inherited, identifier, struct$1, annotations, proto) {
 	const getClassSchema = getClassSchemaFactory(struct$1, identifier, annotations);
 	const ClassTypeId = getClassTypeId(identifier);
 	const out = class extends Inherited {
 		constructor(...[input, options]) {
-			input = input ?? {};
-			const validated = struct$1.make(input, options);
-			super({
-				...input,
-				...validated
-			}, {
+			const payload = options?.["~payload"];
+			const value = payload?.token === payloadToken ? payload.value : struct$1.make(input ?? {}, options);
+			super(value, {
 				...options,
-				disableChecks: true
+				disableChecks: true,
+				"~payload": {
+					token: payloadToken,
+					value
+				}
 			});
 		}
 		static [TypeId$5] = TypeId$5;
@@ -18908,12 +19138,14 @@ function makeClass(Inherited, identifier, struct$1, annotations, proto) {
 			return this.rebuild(appendChecks(this.ast, checks));
 		}
 		static extend(identifier) {
-			return (newFields, annotations) => {
+			return (schema, annotations) => {
+				const extension = isStruct(schema) ? schema : Struct(schema);
 				const fields = {
 					...struct$1.fields,
-					...newFields
+					...extension.fields
 				};
-				return makeClass(this, identifier, makeStruct(struct(fields, struct$1.ast.checks, { identifier }), fields), annotations, proto);
+				const ast = struct(fields, struct$1.ast.checks, { identifier });
+				return makeClass(this, identifier, makeStruct(appendChecks(ast, extension.ast.checks), fields), annotations, proto);
 			};
 		}
 		static mapFields(f, options) {
@@ -18932,25 +19164,22 @@ function getClassTypeId(identifier) {
 function getClassSchemaFactory(from, identifier, annotations) {
 	let memo;
 	return (self) => {
-		if (memo === void 0) {
-			const transformation = getClassTransformation(self);
-			const to = make$9(new Declaration([from.ast], () => (input, ast) => {
-				return input instanceof self || hasProperty$1(input, getClassTypeId(identifier)) ? succeed$1(input) : fail(new InvalidType(ast, some(input)));
-			}, {
-				identifier,
-				[ClassTypeId]: ([from]) => new Link(from, transformation),
-				toCodec: ([from]) => new Link(from.ast, transformation),
-				toArbitrary: ([from]) => () => ({
-					arbitrary: from.arbitrary.map((args) => new self(args)),
-					terminal: from.terminal?.map((args) => new self(args))
-				}),
-				toFormatter: ([from]) => (t) => `${self.identifier}(${from(t)})`,
-				"~sentinels": collectSentinels(from.ast),
-				...annotations
-			}));
-			memo = from.pipe(decodeTo(to, transformation));
-		}
-		return memo;
+		if (memo !== void 0) return memo;
+		const transformation = getClassTransformation(self);
+		return memo = decodeTo(make$9(new Declaration([from.ast], () => (input, ast) => {
+			return input instanceof self || hasProperty$1(input, getClassTypeId(identifier)) ? succeed$1(input) : fail(new InvalidType(ast, some(input)));
+		}, {
+			identifier,
+			[ClassTypeId]: ([from]) => new Link(from, transformation),
+			toCodec: ([from]) => new Link(from.ast, transformation),
+			toArbitrary: ([from]) => () => ({
+				arbitrary: from.arbitrary.map((args) => new self(args)),
+				terminal: from.terminal?.map((args) => new self(args))
+			}),
+			toFormatter: ([from]) => (t) => `${self.identifier}(${from(t)})`,
+			"~sentinels": collectSentinels(from.ast),
+			...annotations
+		})), transformation)(from);
 	};
 }
 function isStruct(schema) {
@@ -18975,7 +19204,7 @@ function isStruct(schema) {
 *
 * Passing `disableChecks` in the options skips constructor validation.
 *
-* **Example** (Basic class)
+* **Example** (Defining a basic class)
 *
 * ```ts
 * import { Schema } from "effect"
@@ -19055,7 +19284,7 @@ var ErrorClass = (identifier) => (schema, annotations) => {
 * Use to define typed errors that are schema validated, yielded in `Effect.gen`,
 * and matched as tagged union members.
 *
-* **Example** (Tagged error class)
+* **Example** (Defining a tagged error class)
 *
 * ```ts
 * import { Effect, Schema } from "effect"
@@ -19098,7 +19327,7 @@ var TaggedErrorClass = (identifier) => {
 */
 var Json = /*#__PURE__*/ make$9(Json$1);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/stream.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/stream.js
 var TypeId$4 = "~effect/Stream";
 var streamVariance = {
 	_R: identity,
@@ -19118,7 +19347,7 @@ var fromChannel$1 = (channel) => {
 	return self;
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Stream.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Stream.js
 /**
 * Describes effectful sources that emit values over time.
 *
@@ -19344,7 +19573,7 @@ var fromQueue = (queue) => fromChannel(fromQueueArray(queue));
 */
 var unwrap$3 = (effect) => fromChannel(unwrap$4(map(effect, toChannel)));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/ManagedRuntime.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/ManagedRuntime.js
 var TypeId$3 = "~effect/ManagedRuntime";
 /**
 * Creates a `ManagedRuntime` from a layer.
@@ -19463,7 +19692,7 @@ function provide(managed, effect) {
 	return flatMap(managed.contextEffect, (context) => provideContext(effect, context));
 }
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Ref.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Ref.js
 /**
 * Stores fiber-safe mutable state inside Effect programs.
 *
@@ -19648,7 +19877,7 @@ var update = /*#__PURE__*/ dual(2, (self, f) => sync(() => {
 	self.ref.current = f(self.ref.current);
 }));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/unstable/reactivity/Reactivity.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/unstable/reactivity/Reactivity.js
 /**
 * Process-local invalidation for connecting writes to dependent reads.
 *
@@ -19803,7 +20032,7 @@ var keysToHashes = (keys, f) => {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/unstable/sql/Statement.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/unstable/sql/Statement.js
 /**
 * Low-level SQL statement and fragment primitives.
 *
@@ -20348,6 +20577,9 @@ var StatementProto = {
 	get values() {
 		return this.withConnection("executeValues", (connection, sql, params) => connection.executeValues(sql, params));
 	},
+	get valuesUnprepared() {
+		return this.withConnection("executeValuesUnprepared", (connection, sql, params) => connection.executeValuesUnprepared(sql, params));
+	},
 	get unprepared() {
 		const self = this;
 		return self.withConnection("executeUnprepared", (connection, sql, params) => connection.executeUnprepared(sql, params, self.transformRows));
@@ -20422,7 +20654,7 @@ function in_() {
 }
 var neverFragment = /*#__PURE__*/ fragment([/*#__PURE__*/ literal("1=0")]);
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/unstable/sql/SqlClient.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/unstable/sql/SqlClient.js
 /**
 * Main SQL client service for tagged-template queries.
 *
@@ -20790,7 +21022,7 @@ function stringColumnToSchema(column, constraint) {
 	return length && isLengthExact ? schema.check(isLengthBetween(length, length)) : length ? schema.check(isMaxLength(length)) : schema;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-schema/schema.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-schema/schema.js
 function isOptional(schema) {
 	if ((typeof schema !== "object" || schema === null) && typeof schema !== "function") return false;
 	return isSchema(schema) && schema.ast?.context?.isOptional === true;
@@ -20845,7 +21077,7 @@ var createInsertSchema = (entity, refine) => {
 	return handleColumns(getColumns(entity), refine ?? {}, insertConditions);
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/foreign-keys.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/foreign-keys.js
 var ForeignKeyBuilder = class {
 	static [entityKind] = "PgForeignKeyBuilder";
 	/** @internal */
@@ -20922,7 +21154,7 @@ function foreignKey(config) {
 	return new ForeignKeyBuilder(mappedConfig);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/common.js
 var PgColumnBuilder = class {
 	static [entityKind] = "PgColumnBuilder";
 	foreignKeyConfigs = [];
@@ -21194,7 +21426,7 @@ var IndexedColumn = class {
 	indexConfig;
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/int.common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/int.common.js
 var PgIntColumnBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgIntColumnBaseBuilder";
 	/**
@@ -21233,7 +21465,7 @@ var PgIntColumnBuilder = class extends PgColumnBuilder {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/bigint.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/bigint.js
 var PgBigInt53Builder = class extends PgIntColumnBuilder {
 	static [entityKind] = "PgBigInt53Builder";
 	constructor(name) {
@@ -21295,7 +21527,7 @@ function bigint(a, b) {
 	return new PgBigInt64Builder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/bigserial.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/bigserial.js
 var PgBigSerial53Builder = class extends PgColumnBuilder {
 	static [entityKind] = "PgBigSerial53Builder";
 	constructor(name) {
@@ -21342,7 +21574,7 @@ function bigserial(a, b) {
 	return new PgBigSerial64Builder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/boolean.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/boolean.js
 var PgBooleanBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgBooleanBuilder";
 	constructor(name) {
@@ -21365,7 +21597,7 @@ function boolean$3(name) {
 	return new PgBooleanBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/char.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/char.js
 var PgCharBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgCharBuilder";
 	constructor(name, config) {
@@ -21399,7 +21631,7 @@ function char(a, b = {}) {
 	return new PgCharBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/cidr.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/cidr.js
 var PgCidrBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgCidrBuilder";
 	constructor(name) {
@@ -21422,7 +21654,7 @@ function cidr(name) {
 	return new PgCidrBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/array.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/array.js
 function parsePgArrayValue(arrayString, startFrom, inQuotes) {
 	for (let i = startFrom; i < arrayString.length; i++) {
 		const char = arrayString[i];
@@ -21484,7 +21716,7 @@ function makePgArray(array) {
 	}).join(",")}}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/postgis_extension/utils.js
 function hexToBytes(hex) {
 	const bytes = [];
 	for (let c = 0; c < hex.length; c += 2) bytes.push(Number.parseInt(hex.slice(c, c + 2), 16));
@@ -21521,7 +21753,7 @@ function parseEWKB(hex) {
 	throw new Error("Unsupported geometry type");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/codecs.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/codecs.js
 var noopCodecs = {};
 var arrayToItemTypeCodecNameMap = {
 	cast: "cast",
@@ -21592,7 +21824,7 @@ function refineCodecs(source, extension = {}) {
 	return result;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/codecs.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/codecs.js
 var PG_ALIAS_TO_TYPE_MAP = {
 	int2: "smallint",
 	integer: "int",
@@ -22496,7 +22728,7 @@ var genericPgCodecs = {
 };
 var refineGenericPgCodecs = (extension) => refineCodecs(genericPgCodecs, extension);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/custom.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/custom.js
 var PgCustomColumnBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgCustomColumnBuilder";
 	constructor(name, fieldConfig, customTypeParams) {
@@ -22550,7 +22782,7 @@ function customType(customTypeParams) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/date.common.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/date.common.js
 var PgDateColumnBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgDateColumnBaseBuilder";
 	/**
@@ -22562,7 +22794,7 @@ var PgDateColumnBuilder = class extends PgColumnBuilder {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/date.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/date.js
 var PgDateBuilder = class extends PgDateColumnBuilder {
 	static [entityKind] = "PgDateBuilder";
 	constructor(name) {
@@ -22613,7 +22845,7 @@ function date$2(a, b) {
 	return new PgDateStringBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/double-precision.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/double-precision.js
 var PgDoublePrecisionBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgDoublePrecisionBuilder";
 	constructor(name) {
@@ -22636,7 +22868,7 @@ function doublePrecision(name) {
 	return new PgDoublePrecisionBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/inet.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/inet.js
 var PgInetBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgInetBuilder";
 	constructor(name) {
@@ -22659,7 +22891,7 @@ function inet(name) {
 	return new PgInetBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/integer.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/integer.js
 var PgIntegerBuilder = class extends PgIntColumnBuilder {
 	static [entityKind] = "PgIntegerBuilder";
 	constructor(name) {
@@ -22682,7 +22914,7 @@ function integer$1(name) {
 	return new PgIntegerBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/interval.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/interval.js
 var PgIntervalBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgIntervalBuilder";
 	constructor(name, intervalConfig) {
@@ -22714,7 +22946,7 @@ function interval(a, b = {}) {
 	return new PgIntervalBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/json.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/json.js
 var PgJsonBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgJsonBuilder";
 	constructor(name) {
@@ -22740,7 +22972,7 @@ function json(name) {
 	return new PgJsonBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/jsonb.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/jsonb.js
 var PgJsonbBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgJsonbBuilder";
 	constructor(name) {
@@ -22766,7 +22998,7 @@ function jsonb(name) {
 	return new PgJsonbBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/line.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/line.js
 var PgLineBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgLineBuilder";
 	constructor(name) {
@@ -22817,7 +23049,7 @@ function line$1(a, b) {
 	return new PgLineABCBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/macaddr.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/macaddr.js
 var PgMacaddrBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgMacaddrBuilder";
 	constructor(name) {
@@ -22840,7 +23072,7 @@ function macaddr(name) {
 	return new PgMacaddrBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/macaddr8.js
 var PgMacaddr8Builder = class extends PgColumnBuilder {
 	static [entityKind] = "PgMacaddr8Builder";
 	constructor(name) {
@@ -22863,7 +23095,7 @@ function macaddr8(name) {
 	return new PgMacaddr8Builder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/numeric.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/numeric.js
 var PgNumericBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgNumericBuilder";
 	constructor(name, precision, scale) {
@@ -22959,7 +23191,7 @@ function numeric(a, b) {
 	return mode === "number" ? new PgNumericNumberBuilder(name, config?.precision, config?.scale) : mode === "bigint" ? new PgNumericBigIntBuilder(name, config?.precision, config?.scale) : new PgNumericBuilder(name, config?.precision, config?.scale);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/point.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/point.js
 var PgPointTupleBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgPointTupleBuilder";
 	constructor(name) {
@@ -23010,7 +23242,7 @@ function point(a, b) {
 	return new PgPointObjectBuilder(name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/postgis_extension/geometry.js
 var PgGeometryBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgGeometryBuilder";
 	constructor(name, srid) {
@@ -23065,7 +23297,7 @@ function geometry(a, b) {
 	return new PgGeometryObjectBuilder(name, config?.srid);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/real.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/real.js
 var PgRealBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgRealBuilder";
 	constructor(name, length) {
@@ -23092,7 +23324,7 @@ function real(name) {
 	return new PgRealBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/serial.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/serial.js
 var PgSerialBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgSerialBuilder";
 	constructor(name) {
@@ -23117,7 +23349,7 @@ function serial(name) {
 	return new PgSerialBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/smallint.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/smallint.js
 var PgSmallIntBuilder = class extends PgIntColumnBuilder {
 	static [entityKind] = "PgSmallIntBuilder";
 	constructor(name) {
@@ -23140,7 +23372,7 @@ function smallint(name) {
 	return new PgSmallIntBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/smallserial.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/smallserial.js
 var PgSmallSerialBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgSmallSerialBuilder";
 	constructor(name) {
@@ -23165,7 +23397,7 @@ function smallserial(name) {
 	return new PgSmallSerialBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/text.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/text.js
 var PgTextBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgTextBuilder";
 	constructor(name, config) {
@@ -23195,7 +23427,7 @@ function text(a, b = {}) {
 	return new PgTextBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/time.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/time.js
 var PgTimeBuilder = class extends PgDateColumnBuilder {
 	static [entityKind] = "PgTimeBuilder";
 	constructor(name, withTimezone, precision) {
@@ -23230,7 +23462,7 @@ function time$2(a, b = {}) {
 	return new PgTimeBuilder(name, config.withTimezone ?? false, config.precision);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/timestamp.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/timestamp.js
 var PgTimestampBuilder = class extends PgDateColumnBuilder {
 	static [entityKind] = "PgTimestampBuilder";
 	constructor(name, withTimezone, precision) {
@@ -23301,7 +23533,7 @@ function timestamp(a, b = {}) {
 	return new PgTimestampBuilder(name, config?.withTimezone ?? false, config?.precision);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/uuid.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/uuid.js
 var PgUUIDBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgUUIDBuilder";
 	constructor(name) {
@@ -23330,7 +23562,7 @@ function uuid$1(name) {
 	return new PgUUIDBuilder(name ?? "");
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/varchar.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/varchar.js
 var PgVarcharBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgVarcharBuilder";
 	constructor(name, config) {
@@ -23361,7 +23593,7 @@ function varchar(a, b = {}) {
 	return new PgVarcharBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
 var PgBinaryVectorBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgBinaryVectorBuilder";
 	constructor(name, config) {
@@ -23387,7 +23619,7 @@ function bit(a, b) {
 	return new PgBinaryVectorBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
 var PgHalfVectorBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgHalfVectorBuilder";
 	constructor(name, config) {
@@ -23416,7 +23648,7 @@ function halfvec(a, b) {
 	return new PgHalfVectorBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
 var PgSparseVectorBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgSparseVectorBuilder";
 	constructor(name, config) {
@@ -23442,7 +23674,7 @@ function sparsevec(a, b) {
 	return new PgSparseVectorBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
 var PgVectorBuilder = class extends PgColumnBuilder {
 	static [entityKind] = "PgVectorBuilder";
 	constructor(name, config) {
@@ -23471,7 +23703,7 @@ function vector(a, b) {
 	return new PgVectorBuilder(name, config);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/columns/all.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/columns/all.js
 function getPgColumnBuilders() {
 	return {
 		bigint,
@@ -23509,7 +23741,7 @@ function getPgColumnBuilders() {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/casing.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
 	return (input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? []).map((word) => word.toLowerCase()).join("_");
 }
@@ -23524,7 +23756,7 @@ function getCasingFn(casing) {
 	return (name) => name;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/table.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/table.js
 /** @internal */
 var InlineForeignKeys = Symbol.for("drizzle:PgInlineForeignKeys");
 /** @internal */
@@ -23585,7 +23817,7 @@ function pgTableWithCasing(casing) {
 }
 var pgTable = pgTableWithCasing(void 0);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/primary-keys.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/primary-keys.js
 function primaryKey(...config) {
 	if (config[0].columns) return new PrimaryKeyBuilder(config[0].columns, config[0].name);
 	return new PrimaryKeyBuilder(config);
@@ -23621,7 +23853,7 @@ var PrimaryKey = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/indexes.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/indexes.js
 var IndexBuilderOn = class {
 	static [entityKind] = "PgIndexBuilderOn";
 	constructor(unique, name) {
@@ -23725,7 +23957,7 @@ function uniqueIndex(name) {
 	return new IndexBuilderOn(true, name);
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/utils.js
 function extractUsedTable(table) {
 	if (is(table, PgTable)) return [table[TableSchema] ? `${table[TableSchema]}.${table[Table.Symbol.BaseName]}` : table[Table.Symbol.BaseName]];
 	if (is(table, Subquery)) return table._.usedTables ?? [];
@@ -23733,7 +23965,7 @@ function extractUsedTable(table) {
 	return [];
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/alias.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/alias.js
 var ColumnTableAliasProxyHandler = class {
 	static [entityKind] = "ColumnTableAliasProxyHandler";
 	constructor(table, ignoreColumnAlias) {
@@ -23818,7 +24050,7 @@ function getOriginalColumnFromAlias(column) {
 	return column[OriginalColumn]();
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/selection-proxy.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/selection-proxy.js
 var SelectionProxyHandler = class SelectionProxyHandler {
 	static [entityKind] = "SelectionProxyHandler";
 	config;
@@ -23856,7 +24088,7 @@ var SelectionProxyHandler = class SelectionProxyHandler {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/query-builders/query-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/query-builders/query-builder.js
 var TypedQueryBuilder = class {
 	static [entityKind] = "TypedQueryBuilder";
 	/** @internal */
@@ -23869,12 +24101,12 @@ var TypedQueryBuilder = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/view-base.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/view-base.js
 var PgViewBase = class extends View {
 	static [entityKind] = "PgViewBase";
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/select.js
 var PgSelectBuilder = class {
 	static [entityKind] = "PgSelectBuilder";
 	fields;
@@ -24792,7 +25024,7 @@ var except = createSetOperator("except", false);
 */
 var exceptAll = createSetOperator("except", true);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/errors.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/errors.js
 var DrizzleError = class extends Error {
 	static [entityKind] = "DrizzleError";
 	constructor({ message, cause }) {
@@ -24802,7 +25034,7 @@ var DrizzleError = class extends Error {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/sql/expressions/conditions.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/sql/expressions/conditions.js
 function bindIfParam(value, column) {
 	if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) return new Param(value, column);
 	return value;
@@ -25166,7 +25398,7 @@ function arrayOverlaps(column, values) {
 	return sql`${column} && ${bindIfParam(values, column)}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/sql/expressions/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/sql/expressions/select.js
 /**
 * Used in sorting, this specifies that the given
 * column or expression should be sorted in ascending
@@ -25208,7 +25440,7 @@ function desc(column) {
 	return sql`${column} desc`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/relations.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/relations.js
 function processRelations(tablesConfig, tables) {
 	for (const tableConfig of Object.values(tablesConfig)) for (const [relationFieldName, relation] of Object.entries(tableConfig.relations)) {
 		if (!is(relation, Relation)) continue;
@@ -25873,7 +26105,7 @@ function getTableAsAliasSQL(table) {
 	return sql`${table[IsAlias] ? sql`${sql`${sql.identifier(table[TableSchema] ?? "")}.`.if(table[TableSchema])}${sql.identifier(table[OriginalName])} as ${table}` : table}`;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/dialect.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/dialect.js
 var PgDialect = class {
 	static [entityKind] = "PgDialect";
 	codecs;
@@ -26334,7 +26566,7 @@ var PgDialect = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/query-builder.js
 var QueryBuilder = class {
 	static [entityKind] = "PgQueryBuilder";
 	dialect;
@@ -26417,7 +26649,7 @@ var QueryBuilder = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/count.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/count.js
 var PgCountBuilder = class PgCountBuilder extends SQL {
 	static [entityKind] = "PgCountBuilder";
 	dialect;
@@ -26444,7 +26676,7 @@ var PgCountBuilder = class PgCountBuilder extends SQL {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/delete.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/delete.js
 var PgDeleteBase = class {
 	static [entityKind] = "PgDelete";
 	config;
@@ -26525,7 +26757,7 @@ var PgDeleteBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/insert.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/insert.js
 var PgInsertBuilder = class {
 	static [entityKind] = "PgInsertBuilder";
 	constructor(table, session, dialect, withList, overridingSystemValue_, builder = PgInsertBase) {
@@ -26687,7 +26919,7 @@ var PgInsertBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/query.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/query.js
 var RelationalQueryBuilder = class {
 	static [entityKind] = "PgRelationalQueryBuilderV2";
 	constructor(schema, table, tableConfig, dialect, session, parseJson, builder = PgRelationalQuery) {
@@ -26742,7 +26974,7 @@ var PgRelationalQuery = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/raw.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/raw.js
 var PgRaw = class {
 	static [entityKind] = "PgRaw";
 	constructor(prepared, sql, query) {
@@ -26761,7 +26993,7 @@ var PgRaw = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/refresh-materialized-view.js
 var PgRefreshMaterializedView = class {
 	static [entityKind] = "PgRefreshMaterializedView";
 	config;
@@ -26789,7 +27021,7 @@ var PgRefreshMaterializedView = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/query-builders/update.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/query-builders/update.js
 var PgUpdateBuilder = class {
 	static [entityKind] = "PgUpdateBuilder";
 	constructor(table, session, dialect, withList, builder = PgUpdateBase) {
@@ -26965,7 +27197,7 @@ var PgUpdateBase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/session.js
 var PgBasePreparedQuery = class {
 	static [entityKind] = "PgBasePreparedQuery";
 	constructor(query) {
@@ -26982,7 +27214,7 @@ var PgSession = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/migrator.utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/migrator.utils.js
 function formatToMillis(dateStr) {
 	const year = parseInt(dateStr.slice(0, 4), 10);
 	const month = parseInt(dateStr.slice(4, 6), 10) - 1;
@@ -26998,7 +27230,7 @@ function getMigrationsToRun(params) {
 	return localMigrations.filter((lm) => !lm.name || !dbNamesSet.has(lm.name));
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/up-migrations/utils.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/up-migrations/utils.js
 var MIGRATIONS_TABLE_VERSIONS = {
 	sqlite: 1,
 	pg: 1,
@@ -27039,7 +27271,7 @@ var GET_VERSION_FOR = {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/cache/core/cache.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/cache/core/cache.js
 var Cache = class {
 	static [entityKind] = "Cache";
 };
@@ -27457,6 +27689,10 @@ var UpdateProductInput = Struct({
 	...createProductFields
 });
 var ProductIdInput = Struct({ id: String$1 });
+var SearchProductsInput = Struct({
+	query: String$1,
+	limit: optional$1(Number$1)
+});
 var invoiceRow = createSelectSchema(invoices);
 var { deletedAt: _invoiceItemDeletedAt, ...invoiceItemFields } = createSelectSchema(invoiceItems).fields;
 var InvoiceItem = Struct(invoiceItemFields);
@@ -27630,7 +27866,7 @@ var mutationContextFrom = (config) => config.mutationContext ?? (() => ({
 	deviceId: "local"
 }));
 //#endregion
-//#region ../../node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/unstable/sql/SqlError.js
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/unstable/sql/SqlError.js
 var TypeId$1 = "~effect/sql/SqlError";
 var ReasonTypeId = "~effect/sql/SqlError/Reason";
 var ReasonFields = {
@@ -27950,7 +28186,7 @@ TaggedErrorClass("effect/sql/ResultLengthMismatch")("ResultLengthMismatch", {
 	actual: Number$1
 });
 //#endregion
-//#region ../../node_modules/.bun/@effect+sql-pglite@4.0.0-beta.83+43902b222b0d7d3e/node_modules/@effect/sql-pglite/dist/PgliteClient.js
+//#region ../../node_modules/.bun/@effect+sql-pglite@4.0.0-beta.98+74997d64abff4185/node_modules/@effect/sql-pglite/dist/PgliteClient.js
 /**
 * Connects Effect SQL to PGlite, the embedded PostgreSQL-compatible database
 * from `@electric-sql/pglite`.
@@ -28077,6 +28313,12 @@ var PgliteConnection = class {
 		return map(tryPromise({
 			try: () => this.pglite.query(sql, params, { rowMode: "array" }),
 			catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to execute statement", "executeValues") })
+		}), (result) => result.rows);
+	}
+	executeValuesUnprepared(sql, params) {
+		return map(tryPromise({
+			try: () => this.pglite.query(sql, params, { rowMode: "array" }),
+			catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to execute statement", "executeValuesUnprepared") })
 		}), (result) => result.rows);
 	}
 	executeUnprepared(sql, params, transformRows) {
@@ -28264,7 +28506,7 @@ var relations = defineRelations(schema_exports$1, (r) => ({
 	}
 }));
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-pglite/codecs.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-pglite/codecs.js
 var effectPgliteCodecs = refineCodecs(refineGenericPgCodecs({
 	bigint: {
 		normalize: BigInt,
@@ -28492,7 +28734,7 @@ var effectPgliteCodecs = refineCodecs(refineGenericPgCodecs({
 	}
 });
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-core/query-effect.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-core/query-effect.js
 function applyEffectWrapper(baseClass) {
 	Object.assign(baseClass.prototype, Prototype({
 		label: "DrizzleQuery",
@@ -28502,7 +28744,7 @@ function applyEffectWrapper(baseClass) {
 	}));
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/update.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/update.js
 var PgEffectUpdateBase = class extends PgUpdateBase {
 	static [entityKind] = "PgEffectUpdate";
 	/** @internal */
@@ -28525,7 +28767,7 @@ var PgEffectUpdateBase = class extends PgUpdateBase {
 };
 applyEffectWrapper(PgEffectUpdateBase);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/delete.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/delete.js
 var PgEffectDeleteBase = class extends PgDeleteBase {
 	static [entityKind] = "PgEffectDelete";
 	/** @internal */
@@ -28548,7 +28790,7 @@ var PgEffectDeleteBase = class extends PgDeleteBase {
 };
 applyEffectWrapper(PgEffectDeleteBase);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/query.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/query.js
 var PgEffectRelationalQuery = class extends PgRelationalQuery {
 	static [entityKind] = "PgEffectRelationalQueryV2";
 	/** @internal */
@@ -28573,7 +28815,7 @@ var PgEffectRelationalQuery = class extends PgRelationalQuery {
 };
 applyEffectWrapper(PgEffectRelationalQuery);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/raw.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/raw.js
 var PgEffectRaw = class extends PgRaw {
 	static [entityKind] = "PgEffectRaw";
 	constructor(prepared, sql, query) {
@@ -28588,7 +28830,7 @@ var PgEffectRaw = class extends PgRaw {
 };
 applyEffectWrapper(PgEffectRaw);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/refresh-materialized-view.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/refresh-materialized-view.js
 var PgEffectRefreshMaterializedView = class extends PgRefreshMaterializedView {
 	static [entityKind] = "PgEffectRefreshMaterializedView";
 	/** @internal */
@@ -28605,7 +28847,7 @@ var PgEffectRefreshMaterializedView = class extends PgRefreshMaterializedView {
 };
 applyEffectWrapper(PgEffectRefreshMaterializedView);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/count.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/count.js
 var PgEffectCountBuilder = class extends PgCountBuilder {
 	static [entityKind] = "PgEffectCountBuilder";
 	session;
@@ -28627,7 +28869,7 @@ var PgEffectCountBuilder = class extends PgCountBuilder {
 };
 applyEffectWrapper(PgEffectCountBuilder);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/insert.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/insert.js
 var PgEffectInsertBase = class extends PgInsertBase {
 	static [entityKind] = "PgEffectInsert";
 	/** @internal */
@@ -28650,7 +28892,7 @@ var PgEffectInsertBase = class extends PgInsertBase {
 };
 applyEffectWrapper(PgEffectInsertBase);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/select.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/select.js
 var PgEffectSelectBase = class extends PgSelectBase {
 	static [entityKind] = "PgEffectSelectQueryBuilder";
 	/** @internal */
@@ -28680,7 +28922,7 @@ var PgEffectSelectBase = class extends PgSelectBase {
 };
 applyEffectWrapper(PgEffectSelectBase);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/db.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/db.js
 var PgEffectDatabase = class {
 	static [entityKind] = "EffectPgDatabase";
 	query;
@@ -29008,7 +29250,7 @@ var PgEffectDatabase = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/cache/core/cache-effect.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/cache/core/cache-effect.js
 /**
 * Effect service for caching query results in Drizzle ORM.
 *
@@ -29126,7 +29368,7 @@ var MigratorInitError = class extends TaggedErrorClass()("MigratorInitError", { 
 	static [entityKind] = "MigratorInitError";
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/up-migrations/effect-pg.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/up-migrations/effect-pg.js
 /**
 * Map of upgrade functions. Each key is the version being upgraded FROM,
 * and the function upgrades the table to the next version.
@@ -29201,7 +29443,7 @@ var upgradeIfNeeded = fn("upgradeIfNeeded")(function* (migrationsSchema, migrati
 	return { newDb: false };
 });
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/pg-core/effect/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/effect/session.js
 var PgEffectPreparedQuery = class extends PgBasePreparedQuery {
 	static [entityKind] = "PgEffectPreparedQuery";
 	/** @internal */
@@ -29336,7 +29578,7 @@ var migrate$1 = fn("migrate")(function* (migrations, session, config) {
 	}));
 });
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-pglite/session.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-pglite/session.js
 var EffectPgSession = class extends PgEffectSession {
 	static [entityKind] = "EffectPgSession";
 	constructor(client, dialect, relations, options) {
@@ -29368,7 +29610,7 @@ var EffectPgTransaction = class extends PgEffectTransaction {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-core/logger.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-core/logger.js
 /**
 * Effect service for logging SQL queries in Drizzle ORM.
 *
@@ -29467,10 +29709,10 @@ var EffectLogger = class EffectLogger extends Service()("drizzle-orm/EffectLogge
 	}) });
 };
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-core/defaults.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-core/defaults.js
 var DefaultServices = merge$1(EffectCache.Default, EffectLogger.Default);
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-pglite/driver.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-pglite/driver.js
 var EffectPgDatabase = class extends PgEffectDatabase {
 	static [entityKind] = "EffectPgDatabase";
 };
@@ -29523,7 +29765,7 @@ var make$1 = fn("PgDrizzle.make")(function* (config = {}) {
 */
 var makeWithDefaults = (config = {}) => make$1(config).pipe(provide$1(DefaultServices));
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/migrator.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/migrator.js
 function readMigrationFiles(config) {
 	if (fs.existsSync(`${config.migrationsFolder}/meta/_journal.json`)) throw Error("We detected that you have old drizzle-kit migration folders. You must upgrade drizzle-kit and run \"drizzle-kit up\"");
 	const migrationFolderTo = config.migrationsFolder;
@@ -29552,10 +29794,99 @@ function readMigrationFiles(config) {
 	return migrationQueries;
 }
 //#endregion
-//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+8fc9b26709e26525/node_modules/drizzle-orm/effect-pglite/migrator.js
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/effect-pglite/migrator.js
 function migrate(db, config) {
 	return migrate$1(readMigrationFiles(config), db.session, config);
 }
+//#endregion
+//#region ../../packages/persistence/src/pglite-extensions.ts
+var pgliteExtensions = {
+	pg_trgm,
+	fuzzystrmatch,
+	unaccent
+};
+//#endregion
+//#region ../../packages/persistence/src/pglite-upgrade.ts
+var legacyPostgresMajor = "17";
+var currentPostgresMajor = "18";
+var isMissingFile = (cause) => typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT";
+var readPostgresMajor = async (dataDir) => {
+	try {
+		return (await readFile(path.join(dataDir, "PG_VERSION"), "utf8")).trim();
+	} catch (cause) {
+		if (isMissingFile(cause)) return void 0;
+		throw cause;
+	}
+};
+var pathExists = async (target) => {
+	try {
+		await readFile(path.join(target, "PG_VERSION"));
+		return true;
+	} catch (cause) {
+		if (isMissingFile(cause)) return false;
+		throw cause;
+	}
+};
+var availableBackupPath = async (dataDir) => {
+	const preferred = `${dataDir}.pg17-backup`;
+	if (!await pathExists(preferred)) return preferred;
+	return `${preferred}-${Date.now()}`;
+};
+var dumpLegacyDatabase = async (dataDir) => {
+	const database = await PGlite$1.create(dataDir);
+	try {
+		return await (await pgDump({ pg: database })).text();
+	} finally {
+		await database.close();
+	}
+};
+var restoreCurrentDatabase = async (dataDir, dump) => {
+	const database = await PGlite.create({
+		dataDir,
+		extensions: pgliteExtensions
+	});
+	try {
+		await database.exec(dump);
+		await database.exec("SET search_path TO public");
+		await database.query("SELECT 1");
+	} finally {
+		await database.close();
+	}
+};
+var swapDatabaseDirectories = async (dataDir, stagingDir) => {
+	const backupDir = await availableBackupPath(dataDir);
+	await rename(dataDir, backupDir);
+	try {
+		await rename(stagingDir, dataDir);
+	} catch (cause) {
+		await rename(backupDir, dataDir);
+		throw cause;
+	}
+};
+var upgrade = async (dataDir) => {
+	const version = await readPostgresMajor(dataDir);
+	if (version === void 0 || version === currentPostgresMajor) return;
+	if (version !== legacyPostgresMajor) throw new Error(`Unsupported local PostgreSQL data version ${version}.`);
+	const stagingDir = `${dataDir}.pg18-upgrade`;
+	await rm(stagingDir, {
+		force: true,
+		recursive: true
+	});
+	try {
+		await restoreCurrentDatabase(stagingDir, await dumpLegacyDatabase(dataDir));
+		await swapDatabaseDirectories(dataDir, stagingDir);
+	} catch (cause) {
+		await rm(stagingDir, {
+			force: true,
+			recursive: true
+		});
+		throw cause;
+	}
+};
+var upgradePgliteDataDir = (dataDir) => tryPromise({
+	try: () => upgrade(dataDir),
+	catch: (cause) => persistenceError("upgrade local database", cause)
+});
 //#endregion
 //#region ../../packages/persistence/src/database.ts
 var makeDatabase = (migrationsFolder) => gen(function* () {
@@ -29567,7 +29898,18 @@ var makeDatabase = (migrationsFolder) => gen(function* () {
 	}).pipe(mapPersistenceError("migrate database"));
 	return database;
 });
-var clientLayer = (config) => layerFrom(make$3({ dataDir: config.dataDir }).pipe(mapError((cause) => persistenceError("open local database", cause))));
+var ensureLocalSearchIndexes = (database) => gen(function* () {
+	yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+	yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS fuzzystrmatch`);
+	yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS unaccent`);
+	yield* database.execute(sql`CREATE INDEX IF NOT EXISTS products_name_trgm_idx ON products USING gin (name gin_trgm_ops)`);
+	yield* database.execute(sql`CREATE INDEX IF NOT EXISTS products_composition_trgm_idx ON products USING gin (composition gin_trgm_ops)`);
+}).pipe(mapPersistenceError("enable local search indexes"));
+var makeClientLayer = (config) => layerFrom(make$3({
+	dataDir: config.dataDir,
+	extensions: pgliteExtensions
+}).pipe(mapError((cause) => persistenceError("open local database", cause))));
+var clientLayer = (config) => unwrap$5(upgradePgliteDataDir(config.dataDir).pipe(map(() => makeClientLayer(config))));
 //#endregion
 //#region ../../packages/persistence/src/models.ts
 var toCategory = ({ deletedAt: _deletedAt, ...category }) => category;
@@ -29863,6 +30205,46 @@ var makeProductStore = (database, mutationContext, signalSync) => {
 			with: productRelations
 		}).pipe(map((rows) => rows.map(toProduct)), mapPersistenceError("list products"));
 	});
+	const searchProducts = (input) => suspend(() => {
+		const actor = mutationContext();
+		const raw = input.query.trim();
+		if (raw.length === 0) return succeed$1([]);
+		const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+		const normalized = sql`lower(unaccent(${raw}))`;
+		const nameNorm = sql`lower(unaccent(${products.name}))`;
+		const compNorm = sql`lower(unaccent(coalesce(${products.composition}, '')))`;
+		const score = sql`(
+          0.45 * similarity(${nameNorm}, ${normalized})
+        + 0.25 * word_similarity(${normalized}, ${compNorm})
+        + (CASE WHEN ${nameNorm} LIKE ${normalized} || '%' THEN 0.30 ELSE 0 END)
+        + (CASE WHEN dmetaphone(${products.name}) = dmetaphone(${raw}) THEN 0.40 ELSE 0 END)
+        + (CASE WHEN soundex(${products.name}) = soundex(${raw}) THEN 0.25 ELSE 0 END)
+        + (CASE WHEN levenshtein(${nameNorm}, ${normalized}) <= 2 THEN 0.20 ELSE 0 END)
+      )`;
+		const matches = sql`(
+           similarity(${nameNorm}, ${normalized}) > 0.15
+        OR word_similarity(${normalized}, ${compNorm}) > 0.4
+        OR dmetaphone(${products.name}) = dmetaphone(${raw})
+        OR soundex(${products.name}) = soundex(${raw})
+        OR levenshtein(${nameNorm}, ${normalized}) <= 2
+        OR ${nameNorm} LIKE '%' || ${normalized} || '%'
+      )`;
+		return database.select({ id: products.id }).from(products).where(and(eq(products.organizationId, actor.organizationId), isNull(products.deletedAt), matches)).orderBy(sql`${score} DESC`).limit(limit).pipe(flatMap((ranked) => {
+			const ids = ranked.map((row) => row.id);
+			if (ids.length === 0) return succeed$1([]);
+			return database.query.products.findMany({
+				where: {
+					organizationId: actor.organizationId,
+					id: { in: ids },
+					deletedAt: { isNull: true }
+				},
+				with: productRelations
+			}).pipe(map((rows) => {
+				const rank = new Map(ids.map((id, index) => [id, index]));
+				return rows.map(toProduct).sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+			}));
+		}), mapPersistenceError("search products"));
+	});
 	const getProduct = fn("OfflineStore.getProduct")(function* (id) {
 		const actor = mutationContext();
 		const row = yield* findProduct(actor.organizationId, id).pipe(mapPersistenceError("find product"));
@@ -30056,6 +30438,7 @@ var makeProductStore = (database, mutationContext, signalSync) => {
 	return {
 		listCategories,
 		listProducts,
+		searchProducts,
 		getProduct,
 		createProduct,
 		updateProduct,
@@ -30307,6 +30690,7 @@ var OfflineStore = class extends Service()("@store/persistence/OfflineStore") {}
 var make = (config) => gen(function* () {
 	const mutationContext = mutationContextFrom(config);
 	const database = yield* makeDatabase(config.migrationsFolder);
+	yield* ensureLocalSearchIndexes(database);
 	yield* initializeDatabase(database, mutationContext());
 	const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
 	const productStore = makeProductStore(database, mutationContext, syncEngine.signal);
@@ -30322,6 +30706,7 @@ var layer = (config) => effect(OfflineStore, make(config)).pipe(provide$3(client
 var program = {
 	listCategories: flatMap(OfflineStore, (store) => store.listCategories),
 	listProducts: flatMap(OfflineStore, (store) => store.listProducts),
+	searchProducts: (input) => flatMap(OfflineStore, (store) => store.searchProducts(input)),
 	getProduct: (id) => flatMap(OfflineStore, (store) => store.getProduct(id)),
 	createProduct: (input) => flatMap(OfflineStore, (store) => store.createProduct(input)),
 	updateProduct: (input) => flatMap(OfflineStore, (store) => store.updateProduct(input)),
@@ -30335,10 +30720,10 @@ var program = {
 	sync: flatMap(OfflineStore, (store) => store.sync)
 };
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+33d53ca422221a04/node_modules/@better-auth/electron/dist/version-YIydhdrs.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/version-YIydhdrs.mjs
 var PACKAGE_VERSION$1 = "1.6.23";
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+33d53ca422221a04/node_modules/@better-auth/electron/dist/utils-DxDKRT6e.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/utils-DxDKRT6e.mjs
 function isProcessType(type) {
 	return typeof process !== "undefined" && process.type === type;
 }
@@ -30635,7 +31020,7 @@ var base64Url = {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/utils/wildcard.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/utils/wildcard.mjs
 /**
 * Escapes a character if it has a special meaning in regular expressions
 * and returns the character as is if it doesn't
@@ -30968,7 +31353,7 @@ var createLogger = (options) => {
 };
 var logger = createLogger();
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/utils/url.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/utils/url.mjs
 var SLASH_CHAR_CODE = "/".charCodeAt(0);
 function trimTrailingSlashes(value) {
 	let end = value.length;
@@ -31100,7 +31485,7 @@ function createRandomStringGenerator(...baseAlphabets) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/crypto/random.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/crypto/random.mjs
 var generateRandomString = createRandomStringGenerator("a-z", "0-9", "A-Z", "-_");
 //#endregion
 //#region ../../node_modules/.bun/@noble+hashes@2.2.0/node_modules/@noble/hashes/utils.js
@@ -34274,7 +34659,7 @@ function decodeJwt(jwt) {
 	return result;
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/crypto/jwt.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/crypto/jwt.mjs
 async function signJWT(payload, secret, expiresIn = 3600) {
 	return await new SignJWT(payload).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(Math.floor(Date.now() / 1e3) + expiresIn).sign(new TextEncoder().encode(secret));
 }
@@ -35789,7 +36174,7 @@ var xchacha20poly1305 = /* @__PURE__ */ wrapCipher({
 	tagLength: 16
 }, /* @__PURE__ */ _poly1305_aead(xchacha20));
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/crypto/index.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/crypto/index.mjs
 var ENVELOPE_PREFIX = "$ba$";
 function formatEnvelope(version, ciphertext) {
 	return `${ENVELOPE_PREFIX}${version}$${ciphertext}`;
@@ -35807,7 +36192,7 @@ var symmetricEncrypt = async ({ key, data }) => {
 	return formatEnvelope(key.currentVersion, ciphertext);
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/context/store-capabilities.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/context/store-capabilities.mjs
 function hasServerSessionStore(options) {
 	return !!options.database || !!options.secondaryStorage;
 }
@@ -40302,7 +40687,7 @@ function filterOutputFields(data, additionalFields) {
 	}), {});
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/db/schema.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/db/schema.mjs
 var cache = /* @__PURE__ */ new WeakMap();
 function getFields(options, modelName, mode) {
 	const cacheKey = `${modelName}:${mode}`;
@@ -40392,17 +40777,17 @@ function parseAdditionalUserInputFromProviderProfile(options, profile = {}, acti
 	});
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/utils/date.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/utils/date.mjs
 var getDate = (span, unit = "ms") => {
 	return new Date(Date.now() + (unit === "sec" ? span * 1e3 : span));
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/utils/is-promise.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/utils/is-promise.mjs
 function isPromise(obj) {
 	return !!obj && (typeof obj === "object" || typeof obj === "function") && typeof obj.then === "function";
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/cookies/cookie-utils.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/cookies/cookie-utils.mjs
 function tryDecode$1(str) {
 	if (str.indexOf("%") === -1) return str;
 	try {
@@ -41144,7 +41529,7 @@ createMiddleware.create = (opts) => {
 	return fn;
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/cookies/session-store.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/cookies/session-store.mjs
 /**
 * Per-cookie byte ceiling.
 * Safari's ~4093 floor is the lowest among browsers.
@@ -41366,7 +41751,7 @@ var createHMAC = (algorithm = "SHA-256", encoding = "none") => {
 	return hmac;
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/cookies/index.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/cookies/index.mjs
 async function setCookieCache(ctx, session, dontRememberMe) {
 	if (!ctx.context.options.session?.cookieCache?.enabled) return;
 	const filteredSession = filterOutputFields(session.session, ctx.context.options.session?.additionalFields);
@@ -41505,7 +41890,7 @@ function deleteSessionCookie(ctx, skipDontRememberMe) {
 	if (!skipDontRememberMe) expireCookie(ctx, ctx.context.authCookies.dontRememberToken);
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/state.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/state.mjs
 var stateDataSchema = looseObject({
 	callbackURL: string$1(),
 	codeVerifier: string$1(),
@@ -41574,7 +41959,7 @@ async function generateGenericState(c, stateData, settings) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/oauth2/errors.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/oauth2/errors.mjs
 var HANDLING_DOCS_URL = "https://www.better-auth.com/docs/concepts/oauth#handling-providers-without-email";
 /**
 * Redirect the user to the OAuth error page with a machine-readable `error`
@@ -41699,10 +42084,10 @@ function defineRequestState(initFn) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/state/oauth.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/state/oauth.mjs
 var { get: getOAuthState, set: setOAuthState } = defineRequestState(() => null);
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/oauth2/state.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/oauth2/state.mjs
 async function generateState(c, link, additionalData) {
 	const callbackURL = c.body?.callbackURL || c.context.options.baseURL;
 	if (!callbackURL) throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.CALLBACK_URL_REQUIRED);
@@ -41822,7 +42207,7 @@ function withServerOnly(options) {
 */
 createAuthEndpoint.serverOnly = (options, handler) => createAuthEndpoint(withServerOnly(options), handler);
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/auth/trusted-origins.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/auth/trusted-origins.mjs
 /**
 * Matches the given url against an origin or origin pattern
 * See "options.trustedOrigins" for details of supported patterns
@@ -41922,7 +42307,7 @@ function deprecate(fn, message, logger) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/middlewares/origin-check.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/middlewares/origin-check.mjs
 /**
 * Checks if CSRF should be skipped for backward compatibility.
 * Previously, disableOriginCheck also disabled CSRF checks.
@@ -42162,7 +42547,7 @@ function normalizeIP(ip, options = {}) {
 	return normalizeIPv6(ip, options.ipv6Subnet ?? 64);
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/state/should-session-refresh.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/state/should-session-refresh.mjs
 /**
 * State for skipping session refresh
 *
@@ -42173,7 +42558,7 @@ function normalizeIP(ip, options = {}) {
 */
 var { get: getShouldSkipSessionRefresh, set: setShouldSkipSessionRefresh } = defineRequestState(() => false);
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/routes/session.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/routes/session.mjs
 var getSession = () => createAuthEndpoint("/get-session", {
 	method: ["GET", "POST"],
 	operationId: "getSession",
@@ -42894,7 +43279,7 @@ function isPublicRoutableHost(host) {
 	return classifyHost(host).kind === "public";
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/context/helpers.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/context/helpers.mjs
 async function getAwaitableValue(arr, item) {
 	if (!arr) return void 0;
 	for (const val of arr) {
@@ -42903,7 +43288,7 @@ async function getAwaitableValue(arr, item) {
 	}
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/oauth2/utils.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/oauth2/utils.mjs
 function setTokenUtil(token, ctx) {
 	if (ctx.options.account?.encryptOAuthTokens && token) return symmetricEncrypt({
 		key: ctx.secretConfig,
@@ -42912,7 +43297,7 @@ function setTokenUtil(token, ctx) {
 	return token;
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/routes/email-verification.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/routes/email-verification.mjs
 async function createEmailVerificationToken(secret, email, updateTo, expiresIn = 3600, extraPayload) {
 	return await signJWT({
 		email: email.toLowerCase(),
@@ -43210,7 +43595,7 @@ createAuthEndpoint("/verify-email", {
 	});
 });
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/oauth2/link-account.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/oauth2/link-account.mjs
 async function handleOAuthUserInfo(c, opts) {
 	const { userInfo, account, callbackURL, disableSignUp, overrideUserInfo } = opts;
 	const dbUser = await c.context.internalAdapter.findOAuthUser(userInfo.email.toLowerCase(), account.accountId, account.providerId).catch((e) => {
@@ -47021,7 +47406,7 @@ var SocialProviderListEnum = _enum(Object.keys({
 	wechat
 })).or(string$1());
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/api/routes/sign-in.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/api/routes/sign-in.mjs
 var socialSignInBodySchema = object({
 	callbackURL: string$1().meta({ description: "Callback URL to redirect to after the user has signed in" }).optional(),
 	newUserCallbackURL: string$1().optional(),
@@ -47165,7 +47550,7 @@ function toKebabCase(input) {
 	return splitWords(input).map((word) => word.toLowerCase()).join("-");
 }
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+33d53ca422221a04/node_modules/@better-auth/electron/dist/client.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/client.mjs
 var { net: net$1 } = electron;
 var DEFAULT_MAX_BYTES = 1024 * 1024 * 5;
 async function fetchUserImage(baseURL, url, options) {
@@ -57452,7 +57837,7 @@ var Conf = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+33d53ca422221a04/node_modules/@better-auth/electron/dist/storage.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/storage.mjs
 var { app: app$1 } = electron;
 var storage = (opts) => {
 	if (!app$1) return {
@@ -57475,10 +57860,10 @@ var storage = (opts) => {
 	};
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/version.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/version.mjs
 var PACKAGE_VERSION = "1.6.23";
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/broadcast-channel.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/broadcast-channel.mjs
 var kBroadcastChannel = Symbol.for("better-auth:broadcast-channel");
 var now$1 = () => Math.floor(Date.now() / 1e3);
 var WindowBroadcastChannel = class {
@@ -57691,7 +58076,7 @@ var onMount = ($store, initialize) => {
 	});
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/equality.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/equality.mjs
 function isPlainObject(value) {
 	if (typeof value !== "object" || value === null) return false;
 	const prototype = Object.getPrototypeOf(value);
@@ -57731,7 +58116,7 @@ function withEquality(store, isEqual) {
 	});
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/focus-manager.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/focus-manager.mjs
 var kFocusManager = Symbol.for("better-auth:focus-manager");
 var WindowFocusManager = class {
 	listeners = /* @__PURE__ */ new Set();
@@ -57760,7 +58145,7 @@ function getGlobalFocusManager() {
 	return globalThis[kFocusManager];
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/online-manager.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/online-manager.mjs
 var kOnlineManager = Symbol.for("better-auth:online-manager");
 var WindowOnlineManager = class {
 	listeners = /* @__PURE__ */ new Set();
@@ -57792,7 +58177,7 @@ function getGlobalOnlineManager() {
 	return globalThis[kOnlineManager];
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/parser.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/parser.mjs
 var PROTO_POLLUTION_PATTERNS = {
 	proto: /"(?:_|\\u0{2}5[Ff]){2}(?:p|\\u0{2}70)(?:r|\\u0{2}72)(?:o|\\u0{2}6[Ff])(?:t|\\u0{2}74)(?:o|\\u0{2}6[Ff])(?:_|\\u0{2}5[Ff]){2}"\s*:/,
 	constructor: /"(?:c|\\u0063)(?:o|\\u006[Ff])(?:n|\\u006[Ee])(?:s|\\u0073)(?:t|\\u0074)(?:r|\\u0072)(?:u|\\u0075)(?:c|\\u0063)(?:t|\\u0074)(?:o|\\u006[Ff])(?:r|\\u0072)"\s*:/,
@@ -57861,7 +58246,7 @@ function parseJSON(value, options = { strict: true }) {
 	return betterJSONParse(value, options);
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/query.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/query.mjs
 var isServer$1 = () => typeof window === "undefined";
 function isAuthQueryStateEqual(a, b) {
 	return isJsonEqual(a.data, b.data) && a.error === b.error && a.isPending === b.isPending && a.isRefetching === b.isRefetching && a.refetch === b.refetch;
@@ -57964,7 +58349,7 @@ var useAuthQuery = (initializedAtom, path, $fetch, options) => {
 	return value;
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/session-refresh.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/session-refresh.mjs
 var now = () => Math.floor(Date.now() / 1e3);
 /**
 * Rate limit: don't refetch on focus if a session request was made within this many seconds
@@ -58091,7 +58476,7 @@ function createSessionRefreshManager(opts) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/fetch-plugins.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/fetch-plugins.mjs
 var redirectPlugin = {
 	id: "redirect",
 	name: "Redirect",
@@ -58106,7 +58491,7 @@ var redirectPlugin = {
 	} }
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/session-atom.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/session-atom.mjs
 var isServer = () => typeof window === "undefined";
 /**
 * Normalize $fetch response: `throw: true` returns data directly,
@@ -58256,7 +58641,7 @@ function getSessionAtom($fetch, options) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/config.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/config.mjs
 var resolvePublicAuthUrl = (basePath) => {
 	if (typeof process === "undefined") return void 0;
 	const path = basePath ?? "/api/auth";
@@ -58354,12 +58739,12 @@ var getClientConfig = (options, loadEnv) => {
 	};
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/utils/is-atom.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/utils/is-atom.mjs
 function isAtom(value) {
 	return typeof value === "object" && value !== null && "get" in value && typeof value.get === "function" && "lc" in value && typeof value.lc === "number";
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/proxy.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/proxy.mjs
 function getMethod(path, knownPathMethods, args) {
 	const method = knownPathMethods[path];
 	const { fetchOptions, query: _query, ...body } = args || {};
@@ -58434,7 +58819,7 @@ function createDynamicPathProxy(routes, client, knownPathMethods, atoms, atomLis
 	return createProxy();
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/client/vanilla.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/client/vanilla.mjs
 function createAuthClient(options) {
 	const { pluginPathMethods, pluginsActions, pluginsAtoms, $fetch, atomListeners, $store } = getClientConfig(options);
 	const resolvedHooks = {};
@@ -58447,7 +58832,7 @@ function createAuthClient(options) {
 	}, $fetch, pluginPathMethods, pluginsAtoms, atomListeners);
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/plugins/access/access.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/plugins/access/access.mjs
 function unknownResourceResponse(requestedResource) {
 	return {
 		success: false,
@@ -58523,7 +58908,7 @@ function createAccessControl(s) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/plugins/organization/error-codes.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/plugins/organization/error-codes.mjs
 var ORGANIZATION_ERROR_CODES = defineErrorCodes({
 	YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION: "You are not allowed to create a new organization",
 	YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS: "You have reached the maximum number of organizations",
@@ -58658,7 +59043,7 @@ var defaultRoles = {
 	member: memberAc
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/plugins/organization/permission.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/plugins/organization/permission.mjs
 var hasPermissionFn = (input, acRoles) => {
 	if (!input.permissions) return false;
 	const roles = input.role.split(",");
@@ -58670,7 +59055,7 @@ var hasPermissionFn = (input, acRoles) => {
 	return false;
 };
 //#endregion
-//#region ../../node_modules/.bun/better-auth@1.6.23+e9f4253d9bc0bb80/node_modules/better-auth/dist/plugins/organization/client.mjs
+//#region ../../node_modules/.bun/better-auth@1.6.23+c23c1f4973474578/node_modules/better-auth/dist/plugins/organization/client.mjs
 /**
 * Using the same `hasPermissionFn` function, but without the need for a `ctx` parameter or the `organizationId` parameter.
 */
@@ -59041,6 +59426,7 @@ var runStore = (effect) => {
 function registerStoreIpc() {
 	ipcMain.handle("store:categories:list", () => runStore(program.listCategories));
 	ipcMain.handle("store:products:list", () => runStore(program.listProducts));
+	ipcMain.handle("store:products:search", (_event, input) => runStore(decodeUnknownEffect(SearchProductsInput)(input).pipe(flatMap(program.searchProducts))));
 	ipcMain.handle("store:products:get", (_event, input) => runStore(decodeUnknownEffect(ProductIdInput)(input).pipe(flatMap(({ id }) => program.getProduct(id)))));
 	ipcMain.handle("store:products:create", (_event, input) => runStore(decodeUnknownEffect(CreateProductInput)(input).pipe(flatMap(program.createProduct))));
 	ipcMain.handle("store:products:update", (_event, input) => runStore(decodeUnknownEffect(UpdateProductInput)(input).pipe(flatMap(program.updateProduct))));

@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthPage } from "@/components/auth-page";
 import { CreateOrganizationPage } from "@/components/create-organization-page";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { CommandMenuProvider } from "@/components/command-menu";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -28,16 +29,18 @@ function AuthenticatedLayout() {
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (
     <TooltipProvider>
-      <div className="[--header-height:calc(--spacing(12))]">
-        <SidebarProvider className="h-svh overflow-hidden">
-          <AppSidebar />
-          <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
-            <SiteHeader />
-            <Outlet />
-            <Toaster />
-          </SidebarInset>
-        </SidebarProvider>
-      </div>
+      <CommandMenuProvider>
+        <div className="[--header-height:calc(--spacing(12))]">
+          <SidebarProvider className="h-svh overflow-hidden">
+            <AppSidebar />
+            <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+              <SiteHeader />
+              <Outlet />
+              <Toaster />
+            </SidebarInset>
+          </SidebarProvider>
+        </div>
+      </CommandMenuProvider>
     </TooltipProvider>
   );
 }

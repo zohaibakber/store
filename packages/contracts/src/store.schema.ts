@@ -87,6 +87,12 @@ export type UpdateProductInput = typeof UpdateProductInput.Type;
 export const ProductIdInput = Schema.Struct({ id: Schema.String });
 export type ProductIdInput = typeof ProductIdInput.Type;
 
+export const SearchProductsInput = Schema.Struct({
+  query: Schema.String,
+  limit: Schema.optional(Schema.Number),
+});
+export type SearchProductsInput = typeof SearchProductsInput.Type;
+
 const invoiceRow = createSelectSchema(invoices);
 const invoiceItemRow = createSelectSchema(invoiceItems);
 

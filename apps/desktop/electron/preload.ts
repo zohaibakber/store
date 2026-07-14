@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld("windowControls", {
 const offlineStore: OfflineStoreApi = {
   listCategories: () => ipcRenderer.invoke("store:categories:list"),
   listProducts: () => ipcRenderer.invoke("store:products:list"),
+  searchProducts: (input) => ipcRenderer.invoke("store:products:search", input),
   getProduct: (input) => ipcRenderer.invoke("store:products:get", input),
   createProduct: (input) => ipcRenderer.invoke("store:products:create", input),
   updateProduct: (input) => ipcRenderer.invoke("store:products:update", input),

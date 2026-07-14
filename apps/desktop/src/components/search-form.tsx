@@ -1,20 +1,22 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchIcon } from "@hugeicons/core-free-icons";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
+import { useCommandMenu } from "./command-menu";
+import { InputGroup, InputGroupAddon } from "./ui/input-group";
 import { Kbd } from "./ui/kbd";
 
-export function SearchForm({ ...props }: React.ComponentProps<"form">) {
+export function SearchForm() {
+  const { open } = useCommandMenu();
   return (
-    <form {...props}>
-      <InputGroup>
+    <button type="button" onClick={open} className="w-full text-left">
+      <InputGroup className="cursor-pointer">
         <InputGroupAddon>
           <HugeiconsIcon icon={SearchIcon} />
         </InputGroupAddon>
-        <InputGroupInput placeholder="Search" />
+        <span className="flex-1 truncate text-sm text-muted-foreground">Search products</span>
         <InputGroupAddon align={"inline-end"}>
-          <Kbd>/</Kbd>
+          <Kbd>⌘K</Kbd>
         </InputGroupAddon>
       </InputGroup>
-    </form>
+    </button>
   );
 }

@@ -12,16 +12,16 @@
     "build": "wrangler deploy --dry-run --outdir dist"
   },
   "dependencies": {
-    "@effect/sql-pg": "4.0.0-beta.83",
+    "@effect/sql-pg": "4.0.0-beta.98",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
-    "effect": "4.0.0-beta.83",
+    "effect": "4.0.0-beta.98",
     "hono": "^4.12.29"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-beta.83",
+    "@effect/vitest": "4.0.0-beta.98",
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3",
     "vitest": "^4.0.18",
