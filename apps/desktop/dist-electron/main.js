@@ -5,10 +5,8 @@ import path, { join, resolve } from "node:path";
 import { fuzzystrmatch } from "@electric-sql/pglite/contrib/fuzzystrmatch";
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { unaccent } from "@electric-sql/pglite/contrib/unaccent";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { PGlite as PGlite$1 } from "pglite-04";
-import { pgDump } from "pglite-tools-04/pg_dump";
 import electron, { BrowserWindow, app, ipcMain, net, safeStorage, shell } from "electron";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { Buffer as Buffer$1 } from "node:buffer";
@@ -3523,9 +3521,9 @@ var done$2 = (value) => {
 /**
 * @since 2.0.0
 */
-var TypeId$21 = "~effect/data/Option";
+var TypeId$22 = "~effect/data/Option";
 var CommonProto$1 = {
-	[TypeId$21]: { _A: (_) => _ },
+	[TypeId$22]: { _A: (_) => _ },
 	...PipeInspectableProto,
 	[Symbol.iterator]() {
 		return new SingleShotGen(this);
@@ -3575,7 +3573,7 @@ var NoneProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(CommonPr
 	}
 });
 /** @internal */
-var isOption = (input) => hasProperty$1(input, TypeId$21);
+var isOption = (input) => hasProperty$1(input, TypeId$22);
 /** @internal */
 var isNone$1 = (fa) => fa._tag === "None";
 /** @internal */
@@ -3590,9 +3588,9 @@ var some$1 = (value) => {
 };
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/result.js
-var TypeId$20 = "~effect/data/Result";
+var TypeId$21 = "~effect/data/Result";
 var CommonProto = {
-	[TypeId$20]: {
+	[TypeId$21]: {
 		/* v8 ignore next 2 */
 		_A: (_) => _,
 		_E: (_) => _
@@ -3643,7 +3641,7 @@ var FailureProto = /*#__PURE__*/ Object.assign(/*#__PURE__*/ Object.create(Commo
 	}
 });
 /** @internal */
-var isResult = (input) => hasProperty$1(input, TypeId$20);
+var isResult = (input) => hasProperty$1(input, TypeId$21);
 /** @internal */
 var isFailure$1 = (result) => result._tag === "Failure";
 /** @internal */
@@ -4650,9 +4648,9 @@ var dedupeWith = /*#__PURE__*/ dual(2, (self, isEquivalent) => {
 *
 * @since 2.0.0
 */
-var TypeId$19 = "~effect/BigDecimal";
+var TypeId$20 = "~effect/BigDecimal";
 var BigDecimalProto = {
-	[TypeId$19]: TypeId$19,
+	[TypeId$20]: TypeId$20,
 	[symbol$2]() {
 		const normalized = normalize(this);
 		return combine(hash(normalized.value), number$3(normalized.scale));
@@ -4698,7 +4696,7 @@ var BigDecimalProto = {
 * @category guards
 * @since 2.0.0
 */
-var isBigDecimal = (u) => hasProperty$1(u, TypeId$19);
+var isBigDecimal = (u) => hasProperty$1(u, TypeId$20);
 /**
 * Creates a `BigDecimal` from a `bigint` value and a scale.
 *
@@ -5202,7 +5200,7 @@ var ServiceProto = {
 	}
 };
 var ReferenceTypeId = "~effect/Context/Reference";
-var TypeId$18 = "~effect/Context";
+var TypeId$19 = "~effect/Context";
 /**
 * Creates a `Context` from an existing service map.
 *
@@ -5241,7 +5239,7 @@ var makeUnsafe$6 = (mapUnsafe) => {
 };
 var Proto$1 = {
 	...PipeInspectableProto,
-	[TypeId$18]: { _Services: (_) => _ },
+	[TypeId$19]: { _Services: (_) => _ },
 	toJSON() {
 		return {
 			_id: "Context",
@@ -5293,7 +5291,7 @@ var Proto$1 = {
 * @category guards
 * @since 2.0.0
 */
-var isContext = (u) => hasProperty$1(u, TypeId$18);
+var isContext = (u) => hasProperty$1(u, TypeId$19);
 /**
 * Checks whether the provided argument is a `Reference`.
 *
@@ -5764,7 +5762,7 @@ var withMapUnsafe = (self, f) => {
 var Reference = Service;
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Duration.js
-var TypeId$17 = "~effect/time/Duration";
+var TypeId$18 = "~effect/time/Duration";
 var bigint0$1 = /*#__PURE__*/ BigInt(0);
 var bigint1 = /*#__PURE__*/ BigInt(1);
 var bigint1e3 = /*#__PURE__*/ BigInt(1e3);
@@ -5829,7 +5827,7 @@ var fromInputUnsafe = (input) => {
 		}
 		case "object": {
 			if (input === null) break;
-			if (TypeId$17 in input) return input;
+			if (TypeId$18 in input) return input;
 			if (Array.isArray(input)) {
 				if (input.length !== 2 || !input.every(isNumber)) return invalid(input);
 				if (Number.isNaN(input[0]) || Number.isNaN(input[1])) return zero;
@@ -5861,7 +5859,7 @@ var zeroDurationValue = {
 var infinityDurationValue = { _tag: "Infinity" };
 var negativeInfinityDurationValue = { _tag: "NegativeInfinity" };
 var DurationProto = {
-	[TypeId$17]: TypeId$17,
+	[TypeId$18]: TypeId$18,
 	[symbol$2]() {
 		return structure(this.value);
 	},
@@ -5939,7 +5937,7 @@ var make$22 = (input) => {
 * @category guards
 * @since 2.0.0
 */
-var isDuration = (u) => hasProperty$1(u, TypeId$17);
+var isDuration = (u) => hasProperty$1(u, TypeId$18);
 /**
 * A Duration representing zero time.
 *
@@ -6253,6 +6251,27 @@ var Equivalence$2 = (self, that) => matchPair(self, that, {
 * @since 2.0.0
 */
 var equals = /*#__PURE__*/ dual(2, (self, that) => Equivalence$2(self, that));
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Filter.js
+/**
+* Composes two filters sequentially, passing the successful output of the first
+* filter to the second.
+*
+* **Details**
+*
+* If either filter fails, the returned filter fails with the original input
+* instead of the intermediate failure value.
+*
+* @category combinators
+* @since 4.0.0
+*/
+var composePassthrough = /*#__PURE__*/ dual(2, (left, right) => (input) => {
+	const leftOut = left(input);
+	if (isFailure(leftOut)) return fail$4(input);
+	const rightOut = right(leftOut.success);
+	if (isFailure(rightOut)) return fail$4(input);
+	return rightOut;
+});
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Scheduler.js
 /**
@@ -6798,7 +6817,7 @@ var Interrupt = class extends ReasonBase {
 /** @internal */
 var causeInterrupt = (fiberId) => new CauseImpl([new Interrupt(fiberId)]);
 /** @internal */
-var findError = (self) => {
+var findError$1 = (self) => {
 	for (let i = 0; i < self.reasons.length; i++) {
 		const reason = self.reasons[i];
 		if (reason._tag === "Fail") return succeed$4(reason.error);
@@ -7037,7 +7056,7 @@ var FiberImpl = class {
 		const exit = this.runLoop(effect);
 		if (exit === Yield) return;
 		const interruptChildren = fiberMiddleware.interruptChildren && fiberMiddleware.interruptChildren(this);
-		if (interruptChildren !== void 0) return this.evaluate(flatMap$2(interruptChildren, () => exit));
+		if (interruptChildren !== void 0) return this.evaluate(flatMap$1(interruptChildren, () => exit));
 		this._exit = exit;
 		this.runtimeMetrics?.recordFiberEnd(this.context, this._exit);
 		for (let i = 0; i < this._observers.length; i++) this._observers[i](exit);
@@ -7056,7 +7075,7 @@ var FiberImpl = class {
 				if (!yielding && !this.currentPreventYield && this.currentScheduler.shouldYield(this)) {
 					yielding = true;
 					const prev = current;
-					current = flatMap$2(yieldNow, () => prev);
+					current = flatMap$1(yieldNow, () => prev);
 				}
 				current = this.currentTracerContext ? this.currentTracerContext(current, this) : current[evaluate](this);
 				if (currentLoop !== this.currentLoopCount) return Yield;
@@ -7284,7 +7303,7 @@ var asyncFinalizer = /*#__PURE__*/ makePrimitive({
 		}
 	},
 	[contE](cause, _fiber) {
-		return hasInterrupts(cause) ? flatMap$2(this[args](), () => failCause$2(cause)) : failCause$2(cause);
+		return hasInterrupts(cause) ? flatMap$1(this[args](), () => failCause$2(cause)) : failCause$2(cause);
 	}
 });
 /** @internal */
@@ -7370,7 +7389,7 @@ var fromIteratorEagerUnsafe = (evaluate) => {
 				return suspend$1(() => {
 					if (isFirstExecution) {
 						isFirstExecution = false;
-						return flatMap$2(state.value, (value) => fromIteratorUnsafe(iterator, value));
+						return flatMap$1(state.value, (value) => fromIteratorUnsafe(iterator, value));
 					} else return suspend$1(() => fromIteratorUnsafe(evaluate()));
 				});
 			}
@@ -7401,23 +7420,23 @@ var fromIteratorUnsafe = /*#__PURE__*/ makePrimitive({
 /** @internal */
 var as$1 = /*#__PURE__*/ dual(2, (self, value) => {
 	const b = succeed$3(value);
-	return flatMap$2(self, (_) => b);
+	return flatMap$1(self, (_) => b);
 });
 /** @internal */
 var asSome = (self) => map$2(self, some);
 /** @internal */
-var andThen = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => isEffect$1(f) ? f : internalCall(() => f(a))));
+var andThen = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => isEffect$1(f) ? f : internalCall(() => f(a))));
 /** @internal */
-var tap$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => as$1(isEffect$1(f) ? f : internalCall(() => f(a)), a)));
+var tap$1 = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => as$1(isEffect$1(f) ? f : internalCall(() => f(a)), a)));
 /** @internal */
-var asVoid$1 = (self) => flatMap$2(self, (_) => exitVoid);
+var asVoid$1 = (self) => flatMap$1(self, (_) => exitVoid);
 /** @internal */
 var raceAllFirst = (all, options) => withFiber$1((parent) => callback$1((resume) => {
 	let done = false;
 	const fibers = /* @__PURE__ */ new Set();
 	const onExit = (exit) => {
 		done = true;
-		resume(fibers.size === 0 ? exit : flatMap$2(uninterruptible(fiberInterruptAll(fibers)), () => exit));
+		resume(fibers.size === 0 ? exit : flatMap$1(uninterruptible(fiberInterruptAll(fibers)), () => exit));
 	};
 	let i = 0;
 	for (const effect of all) {
@@ -7441,7 +7460,7 @@ var raceAllFirst = (all, options) => withFiber$1((parent) => callback$1((resume)
 /** @internal */
 var raceFirst = /*#__PURE__*/ dual((args) => isEffect$1(args[1]), (self, that, options) => raceAllFirst([self, that], options));
 /** @internal */
-var flatMap$2 = /*#__PURE__*/ dual(2, (self, f) => {
+var flatMap$1 = /*#__PURE__*/ dual(2, (self, f) => {
 	const onSuccess = Object.create(OnSuccessProto);
 	onSuccess[args] = self;
 	onSuccess[contA] = f.length !== 1 ? (a) => f(a) : f;
@@ -7459,12 +7478,12 @@ var effectIsExit = (effect) => ExitTypeId in effect;
 /** @internal */
 var flatMapEager$1 = /*#__PURE__*/ dual(2, (self, f) => {
 	if (effectIsExit(self)) return self._tag === "Success" ? f(self.value) : self;
-	return flatMap$2(self, f);
+	return flatMap$1(self, f);
 });
 /** @internal */
-var flatten$1 = (self) => flatMap$2(self, identity);
+var flatten$1 = (self) => flatMap$1(self, identity);
 /** @internal */
-var map$2 = /*#__PURE__*/ dual(2, (self, f) => flatMap$2(self, (a) => succeed$3(internalCall(() => f(a)))));
+var map$2 = /*#__PURE__*/ dual(2, (self, f) => flatMap$1(self, (a) => succeed$3(internalCall(() => f(a)))));
 /** @internal */
 var mapEager$1 = /*#__PURE__*/ dual(2, (self, f) => effectIsExit(self) ? exitMap(self, f) : map$2(self, f));
 /** @internal */
@@ -7522,6 +7541,12 @@ var provideServiceImpl = (self, service, implementation) => updateContext(self, 
 	return add(s, service, implementation);
 });
 /** @internal */
+var forever$2 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, options) => whileLoop({
+	while: constTrue,
+	body: constant(options?.disableYield ? self : flatMap$1(self, (_) => yieldNow)),
+	step: constVoid
+}));
+/** @internal */
 var catchCause$1 = /*#__PURE__*/ dual(2, (self, f) => {
 	const onFailure = Object.create(OnFailureProto);
 	onFailure[args] = self;
@@ -7541,7 +7566,7 @@ var catchCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause$1(s
 	return isFailure(eb) ? failCause$2(eb.failure) : internalCall(() => f(eb.success, cause));
 }));
 /** @internal */
-var catch_$1 = /*#__PURE__*/ dual(2, (self, f) => catchCauseFilter(self, findError, (e) => f(e)));
+var catch_$1 = /*#__PURE__*/ dual(2, (self, f) => catchCauseFilter(self, findError$1, (e) => f(e)));
 /** @internal */
 var tapCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause$1(self, (cause) => {
 	const result = filter(cause);
@@ -7549,7 +7574,7 @@ var tapCauseFilter = /*#__PURE__*/ dual(3, (self, filter, f) => catchCause$1(sel
 	return andThen(internalCall(() => f(result.success, cause)), failCause$2(cause));
 }));
 /** @internal */
-var tapError$1 = /*#__PURE__*/ dual(2, (self, f) => tapCauseFilter(self, findError, (e) => f(e)));
+var tapError$1 = /*#__PURE__*/ dual(2, (self, f) => tapCauseFilter(self, findError$1, (e) => f(e)));
 /** @internal */
 var mapError$1 = /*#__PURE__*/ dual(2, (self, f) => catch_$1(self, (error) => failSync(() => f(error))));
 /** @internal */
@@ -7575,7 +7600,7 @@ var OnSuccessAndFailureProto = /*#__PURE__*/ makePrimitiveProto({
 	}
 });
 /** @internal */
-var matchEffect = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self, {
+var matchEffect$1 = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self, {
 	onFailure: (cause) => {
 		const fail = cause.reasons.find(isFailReason$1);
 		return fail ? internalCall(() => options.onFailure(fail.error)) : failCause$2(cause);
@@ -7583,7 +7608,7 @@ var matchEffect = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self
 	onSuccess: options.onSuccess
 }));
 /** @internal */
-var match = /*#__PURE__*/ dual(2, (self, options) => matchEffect(self, {
+var match = /*#__PURE__*/ dual(2, (self, options) => matchEffect$1(self, {
 	onFailure: (error) => sync$1(() => options.onFailure(error)),
 	onSuccess: (value) => sync$1(() => options.onSuccess(value))
 }));
@@ -7591,7 +7616,7 @@ var match = /*#__PURE__*/ dual(2, (self, options) => matchEffect(self, {
 var matchEager = /*#__PURE__*/ dual(2, (self, options) => {
 	if (effectIsExit(self)) {
 		if (self._tag === "Success") return exitSucceed(options.onSuccess(self.value));
-		const error = findError(self.cause);
+		const error = findError$1(self.cause);
 		if (isFailure(error)) return self;
 		return exitSucceed(options.onFailure(error.success));
 	}
@@ -7612,6 +7637,8 @@ var exitPrimitive = /*#__PURE__*/ makePrimitive({
 		return succeed$3(exit ?? exitFailCause(cause));
 	}
 });
+/** @internal */
+var delay$1 = /*#__PURE__*/ dual(2, (self, duration) => andThen(sleep(duration), self));
 /** @internal */
 var timeoutOption$1 = /*#__PURE__*/ dual(2, (self, duration) => raceFirst(asSome(self), as$1(sleep(duration), none())));
 /** @internal */
@@ -7716,7 +7743,7 @@ var scopedWith = (f) => suspend$1(() => {
 	return onExit$1(f(scope), (exit) => suspend$1(() => scopeCloseUnsafe(scope, exit) ?? void_$2));
 });
 /** @internal */
-var acquireRelease$1 = (acquire, release, options) => contextWith$1((context) => uninterruptibleMask$1((restore) => flatMap$2(scope, (scope) => tap$1(options?.interruptible ? restore(acquire) : acquire, (a) => scopeAddFinalizerExit(scope, (exit) => provideContext$1(release(a, exit), context))))));
+var acquireRelease$1 = (acquire, release, options) => contextWith$1((context) => uninterruptibleMask$1((restore) => flatMap$1(scope, (scope) => tap$1(options?.interruptible ? restore(acquire) : acquire, (a) => scopeAddFinalizerExit(scope, (exit) => provideContext$1(release(a, exit), context))))));
 /** @internal */
 var onExitPrimitive = /*#__PURE__*/ makePrimitive({
 	op: "OnExit",
@@ -7734,12 +7761,12 @@ var onExitPrimitive = /*#__PURE__*/ makePrimitive({
 	[contA](value, _, exit) {
 		exit ??= exitSucceed(value);
 		const eff = this[args][1](exit);
-		return eff ? flatMap$2(eff, (_) => exit) : exit;
+		return eff ? flatMap$1(eff, (_) => exit) : exit;
 	},
 	[contE](cause, _, exit) {
 		exit ??= exitFailCause(cause);
 		const eff = this[args][1](exit);
-		return eff ? flatMap$2(eff, (_) => exit) : exit;
+		return eff ? flatMap$1(eff, (_) => exit) : exit;
 	}
 });
 /** @internal */
@@ -7877,7 +7904,7 @@ var iterateEagerImpl = (options) => {
 				if (effectIsExit(eff)) {
 					terminal = runStep(item, eff, index);
 					if (terminal) break;
-				} else if (concurrency === 1) return flatMap$2(exit$1(eff), (exit) => {
+				} else if (concurrency === 1) return flatMap$1(exit$1(eff), (exit) => {
 					terminal = runStep(item, exit, index);
 					index++;
 					return terminal ?? go() ?? void_$2;
@@ -7980,7 +8007,7 @@ var forkIn$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, scope, o
 	return succeed$3(fiber);
 }));
 /** @internal */
-var forkScoped$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, options) => flatMap$2(scope, (scope) => forkIn$1(self, scope, options)));
+var forkScoped$1 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, options) => flatMap$1(scope, (scope) => forkIn$1(self, scope, options)));
 /** @internal */
 var runForkWith$1 = (context) => (effect, options) => {
 	const fiber = new FiberImpl(options?.scheduler ? add(context, Scheduler, options.scheduler) : context, options?.uninterruptible !== true);
@@ -8477,6 +8504,35 @@ var fail$2 = causeFail;
 * @since 2.0.0
 */
 var map$1 = causeMap;
+/**
+* Returns a `Result` whose success value is the first typed error value `E`
+* from a `Fail` reason in the cause. If the cause has no `Fail` reason,
+* the failure value is the original cause narrowed to `Cause<never>`, because
+* it contains no typed error reasons.
+*
+* **When to use**
+*
+* Use when you need the first typed error value from a `Cause` as a `Result`
+* that preserves the original cause when no match is found.
+*
+* **Example** (Extracting the first error value)
+*
+* ```ts
+* import { Cause, Result } from "effect"
+*
+* const result = Cause.findError(Cause.fail("error"))
+* if (!Result.isFailure(result)) {
+*   console.log(result.success) // "error"
+* }
+* ```
+*
+* @see {@link findFail} — extract the full `Fail` reason
+* @see {@link findErrorOption} — `Option`-based variant
+*
+* @category filtering
+* @since 4.0.0
+*/
+var findError = findError$1;
 /**
 * Checks whether an arbitrary value is a `Done` signal.
 *
@@ -9082,14 +9138,14 @@ var forkUnsafe = scopeForkUnsafe;
 var close = scopeClose;
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Layer.js
-var TypeId$15 = "~effect/Layer";
+var TypeId$16 = "~effect/Layer";
 var MemoMapTypeId = "~effect/Layer/MemoMap";
 var memoMapReuse = (entry, scope) => {
 	entry.observers++;
 	return andThen(scopeAddFinalizerExit(scope, (exit) => entry.finalizer(exit)), entry.effect);
 };
 var LayerProto = {
-	[TypeId$15]: {
+	[TypeId$16]: {
 		_ROut: identity,
 		_E: identity,
 		_RIn: identity
@@ -9187,7 +9243,7 @@ var memoMapBuild = (memoMap, layer, scope, build) => {
 		})
 	};
 	memoMap.map.set(layer, entry);
-	return scopeAddFinalizerExit(scope, entry.finalizer).pipe(flatMap$2(() => build(memoMap, layerScope)), onExit$1((exit) => {
+	return scopeAddFinalizerExit(scope, entry.finalizer).pipe(flatMap$1(() => build(memoMap, layerScope)), onExit$1((exit) => {
 		entry.effect = exit;
 		return done(deferred, exit);
 	}));
@@ -9535,42 +9591,6 @@ var effectImpl = (service, effect) => effectContext(map$2(effect, (value) => mak
 * @since 2.0.0
 */
 var effectContext = (effect) => fromBuildMemo((_, scope) => provide$4(effect, scope));
-/**
-* Unwraps a `Layer` from an `Effect`, flattening the nested structure.
-*
-* **When to use**
-*
-* Use when you have an `Effect` that produces a `Layer` and you want to
-* use that layer directly.
-*
-* **Details**
-*
-* The resulting Layer will have the combined error and dependency types from
-* both the outer Effect and the inner Layer.
-*
-* **Example** (Unwrapping an effectful layer)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* const layerEffect = Effect.succeed(
-*   Layer.succeed(Database, { query: Effect.fn("Database.query")((sql: string) => Effect.succeed("result")) })
-* )
-*
-* const unwrappedLayer = Layer.unwrap(layerEffect)
-* ```
-*
-* @category converting
-* @since 4.0.0
-*/
-var unwrap$5 = (self) => {
-	const service = Service("effect/Layer/unwrap");
-	return flatMap$1(effect(service)(self), get$1(service));
-};
 var mergeAllEffect = (layers, memoMap, scope) => {
 	const parentScope = forkUnsafe(scope, "parallel");
 	return forEach(layers, (layer) => layer.build(memoMap, forkUnsafe(parentScope, "sequential")), { concurrency: layers.length }).pipe(map$2((context) => mergeAll$1(...context)));
@@ -9664,7 +9684,7 @@ var mergeAll = (...layers) => fromBuild((memoMap, scope) => mergeAllEffect(layer
 * @since 2.0.0
 */
 var merge$1 = /*#__PURE__*/ dual(2, (self, that) => mergeAll(self, ...Array.isArray(that) ? that : [that]));
-var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$2(Array.isArray(that) ? mergeAllEffect(that, memoMap, scope) : that.build(memoMap, scope), (context) => self.build(memoMap, scope).pipe(provideContext$1(context), map$2((merged) => f(merged, context)))));
+var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$1(Array.isArray(that) ? mergeAllEffect(that, memoMap, scope) : that.build(memoMap, scope), (context) => self.build(memoMap, scope).pipe(provideContext$1(context), map$2((merged) => f(merged, context)))));
 /**
 * Feeds the output services of the dependency layer into the requirements of
 * this layer, returning a layer that only provides the services from this layer.
@@ -9743,78 +9763,6 @@ var provideWith = (self, that, f) => fromBuild((memoMap, scope) => flatMap$2(Arr
 * @since 2.0.0
 */
 var provide$3 = /*#__PURE__*/ dual(2, (self, that) => provideWith(self, that, identity));
-/**
-* Constructs a layer dynamically based on the output of this layer.
-*
-* **Example** (Creating services from layer output)
-*
-* ```ts
-* import { Context, Effect, Layer } from "effect"
-*
-* class Config extends Context.Service<Config, {
-*   readonly dbUrl: string
-*   readonly logLevel: string
-* }>()("Config") {}
-*
-* class Database extends Context.Service<Database, {
-*   readonly query: (sql: string) => Effect.Effect<string>
-* }>()("Database") {}
-*
-* class Logger extends Context.Service<Logger, {
-*   readonly log: (msg: string) => Effect.Effect<void>
-* }>()("Logger") {}
-*
-* // Base config layer
-* const configLayer = Layer.succeed(Config, {
-*   dbUrl: "postgres://localhost:5432/mydb",
-*   logLevel: "debug"
-* })
-*
-* // Dynamically create services based on config
-* const dynamicServiceLayer = configLayer.pipe(
-*   Layer.flatMap((context) => {
-*     const config = Context.get(context, Config)
-*
-*     // Create database layer based on config
-*     const dbLayer = Layer.succeed(Database, {
-*       query: Effect.fn("Database.query")((sql: string) =>
-*         Effect.succeed(
-*           `Querying ${config.dbUrl}: ${sql}`
-*         ))
-*     })
-*
-*     // Create logger layer based on config
-*     const loggerLayer = Layer.succeed(Logger, {
-*       log: Effect.fn("Logger.log")((msg: string) =>
-*         config.logLevel === "debug"
-*           ? Effect.sync(() => console.log(`[DEBUG] ${msg}`))
-*           : Effect.sync(() => console.log(msg))
-*       )
-*     })
-*
-*     // Return combined layer
-*     return Layer.mergeAll(dbLayer, loggerLayer)
-*   })
-* )
-*
-* // Use the dynamic services
-* const program = Effect.gen(function*() {
-*   const database = yield* Database
-*   const logger = yield* Logger
-*
-*   yield* logger.log("Starting database query")
-*   const result = yield* database.query("SELECT * FROM users")
-*
-*   return result
-* }).pipe(
-*   Effect.provide(dynamicServiceLayer)
-* )
-* ```
-*
-* @category sequencing
-* @since 2.0.0
-*/
-var flatMap$1 = /*#__PURE__*/ dual(2, (self, f) => fromBuild((memoMap, scope) => flatMap$2(self.build(memoMap, scope), (context) => f(context).build(memoMap, scope))));
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Data.js
 /**
@@ -9932,11 +9880,11 @@ var Clock = ClockRef;
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/dateTime.js
 /** @internal */
-var TypeId$14 = "~effect/time/DateTime";
+var TypeId$15 = "~effect/time/DateTime";
 /** @internal */
 var TimeZoneTypeId = "~effect/time/DateTime/TimeZone";
 var Proto = {
-	[TypeId$14]: TypeId$14,
+	[TypeId$15]: TypeId$15,
 	pipe() {
 		return pipeArguments(this, arguments);
 	},
@@ -9960,6 +9908,17 @@ var ProtoTimeZone = {
 /** @internal */
 var toDateUtc$1 = (self) => new Date(self.epochMilliseconds);
 //#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/random.js
+/** @internal */
+var Random = /*#__PURE__*/ Reference("effect/Random", { defaultValue: () => ({
+	nextIntUnsafe() {
+		return Math.floor(Math.random() * (Number.MAX_SAFE_INTEGER - Number.MIN_SAFE_INTEGER + 1)) + Number.MIN_SAFE_INTEGER;
+	},
+	nextDoubleUnsafe() {
+		return Math.random();
+	}
+}) });
+//#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Pull.js
 /**
 * Models one low-level pull step for stream-like consumers.
@@ -9973,6 +9932,28 @@ var toDateUtc$1 = (self) => new Date(self.epochMilliseconds);
 *
 * @since 4.0.0
 */
+/**
+* Handles `Cause.Done` failures in an effect while leaving ordinary failures
+* in the error channel.
+*
+* **When to use**
+*
+* Use to recover from a `Cause.Done` completion signal in an effect, such as
+* turning a pull leftover value into a successful recovery effect while
+* preserving ordinary failures.
+*
+* **Details**
+*
+* The handler receives the done leftover value and may recover with a new
+* effect. Non-done errors are preserved.
+*
+* @see {@link matchEffect} for handling success, ordinary failure, and done outcomes explicitly
+* @see {@link filterDoneLeftover} for extracting a done leftover from an existing `Cause`
+*
+* @category Done
+* @since 4.0.0
+*/
+var catchDone = /*#__PURE__*/ dual(2, (effect, f) => catchCauseFilter(effect, filterDoneLeftover, (l) => f(l)));
 /**
 * Checks whether a Cause contains any done errors.
 *
@@ -10005,11 +9986,554 @@ var isDoneCause = (cause) => cause.reasons.some(isDoneFailure);
 * @since 4.0.0
 */
 var isDoneFailure = (failure) => failure._tag === "Fail" && isDone(failure.error);
+/**
+* Finds a `Cause.Done` failure in a `Cause`.
+*
+* **When to use**
+*
+* Use to separate `Cause.Done` completion from ordinary causes while preserving
+* the typed done value.
+*
+* **Details**
+*
+* Returns a successful `Result` with the `Cause.Done` value when one is
+* present, otherwise returns a failed `Result` containing the non-done cause.
+*
+* @category Done
+* @since 4.0.0
+*/
+var filterDone = /*#__PURE__*/ composePassthrough(findError, (e) => isDone(e) ? succeed$4(e) : fail$4(e));
+/**
+* Filters a Cause to extract the leftover value from done errors.
+*
+* **When to use**
+*
+* Use to extract only the leftover value carried by a `Cause.Done` completion
+* signal.
+*
+* @category Done
+* @since 4.0.0
+*/
+var filterDoneLeftover = /*#__PURE__*/ composePassthrough(findError, (e) => isDone(e) ? succeed$4(e.value) : fail$4(e));
+/**
+* Pattern matches on a Pull, handling success, failure, and done cases.
+*
+* **When to use**
+*
+* Use to handle all three `Pull` outcomes with effectful handlers.
+*
+* **Example** (Matching Pull outcomes)
+*
+* ```ts
+* import { Cause, Effect, Pull } from "effect"
+*
+* const pull = Cause.done("stream ended")
+*
+* const result = Pull.matchEffect(pull, {
+*   onSuccess: (value) => Effect.succeed(`Got value: ${value}`),
+*   onFailure: (cause) => Effect.succeed(`Got error: ${cause}`),
+*   onDone: (leftover) => Effect.succeed(`Stream halted with: ${leftover}`)
+* })
+* ```
+*
+* @category pattern matching
+* @since 4.0.0
+*/
+var matchEffect = /*#__PURE__*/ dual(2, (self, options) => matchCauseEffect(self, {
+	onSuccess: options.onSuccess,
+	onFailure: (cause) => {
+		const halt = filterDone(cause);
+		return !isFailure(halt) ? options.onDone(halt.success.value) : options.onFailure(halt.failure);
+	}
+}));
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Schedule.js
+var TypeId$14 = "~effect/Schedule";
+var randomNext = /*#__PURE__*/ Random.useSync((random) => random.nextDoubleUnsafe());
+/**
+* Context reference containing metadata for the currently running schedule step.
+*
+* **Details**
+*
+* Repeat, retry, stream, and channel scheduling operations provide this service
+* to effects run between schedule steps. The default value contains undefined
+* input and output values, zero duration, and zeroed timing fields before any
+* schedule step has produced metadata.
+*
+* @category metadata
+* @since 4.0.0
+*/
+var CurrentMetadata = /*#__PURE__*/ Reference("effect/Schedule/CurrentMetadata", { defaultValue: /*#__PURE__*/ constant({
+	input: void 0,
+	output: void 0,
+	duration: zero,
+	attempt: 0,
+	start: 0,
+	now: 0,
+	elapsed: 0,
+	elapsedSincePrevious: 0
+}) });
+var ScheduleProto = {
+	[TypeId$14]: {
+		_Out: identity,
+		_In: identity,
+		_Env: identity
+	},
+	pipe() {
+		return pipeArguments(this, arguments);
+	}
+};
+/**
+* Type guard that checks if a value is a Schedule.
+*
+* **Example** (Checking for schedules)
+*
+* ```ts
+* import { Schedule } from "effect"
+*
+* const schedule = Schedule.exponential("100 millis")
+* const notSchedule = { foo: "bar" }
+*
+* console.log(Schedule.isSchedule(schedule)) // true
+* console.log(Schedule.isSchedule(notSchedule)) // false
+* console.log(Schedule.isSchedule(null)) // false
+* console.log(Schedule.isSchedule(undefined)) // false
+* ```
+*
+* @category guards
+* @since 2.0.0
+*/
+var isSchedule = (u) => hasProperty$1(u, TypeId$14);
+/**
+* Creates a Schedule from a step function that returns a Pull.
+*
+* **Example** (Creating a custom schedule from a step function)
+*
+* ```ts
+* import { Cause, Duration, Effect, Schedule } from "effect"
+*
+* const schedule = Schedule.fromStep(Effect.sync(() => {
+*   let count = 0
+*
+*   return (_now: number, _input: string) => {
+*     if (count >= 3) {
+*       return Cause.done(count)
+*     }
+*     return Effect.succeed([count++, Duration.millis(100)] as [number, Duration.Duration])
+*   }
+* }))
+* ```
+*
+* @category constructors
+* @since 4.0.0
+*/
+var fromStep = (step) => {
+	const self = Object.create(ScheduleProto);
+	self.step = step;
+	return self;
+};
+var metadataFn = () => {
+	let n = 0;
+	let previous;
+	let start;
+	return (now, input) => {
+		if (start === void 0) start = now;
+		const elapsed = now - start;
+		const elapsedSincePrevious = previous === void 0 ? 0 : now - previous;
+		previous = now;
+		return {
+			input,
+			attempt: ++n,
+			start,
+			now,
+			elapsed,
+			elapsedSincePrevious
+		};
+	};
+};
+/**
+* Creates a Schedule from a step function that receives metadata about the schedule's execution.
+*
+* **Example** (Creating a metadata-aware schedule)
+*
+* ```ts
+* import { Cause, Duration, Effect, Schedule } from "effect"
+*
+* const firstThreeInputs = Schedule.fromStepWithMetadata(Effect.succeed((metadata: Schedule.InputMetadata<string>) => {
+*   if (metadata.attempt > 3) {
+*     return Cause.done("finished")
+*   }
+*
+*   return Effect.succeed([
+*     `attempt ${metadata.attempt}: ${metadata.input}`,
+*     Duration.millis(250)
+*   ] as [string, Duration.Duration])
+* }))
+* ```
+*
+* @category constructors
+* @since 4.0.0
+*/
+var fromStepWithMetadata = (step) => fromStep(map$2(step, (f) => {
+	const meta = metadataFn();
+	return (now, input) => f(meta(now, input));
+}));
+/**
+* Extracts the step function from a Schedule.
+*
+* **Example** (Extracting a schedule step function)
+*
+* ```ts
+* import { Effect, Schedule } from "effect"
+*
+* // Extract step function from an existing schedule
+* const schedule = Schedule.exponential("100 millis").pipe(Schedule.upTo({ times: 3 }))
+*
+* const program = Effect.gen(function*() {
+*   const stepFn = yield* Schedule.toStep(schedule)
+*
+*   // Use the step function directly for custom logic. The timestamp is
+*   // supplied by the caller, so tests can pass a deterministic value.
+*   const now = 0
+*   const result = yield* stepFn(now, "input")
+*
+*   console.log(`Step result: ${result}`)
+* })
+* ```
+*
+* @category destructors
+* @since 4.0.0
+*/
+var toStep = (schedule) => catchCause$1(schedule.step, (cause) => succeed$3(() => failCause$2(cause)));
+/**
+* Extracts a step function from a `Schedule` that sleeps for each computed
+* delay and returns metadata for the completed step.
+*
+* **When to use**
+*
+* Use to drive a schedule manually while preserving the computed output,
+* delay, input, attempt, and elapsed timing metadata for each step.
+*
+* **Details**
+*
+* The returned step reads the current time from `Clock` when invoked, calls the
+* schedule step with that timestamp and input, sleeps for the returned
+* duration, and then yields `Metadata`.
+*
+* @see {@link toStep} for manually supplying the timestamp and handling the returned delay yourself
+* @see {@link toStepWithSleep} for the same automatic sleeping behavior when only the schedule output is needed
+*
+* @category destructors
+* @since 4.0.0
+*/
+var toStepWithMetadata = (schedule) => clockWith((clock) => map$2(toStep(schedule), (step) => {
+	const metaFn = metadataFn();
+	return (input) => suspend$1(() => {
+		const now = clock.currentTimeMillisUnsafe();
+		return flatMap$1(step(now, input), ([output, duration]) => {
+			const meta = metaFn(now, input);
+			meta.output = output;
+			meta.duration = duration;
+			return as$1(sleep(duration), meta);
+		});
+	});
+}));
+/**
+* Schedule that always recurs, but will wait a certain amount between
+* repetitions, given by `base * factor.pow(n)`, where `n` is the number of
+* repetitions so far. Returns the current duration between recurrences.
+*
+* **Example** (Retrying with exponential backoff)
+*
+* ```ts
+* import { Console, Data, Effect, Schedule } from "effect"
+*
+* class RetryFailure extends Data.TaggedError("RetryFailure")<{ readonly message: string }> {}
+*
+* // Basic exponential backoff with default factor of 2
+* const basicExponential = Schedule.exponential("100 millis")
+* // Delays: 100ms, 200ms, 400ms, 800ms, 1600ms, ...
+*
+* // Custom exponential backoff with factor 1.5
+* const gentleExponential = Schedule.exponential("200 millis", 1.5)
+* // Delays: 200ms, 300ms, 450ms, 675ms, 1012ms, ...
+*
+* // Retry with exponential backoff (limited to 5 attempts)
+* const retryPolicy = Schedule.max([
+*   Schedule.exponential("50 millis"),
+*   Schedule.recurs(5)
+* ])
+*
+* const program = Effect.gen(function*() {
+*   let attempt = 0
+*
+*   const result = yield* Effect.retry(
+*     Effect.gen(function*() {
+*       attempt++
+*       if (attempt < 4) {
+*         yield* Console.log(`Attempt ${attempt} failed, retrying...`)
+*         return yield* Effect.fail(new RetryFailure({ message: `Failure ${attempt}` }))
+*       }
+*       return `Success on attempt ${attempt}`
+*     }),
+*     retryPolicy
+*   )
+*
+*   yield* Console.log(`Final result: ${result}`)
+* })
+*
+* // Will retry with delays: 50ms, 100ms, 200ms before success
+* ```
+*
+* @category constructors
+* @since 2.0.0
+*/
+var exponential = (base, factor = 2) => {
+	const baseMillis = toMillis(fromInputUnsafe(base));
+	return fromStepWithMetadata(succeed$3((meta) => {
+		const duration = millis(baseMillis * Math.pow(factor, meta.attempt - 1));
+		return succeed$3([duration, duration]);
+	}));
+};
+/**
+* Returns a new `Schedule` that modifies the delay of the next recurrence
+* of the schedule using the specified effectful function.
+*
+* **Example** (Modifying delays from schedule metadata)
+*
+* ```ts
+* import { Console, Duration, Effect, Schedule } from "effect"
+*
+* // Modify delays based on output - increase delay on high iteration counts
+* const adaptiveDelay = Schedule.recurs(10).pipe(
+*   Schedule.modifyDelay(({ output, duration }) => {
+*     // Double the delay if we're seeing high iteration counts
+*     return Effect.succeed(output > 5 ? Duration.times(duration, 2) : duration)
+*   })
+* )
+*
+* const program = Effect.gen(function*() {
+*   let counter = 0
+*   yield* Effect.repeat(
+*     Effect.gen(function*() {
+*       counter++
+*       yield* Console.log(`Attempt ${counter}`)
+*       return counter
+*     }),
+*     adaptiveDelay.pipe(Schedule.upTo({ times: 8 }))
+*   )
+* })
+* ```
+*
+* @category delays & timeouts
+* @since 2.0.0
+*/
+var modifyDelay = /*#__PURE__*/ dual(2, (self, f) => fromStep(map$2(toStep(self), (step) => {
+	const meta = metadataFn();
+	return (now, input) => flatMap$1(step(now, input), ([output, duration]) => map$2(f({
+		...meta(now, input),
+		output,
+		duration
+	}), (replacement) => [output, fromInputUnsafe(replacement)]));
+})));
+/**
+* Returns a new `Schedule` that randomly adjusts each recurrence delay.
+*
+* **When to use**
+*
+* Use to add random variation to an existing schedule's recurrence delays while
+* preserving its output and completion behavior.
+*
+* **Details**
+*
+* Each recurrence delay is scaled by a random factor between `0.8` and `1.2`.
+*
+* @see {@link modifyDelay} for replacing recurrence delays with a custom effectful transformation
+*
+* @category delays & timeouts
+* @since 2.0.0
+*/
+var jittered = (self) => modifyDelay(self, ({ duration }) => map$2(randomNext, (random) => {
+	const millis$1 = toMillis(duration);
+	return millis(millis$1 * .8 * (1 - random) + millis$1 * 1.2 * random);
+}));
+/**
+* Returns a new `Schedule` that outputs the inputs of the specified schedule.
+*
+* **Example** (Passing inputs through as outputs)
+*
+* ```ts
+* import { Console, Effect, Schedule } from "effect"
+*
+* // Create a schedule that outputs the inputs instead of original outputs
+* const inputSchedule = Schedule.passthrough(
+*   Schedule.exponential("100 millis").pipe(Schedule.upTo({ times: 3 }))
+* )
+*
+* const program = Effect.gen(function*() {
+*   let counter = 0
+*   yield* Effect.repeat(
+*     Effect.gen(function*() {
+*       counter++
+*       yield* Console.log(`Task ${counter} executed`)
+*       return `result-${counter}`
+*     }),
+*     inputSchedule
+*   )
+* })
+* ```
+*
+* @category mapping
+* @since 2.0.0
+*/
+var passthrough$2 = (self) => fromStep(map$2(toStep(self), (step) => (now, input) => matchEffect(step(now, input), {
+	onSuccess: (result) => succeed$3([input, result[1]]),
+	onFailure: failCause$2,
+	onDone: () => done$1(input)
+})));
+/**
+* Returns a schedule that recurs continuously, each repetition spaced the
+* specified duration from the last run.
+*
+* **When to use**
+*
+* Use when each delay should start after the previous action completes.
+*
+* **Example** (Repeating with fixed spacing)
+*
+* ```ts
+* import { Console, Effect, Schedule } from "effect"
+*
+* // Basic spaced schedule - runs every 2 seconds
+* const everyTwoSeconds = Schedule.spaced("2 seconds")
+*
+* // Heartbeat that runs indefinitely with fixed spacing
+* const heartbeat = Effect.gen(function*() {
+*   yield* Console.log("Heartbeat")
+* }).pipe(
+*   Effect.repeat(everyTwoSeconds)
+* )
+*
+* // Limited repeat - run only 5 times with 1-second spacing
+* const limitedTask = Effect.gen(function*() {
+*   yield* Console.log("Executing scheduled task...")
+*   yield* Effect.sleep("500 millis") // simulate work
+*   return "Task completed"
+* }).pipe(
+*   Effect.repeat(
+*     Schedule.spaced("1 second").pipe(Schedule.upTo({ times: 5 }))
+*   )
+* )
+*
+* // Simple spaced schedule with limited repetitions
+* const limitedSpaced = Schedule.max([
+*   Schedule.spaced("100 millis"),
+*   Schedule.recurs(5) // at most 5 times
+* ])
+*
+* const program = Effect.gen(function*() {
+*   yield* Console.log("Starting spaced execution...")
+*
+*   yield* Effect.repeat(
+*     Effect.succeed("work item"),
+*     limitedSpaced
+*   )
+*
+*   yield* Console.log("Completed executions")
+* })
+* ```
+*
+* @see {@link fixed} for recurrence aligned to a regular cadence
+*
+* @category constructors
+* @since 2.0.0
+*/
+var spaced = (duration) => {
+	const decoded = fromInputUnsafe(duration);
+	return fromStepWithMetadata(succeed$3((meta) => succeed$3([meta.attempt - 1, decoded])));
+};
+var while_ = /*#__PURE__*/ dual(2, (self, predicate) => fromStep(map$2(toStep(self), (step) => {
+	const meta = metadataFn();
+	return (now, input) => flatMap$1(step(now, input), (result) => {
+		const [output, duration] = result;
+		const eff = predicate({
+			...meta(now, input),
+			output,
+			duration
+		});
+		return flatMap$1(isEffect$1(eff) ? eff : succeed$3(eff), (check) => check ? succeed$3(result) : done$1(output));
+	});
+})));
+/**
+* Returns a new `Schedule` that will recur forever.
+*
+* **Details**
+*
+* The output of the schedule is the current count of its repetitions thus far
+* (i.e. `0, 1, 2, ...`).
+*
+* **Example** (Repeating forever)
+*
+* ```ts
+* import { Console, Effect, Schedule } from "effect"
+*
+* // A schedule that runs forever with no delay
+* const infiniteSchedule = Schedule.forever
+*
+* const program = Effect.gen(function*() {
+*   yield* Effect.repeat(
+*     Effect.gen(function*() {
+*       yield* Console.log("Running forever...")
+*       return "continuous-task"
+*     }),
+*     infiniteSchedule.pipe(Schedule.upTo({ times: 5 })) // Limit for demo
+*   )
+* })
+* ```
+*
+* @category constructors
+* @since 2.0.0
+*/
+var forever$1 = /*#__PURE__*/ spaced(zero);
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/layer.js
-var provideLayer = (self, layer, options) => scopedWith((scope) => flatMap$2(options?.local ? buildWithMemoMap(layer, makeMemoMapUnsafe(), scope) : buildWithScope(layer, scope), (context) => provideContext$1(self, context)));
+var provideLayer = (self, layer, options) => scopedWith((scope) => flatMap$1(options?.local ? buildWithMemoMap(layer, makeMemoMapUnsafe(), scope) : buildWithScope(layer, scope), (context) => provideContext$1(self, context)));
 /** @internal */
 var provide$2 = /*#__PURE__*/ dual((args) => isEffect$1(args[0]), (self, source, options) => isContext(source) ? provideContext$1(self, source) : provideLayer(self, Array.isArray(source) ? mergeAll(...source) : source, options));
+//#endregion
+//#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/internal/schedule.js
+/** @internal */
+var retryOrElse = /*#__PURE__*/ dual(3, (self, policy, orElse) => flatMap$1(toStepWithMetadata(policy), (step) => {
+	let meta = CurrentMetadata.defaultValue();
+	let lastError;
+	const loop = catch_$1(suspend$1(() => provideService$1(self, CurrentMetadata, meta)), (error) => {
+		lastError = error;
+		return flatMap$1(step(error), (meta_) => {
+			meta = meta_;
+			return loop;
+		});
+	});
+	return catchDone(loop, (out) => internalCall(() => orElse(lastError, out)));
+}));
+/** @internal */
+var retry$1 = /*#__PURE__*/ dual(2, (self, options) => {
+	return retryOrElse(self, typeof options === "function" ? options(identity) : isSchedule(options) ? options : buildFromOptions(options), fail$3);
+});
+var passthroughForever = /*#__PURE__*/ passthrough$2(forever$1);
+/** @internal */
+var buildFromOptions = (options) => {
+	let schedule = options.schedule ? passthrough$2(options.schedule) : passthroughForever;
+	if (options.while) schedule = while_(schedule, ({ input }) => {
+		const applied = options.while(input);
+		return isEffect$1(applied) ? applied : succeed$3(applied);
+	});
+	if (options.until) schedule = while_(schedule, ({ input }) => {
+		const applied = options.until(input);
+		return isEffect$1(applied) ? map$2(applied, (b) => !b) : succeed$3(!applied);
+	});
+	if (options.times !== void 0) schedule = while_(schedule, ({ attempt }) => succeed$3(attempt <= options.times));
+	return schedule;
+};
 //#endregion
 //#region ../../node_modules/.bun/effect@4.0.0-beta.98/node_modules/effect/dist/Effect.js
 /**
@@ -10736,7 +11260,7 @@ var withFiber = withFiber$1;
 * @category sequencing
 * @since 2.0.0
 */
-var flatMap = flatMap$2;
+var flatMap = flatMap$1;
 /**
 * Flattens an `Effect` that produces another `Effect` into a single effect.
 *
@@ -11164,6 +11688,59 @@ var orDie = orDie$1;
 */
 var tapError = tapError$1;
 /**
+* Retries typed failures from an effect according to a retry policy.
+*
+* **When to use**
+*
+* Use when you need to rerun an effect after transient typed failures, such as
+* network issues or temporary resource unavailability.
+*
+* **Details**
+*
+* The policy can be a `Schedule`, a schedule builder, or a `Retry.Options`
+* object using `schedule`, `times`, `while`, or `until`. If a retry eventually
+* succeeds, the returned effect succeeds with that value. If the policy stops
+* while the effect is still failing, the last failure is propagated.
+*
+* **Gotchas**
+*
+* The source effect is always evaluated once before any retry policy is
+* applied. For example, `Schedule.recurs(3)` allows up to three retries after
+* the initial attempt.
+*
+* Defects and interruptions are not retried.
+*
+* **Example** (Retrying with a schedule)
+*
+* ```ts
+* import { Data, Effect, Schedule } from "effect"
+*
+* class AttemptError extends Data.TaggedError("AttemptError")<{ readonly attempt: number }> {}
+*
+* let attempt = 0
+* const task = Effect.callback<string, AttemptError>((resume) => {
+*   attempt++
+*   if (attempt <= 2) {
+*     resume(Effect.fail(new AttemptError({ attempt })))
+*   } else {
+*     resume(Effect.succeed("Success!"))
+*   }
+* })
+*
+* const policy = Schedule.addDelay(Schedule.recurs(5), () => Effect.succeed("100 millis"))
+* const program = Effect.retry(task, policy)
+*
+* Effect.runPromise(program).then(console.log)
+* // Output: "Success!" (after 2 retries)
+* ```
+*
+* @see {@link retryOrElse} for a version that allows you to run a fallback.
+* @see {@link repeat} if your retry condition is based on successful outcomes rather than errors.
+* @category error handling
+* @since 2.0.0
+*/
+var retry = retry$1;
+/**
 * Runs an effect with a time limit and represents only the timeout case as
 * `Option.none`.
 *
@@ -11213,6 +11790,28 @@ var tapError = tapError$1;
 * @since 3.1.0
 */
 var timeoutOption = timeoutOption$1;
+/**
+* Returns an effect that is delayed from this effect by the specified
+* `Duration`.
+*
+* **Example** (Delaying an effect)
+*
+* ```ts
+* import { Console, Effect } from "effect"
+*
+* const program = Effect.delay(
+*   Console.log("Delayed message"),
+*   "1 second"
+* )
+*
+* Effect.runFork(program)
+* // Waits 1 second, then prints: "Delayed message"
+* ```
+*
+* @category delays & timeouts
+* @since 2.0.0
+*/
+var delay = delay$1;
 /**
 * Returns the complete context.
 *
@@ -11688,6 +12287,37 @@ var onExit = onExit$1;
 * @since 2.0.0
 */
 var uninterruptibleMask = uninterruptibleMask$1;
+/**
+* Repeats this effect forever (until the first error).
+*
+* **Example** (Repeating forever)
+*
+* ```ts
+* import { Console, Effect, Fiber } from "effect"
+*
+* const task = Effect.gen(function*() {
+*   yield* Console.log("Task running...")
+*   yield* Effect.sleep("1 second")
+* })
+*
+* // This will run forever, printing every second
+* const program = task.pipe(Effect.forever)
+*
+* // This will run forever, without yielding every iteration
+* const programNoYield = task.pipe(Effect.forever({ disableYield: true }))
+*
+* // Run for 5 seconds then interrupt
+* const timedProgram = Effect.gen(function*() {
+*   const fiber = yield* Effect.forkChild(program)
+*   yield* Effect.sleep("5 seconds")
+*   yield* Fiber.interrupt(fiber)
+* })
+* ```
+*
+* @category repetition
+* @since 2.0.0
+*/
+var forever = forever$2;
 /**
 * Create a new span for tracing, and automatically close it when the Scope
 * finalizes.
@@ -17238,7 +17868,7 @@ var SemaphoreImpl = class {
 		return this.updateTaken((_) => 0);
 	}
 	withPermits(n) {
-		return (self) => uninterruptibleMask$1((restore) => flatMap$2(restore(this.take(n)), (permits) => onExitPrimitive(restore(self), () => {
+		return (self) => uninterruptibleMask$1((restore) => flatMap$1(restore(this.take(n)), (permits) => onExitPrimitive(restore(self), () => {
 			this.updateTakenUnsafe(getCurrentFiber(), (taken) => taken - permits);
 		}, true)));
 	}
@@ -27337,76 +27967,6 @@ async function hashQuery(sql, params) {
 	return [...new Uint8Array(hashBuffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 //#endregion
-//#region ../../packages/db/src/auth.schema.ts
-var user = pgTable("user", {
-	id: text("id").primaryKey(),
-	name: text("name").notNull(),
-	email: text("email").notNull().unique(),
-	emailVerified: boolean$3("email_verified").default(false).notNull(),
-	image: text("image"),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull()
-});
-var session$1 = pgTable("session", {
-	id: text("id").primaryKey(),
-	expiresAt: timestamp("expires_at").notNull(),
-	token: text("token").notNull().unique(),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	updatedAt: timestamp("updated_at").$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
-	ipAddress: text("ip_address"),
-	userAgent: text("user_agent"),
-	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-	activeOrganizationId: text("active_organization_id")
-}, (table) => [index("session_userId_idx").on(table.userId)]);
-var account = pgTable("account", {
-	id: text("id").primaryKey(),
-	accountId: text("account_id").notNull(),
-	providerId: text("provider_id").notNull(),
-	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-	accessToken: text("access_token"),
-	refreshToken: text("refresh_token"),
-	idToken: text("id_token"),
-	accessTokenExpiresAt: timestamp("access_token_expires_at"),
-	refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-	scope: text("scope"),
-	password: text("password"),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	updatedAt: timestamp("updated_at").$onUpdate(() => /* @__PURE__ */ new Date()).notNull()
-}, (table) => [index("account_userId_idx").on(table.userId)]);
-var verification = pgTable("verification", {
-	id: text("id").primaryKey(),
-	identifier: text("identifier").notNull(),
-	value: text("value").notNull(),
-	expiresAt: timestamp("expires_at").notNull(),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull()
-}, (table) => [index("verification_identifier_idx").on(table.identifier)]);
-var organization = pgTable("organization", {
-	id: text("id").primaryKey(),
-	name: text("name").notNull(),
-	slug: text("slug").notNull().unique(),
-	logo: text("logo"),
-	createdAt: timestamp("created_at").notNull(),
-	metadata: text("metadata")
-}, (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)]);
-var member = pgTable("member", {
-	id: text("id").primaryKey(),
-	organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
-	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-	role: text("role").default("member").notNull(),
-	createdAt: timestamp("created_at").notNull()
-}, (table) => [index("member_organizationId_idx").on(table.organizationId), index("member_userId_idx").on(table.userId)]);
-var invitation = pgTable("invitation", {
-	id: text("id").primaryKey(),
-	organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
-	email: text("email").notNull(),
-	role: text("role"),
-	status: text("status").default("pending").notNull(),
-	expiresAt: timestamp("expires_at").notNull(),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	inviterId: text("inviter_id").notNull().references(() => user.id, { onDelete: "cascade" })
-}, (table) => [index("invitation_organizationId_idx").on(table.organizationId), index("invitation_email_idx").on(table.email)]);
-//#endregion
 //#region ../../node_modules/.bun/nanoid@5.1.16/node_modules/nanoid/url-alphabet/index.js
 var urlAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
 //#endregion
@@ -27437,7 +27997,7 @@ function nanoid$1(size = 21) {
 	return id;
 }
 //#endregion
-//#region ../../packages/db/src/store.schema.ts
+//#region ../../packages/db/src/shared/store.schema.ts
 var epochMilliseconds = () => bigint({ mode: "number" });
 var timestamps = {
 	createdAt: epochMilliseconds().notNull(),
@@ -27611,93 +28171,6 @@ var stockMovements = pgTable("stock_movements", {
 	index("stock_movements_organization_id_operation_id_idx").on(table.organizationId, table.operationId)
 ]);
 //#endregion
-//#region ../../packages/db/src/sync.schema.ts
-var syncEntities = [
-	"category",
-	"product",
-	"batch",
-	"invoice",
-	"invoiceItem",
-	"stockMovement"
-];
-var syncActions = ["upsert", "delete"];
-var syncOutbox = pgTable("sync_outbox", {
-	operationId: text().primaryKey(),
-	organizationId: tenantId(),
-	deviceId: text().notNull(),
-	actorUserId: text().notNull(),
-	clientSequence: bigserial({ mode: "number" }).notNull(),
-	occurredAt: epochMilliseconds().notNull(),
-	payload: jsonb().$type().notNull(),
-	payloadHash: text().notNull(),
-	attemptCount: integer$1().notNull().default(0),
-	nextAttemptAt: epochMilliseconds(),
-	lastError: text(),
-	acknowledgedAt: epochMilliseconds()
-}, (table) => [uniqueIndex("sync_outbox_organization_device_sequence_uidx").on(table.organizationId, table.deviceId, table.clientSequence), index("sync_outbox_pending_idx").on(table.organizationId, table.acknowledgedAt, table.nextAttemptAt, table.clientSequence)]);
-var syncState = pgTable("sync_state", {
-	organizationId: tenantId().primaryKey(),
-	cursor: epochMilliseconds().notNull().default(0),
-	lastSuccessAt: epochMilliseconds(),
-	lastAttemptAt: epochMilliseconds(),
-	lastError: text()
-});
-var syncInbox = pgTable("sync_inbox", {
-	organizationId: tenantId(),
-	operationId: text().notNull(),
-	deviceId: text().notNull(),
-	actorUserId: text().notNull(),
-	clientSequence: epochMilliseconds().notNull(),
-	payloadHash: text().notNull(),
-	appliedCursor: epochMilliseconds().notNull(),
-	receivedAt: epochMilliseconds().notNull()
-}, (table) => [primaryKey({
-	name: "sync_inbox_organization_operation_pk",
-	columns: [table.organizationId, table.operationId]
-}), uniqueIndex("sync_inbox_organization_device_sequence_uidx").on(table.organizationId, table.deviceId, table.clientSequence)]);
-var syncChangeLog = pgTable("sync_change_log", {
-	cursor: bigserial({ mode: "number" }).primaryKey(),
-	organizationId: tenantId(),
-	operationId: text().notNull(),
-	ordinal: integer$1().notNull(),
-	entity: text().$type().notNull(),
-	action: text().$type().notNull(),
-	entityId: text().notNull(),
-	rowVersion: epochMilliseconds().notNull(),
-	payload: jsonb().$type().notNull(),
-	changedAt: epochMilliseconds().notNull()
-}, (table) => [
-	uniqueIndex("sync_change_log_organization_operation_ordinal_uidx").on(table.organizationId, table.operationId, table.ordinal),
-	index("sync_change_log_organization_cursor_idx").on(table.organizationId, table.cursor),
-	index("sync_change_log_organization_entity_idx").on(table.organizationId, table.entity, table.entityId)
-]);
-//#endregion
-//#region ../../packages/db/src/schema.ts
-var schema_exports$1 = /* @__PURE__ */ __exportAll({
-	account: () => account,
-	batches: () => batches,
-	categories: () => categories,
-	epochMilliseconds: () => epochMilliseconds,
-	invitation: () => invitation,
-	invoiceCounters: () => invoiceCounters,
-	invoiceItems: () => invoiceItems,
-	invoices: () => invoices,
-	member: () => member,
-	organization: () => organization,
-	products: () => products,
-	session: () => session$1,
-	stockMovements: () => stockMovements,
-	syncActions: () => syncActions,
-	syncChangeLog: () => syncChangeLog,
-	syncEntities: () => syncEntities,
-	syncInbox: () => syncInbox,
-	syncOutbox: () => syncOutbox,
-	syncState: () => syncState,
-	tenantId: () => tenantId,
-	user: () => user,
-	verification: () => verification
-});
-//#endregion
 //#region ../../packages/contracts/src/store.schema.ts
 var productRow = createSelectSchema(products);
 var productInsert = createInsertSchema(products);
@@ -27805,16 +28278,56 @@ Class("SyncResponse")({
 var SyncTransportError = class extends TaggedErrorClass()("SyncTransportError", { message: String$1 }) {};
 var PersistenceError = class extends TaggedErrorClass()("PersistenceError", {
 	operation: String$1,
-	message: String$1
+	message: String$1,
+	cause: optionalKey(Defect())
 }) {};
 var ProductNotFoundError = class extends TaggedErrorClass()("ProductNotFoundError", { id: String$1 }) {};
 var InvoiceNotFoundError = class extends TaggedErrorClass()("InvoiceNotFoundError", { id: String$1 }) {};
 var messageOf = (cause) => cause instanceof Error ? cause.message : String(cause);
 var persistenceError = (operation, cause) => cause instanceof PersistenceError ? cause : PersistenceError.make({
 	operation,
-	message: messageOf(cause)
+	message: messageOf(cause),
+	cause
 });
 var mapPersistenceError = (operation) => (effect) => effect.pipe(mapError((cause) => persistenceError(operation, cause)));
+//#endregion
+//#region ../../packages/db/src/local/sync.schema.ts
+var syncOutbox = pgTable("sync_outbox", {
+	operationId: text().primaryKey(),
+	organizationId: tenantId(),
+	deviceId: text().notNull(),
+	actorUserId: text().notNull(),
+	clientSequence: bigserial({ mode: "number" }).notNull(),
+	occurredAt: epochMilliseconds().notNull(),
+	payload: jsonb().$type().notNull(),
+	payloadHash: text().notNull(),
+	attemptCount: integer$1().notNull().default(0),
+	nextAttemptAt: epochMilliseconds(),
+	lastError: text(),
+	acknowledgedAt: epochMilliseconds()
+}, (table) => [uniqueIndex("sync_outbox_organization_device_sequence_uidx").on(table.organizationId, table.deviceId, table.clientSequence), index("sync_outbox_pending_idx").on(table.organizationId, table.acknowledgedAt, table.nextAttemptAt, table.clientSequence)]);
+var syncState = pgTable("sync_state", {
+	organizationId: tenantId().primaryKey(),
+	cursor: epochMilliseconds().notNull().default(0),
+	lastSuccessAt: epochMilliseconds(),
+	lastAttemptAt: epochMilliseconds(),
+	lastError: text()
+});
+//#endregion
+//#region ../../packages/db/src/local/schema.ts
+var schema_exports$1 = /* @__PURE__ */ __exportAll({
+	batches: () => batches,
+	categories: () => categories,
+	epochMilliseconds: () => epochMilliseconds,
+	invoiceCounters: () => invoiceCounters,
+	invoiceItems: () => invoiceItems,
+	invoices: () => invoices,
+	products: () => products,
+	stockMovements: () => stockMovements,
+	syncOutbox: () => syncOutbox,
+	syncState: () => syncState,
+	tenantId: () => tenantId
+});
 //#endregion
 //#region ../../packages/persistence/src/hash.ts
 var operationPayloadHash = (operation) => createHash("sha256").update(canonicalJson(operation)).digest("hex");
@@ -28436,52 +28949,8 @@ var classifyError = (cause, message, operation) => {
 	return new UnknownError(props);
 };
 //#endregion
-//#region ../../packages/db/src/relations.ts
-var relations = defineRelations(schema_exports$1, (r) => ({
-	user: {
-		sessions: r.many.session(),
-		accounts: r.many.account(),
-		memberships: r.many.member(),
-		invitations: r.many.invitation()
-	},
-	session: { user: r.one.user({
-		from: r.session.userId,
-		to: r.user.id,
-		optional: false
-	}) },
-	account: { user: r.one.user({
-		from: r.account.userId,
-		to: r.user.id,
-		optional: false
-	}) },
-	organization: {
-		members: r.many.member(),
-		invitations: r.many.invitation()
-	},
-	member: {
-		organization: r.one.organization({
-			from: r.member.organizationId,
-			to: r.organization.id,
-			optional: false
-		}),
-		user: r.one.user({
-			from: r.member.userId,
-			to: r.user.id,
-			optional: false
-		})
-	},
-	invitation: {
-		organization: r.one.organization({
-			from: r.invitation.organizationId,
-			to: r.organization.id,
-			optional: false
-		}),
-		inviter: r.one.user({
-			from: r.invitation.inviterId,
-			to: r.user.id,
-			optional: false
-		})
-	},
+//#region ../../packages/db/src/local/relations.ts
+var localRelations = defineRelations(schema_exports$1, (r) => ({
 	categories: { products: r.many.products() },
 	products: {
 		category: r.one.categories({
@@ -29840,91 +30309,9 @@ var pgliteExtensions = {
 	unaccent
 };
 //#endregion
-//#region ../../packages/persistence/src/pglite-upgrade.ts
-var legacyPostgresMajor = "17";
-var currentPostgresMajor = "18";
-var isMissingFile = (cause) => typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT";
-var readPostgresMajor = async (dataDir) => {
-	try {
-		return (await readFile(path.join(dataDir, "PG_VERSION"), "utf8")).trim();
-	} catch (cause) {
-		if (isMissingFile(cause)) return void 0;
-		throw cause;
-	}
-};
-var pathExists = async (target) => {
-	try {
-		await readFile(path.join(target, "PG_VERSION"));
-		return true;
-	} catch (cause) {
-		if (isMissingFile(cause)) return false;
-		throw cause;
-	}
-};
-var availableBackupPath = async (dataDir) => {
-	const preferred = `${dataDir}.pg17-backup`;
-	if (!await pathExists(preferred)) return preferred;
-	return `${preferred}-${Date.now()}`;
-};
-var dumpLegacyDatabase = async (dataDir) => {
-	const database = await PGlite$1.create(dataDir);
-	try {
-		return await (await pgDump({ pg: database })).text();
-	} finally {
-		await database.close();
-	}
-};
-var restoreCurrentDatabase = async (dataDir, dump) => {
-	const database = await PGlite.create({
-		dataDir,
-		extensions: pgliteExtensions
-	});
-	try {
-		await database.exec(dump);
-		await database.exec("SET search_path TO public");
-		await database.query("SELECT 1");
-	} finally {
-		await database.close();
-	}
-};
-var swapDatabaseDirectories = async (dataDir, stagingDir) => {
-	const backupDir = await availableBackupPath(dataDir);
-	await rename(dataDir, backupDir);
-	try {
-		await rename(stagingDir, dataDir);
-	} catch (cause) {
-		await rename(backupDir, dataDir);
-		throw cause;
-	}
-};
-var upgrade = async (dataDir) => {
-	const version = await readPostgresMajor(dataDir);
-	if (version === void 0 || version === currentPostgresMajor) return;
-	if (version !== legacyPostgresMajor) throw new Error(`Unsupported local PostgreSQL data version ${version}.`);
-	const stagingDir = `${dataDir}.pg18-upgrade`;
-	await rm(stagingDir, {
-		force: true,
-		recursive: true
-	});
-	try {
-		await restoreCurrentDatabase(stagingDir, await dumpLegacyDatabase(dataDir));
-		await swapDatabaseDirectories(dataDir, stagingDir);
-	} catch (cause) {
-		await rm(stagingDir, {
-			force: true,
-			recursive: true
-		});
-		throw cause;
-	}
-};
-var upgradePgliteDataDir = (dataDir) => tryPromise({
-	try: () => upgrade(dataDir),
-	catch: (cause) => persistenceError("upgrade local database", cause)
-});
-//#endregion
 //#region ../../packages/persistence/src/database.ts
 var makeDatabase = (migrationsFolder) => gen(function* () {
-	const database = yield* makeWithDefaults({ relations });
+	const database = yield* makeWithDefaults({ relations: localRelations });
 	yield* migrate(database, {
 		migrationsFolder,
 		migrationsSchema: "store_migrations",
@@ -29939,11 +30326,10 @@ var ensureLocalSearchIndexes = (database) => gen(function* () {
 	yield* database.execute(sql`CREATE INDEX IF NOT EXISTS products_name_trgm_idx ON products USING gin (name gin_trgm_ops)`);
 	yield* database.execute(sql`CREATE INDEX IF NOT EXISTS products_composition_trgm_idx ON products USING gin (composition gin_trgm_ops)`);
 }).pipe(mapPersistenceError("enable local search indexes"));
-var makeClientLayer = (config) => layerFrom(make$3({
+var clientLayer = (config) => layerFrom(make$3({
 	dataDir: config.dataDir,
 	extensions: pgliteExtensions
 }).pipe(mapError((cause) => persistenceError("open local database", cause))));
-var clientLayer = (config) => unwrap$5(upgradePgliteDataDir(config.dataDir).pipe(map(() => makeClientLayer(config))));
 //#endregion
 //#region ../../packages/persistence/src/models.ts
 var toCategory = ({ deletedAt: _deletedAt, ...category }) => category;
@@ -30641,7 +31027,10 @@ var makeSyncEngine = (database, config, mutationContext) => gen(function* () {
 			concurrency: 1,
 			discard: true
 		}).pipe(mapPersistenceError("record sync attempt"));
-		const response = yield* transport.exchange(request).pipe(mapError((error) => PersistenceError.make({
+		const response = yield* suspend(() => transport.exchange(request)).pipe(retry({
+			schedule: exponential("500 millis").pipe(jittered),
+			times: 3
+		}), mapError((error) => PersistenceError.make({
 			operation: "exchange sync changes",
 			message: error.message
 		})));
@@ -30725,6 +31114,8 @@ var makeSyncEngine = (database, config, mutationContext) => gen(function* () {
 				if (result$2._tag === "Failure") yield* logWarning("Background synchronization failed", result$2.failure);
 			}
 		}).pipe(forkScoped);
+		const resyncInterval = config.resyncIntervalMillis ?? 3e5;
+		yield* offer(signals, void 0).pipe(delay(resyncInterval), forever, forkScoped);
 		yield* offer(signals, void 0);
 	}
 	return {
@@ -30769,10 +31160,10 @@ var program = {
 	sync: flatMap(OfflineStore, (store) => store.sync)
 };
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/version-YIydhdrs.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+9b39ccd895c7c4b1/node_modules/@better-auth/electron/dist/version-YIydhdrs.mjs
 var PACKAGE_VERSION$1 = "1.6.23";
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/utils-DxDKRT6e.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+9b39ccd895c7c4b1/node_modules/@better-auth/electron/dist/utils-DxDKRT6e.mjs
 function isProcessType(type) {
 	return typeof process !== "undefined" && process.type === type;
 }
@@ -47599,7 +47990,7 @@ function toKebabCase(input) {
 	return splitWords(input).map((word) => word.toLowerCase()).join("-");
 }
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/client.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+9b39ccd895c7c4b1/node_modules/@better-auth/electron/dist/client.mjs
 var { net: net$1 } = electron;
 var DEFAULT_MAX_BYTES = 1024 * 1024 * 5;
 async function fetchUserImage(baseURL, url, options) {
@@ -57886,7 +58277,7 @@ var Conf = class {
 	}
 };
 //#endregion
-//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+ecc28046be3dd862/node_modules/@better-auth/electron/dist/storage.mjs
+//#region ../../node_modules/.bun/@better-auth+electron@1.6.23+9b39ccd895c7c4b1/node_modules/@better-auth/electron/dist/storage.mjs
 var { app: app$1 } = electron;
 var storage = (opts) => {
 	if (!app$1) return {
@@ -59489,7 +59880,7 @@ function registerStoreIpc() {
 	ipcMain.handle("store:sync:run", () => runStore(program.sync));
 }
 var organizationKey = (organizationId) => createHash("sha256").update(organizationId).digest("hex").slice(0, 32);
-var migrationsFolder = () => app.isPackaged ? path.join(process.resourcesPath, "database-migrations") : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations");
+var migrationsFolder = () => app.isPackaged ? path.join(process.resourcesPath, "database-migrations") : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations", "local");
 async function loadDeviceId() {
 	const file = path.join(app.getPath("userData"), "device-id");
 	try {
