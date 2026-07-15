@@ -37,3 +37,5 @@ release
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+
+plans/

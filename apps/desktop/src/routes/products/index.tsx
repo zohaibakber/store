@@ -1,9 +1,4 @@
-import {
-  Add01Icon,
-  ChevronDownIcon,
-  Download01Icon,
-  Upload01Icon,
-} from "@hugeicons/core-free-icons";
+import { Add01Icon, ChevronDownIcon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,10 +50,6 @@ function ProductsPage() {
                   <DropdownMenuItem render={<Link to="/products/upload" />}>
                     <HugeiconsIcon icon={Upload01Icon} />
                     Upload Invoices
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <HugeiconsIcon icon={Download01Icon} />
-                    Download Products
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>

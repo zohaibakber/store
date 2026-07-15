@@ -1,14 +1,18 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  Alert02Icon,
-  ArrowRightFreeIcons,
-  ChevronDown,
-  ChevronUp,
-  Tag01Icon,
-  Trash2,
-} from "@hugeicons/core-free-icons";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { Alert02Icon, ArrowRightFreeIcons, Tag01Icon, Trash2 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,6 +26,7 @@ import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/prod
 import { EditProductDialog } from "@/components/product-form";
 import { ProductVisibilityCard } from "@/components/product-visibility";
 import { formatDate, formatPrice } from "@/lib/format";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ params }) => {
@@ -64,6 +69,19 @@ function BackToProducts() {
 
 function ProductDetailPage() {
   const { product, movements, categories } = Route.useLoaderData();
+  const navigate = useNavigate();
+  const router = useRouter();
+
+  const deleteProduct = async () => {
+    try {
+      await window.offlineStore.deleteProduct({ id: product.id });
+      toast.success(`${product.name} deleted`);
+      await navigate({ to: "/products" });
+      await router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the product.");
+    }
+  };
 
   const details: Array<{ label: string; value: React.ReactNode }> = [
     { label: "Aisle", value: product.aisle ?? "—" },
@@ -85,15 +103,27 @@ function ProductDetailPage() {
           <PageHeading>{product.name}</PageHeading>
         </div>
         <PageAction>
-          <Button variant="ghost" size="icon">
-            <HugeiconsIcon icon={ChevronUp} />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <HugeiconsIcon icon={ChevronDown} />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <HugeiconsIcon icon={Trash2} />
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={<Button aria-label="Delete product" variant="ghost" size="icon" />}
+            >
+              <HugeiconsIcon icon={Trash2} />
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete product?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Delete {product.name}? Stock and batches for this product will no longer appear.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={deleteProduct}>
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </PageAction>
       </PageHeader>
 

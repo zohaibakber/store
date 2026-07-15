@@ -17,6 +17,8 @@ export interface PersistenceConfig {
   readonly migrationsFolder: string;
   readonly mutationContext?: () => MutationContext;
   readonly syncTransport?: SyncTransport;
+  /** How often the engine re-signals a background sync. Default: 5 minutes. */
+  readonly resyncIntervalMillis?: number;
 }
 
 export const mutationContextFrom = (config: PersistenceConfig): (() => MutationContext) =>

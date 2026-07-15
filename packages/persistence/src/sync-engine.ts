@@ -15,6 +15,7 @@ import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { MutationContext, PersistenceConfig } from "./config";
@@ -234,13 +235,15 @@ export const makeSyncEngine = (
         { concurrency: 1, discard: true },
       ).pipe(mapPersistenceError("record sync attempt"));
 
-      const response = yield* transport
-        .exchange(request)
-        .pipe(
-          Effect.mapError((error) =>
-            PersistenceError.make({ operation: "exchange sync changes", message: error.message }),
-          ),
-        );
+      const response = yield* Effect.suspend(() => transport.exchange(request)).pipe(
+        Effect.retry({
+          schedule: Schedule.exponential("500 millis").pipe(Schedule.jittered),
+          times: 3,
+        }),
+        Effect.mapError((error) =>
+          PersistenceError.make({ operation: "exchange sync changes", message: error.message }),
+        ),
+      );
       if (response.organizationId !== currentActor.organizationId || response.cursor < cursor)
         return yield* invalidResponse("The sync response has an invalid organization or cursor");
       const acknowledgementIds = new Set(response.acknowledgements.map((ack) => ack.operationId));
@@ -370,6 +373,12 @@ export const makeSyncEngine = (
             yield* Effect.logWarning("Background synchronization failed", result.failure);
         }
       }).pipe(Effect.forkScoped);
+      const resyncInterval = config.resyncIntervalMillis ?? 300_000;
+      yield* Queue.offer(signals, undefined).pipe(
+        Effect.delay(resyncInterval),
+        Effect.forever,
+        Effect.forkScoped,
+      );
       yield* Queue.offer(signals, undefined);
     }
 

@@ -8,7 +8,11 @@ export class SyncTransportError extends Schema.TaggedErrorClass<SyncTransportErr
 
 export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>()(
   "PersistenceError",
-  { operation: Schema.String, message: Schema.String },
+  {
+    operation: Schema.String,
+    message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
 ) {}
 
 export class ProductNotFoundError extends Schema.TaggedErrorClass<ProductNotFoundError>()(
@@ -28,7 +32,7 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 export const persistenceError = (operation: string, cause: unknown) =>
   cause instanceof PersistenceError
     ? cause
-    : PersistenceError.make({ operation, message: messageOf(cause) });
+    : PersistenceError.make({ operation, message: messageOf(cause), cause });
 
 export const mapPersistenceError =
   (operation: string) =>

@@ -5,7 +5,7 @@
     "": {
       "name": "store-electron",
       "devDependencies": {
-        "turbo": "^2.6.0",
+        "turbo": "^2.10.5",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
         "vite-plus": "0.2.4",
       },
@@ -55,8 +55,6 @@
         "date-fns": "^4.4.0",
         "embla-carousel-react": "^8.6.0",
         "input-otp": "^1.4.2",
-        "pglite-04": "npm:@electric-sql/pglite@0.4.6",
-        "pglite-tools-04": "npm:@electric-sql/pglite-tools@0.3.6",
         "radix-ui": "^1.6.2",
         "react": "^19.2.7",
         "react-day-picker": "^10.0.1",
@@ -142,8 +140,6 @@
         "@store/db": "workspace:*",
         "drizzle-orm": "1.0.0-rc.4",
         "effect": "4.0.0-beta.98",
-        "pglite-04": "npm:@electric-sql/pglite@0.4.6",
-        "pglite-tools-04": "npm:@electric-sql/pglite-tools@0.3.6",
       },
       "devDependencies": {
         "@types/node": "^24.10.13",
@@ -1899,10 +1895,6 @@
 
     "pg-types": ["pg-types@4.1.0", "", { "dependencies": { "pg-int8": "1.0.1", "pg-numeric": "1.0.2", "postgres-array": "~3.0.1", "postgres-bytea": "~3.0.0", "postgres-date": "~2.1.0", "postgres-interval": "^3.0.0", "postgres-range": "^1.1.1" } }, "sha512-o2XFanIMy/3+mThw69O8d4n1E5zsLhdO+OPqswezu7Z5ekP4hYDqlDjlmOpYMbzY2Br0ufCwJLdDIXeNVwcWFg=="],
 
-    "pglite-04": ["@electric-sql/pglite@0.4.6", "", {}, "sha512-qmlmfN8UyKCee35qkV0r/MBp+Znl8FjBz7OpoglNvww3GJpw0/DLP0o1ZymvLNmcD5DTLOQdzKPtF8Hd3mdl1w=="],
-
-    "pglite-tools-04": ["@electric-sql/pglite-tools@0.3.6", "", { "peerDependencies": { "@electric-sql/pglite": "0.4.6" } }, "sha512-m0JcJB4gOlZHMKGXthMQYnA+VqJE0c0tZyFfN1B7HTgZXAtP/aqmrSmoKlmC5939Ek35npir52k728B+zfUpuw=="],
-
     "pgpass": ["pgpass@1.0.5", "", { "dependencies": { "split2": "^4.1.0" } }, "sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug=="],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
@@ -2548,8 +2540,6 @@
     "path-scurry/lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
 
     "pg/pg-types": ["pg-types@2.2.0", "", { "dependencies": { "pg-int8": "1.0.1", "postgres-array": "~2.0.0", "postgres-bytea": "~1.0.0", "postgres-date": "~1.0.4", "postgres-interval": "^1.1.0" } }, "sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA=="],
-
-    "pglite-tools-04/@electric-sql/pglite": ["@electric-sql/pglite@0.4.6", "", {}, "sha512-qmlmfN8UyKCee35qkV0r/MBp+Znl8FjBz7OpoglNvww3GJpw0/DLP0o1ZymvLNmcD5DTLOQdzKPtF8Hd3mdl1w=="],
 
     "pkijs/@noble/hashes": ["@noble/hashes@1.4.0", "", {}, "sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg=="],
 

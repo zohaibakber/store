@@ -15,7 +15,6 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -101,34 +100,6 @@ export function SettingsPage() {
               {pending && <Spinner data-icon="inline-start" />}Create organization
             </Button>
           </CardFooter>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Application</CardTitle>
-            <CardDescription>Choose how the desktop application behaves.</CardDescription>
-          </CardHeader>
-          <Separator />
-          <label className="flex cursor-pointer items-center justify-between gap-6 p-6">
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">
-                Desktop notifications
-              </span>
-              <span className="mt-1 block text-sm text-muted-foreground">
-                Receive a notification when an order is placed.
-              </span>
-            </span>
-            <Switch aria-label="Desktop notifications" />
-          </label>
-          <Separator />
-          <label className="flex cursor-pointer items-center justify-between gap-6 p-6">
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">Launch on startup</span>
-              <span className="mt-1 block text-sm text-muted-foreground">
-                Open the store dashboard when you sign in.
-              </span>
-            </span>
-            <Switch aria-label="Launch on startup" />
-          </label>
         </Card>
       </PageContent>
     </PageLayout>
