@@ -16,9 +16,7 @@
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
-    "effect": "4.0.0-beta.98",
-    "pglite-04": "npm:@electric-sql/pglite@0.4.6",
-    "pglite-tools-04": "npm:@electric-sql/pglite-tools@0.3.6"
+    "effect": "4.0.0-beta.98"
   },
   "devDependencies": {
     "@types/node": "^24.10.13",

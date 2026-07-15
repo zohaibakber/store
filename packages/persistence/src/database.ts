@@ -4,11 +4,9 @@ import { sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-pglite";
 import { migrate } from "drizzle-orm/effect-pglite/migrator";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import type { PersistenceConfig } from "./config";
 import { mapPersistenceError, persistenceError } from "./errors";
 import { pgliteExtensions } from "./pglite-extensions";
-import { upgradePgliteDataDir } from "./pglite-upgrade";
 
 export type StoreDatabase = PgDrizzle.EffectPgDatabase<typeof localRelations>;
 export type StoreTransaction = Parameters<Parameters<StoreDatabase["transaction"]>[0]>[0];
@@ -40,15 +38,10 @@ export const ensureLocalSearchIndexes = (database: StoreDatabase) =>
     );
   }).pipe(mapPersistenceError("enable local search indexes"));
 
-const makeClientLayer = (config: PersistenceConfig) =>
+export const clientLayer = (config: PersistenceConfig) =>
   PgliteClient.layerFrom(
     PgliteClient.make({
       dataDir: config.dataDir,
       extensions: pgliteExtensions,
     }).pipe(Effect.mapError((cause) => persistenceError("open local database", cause))),
-  );
-
-export const clientLayer = (config: PersistenceConfig) =>
-  Layer.unwrap(
-    upgradePgliteDataDir(config.dataDir).pipe(Effect.map(() => makeClientLayer(config))),
   );

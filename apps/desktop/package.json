@@ -34,8 +34,6 @@
     "date-fns": "^4.4.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
-    "pglite-04": "npm:@electric-sql/pglite@0.4.6",
-    "pglite-tools-04": "npm:@electric-sql/pglite-tools@0.3.6",
     "radix-ui": "^1.6.2",
     "react": "^19.2.7",
     "react-day-picker": "^10.0.1",
