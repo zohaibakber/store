@@ -74,13 +74,20 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
 
   const open = useCallback(() => setIsOpen(true), []);
 
-  // ⌘K / Ctrl+K toggles the palette from anywhere.
+  // Slash opens the palette unless the user is already typing in an editable control.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        setIsOpen((previous) => !previous);
-      }
+      const target = event.target;
+      const isEditable =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.matches("select") ||
+          (target.matches("input, textarea") && !target.hasAttribute("readonly")));
+
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey || isEditable) return;
+
+      event.preventDefault();
+      setIsOpen(true);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
