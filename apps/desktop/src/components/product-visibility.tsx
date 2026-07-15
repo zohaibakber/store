@@ -50,6 +50,7 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
       </CardHeader>
       <CardContent>
         <Select
+          items={visibilityOptions}
           onValueChange={(value) => value && void setVisible(value === "visible")}
           value={product.visible ? "visible" : "hidden"}
         >

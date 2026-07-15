@@ -94,7 +94,7 @@ const productFormOpts = formOptions({
     composition: "",
     strength: "",
     strengthUnit: "mg" as (typeof strengthUnits)[number],
-    unitsPerPack: "1",
+    unitsPerPack: "",
     packPrice: "",
     unitPrice: "",
   },
@@ -224,6 +224,10 @@ function ProductForm({
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Category</FieldLabel>
                   <Select
+                    items={categories.map((category) => ({
+                      label: category.name,
+                      value: category.id,
+                    }))}
                     name={field.name}
                     onValueChange={(value) => value && field.handleChange(value)}
                     value={field.state.value}
@@ -386,6 +390,7 @@ function ProductForm({
                           className="text-left"
                           name={field.name}
                           onBlur={field.handleBlur}
+                          placeholder="1"
                         />
                       </NumberFieldGroup>
                     </NumberField>

@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchIcon } from "@hugeicons/core-free-icons";
 import { useCommandMenu } from "./command-menu";
-import { InputGroup, InputGroupAddon } from "./ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 import { Kbd } from "./ui/kbd";
 
 export function SearchForm() {
@@ -12,9 +12,10 @@ export function SearchForm() {
         <InputGroupAddon>
           <HugeiconsIcon icon={SearchIcon} />
         </InputGroupAddon>
-        <span className="flex-1 truncate text-sm text-muted-foreground">Search products</span>
+        <InputGroupInput placeholder="Search" />
         <InputGroupAddon align={"inline-end"}>
-          <Kbd>⌘K</Kbd>
+          <Kbd>⌘</Kbd>
+          <Kbd>K</Kbd>
         </InputGroupAddon>
       </InputGroup>
     </button>

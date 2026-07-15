@@ -137,7 +137,7 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
       table={table}
     >
       <DataTableHeader>
-        <DataTableFilter columnId="name" placeholder="Search" />
+        <DataTableFilter columnId="name" placeholder="Search products" />
         <DataTableViewOptions />
       </DataTableHeader>
       <DataTableContent />
