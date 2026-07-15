@@ -1,9 +1,9 @@
 import type { SyncEntityChange, SyncRequest } from "@store/contracts";
 import { vi } from "vitest";
-import { createApp } from "./app";
-import { factory } from "./factory";
-import { operationPayloadHash } from "./sync/hash";
-import type { SyncActor } from "./sync/service";
+import { createApp } from "../http/app";
+import { factory } from "../http/factory";
+import { operationPayloadHash } from "../sync/hash";
+import type { SyncActor } from "../sync/service";
 
 const session = {
   user: {

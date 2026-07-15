@@ -1,9 +1,21 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "f11959ab-30c5-4062-a4ba-5174acb21ff4",
+  "id": "5850704d-d394-441e-8c95-e5e16802575c",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "sync_change_log",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "sync_inbox",
+      "entityType": "tables",
+      "schema": "public"
+    },
     {
       "isRlsEnabled": false,
       "name": "account",
@@ -60,6 +72,12 @@
     },
     {
       "isRlsEnabled": false,
+      "name": "invoice_counters",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
       "name": "invoice_items",
       "entityType": "tables",
       "schema": "public"
@@ -83,28 +101,238 @@
       "schema": "public"
     },
     {
-      "isRlsEnabled": false,
-      "name": "sync_change_log",
-      "entityType": "tables",
-      "schema": "public"
+      "type": "bigserial",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
     },
     {
-      "isRlsEnabled": false,
-      "name": "sync_inbox",
-      "entityType": "tables",
-      "schema": "public"
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organizationId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
     },
     {
-      "isRlsEnabled": false,
-      "name": "sync_outbox",
-      "entityType": "tables",
-      "schema": "public"
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operationId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
     },
     {
-      "isRlsEnabled": false,
-      "name": "sync_state",
-      "entityType": "tables",
-      "schema": "public"
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "entity",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "action",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "entityId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "rowVersion",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "payload",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "changedAt",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_change_log"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organizationId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operationId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "deviceId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "actorUserId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "clientSequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "payloadHash",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "appliedCursor",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "receivedAt",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "sync_inbox"
     },
     {
       "type": "text",
@@ -1154,6 +1382,32 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "organizationId",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "invoice_counters"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "lastInvoiceNumber",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "invoice_counters"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "id",
       "entityType": "columns",
       "schema": "public",
@@ -1407,7 +1661,7 @@
       "table": "invoices"
     },
     {
-      "type": "text",
+      "type": "integer",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -1979,459 +2233,137 @@
       "table": "stock_movements"
     },
     {
-      "type": "bigserial",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "cursor",
-      "entityType": "columns",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "organizationId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "operationId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "ordinal",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_change_log_organization_operation_ordinal_uidx",
+      "entityType": "indexes",
       "schema": "public",
       "table": "sync_change_log"
     },
     {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "organizationId",
-      "entityType": "columns",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "organizationId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "cursor",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_change_log_organization_cursor_idx",
+      "entityType": "indexes",
       "schema": "public",
       "table": "sync_change_log"
     },
     {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "operationId",
-      "entityType": "columns",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "organizationId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "entity",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "entityId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_change_log_organization_entity_idx",
+      "entityType": "indexes",
       "schema": "public",
       "table": "sync_change_log"
     },
     {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "ordinal",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "entity",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "action",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "entityId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "rowVersion",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "payload",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "changedAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "organizationId",
-      "entityType": "columns",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "organizationId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "deviceId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "clientSequence",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_inbox_organization_device_sequence_uidx",
+      "entityType": "indexes",
       "schema": "public",
       "table": "sync_inbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "operationId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "deviceId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "actorUserId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "clientSequence",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "payloadHash",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "appliedCursor",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "receivedAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "operationId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "deviceId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "actorUserId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "bigserial",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "clientSequence",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "occurredAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "payload",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "payloadHash",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attemptCount",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "nextAttemptAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lastError",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "acknowledgedAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_state"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "cursor",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_state"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lastSuccessAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_state"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lastAttemptAt",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_state"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lastError",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "sync_state"
     },
     {
       "nameExplicit": true,
@@ -3001,216 +2933,6 @@
       "table": "stock_movements"
     },
     {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "operationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "ordinal",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_change_log_organization_operation_ordinal_uidx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "cursor",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_change_log_organization_cursor_idx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "entity",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "entityId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_change_log_organization_entity_idx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_change_log"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "deviceId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "clientSequence",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_inbox_organization_device_sequence_uidx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_inbox"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "deviceId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "clientSequence",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_outbox_organization_device_sequence_uidx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "acknowledgedAt",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "nextAttemptAt",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "clientSequence",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_outbox_pending_idx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "sync_outbox"
-    },
-    {
       "nameExplicit": false,
       "columns": ["user_id"],
       "schemaTo": "public",
@@ -3393,6 +3115,14 @@
       "table": "stock_movements"
     },
     {
+      "columns": ["organizationId", "operationId"],
+      "nameExplicit": true,
+      "name": "sync_inbox_organization_operation_pk",
+      "entityType": "pks",
+      "schema": "public",
+      "table": "sync_inbox"
+    },
+    {
       "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "batches_organization_id_id_pk",
@@ -3441,12 +3171,12 @@
       "table": "stock_movements"
     },
     {
-      "columns": ["organizationId", "operationId"],
-      "nameExplicit": true,
-      "name": "sync_inbox_organization_operation_pk",
-      "entityType": "pks",
+      "columns": ["cursor"],
+      "nameExplicit": false,
+      "name": "sync_change_log_pkey",
       "schema": "public",
-      "table": "sync_inbox"
+      "table": "sync_change_log",
+      "entityType": "pks"
     },
     {
       "columns": ["id"],
@@ -3505,27 +3235,11 @@
       "entityType": "pks"
     },
     {
-      "columns": ["cursor"],
-      "nameExplicit": false,
-      "name": "sync_change_log_pkey",
-      "schema": "public",
-      "table": "sync_change_log",
-      "entityType": "pks"
-    },
-    {
-      "columns": ["operationId"],
-      "nameExplicit": false,
-      "name": "sync_outbox_pkey",
-      "schema": "public",
-      "table": "sync_outbox",
-      "entityType": "pks"
-    },
-    {
       "columns": ["organizationId"],
       "nameExplicit": false,
-      "name": "sync_state_pkey",
+      "name": "invoice_counters_pkey",
       "schema": "public",
-      "table": "sync_state",
+      "table": "invoice_counters",
       "entityType": "pks"
     },
     {
@@ -3554,6 +3268,20 @@
       "schema": "public",
       "table": "user",
       "entityType": "uniques"
+    },
+    {
+      "value": "\"lastInvoiceNumber\" >= 0",
+      "name": "invoice_counters_last_invoice_number_nonnegative",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "invoice_counters"
+    },
+    {
+      "value": "\"invoiceNumber\" > 0",
+      "name": "invoices_invoice_number_positive",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "invoices"
     }
   ],
   "renames": []

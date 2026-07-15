@@ -6,7 +6,7 @@ import {
   invoices,
   products,
   stockMovements,
-} from "@store/db/schema";
+} from "@store/db/store.schema";
 import * as Schema from "effect/Schema";
 
 // Wire schemas are derived from the drizzle tables so the database schema stays
@@ -103,6 +103,9 @@ export type InvoiceItem = typeof InvoiceItem.Type;
 const { deletedAt: _invoiceDeletedAt, ...invoiceFields } = invoiceRow.fields;
 export const Invoice = Schema.Struct({ ...invoiceFields, items: Schema.Array(InvoiceItem) });
 export type Invoice = typeof Invoice.Type;
+
+export const formatInvoiceNumber = (invoiceNumber: number) =>
+  invoiceNumber.toString().padStart(4, "0");
 
 // A sale line names the product and quantity; the batch is optional — when it
 // is omitted the store draws stock from open batches, earliest expiry first.

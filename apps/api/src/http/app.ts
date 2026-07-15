@@ -1,8 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
-import { type AppEnv, requireOrganization } from "./auth-client";
+import { requireOrganization } from "../auth/require-organization";
+import { syncRoute } from "../routes/sync";
+import type { AppEnv } from "./context";
 import { factory } from "./factory";
-import { syncRoute } from "./routes/sync";
 
 export const createApp = (runtime: MiddlewareHandler<AppEnv>) => {
   const app = factory.createApp();

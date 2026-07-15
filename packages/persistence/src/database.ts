@@ -1,5 +1,5 @@
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
-import { relations } from "@store/db/relations";
+import { localRelations } from "@store/db/local/relations";
 import { sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-pglite";
 import { migrate } from "drizzle-orm/effect-pglite/migrator";
@@ -10,12 +10,12 @@ import { mapPersistenceError, persistenceError } from "./errors";
 import { pgliteExtensions } from "./pglite-extensions";
 import { upgradePgliteDataDir } from "./pglite-upgrade";
 
-export type StoreDatabase = PgDrizzle.EffectPgDatabase<typeof relations>;
+export type StoreDatabase = PgDrizzle.EffectPgDatabase<typeof localRelations>;
 export type StoreTransaction = Parameters<Parameters<StoreDatabase["transaction"]>[0]>[0];
 
 export const makeDatabase = (migrationsFolder: string) =>
   Effect.gen(function* () {
-    const database = yield* PgDrizzle.makeWithDefaults({ relations });
+    const database = yield* PgDrizzle.makeWithDefaults({ relations: localRelations });
     yield* migrate(database, {
       migrationsFolder,
       migrationsSchema: "store_migrations",
@@ -24,11 +24,9 @@ export const makeDatabase = (migrationsFolder: string) =>
     return database;
   });
 
-// The fuzzy-search extensions and their trigram indexes live only in the local
-// PGlite database. Search never runs against the remote sync database, so we
-// deliberately keep this DDL out of the shared drizzle migrations (which are
-// also applied to the remote Postgres) to avoid coupling it to these contrib
-// modules. The statements are idempotent so they can run on every startup.
+// The fuzzy-search extensions and their trigram indexes live only in PGlite.
+// They remain runtime setup rather than migrations because the remote database
+// does not install these extensions. The statements are safe on every startup.
 export const ensureLocalSearchIndexes = (database: StoreDatabase) =>
   Effect.gen(function* () {
     yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);

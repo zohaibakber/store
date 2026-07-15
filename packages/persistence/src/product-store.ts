@@ -8,7 +8,7 @@ import type {
   StockMovement,
   UpdateProductInput,
 } from "@store/contracts";
-import { batches, products, stockMovements } from "@store/db/schema";
+import { batches, products, stockMovements } from "@store/db/local/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";

@@ -1,5 +1,5 @@
 import type { SyncEntityChange, SyncOperation } from "@store/contracts";
-import { syncOutbox } from "@store/db/schema";
+import { syncOutbox } from "@store/db/local/schema";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";

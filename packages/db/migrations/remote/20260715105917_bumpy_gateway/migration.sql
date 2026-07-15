@@ -1,3 +1,28 @@
+CREATE TABLE "sync_change_log" (
+	"cursor" bigserial PRIMARY KEY,
+	"organizationId" text NOT NULL,
+	"operationId" text NOT NULL,
+	"ordinal" integer NOT NULL,
+	"entity" text NOT NULL,
+	"action" text NOT NULL,
+	"entityId" text NOT NULL,
+	"rowVersion" bigint NOT NULL,
+	"payload" jsonb NOT NULL,
+	"changedAt" bigint NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "sync_inbox" (
+	"organizationId" text,
+	"operationId" text,
+	"deviceId" text NOT NULL,
+	"actorUserId" text NOT NULL,
+	"clientSequence" bigint NOT NULL,
+	"payloadHash" text NOT NULL,
+	"appliedCursor" bigint NOT NULL,
+	"receivedAt" bigint NOT NULL,
+	CONSTRAINT "sync_inbox_organization_operation_pk" PRIMARY KEY("organizationId","operationId")
+);
+--> statement-breakpoint
 CREATE TABLE "account" (
 	"id" text PRIMARY KEY,
 	"account_id" text NOT NULL,
@@ -107,6 +132,12 @@ CREATE TABLE "categories" (
 	CONSTRAINT "categories_organization_id_id_pk" PRIMARY KEY("organizationId","id")
 );
 --> statement-breakpoint
+CREATE TABLE "invoice_counters" (
+	"organizationId" text PRIMARY KEY,
+	"lastInvoiceNumber" integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "invoice_counters_last_invoice_number_nonnegative" CHECK ("lastInvoiceNumber" >= 0)
+);
+--> statement-breakpoint
 CREATE TABLE "invoice_items" (
 	"id" text,
 	"invoiceId" text NOT NULL,
@@ -132,7 +163,7 @@ CREATE TABLE "invoice_items" (
 --> statement-breakpoint
 CREATE TABLE "invoices" (
 	"id" text,
-	"invoiceNumber" text NOT NULL,
+	"invoiceNumber" integer NOT NULL,
 	"customerName" text,
 	"total" integer DEFAULT 0 NOT NULL,
 	"createdAt" bigint NOT NULL,
@@ -144,7 +175,8 @@ CREATE TABLE "invoices" (
 	"deviceId" text NOT NULL,
 	"operationId" text NOT NULL,
 	"rowVersion" bigint DEFAULT 1 NOT NULL,
-	CONSTRAINT "invoices_organization_id_id_pk" PRIMARY KEY("organizationId","id")
+	CONSTRAINT "invoices_organization_id_id_pk" PRIMARY KEY("organizationId","id"),
+	CONSTRAINT "invoices_invoice_number_positive" CHECK ("invoiceNumber" > 0)
 );
 --> statement-breakpoint
 CREATE TABLE "products" (
@@ -187,54 +219,10 @@ CREATE TABLE "stock_movements" (
 	CONSTRAINT "stock_movements_organization_id_id_pk" PRIMARY KEY("organizationId","id")
 );
 --> statement-breakpoint
-CREATE TABLE "sync_change_log" (
-	"cursor" bigserial PRIMARY KEY,
-	"organizationId" text NOT NULL,
-	"operationId" text NOT NULL,
-	"ordinal" integer NOT NULL,
-	"entity" text NOT NULL,
-	"action" text NOT NULL,
-	"entityId" text NOT NULL,
-	"rowVersion" bigint NOT NULL,
-	"payload" jsonb NOT NULL,
-	"changedAt" bigint NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "sync_inbox" (
-	"organizationId" text,
-	"operationId" text,
-	"deviceId" text NOT NULL,
-	"actorUserId" text NOT NULL,
-	"clientSequence" bigint NOT NULL,
-	"payloadHash" text NOT NULL,
-	"appliedCursor" bigint NOT NULL,
-	"receivedAt" bigint NOT NULL,
-	CONSTRAINT "sync_inbox_organization_operation_pk" PRIMARY KEY("organizationId","operationId")
-);
---> statement-breakpoint
-CREATE TABLE "sync_outbox" (
-	"operationId" text PRIMARY KEY,
-	"organizationId" text NOT NULL,
-	"deviceId" text NOT NULL,
-	"actorUserId" text NOT NULL,
-	"clientSequence" bigserial,
-	"occurredAt" bigint NOT NULL,
-	"payload" jsonb NOT NULL,
-	"payloadHash" text NOT NULL,
-	"attemptCount" integer DEFAULT 0 NOT NULL,
-	"nextAttemptAt" bigint,
-	"lastError" text,
-	"acknowledgedAt" bigint
-);
---> statement-breakpoint
-CREATE TABLE "sync_state" (
-	"organizationId" text PRIMARY KEY,
-	"cursor" bigint DEFAULT 0 NOT NULL,
-	"lastSuccessAt" bigint,
-	"lastAttemptAt" bigint,
-	"lastError" text
-);
---> statement-breakpoint
+CREATE UNIQUE INDEX "sync_change_log_organization_operation_ordinal_uidx" ON "sync_change_log" ("organizationId","operationId","ordinal");--> statement-breakpoint
+CREATE INDEX "sync_change_log_organization_cursor_idx" ON "sync_change_log" ("organizationId","cursor");--> statement-breakpoint
+CREATE INDEX "sync_change_log_organization_entity_idx" ON "sync_change_log" ("organizationId","entity","entityId");--> statement-breakpoint
+CREATE UNIQUE INDEX "sync_inbox_organization_device_sequence_uidx" ON "sync_inbox" ("organizationId","deviceId","clientSequence");--> statement-breakpoint
 CREATE INDEX "account_userId_idx" ON "account" ("user_id");--> statement-breakpoint
 CREATE INDEX "invitation_organizationId_idx" ON "invitation" ("organization_id");--> statement-breakpoint
 CREATE INDEX "invitation_email_idx" ON "invitation" ("email");--> statement-breakpoint
@@ -257,12 +245,6 @@ CREATE INDEX "stock_movements_organization_id_product_id_idx" ON "stock_movement
 CREATE INDEX "stock_movements_organization_id_batch_id_idx" ON "stock_movements" ("organizationId","batchId");--> statement-breakpoint
 CREATE INDEX "stock_movements_organization_id_invoice_id_idx" ON "stock_movements" ("organizationId","invoiceId");--> statement-breakpoint
 CREATE INDEX "stock_movements_organization_id_operation_id_idx" ON "stock_movements" ("organizationId","operationId");--> statement-breakpoint
-CREATE UNIQUE INDEX "sync_change_log_organization_operation_ordinal_uidx" ON "sync_change_log" ("organizationId","operationId","ordinal");--> statement-breakpoint
-CREATE INDEX "sync_change_log_organization_cursor_idx" ON "sync_change_log" ("organizationId","cursor");--> statement-breakpoint
-CREATE INDEX "sync_change_log_organization_entity_idx" ON "sync_change_log" ("organizationId","entity","entityId");--> statement-breakpoint
-CREATE UNIQUE INDEX "sync_inbox_organization_device_sequence_uidx" ON "sync_inbox" ("organizationId","deviceId","clientSequence");--> statement-breakpoint
-CREATE UNIQUE INDEX "sync_outbox_organization_device_sequence_uidx" ON "sync_outbox" ("organizationId","deviceId","clientSequence");--> statement-breakpoint
-CREATE INDEX "sync_outbox_pending_idx" ON "sync_outbox" ("organizationId","acknowledgedAt","nextAttemptAt","clientSequence");--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "invitation" ADD CONSTRAINT "invitation_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "invitation" ADD CONSTRAINT "invitation_inviter_id_user_id_fkey" FOREIGN KEY ("inviter_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint

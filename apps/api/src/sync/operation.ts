@@ -1,5 +1,5 @@
 import { compareCodeUnits, SyncAck, SyncEntityChange, type SyncOperation } from "@store/contracts";
-import { syncChangeLog, syncInbox } from "@store/db/schema";
+import { syncChangeLog, syncInbox } from "@store/db/remote/schema";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import { applyChange } from "./apply-change";

@@ -1,5 +1,5 @@
 import type { SyncEntityChange } from "@store/contracts";
-import { categories, syncState } from "@store/db/schema";
+import { categories, syncState } from "@store/db/local/schema";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";
 import type { StoreDatabase } from "./database";

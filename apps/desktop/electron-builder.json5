@@ -18,7 +18,7 @@
   files: ["dist", "dist-electron"],
   extraResources: [
     {
-      from: "../../packages/db/migrations",
+      from: "../../packages/db/migrations/local",
       to: "database-migrations",
     },
   ],

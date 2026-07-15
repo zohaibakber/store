@@ -157,7 +157,7 @@ const organizationKey = (organizationId: string) =>
 const migrationsFolder = () =>
   app.isPackaged
     ? path.join(process.resourcesPath, "database-migrations")
-    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations");
+    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations", "local");
 
 async function loadDeviceId() {
   const file = path.join(app.getPath("userData"), "device-id");

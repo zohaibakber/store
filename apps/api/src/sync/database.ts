@@ -1,5 +1,5 @@
 import { SyncResponse, SyncServerChange, type SyncAck, type SyncRequest } from "@store/contracts";
-import { syncChangeLog } from "@store/db/schema";
+import { syncChangeLog } from "@store/db/remote/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";

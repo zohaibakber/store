@@ -6,7 +6,7 @@ import {
   invoices,
   products,
   stockMovements,
-} from "@store/db/schema";
+} from "@store/db/local/schema";
 
 export type ProductRow = typeof products.$inferSelect;
 export type CategoryRow = typeof categories.$inferSelect;

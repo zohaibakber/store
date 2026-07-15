@@ -2,13 +2,14 @@ import type { SyncEntityChange, SyncOperation, SyncRequest, SyncStatus } from "@
 import {
   batches,
   categories,
+  invoiceCounters,
   invoiceItems,
   invoices,
   products,
   stockMovements,
   syncOutbox,
   syncState,
-} from "@store/db/schema";
+} from "@store/db/local/schema";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -115,6 +116,18 @@ const upsertRemoteChange = (
           .insert(invoices)
           .values(row)
           .onConflictDoUpdate({ target: [invoices.organizationId, invoices.id], set });
+        yield* transaction
+          .insert(invoiceCounters)
+          .values({
+            organizationId: actor.organizationId,
+            lastInvoiceNumber: row.invoiceNumber,
+          })
+          .onConflictDoUpdate({
+            target: invoiceCounters.organizationId,
+            set: {
+              lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
+            },
+          });
         return;
       }
       case "invoiceItem": {

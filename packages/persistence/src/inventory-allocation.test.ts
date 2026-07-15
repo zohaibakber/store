@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { formatInvoiceNumber } from "@store/contracts";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 import { layer, program } from "./index";
@@ -57,7 +58,8 @@ test("selling draws stock from batches, earliest expiry first", async () => {
         ],
       }),
     );
-    expect(invoice.invoiceNumber).toMatch(/^local-[0-9a-f-]{36}$/);
+    expect(invoice.invoiceNumber).toBe(1);
+    expect(formatInvoiceNumber(invoice.invoiceNumber)).toBe("0001");
     expect(invoice.total).toBe(6000);
     expect(invoice.items).toHaveLength(2);
     expect(invoice.items[0]).toMatchObject({
@@ -120,8 +122,7 @@ test("selling draws stock from batches, earliest expiry first", async () => {
         ],
       }),
     );
-    expect(fromBatch.invoiceNumber).toMatch(/^local-[0-9a-f-]{36}$/);
-    expect(fromBatch.invoiceNumber).not.toBe(invoice.invoiceNumber);
+    expect(fromBatch.invoiceNumber).toBe(2);
     expect(fromBatch.items).toEqual([
       expect.objectContaining({
         batchId: later.id,
@@ -142,6 +143,8 @@ test("selling draws stock from batches, earliest expiry first", async () => {
       invoice.invoiceNumber,
     ]);
     expect(await runtime.runPromise(program.getInvoice(invoice.id))).toEqual(invoice);
+    expect(formatInvoiceNumber(9999)).toBe("9999");
+    expect(formatInvoiceNumber(10000)).toBe("10000");
   } finally {
     await runtime.dispose();
     await rm(directory, { recursive: true, force: true });

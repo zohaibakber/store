@@ -5,8 +5,8 @@ const databaseCredentials = databaseUrl ? { dbCredentials: { url: databaseUrl } 
 
 export default defineConfig({
   dialect: "postgresql",
-  schema: ["./src/auth.schema.ts", "./src/store.schema.ts", "./src/sync.schema.ts"],
-  out: "./migrations",
+  schema: "./src/remote/schema.ts",
+  out: "./migrations/remote",
   migrations: {
     schema: "store_migrations",
     table: "__store_drizzle_migrations",

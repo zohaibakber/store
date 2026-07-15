@@ -1,7 +1,7 @@
-import { createApp } from "./app";
-import { workerErrorHandler, workerRuntime } from "./worker-runtime";
+import { createApp } from "./http/app";
+import { workerErrorHandler, workerRuntime } from "./runtime/worker";
 
-export { createApp } from "./app";
+export { createApp } from "./http/app";
 
 const app = createApp(workerRuntime);
 app.onError(workerErrorHandler);

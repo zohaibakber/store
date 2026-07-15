@@ -2,12 +2,13 @@ import { SyncEntityChange, type SyncOperation } from "@store/contracts";
 import {
   batches,
   categories,
+  invoiceCounters,
   invoiceItems,
   invoices,
   products,
   stockMovements,
-} from "@store/db/schema";
-import { and, eq } from "drizzle-orm";
+} from "@store/db/remote/schema";
+import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { SyncTransaction } from "./database.client";
 import { protocolError } from "./errors";
@@ -129,7 +130,7 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        invoiceNumber: yield* stringValue(row, "invoiceNumber"),
+        invoiceNumber: yield* integerValue(row, "invoiceNumber", 1),
         customerName: yield* nullableString(row, "customerName"),
         total: yield* integerValue(row, "total"),
         ...(yield* commonMutable(actor, operation, change, row, current)),
@@ -140,6 +141,18 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         .onConflictDoUpdate({ target: [invoices.organizationId, invoices.id], set: values })
         .returning();
       if (!saved) return yield* writeFailed("Invoice");
+      yield* tx
+        .insert(invoiceCounters)
+        .values({
+          organizationId: actor.organizationId,
+          lastInvoiceNumber: saved.invoiceNumber,
+        })
+        .onConflictDoUpdate({
+          target: invoiceCounters.organizationId,
+          set: {
+            lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${saved.invoiceNumber})`,
+          },
+        });
       return canonicalChange(change, saved.rowVersion, saved);
     }
     case "invoiceItem": {

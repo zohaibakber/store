@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -9,6 +10,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export const epochMilliseconds = () => bigint({ mode: "number" });
@@ -119,9 +121,7 @@ export const invoices = pgTable(
   "invoices",
   {
     id: entityId(),
-    // Invoice numbers are generated independently by offline devices. A text
-    // prefix keeps them unique without requiring a server round-trip.
-    invoiceNumber: text().notNull(),
+    invoiceNumber: integer().notNull(),
     customerName: text(),
     total: integer().notNull().default(0),
     ...timestamps,
@@ -141,6 +141,20 @@ export const invoices = pgTable(
       table.operationId,
     ),
     index("invoices_organization_id_created_at_idx").on(table.organizationId, table.createdAt),
+    check("invoices_invoice_number_positive", sql`${table.invoiceNumber} > 0`),
+  ],
+);
+
+// The counter is internal database state rather than a synced entity. Updating
+// one row per organization makes invoice allocation atomic within a database.
+export const invoiceCounters = pgTable(
+  "invoice_counters",
+  {
+    organizationId: tenantId().primaryKey(),
+    lastInvoiceNumber: integer().notNull().default(0),
+  },
+  (table) => [
+    check("invoice_counters_last_invoice_number_nonnegative", sql`${table.lastInvoiceNumber} >= 0`),
   ],
 );
 

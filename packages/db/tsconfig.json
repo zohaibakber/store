@@ -9,5 +9,5 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "drizzle.config.ts"]
+  "include": ["src", "drizzle.local.config.ts", "drizzle.remote.config.ts"]
 }

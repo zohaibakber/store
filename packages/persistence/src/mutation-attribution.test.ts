@@ -62,7 +62,7 @@ test("offline mutations keep immutable organization, actor, device, and operatio
       createdByUserId: context.userId,
       deviceId: context.deviceId,
     });
-    expect(invoice.invoiceNumber).toBe(`deviceco-${invoice.operationId}`);
+    expect(invoice.invoiceNumber).toBe(1);
 
     const movements = await runtime.runPromise(program.listStockMovements(product.id));
     const saleMovements = movements.filter((movement) => movement.invoiceId === invoice.id);

@@ -1,6 +1,17 @@
-import type { CreateInvoiceInput, Invoice, SyncEntityChange } from "@store/contracts";
-import { batches, invoiceItems, invoices, stockMovements } from "@store/db/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  formatInvoiceNumber,
+  type CreateInvoiceInput,
+  type Invoice,
+  type SyncEntityChange,
+} from "@store/contracts";
+import {
+  batches,
+  invoiceCounters,
+  invoiceItems,
+  invoices,
+  stockMovements,
+} from "@store/db/local/schema";
+import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";
 import type { StoreDatabase, StoreTransaction } from "./database";
@@ -29,6 +40,23 @@ interface Allocation {
 
 const invalidInvoice = (message: string) =>
   PersistenceError.make({ operation: "create invoice", message });
+
+const allocateInvoiceNumber = (transaction: StoreTransaction, organizationId: string) =>
+  transaction
+    .insert(invoiceCounters)
+    .values({ organizationId, lastInvoiceNumber: 1 })
+    .onConflictDoUpdate({
+      target: invoiceCounters.organizationId,
+      set: { lastInvoiceNumber: sql`${invoiceCounters.lastInvoiceNumber} + 1` },
+    })
+    .returning({ invoiceNumber: invoiceCounters.lastInvoiceNumber })
+    .pipe(
+      Effect.flatMap(([allocated]) =>
+        allocated
+          ? Effect.succeed(allocated.invoiceNumber)
+          : invalidInvoice("The invoice number could not be allocated"),
+      ),
+    );
 
 const movementChange = (
   transaction: StoreTransaction,
@@ -97,8 +125,8 @@ export const makeInvoiceStore = (
           const allocations: Allocation[] = [];
           const changes: SyncEntityChange[] = [];
           const id = crypto.randomUUID();
-          const devicePrefix = actor.deviceId.replace(/-/g, "").slice(0, 8) || "local";
-          const invoiceNumber = `${devicePrefix}-${operationId}`;
+          const invoiceNumber = yield* allocateInvoiceNumber(transaction, actor.organizationId);
+          const displayInvoiceNumber = formatInvoiceNumber(invoiceNumber);
           const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
           const [invoice] = yield* transaction
             .insert(invoices)
@@ -222,7 +250,7 @@ export const makeInvoiceStore = (
                     type: "sale",
                     packDelta: -taken,
                     unitDelta: 0,
-                    note: `Invoice #${invoiceNumber}`,
+                    note: `Invoice #${displayInvoiceNumber}`,
                     organizationId: actor.organizationId,
                     actorUserId: actor.userId,
                     deviceId: actor.deviceId,
@@ -269,7 +297,7 @@ export const makeInvoiceStore = (
                       type: "open_pack",
                       packDelta: -packsOpened,
                       unitDelta: packsOpened * product.unitsPerPack,
-                      note: `Opened for invoice #${invoiceNumber}`,
+                      note: `Opened for invoice #${displayInvoiceNumber}`,
                       organizationId: actor.organizationId,
                       actorUserId: actor.userId,
                       deviceId: actor.deviceId,
@@ -286,7 +314,7 @@ export const makeInvoiceStore = (
                     type: "sale",
                     packDelta: 0,
                     unitDelta: -taken,
-                    note: `Invoice #${invoiceNumber}`,
+                    note: `Invoice #${displayInvoiceNumber}`,
                     organizationId: actor.organizationId,
                     actorUserId: actor.userId,
                     deviceId: actor.deviceId,

@@ -1,4 +1,4 @@
-import type { Invoice } from "@store/contracts";
+import { formatInvoiceNumber, type Invoice } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
 import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -55,7 +55,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
         <div className="flex items-center gap-1">
           <BackToInvoices />
           <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
-          <PageHeading>Invoice #{invoice.invoiceNumber}</PageHeading>
+          <PageHeading>Invoice #{formatInvoiceNumber(invoice.invoiceNumber)}</PageHeading>
         </div>
         <PageDescription>
           {invoice.customerName ?? "Walk-in customer"} · {formatDateTime(invoice.createdAt)}

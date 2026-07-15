@@ -1,5 +1,5 @@
 import { createContext, use, useState, type ReactNode } from "react";
-import type { Product } from "@store/contracts";
+import { formatInvoiceNumber, type Product } from "@store/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -209,7 +209,7 @@ function InvoiceCreateProvider({
           salePrice: discountedSalePrice(line, bulkDiscount!)!,
         })),
       });
-      toast.success(`Invoice #${invoice.invoiceNumber} created`);
+      toast.success(`Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`);
       await navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not complete the sale.");

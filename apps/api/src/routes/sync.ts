@@ -1,13 +1,10 @@
-import { SyncRequest, type SyncResponse } from "@store/contracts";
+import { SyncRequest } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Hono } from "hono";
-import type { AppEnv } from "../auth-client";
-import { publicError } from "../errors";
+import type { AppEnv } from "../http/context";
+import { publicError } from "../http/errors";
 import { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
-import type { SyncActor } from "../sync/model";
-
-export type SyncRunner = (actor: SyncActor, request: SyncRequest) => Promise<SyncResponse>;
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 

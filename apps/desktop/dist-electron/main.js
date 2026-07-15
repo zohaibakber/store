@@ -23853,6 +23853,33 @@ var PrimaryKey = class {
 	}
 };
 //#endregion
+//#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/checks.js
+var CheckBuilder = class {
+	static [entityKind] = "PgCheckBuilder";
+	brand;
+	constructor(name, value) {
+		this.name = name;
+		this.value = value;
+	}
+	/** @internal */
+	build(table) {
+		return new Check(table, this);
+	}
+};
+var Check = class {
+	static [entityKind] = "PgCheck";
+	name;
+	value;
+	constructor(table, builder) {
+		this.table = table;
+		this.name = builder.name;
+		this.value = builder.value;
+	}
+};
+function check$1(name, value) {
+	return new CheckBuilder(name, value);
+}
+//#endregion
 //#region ../../node_modules/.bun/drizzle-orm@1.0.0-rc.4+f554811f34e8f4b6/node_modules/drizzle-orm/pg-core/indexes.js
 var IndexBuilderOn = class {
 	static [entityKind] = "PgIndexBuilderOn";
@@ -27490,7 +27517,7 @@ var batches = pgTable("batches", {
 ]);
 var invoices = pgTable("invoices", {
 	id: entityId(),
-	invoiceNumber: text().notNull(),
+	invoiceNumber: integer$1().notNull(),
 	customerName: text(),
 	total: integer$1().notNull().default(0),
 	...timestamps,
@@ -27502,8 +27529,13 @@ var invoices = pgTable("invoices", {
 	}),
 	uniqueIndex("invoices_organization_id_invoice_number_uidx").on(table.organizationId, table.invoiceNumber),
 	uniqueIndex("invoices_organization_id_operation_id_uidx").on(table.organizationId, table.operationId),
-	index("invoices_organization_id_created_at_idx").on(table.organizationId, table.createdAt)
+	index("invoices_organization_id_created_at_idx").on(table.organizationId, table.createdAt),
+	check$1("invoices_invoice_number_positive", sql`${table.invoiceNumber} > 0`)
 ]);
+var invoiceCounters = pgTable("invoice_counters", {
+	organizationId: tenantId().primaryKey(),
+	lastInvoiceNumber: integer$1().notNull().default(0)
+}, (table) => [check$1("invoice_counters_last_invoice_number_nonnegative", sql`${table.lastInvoiceNumber} >= 0`)]);
 var invoiceItems = pgTable("invoice_items", {
 	id: entityId(),
 	invoiceId: text().notNull(),
@@ -27647,6 +27679,7 @@ var schema_exports$1 = /* @__PURE__ */ __exportAll({
 	categories: () => categories,
 	epochMilliseconds: () => epochMilliseconds,
 	invitation: () => invitation,
+	invoiceCounters: () => invoiceCounters,
 	invoiceItems: () => invoiceItems,
 	invoices: () => invoices,
 	member: () => member,
@@ -27701,6 +27734,7 @@ Struct({
 	...invoiceFields,
 	items: ArraySchema(InvoiceItem)
 });
+var formatInvoiceNumber = (invoiceNumber) => invoiceNumber.toString().padStart(4, "0");
 var CreateInvoiceLineInput = Struct({
 	productId: String$1,
 	batchId: NullOr(String$1),
@@ -29931,6 +29965,13 @@ var invalidInvoice = (message) => PersistenceError.make({
 	operation: "create invoice",
 	message
 });
+var allocateInvoiceNumber = (transaction, organizationId) => transaction.insert(invoiceCounters).values({
+	organizationId,
+	lastInvoiceNumber: 1
+}).onConflictDoUpdate({
+	target: invoiceCounters.organizationId,
+	set: { lastInvoiceNumber: sql`${invoiceCounters.lastInvoiceNumber} + 1` }
+}).returning({ invoiceNumber: invoiceCounters.lastInvoiceNumber }).pipe(flatMap(([allocated]) => allocated ? succeed$1(allocated.invoiceNumber) : invalidInvoice("The invoice number could not be allocated")));
 var movementChange = (transaction, values) => gen(function* () {
 	const [movement] = yield* transaction.insert(stockMovements).values(values).returning();
 	if (!movement) return yield* invalidInvoice("The stock movement could not be recorded");
@@ -29981,7 +30022,8 @@ var makeInvoiceStore = (database, mutationContext, signalSync) => {
 				const allocations = [];
 				const changes = [];
 				const id = crypto.randomUUID();
-				const invoiceNumber = `${actor.deviceId.replace(/-/g, "").slice(0, 8) || "local"}-${operationId}`;
+				const invoiceNumber = yield* allocateInvoiceNumber(transaction, actor.organizationId);
+				const displayInvoiceNumber = formatInvoiceNumber(invoiceNumber);
 				const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
 				const [invoice] = yield* transaction.insert(invoices).values({
 					id,
@@ -30063,7 +30105,7 @@ var makeInvoiceStore = (database, mutationContext, signalSync) => {
 								type: "sale",
 								packDelta: -taken,
 								unitDelta: 0,
-								note: `Invoice #${invoiceNumber}`,
+								note: `Invoice #${displayInvoiceNumber}`,
 								organizationId: actor.organizationId,
 								actorUserId: actor.userId,
 								deviceId: actor.deviceId,
@@ -30098,7 +30140,7 @@ var makeInvoiceStore = (database, mutationContext, signalSync) => {
 								type: "open_pack",
 								packDelta: -packsOpened,
 								unitDelta: packsOpened * product.unitsPerPack,
-								note: `Opened for invoice #${invoiceNumber}`,
+								note: `Opened for invoice #${displayInvoiceNumber}`,
 								organizationId: actor.organizationId,
 								actorUserId: actor.userId,
 								deviceId: actor.deviceId,
@@ -30113,7 +30155,7 @@ var makeInvoiceStore = (database, mutationContext, signalSync) => {
 								type: "sale",
 								packDelta: 0,
 								unitDelta: -taken,
-								note: `Invoice #${invoiceNumber}`,
+								note: `Invoice #${displayInvoiceNumber}`,
 								organizationId: actor.organizationId,
 								actorUserId: actor.userId,
 								deviceId: actor.deviceId,
@@ -30525,6 +30567,13 @@ var upsertRemoteChange = (transaction, actor, change) => gen(function* () {
 			yield* transaction.insert(invoices).values(row).onConflictDoUpdate({
 				target: [invoices.organizationId, invoices.id],
 				set
+			});
+			yield* transaction.insert(invoiceCounters).values({
+				organizationId: actor.organizationId,
+				lastInvoiceNumber: row.invoiceNumber
+			}).onConflictDoUpdate({
+				target: invoiceCounters.organizationId,
+				set: { lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})` }
 			});
 			return;
 		}

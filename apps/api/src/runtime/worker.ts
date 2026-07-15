@@ -1,8 +1,8 @@
 import { makeAuth } from "@store/auth";
 import { createAuthDatabase } from "@store/db/auth.database";
-import { withElectronOrigin } from "./electron-request";
-import { factory } from "./factory";
-import { makeSyncRuntime } from "./sync/runtime";
+import { withElectronOrigin } from "../auth/electron-origin";
+import { factory } from "../http/factory";
+import { makeSyncRuntime } from "../sync/runtime";
 
 const commaSeparated = (value: string): ReadonlyArray<string> =>
   value

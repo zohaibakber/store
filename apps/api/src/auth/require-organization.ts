@@ -1,25 +1,6 @@
-import type { AuthSession } from "@store/auth";
 import type { MiddlewareHandler } from "hono";
-import { publicError } from "./errors";
-import type { SyncRunner } from "./routes/sync";
-
-export type AuthApi = {
-  getSession(options: { headers: Headers }): Promise<AuthSession | null>;
-  getActiveMember(options: { headers: Headers }): Promise<object | null>;
-};
-
-export type AppEnv = {
-  Bindings: CloudflareBindings;
-  Variables: {
-    authApi: AuthApi;
-    authHandler: (request: Request) => Promise<Response>;
-    runSync: SyncRunner;
-    trustedOrigins: ReadonlyArray<string>;
-    user: AuthSession["user"];
-    session: AuthSession["session"];
-    organizationId: string;
-  };
-};
+import type { AppEnv } from "../http/context";
+import { publicError } from "../http/errors";
 
 export const requireOrganization: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await c.var.authApi.getSession({ headers: c.req.raw.headers });

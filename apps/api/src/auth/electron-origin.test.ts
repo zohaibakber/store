@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withElectronOrigin } from "./electron-request";
+import { withElectronOrigin } from "./electron-origin";
 
 describe("withElectronOrigin", () => {
   it("replaces a null Origin with the API origin for a verified Electron request", () => {

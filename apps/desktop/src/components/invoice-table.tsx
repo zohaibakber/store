@@ -1,4 +1,4 @@
-import type { Invoice } from "@store/contracts";
+import { formatInvoiceNumber, type Invoice } from "@store/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
@@ -50,7 +50,7 @@ const columns = columnHelper.columns([
         params={{ invoiceId: row.original.id }}
         to="/invoices/$invoiceId"
       >
-        #{getValue()}
+        #{formatInvoiceNumber(getValue())}
       </Link>
     ),
     enableHiding: false,
