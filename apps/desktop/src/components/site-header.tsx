@@ -1,7 +1,7 @@
 import { WindowControls } from "@/components/window-controls";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useCanGoBack, useRouter, useRouterState } from "@tanstack/react-router";
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -12,19 +12,15 @@ export function SiteHeader() {
   const canGoForward = useRouterState({
     select: (state) => state.location.state.__TSR_index < router.history.length - 1,
   });
-  const { state, isMobile } = useSidebar();
-  const showSidebarTrigger = isMobile || state === "collapsed";
-
   return (
-    <header className="sticky top-0 z-50 flex w-full items-center bg-background [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag] [&_input]:[-webkit-app-region:no-drag]">
-      <div className="flex h-(--header-height) w-full items-center px-2">
+    <header className="sticky top-0 z-10 flex h-12 shrink-0 w-full items-center bg-background [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag]">
+      <div className="flex h-12 w-full items-center px-2">
         <div className="flex items-center gap-1">
-          {showSidebarTrigger && (
-            <>
-              <SidebarTrigger />
-              <Separator orientation="vertical" className="mr-1 h-4 my-auto" />
-            </>
-          )}
+          <SidebarTrigger />
+          <Separator
+            orientation="vertical"
+            className="mr-1 data-vertical:h-4 data-vertical:self-auto"
+          />
           <Button
             type="button"
             variant="ghost"

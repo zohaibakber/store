@@ -1,23 +1,25 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchIcon } from "@hugeicons/core-free-icons";
-import { useCommandMenu } from "./command-menu";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
-import { Kbd } from "./ui/kbd";
+import { useCommandMenu } from "@/components/command-menu";
+import { Button } from "@/components/ui/button";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 export function SearchForm() {
   const { open } = useCommandMenu();
   return (
-    <button type="button" onClick={open} className="w-full text-left">
-      <InputGroup className="cursor-pointer">
-        <InputGroupAddon>
-          <HugeiconsIcon icon={SearchIcon} />
-        </InputGroupAddon>
-        <InputGroupInput placeholder="Search" />
-        <InputGroupAddon align={"inline-end"}>
-          <Kbd>⌘</Kbd>
-          <Kbd>K</Kbd>
-        </InputGroupAddon>
-      </InputGroup>
-    </button>
+    <Button
+      type="button"
+      variant="outline"
+      className="w-full justify-start"
+      aria-keyshortcuts="Meta+K Control+K"
+      onClick={open}
+    >
+      <HugeiconsIcon data-icon="inline-start" icon={SearchIcon} />
+      <span>Search</span>
+      <KbdGroup className="ml-auto">
+        <Kbd>⌘</Kbd>
+        <Kbd>K</Kbd>
+      </KbdGroup>
+    </Button>
   );
 }

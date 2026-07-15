@@ -30,16 +30,14 @@ function AuthenticatedLayout() {
   return (
     <TooltipProvider>
       <CommandMenuProvider>
-        <div className="[--header-height:calc(--spacing(12))]">
-          <SidebarProvider className="h-svh overflow-hidden">
-            <AppSidebar />
-            <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
-              <SiteHeader />
-              <Outlet />
-              <Toaster />
-            </SidebarInset>
-          </SidebarProvider>
-        </div>
+        <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+          <AppSidebar />
+          <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+            <SiteHeader />
+            <Outlet />
+            <Toaster />
+          </SidebarInset>
+        </SidebarProvider>
       </CommandMenuProvider>
     </TooltipProvider>
   );

@@ -9,6 +9,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
@@ -27,6 +28,12 @@ export type NavMainItem = {
 };
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const closeMobileSidebar = () => {
+    if (isMobile) setOpenMobile(false);
+  };
+
   return (
     <SidebarGroup>
       <SidebarMenu>
@@ -34,7 +41,13 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           <Collapsible key={item.title} defaultOpen={item.isActive} render={<SidebarMenuItem />}>
             <SidebarMenuButton
               tooltip={item.title}
-              render={<Link activeProps={{ "data-active": true }} to={item.url} />}
+              render={
+                <Link
+                  activeProps={{ "data-active": true }}
+                  to={item.url}
+                  onClick={closeMobileSidebar}
+                />
+              }
             >
               {item.icon}
               <span>{item.title}</span>
@@ -52,7 +65,9 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                   <SidebarMenuSub>
                     {item.items?.map((subItem) => (
                       <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton render={<a href={subItem.url} />}>
+                        <SidebarMenuSubButton
+                          render={<Link to={subItem.url} onClick={closeMobileSidebar} />}
+                        >
                           <span>{subItem.title}</span>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>

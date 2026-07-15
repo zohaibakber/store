@@ -6,16 +6,16 @@ function PageLayout({
   className,
   contentClassName,
   ...props
-}: ComponentProps<"main"> & { children: ReactNode; contentClassName?: string }) {
+}: ComponentProps<"div"> & { children: ReactNode; contentClassName?: string }) {
   return (
-    <main data-slot="page-layout" className={cn("p-4", className)} {...props}>
+    <div data-slot="page-layout" className={cn("p-4", className)} {...props}>
       <div
         data-slot="page-layout-content"
         className={cn("mx-auto flex w-full flex-col gap-2 max-w-5xl", contentClassName)}
       >
         {children}
       </div>
-    </main>
+    </div>
   );
 }
 

@@ -4,13 +4,7 @@ import { NavMain, type NavMainItem } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
 import { SyncButton } from "@/components/sync-button";
 import { TeamSwitcher } from "@/components/team-switcher";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { HomeIcon, Invoice01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
 import { SearchForm } from "./search-form";
@@ -41,14 +35,9 @@ const data = {
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar {...props}>
+    <Sidebar variant="inset" collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
-            <TeamSwitcher />
-          </div>
-          <SidebarTrigger />
-        </div>
+        <TeamSwitcher />
         <SearchForm />
       </SidebarHeader>
       <SidebarContent>
