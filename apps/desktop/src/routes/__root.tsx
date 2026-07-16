@@ -24,7 +24,10 @@ export function RootLayout() {
 }
 
 function AuthenticatedLayout() {
-  const { snapshot, error } = useAuth();
+  const { snapshot, loading, error } = useAuth();
+  // While the session is still resolving, render nothing instead of flashing
+  // the sign-in screen for users who are already authenticated.
+  if (!snapshot && loading) return null;
   if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (

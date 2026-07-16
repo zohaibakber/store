@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
 
 function formValue(form: FormData, key: string) {
@@ -50,7 +51,10 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   }
 
   return (
-    <div className="grid min-h-svh lg:grid-cols-2">
+    <div className="relative grid min-h-svh lg:grid-cols-2">
+      <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center px-2 [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag]">
+        <WindowControls />
+      </header>
       <div className="flex flex-col gap-4 p-6 md:p-10">
         <div className="flex justify-center gap-2 md:justify-start">
           <span className="flex items-center gap-2 font-medium">

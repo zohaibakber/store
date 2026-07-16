@@ -22,10 +22,26 @@ const messageFrom = (error: unknown) => {
   return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 };
 
+// The main process settles the session before the window loads, so resolving it
+// once before the first React render means the initial paint is already correct
+// and the sign-in screen never flashes for signed-in users.
+let initialSnapshot: AuthSnapshot | null = null;
+let initialError: string | null = null;
+
+export async function bootstrapAuth() {
+  try {
+    if (!window.auth) throw new Error("Authentication is unavailable in this build.");
+    initialSnapshot = await window.auth.getSession();
+  } catch (cause) {
+    initialError = messageFrom(cause);
+  }
+  return initialSnapshot;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [snapshot, setSnapshot] = React.useState<AuthSnapshot | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const [snapshot, setSnapshot] = React.useState<AuthSnapshot | null>(initialSnapshot);
+  const [loading, setLoading] = React.useState(initialSnapshot === null && initialError === null);
+  const [error, setError] = React.useState<string | null>(initialError);
   const refresh = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -40,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
-    void refresh();
+    if (initialSnapshot === null && initialError === null) void refresh();
     const apply = (next: AuthSnapshot) => {
       setSnapshot(next);
       setError(null);
