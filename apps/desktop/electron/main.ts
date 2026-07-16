@@ -66,8 +66,14 @@ let win: BrowserWindow | null;
 let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 let activeOrganizationId: string | null = null;
 let deviceId = "local";
+// Packaged apps ship no .env, so the API URL is baked in at build time via
+// `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
+// process.env reads stay as runtime overrides for local development.
 const authBroker = new AuthBroker(
-  process.env["STORE_API_URL"] ?? process.env["VITE_API_URL"] ?? "http://localhost:8787",
+  process.env["STORE_API_URL"] ??
+    process.env["VITE_API_URL"] ??
+    import.meta.env.VITE_API_URL ??
+    "http://localhost:8787",
   process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
 );
 authBroker.setupMain();

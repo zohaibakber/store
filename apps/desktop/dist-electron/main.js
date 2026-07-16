@@ -32452,7 +32452,7 @@ var _1 = [s.join(process.env.APP_ROOT, ".env"), s.join(process.env.APP_ROOT, "..
 for (let e of _1) try {
 	process.loadEnvFile(e);
 } catch {}
-var v1, y1, b1 = null, x1 = "local", S1 = new s1(process.env.STORE_API_URL ?? process.env.VITE_API_URL ?? "http://localhost:8787", process.env.ELECTRON_PROTOCOL ?? "com.tabaaq.desktop");
+var v1, y1, b1 = null, x1 = "local", S1 = new s1(process.env.STORE_API_URL ?? process.env.VITE_API_URL ?? "https://store-api.zohaibakber99.workers.dev" ?? "http://localhost:8787", process.env.ELECTRON_PROTOCOL ?? "com.tabaaq.desktop");
 S1.setupMain();
 var C1 = (e) => y1 ? y1.runPromise(e).catch((e) => {
 	let t = typeof e == "object" && e && "message" in e ? String(e.message) : String(e);
