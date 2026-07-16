@@ -52,7 +52,7 @@
     deleteAppDataOnUninstall: false,
   },
   linux: {
-    target: ["AppImage", "deb", "rpm", "pacman"],
+    target: ["AppImage"],
     artifactName: "${productName}-Linux-${version}.${ext}",
     category: "Office",
     maintainer: "Zohaib Akber <zohaibakber99@gmail.com>",
