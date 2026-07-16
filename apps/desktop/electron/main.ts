@@ -24,6 +24,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { AuthBroker, type AuthSnapshot } from "./auth";
+import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -400,6 +401,7 @@ void app.whenReady().then(async () => {
   registerStoreIpc();
   registerAuthIpc();
   registerServerIpc();
+  setupUpdater(() => win);
   if (snapshot.status === "authenticated" && snapshot.activeOrganization)
     await activateOrganization(snapshot.activeOrganization.id);
   else await activateLockedRuntime();

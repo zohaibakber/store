@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vp dev",
     "build": "tsc && vp build && electron-builder --config electron-builder.json5",
+    "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always",
     "check": "vp check",
     "lint": "vp lint",
     "preview": "vp preview",
@@ -32,6 +33,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "electron-updater": "^6.8.9",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "radix-ui": "^1.6.2",

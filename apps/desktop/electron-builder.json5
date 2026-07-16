@@ -15,6 +15,14 @@
   directories: {
     output: "release/${version}",
   },
+  publish: [
+    {
+      provider: "github",
+      owner: "zohaibakber",
+      repo: "store-electron",
+      releaseType: "release",
+    },
+  ],
   files: ["dist", "dist-electron"],
   extraResources: [
     {

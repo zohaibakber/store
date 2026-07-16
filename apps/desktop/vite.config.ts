@@ -50,7 +50,7 @@ export default defineConfig({
         vite: {
           build: {
             rolldownOptions: {
-              external: [/^@electric-sql\/pglite(\/|$)/],
+              external: [/^@electric-sql\/pglite(\/|$)/, "electron-updater"],
             },
           },
         },

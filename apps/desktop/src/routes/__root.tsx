@@ -9,6 +9,7 @@ import { AuthPage } from "@/components/auth-page";
 import { CreateOrganizationPage } from "@/components/create-organization-page";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { CommandMenuProvider } from "@/components/command-menu";
+import { useAppUpdater } from "@/hooks/use-app-updater";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -16,9 +17,12 @@ export const Route = createRootRoute({
 });
 
 export function RootLayout() {
+  // Mounted at the root so update toasts also reach the auth screen.
+  useAppUpdater();
   return (
     <AuthProvider>
       <AuthenticatedLayout />
+      <Toaster />
     </AuthProvider>
   );
 }
@@ -38,7 +42,6 @@ function AuthenticatedLayout() {
           <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
             <SiteHeader />
             <Outlet />
-            <Toaster />
           </SidebarInset>
         </SidebarProvider>
       </CommandMenuProvider>

@@ -46,6 +46,13 @@ interface Window {
       files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
     }) => Promise<unknown>;
   };
+  updater: {
+    getVersion: () => Promise<string>;
+    check: () => Promise<void>;
+    download: () => Promise<void>;
+    install: () => void;
+    onEvent: (callback: (event: import("./updater").UpdaterEvent) => void) => () => void;
+  };
   windowControls: {
     minimize: () => void;
     toggleMaximize: () => Promise<boolean>;

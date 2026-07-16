@@ -1,6 +1,7 @@
 import { ipcRenderer, contextBridge } from "electron";
 import type { OfflineStoreApi } from "@store/contracts";
 import type { AuthSnapshot } from "./auth";
+import type { UpdaterEvent } from "./updater";
 
 contextBridge.exposeInMainWorld("auth", {
   getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<AuthSnapshot>,
@@ -52,6 +53,21 @@ contextBridge.exposeInMainWorld("windowControls", {
   },
   close() {
     ipcRenderer.send("window-controls:close");
+  },
+});
+
+contextBridge.exposeInMainWorld("updater", {
+  getVersion: () => ipcRenderer.invoke("updater:version") as Promise<string>,
+  check: () => ipcRenderer.invoke("updater:check") as Promise<void>,
+  download: () => ipcRenderer.invoke("updater:download") as Promise<void>,
+  install() {
+    ipcRenderer.send("updater:install");
+  },
+  onEvent(callback: (event: UpdaterEvent) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, updaterEvent: UpdaterEvent) =>
+      callback(updaterEvent);
+    ipcRenderer.on("updater:event", listener);
+    return () => ipcRenderer.off("updater:event", listener);
   },
 });
 
