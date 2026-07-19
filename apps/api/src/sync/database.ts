@@ -12,6 +12,7 @@ import type { SyncActor } from "./model";
 import { applyOperation } from "./operation";
 
 const PAGE_SIZE = 500;
+type SyncDatabaseClient = Pick<SyncDrizzle, "transaction">;
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
@@ -31,7 +32,9 @@ const constraintProtocolError = (cause: unknown) => {
   return undefined;
 };
 
-const makeDatabase = (db: SyncDrizzle) => {
+// Exported for tests only: lets database.test.ts build a real `exchange`
+// implementation over a PGlite-backed Drizzle client instead of the network.
+export const makeDatabase = (db: SyncDatabaseClient) => {
   const exchange = Effect.fn("SyncDatabase.exchange")(
     function* (actor: SyncActor, request: SyncRequest) {
       return yield* db.transaction((tx) =>
