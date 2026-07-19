@@ -216,45 +216,41 @@ function UploadProvider({
       const generalCategory =
         categories.find((category) => category.id === "general") ?? categories[0];
       if (!generalCategory) throw new Error("Create a category before importing inventory.");
-      const createdProducts = new Map<string, string>();
-      for (const change of changes) {
-        const productKey = change.name.trim().toLocaleLowerCase();
-        const productId =
-          change.productId ??
-          createdProducts.get(productKey) ??
-          (
-            await window.offlineStore.createProduct({
-              name: change.name,
-              categoryId: generalCategory.id,
-              aisle: null,
-              composition: null,
-              strength: null,
-              unitsPerPack: change.unitsPerPack,
-              packPrice: change.packPrice,
-              unitPrice: null,
-            })
-          ).id;
-        if (!change.productId) createdProducts.set(productKey, productId);
-        if (change.packQuantity + change.unitQuantity > 0)
-          await window.offlineStore.createBatch({
-            productId,
-            batchNumber: change.batchNumber,
-            expiresAt: validTimestamp(change.expiresAt),
-            packQuantity: change.packQuantity,
-            unitQuantity: change.unitQuantity,
-          });
-      }
-      const syncStatus = await window.offlineStore.sync();
-      if (syncStatus.phase === "error") throw new Error(syncStatus.message);
-      toast.success(`${changes.length} inventory changes applied locally.`);
-      await router.invalidate();
-      setChanges([]);
-      setFiles([]);
-      setPhase("idle");
+      await window.offlineStore.importInventory({
+        categoryId: generalCategory.id,
+        lines: changes.map((change) => ({
+          name: change.name,
+          batchNumber: change.batchNumber,
+          expiresAt: validTimestamp(change.expiresAt),
+          unitsPerPack: change.unitsPerPack,
+          packQuantity: change.packQuantity,
+          unitQuantity: change.unitQuantity,
+          packPrice: change.packPrice,
+          productId: change.productId ?? null,
+        })),
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not apply changes.");
       setPhase("ready");
+      return;
     }
+
+    setChanges([]);
+    setFiles([]);
+    toast.success(`${changes.length} inventory changes applied locally.`);
+    try {
+      await router.invalidate();
+    } catch {
+      toast.warning("Inventory imported, but the current view could not be refreshed.");
+    }
+    try {
+      const syncStatus = await window.offlineStore.sync();
+      if (syncStatus.phase === "error")
+        toast.warning("Inventory imported locally; synchronization will retry automatically.");
+    } catch {
+      toast.warning("Inventory imported locally; synchronization will retry automatically.");
+    }
+    setPhase("idle");
   };
 
   const processing = phase === "processing" || phase === "syncing";

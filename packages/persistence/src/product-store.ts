@@ -3,9 +3,12 @@ import type {
   Category,
   CreateBatchInput,
   CreateProductInput,
+  ImportInventoryInput,
+  ImportInventoryResult,
   Product,
   SearchProductsInput,
   StockMovement,
+  SyncEntityChange,
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, products, stockMovements } from "@store/db/local/schema";
@@ -13,7 +16,12 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";
 import type { StoreDatabase } from "./database";
-import { PersistenceError, ProductNotFoundError, mapPersistenceError } from "./errors";
+import {
+  PersistenceError,
+  ProductNotFoundError,
+  mapPersistenceError,
+  persistenceError,
+} from "./errors";
 import { toBatch, toCategory, toProduct, toStockMovement } from "./models";
 import { enqueueOperation } from "./outbox";
 
@@ -36,6 +44,9 @@ export interface ProductStore {
   readonly createBatch: (
     input: CreateBatchInput,
   ) => Effect.Effect<Batch, PersistenceError | ProductNotFoundError>;
+  readonly importInventory: (
+    input: ImportInventoryInput,
+  ) => Effect.Effect<ImportInventoryResult, PersistenceError | ProductNotFoundError>;
   readonly listStockMovements: (
     productId: string,
   ) => Effect.Effect<ReadonlyArray<StockMovement>, PersistenceError>;
@@ -409,6 +420,191 @@ export const makeProductStore = (
     return toBatch(row);
   });
 
+  // Applies an entire invoice-upload import as one local transaction and one
+  // outbox operation: every product resolution, batch insert, and stock
+  // movement either all commit together or none do, so a retry after a local
+  // failure is safe. Products are matched to an existing line by normalized
+  // name, or created once and reused for duplicate names within the same
+  // import.
+  const importInventory = Effect.fn("OfflineStore.importInventory")(function* (
+    input: ImportInventoryInput,
+  ) {
+    const actor = mutationContext();
+    const occurredAt = Date.now();
+    const operationId = crypto.randomUUID();
+
+    const result = yield* database
+      .transaction((transaction) =>
+        Effect.gen(function* () {
+          const productChanges: SyncEntityChange[] = [];
+          const batchChanges: SyncEntityChange[] = [];
+          const movementChanges: SyncEntityChange[] = [];
+          let createdProductCount = 0;
+          let createdBatchCount = 0;
+
+          const existingProducts = yield* transaction.query.products.findMany({
+            where: { organizationId: actor.organizationId, deletedAt: { isNull: true } },
+          });
+          const productIdsByName = new Map(
+            existingProducts.map(
+              (product) => [product.name.trim().toLocaleLowerCase(), product.id] as const,
+            ),
+          );
+          const knownProductIds = new Set(existingProducts.map((product) => product.id));
+
+          for (const line of input.lines) {
+            const packQuantity = line.packQuantity ?? 0;
+            const unitQuantity = line.unitQuantity ?? 0;
+            if (
+              !Number.isInteger(packQuantity) ||
+              !Number.isInteger(unitQuantity) ||
+              packQuantity < 0 ||
+              unitQuantity < 0
+            )
+              return yield* PersistenceError.make({
+                operation: "import inventory",
+                message: "Pack and unit quantities must be non-negative whole numbers",
+              });
+
+            let productId: string;
+            if (line.productId) {
+              if (!knownProductIds.has(line.productId))
+                return yield* ProductNotFoundError.make({ id: line.productId });
+              productId = line.productId;
+            } else {
+              const key = line.name.trim().toLocaleLowerCase();
+              const existingId = productIdsByName.get(key);
+              if (existingId) {
+                productId = existingId;
+              } else {
+                const id = crypto.randomUUID();
+                const [created] = yield* transaction
+                  .insert(products)
+                  .values({
+                    id,
+                    name: line.name.trim(),
+                    categoryId: input.categoryId,
+                    aisle: null,
+                    composition: null,
+                    strength: null,
+                    unitsPerPack: line.unitsPerPack,
+                    packPrice: line.packPrice,
+                    unitPrice: null,
+                    organizationId: actor.organizationId,
+                    createdByUserId: actor.userId,
+                    updatedByUserId: actor.userId,
+                    deviceId: actor.deviceId,
+                    operationId,
+                    rowVersion: 1,
+                    createdAt: occurredAt,
+                    updatedAt: occurredAt,
+                  })
+                  .returning();
+                if (!created)
+                  return yield* PersistenceError.make({
+                    operation: "import inventory",
+                    message: "Created product could not be loaded",
+                  });
+                productChanges.push({
+                  entity: "product",
+                  action: "upsert",
+                  entityId: created.id,
+                  rowVersion: created.rowVersion,
+                  row: created,
+                });
+                productIdsByName.set(key, created.id);
+                knownProductIds.add(created.id);
+                createdProductCount += 1;
+                productId = created.id;
+              }
+            }
+
+            if (packQuantity + unitQuantity > 0) {
+              const batchId = crypto.randomUUID();
+              const [createdBatch] = yield* transaction
+                .insert(batches)
+                .values({
+                  id: batchId,
+                  productId,
+                  batchNumber: line.batchNumber,
+                  expiresAt: line.expiresAt,
+                  packQuantity,
+                  unitQuantity,
+                  organizationId: actor.organizationId,
+                  createdByUserId: actor.userId,
+                  updatedByUserId: actor.userId,
+                  deviceId: actor.deviceId,
+                  operationId,
+                  rowVersion: 1,
+                  createdAt: occurredAt,
+                  updatedAt: occurredAt,
+                })
+                .returning();
+              if (!createdBatch)
+                return yield* PersistenceError.make({
+                  operation: "import inventory",
+                  message: "Created batch could not be loaded",
+                });
+              const [movement] = yield* transaction
+                .insert(stockMovements)
+                .values({
+                  id: crypto.randomUUID(),
+                  productId,
+                  batchId,
+                  invoiceId: null,
+                  type: "stock_in",
+                  packDelta: packQuantity,
+                  unitDelta: unitQuantity,
+                  note: "Initial batch stock",
+                  organizationId: actor.organizationId,
+                  actorUserId: actor.userId,
+                  deviceId: actor.deviceId,
+                  operationId,
+                  createdAt: occurredAt,
+                })
+                .returning();
+              if (!movement)
+                return yield* PersistenceError.make({
+                  operation: "import inventory",
+                  message: "Stock movement could not be recorded",
+                });
+              batchChanges.push({
+                entity: "batch",
+                action: "upsert",
+                entityId: createdBatch.id,
+                rowVersion: createdBatch.rowVersion,
+                row: createdBatch,
+              });
+              movementChanges.push({
+                entity: "stockMovement",
+                action: "upsert",
+                entityId: movement.id,
+                rowVersion: 1,
+                row: movement,
+              });
+              createdBatchCount += 1;
+            }
+          }
+
+          yield* enqueueOperation(transaction, actor, operationId, occurredAt, [
+            ...productChanges,
+            ...batchChanges,
+            ...movementChanges,
+          ]);
+          return { createdProducts: createdProductCount, createdBatches: createdBatchCount };
+        }),
+      )
+      .pipe(
+        Effect.mapError((cause) =>
+          cause instanceof ProductNotFoundError
+            ? cause
+            : persistenceError("import inventory", cause),
+        ),
+      );
+    yield* signalSync;
+    return result;
+  });
+
   const listStockMovements = (productId: string) =>
     Effect.suspend(() => {
       const actor = mutationContext();
@@ -432,6 +628,7 @@ export const makeProductStore = (
     updateProduct,
     deleteProduct,
     createBatch,
+    importInventory,
     listStockMovements,
   };
 };

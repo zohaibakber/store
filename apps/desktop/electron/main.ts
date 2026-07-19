@@ -3,6 +3,7 @@ import {
   CreateInvoiceInput,
   CreateProductInput,
   InvoiceExtraction,
+  ImportInventoryInput,
   InvoiceIdInput,
   ModelCatalogResponse,
   ProductIdInput,
@@ -132,6 +133,13 @@ function registerStoreIpc() {
   ipcMain.handle("store:batches:create", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(CreateBatchInput)(input).pipe(Effect.flatMap(program.createBatch)),
+    ),
+  );
+  ipcMain.handle("store:inventory:import", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(ImportInventoryInput)(input).pipe(
+        Effect.flatMap(program.importInventory),
+      ),
     ),
   );
   ipcMain.handle("store:stock-movements:list", (_event, input: unknown) =>

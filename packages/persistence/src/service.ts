@@ -4,6 +4,8 @@ import type {
   CreateBatchInput,
   CreateInvoiceInput,
   CreateProductInput,
+  ImportInventoryInput,
+  ImportInventoryResult,
   Invoice,
   Product,
   SearchProductsInput,
@@ -41,6 +43,9 @@ export class OfflineStore extends Context.Service<
     readonly updateProduct: (input: UpdateProductInput) => Effect.Effect<Product, StoreError>;
     readonly deleteProduct: (id: string) => Effect.Effect<void, StoreError>;
     readonly createBatch: (input: CreateBatchInput) => Effect.Effect<Batch, StoreError>;
+    readonly importInventory: (
+      input: ImportInventoryInput,
+    ) => Effect.Effect<ImportInventoryResult, StoreError>;
     readonly listStockMovements: (
       productId: string,
     ) => Effect.Effect<ReadonlyArray<StockMovement>, PersistenceError>;
@@ -86,6 +91,8 @@ export const program = {
   deleteProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.deleteProduct(id)),
   createBatch: (input: CreateBatchInput) =>
     Effect.flatMap(OfflineStore, (store) => store.createBatch(input)),
+  importInventory: (input: ImportInventoryInput) =>
+    Effect.flatMap(OfflineStore, (store) => store.importInventory(input)),
   listStockMovements: (productId: string) =>
     Effect.flatMap(OfflineStore, (store) => store.listStockMovements(productId)),
   listInvoices: Effect.flatMap(OfflineStore, (store) => store.listInvoices),
