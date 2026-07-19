@@ -1,28 +1,14 @@
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Category, Product } from "@store/contracts";
+import type { Category, GatewayModel, InvoiceExtractionLine, Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useOnline } from "@/hooks/use-online";
 
-type ExtractedLine = {
-  name: string;
-  batchNumber: string | null;
-  expiresAt: string | null;
-  packQuantity: number;
-  unitQuantity: number;
-  unitsPerPack: number;
-  packPrice: number | null;
-};
-type Extraction = {
-  supplier: string | null;
-  invoiceNumber: string | null;
-  lines: ExtractedLine[];
-};
+type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
   type: "create_product" | "add_inventory";
   productId?: string;
 };
-type GatewayModel = { id: string; name?: string; type?: string };
 type ModelGroup = { provider: string; label: string; items: GatewayModel[] };
 type UploadPhase = "idle" | "processing" | "ready" | "syncing";
 
@@ -136,7 +122,7 @@ function UploadProvider({
     let cancelled = false;
     const loadModels = async () => {
       if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
-      const payload = (await window.serverApi.getModels()) as { data?: GatewayModel[] };
+      const payload = await window.serverApi.getModels();
       const available = (payload.data ?? []).filter(
         (candidate) => candidate.type === "language" && candidate.id.includes("/"),
       );
@@ -147,7 +133,14 @@ function UploadProvider({
       .then((available) => {
         if (!cancelled) setModels(available);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not load live models from the server; using defaults.",
+        );
+      });
     return () => {
       cancelled = true;
     };
@@ -187,7 +180,7 @@ function UploadProvider({
     setPhase("processing");
     try {
       if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
-      const payload = (await window.serverApi.analyseInvoices({
+      const payload = await window.serverApi.analyseInvoices({
         model: modelId,
         files: await Promise.all(
           files.map(async (file) => ({
@@ -196,7 +189,7 @@ function UploadProvider({
             bytes: await file.arrayBuffer(),
           })),
         ),
-      })) as Extraction;
+      });
       setChanges(
         payload.lines.map((line) => {
           const product = products.find((candidate) => sameProduct(line, candidate));
@@ -295,7 +288,6 @@ export {
   useUpload,
   validTimestamp,
   type ExtractedLine,
-  type Extraction,
   type GatewayModel,
   type ModelGroup,
   type ProposedChange,

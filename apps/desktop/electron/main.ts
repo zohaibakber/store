@@ -2,7 +2,9 @@ import {
   CreateBatchInput,
   CreateInvoiceInput,
   CreateProductInput,
+  InvoiceExtraction,
   InvoiceIdInput,
+  ModelCatalogResponse,
   ProductIdInput,
   SearchProductsInput,
   type SyncResponse,
@@ -281,7 +283,16 @@ function registerAuthIpc() {
 }
 
 function registerServerIpc() {
-  ipcMain.handle("server:models", () => authBroker.apiRequest("/api/models"));
+  ipcMain.handle("server:models", async () => {
+    const raw = await authBroker.apiRequest("/api/models");
+    return await Effect.runPromise(
+      Schema.decodeUnknownEffect(ModelCatalogResponse)(raw).pipe(
+        Effect.mapError(
+          () => new Error("The model catalog response was not in the expected format."),
+        ),
+      ),
+    );
+  });
   ipcMain.handle(
     "server:uploads",
     async (
@@ -311,7 +322,14 @@ function registerServerIpc() {
         );
       }
       body.append("model", input.model);
-      return authBroker.apiRequest("/api/uploads", { method: "POST", body });
+      const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
+      return await Effect.runPromise(
+        Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
+          Effect.mapError(
+            () => new Error("The invoice analysis response was not in the expected format."),
+          ),
+        ),
+      );
     },
   );
 }

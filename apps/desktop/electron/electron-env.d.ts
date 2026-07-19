@@ -40,11 +40,11 @@ interface Window {
     onSessionChange: (callback: (snapshot: import("./auth").AuthSnapshot) => void) => () => void;
   };
   serverApi: {
-    getModels: () => Promise<unknown>;
+    getModels: () => Promise<import("@store/contracts").ModelCatalogResponse>;
     analyseInvoices: (input: {
       model: string;
       files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
-    }) => Promise<unknown>;
+    }) => Promise<import("@store/contracts").InvoiceExtraction>;
   };
   updater: {
     getVersion: () => Promise<string>;
