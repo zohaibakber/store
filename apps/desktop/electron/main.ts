@@ -17,7 +17,7 @@ import {
   SyncTransportError,
   layer as persistenceLayer,
 } from "@store/persistence";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, session } from "electron";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
@@ -71,14 +71,42 @@ let deviceId = "local";
 // Packaged apps ship no .env, so the API URL is baked in at build time via
 // `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
 // process.env reads stay as runtime overrides for local development.
-const authBroker = new AuthBroker(
+const API_BASE_URL =
   process.env["STORE_API_URL"] ??
-    process.env["VITE_API_URL"] ??
-    import.meta.env.VITE_API_URL ??
-    "http://localhost:8787",
+  process.env["VITE_API_URL"] ??
+  import.meta.env.VITE_API_URL ??
+  "http://localhost:8787";
+const authBroker = new AuthBroker(
+  API_BASE_URL,
   process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
 );
 authBroker.setupMain();
+
+const rendererCsp = [
+  "default-src 'self'",
+  // Vite injects the React Refresh preamble as an inline script in development.
+  `script-src 'self'${VITE_DEV_SERVER_URL ? " 'unsafe-inline'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: user-image:",
+  "font-src 'self' data:",
+  `connect-src 'self' ${new URL(API_BASE_URL).origin}${
+    VITE_DEV_SERVER_URL ? " ws: http://localhost:*" : ""
+  }`,
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+function registerRendererCsp() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [rendererCsp],
+      },
+    });
+  });
+}
 
 const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
   if (!runtime) return Promise.reject(new Error("The local store is not ready"));
@@ -435,6 +463,7 @@ app.on("before-quit", () => {
 });
 
 void app.whenReady().then(async () => {
+  registerRendererCsp();
   deviceId = await loadDeviceId();
   const snapshot = await authBroker.initialize();
   registerStoreIpc();

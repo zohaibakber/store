@@ -80,7 +80,7 @@ export class AuthBroker {
   }
 
   setupMain() {
-    this.#client.setupMain({ bridges: false, csp: true, scheme: false });
+    this.#client.setupMain({ bridges: false, csp: false, scheme: false });
   }
 
   onChange(listener: (snapshot: AuthSnapshot) => void) {
