@@ -4,6 +4,12 @@ import path from "node:path";
 import { asc } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-pglite";
 import * as Effect from "effect/Effect";
+import { OfflineStore } from "./service";
+
+type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
+
+export const store = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =>
+  Effect.flatMap(OfflineStore, f);
 
 export const migrationsFolder = path.resolve(import.meta.dirname, "../../db/migrations/local");
 export const remoteMigrationsFolder = path.resolve(

@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
-import { layer, program } from "./index";
-import { migrationsFolder, remoteMigrationsFolder } from "./test-support";
+import { layer } from "./index";
+import { migrationsFolder, remoteMigrationsFolder, store } from "./test-support";
 
 const readMigrations = async (folder: string) => {
   const entries = await readdir(folder, { withFileTypes: true });
@@ -51,19 +51,21 @@ test("migrations are idempotent and preserve existing products", async () => {
   try {
     const firstRuntime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
     const created = await firstRuntime.runPromise(
-      program.createProduct({
-        name: "Aspirin",
-        aisle: null,
-        composition: null,
-        strength: null,
-        packPrice: null,
-        unitPrice: null,
-      }),
+      store((store) =>
+        store.createProduct({
+          name: "Aspirin",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
     );
     await firstRuntime.dispose();
 
     const secondRuntime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-    expect(await secondRuntime.runPromise(program.listProducts)).toEqual([created]);
+    expect(await secondRuntime.runPromise(store((store) => store.listProducts))).toEqual([created]);
     await secondRuntime.dispose();
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -4,8 +4,8 @@ import path from "node:path";
 import type { ImportInventoryLine } from "@store/contracts";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
-import { layer, program } from "./index";
-import { migrationsFolder, readOutbox } from "./test-support";
+import { layer } from "./index";
+import { migrationsFolder, readOutbox, store } from "./test-support";
 
 const importLine = (name: string, productId: string | null = null): ImportInventoryLine => ({
   name,
@@ -25,16 +25,18 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
 
   try {
     const existing = await runtime.runPromise(
-      program.createProduct({
-        name: "Existing product",
-        categoryId: "general",
-        aisle: null,
-        composition: null,
-        strength: null,
-        unitsPerPack: 6,
-        packPrice: null,
-        unitPrice: null,
-      }),
+      store((store) =>
+        store.createProduct({
+          name: "Existing product",
+          categoryId: "general",
+          aisle: null,
+          composition: null,
+          strength: null,
+          unitsPerPack: 6,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
     );
     await runtime.dispose();
     const before = await readOutbox(dataDir);
@@ -42,21 +44,27 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
 
     await expect(
       runtime.runPromise(
-        program.importInventory({
-          categoryId: "general",
-          lines: [importLine("Aspirin"), importLine("Existing product", existing.id)],
-        }),
+        store((store) =>
+          store.importInventory({
+            categoryId: "general",
+            lines: [importLine("Aspirin"), importLine("Existing product", existing.id)],
+          }),
+        ),
       ),
     ).resolves.toEqual({ createdProducts: 1, createdBatches: 2 });
 
-    const storedProducts = await runtime.runPromise(program.listProducts);
+    const storedProducts = await runtime.runPromise(store((store) => store.listProducts));
     const aspirin = storedProducts.find((product) => product.name === "Aspirin");
     const reloadedExisting = storedProducts.find((product) => product.id === existing.id);
     expect(aspirin?.batches).toHaveLength(1);
     expect(reloadedExisting?.batches).toHaveLength(1);
     if (!aspirin) throw new Error("Imported product was not found");
-    expect(await runtime.runPromise(program.listStockMovements(aspirin.id))).toHaveLength(1);
-    expect(await runtime.runPromise(program.listStockMovements(existing.id))).toHaveLength(1);
+    expect(
+      await runtime.runPromise(store((store) => store.listStockMovements(aspirin.id))),
+    ).toHaveLength(1);
+    expect(
+      await runtime.runPromise(store((store) => store.listStockMovements(existing.id))),
+    ).toHaveLength(1);
 
     await runtime.dispose();
     const after = await readOutbox(dataDir);
@@ -81,14 +89,16 @@ test("duplicate names in one import share one created product", async () => {
 
   try {
     const result = await runtime.runPromise(
-      program.importInventory({
-        categoryId: "general",
-        lines: [importLine("Panadol"), importLine("  panadol  ")],
-      }),
+      store((store) =>
+        store.importInventory({
+          categoryId: "general",
+          lines: [importLine("Panadol"), importLine("  panadol  ")],
+        }),
+      ),
     );
 
     expect(result).toEqual({ createdProducts: 1, createdBatches: 2 });
-    const storedProducts = await runtime.runPromise(program.listProducts);
+    const storedProducts = await runtime.runPromise(store((store) => store.listProducts));
     expect(storedProducts).toHaveLength(1);
     expect(storedProducts[0]?.name).toBe("Panadol");
     expect(storedProducts[0]?.batches).toHaveLength(2);
@@ -106,20 +116,22 @@ test("an invalid line rolls back every row and outbox change", async () => {
   try {
     await expect(
       runtime.runPromise(
-        program.importInventory({
-          categoryId: "general",
-          lines: [
-            importLine("First product"),
-            { ...importLine("Invalid product"), packQuantity: -1 },
-          ],
-        }),
+        store((store) =>
+          store.importInventory({
+            categoryId: "general",
+            lines: [
+              importLine("First product"),
+              { ...importLine("Invalid product"), packQuantity: -1 },
+            ],
+          }),
+        ),
       ),
     ).rejects.toMatchObject({
       _tag: "PersistenceError",
       operation: "import inventory",
     });
 
-    expect(await runtime.runPromise(program.listProducts)).toEqual([]);
+    expect(await runtime.runPromise(store((store) => store.listProducts))).toEqual([]);
     await runtime.dispose();
     const outbox = await readOutbox(dataDir);
     expect(outbox).toHaveLength(1);
@@ -141,27 +153,31 @@ test("a repeated import reuses products by normalized name", async () => {
   const input = { categoryId: "general", lines: [importLine("Brufen")] };
 
   try {
-    await expect(runtime.runPromise(program.importInventory(input))).resolves.toEqual({
+    await expect(
+      runtime.runPromise(store((store) => store.importInventory(input))),
+    ).resolves.toEqual({
       createdProducts: 1,
       createdBatches: 1,
     });
     await expect(
       runtime.runPromise(
-        program.importInventory({
-          categoryId: "general",
-          lines: [importLine("  brufen  ")],
-        }),
+        store((store) =>
+          store.importInventory({
+            categoryId: "general",
+            lines: [importLine("  brufen  ")],
+          }),
+        ),
       ),
     ).resolves.toEqual({ createdProducts: 0, createdBatches: 1 });
 
-    const storedProducts = await runtime.runPromise(program.listProducts);
+    const storedProducts = await runtime.runPromise(store((store) => store.listProducts));
     expect(storedProducts).toHaveLength(1);
     expect(storedProducts[0]?.name).toBe("Brufen");
     expect(storedProducts[0]?.batches).toHaveLength(2);
     if (!storedProducts[0]) throw new Error("Imported product was not found");
-    expect(await runtime.runPromise(program.listStockMovements(storedProducts[0].id))).toHaveLength(
-      2,
-    );
+    expect(
+      await runtime.runPromise(store((store) => store.listStockMovements(storedProducts[0].id))),
+    ).toHaveLength(2);
     await runtime.dispose();
     expect(await readOutbox(dataDir)).toHaveLength(3);
   } finally {

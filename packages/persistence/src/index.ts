@@ -5,4 +5,4 @@ export {
   ProductNotFoundError,
   SyncTransportError,
 } from "./errors";
-export { OfflineStore, layer, program } from "./service";
+export { OfflineStore, layer } from "./service";

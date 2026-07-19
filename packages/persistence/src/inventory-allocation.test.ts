@@ -4,8 +4,8 @@ import path from "node:path";
 import { formatInvoiceNumber } from "@store/contracts";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
-import { layer, program } from "./index";
-import { migrationsFolder } from "./test-support";
+import { layer } from "./index";
+import { migrationsFolder, store } from "./test-support";
 
 test("selling draws stock from batches, earliest expiry first", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
@@ -15,48 +15,56 @@ test("selling draws stock from batches, earliest expiry first", async () => {
 
   try {
     const product = await runtime.runPromise(
-      program.createProduct({
-        name: "Panadol",
-        aisle: null,
-        composition: null,
-        strength: null,
-        packPrice: null,
-        unitPrice: 200,
-        unitsPerPack: 10,
-      }),
+      store((store) =>
+        store.createProduct({
+          name: "Panadol",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: 200,
+          unitsPerPack: 10,
+        }),
+      ),
     );
     const later = await runtime.runPromise(
-      program.createBatch({
-        productId: product.id,
-        batchNumber: "B-2027",
-        expiresAt: Date.parse("2027-06-01"),
-        packQuantity: 5,
-        unitQuantity: 0,
-      }),
+      store((store) =>
+        store.createBatch({
+          productId: product.id,
+          batchNumber: "B-2027",
+          expiresAt: Date.parse("2027-06-01"),
+          packQuantity: 5,
+          unitQuantity: 0,
+        }),
+      ),
     );
     const earlier = await runtime.runPromise(
-      program.createBatch({
-        productId: product.id,
-        batchNumber: "B-2026",
-        expiresAt: Date.parse("2026-12-01"),
-        packQuantity: 2,
-        unitQuantity: 0,
-      }),
+      store((store) =>
+        store.createBatch({
+          productId: product.id,
+          batchNumber: "B-2026",
+          expiresAt: Date.parse("2026-12-01"),
+          packQuantity: 2,
+          unitQuantity: 0,
+        }),
+      ),
     );
 
     const invoice = await runtime.runPromise(
-      program.createInvoice({
-        customerName: "Walk-in",
-        items: [
-          {
-            productId: product.id,
-            batchId: null,
-            quantity: 30,
-            quantityType: "unit",
-            salePrice: 200,
-          },
-        ],
-      }),
+      store((store) =>
+        store.createInvoice({
+          customerName: "Walk-in",
+          items: [
+            {
+              productId: product.id,
+              batchId: null,
+              quantity: 30,
+              quantityType: "unit",
+              salePrice: 200,
+            },
+          ],
+        }),
+      ),
     );
     expect(invoice.invoiceNumber).toBe(1);
     expect(formatInvoiceNumber(invoice.invoiceNumber)).toBe("0001");
@@ -73,7 +81,7 @@ test("selling draws stock from batches, earliest expiry first", async () => {
     });
     expect(invoice.items[1]).toMatchObject({ batchId: later.id, quantity: 10 });
 
-    const reloaded = await runtime.runPromise(program.getProduct(product.id));
+    const reloaded = await runtime.runPromise(store((store) => store.getProduct(product.id)));
     expect(reloaded.batches.map((batch) => batch.packQuantity)).toContain(0);
     expect(
       reloaded.batches.reduce(
@@ -85,21 +93,23 @@ test("selling draws stock from batches, earliest expiry first", async () => {
     // Selling more than the remaining stock fails and changes nothing.
     await expect(
       runtime.runPromise(
-        program.createInvoice({
-          customerName: null,
-          items: [
-            {
-              productId: product.id,
-              batchId: null,
-              quantity: 41,
-              quantityType: "unit",
-              salePrice: 200,
-            },
-          ],
-        }),
+        store((store) =>
+          store.createInvoice({
+            customerName: null,
+            items: [
+              {
+                productId: product.id,
+                batchId: null,
+                quantity: 41,
+                quantityType: "unit",
+                salePrice: 200,
+              },
+            ],
+          }),
+        ),
       ),
     ).rejects.toThrow(/Not enough stock/);
-    const untouched = await runtime.runPromise(program.getProduct(product.id));
+    const untouched = await runtime.runPromise(store((store) => store.getProduct(product.id)));
     expect(
       untouched.batches.reduce(
         (sum, batch) => sum + batch.packQuantity * 10 + batch.unitQuantity,
@@ -109,18 +119,20 @@ test("selling draws stock from batches, earliest expiry first", async () => {
 
     // Selling from an explicitly chosen batch only touches that batch.
     const fromBatch = await runtime.runPromise(
-      program.createInvoice({
-        customerName: null,
-        items: [
-          {
-            productId: product.id,
-            batchId: later.id,
-            quantity: 5,
-            quantityType: "unit",
-            salePrice: 150,
-          },
-        ],
-      }),
+      store((store) =>
+        store.createInvoice({
+          customerName: null,
+          items: [
+            {
+              productId: product.id,
+              batchId: later.id,
+              quantity: 5,
+              quantityType: "unit",
+              salePrice: 150,
+            },
+          ],
+        }),
+      ),
     );
     expect(fromBatch.invoiceNumber).toBe(2);
     expect(fromBatch.items).toEqual([
@@ -132,17 +144,21 @@ test("selling draws stock from batches, earliest expiry first", async () => {
       }),
     ]);
 
-    const movements = await runtime.runPromise(program.listStockMovements(product.id));
+    const movements = await runtime.runPromise(
+      store((store) => store.listStockMovements(product.id)),
+    );
     expect(movements.some((movement) => movement.type === "stock_in")).toBe(true);
     expect(movements.some((movement) => movement.type === "open_pack")).toBe(true);
     expect(movements.some((movement) => movement.type === "sale")).toBe(true);
 
-    const invoicesList = await runtime.runPromise(program.listInvoices);
+    const invoicesList = await runtime.runPromise(store((store) => store.listInvoices));
     expect(invoicesList.map((row) => row.invoiceNumber)).toEqual([
       fromBatch.invoiceNumber,
       invoice.invoiceNumber,
     ]);
-    expect(await runtime.runPromise(program.getInvoice(invoice.id))).toEqual(invoice);
+    expect(await runtime.runPromise(store((store) => store.getInvoice(invoice.id)))).toEqual(
+      invoice,
+    );
     expect(formatInvoiceNumber(9999)).toBe("9999");
     expect(formatInvoiceNumber(10000)).toBe("10000");
   } finally {

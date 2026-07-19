@@ -16,7 +16,6 @@ import {
   PersistenceError,
   SyncTransportError,
   layer as persistenceLayer,
-  program,
 } from "@store/persistence";
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as Effect from "effect/Effect";
@@ -92,80 +91,88 @@ const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
   });
 };
 
+type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
+const withStore = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =>
+  Effect.flatMap(OfflineStore, f);
+
 function registerStoreIpc() {
-  ipcMain.handle("store:categories:list", () => runStore(program.listCategories));
-  ipcMain.handle("store:products:list", () => runStore(program.listProducts));
+  ipcMain.handle("store:categories:list", () =>
+    runStore(withStore((store) => store.listCategories)),
+  );
+  ipcMain.handle("store:products:list", () => runStore(withStore((store) => store.listProducts)));
   ipcMain.handle("store:products:search", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(SearchProductsInput)(input).pipe(
-        Effect.flatMap(program.searchProducts),
+        Effect.flatMap((input) => withStore((store) => store.searchProducts(input))),
       ),
     ),
   );
   ipcMain.handle("store:products:get", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => program.getProduct(id)),
+        Effect.flatMap(({ id }) => withStore((store) => store.getProduct(id))),
       ),
     ),
   );
   ipcMain.handle("store:products:create", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(CreateProductInput)(input).pipe(
-        Effect.flatMap(program.createProduct),
+        Effect.flatMap((input) => withStore((store) => store.createProduct(input))),
       ),
     ),
   );
   ipcMain.handle("store:products:update", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(UpdateProductInput)(input).pipe(
-        Effect.flatMap(program.updateProduct),
+        Effect.flatMap((input) => withStore((store) => store.updateProduct(input))),
       ),
     ),
   );
   ipcMain.handle("store:products:delete", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => program.deleteProduct(id)),
+        Effect.flatMap(({ id }) => withStore((store) => store.deleteProduct(id))),
       ),
     ),
   );
   ipcMain.handle("store:batches:create", (_event, input: unknown) =>
     runStore(
-      Schema.decodeUnknownEffect(CreateBatchInput)(input).pipe(Effect.flatMap(program.createBatch)),
+      Schema.decodeUnknownEffect(CreateBatchInput)(input).pipe(
+        Effect.flatMap((input) => withStore((store) => store.createBatch(input))),
+      ),
     ),
   );
   ipcMain.handle("store:inventory:import", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(ImportInventoryInput)(input).pipe(
-        Effect.flatMap(program.importInventory),
+        Effect.flatMap((input) => withStore((store) => store.importInventory(input))),
       ),
     ),
   );
   ipcMain.handle("store:stock-movements:list", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => program.listStockMovements(id)),
+        Effect.flatMap(({ id }) => withStore((store) => store.listStockMovements(id))),
       ),
     ),
   );
-  ipcMain.handle("store:invoices:list", () => runStore(program.listInvoices));
+  ipcMain.handle("store:invoices:list", () => runStore(withStore((store) => store.listInvoices)));
   ipcMain.handle("store:invoices:get", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(InvoiceIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => program.getInvoice(id)),
+        Effect.flatMap(({ id }) => withStore((store) => store.getInvoice(id))),
       ),
     ),
   );
   ipcMain.handle("store:invoices:create", (_event, input: unknown) =>
     runStore(
       Schema.decodeUnknownEffect(CreateInvoiceInput)(input).pipe(
-        Effect.flatMap(program.createInvoice),
+        Effect.flatMap((input) => withStore((store) => store.createInvoice(input))),
       ),
     ),
   );
-  ipcMain.handle("store:sync:status", () => runStore(program.getSyncStatus));
-  ipcMain.handle("store:sync:run", () => runStore(program.sync));
+  ipcMain.handle("store:sync:status", () => runStore(withStore((store) => store.getSyncStatus)));
+  ipcMain.handle("store:sync:run", () => runStore(withStore((store) => store.sync)));
 }
 
 const organizationKey = (organizationId: string) =>

@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
-import { layer, program } from "./index";
-import { migrationsFolder } from "./test-support";
+import { layer } from "./index";
+import { migrationsFolder, store } from "./test-support";
 
 const seed = [
   { name: "Panadol", composition: "Paracetamol 500mg" },
@@ -21,15 +21,17 @@ const withStore = async (run: (runtime: ReturnType<typeof makeRuntime>) => Promi
   try {
     for (const item of seed) {
       await runtime.runPromise(
-        program.createProduct({
-          name: item.name,
-          categoryId: "medicine",
-          aisle: null,
-          composition: item.composition,
-          strength: null,
-          packPrice: 1000,
-          unitPrice: 100,
-        }),
+        store((store) =>
+          store.createProduct({
+            name: item.name,
+            categoryId: "medicine",
+            aisle: null,
+            composition: item.composition,
+            strength: null,
+            packPrice: 1000,
+            unitPrice: 100,
+          }),
+        ),
       );
     }
     await run(runtime);
@@ -43,7 +45,9 @@ const makeRuntime = (directory: string) =>
   ManagedRuntime.make(layer({ dataDir: path.join(directory, "pglite"), migrationsFolder }));
 
 const names = async (runtime: ReturnType<typeof makeRuntime>, query: string) =>
-  (await runtime.runPromise(program.searchProducts({ query }))).map((product) => product.name);
+  (await runtime.runPromise(store((store) => store.searchProducts({ query })))).map(
+    (product) => product.name,
+  );
 
 test("phonetic misspelling 'pendal' finds Panadol (trigram alone would miss it)", async () => {
   await withStore(async (runtime) => {

@@ -78,31 +78,6 @@ const make = (config: PersistenceConfig) =>
 export const layer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(Layer.provide(clientLayer(config)));
 
-export const program = {
-  listCategories: Effect.flatMap(OfflineStore, (store) => store.listCategories),
-  listProducts: Effect.flatMap(OfflineStore, (store) => store.listProducts),
-  searchProducts: (input: SearchProductsInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.searchProducts(input)),
-  getProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.getProduct(id)),
-  createProduct: (input: CreateProductInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.createProduct(input)),
-  updateProduct: (input: UpdateProductInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.updateProduct(input)),
-  deleteProduct: (id: string) => Effect.flatMap(OfflineStore, (store) => store.deleteProduct(id)),
-  createBatch: (input: CreateBatchInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.createBatch(input)),
-  importInventory: (input: ImportInventoryInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.importInventory(input)),
-  listStockMovements: (productId: string) =>
-    Effect.flatMap(OfflineStore, (store) => store.listStockMovements(productId)),
-  listInvoices: Effect.flatMap(OfflineStore, (store) => store.listInvoices),
-  getInvoice: (id: string) => Effect.flatMap(OfflineStore, (store) => store.getInvoice(id)),
-  createInvoice: (input: CreateInvoiceInput) =>
-    Effect.flatMap(OfflineStore, (store) => store.createInvoice(input)),
-  getSyncStatus: Effect.flatMap(OfflineStore, (store) => store.getSyncStatus),
-  sync: Effect.flatMap(OfflineStore, (store) => store.sync),
-};
-
 // Keep the error classes referenced by the public service shape available to
 // generated declaration tools even when consumers import only this module.
 export type PublicStoreErrors = PersistenceError | ProductNotFoundError | InvoiceNotFoundError;
