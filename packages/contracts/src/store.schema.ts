@@ -84,6 +84,31 @@ export const UpdateProductInput = Schema.Struct({
 });
 export type UpdateProductInput = typeof UpdateProductInput.Type;
 
+// One import line carries the fields a new product needs alongside the fields
+// a new batch needs. `productId` is null when the line should be matched (or
+// created) by product name rather than targeting a known product.
+const { productId: _batchLineProductId, ...batchLineFields } = createBatchFields;
+export const ImportInventoryLine = Schema.Struct({
+  productId: Schema.NullOr(Schema.String),
+  name: createProductFields.name,
+  unitsPerPack: createProductFields.unitsPerPack,
+  packPrice: createProductFields.packPrice,
+  ...batchLineFields,
+});
+export type ImportInventoryLine = typeof ImportInventoryLine.Type;
+
+export const ImportInventoryInput = Schema.Struct({
+  categoryId: Schema.String,
+  lines: Schema.Array(ImportInventoryLine),
+});
+export type ImportInventoryInput = typeof ImportInventoryInput.Type;
+
+export const ImportInventoryResult = Schema.Struct({
+  createdProducts: Schema.Number,
+  createdBatches: Schema.Number,
+});
+export type ImportInventoryResult = typeof ImportInventoryResult.Type;
+
 export const ProductIdInput = Schema.Struct({ id: Schema.String });
 export type ProductIdInput = typeof ProductIdInput.Type;
 
