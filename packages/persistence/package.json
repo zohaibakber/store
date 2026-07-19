@@ -8,7 +8,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/persistence/src"
   },
   "dependencies": {
     "@effect/sql-pglite": "4.0.0-beta.98",
