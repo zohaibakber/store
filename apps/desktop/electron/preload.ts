@@ -71,22 +71,35 @@ contextBridge.exposeInMainWorld("updater", {
   },
 });
 
+type StoreIpcResult<A> =
+  | { readonly ok: true; readonly value: A }
+  | {
+      readonly ok: false;
+      readonly error: unknown;
+    };
+
+const invokeStore = async <A>(channel: string, input?: unknown): Promise<A> => {
+  const result: StoreIpcResult<A> = await ipcRenderer.invoke(channel, input);
+  if (result.ok) return result.value;
+  throw result.error;
+};
+
 const offlineStore: OfflineStoreApi = {
-  listCategories: () => ipcRenderer.invoke("store:categories:list"),
-  listProducts: () => ipcRenderer.invoke("store:products:list"),
-  searchProducts: (input) => ipcRenderer.invoke("store:products:search", input),
-  getProduct: (input) => ipcRenderer.invoke("store:products:get", input),
-  createProduct: (input) => ipcRenderer.invoke("store:products:create", input),
-  updateProduct: (input) => ipcRenderer.invoke("store:products:update", input),
-  deleteProduct: (input) => ipcRenderer.invoke("store:products:delete", input),
-  createBatch: (input) => ipcRenderer.invoke("store:batches:create", input),
-  importInventory: (input) => ipcRenderer.invoke("store:inventory:import", input),
-  listStockMovements: (input) => ipcRenderer.invoke("store:stock-movements:list", input),
-  listInvoices: () => ipcRenderer.invoke("store:invoices:list"),
-  getInvoice: (input) => ipcRenderer.invoke("store:invoices:get", input),
-  createInvoice: (input) => ipcRenderer.invoke("store:invoices:create", input),
-  getSyncStatus: () => ipcRenderer.invoke("store:sync:status"),
-  sync: () => ipcRenderer.invoke("store:sync:run"),
+  listCategories: () => invokeStore("store:categories:list"),
+  listProducts: () => invokeStore("store:products:list"),
+  searchProducts: (input) => invokeStore("store:products:search", input),
+  getProduct: (input) => invokeStore("store:products:get", input),
+  createProduct: (input) => invokeStore("store:products:create", input),
+  updateProduct: (input) => invokeStore("store:products:update", input),
+  deleteProduct: (input) => invokeStore("store:products:delete", input),
+  createBatch: (input) => invokeStore("store:batches:create", input),
+  importInventory: (input) => invokeStore("store:inventory:import", input),
+  listStockMovements: (input) => invokeStore("store:stock-movements:list", input),
+  listInvoices: () => invokeStore("store:invoices:list"),
+  getInvoice: (input) => invokeStore("store:invoices:get", input),
+  createInvoice: (input) => invokeStore("store:invoices:create", input),
+  getSyncStatus: () => invokeStore("store:sync:status"),
+  sync: () => invokeStore("store:sync:run"),
 };
 
 contextBridge.exposeInMainWorld("offlineStore", offlineStore);

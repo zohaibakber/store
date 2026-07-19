@@ -2,6 +2,7 @@ import {
   CreateBatchInput,
   CreateInvoiceInput,
   CreateProductInput,
+  encodeStoreError,
   InvoiceExtraction,
   ImportInventoryInput,
   InvoiceIdInput,
@@ -108,15 +109,46 @@ function registerRendererCsp() {
   });
 }
 
-const runStore = <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => {
-  if (!runtime) return Promise.reject(new Error("The local store is not ready"));
-  return runtime.runPromise(effect).catch((cause: unknown) => {
-    const message =
-      typeof cause === "object" && cause !== null && "message" in cause
-        ? String(cause.message)
-        : String(cause);
-    throw new Error(message);
-  });
+type StoreIpcResult<A> =
+  | { readonly ok: true; readonly value: A }
+  | {
+      readonly ok: false;
+      readonly error: unknown;
+    };
+
+const errorMessage = (cause: unknown) =>
+  typeof cause === "object" && cause !== null && "message" in cause
+    ? String(cause.message)
+    : String(cause);
+
+const encodeStoreErrorSafely = (cause: unknown) => {
+  try {
+    return encodeStoreError(cause);
+  } catch {
+    return encodeStoreError(
+      PersistenceError.make({ operation: "run store", message: errorMessage(cause) }),
+    );
+  }
+};
+
+const runStore = async <A, E>(
+  effect: Effect.Effect<A, E, OfflineStore>,
+): Promise<StoreIpcResult<A>> => {
+  if (!runtime)
+    return {
+      ok: false,
+      error: encodeStoreError(
+        PersistenceError.make({
+          operation: "run store",
+          message: "The local store is not ready",
+        }),
+      ),
+    };
+  try {
+    return { ok: true, value: await runtime.runPromise(effect) };
+  } catch (cause) {
+    return { ok: false, error: encodeStoreErrorSafely(cause) };
+  }
 };
 
 type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
