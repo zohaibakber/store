@@ -15,13 +15,13 @@
   directories: {
     output: "release/${version}",
   },
-  // Releases live in a separate public repo so installed apps can fetch
-  // updates anonymously while the source repo stays private.
+  // The source repo is public, so releases and auto-update checks are
+  // published directly here rather than to a separate releases-only repo.
   publish: [
     {
       provider: "github",
       owner: "zohaibakber",
-      repo: "store-electron-releases",
+      repo: "store",
       releaseType: "release",
     },
   ],

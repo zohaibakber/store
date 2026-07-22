@@ -41,8 +41,8 @@ jobs:
         working-directory: apps/desktop
         run: bun run release
         env:
-          # Publishes to the public store-electron-releases repo, which the
-          # default GITHUB_TOKEN cannot write to.
-          GH_TOKEN: ${{ secrets.GH_RELEASES_TOKEN }}
+          # Publishes to this repo directly now that it's public; the default
+          # GITHUB_TOKEN has contents:write (see workflow permissions above).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           ELECTRON_PROTOCOL: ${{ secrets.ELECTRON_PROTOCOL }}
