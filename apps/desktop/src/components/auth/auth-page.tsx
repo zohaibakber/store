@@ -1,7 +1,4 @@
 import * as React from "react";
-import { Voronoi } from "@paper-design/shaders-react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { MedicineBottle01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -9,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
+import { AuthBrand } from "@/components/auth/auth-brand";
+import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
+import { AuthPasswordInput } from "@/components/auth/auth-password-input";
 
 function formValue(form: FormData, key: string) {
   const value = form.get(key);
@@ -19,6 +19,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(bridgeError ?? null);
+  const [password, setPassword] = React.useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,23 +49,17 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   function toggleMode() {
     setMode(mode === "sign-in" ? "sign-up" : "sign-in");
     setError(null);
+    setPassword("");
   }
 
   return (
-    <div className="relative grid min-h-svh lg:grid-cols-2">
+    <div className="relative flex min-h-svh flex-col">
       <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center px-2 [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag]">
         <WindowControls />
       </header>
-      <div className="flex flex-col gap-4 p-6 md:p-10">
-        <div className="flex justify-center gap-2 md:justify-start">
-          <span className="flex items-center gap-2 font-medium">
-            <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <HugeiconsIcon icon={MedicineBottle01Icon} className="size-4" />
-            </div>
-            ZENO
-          </span>
-        </div>
-        <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 md:p-10">
+        <AuthBrand />
+        <div className="flex w-full justify-center">
           <div className="w-full max-w-xs">
             <form id="auth-form" onSubmit={submit}>
               <FieldGroup>
@@ -72,11 +67,6 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                   <h1 className="text-2xl font-bold">
                     {mode === "sign-in" ? "Welcome back" : "Set up your store"}
                   </h1>
-                  <p className="text-sm text-balance text-muted-foreground">
-                    {mode === "sign-in"
-                      ? "Sign in to open your organization and sync shared data."
-                      : "Create your account, then set up your organization."}
-                  </p>
                 </div>
                 {mode === "sign-up" && (
                   <Field>
@@ -98,14 +88,15 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                 </Field>
                 <Field data-invalid={Boolean(error)}>
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
+                  <AuthPasswordInput
                     id="password"
                     name="password"
-                    type="password"
                     autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
                     minLength={8}
                     required
                     aria-invalid={Boolean(error)}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
                   />
                   {error && <FieldError>{error}</FieldError>}
                 </Field>
@@ -115,29 +106,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                     {mode === "sign-in" ? "Sign in" : "Create account"}
                   </Button>
                   <FieldDescription className="text-center">
-                    {mode === "sign-in" ? (
-                      <>
-                        Don&apos;t have an account?{" "}
-                        <button
-                          type="button"
-                          className="underline underline-offset-4"
-                          onClick={toggleMode}
-                        >
-                          Sign up
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        Already have an account?{" "}
-                        <button
-                          type="button"
-                          className="underline underline-offset-4"
-                          onClick={toggleMode}
-                        >
-                          Sign in
-                        </button>
-                      </>
-                    )}
+                    <AuthModeToggle mode={mode} onToggle={toggleMode} />
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -150,20 +119,6 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
             )}
           </div>
         </div>
-      </div>
-      <div className="relative hidden overflow-hidden lg:flex lg:items-center lg:justify-center">
-        <Voronoi
-          className="absolute inset-0 h-full w-full"
-          colors={["#ffffff"]}
-          colorGlow="#ffffff"
-          colorGap="#000000"
-          stepsPerColor={1}
-          distortion={0.5}
-          gap={0.03}
-          glow={0.8}
-          speed={0.5}
-          scale={0.5}
-        />
       </div>
     </div>
   );

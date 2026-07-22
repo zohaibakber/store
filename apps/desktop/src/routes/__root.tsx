@@ -5,7 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthPage } from "@/components/auth-page";
+import { AuthPage } from "@/components/auth/auth-page";
 import { CreateOrganizationPage } from "@/components/create-organization-page";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { CommandMenuProvider } from "@/components/command-menu";

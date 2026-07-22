@@ -417,6 +417,8 @@ function createWindow() {
   win = new BrowserWindow({
     icon: appIconPath(),
     frame: false,
+    show: false,
+    backgroundColor: "#0a0a0a",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
@@ -424,6 +426,8 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  win.once("ready-to-show", () => win?.show());
 
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {

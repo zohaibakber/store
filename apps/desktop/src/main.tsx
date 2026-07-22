@@ -31,6 +31,11 @@ async function start() {
       </ThemeProvider>
     </React.StrictMode>,
   );
+  const loader = document.getElementById("app-loading");
+  requestAnimationFrame(() => {
+    loader?.classList.add("app-loading-hidden");
+    loader?.addEventListener("transitionend", () => loader.remove(), { once: true });
+  });
 }
 
 void start();
