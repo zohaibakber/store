@@ -25,7 +25,7 @@ fi
 mkdir -p "${INSTALL_DIR}" "${BIN_DIR}" "${DESKTOP_DIR}"
 
 echo "Downloading ${asset_url}"
-curl -fsSL "${asset_url}" -o "${INSTALL_DIR}/${APP_NAME}.AppImage"
+curl -fL --progress-bar "${asset_url}" -o "${INSTALL_DIR}/${APP_NAME}.AppImage"
 chmod +x "${INSTALL_DIR}/${APP_NAME}.AppImage"
 
 ln -sf "${INSTALL_DIR}/${APP_NAME}.AppImage" "${BIN_DIR}/tabaaq"
