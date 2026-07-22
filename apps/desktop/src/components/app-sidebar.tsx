@@ -35,7 +35,7 @@ const data = {
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar variant="inset" collapsible="offcanvas" {...props}>
+    <Sidebar {...props}>
       <SidebarHeader>
         <TeamSwitcher />
         <SearchForm />

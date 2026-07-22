@@ -26,6 +26,7 @@
     },
   ],
   files: ["dist", "dist-electron"],
+  icon: "public/logo.png",
   extraResources: [
     {
       from: "../../packages/db/migrations/local",

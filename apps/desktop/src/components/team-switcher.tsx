@@ -41,9 +41,7 @@ export function TeamSwitcher() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger render={<SidebarMenuButton className="w-fit px-1.5" />}>
-            <div className="flex aspect-square size-5 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-              <HugeiconsIcon icon={MedicineBottle01Icon} className="size-3" />
-            </div>
+            <img src="/logo.svg" alt="Tabaaq" className="size-5 shrink-0 rounded-[5px]" />
             <span className="truncate font-medium">{activeOrganization.name}</span>
             <HugeiconsIcon icon={ArrowDown01Icon} className="opacity-50" />
           </DropdownMenuTrigger>

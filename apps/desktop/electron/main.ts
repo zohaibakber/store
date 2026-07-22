@@ -69,6 +69,10 @@ let win: BrowserWindow | null;
 let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 let activeOrganizationId: string | null = null;
 let deviceId = "local";
+
+function appIconPath() {
+  return path.join(process.env.VITE_PUBLIC, "logo.png");
+}
 // Packaged apps ship no .env, so the API URL is baked in at build time via
 // `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
 // process.env reads stay as runtime overrides for local development.
@@ -411,7 +415,7 @@ function registerServerIpc() {
 
 function createWindow() {
   win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+    icon: appIconPath(),
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
