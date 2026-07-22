@@ -21,7 +21,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const [error, setError] = React.useState<string | null>(bridgeError ?? null);
   const [password, setPassword] = React.useState("");
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setPending(true);
