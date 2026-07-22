@@ -19,7 +19,7 @@ export class SyncService extends Context.Service<
       request: SyncRequest,
     ) => Effect.Effect<SyncResponse, SyncDatabaseError | SyncProtocolError>;
   }
->()("@store/api/SyncService") {}
+>()("@store/server/SyncService") {}
 
 const invalid = (code: string, message: string) => protocolError(code, message);
 

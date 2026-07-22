@@ -40,7 +40,7 @@ vp install
 vp run dev
 ```
 
-The Worker setup and deployment commands are documented in `apps/api/README.md`. Apply the unified
+The Worker setup and deployment commands are documented in `apps/server/README.md`. Apply the unified
 `packages/db` migration to remote PostgreSQL before starting the API; runtime requests use the
 configured Hyperdrive binding rather than a development database URL.
 An authenticated user can continue using a previously opened organization offline; a first sign-in

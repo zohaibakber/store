@@ -1,5 +1,5 @@
 {
-  "name": "@store/api",
+  "name": "@store/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "typegen": "wrangler types --env-interface CloudflareBindings --env-file .wrangler-types.env",
     "check": "wrangler types --env-interface CloudflareBindings --env-file .wrangler-types.env --check && tsc --noEmit",
-    "test": "vitest run --root ../.. apps/api/src",
+    "test": "vitest run --root ../.. apps/server/src",
     "build": "wrangler deploy --dry-run --outdir dist"
   },
   "dependencies": {

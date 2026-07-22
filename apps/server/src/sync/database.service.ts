@@ -12,4 +12,4 @@ export class SyncDatabase extends Context.Service<
       request: SyncRequest,
     ) => Effect.Effect<SyncResponse, SyncDatabaseError | SyncProtocolError>;
   }
->()("@store/api/SyncDatabase") {}
+>()("@store/server/SyncDatabase") {}

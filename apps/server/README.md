@@ -24,7 +24,7 @@ later without adding Vercel-specific code to the sync API.
 which is required by the PostgreSQL drivers. Set the auth secret once for the Worker:
 
 ```sh
-cd apps/api
+cd apps/server
 vp run typegen
 wrangler secret put BETTER_AUTH_SECRET
 ```
