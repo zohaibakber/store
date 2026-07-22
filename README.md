@@ -49,3 +49,13 @@ and organization creation require the API.
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
 `vp run build`. The Electron build keeps PGlite external so its PostgreSQL WASM and data assets are
 packaged intact.
+
+## Install
+
+Download the latest desktop build from [Releases](https://github.com/zohaibakber/store/releases/latest).
+
+Linux users can install the latest AppImage with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zohaibakber/store/main/scripts/install-linux.sh | bash
+```
