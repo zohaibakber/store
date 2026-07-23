@@ -1,4 +1,5 @@
-import { formatInvoiceNumber, type Invoice } from "@store/contracts";
+import type { Invoice } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   columnFilteringFeature,

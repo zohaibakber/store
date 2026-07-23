@@ -1,4 +1,5 @@
-import { formatInvoiceNumber, type Invoice } from "@store/contracts";
+import type { Invoice } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link } from "@tanstack/react-router";
 import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";

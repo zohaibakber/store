@@ -53,15 +53,6 @@ export const Product = Schema.Struct({
 });
 export type Product = typeof Product.Type;
 
-export const productPackStock = (product: Pick<Product, "batches">) =>
-  product.batches.reduce((sum, batch) => sum + batch.packQuantity, 0);
-
-export const productLooseUnitStock = (product: Pick<Product, "batches">) =>
-  product.batches.reduce((sum, batch) => sum + batch.unitQuantity, 0);
-
-export const productStock = (product: Pick<Product, "batches" | "unitsPerPack">) =>
-  productPackStock(product) * product.unitsPerPack + productLooseUnitStock(product);
-
 const {
   id: _productId,
   createdAt: _productCreatedAt,
@@ -128,9 +119,6 @@ export type InvoiceItem = typeof InvoiceItem.Type;
 const { deletedAt: _invoiceDeletedAt, ...invoiceFields } = invoiceRow.fields;
 export const Invoice = Schema.Struct({ ...invoiceFields, items: Schema.Array(InvoiceItem) });
 export type Invoice = typeof Invoice.Type;
-
-export const formatInvoiceNumber = (invoiceNumber: number) =>
-  invoiceNumber.toString().padStart(4, "0");
 
 // A sale line names the product and quantity; the batch is optional — when it
 // is omitted the store draws stock from open batches, earliest expiry first.

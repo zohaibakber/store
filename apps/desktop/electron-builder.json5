@@ -5,6 +5,9 @@
   executableName: "store-electron",
   asar: true,
   asarUnpack: ["**/*.node", "**/*.wasm", "**/*.data"],
+  // Fail before signing or publishing if monorepo/server sources, credentials,
+  // or database schema code cross into the packaged desktop boundaries.
+  afterPack: "./scripts/verify-after-pack.cjs",
   productName: "Tabaaq",
   protocols: [
     {
@@ -32,6 +35,13 @@
       from: "../../packages/db/migrations/local",
       to: "database-migrations",
     },
+    {
+      // BrowserWindow's `icon` option loads through nativeImage, which reads
+      // the real filesystem and can't see into app.asar — so the icon must
+      // live outside the archive to show up at runtime in production.
+      from: "public/logo.png",
+      to: "logo.png",
+    },
   ],
   mac: {
     target: ["dmg"],
@@ -57,5 +67,18 @@
     artifactName: "${productName}-Linux-${version}.${ext}",
     category: "Office",
     maintainer: "Zohaib Akber <zohaibakber99@gmail.com>",
+    // electron-builder's icon converter copies a single source PNG as-is
+    // instead of generating the standard hicolor size ladder, so the
+    // launcher/app-search icon fails to resolve even though it's present.
+    // A pre-sized icon set directory forces it to ship all standard sizes.
+    icon: "build/icons",
+    // package.json's "name" is the scoped npm name "@store/desktop", which is
+    // invalid as a WM_CLASS/app_id. syncDesktopName (paired with
+    // package.json's "desktopName") makes the installed .desktop filename
+    // match StartupWMClass and Electron's app_id, so desktop environments can
+    // link the running window back to the installed .desktop entry —
+    // otherwise launcher/search icons don't resolve even though the window's
+    // own icon (taskbar) shows fine.
+    syncDesktopName: true,
   },
 }

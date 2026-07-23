@@ -24,19 +24,29 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  // The periodic background check (below) can otherwise re-emit `available`
+  // while a download is already running or finished, which would resurface
+  // the "Download" action in the renderer mid-download.
+  let downloadState: "idle" | "downloading" | "downloaded" = "idle";
+
   autoUpdater.on("checking-for-update", () => send({ type: "checking" }));
   autoUpdater.on("update-available", (info) => send({ type: "available", version: info.version }));
   autoUpdater.on("update-not-available", () => send({ type: "not-available" }));
-  autoUpdater.on("download-progress", (progress) =>
-    send({ type: "progress", percent: progress.percent }),
-  );
-  autoUpdater.on("update-downloaded", (info) =>
-    send({ type: "downloaded", version: info.version }),
-  );
-  autoUpdater.on("error", (error) => send({ type: "error", message: error.message }));
+  autoUpdater.on("download-progress", (progress) => {
+    downloadState = "downloading";
+    send({ type: "progress", percent: progress.percent });
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    downloadState = "downloaded";
+    send({ type: "downloaded", version: info.version });
+  });
+  autoUpdater.on("error", (error) => {
+    downloadState = "idle";
+    send({ type: "error", message: error.message });
+  });
 
   const check = () => {
-    if (!app.isPackaged) return;
+    if (!app.isPackaged || downloadState !== "idle") return;
     // Failures also surface through the `error` event above.
     autoUpdater.checkForUpdates().catch(() => {});
   };
@@ -44,6 +54,8 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   ipcMain.handle("updater:version", () => app.getVersion());
   ipcMain.handle("updater:check", () => check());
   ipcMain.handle("updater:download", async () => {
+    if (downloadState !== "idle") return;
+    downloadState = "downloading";
     await autoUpdater.downloadUpdate();
   });
   ipcMain.on("updater:install", () => autoUpdater.quitAndInstall());

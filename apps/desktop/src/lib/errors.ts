@@ -1,4 +1,7 @@
-import { decodeStoreError as decodeStoreErrorContract, type StoreError } from "@store/contracts";
+import {
+  decodeStoreError as decodeStoreErrorContract,
+  type StoreError,
+} from "@store/contracts/store-errors";
 
 export const decodeStoreError = (error: unknown): StoreError | null => {
   try {

@@ -1,5 +1,6 @@
 import { createContext, use, useState, type ReactNode } from "react";
-import { formatInvoiceNumber, type Product } from "@store/contracts";
+import type { Product } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { decodeStoreError, storeErrorMessage } from "@/lib/errors";

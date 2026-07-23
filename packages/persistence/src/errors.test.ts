@@ -1,4 +1,4 @@
-import { decodeStoreError, encodeStoreError } from "@store/contracts";
+import { decodeStoreError, encodeStoreError } from "@store/contracts/store-errors";
 import { expect, test } from "vitest";
 import {
   InvoiceNotFoundError,

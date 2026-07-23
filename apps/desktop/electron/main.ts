@@ -70,7 +70,13 @@ let activeOrganizationId: string | null = null;
 let deviceId = "local";
 
 function appIconPath() {
-  return path.join(process.env.VITE_PUBLIC, "logo.png");
+  // nativeImage (which BrowserWindow's `icon` option uses under the hood)
+  // reads the real filesystem and can't see into app.asar, so packaged
+  // builds must load the icon from extraResources instead of the bundled
+  // renderer assets.
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "logo.png")
+    : path.join(process.env.VITE_PUBLIC, "logo.png");
 }
 // Packaged apps ship no .env, so the API URL is baked in at build time via
 // `import.meta.env` (dot access on purpose — Vite inlines it); the bracket

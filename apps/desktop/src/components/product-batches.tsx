@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import type { Product, StockMovement } from "@store/contracts";
-import { productLooseUnitStock, productPackStock, productStock } from "@store/contracts";
+import {
+  productLooseUnitStock,
+  productPackStock,
+  productStock,
+} from "@store/contracts/store-helpers";
 import { Add01Icon, PackageIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";

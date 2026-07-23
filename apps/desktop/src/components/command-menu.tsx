@@ -1,5 +1,5 @@
 import type { Product } from "@store/contracts";
-import { productStock } from "@store/contracts";
+import { productStock } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";

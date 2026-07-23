@@ -1,9 +1,5 @@
-import {
-  formatInvoiceNumber,
-  type CreateInvoiceInput,
-  type Invoice,
-  type SyncEntityChange,
-} from "@store/contracts";
+import type { CreateInvoiceInput, Invoice, SyncEntityChange } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
   batches,
   invoiceCounters,

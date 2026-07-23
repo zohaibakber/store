@@ -1,5 +1,5 @@
 import type { Product } from "@store/contracts";
-import { productStock } from "@store/contracts";
+import { productStock } from "@store/contracts/store-helpers";
 
 import { Badge } from "@/components/ui/badge";
 import {
