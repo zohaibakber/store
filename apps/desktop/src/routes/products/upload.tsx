@@ -3,7 +3,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { UploadAttachmentList } from "@/components/uploads/upload-attachment-list";
 import { UploadDropzone } from "@/components/uploads/upload-dropzone";
-import { UploadModelPicker } from "@/components/uploads/upload-model-picker";
 import { UploadProposedChanges } from "@/components/uploads/upload-proposed-changes";
 import { UploadProvider, useUpload } from "@/components/uploads/upload-context";
 import {
@@ -85,7 +84,6 @@ function UploadPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <UploadModelPicker />
             <UploadDropzone />
             <UploadAttachmentList />
           </CardContent>

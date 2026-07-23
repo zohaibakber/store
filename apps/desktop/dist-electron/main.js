@@ -17705,11 +17705,8 @@ var TaggedErrorClass = (identifier) => {
 * @since 4.0.0
 */
 var Json = /*#__PURE__*/ make$13(Json$1);
-var ModelCatalogResponse = Struct({ data: optional$1(ArraySchema(Struct({
-	id: String$1,
-	name: optional$1(String$1),
-	type: optional$1(String$1)
-}))) });
+//#endregion
+//#region ../../packages/contracts/src/server-api.schema.ts
 var InvoiceExtractionLine = Struct({
 	name: String$1,
 	batchNumber: NullOr(String$1),
@@ -60392,19 +60389,14 @@ function registerAuthIpc() {
 	ipcMain.handle("auth:organization:create", async (_event, input) => applyAuthSnapshot(await authBroker.createOrganization({ name: inputString(input, "name") })));
 }
 function registerServerIpc() {
-	ipcMain.handle("server:models", async () => {
-		const raw = await authBroker.apiRequest("/api/models");
-		return await runPromise(decodeUnknownEffect(ModelCatalogResponse)(raw).pipe(mapError(() => /* @__PURE__ */ new Error("The model catalog response was not in the expected format."))));
-	});
 	ipcMain.handle("server:uploads", async (_event, input) => {
-		if (!input || !Array.isArray(input.files) || typeof input.model !== "string") throw new Error("Invalid invoice upload request.");
+		if (!input || !Array.isArray(input.files)) throw new Error("Invalid invoice upload request.");
 		const body = new FormData();
 		for (const file of input.files) {
 			if (!file || typeof file.name !== "string" || typeof file.type !== "string" || !(file.bytes instanceof ArrayBuffer)) throw new Error("Invalid invoice attachment.");
 			const inferredType = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/csv";
 			body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
 		}
-		body.append("model", input.model);
 		const raw = await authBroker.apiRequest("/api/uploads", {
 			method: "POST",
 			body

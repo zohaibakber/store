@@ -14,8 +14,6 @@
     "build": "tsc --outDir dist"
   },
   "dependencies": {
-    "@ai-sdk/gateway": "^4.0.16",
-    "ai": "^7.0.22",
     "effect": "4.0.0-beta.98",
     "zod": "^4.4.0"
   },

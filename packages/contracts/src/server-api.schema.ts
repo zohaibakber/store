@@ -1,21 +1,7 @@
 import * as Schema from "effect/Schema";
 
-// Schemas for the two server/AI-gateway response boundaries the desktop app
-// decodes at IPC time (`server:models`, `server:uploads`). The server side of
-// these endpoints does not exist yet — these schemas double as the contract
-// the future implementation must satisfy.
-
-export const GatewayModel = Schema.Struct({
-  id: Schema.String,
-  name: Schema.optional(Schema.String),
-  type: Schema.optional(Schema.String),
-});
-export type GatewayModel = typeof GatewayModel.Type;
-
-export const ModelCatalogResponse = Schema.Struct({
-  data: Schema.optional(Schema.Array(GatewayModel)),
-});
-export type ModelCatalogResponse = typeof ModelCatalogResponse.Type;
+// Schema for the `server:uploads` response boundary the desktop app decodes at
+// IPC time. Served by `/api/uploads`, which extracts invoices with Workers AI.
 
 export const InvoiceExtractionLine = Schema.Struct({
   name: Schema.String,

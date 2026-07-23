@@ -12,6 +12,7 @@
     "build": "tsc && vp build && electron-builder --config electron-builder.json5",
     "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always",
     "check": "vp check",
+    "test": "vitest run --root ../.. apps/desktop/src",
     "lint": "vp lint",
     "preview": "vp preview",
     "prepare": "vp config"
@@ -65,7 +66,8 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
     "vite-plugin-electron": "^1.1.0",
     "vite-plugin-electron-renderer": "^1.0.0",
-    "vite-plus": "0.2.4"
+    "vite-plus": "0.2.4",
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4"

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { AuthSnapshot } from "@/lib/auth";
-import type { InvoiceExtraction, ModelCatalogResponse } from "@store/contracts";
+import type { InvoiceExtraction } from "@store/contracts";
 
 declare global {
   interface Window {
@@ -15,9 +15,7 @@ declare global {
       onSessionChange(listener: (snapshot: AuthSnapshot) => void): () => void;
     };
     serverApi?: {
-      getModels(): Promise<ModelCatalogResponse>;
       analyseInvoices(input: {
-        model: string;
         files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
       }): Promise<InvoiceExtraction>;
     };

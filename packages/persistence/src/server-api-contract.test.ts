@@ -1,4 +1,4 @@
-import { InvoiceExtraction, ModelCatalogResponse } from "@store/contracts";
+import { InvoiceExtraction } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
@@ -36,11 +36,5 @@ describe("server API response contracts", () => {
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
-  });
-
-  test("accepts a model catalog without data", () => {
-    const decoded = Effect.runSync(Schema.decodeUnknownEffect(ModelCatalogResponse)({}));
-
-    expect(decoded.data).toBeUndefined();
   });
 });

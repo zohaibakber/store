@@ -13,10 +13,7 @@ electron.contextBridge.exposeInMainWorld("auth", {
 		return () => electron.ipcRenderer.off("auth:session-changed", listener);
 	}
 });
-electron.contextBridge.exposeInMainWorld("serverApi", {
-	getModels: () => electron.ipcRenderer.invoke("server:models"),
-	analyseInvoices: (input) => electron.ipcRenderer.invoke("server:uploads", input)
-});
+electron.contextBridge.exposeInMainWorld("serverApi", { analyseInvoices: (input) => electron.ipcRenderer.invoke("server:uploads", input) });
 electron.contextBridge.exposeInMainWorld("windowControls", {
 	minimize() {
 		electron.ipcRenderer.send("window-controls:minimize");

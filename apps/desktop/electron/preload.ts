@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from "electron";
-import type { InvoiceExtraction, ModelCatalogResponse, OfflineStoreApi } from "@store/contracts";
+import type { InvoiceExtraction, OfflineStoreApi } from "@store/contracts";
 import type { AuthSnapshot } from "./auth";
 import type { UpdaterEvent } from "./updater";
 
@@ -23,9 +23,7 @@ contextBridge.exposeInMainWorld("auth", {
 });
 
 contextBridge.exposeInMainWorld("serverApi", {
-  getModels: (): Promise<ModelCatalogResponse> => ipcRenderer.invoke("server:models"),
   analyseInvoices: (input: {
-    model: string;
     files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
   }): Promise<InvoiceExtraction> => ipcRenderer.invoke("server:uploads", input),
 });

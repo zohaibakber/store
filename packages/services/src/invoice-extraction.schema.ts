@@ -41,19 +41,29 @@ const nameField = z
   .transform((value) => value.trim() || "Unspecified item");
 
 export const InvoiceLine = z.object({
-  name: nameField,
-  batchNumber: nullableStringField,
-  expiresAt: nullableStringField,
-  packQuantity: countField(0, 0),
-  unitQuantity: countField(0, 0),
-  unitsPerPack: countField(1, 1),
-  packPrice: priceField,
+  name: nameField.describe("Product name exactly as printed on the invoice line."),
+  batchNumber: nullableStringField.describe("Batch or lot number, or null when absent."),
+  expiresAt: nullableStringField.describe("Expiry date as (DD-MM-YYYY), or null."),
+  packQuantity: countField(0, 0).describe("Whole number of packs received."),
+  unitQuantity: countField(0, 0).describe("Whole number of loose units received, beyond packs."),
+  unitsPerPack: countField(1, 1).describe("Whole number of units contained in one pack."),
+  packPrice: priceField.describe(
+    "Price of one pack in the invoice currency's smallest unit (e.g. cents), or null.",
+  ),
 });
 
 export const InvoiceExtraction = z.object({
-  supplier: nullableStringField,
-  invoiceNumber: nullableStringField,
-  lines: z.array(InvoiceLine),
+  supplier: nullableStringField.describe("Supplier or vendor name, or null."),
+  invoiceNumber: nullableStringField.describe("Invoice reference number, or null."),
+  lines: z.array(InvoiceLine).describe("One entry per received inventory line on the invoice."),
 });
 
 export type InvoiceExtraction = z.infer<typeof InvoiceExtraction>;
+
+/**
+ * JSON Schema handed to the model to constrain its output. Derived from the
+ * input side of `InvoiceExtraction` so the two cannot drift: the zod schema
+ * stays responsible for coercing whatever the model actually returns, while
+ * this steers it towards returning the right shape in the first place.
+ */
+export const invoiceExtractionJsonSchema = z.toJSONSchema(InvoiceExtraction, { io: "input" });

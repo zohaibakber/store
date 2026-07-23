@@ -40,9 +40,7 @@ interface Window {
     onSessionChange: (callback: (snapshot: import("./auth").AuthSnapshot) => void) => () => void;
   };
   serverApi: {
-    getModels: () => Promise<import("@store/contracts").ModelCatalogResponse>;
     analyseInvoices: (input: {
-      model: string;
       files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
     }) => Promise<import("@store/contracts").InvoiceExtraction>;
   };

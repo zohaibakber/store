@@ -1,34 +1,31 @@
-import { createContext, use, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Category, GatewayModel, InvoiceExtractionLine, Product } from "@store/contracts";
+import { createContext, use, useState, type ReactNode } from "react";
+import type { Category, InvoiceExtractionLine, Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useOnline } from "@/hooks/use-online";
+import { parseExpiryDate } from "@/lib/format";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
   type: "create_product" | "add_inventory";
   productId?: string;
 };
-type ModelGroup = { provider: string; label: string; items: GatewayModel[] };
 type UploadPhase = "idle" | "processing" | "ready" | "syncing";
 
 interface UploadState {
   files: File[];
   phase: UploadPhase;
   changes: ProposedChange[];
-  model: GatewayModel;
 }
 
 interface UploadActions {
   addFiles: (incoming: FileList | File[]) => void;
   removeFile: (file: File) => void;
-  setModel: (model: GatewayModel) => void;
   analyse: () => Promise<void>;
   applyChanges: () => Promise<void>;
 }
 
 interface UploadMeta {
-  groupedModels: ModelGroup[];
   processing: boolean;
   isOnline: boolean;
 }
@@ -41,47 +38,6 @@ interface UploadContextValue {
 
 const UploadContext = createContext<UploadContextValue | null>(null);
 
-const defaultModel = "openai/gpt-4.1-mini";
-const fallbackModels: GatewayModel[] = [
-  { id: defaultModel, name: "GPT-4.1 mini" },
-  { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
-  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-];
-const providerLabels: Record<string, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google",
-  vertex: "Google Vertex",
-  mistral: "Mistral",
-  meta: "Meta",
-  cohere: "Cohere",
-  groq: "Groq",
-  deepseek: "DeepSeek",
-  xai: "xAI",
-  perplexity: "Perplexity",
-  amazon: "Amazon Bedrock",
-  bedrock: "Amazon Bedrock",
-};
-
-const providerLabel = (provider: string) =>
-  providerLabels[provider] ??
-  provider.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-
-const groupModelsByProvider = (models: GatewayModel[]): ModelGroup[] => {
-  const groups = new Map<string, GatewayModel[]>();
-  for (const candidate of models) {
-    const provider = candidate.id.split("/")[0] ?? candidate.id;
-    const items = groups.get(provider);
-    if (items) items.push(candidate);
-    else groups.set(provider, [candidate]);
-  }
-  return Array.from(groups.entries()).map(([provider, items]) => ({
-    provider,
-    label: providerLabel(provider),
-    items,
-  }));
-};
-
 const fileDescription = (file: File) => {
   const kind = file.type === "application/pdf" ? "PDF" : "CSV";
   return `${kind} · ${Math.max(1, Math.ceil(file.size / 1024))} KB`;
@@ -91,11 +47,6 @@ const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
 
 const sameProduct = (line: ExtractedLine, product: Product) =>
   product.name.trim().toLocaleLowerCase() === line.name.trim().toLocaleLowerCase();
-
-const validTimestamp = (date: string | null) => {
-  const timestamp = date ? Date.parse(date) : Number.NaN;
-  return Number.isFinite(timestamp) ? timestamp : null;
-};
 
 function UploadProvider({
   children,
@@ -111,40 +62,6 @@ function UploadProvider({
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
-  const [modelId, setModelId] = useState(defaultModel);
-  const [models, setModels] = useState<GatewayModel[]>(fallbackModels);
-  const groupedModels = useMemo(() => groupModelsByProvider(models), [models]);
-  const model = models.find((candidate) => candidate.id === modelId) ?? {
-    id: modelId,
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadModels = async () => {
-      if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
-      const payload = await window.serverApi.getModels();
-      const available = (payload.data ?? []).filter(
-        (candidate) => candidate.type === "language" && candidate.id.includes("/"),
-      );
-      if (available.length === 0) throw new Error("No language models were returned.");
-      return available;
-    };
-    void loadModels()
-      .then((available) => {
-        if (!cancelled) setModels(available);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not load live models from the server; using defaults.",
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
@@ -164,10 +81,6 @@ function UploadProvider({
     setFiles((current) => current.filter((candidate) => candidate !== file));
   };
 
-  const setModel = (nextModel: GatewayModel) => {
-    setModelId(nextModel.id);
-  };
-
   const analyse = async () => {
     if (!isOnline) {
       toast.error("You’re offline. Connect to the internet before analysing invoices.");
@@ -181,7 +94,6 @@ function UploadProvider({
     try {
       if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
       const payload = await window.serverApi.analyseInvoices({
-        model: modelId,
         files: await Promise.all(
           files.map(async (file) => ({
             name: file.name,
@@ -221,7 +133,7 @@ function UploadProvider({
         lines: changes.map((change) => ({
           name: change.name,
           batchNumber: change.batchNumber,
-          expiresAt: validTimestamp(change.expiresAt),
+          expiresAt: parseExpiryDate(change.expiresAt),
           unitsPerPack: change.unitsPerPack,
           packQuantity: change.packQuantity,
           unitQuantity: change.unitQuantity,
@@ -258,9 +170,9 @@ function UploadProvider({
   return (
     <UploadContext
       value={{
-        state: { files, phase, changes, model },
-        actions: { addFiles, removeFile, setModel, analyse, applyChanges },
-        meta: { groupedModels, processing, isOnline },
+        state: { files, phase, changes },
+        actions: { addFiles, removeFile, analyse, applyChanges },
+        meta: { processing, isOnline },
       }}
     >
       {children}
@@ -277,15 +189,10 @@ function useUpload() {
 export {
   UploadProvider,
   fileDescription,
-  groupModelsByProvider,
   isInvoice,
-  providerLabel,
   sameProduct,
   useUpload,
-  validTimestamp,
   type ExtractedLine,
-  type GatewayModel,
-  type ModelGroup,
   type ProposedChange,
   type UploadPhase,
 };

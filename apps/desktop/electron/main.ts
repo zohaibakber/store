@@ -6,7 +6,6 @@ import {
   InvoiceExtraction,
   ImportInventoryInput,
   InvoiceIdInput,
-  ModelCatalogResponse,
   ProductIdInput,
   SearchProductsInput,
   type SyncResponse,
@@ -362,27 +361,15 @@ function registerAuthIpc() {
 }
 
 function registerServerIpc() {
-  ipcMain.handle("server:models", async () => {
-    const raw = await authBroker.apiRequest("/api/models");
-    return await Effect.runPromise(
-      Schema.decodeUnknownEffect(ModelCatalogResponse)(raw).pipe(
-        Effect.mapError(
-          () => new Error("The model catalog response was not in the expected format."),
-        ),
-      ),
-    );
-  });
   ipcMain.handle(
     "server:uploads",
     async (
       _event,
       input: {
-        model: string;
         files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
       },
     ) => {
-      if (!input || !Array.isArray(input.files) || typeof input.model !== "string")
-        throw new Error("Invalid invoice upload request.");
+      if (!input || !Array.isArray(input.files)) throw new Error("Invalid invoice upload request.");
       const body = new FormData();
       for (const file of input.files) {
         if (
@@ -400,7 +387,6 @@ function registerServerIpc() {
           new File([file.bytes], file.name, { type: file.type || inferredType }),
         );
       }
-      body.append("model", input.model);
       const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
       return await Effect.runPromise(
         Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(

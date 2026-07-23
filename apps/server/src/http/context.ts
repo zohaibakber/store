@@ -10,7 +10,7 @@ export type AuthApi = {
 export type SyncRunner = (actor: SyncActor, request: SyncRequest) => Promise<SyncResponse>;
 
 export type AppEnv = {
-  Bindings: CloudflareBindings;
+  Bindings: Env;
   Variables: {
     authApi: AuthApi;
     authHandler: (request: Request) => Promise<Response>;

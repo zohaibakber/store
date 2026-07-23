@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { requireOrganization } from "../auth/require-organization";
 import { syncRoute } from "../routes/sync";
+import { uploadsRoute } from "../routes/uploads";
 import type { AppEnv } from "./context";
 import { factory } from "./factory";
 
@@ -25,7 +26,7 @@ export const createApp = (runtime: MiddlewareHandler<AppEnv>) => {
   app.get("/", (c) =>
     c.json({
       service: "Store Invoice API",
-      endpoints: ["/api/health", "/api/auth/*", "/api/sync/*"],
+      endpoints: ["/api/health", "/api/auth/*", "/api/sync/*", "/api/uploads"],
     }),
   );
   api.get("/", (c) => c.json({ service: "Store Invoice API", ok: true }));
@@ -34,7 +35,9 @@ export const createApp = (runtime: MiddlewareHandler<AppEnv>) => {
 
   api.use("/sync", requireOrganization);
   api.use("/sync/*", requireOrganization);
+  api.use("/uploads", requireOrganization);
   api.route("/sync", syncRoute);
+  api.route("/uploads", uploadsRoute);
   app.route("/api", api);
 
   return app;
