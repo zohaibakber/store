@@ -41,7 +41,14 @@ export function TeamSwitcher() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger render={<SidebarMenuButton className="w-fit px-1.5" />}>
-            <img src="/logo.svg" alt="Tabaaq" className="size-5 shrink-0 rounded-[5px]" />
+            {/* vite-plugin-electron builds with base: "./" so the packaged app can
+                load index.html via file://; a root-absolute "/logo.svg" would
+                resolve to the filesystem root instead of the public dir. */}
+            <img
+              src={`${import.meta.env.BASE_URL}logo.svg`}
+              alt="Tabaaq"
+              className="size-5 shrink-0 rounded-[5px]"
+            />
             <span className="truncate font-medium">{activeOrganization.name}</span>
             <HugeiconsIcon icon={ArrowDown01Icon} className="opacity-50" />
           </DropdownMenuTrigger>
