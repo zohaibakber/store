@@ -1,11 +1,10 @@
 import * as React from "react";
 
+import { AccountMenu } from "@/components/account-menu";
 import { NavHistory } from "@/components/nav-history";
 import { NavMain, type NavMainItem } from "@/components/nav-main";
-import { NavUser } from "@/components/nav-user";
-import { SyncButton } from "@/components/sync-button";
-import { TeamSwitcher } from "@/components/team-switcher";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
+import { SyncStatusIndicator } from "@/components/sync-status";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { HomeIcon, Invoice01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
 import { SearchForm } from "./search-form";
@@ -40,7 +39,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
-            <TeamSwitcher />
+            <AccountMenu />
           </div>
           <NavHistory />
         </div>
@@ -50,12 +49,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
-            <NavUser />
-          </div>
-          <SyncButton />
-        </div>
+        <SyncStatusIndicator />
       </SidebarFooter>
     </Sidebar>
   );

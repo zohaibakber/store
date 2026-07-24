@@ -1,12 +1,6 @@
-import * as React from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Building01Icon, PaintBoardIcon, UserIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { FrameCard } from "@/components/frame-card";
 import {
   PageContent,
   PageDescription,
@@ -14,94 +8,48 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Fieldset } from "@/components/ui/fieldset";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { getErrorMessage, type AuthSnapshot, useAuth } from "@/lib/auth";
-import { toast } from "@/lib/toast";
+import { AccountSettings } from "@/components/settings/account-settings";
+import { OrganizationSettings } from "@/components/settings/organization-settings";
+import { ThemePicker } from "@/components/settings/theme-picker";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+
+const tabs = [
+  { value: "account", label: "Account", icon: UserIcon },
+  { value: "organization", label: "Organization", icon: Building01Icon },
+  { value: "appearance", label: "Appearance", icon: PaintBoardIcon },
+] as const;
 
 export function SettingsPage() {
-  const { snapshot } = useAuth();
-  const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  async function createOrganization(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = new FormData(event.currentTarget).get("organizationName");
-    const name = typeof value === "string" ? value : "";
-    setPending(true);
-    setError(null);
-    try {
-      if (!window.auth) throw new Error("Authentication is unavailable.");
-      const next = await window.auth.createOrganization({ name });
-      window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
-      event.currentTarget.reset();
-      toast.success("Organization created");
-    } catch (cause) {
-      setError(getErrorMessage(cause));
-    } finally {
-      setPending(false);
-    }
-  }
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageHeader className="gap-2">
-        <p className="text-sm font-medium text-primary">Preferences</p>
+    <PageLayout contentClassName="max-w-5xl">
+      <PageHeader>
         <PageHeading>Settings</PageHeading>
-        <PageDescription>
-          This route is ready for your persistent Electron settings.
-        </PageDescription>
+        <PageDescription>Your account, your organization, and how the app looks.</PageDescription>
       </PageHeader>
 
       <PageContent>
-        <Card>
-          <CardHeader>
-            <CardTitle>Organization</CardTitle>
-            <CardDescription>
-              Store data is shared with everyone in the active organization.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {snapshot?.activeOrganization?.name ?? "No organization selected"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {snapshot?.organizations.length ?? 0} available organization
-                  {snapshot?.organizations.length === 1 ? "" : "s"}
-                </p>
-              </div>
-              {snapshot?.activeOrganization && (
-                <Badge variant="secondary">{snapshot.activeOrganization.role}</Badge>
-              )}
-            </div>
-            <Separator />
-            <form id="create-organization-form" onSubmit={createOrganization}>
-              <Fieldset className="flex w-full flex-col gap-6">
-                <Field data-invalid={Boolean(error)}>
-                  <FieldLabel htmlFor="new-organization-name">New organization</FieldLabel>
-                  <Input
-                    id="new-organization-name"
-                    name="organizationName"
-                    placeholder="Store name"
-                    required
-                    aria-invalid={error ? true : undefined}
-                  />
-                  {error && <FieldError match>{error}</FieldError>}
-                </Field>
-              </Fieldset>
-            </form>
-          </CardContent>
-          <CardFooter>
-            <Button form="create-organization-form" type="submit" disabled={pending}>
-              {pending && <Spinner data-icon="inline-start" />}Create organization
-            </Button>
-          </CardFooter>
-        </Card>
+        <Tabs className="w-full items-start gap-6" defaultValue="account" orientation="vertical">
+          <TabsList className="w-44 shrink-0">
+            {tabs.map((tab) => (
+              <TabsTab className="justify-start gap-2" key={tab.value} value={tab.value}>
+                <HugeiconsIcon aria-hidden="true" className="size-4" icon={tab.icon} />
+                {tab.label}
+              </TabsTab>
+            ))}
+          </TabsList>
+
+          <TabsPanel className="min-w-0 flex-1" value="account">
+            <AccountSettings />
+          </TabsPanel>
+          <TabsPanel className="min-w-0 flex-1" value="organization">
+            <OrganizationSettings />
+          </TabsPanel>
+          <TabsPanel className="min-w-0 flex-1" value="appearance">
+            <FrameCard description="Applies immediately on this device." title="Appearance">
+              <ThemePicker />
+            </FrameCard>
+          </TabsPanel>
+        </Tabs>
       </PageContent>
     </PageLayout>
   );

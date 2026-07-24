@@ -1,23 +1,29 @@
-import { Moon01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import * as React from "react";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
-type Theme = "dark" | "light";
+export type ThemePreference = "dark" | "light" | "system";
+type ResolvedTheme = "dark" | "light";
 
 type ThemeContextValue = {
-  setTheme: (theme: Theme) => void;
-  theme: Theme;
+  /** What the user picked — may be "system". */
+  preference: ThemePreference;
+  /** What is actually applied right now. */
+  theme: ResolvedTheme;
+  setTheme: (theme: ThemePreference) => void;
 };
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
-export function useTheme() {
+export function useTheme(): ThemeContextValue {
   const context = React.useContext(ThemeContext);
-  if (!context) throw new Error("ThemeToggle must be used inside ThemeProvider.");
+  if (!context) throw new Error("useTheme must be used inside ThemeProvider.");
   return context;
 }
+
+const isPreference = (value: string | null): value is ThemePreference =>
+  value === "light" || value === "dark" || value === "system";
+
+const systemTheme = (): ResolvedTheme =>
+  window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 
 export function ThemeProvider({
   children,
@@ -25,13 +31,26 @@ export function ThemeProvider({
   storageKey = "store-electron-theme",
 }: {
   children: React.ReactNode;
-  defaultTheme?: Theme;
+  defaultTheme?: ThemePreference;
   storageKey?: string;
 }) {
-  const [theme, setThemeState] = React.useState<Theme>(() => {
-    const savedTheme = localStorage.getItem(storageKey);
-    return savedTheme === "light" || savedTheme === "dark" ? savedTheme : defaultTheme;
+  const [preference, setPreference] = React.useState<ThemePreference>(() => {
+    const saved = localStorage.getItem(storageKey);
+    return isPreference(saved) ? saved : defaultTheme;
   });
+  const [resolvedSystem, setResolvedSystem] = React.useState<ResolvedTheme>(systemTheme);
+
+  // Only worth tracking while the user is actually on "system".
+  React.useEffect(() => {
+    if (preference !== "system") return;
+    const query = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => setResolvedSystem(systemTheme());
+    onChange();
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [preference]);
+
+  const theme: ResolvedTheme = preference === "system" ? resolvedSystem : preference;
 
   React.useLayoutEffect(() => {
     const root = document.documentElement;
@@ -41,33 +60,17 @@ export function ThemeProvider({
   }, [theme]);
 
   const setTheme = React.useCallback(
-    (nextTheme: Theme) => {
-      localStorage.setItem(storageKey, nextTheme);
-      setThemeState(nextTheme);
+    (next: ThemePreference) => {
+      localStorage.setItem(storageKey, next);
+      setPreference(next);
     },
     [storageKey],
   );
 
-  const value = React.useMemo(() => ({ setTheme, theme }), [setTheme, theme]);
+  const value = React.useMemo(
+    () => ({ preference, setTheme, theme }),
+    [preference, setTheme, theme],
+  );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-export function ThemeToggle() {
-  const id = React.useId();
-  const { setTheme, theme } = useTheme();
-
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-2">
-      <Label htmlFor={id} className="min-w-0 gap-2 text-sidebar-foreground">
-        <HugeiconsIcon aria-hidden="true" icon={Moon01Icon} />
-        <span className="truncate">Dark mode</span>
-      </Label>
-      <Switch
-        id={id}
-        checked={theme === "dark"}
-        onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-      />
-    </div>
-  );
 }
