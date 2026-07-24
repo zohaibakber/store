@@ -58,10 +58,6 @@ export function useAppUpdater() {
   const downloadingRef = useRef(false);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      showDownloadProgress(42, "The update will be ready to install shortly.");
-    }
-
     // The bridge is absent outside Electron (e.g. vitest with a bare jsdom).
     if (!window.updater) return;
 
