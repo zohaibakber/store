@@ -8,13 +8,7 @@ import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
 import { TopProducts } from "@/components/dashboard/top-products";
-import {
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/page-layout";
+import { PageContent, PageLayout } from "@/components/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { storeErrorMessage } from "@/lib/errors";
@@ -58,11 +52,6 @@ export function HomePage() {
 
   return (
     <PageLayout>
-      <PageHeader>
-        <PageHeading>Dashboard</PageHeading>
-        <PageDescription>Sales and stock health from the on-device database.</PageDescription>
-      </PageHeader>
-
       <PageContent>
         {error && (
           <Alert variant="error">

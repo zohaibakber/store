@@ -1,8 +1,6 @@
 import type { ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
 import {
   ArrowDown01Icon,
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
   ArrowUp01Icon,
   Cancel01Icon,
   ColumnsThreeCogIcon,
@@ -10,7 +8,7 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { createContext, use } from "react";
+import { createContext, use, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Menu,
@@ -168,32 +166,74 @@ function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
   const value = (column?.getFilterValue() as string | undefined) ?? "";
+  const [expanded, setExpanded] = useState(value.length > 0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const accessibleLabel =
+    props["aria-label"] ??
+    (typeof props.placeholder === "string" ? props.placeholder : "Search table");
+
+  useEffect(() => {
+    if (expanded) inputRef.current?.focus();
+  }, [expanded]);
+
+  const collapse = () => {
+    column?.setFilterValue("");
+    setExpanded(false);
+  };
+
   return (
-    <InputGroup className={cn("max-w-64", className)}>
-      <InputGroupInput
-        onChange={(event) => column?.setFilterValue(event.target.value)}
-        role="searchbox"
-        type="text"
-        value={value}
-        {...props}
-      />
-      <InputGroupAddon align="inline-start">
-        <HugeiconsIcon aria-hidden="true" icon={Search01Icon} strokeWidth={2} />
-      </InputGroupAddon>
-      {value && (
-        <InputGroupAddon align="inline-end">
-          <Button
-            aria-label="Clear search"
-            onClick={() => column?.setFilterValue("")}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} strokeWidth={2} />
-          </Button>
-        </InputGroupAddon>
+    <div
+      className={cn(
+        "flex shrink-0 justify-end transition-[width] duration-200",
+        expanded ? "w-64" : "w-9 sm:w-8",
+        className,
       )}
-    </InputGroup>
+      data-expanded={expanded}
+      data-slot="data-table-filter"
+    >
+      {expanded ? (
+        <InputGroup>
+          <InputGroupInput
+            {...props}
+            aria-label={accessibleLabel}
+            onChange={(event) => column?.setFilterValue(event.target.value)}
+            onKeyDown={(event) => {
+              props.onKeyDown?.(event);
+              if (!event.defaultPrevented && event.key === "Escape") collapse();
+            }}
+            ref={inputRef}
+            role="searchbox"
+            type="search"
+            value={value}
+          />
+          <InputGroupAddon align="inline-start">
+            <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
+          </InputGroupAddon>
+          <InputGroupAddon align="inline-end">
+            <Button
+              aria-label="Close search"
+              onClick={collapse}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            >
+              <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
+            </Button>
+          </InputGroupAddon>
+        </InputGroup>
+      ) : (
+        <Button
+          aria-expanded={false}
+          aria-label={accessibleLabel}
+          onClick={() => setExpanded(true)}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -204,7 +244,7 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
     <Menu>
       <MenuTrigger
         render={
-          <Button className={cn("ml-auto", className)} size="icon" variant="ghost" {...props}>
+          <Button className={cn("ml-auto", className)} size="icon" variant="outline" {...props}>
             <HugeiconsIcon aria-hidden="true" icon={ColumnsThreeCogIcon} />
           </Button>
         }
@@ -370,21 +410,19 @@ function DataTablePagination({ className, ...props }: React.ComponentProps<"div"
           aria-label="Previous page"
           disabled={!table.getCanPreviousPage()}
           onClick={() => table.previousPage()}
-          size="icon-sm"
+          size="sm"
           type="button"
-          variant="outline"
         >
-          <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
+          Previous
         </Button>
         <Button
           aria-label="Next page"
           disabled={!table.getCanNextPage()}
           onClick={() => table.nextPage()}
-          size="icon-sm"
+          size="sm"
           type="button"
-          variant="outline"
         >
-          <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
+          Next
         </Button>
       </div>
     </div>

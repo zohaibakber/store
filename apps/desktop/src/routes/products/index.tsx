@@ -43,10 +43,6 @@ function ProductsPage() {
           <PageAction className="flex items-center gap-2">
             <DataTableFilter columnId="name" placeholder="Search products" />
             <DataTableViewOptions className="ml-0" />
-            <Button render={<Link to="/products/new" />}>
-              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-              Add product
-            </Button>
             <Button
               aria-label="Import products"
               render={<Link to="/products/upload" />}
@@ -54,6 +50,10 @@ function ProductsPage() {
               variant="outline"
             >
               <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
+            </Button>
+            <Button render={<Link to="/products/new" />}>
+              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+              Add product
             </Button>
           </PageAction>
         </PageHeader>

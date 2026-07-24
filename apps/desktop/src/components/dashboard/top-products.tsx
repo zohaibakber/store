@@ -26,7 +26,7 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
   return (
     <FrameCard description="Highest revenue over the last 30 days." title="Top products">
       {products.length === 0 ? (
-        <Empty className="border border-dashed">
+        <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={ChartBarLineIcon} />

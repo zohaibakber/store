@@ -75,7 +75,7 @@ export function AccountMenu() {
             </span>
             <HugeiconsIcon aria-hidden="true" className="ml-auto size-4" icon={ArrowDown01Icon} />
           </MenuTrigger>
-          <MenuPopup align="start" className="min-w-56" side="bottom" sideOffset={4}>
+          <MenuPopup align="start" className="min-w-64" side="bottom" sideOffset={4}>
             <MenuGroup>
               <MenuGroupLabel className="gap-2">
                 <Avatar className="size-6">

@@ -47,7 +47,7 @@ export function ExpiringBatches({ batches }: { batches: DashboardAnalytics["expi
   return (
     <FrameCard description="Batches with stock expiring in the next 90 days." title="Expiring soon">
       {batches.length === 0 ? (
-        <Empty className="border border-dashed">
+        <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
@@ -97,7 +97,7 @@ export function LowStock({
       title="Low stock"
     >
       {products.length === 0 ? (
-        <Empty className="border border-dashed">
+        <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />

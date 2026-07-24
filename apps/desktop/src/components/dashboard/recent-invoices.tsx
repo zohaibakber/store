@@ -28,7 +28,7 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
       title="Recent invoices"
     >
       {invoices.length === 0 ? (
-        <Empty className="border border-dashed">
+        <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={Invoice01Icon} />

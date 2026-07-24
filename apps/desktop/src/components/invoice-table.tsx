@@ -1,6 +1,6 @@
 import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
@@ -17,12 +17,9 @@ import {
 } from "@tanstack/react-table";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import {
-  DataTable,
   DataTableColumnHeader,
   DataTableContent,
   DataTableFooter,
-  DataTableFilter,
-  DataTableHeader,
   DataTablePagination,
 } from "@/components/data-table";
 
@@ -87,10 +84,8 @@ const columns = columnHelper.columns([
   }),
 ]);
 
-export function InvoicesTable({ invoices }: { invoices: readonly Invoice[] }) {
-  const navigate = useNavigate();
-
-  const table = useTable({
+export function useInvoicesTable(invoices: readonly Invoice[]) {
+  return useTable({
     features,
     columns,
     data: invoices,
@@ -100,19 +95,14 @@ export function InvoicesTable({ invoices }: { invoices: readonly Invoice[] }) {
       sorting: [{ id: "createdAt", desc: true }],
     },
   });
+}
+
+export function InvoicesTable() {
   return (
-    <DataTable
-      onRowClick={(row) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })}
-      table={table}
-    >
-      <DataTableHeader>
-        <DataTableFilter columnId="customer" placeholder="Filter by customer…" />
-      </DataTableHeader>
-      <DataTableContent>
-        <DataTableFooter>
-          <DataTablePagination />
-        </DataTableFooter>
-      </DataTableContent>
-    </DataTable>
+    <DataTableContent>
+      <DataTableFooter>
+        <DataTablePagination />
+      </DataTableFooter>
+    </DataTableContent>
   );
 }
