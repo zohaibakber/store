@@ -75,10 +75,10 @@ export function AccountMenu() {
             </span>
             <HugeiconsIcon aria-hidden="true" className="ml-auto size-4" icon={ArrowDown01Icon} />
           </MenuTrigger>
-          <MenuPopup align="start" className="w-64" side="bottom" sideOffset={4}>
+          <MenuPopup align="center" className="w-62" side="bottom">
             <MenuGroup>
-              <MenuGroupLabel className="gap-2">
-                <Avatar className="size-6">
+              <MenuGroupLabel className="flex w-full items-center gap-2">
+                <Avatar className="size-6 shrink-0">
                   <AvatarImage alt={user.name} src={user.image ?? undefined} />
                   <AvatarFallback>{initials(user.name)}</AvatarFallback>
                 </Avatar>
