@@ -411,7 +411,7 @@ function DataTablePagination({ className, ...props }: React.ComponentProps<"div"
           aria-label="Previous page"
           disabled={!table.getCanPreviousPage()}
           onClick={() => table.previousPage()}
-          size="sm"
+          size="xs"
           type="button"
         >
           Previous
@@ -420,7 +420,7 @@ function DataTablePagination({ className, ...props }: React.ComponentProps<"div"
           aria-label="Next page"
           disabled={!table.getCanNextPage()}
           onClick={() => table.nextPage()}
-          size="sm"
+          size="xs"
           type="button"
         >
           Next

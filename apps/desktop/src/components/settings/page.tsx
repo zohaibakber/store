@@ -2,13 +2,7 @@ import { Building01Icon, PaintBoardIcon, UserIcon } from "@hugeicons/core-free-i
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { FrameCard } from "@/components/frame-card";
-import {
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/page-layout";
+import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/page-layout";
 import { AccountSettings } from "@/components/settings/account-settings";
 import { OrganizationSettings } from "@/components/settings/organization-settings";
 import { ThemePicker } from "@/components/settings/theme-picker";
@@ -25,7 +19,6 @@ export function SettingsPage() {
     <PageLayout contentClassName="max-w-5xl">
       <PageHeader>
         <PageHeading>Settings</PageHeading>
-        <PageDescription>Your account, your organization, and how the app looks.</PageDescription>
       </PageHeader>
 
       <PageContent>
