@@ -36,9 +36,9 @@ const data = {
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar {...props}>
+    <Sidebar variant="inset" {...props}>
       <SidebarHeader>
-        <div className="flex items-center gap-1">
+        <div className="-mx-1 flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <AccountMenu />
           </div>

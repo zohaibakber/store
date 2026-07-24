@@ -41,7 +41,7 @@ function AuthenticatedLayout() {
       <CommandMenuProvider>
         <SidebarProvider className="h-svh min-h-0 overflow-hidden">
           <AppSidebar />
-          <SidebarInset className="min-h-0 scrollbar-gutter-stable overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+          <SidebarInset className="min-h-0 scrollbar-none overflow-y-auto">
             <SiteHeader />
             <Outlet />
           </SidebarInset>

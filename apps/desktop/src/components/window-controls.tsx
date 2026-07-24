@@ -1,8 +1,8 @@
 import {
-  ArrowExpand01Icon,
-  ArrowShrink02Icon,
   Cancel01Icon,
   MinusSignIcon,
+  SquareIcon,
+  SquareSquareIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
@@ -43,9 +43,9 @@ export function WindowControls() {
         }}
       >
         {isMaximized ? (
-          <HugeiconsIcon icon={ArrowShrink02Icon} />
+          <HugeiconsIcon icon={SquareSquareIcon} />
         ) : (
-          <HugeiconsIcon icon={ArrowExpand01Icon} />
+          <HugeiconsIcon icon={SquareIcon} />
         )}
       </Button>
       <Button
