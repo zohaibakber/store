@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useRouter } from "@tanstack/react-router";
 
 export type AuthUser = { id: string; name: string; email: string; image?: string | null };
 export type AuthOrganization = { id: string; name: string; slug?: string | null; role: string };
@@ -10,6 +11,12 @@ export type AuthSnapshot = {
   isOnline: boolean;
 };
 
+declare global {
+  interface WindowEventMap {
+    "auth:session": CustomEvent<AuthSnapshot>;
+  }
+}
+
 type AuthContextValue = {
   snapshot: AuthSnapshot | null;
   loading: boolean;
@@ -17,6 +24,11 @@ type AuthContextValue = {
   refresh: () => Promise<void>;
 };
 const AuthContext = React.createContext<AuthContextValue | null>(null);
+const authScope = (snapshot: AuthSnapshot | null): string | null =>
+  snapshot?.status === "authenticated" && snapshot.user && snapshot.activeOrganization
+    ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
+    : null;
+
 const messageFrom = (error: unknown) => {
   if (!(error instanceof Error)) return "Something went wrong. Please try again.";
   return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
@@ -39,37 +51,68 @@ export async function bootstrapAuth() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [snapshot, setSnapshot] = React.useState<AuthSnapshot | null>(initialSnapshot);
   const [loading, setLoading] = React.useState(initialSnapshot === null && initialError === null);
   const [error, setError] = React.useState<string | null>(initialError);
+  const currentScopeRef = React.useRef(authScope(initialSnapshot));
+  const pendingScopeRef = React.useRef<string | null | undefined>(undefined);
+  const transitionRef = React.useRef(0);
+
+  const apply = React.useCallback(
+    async (next: AuthSnapshot) => {
+      const nextScope = authScope(next);
+      if (nextScope === pendingScopeRef.current) return;
+      if (nextScope === currentScopeRef.current && pendingScopeRef.current === undefined) {
+        setSnapshot(next);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      const transition = transitionRef.current + 1;
+      transitionRef.current = transition;
+      pendingScopeRef.current = nextScope;
+      setError(null);
+      setLoading(true);
+
+      if (nextScope === null) {
+        router.clearCache();
+      } else {
+        await router.invalidate().catch(() => undefined);
+      }
+
+      if (transition !== transitionRef.current) return;
+      currentScopeRef.current = nextScope;
+      pendingScopeRef.current = undefined;
+      setSnapshot(next);
+      setLoading(false);
+    },
+    [router],
+  );
+
   const refresh = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-      setSnapshot(await window.auth.getSession());
+      await apply(await window.auth.getSession());
     } catch (cause) {
       setError(messageFrom(cause));
-    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apply]);
 
   React.useEffect(() => {
     if (initialSnapshot === null && initialError === null) void refresh();
-    const apply = (next: AuthSnapshot) => {
-      setSnapshot(next);
-      setError(null);
-      setLoading(false);
-    };
-    const dispose = window.auth?.onSessionChange(apply);
-    const handleLocal = (event: Event) => apply((event as CustomEvent<AuthSnapshot>).detail);
+    const dispose = window.auth?.onSessionChange((next) => void apply(next));
+    const handleLocal = (event: CustomEvent<AuthSnapshot>) => void apply(event.detail);
     window.addEventListener("auth:session", handleLocal);
     return () => {
       dispose?.();
       window.removeEventListener("auth:session", handleLocal);
     };
-  }, [refresh]);
+  }, [apply, refresh]);
 
   return (
     <AuthContext.Provider value={{ snapshot, loading, error, refresh }}>
