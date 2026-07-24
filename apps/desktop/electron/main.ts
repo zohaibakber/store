@@ -19,7 +19,7 @@ import {
   SyncTransportError,
   layer as persistenceLayer,
 } from "@store/persistence";
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
@@ -446,7 +446,7 @@ function createWindow() {
     icon: appIconPath(),
     frame: false,
     show: false,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
