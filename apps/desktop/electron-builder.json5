@@ -25,7 +25,9 @@
       provider: "github",
       owner: "zohaibakber",
       repo: "store",
-      releaseType: "release",
+      // Both platform jobs upload into the same draft. The release workflow
+      // publishes it only after every platform and update manifest is present.
+      releaseType: "draft",
     },
   ],
   files: ["dist", "dist-electron"],

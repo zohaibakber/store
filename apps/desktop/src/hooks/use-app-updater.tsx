@@ -101,8 +101,8 @@ export function useAppUpdater() {
             toastManager.add({
               description: event.message,
               priority: "high",
-              title: "Update check failed",
-              type: "error",
+              title: event.retrying ? "Update check delayed" : "Update check failed",
+              type: event.retrying ? "info" : "error",
             });
           }
           downloadingRef.current = false;
