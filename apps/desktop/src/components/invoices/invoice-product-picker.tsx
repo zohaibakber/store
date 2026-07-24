@@ -45,6 +45,8 @@ function InvoiceProductPicker() {
         autoFocus
         aria-label="Search products"
         placeholder="Search products to add…"
+        showClear
+        showTrigger
         startAddon={<HugeiconsIcon aria-hidden="true" icon={Search01Icon} />}
       />
       <AutocompletePopup>

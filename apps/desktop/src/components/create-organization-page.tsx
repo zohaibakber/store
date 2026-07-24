@@ -1,30 +1,24 @@
 import * as React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { MedicineBottle01Icon } from "@hugeicons/core-free-icons";
+import { AuthBrand } from "@/components/auth/auth-brand";
+import { WindowControls } from "@/components/window-controls";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
+
+type CreateOrganizationErrors = Record<string, string | string[]>;
 
 export function CreateOrganizationPage() {
   const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [errors, setErrors] = React.useState<CreateOrganizationErrors>({});
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = new FormData(event.currentTarget).get("organizationName");
     setPending(true);
-    setError(null);
+    setErrors({});
     try {
       if (!window.auth) throw new Error("Authentication is unavailable in this build.");
       const next = await window.auth.createOrganization({
@@ -32,55 +26,48 @@ export function CreateOrganizationPage() {
       });
       window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
     } catch (cause) {
-      setError(getErrorMessage(cause));
+      setErrors({ organizationName: getErrorMessage(cause) });
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/30 p-4">
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <HugeiconsIcon icon={MedicineBottle01Icon} />
-          </div>
-          <span className="text-base font-medium">Tabaaq</span>
+    <main className="relative flex min-h-svh flex-col">
+      <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center px-2 [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag]">
+        <WindowControls />
+      </header>
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 md:p-10">
+        <AuthBrand />
+        <div className="w-full max-w-xs">
+          <Form errors={errors} onChange={() => setErrors({})} onSubmit={submit}>
+            <Fieldset className="flex w-full flex-col gap-6">
+              <div className="flex flex-col items-center gap-1 text-center">
+                <h1 className="text-2xl font-medium">Create your organization</h1>
+                <p className="text-muted-foreground text-sm">
+                  The workspace your store data will sync to.
+                </p>
+              </div>
+              <Field name="organizationName">
+                <FieldLabel htmlFor="organizationName">Organization name</FieldLabel>
+                <Input
+                  id="organizationName"
+                  name="organizationName"
+                  type="text"
+                  autoComplete="organization"
+                  autoFocus
+                  required
+                />
+                <FieldError />
+              </Field>
+              <Field>
+                <Button className="w-full" loading={pending} type="submit">
+                  Create organization
+                </Button>
+              </Field>
+            </Fieldset>
+          </Form>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Create your organization</CardTitle>
-            <CardDescription>The shared workspace your store data will sync to.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form id="create-organization-form" onSubmit={submit}>
-              <Fieldset className="flex w-full flex-col gap-6">
-                <Field data-invalid={Boolean(error)}>
-                  <FieldLabel htmlFor="organizationName">Organization name</FieldLabel>
-                  <Input
-                    id="organizationName"
-                    name="organizationName"
-                    autoComplete="organization"
-                    required
-                    aria-invalid={error ? true : undefined}
-                  />
-                  {error && <FieldError match>{error}</FieldError>}
-                </Field>
-              </Fieldset>
-            </form>
-          </CardContent>
-          <CardFooter>
-            <Button
-              className="w-full"
-              form="create-organization-form"
-              type="submit"
-              disabled={pending}
-            >
-              {pending && <Spinner data-icon="inline-start" />}
-              Create organization
-            </Button>
-          </CardFooter>
-        </Card>
       </div>
     </main>
   );
