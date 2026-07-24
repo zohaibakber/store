@@ -28,6 +28,6 @@
     "@types/node": "^24.10.13",
     "@types/pg": "^8.16.0",
     "drizzle-kit": "1.0.0-rc.4",
-    "typescript": "^7.0.2"
+    "typescript": "catalog:"
   }
 }

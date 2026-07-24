@@ -2,10 +2,21 @@
   "name": "store-electron",
   "version": "0.0.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "effect": "4.0.0-beta.101",
+      "@effect/sql-pg": "4.0.0-beta.101",
+      "@effect/sql-pglite": "4.0.0-beta.101",
+      "@effect/vitest": "4.0.0-beta.101",
+      "typescript": "7.0.2",
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
+      "vite-plus": "0.2.6"
+    }
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -15,12 +26,13 @@
     "preview": "turbo run preview --parallel"
   },
   "devDependencies": {
-    "turbo": "^2.10.5",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
-    "vite-plus": "0.2.4"
+    "turbo": "^2.10.6",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4"
+    "drizzle-orm": "1.0.0-rc.4",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6"
   },
   "devEngines": {
     "packageManager": {

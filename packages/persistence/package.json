@@ -12,16 +12,16 @@
     "test": "vitest run --root ../.. packages/persistence/src"
   },
   "dependencies": {
-    "@effect/sql-pglite": "4.0.0-beta.98",
+    "@effect/sql-pglite": "catalog:",
     "@electric-sql/pglite": "^0.5.4",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
-    "effect": "4.0.0-beta.98"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "^24.10.13",
-    "typescript": "^7.0.2",
+    "typescript": "catalog:",
     "vitest": "^4.1.0"
   }
 }
