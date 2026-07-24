@@ -62,7 +62,7 @@ export function CreateOrganizationPage() {
                     name="organizationName"
                     autoComplete="organization"
                     required
-                    aria-invalid={Boolean(error)}
+                    aria-invalid={error ? true : undefined}
                   />
                   {error && <FieldError match>{error}</FieldError>}
                 </Field>

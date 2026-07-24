@@ -1,12 +1,8 @@
-import { useState } from "react";
 import { formOptions, useForm } from "@tanstack/react-form";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import type { Category, Product } from "@store/contracts";
-import { PencilEdit02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "@/lib/toast";
 import * as z from "zod";
-import { Button } from "@/components/ui/button";
 import {
   ControlGroup,
   ControlGroupAddon,
@@ -14,16 +10,6 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/control-group";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { FormFieldError } from "@/components/form-field-error";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
@@ -203,7 +189,7 @@ function ProductForm({
               <Field data-invalid={invalid}>
                 <FieldLabel htmlFor={field.name}>Product name</FieldLabel>
                 <Input
-                  aria-invalid={invalid}
+                  aria-invalid={invalid || undefined}
                   autoFocus
                   id={field.name}
                   name={field.name}
@@ -235,7 +221,11 @@ function ProductForm({
                     onValueChange={(value) => value && field.handleChange(value)}
                     value={field.state.value}
                   >
-                    <SelectTrigger aria-invalid={invalid} className="w-full" id={field.name}>
+                    <SelectTrigger
+                      aria-invalid={invalid || undefined}
+                      className="w-full"
+                      id={field.name}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -261,7 +251,7 @@ function ProductForm({
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Aisle</FieldLabel>
                   <Input
-                    aria-invalid={invalid}
+                    aria-invalid={invalid || undefined}
                     id={field.name}
                     name={field.name}
                     onBlur={field.handleBlur}
@@ -285,7 +275,7 @@ function ProductForm({
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Composition</FieldLabel>
                   <Input
-                    aria-invalid={invalid}
+                    aria-invalid={invalid || undefined}
                     id={field.name}
                     name={field.name}
                     onBlur={field.handleBlur}
@@ -310,7 +300,7 @@ function ProductForm({
                       format={{ maximumFractionDigits: 2 }}
                       id={field.name}
                       inputProps={{
-                        "aria-invalid": invalid,
+                        "aria-invalid": invalid || undefined,
                         "aria-label": "Strength value",
                         name: field.name,
                         onBlur: field.handleBlur,
@@ -390,7 +380,7 @@ function ProductForm({
                     >
                       <NumberFieldGroup>
                         <NumberFieldInput
-                          aria-invalid={invalid}
+                          aria-invalid={invalid || undefined}
                           className="text-left"
                           name={field.name}
                           onBlur={field.handleBlur}
@@ -425,7 +415,7 @@ function ProductForm({
                         format={{ maximumFractionDigits: 2 }}
                         id={field.name}
                         inputProps={{
-                          "aria-invalid": invalid,
+                          "aria-invalid": invalid || undefined,
                           name: field.name,
                           onBlur: field.handleBlur,
                         }}
@@ -459,7 +449,7 @@ function ProductForm({
                       format={{ maximumFractionDigits: 0 }}
                       id={field.name}
                       inputProps={{
-                        "aria-invalid": invalid,
+                        "aria-invalid": invalid || undefined,
                         name: field.name,
                         onBlur: field.handleBlur,
                       }}
@@ -488,67 +478,4 @@ function ProductForm({
   );
 }
 
-function EditProductFields({
-  categories,
-  onUpdated,
-  product,
-}: {
-  categories: ReadonlyArray<Category>;
-  onUpdated: () => void;
-  product: Product;
-}) {
-  const form = useProductUpdateForm(product, onUpdated);
-
-  return (
-    <>
-      <ProductForm categories={categories} form={form} formId="edit-product-form" />
-      <DialogFooter>
-        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-        <form.Subscribe selector={(state) => state.canSubmit}>
-          {(canSubmit) => (
-            <Button disabled={!canSubmit} form="edit-product-form" type="submit">
-              Save changes
-            </Button>
-          )}
-        </form.Subscribe>
-      </DialogFooter>
-    </>
-  );
-}
-
-function EditProductDialog({
-  categories,
-  product,
-}: {
-  categories: ReadonlyArray<Category>;
-  product: Product;
-}) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Dialog onOpenChange={setOpen} open={open}>
-      <DialogTrigger render={<Button size="icon" variant="ghost" />}>
-        <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
-      </DialogTrigger>
-      <DialogContent className={"min-w-[50vw]"}>
-        <DialogHeader>
-          <DialogTitle>Edit product</DialogTitle>
-          <DialogDescription>Update the catalog details for this product.</DialogDescription>
-        </DialogHeader>
-        {open && (
-          <EditProductFields
-            categories={categories}
-            onUpdated={() => {
-              setOpen(false);
-              void router.invalidate();
-            }}
-            product={product}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export { EditProductDialog, ProductForm, useProductCreateForm };
+export { ProductForm, useProductCreateForm, useProductUpdateForm };

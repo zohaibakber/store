@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { NavHistory } from "@/components/nav-history";
 import { NavMain, type NavMainItem } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
 import { SyncButton } from "@/components/sync-button";
@@ -37,7 +38,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar {...props}>
       <SidebarHeader>
-        <TeamSwitcher />
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <TeamSwitcher />
+          </div>
+          <NavHistory />
+        </div>
         <SearchForm />
       </SidebarHeader>
       <SidebarContent>

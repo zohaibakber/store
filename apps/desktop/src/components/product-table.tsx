@@ -1,5 +1,5 @@
 import type { Product } from "@store/contracts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { rankItem } from "@tanstack/match-sorter-utils";
 import {
   columnFilteringFeature,
@@ -17,16 +17,7 @@ import {
   useTable,
 } from "@tanstack/react-table";
 import { formatDate, formatPrice } from "@/lib/format";
-import {
-  DataTable,
-  DataTableColumnHeader,
-  DataTableContent,
-  DataTableFooter,
-  DataTableFilter,
-  DataTableHeader,
-  DataTablePagination,
-  DataTableViewOptions,
-} from "@/components/data-table";
+import { DataTableColumnHeader } from "@/components/data-table";
 
 // v9: features, row models and fn registries are stitched together statically
 // so the bundle only carries what this table uses.
@@ -117,10 +108,13 @@ const columns = columnHelper.columns([
     meta: { label: "Updated" },
   }),
 ]);
-export function ProductsTable({ products }: { products: readonly Product[] }) {
-  const navigate = useNavigate();
-
-  const table = useTable({
+/**
+ * The table instance lives in the page rather than a self-contained component:
+ * the filter and column-visibility controls now sit in the page header, which
+ * is outside the table's markup but must share its context.
+ */
+export function useProductsTable(products: readonly Product[]) {
+  return useTable({
     features,
     columns,
     data: products,
@@ -131,20 +125,4 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
       sorting: [{ id: "name", desc: false }],
     },
   });
-  return (
-    <DataTable
-      onRowClick={(row) => navigate({ to: "/products/$productId", params: { productId: row.id } })}
-      table={table}
-    >
-      <DataTableHeader>
-        <DataTableFilter columnId="name" placeholder="Search products" />
-        <DataTableViewOptions />
-      </DataTableHeader>
-      <DataTableContent>
-        <DataTableFooter>
-          <DataTablePagination />
-        </DataTableFooter>
-      </DataTableContent>
-    </DataTable>
-  );
 }

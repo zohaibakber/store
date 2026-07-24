@@ -89,7 +89,7 @@ export function SettingsPage() {
                     name="organizationName"
                     placeholder="Store name"
                     required
-                    aria-invalid={Boolean(error)}
+                    aria-invalid={error ? true : undefined}
                   />
                   {error && <FieldError match>{error}</FieldError>}
                 </Field>

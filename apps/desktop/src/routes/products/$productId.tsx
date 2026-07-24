@@ -1,5 +1,11 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { Alert02Icon, ArrowRightFreeIcons, Tag01Icon, Trash2 } from "@hugeicons/core-free-icons";
+import {
+  Alert02Icon,
+  ArrowRightFreeIcons,
+  PencilEdit02Icon,
+  Tag01Icon,
+  Trash2,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -22,7 +28,6 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/product-batches";
-import { EditProductDialog } from "@/components/product-form";
 import { ProductVisibilityCard } from "@/components/product-visibility";
 import { formatDate, formatPrice } from "@/lib/format";
 import { toast } from "@/lib/toast";
@@ -30,12 +35,11 @@ import { toast } from "@/lib/toast";
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ params }) => {
     const input = { id: params.productId };
-    const [product, movements, categories] = await Promise.all([
+    const [product, movements] = await Promise.all([
       window.offlineStore.getProduct(input),
       window.offlineStore.listStockMovements(input),
-      window.offlineStore.listCategories(),
     ]);
-    return { product, movements, categories };
+    return { product, movements };
   },
   component: ProductDetailPage,
   errorComponent: ProductDetailError,
@@ -67,7 +71,7 @@ function BackToProducts() {
 }
 
 function ProductDetailPage() {
-  const { product, movements, categories } = Route.useLoaderData();
+  const { product, movements } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
 
@@ -132,7 +136,16 @@ function ProductDetailPage() {
             <CardHeader>
               <CardTitle>Details</CardTitle>
               <CardAction>
-                <EditProductDialog categories={categories} product={product} />
+                <Button
+                  render={
+                    <Link params={{ productId: product.id }} to="/products/$productId/edit" />
+                  }
+                  size="sm"
+                  variant="outline"
+                >
+                  <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+                  Edit
+                </Button>
               </CardAction>
             </CardHeader>
             <CardContent>

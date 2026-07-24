@@ -135,7 +135,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
                     <Field data-invalid={invalid}>
                       <FieldLabel htmlFor={field.name}>Batch number</FieldLabel>
                       <Input
-                        aria-invalid={invalid}
+                        aria-invalid={invalid || undefined}
                         autoFocus
                         id={field.name}
                         name={field.name}
@@ -184,7 +184,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
                           {name === "packQuantity" ? "Sealed packs" : "Loose units"}
                         </FieldLabel>
                         <Input
-                          aria-invalid={invalid}
+                          aria-invalid={invalid || undefined}
                           id={field.name}
                           min="0"
                           name={field.name}
