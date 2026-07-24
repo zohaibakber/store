@@ -1,3 +1,16 @@
+import {
+  Add01Icon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  CornerDownLeftIcon,
+  HomeIcon,
+  Invoice01Icon,
+  SearchIcon,
+  SettingsIcon,
+  TagIcon,
+  Upload01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, Fragment, useCallback, useContext, useEffect, useState } from "react";
 import {
@@ -6,6 +19,7 @@ import {
   CommandDialog,
   CommandDialogPopup,
   CommandEmpty,
+  CommandFooter,
   CommandGroup,
   CommandGroupLabel,
   CommandInput,
@@ -13,16 +27,7 @@ import {
   CommandList,
   CommandPanel,
 } from "@/components/ui/command";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Add01Icon,
-  HomeIcon,
-  Invoice01Icon,
-  SearchIcon,
-  SettingsIcon,
-  TagIcon,
-  Upload01Icon,
-} from "@hugeicons/core-free-icons";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 type CommandRoute =
   | "/"
@@ -165,6 +170,31 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
                 )}
               </CommandList>
             </CommandPanel>
+            <CommandFooter>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <KbdGroup>
+                    <Kbd>
+                      <HugeiconsIcon aria-hidden="true" icon={ArrowUp01Icon} />
+                    </Kbd>
+                    <Kbd>
+                      <HugeiconsIcon aria-hidden="true" icon={ArrowDown01Icon} />
+                    </Kbd>
+                  </KbdGroup>
+                  <span>Navigate</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Kbd>
+                    <HugeiconsIcon aria-hidden="true" icon={CornerDownLeftIcon} />
+                  </Kbd>
+                  <span>Open</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Kbd>Esc</Kbd>
+                <span>Close</span>
+              </div>
+            </CommandFooter>
           </Command>
         </CommandDialogPopup>
       </CommandDialog>

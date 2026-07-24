@@ -1,14 +1,20 @@
-import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, LogoutIcon, SettingsIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  ComputerIcon,
+  LogoutIcon,
+  Moon02Icon,
+  Sun03Icon,
+} from "@hugeicons/core-free-icons";
+import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
   MenuItem,
-  MenuLinkItem,
   MenuPopup,
+  MenuPrimitive,
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
@@ -50,6 +56,7 @@ async function signOut() {
  */
 export function AccountMenu() {
   const { snapshot } = useAuth();
+  const { preference, setTheme } = useTheme();
   if (!snapshot?.activeOrganization || !snapshot.user) return null;
   const { activeOrganization, user } = snapshot;
 
@@ -59,14 +66,14 @@ export function AccountMenu() {
         <Menu>
           <MenuTrigger
             render={
-              <SidebarMenuButton className="aria-expanded:bg-muted aria-expanded:text-foreground" />
+              <SidebarMenuButton className="aria-expanded:bg-muted aria-expanded:text-foreground w-fit" />
             }
           >
             {/* vite-plugin-electron builds with base: "./" so the packaged app
                 can load index.html via file://; a root-absolute "/logo.svg"
                 would resolve to the filesystem root instead of the public dir. */}
             <img
-              alt=""
+              alt="Logo"
               className="size-6 shrink-0 rounded-[5px]"
               src={`${import.meta.env.BASE_URL}logo.svg`}
             />
@@ -92,10 +99,43 @@ export function AccountMenu() {
             </MenuGroup>
             <MenuSeparator />
             <MenuGroup>
-              <MenuLinkItem render={<Link to="/settings" />}>
-                <HugeiconsIcon aria-hidden="true" icon={SettingsIcon} />
-                Settings
-              </MenuLinkItem>
+              <div className="flex min-h-8 items-center justify-between gap-4 px-2 py-1 text-sm">
+                <span>Theme</span>
+                <MenuPrimitive.RadioGroup
+                  aria-label="Theme"
+                  className="grid w-fit shrink-0 grid-cols-3 rounded-lg border bg-muted/40 p-0.5"
+                  onValueChange={(value) => {
+                    if (value === "system" || value === "light" || value === "dark")
+                      setTheme(value);
+                  }}
+                  value={preference}
+                >
+                  <MenuPrimitive.RadioItem
+                    aria-label="Use system theme"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    closeOnClick={false}
+                    value="system"
+                  >
+                    <HugeiconsIcon aria-hidden="true" className="size-4" icon={ComputerIcon} />
+                  </MenuPrimitive.RadioItem>
+                  <MenuPrimitive.RadioItem
+                    aria-label="Use light theme"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    closeOnClick={false}
+                    value="light"
+                  >
+                    <HugeiconsIcon aria-hidden="true" className="size-4" icon={Sun03Icon} />
+                  </MenuPrimitive.RadioItem>
+                  <MenuPrimitive.RadioItem
+                    aria-label="Use dark theme"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    closeOnClick={false}
+                    value="dark"
+                  >
+                    <HugeiconsIcon aria-hidden="true" className="size-4" icon={Moon02Icon} />
+                  </MenuPrimitive.RadioItem>
+                </MenuPrimitive.RadioGroup>
+              </div>
             </MenuGroup>
             <MenuSeparator />
             <MenuGroup>

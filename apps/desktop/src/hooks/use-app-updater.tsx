@@ -2,35 +2,49 @@ import { useEffect, useRef } from "react";
 import { toastManager } from "@/components/ui/toast";
 
 const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
+const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
 
 const startDownload = (version: string) => {
-  void toastManager
-    .promise(window.updater.download(), {
-      error: (error) => ({
-        description: error instanceof Error ? error.message : "Please try again.",
-        priority: "high",
-        title: "Update failed",
-        type: "error",
-      }),
-      loading: {
-        description: `Downloading version ${version}.`,
-        timeout: 0,
-        title: "Downloading update…",
-        type: "loading",
+  toastManager.add({
+    data: {
+      progress: {
+        label: "Downloading",
+        value: 0,
       },
-      success: {
+    },
+    description: `Downloading version ${version}.`,
+    id: UPDATE_DOWNLOAD_TOAST_ID,
+    timeout: 0,
+    title: "Downloading update…",
+    type: "loading",
+  });
+
+  void window.updater
+    .download()
+    .then(() => {
+      toastManager.add({
         actionProps: {
           children: "Restart now",
           onClick: () => window.updater.install(),
         },
+        data: {},
         description: `Restart to install version ${version}.`,
+        id: UPDATE_DOWNLOAD_TOAST_ID,
         timeout: 0,
         title: "Update ready",
         type: "success",
-      },
+      });
     })
-    .catch(() => {
-      // The promise toast renders the rejected download state.
+    .catch((error) => {
+      toastManager.add({
+        data: {},
+        description: error instanceof Error ? error.message : "Please try again.",
+        id: UPDATE_DOWNLOAD_TOAST_ID,
+        priority: "high",
+        title: "Update failed",
+        type: "error",
+        timeout: 0,
+      });
     });
 };
 
@@ -65,6 +79,19 @@ export function useAppUpdater() {
           break;
         case "progress":
           downloadingRef.current = true;
+          toastManager.add({
+            data: {
+              progress: {
+                label: "Downloading",
+                value: event.percent,
+              },
+            },
+            description: "The update will be ready to install shortly.",
+            id: UPDATE_DOWNLOAD_TOAST_ID,
+            timeout: 0,
+            title: "Downloading update…",
+            type: "loading",
+          });
           break;
         case "downloaded":
           downloadingRef.current = false;

@@ -14,7 +14,7 @@ import { InvoiceProductPicker } from "@/components/invoices/invoice-product-pick
 
 function EmptyInvoiceItems() {
   return (
-    <Empty className="border border-dashed">
+    <Empty className="border border-dashed rounded-2xl">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />

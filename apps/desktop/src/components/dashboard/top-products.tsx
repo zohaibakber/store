@@ -2,7 +2,7 @@ import { FrameCard } from "@/components/frame-card";
 import type { DashboardAnalytics } from "@store/contracts";
 import { ChartBarLineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Bar, BarChart, LabelList, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, Cell, LabelList, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
@@ -21,6 +21,14 @@ import { formatPrice } from "@/lib/format";
 const topProductsConfig = {
   revenue: { label: "Revenue", color: "var(--chart-1)" },
 } satisfies ChartConfig;
+
+const topProductColors = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 export function TopProducts({ products }: { products: DashboardAnalytics["topProducts"] }) {
   return (
@@ -63,6 +71,12 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
               cursor={false}
             />
             <Bar barSize={24} dataKey="revenue" fill="var(--color-revenue)" radius={4}>
+              {products.map((product, index) => (
+                <Cell
+                  fill={topProductColors[index % topProductColors.length]}
+                  key={product.productId}
+                />
+              ))}
               <LabelList
                 className="fill-foreground"
                 dataKey="revenue"

@@ -11,6 +11,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type React from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import {
+  Progress,
+  ProgressIndicator,
+  ProgressLabel,
+  ProgressTrack,
+  ProgressValue,
+} from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 
 function CircleAlertIcon(
@@ -48,6 +55,10 @@ const TOAST_ICONS = {
 type SwipeDirection = "up" | "down" | "left" | "right";
 
 type ToastData = {
+  progress?: {
+    label: string;
+    value: number;
+  };
   rootProps?: Omit<
     React.ComponentProps<typeof Toast.Root>,
     "children" | "className" | "swipeDirection" | "toast"
@@ -76,6 +87,7 @@ function upsertReplayClassName(toast: { type?: string; updateKey?: number }): st
   if (toast.type === "error") {
     return isEven ? "animate-toast-error-even" : "animate-toast-error-odd";
   }
+  if (toast.type !== "success") return undefined;
   return isEven ? "animate-toast-success-even" : "animate-toast-success-odd";
 }
 
@@ -160,7 +172,7 @@ function Toasts({
               toast={toast}
             >
               <Toast.Content className="pointer-events-auto flex items-center justify-between gap-1.5 overflow-hidden px-3.5 py-3 text-sm transition-opacity duration-250 data-behind:not-data-expanded:pointer-events-none data-behind:opacity-0 data-expanded:opacity-100">
-                <div className="flex gap-2">
+                <div className="flex min-w-0 flex-1 gap-2">
                   {Icon && (
                     <div
                       className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
@@ -173,12 +185,23 @@ function Toasts({
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <Toast.Title className="font-medium" data-slot="toast-title" />
                     <Toast.Description
                       className="text-muted-foreground"
                       data-slot="toast-description"
                     />
+                    {toastData?.progress && (
+                      <Progress className="mt-1.5" value={toastData.progress.value}>
+                        <div className="flex items-center justify-between gap-2">
+                          <ProgressLabel>{toastData.progress.label}</ProgressLabel>
+                          <ProgressValue />
+                        </div>
+                        <ProgressTrack>
+                          <ProgressIndicator />
+                        </ProgressTrack>
+                      </Progress>
+                    )}
                   </div>
                 </div>
                 {toast.actionProps && (

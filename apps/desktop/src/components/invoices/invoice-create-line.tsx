@@ -74,7 +74,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
         <FrameHeader className="flex-row items-center gap-3 px-2 py-2">
           <CollapsibleTrigger
             className="data-panel-open:[&_svg]:rotate-180"
-            render={<Button className="min-w-0 flex-1 justify-start ps-0" variant="ghost" />}
+            render={<Button className="min-w-0 flex-1 justify-start" variant="ghost" />}
           >
             <HugeiconsIcon
               aria-hidden="true"

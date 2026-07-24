@@ -30,7 +30,7 @@ function PageHeader({ className, ...props }: ComponentProps<"header">) {
     <header
       data-slot="page-header"
       className={cn(
-        "grid auto-rows-min items-start has-data-[slot=page-action]:grid-cols-[1fr_auto]",
+        "grid auto-rows-min items-center has-data-[slot=page-action]:grid-cols-[1fr_auto]",
         className,
       )}
       {...props}
@@ -42,7 +42,7 @@ function PageHeading({ className, ...props }: ComponentProps<"h1">) {
   return (
     <h1
       data-slot="page-heading"
-      className={cn("text-xl font-medium tracking-tight", className)}
+      className={cn("text-2xl font-medium tracking-tight", className)}
       {...props}
     />
   );
