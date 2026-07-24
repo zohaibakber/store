@@ -1,5 +1,5 @@
 import { FrameCard } from "@/components/frame-card";
-import type { DashboardAnalytics, SyncStatus } from "@store/contracts";
+import type { DashboardAnalytics } from "@store/contracts";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
@@ -7,10 +7,8 @@ import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-heal
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
-import { SyncStatusBadge } from "@/components/dashboard/sync-status-badge";
 import { TopProducts } from "@/components/dashboard/top-products";
 import {
-  PageAction,
   PageContent,
   PageDescription,
   PageHeader,
@@ -25,13 +23,6 @@ import { storeErrorMessage } from "@/lib/errors";
 // products qualify; the page only names the number in its description.
 const LOW_STOCK_THRESHOLD = 10;
 
-const initialStatus: SyncStatus = {
-  phase: "local-only",
-  configured: false,
-  lastSyncedAt: null,
-  message: "Loading local database…",
-};
-
 function ChartSkeleton() {
   return (
     <FrameCard
@@ -44,17 +35,11 @@ function ChartSkeleton() {
 }
 
 export function HomePage() {
-  const [status, setStatus] = useState(initialStatus);
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [nextStatus, nextAnalytics] = await Promise.all([
-      window.offlineStore.getSyncStatus(),
-      window.offlineStore.getDashboardAnalytics(),
-    ]);
-    setStatus(nextStatus);
-    setAnalytics(nextAnalytics);
+    setAnalytics(await window.offlineStore.getDashboardAnalytics());
     setError(null);
   }, []);
 
@@ -76,9 +61,6 @@ export function HomePage() {
       <PageHeader>
         <PageHeading>Dashboard</PageHeading>
         <PageDescription>Sales and stock health from the on-device database.</PageDescription>
-        <PageAction>
-          <SyncStatusBadge status={status} />
-        </PageAction>
       </PageHeader>
 
       <PageContent>

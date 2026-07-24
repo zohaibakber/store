@@ -59,10 +59,7 @@ export function AccountMenu() {
         <Menu>
           <MenuTrigger
             render={
-              <SidebarMenuButton
-                className="aria-expanded:bg-muted aria-expanded:text-foreground"
-                size="lg"
-              />
+              <SidebarMenuButton className="aria-expanded:bg-muted aria-expanded:text-foreground" />
             }
           >
             {/* vite-plugin-electron builds with base: "./" so the packaged app
@@ -73,10 +70,9 @@ export function AccountMenu() {
               className="size-6 shrink-0 rounded-[5px]"
               src={`${import.meta.env.BASE_URL}logo.svg`}
             />
-            <div className="grid min-w-0 flex-1 text-left leading-tight">
-              <span className="truncate font-medium">{activeOrganization.name}</span>
-              <span className="truncate text-muted-foreground text-xs">{user.email}</span>
-            </div>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">
+              {activeOrganization.name}
+            </span>
             <HugeiconsIcon aria-hidden="true" className="ml-auto size-4" icon={ArrowDown01Icon} />
           </MenuTrigger>
           <MenuPopup align="start" className="min-w-56" side="bottom" sideOffset={4}>
