@@ -1,5 +1,3 @@
-import { FrameCard } from "@/components/frame-card";
-import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Alert02Icon,
   ArrowRightFreeIcons,
@@ -8,6 +6,18 @@ import {
   Trash2,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+
+import { FrameCard } from "@/components/frame-card";
+import {
+  PageAction,
+  PageContent,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/page-layout";
+import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
+import { ProductVisibilityCard } from "@/components/products/visibility";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -20,18 +30,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/page-layout";
-import {
-  ProductBatchesCard,
-  ProductStockMovementsCard,
-} from "@/components/products/product-batches";
-import { ProductVisibilityCard } from "@/components/products/product-visibility";
 import { toastManager } from "@/components/ui/toast";
 import { formatDate, formatPrice } from "@/lib/format";
 

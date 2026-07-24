@@ -1,7 +1,8 @@
-import type { Category } from "@store/contracts";
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { Category } from "@store/contracts";
 import { useState } from "react";
+
 import {
   Combobox,
   ComboboxInput,
@@ -136,7 +137,7 @@ export function CategoryField({
           {(option: CategoryOption) =>
             option.create ? (
               <ComboboxItem
-                className="border-t data-highlighted:text-accent-foreground py-1.5"
+                className="border-t py-1.5 data-highlighted:text-accent-foreground"
                 disabled={!canCreate}
                 key="create"
                 value={option}

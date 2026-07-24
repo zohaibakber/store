@@ -1,5 +1,5 @@
-import * as React from "react";
 import { useRouter } from "@tanstack/react-router";
+import * as React from "react";
 
 export type AuthUser = { id: string; name: string; email: string; image?: string | null };
 export type AuthOrganization = { id: string; name: string; slug?: string | null; role: string };
@@ -104,7 +104,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [apply]);
 
   React.useEffect(() => {
-    if (initialSnapshot === null && initialError === null) void refresh();
     const dispose = window.auth?.onSessionChange((next) => void apply(next));
     const handleLocal = (event: CustomEvent<AuthSnapshot>) => void apply(event.detail);
     window.addEventListener("auth:session", handleLocal);
@@ -112,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       dispose?.();
       window.removeEventListener("auth:session", handleLocal);
     };
-  }, [apply, refresh]);
+  }, [apply]);
 
   return (
     <AuthContext.Provider value={{ snapshot, loading, error, refresh }}>

@@ -1,8 +1,9 @@
-import { FrameCard } from "@/components/frame-card";
-import type { DashboardAnalytics } from "@store/contracts";
 import { ChartBarLineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DashboardAnalytics } from "@store/contracts";
 import { Bar, BarChart, Cell, LabelList, XAxis, YAxis } from "recharts";
+
+import { FrameCard } from "@/components/frame-card";
 import {
   type ChartConfig,
   ChartContainer,

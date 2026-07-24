@@ -2,6 +2,7 @@ import { SyncEntityChange, type SyncOperation } from "@store/contracts";
 import { batches, stockMovements } from "@store/db/remote/schema";
 import { and, eq, sum } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+
 import type { SyncTransaction } from "./database.client";
 import { protocolError } from "./errors";
 import type { SyncActor } from "./model";

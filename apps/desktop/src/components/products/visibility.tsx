@@ -1,6 +1,7 @@
-import { FrameCard } from "@/components/frame-card";
 import type { Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
+
+import { FrameCard } from "@/components/frame-card";
 import {
   Select,
   SelectContent,

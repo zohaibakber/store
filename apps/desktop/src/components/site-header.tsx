@@ -1,5 +1,5 @@
-import { WindowControls } from "@/components/window-controls";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { WindowControls } from "@/components/window-controls";
 
 export function SiteHeader() {
   return (

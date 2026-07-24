@@ -1,11 +1,8 @@
 import type { Product } from "@store/contracts";
 
-import {
-  InvoiceCheckout,
-  InvoiceCompleteSaleAction,
-} from "@/components/invoices/invoice-create-checkout";
-import { InvoiceCreateProvider } from "@/components/invoices/invoice-create-context";
-import { InvoiceItems } from "@/components/invoices/invoice-create-items";
+import { InvoiceCheckout, InvoiceCompleteSaleAction } from "@/components/invoices/create-checkout";
+import { InvoiceCreateProvider } from "@/components/invoices/create-context";
+import { InvoiceItems } from "@/components/invoices/create-items";
 import {
   PageAction,
   PageContent,

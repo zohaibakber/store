@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+
 import type { AppEnv } from "../http/context";
 import { publicError } from "../http/errors";
 

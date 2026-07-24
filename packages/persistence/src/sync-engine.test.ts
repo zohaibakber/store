@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
 import {
   SyncEntityChange,
   SyncResponse,
@@ -13,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { expect, test } from "vitest";
+
 import { layer, SyncTransportError, type OfflineStore, type PersistenceError } from "./index";
 import { migrationsFolder, readOutbox, store } from "./test-support";
 

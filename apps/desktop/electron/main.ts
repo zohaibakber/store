@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   CreateBatchInput,
   CreateCategoryInput,
@@ -19,15 +24,12 @@ import {
   SyncTransportError,
   layer as persistenceLayer,
 } from "@store/persistence";
-import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
+
 import { AuthBroker, type AuthSnapshot, RequestError } from "./auth";
 import { setupUpdater } from "./updater";
 

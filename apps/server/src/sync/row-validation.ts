@@ -1,6 +1,7 @@
 import type { SyncEntityChange, SyncOperation } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
 import { protocolError } from "./errors";
 import type { SyncActor } from "./model";
 

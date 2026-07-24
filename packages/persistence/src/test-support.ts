@@ -1,9 +1,11 @@
+import path from "node:path";
+
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
 import { syncOutbox } from "@store/db/local/schema";
-import path from "node:path";
 import { asc } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-pglite";
 import * as Effect from "effect/Effect";
+
 import { OfflineStore } from "./service";
 
 type OfflineStoreShape = Effect.Success<typeof OfflineStore>;

@@ -4,11 +4,11 @@ import {
   ControlGroupNumberInput,
   ControlGroupText,
 } from "@/components/control-group";
+import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
 function InvoiceCompleteSaleAction() {
@@ -33,7 +33,7 @@ function InvoiceCheckout() {
   const itemCount = lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-6 border rounded-2xl p-6">
+    <div className="flex flex-wrap items-start justify-between gap-6 rounded-2xl border p-6">
       <Fieldset className="space-y-4">
         <Field>
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
@@ -64,10 +64,10 @@ function InvoiceCheckout() {
           )}
         </Field>
       </Fieldset>
-      <div className="ml-auto flex flex-col items-end mt-auto">
+      <div className="mt-auto ml-auto flex flex-col items-end">
         <div className="grid min-w-40 grid-cols-2 gap-x-6 gap-y-1 text-right">
           <span className="text-muted-foreground">Items</span>
-          <span className="tabular-nums font-mono">
+          <span className="font-mono tabular-nums">
             {lines.length === 0
               ? "—"
               : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · ${itemCount}`}
@@ -78,8 +78,8 @@ function InvoiceCheckout() {
           <span className="font-mono tabular-nums">
             {bulkDiscount != null && bulkDiscount > 0 ? `−${formatPrice(discountTotal)}` : "–"}
           </span>
-          <span className="font-medium text-lg">Total</span>
-          <span className="font-medium text-lg font-mono tabular-nums">{formatPrice(total)}</span>
+          <span className="text-lg font-medium">Total</span>
+          <span className="font-mono text-lg font-medium tabular-nums">{formatPrice(total)}</span>
         </div>
       </div>
     </div>

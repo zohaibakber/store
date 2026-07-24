@@ -1,7 +1,8 @@
+import type { Category, Product } from "@store/contracts";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
-import type { Category, Product } from "@store/contracts";
 import * as z from "zod";
+
 import {
   ControlGroup,
   ControlGroupAddon,
@@ -9,8 +10,8 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/control-group";
-import { CategoryField } from "@/components/products/category-field";
 import { FormFieldError } from "@/components/form-field-error";
+import { CategoryField } from "@/components/products/category-field";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";

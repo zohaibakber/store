@@ -47,7 +47,7 @@ export function ThemePicker() {
 
   return (
     <Field className="gap-4" name="theme" render={(props) => <Fieldset {...props} />}>
-      <FieldsetLegend className="font-medium text-sm">Theme</FieldsetLegend>
+      <FieldsetLegend className="text-sm font-medium">Theme</FieldsetLegend>
       <RadioGroup
         className="flex-row gap-4"
         onValueChange={(value) => value && setTheme(value as ThemePreference)}

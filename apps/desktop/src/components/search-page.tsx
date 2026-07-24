@@ -1,9 +1,10 @@
-import type { Product } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { Product } from "@store/contracts";
+import { productStock } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+
 import {
   PageContent,
   PageDescription,
@@ -26,41 +27,42 @@ import { formatPrice } from "@/lib/format";
 
 const SEARCH_DEBOUNCE_MS = 150;
 
+interface SearchState {
+  readonly term: string;
+  readonly results: ReadonlyArray<Product>;
+  readonly error: string | null;
+}
+
 export function SearchPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ReadonlyArray<Product>>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState<SearchState>({
+    term: "",
+    results: [],
+    error: null,
+  });
+  const term = query.trim();
+  const hasCurrentResult = search.term === term;
+  const results = hasCurrentResult ? search.results : [];
+  const error = hasCurrentResult ? search.error : null;
+  const isSearching = term.length > 0 && !hasCurrentResult;
 
   // Ranking happens in PGlite (trigram + phonetic scoring), so the component
   // never filters locally — hence `filter={null}` on the Autocomplete root.
   useEffect(() => {
-    const term = query.trim();
-    if (term.length === 0) {
-      setResults([]);
-      setIsSearching(false);
-      setError(null);
-      return;
-    }
+    if (term.length === 0) return;
 
-    setIsSearching(true);
     let cancelled = false;
     const handle = setTimeout(() => {
       window.offlineStore
         .searchProducts({ query: term, limit: 20 })
         .then((found) => {
           if (cancelled) return;
-          setResults(found);
-          setError(null);
+          setSearch({ term, results: found, error: null });
         })
         .catch((cause: unknown) => {
           if (cancelled) return;
-          setResults([]);
-          setError(storeErrorMessage(cause));
-        })
-        .finally(() => {
-          if (!cancelled) setIsSearching(false);
+          setSearch({ term, results: [], error: storeErrorMessage(cause) });
         });
     }, SEARCH_DEBOUNCE_MS);
 
@@ -68,7 +70,7 @@ export function SearchPage() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [query]);
+  }, [term]);
 
   const openProduct = (product: Product) =>
     void navigate({ to: "/products/$productId", params: { productId: product.id } });

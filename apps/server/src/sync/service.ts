@@ -7,6 +7,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+
 import { SyncDatabase } from "./database.service";
 import { protocolError, type SyncDatabaseError, type SyncProtocolError } from "./errors";
 import { operationPayloadHash } from "./hash";

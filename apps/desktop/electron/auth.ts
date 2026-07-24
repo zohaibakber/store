@@ -1,7 +1,8 @@
-import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
-import { app, net, safeStorage } from "electron";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
+import { app, net, safeStorage } from "electron";
 
 export interface AuthUser {
   readonly id: string;

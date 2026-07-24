@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+
 import { epochMilliseconds, tenantId } from "../shared/store.schema";
 import type { SyncEntity, SyncEntityChangePayload } from "../shared/sync";
 

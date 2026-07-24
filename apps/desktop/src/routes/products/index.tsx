@@ -1,6 +1,7 @@
 import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+
 import {
   DataTable,
   DataTableContent,
@@ -16,8 +17,8 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductAnalytics } from "@/components/products/product-analytics";
-import { useProductsTable } from "@/components/products/product-table";
+import { ProductAnalytics } from "@/components/products/analytics";
+import { useProductsTable } from "@/components/products/table";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/")({

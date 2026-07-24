@@ -1,5 +1,6 @@
 import type { SyncRequest, SyncResponse } from "@store/contracts";
 import type * as Effect from "effect/Effect";
+
 import type { SyncTransportError } from "./errors";
 
 export interface MutationContext {

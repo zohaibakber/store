@@ -1,6 +1,7 @@
-import * as React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { EyeIcon, EyeClosedIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import * as React from "react";
+
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 

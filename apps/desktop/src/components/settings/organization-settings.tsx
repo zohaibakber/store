@@ -1,4 +1,5 @@
 import * as React from "react";
+
 import { FrameCard } from "@/components/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,7 @@ export function OrganizationSettings() {
         title="Organization"
       >
         <p className="truncate font-medium">{organization?.name ?? "No organization"}</p>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           {snapshot?.user?.email ?? "—"} is signed in to this workspace.
         </p>
       </FrameCard>

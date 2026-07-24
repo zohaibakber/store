@@ -18,8 +18,8 @@ import {
   syncOutbox,
   syncState,
 } from "@store/db/local/schema";
-import { createSelectSchema } from "drizzle-orm/effect-schema";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
+import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+
 import type { MutationContext, PersistenceConfig } from "./config";
 import type { StoreDatabase, StoreTransaction } from "./database";
 import { PersistenceError, mapPersistenceError } from "./errors";

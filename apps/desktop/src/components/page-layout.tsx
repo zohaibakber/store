@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
+
 import { cn } from "@/lib/utils";
 
 function PageLayout({
@@ -11,7 +12,7 @@ function PageLayout({
     <div data-slot="page-layout" className={cn("p-4", className)} {...props}>
       <div
         data-slot="page-layout-content"
-        className={cn("mx-auto flex w-full flex-col gap-2 max-w-5xl", contentClassName)}
+        className={cn("mx-auto flex w-full max-w-5xl flex-col gap-2", contentClassName)}
       >
         {children}
       </div>

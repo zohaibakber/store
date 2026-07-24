@@ -6,6 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Hono } from "hono";
+
 import type { AppEnv } from "../http/context";
 import { publicError } from "../http/errors";
 import { SyncDatabaseError, SyncProtocolError } from "../sync/errors";

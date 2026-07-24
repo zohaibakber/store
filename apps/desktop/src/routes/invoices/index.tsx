@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { InvoicesPage } from "@/components/invoices/invoices-page";
+import { InvoicesPage } from "@/components/invoices/page";
 
 export const Route = createFileRoute("/invoices/")({
   loader: () => window.offlineStore.listInvoices(),

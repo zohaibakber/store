@@ -1,5 +1,6 @@
 import { Building01Icon, PaintBoardIcon, UserIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
 import { FrameCard } from "@/components/frame-card";
 import {
   PageContent,

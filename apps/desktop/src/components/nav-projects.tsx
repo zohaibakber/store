@@ -1,4 +1,12 @@
 import {
+  MoreHorizontalCircle01Icon,
+  FolderIcon,
+  Share03Icon,
+  Delete02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+
+import {
   Menu,
   MenuPopup,
   MenuGroup,
@@ -15,13 +23,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  MoreHorizontalCircle01Icon,
-  FolderIcon,
-  Share03Icon,
-  Delete02Icon,
-} from "@hugeicons/core-free-icons";
 
 export function NavProjects({
   projects,

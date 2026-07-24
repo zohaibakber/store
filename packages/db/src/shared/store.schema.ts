@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -10,7 +11,6 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export const epochMilliseconds = () => bigint({ mode: "number" });

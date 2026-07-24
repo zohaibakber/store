@@ -19,6 +19,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Stream from "effect/Stream";
+
+import { makeAnalyticsStore } from "./analytics-store";
 import { initializeDatabase } from "./bootstrap";
 import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
@@ -29,7 +31,6 @@ import {
   ProductNotFoundError,
   type StoreError,
 } from "./errors";
-import { makeAnalyticsStore } from "./analytics-store";
 import { makeInvoiceStore } from "./invoice-store";
 import { makeProductStore } from "./product-store";
 import { makeSyncEngine } from "./sync-engine";

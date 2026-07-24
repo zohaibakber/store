@@ -1,4 +1,8 @@
 import * as React from "react";
+
+import { AuthBrand } from "@/components/auth/brand";
+import { AuthModeToggle } from "@/components/auth/mode-toggle";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
@@ -7,9 +11,6 @@ import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
-import { AuthBrand } from "@/components/auth/auth-brand";
-import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
-import { PasswordInput } from "@/components/auth/password-input";
 
 function formValue(form: FormData, key: string) {
   const value = form.get(key);
@@ -107,7 +108,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                   <Button type="submit" disabled={pending} loading={pending} className="w-full">
                     {mode === "sign-in" ? "Sign in" : "Create account"}
                   </Button>
-                  <FieldDescription className="text-center mx-auto mt-2">
+                  <FieldDescription className="mx-auto mt-2 text-center">
                     <AuthModeToggle mode={mode} onToggle={toggleMode} />
                   </FieldDescription>
                 </Field>

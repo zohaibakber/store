@@ -1,9 +1,11 @@
+import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { routeTree } from "@/routeTree.gen";
+
 import { ThemeProvider } from "@/components/theme-provider";
 import { bootstrapAuth } from "@/lib/auth";
+import { routeTree } from "@/routeTree.gen";
+
 import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";

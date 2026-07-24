@@ -1,8 +1,8 @@
-import { app, ipcMain, type BrowserWindow } from "electron";
-import electronUpdater from "electron-updater";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schedule from "effect/Schedule";
+import { app, ipcMain, type BrowserWindow } from "electron";
+import electronUpdater from "electron-updater";
 
 // electron-updater is CJS; grab the instance off the default export so the
 // import works from the ESM main bundle.

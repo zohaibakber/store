@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { Button, buttonVariants } from "@/components/ui/button";
+
 import {
   PageAction,
   PageContent,
@@ -8,7 +8,8 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductForm, useProductUpdateForm } from "@/components/products/product-form";
+import { ProductForm, useProductUpdateForm } from "@/components/products/form";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ params }) => {

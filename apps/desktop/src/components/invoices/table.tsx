@@ -15,13 +15,14 @@ import {
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
-import { formatDateTime, formatPrice } from "@/lib/format";
+
 import {
   DataTableColumnHeader,
   DataTableContent,
   DataTableFooter,
   DataTablePagination,
 } from "@/components/data-table";
+import { formatDateTime, formatPrice } from "@/lib/format";
 
 const features = tableFeatures({
   columnFilteringFeature,
@@ -43,7 +44,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Invoice" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-medium font-mono tabular-nums hover:underline"
+        className="font-mono font-medium tabular-nums hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ invoiceId: row.original.id }}
         to="/invoices/$invoiceId"

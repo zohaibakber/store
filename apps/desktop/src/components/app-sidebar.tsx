@@ -1,12 +1,13 @@
+import { HomeIcon, Invoice01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type * as React from "react";
 
 import { AccountMenu } from "@/components/account-menu";
 import { NavHistory } from "@/components/nav-history";
 import { NavMain, type NavMainItem } from "@/components/nav-main";
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
 import { SyncStatusIndicator } from "@/components/sync-status";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { HomeIcon, Invoice01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
+
 import { SearchForm } from "./search-form";
 
 const data = {
@@ -52,7 +53,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <div className="flex items-center justify-between gap-2 px-1">
           <span
             aria-label={`App version ${__APP_VERSION__}`}
-            className="font-mono text-muted-foreground text-xs tabular-nums"
+            className="font-mono text-xs text-muted-foreground tabular-nums"
           >
             v{__APP_VERSION__}
           </span>

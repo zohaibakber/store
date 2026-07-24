@@ -1,8 +1,9 @@
-import type { Product } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { Product } from "@store/contracts";
+import { productStock } from "@store/contracts/store-helpers";
 
+import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   Autocomplete,
   AutocompleteEmpty,
@@ -12,7 +13,6 @@ import {
   AutocompletePopup,
 } from "@/components/ui/autocomplete";
 import { Badge } from "@/components/ui/badge";
-import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
 // The catalog is already in memory from the route loader, so matching happens

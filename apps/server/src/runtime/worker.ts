@@ -1,5 +1,6 @@
 import { makeAuth } from "@store/auth";
 import { createAuthDatabase } from "@store/db/auth.database";
+
 import { withElectronOrigin } from "../auth/electron-origin";
 import { factory } from "../http/factory";
 import { makeSyncRuntime } from "../sync/runtime";

@@ -1,8 +1,9 @@
-import type { Product } from "@store/contracts";
-import { productStock, productStockValue } from "@store/contracts/store-helpers";
 import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { Product } from "@store/contracts";
+import { productStock, productStockValue } from "@store/contracts/store-helpers";
 import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatPrice } from "@/lib/format";
@@ -33,10 +34,10 @@ function PrivateStockValue({ value }: { value: string }) {
 
   return (
     <div className="relative bg-background px-3 py-2">
-      <p className="truncate text-muted-foreground text-xs">Stock value</p>
+      <p className="truncate text-xs text-muted-foreground">Stock value</p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}
-        className="font-medium font-mono text-lg tabular-nums"
+        className="font-mono text-lg font-medium tabular-nums"
       >
         {visible ? value : "••••••"}
       </p>
@@ -46,7 +47,7 @@ function PrivateStockValue({ value }: { value: string }) {
             <Button
               aria-label={actionLabel}
               aria-pressed={visible}
-              className="absolute end-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity in-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+              className="absolute end-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-visible:opacity-100 in-hover:opacity-100 pointer-coarse:opacity-100"
               onClick={() => setVisible((current) => !current)}
               size="icon-xs"
               type="button"
@@ -88,8 +89,8 @@ export function ProductAnalytics({ products }: { products: readonly Product[] })
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
       {tiles.slice(0, 3).map((tile) => (
         <div className="bg-background px-3 py-2" key={tile.label}>
-          <p className="truncate text-muted-foreground text-xs">{tile.label}</p>
-          <p className={`font-medium font-mono text-lg tabular-nums ${tile.tone ?? ""}`}>
+          <p className="truncate text-xs text-muted-foreground">{tile.label}</p>
+          <p className={`font-mono text-lg font-medium tabular-nums ${tile.tone ?? ""}`}>
             {tile.value}
           </p>
         </div>
@@ -97,8 +98,8 @@ export function ProductAnalytics({ products }: { products: readonly Product[] })
       <PrivateStockValue value={formatPrice(stockValue)} />
       {tiles.slice(3).map((tile) => (
         <div className="bg-background px-3 py-2" key={tile.label}>
-          <p className="truncate text-muted-foreground text-xs">{tile.label}</p>
-          <p className={`font-medium font-mono text-lg tabular-nums ${tile.tone ?? ""}`}>
+          <p className="truncate text-xs text-muted-foreground">{tile.label}</p>
+          <p className={`font-mono text-lg font-medium tabular-nums ${tile.tone ?? ""}`}>
             {tile.value}
           </p>
         </div>

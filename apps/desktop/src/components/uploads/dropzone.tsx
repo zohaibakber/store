@@ -1,8 +1,10 @@
-import { useRef, useState } from "react";
 import { Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useRef, useState } from "react";
+
 import { cn } from "@/lib/utils";
-import { useUpload } from "./upload-context";
+
+import { useUpload } from "./context";
 
 function UploadDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,7 +50,7 @@ function UploadDropzone() {
           icon={Upload01Icon}
         />
         <span className="font-medium">Drop invoices here, or browse</span>
-        <span className="text-muted-foreground text-xs">PDF and CSV files</span>
+        <span className="text-xs text-muted-foreground">PDF and CSV files</span>
       </button>
     </>
   );

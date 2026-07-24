@@ -3,6 +3,7 @@ import type { SyncRequest } from "@store/contracts";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Redacted from "effect/Redacted";
+
 import { syncDatabaseLayer } from "./database";
 import { syncProgram, syncServiceLayer, type SyncActor } from "./service";
 

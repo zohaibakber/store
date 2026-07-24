@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+
 import { toastManager } from "@/components/ui/toast";
 
 const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";

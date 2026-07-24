@@ -1,4 +1,5 @@
 import { bigserial, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+
 import { epochMilliseconds, tenantId } from "../shared/store.schema";
 import type { SyncEntityChangePayload } from "../shared/sync";
 

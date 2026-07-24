@@ -1,9 +1,11 @@
 import { Delete02Icon, FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ThinkingOrb } from "thinking-orbs";
+
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
-import { fileDescription, useUpload } from "./upload-context";
+
+import { fileDescription, useUpload } from "./context";
 
 function UploadAttachmentList() {
   const {
@@ -26,7 +28,7 @@ function UploadAttachmentList() {
             />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">{file.name}</p>
-              <p className="truncate text-muted-foreground text-xs">{fileDescription(file)}</p>
+              <p className="truncate text-xs text-muted-foreground">{fileDescription(file)}</p>
             </div>
             <Button
               aria-label={`Remove ${file.name}`}
@@ -54,7 +56,7 @@ function UploadAttachmentList() {
             <p className="font-medium">
               {phase === "syncing" ? "Applying changes" : "Reading invoices with AI"}
             </p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               {phase === "syncing"
                 ? "Writing the approved stock into the local database."
                 : "Extracting products and quantities from the attached files."}

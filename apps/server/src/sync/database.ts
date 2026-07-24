@@ -5,6 +5,7 @@ import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ConstraintError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
+
 import { makeSyncDrizzle, type SyncDrizzle } from "./database.client";
 import { SyncDatabase } from "./database.service";
 import { SyncDatabaseError, SyncProtocolError } from "./errors";

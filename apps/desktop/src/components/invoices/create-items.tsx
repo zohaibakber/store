@@ -1,6 +1,9 @@
 import { ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { useInvoiceCreate } from "@/components/invoices/create-context";
+import { InvoiceCreateLine } from "@/components/invoices/create-line";
+import { InvoiceProductPicker } from "@/components/invoices/product-picker";
 import {
   Empty,
   EmptyDescription,
@@ -8,13 +11,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
-import { InvoiceCreateLine } from "@/components/invoices/invoice-create-line";
-import { InvoiceProductPicker } from "@/components/invoices/invoice-product-picker";
 
 function EmptyInvoiceItems() {
   return (
-    <Empty className="border border-dashed rounded-2xl">
+    <Empty className="rounded-2xl border border-dashed">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />

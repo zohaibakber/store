@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import {
   ArrowExpand01Icon,
   ArrowShrink02Icon,
@@ -7,6 +6,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
+
+import { Button } from "@/components/ui/button";
 
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);

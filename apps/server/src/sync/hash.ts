@@ -1,5 +1,6 @@
-import { canonicalJson, type SyncOperation } from "@store/contracts";
 import { createHash } from "node:crypto";
+
+import { canonicalJson, type SyncOperation } from "@store/contracts";
 
 export const operationPayloadHash = (operation: SyncOperation) => {
   const { payloadHash: _payloadHash, ...payload } = operation;

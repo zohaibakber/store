@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/invoice-detail-page";
+import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/detail-page";
 
 export const Route = createFileRoute("/invoices/$invoiceId")({
   loader: ({ params }) => window.offlineStore.getInvoice({ id: params.invoiceId }),

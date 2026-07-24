@@ -1,10 +1,7 @@
 import { Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { UploadAttachmentList } from "@/components/uploads/upload-attachment-list";
-import { UploadDropzone } from "@/components/uploads/upload-dropzone";
-import { UploadProposedChanges } from "@/components/uploads/upload-proposed-changes";
-import { UploadProvider, useUpload } from "@/components/uploads/upload-context";
+
 import {
   PageAction,
   PageContent,
@@ -15,6 +12,10 @@ import {
 } from "@/components/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { UploadAttachmentList } from "@/components/uploads/attachment-list";
+import { UploadProvider, useUpload } from "@/components/uploads/context";
+import { UploadDropzone } from "@/components/uploads/dropzone";
+import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
 
 export const Route = createFileRoute("/products/upload")({
   loader: async () => {

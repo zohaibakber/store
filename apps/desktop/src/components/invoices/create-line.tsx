@@ -1,9 +1,6 @@
 import { ArrowDown01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   ControlGroup,
   ControlGroupAddon,
@@ -11,6 +8,17 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/control-group";
+import {
+  AUTO_BATCH,
+  lineTotal,
+  paisaToRupees,
+  suggestedPrice,
+  useInvoiceCreate,
+  type SaleLine,
+} from "@/components/invoices/create-context";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Frame, FrameHeader, FramePanel } from "@/components/ui/frame";
 import {
@@ -21,14 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AUTO_BATCH,
-  lineTotal,
-  paisaToRupees,
-  suggestedPrice,
-  useInvoiceCreate,
-  type SaleLine,
-} from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
 const quantityItems = [
@@ -129,7 +129,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             </ControlGroupAddon>
           </ControlGroup>
 
-          <span className="min-w-24 text-right font-medium font-mono tabular-nums">
+          <span className="min-w-24 text-right font-mono font-medium tabular-nums">
             {total == null ? "—" : formatPrice(total)}
           </span>
 
@@ -223,7 +223,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
         </CollapsiblePanel>
       </Collapsible>
 
-      {error && <p className="px-4 pb-2 text-destructive-foreground text-xs">{error}</p>}
+      {error && <p className="px-4 pb-2 text-xs text-destructive-foreground">{error}</p>}
     </Frame>
   );
 }

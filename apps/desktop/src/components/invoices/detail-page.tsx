@@ -1,11 +1,9 @@
+import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link } from "@tanstack/react-router";
-import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Frame, FrameHeader } from "@/components/ui/frame";
+
 import {
   PageContent,
   PageDescription,
@@ -13,6 +11,9 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Frame, FrameHeader } from "@/components/ui/frame";
 import { formatDateTime, formatPrice } from "@/lib/format";
 
 function BackToInvoices() {
@@ -70,14 +71,14 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
               <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{item.productName}</p>
-                  <p className="truncate font-mono text-muted-foreground text-xs tabular-nums">
+                  <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
                     {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
                     {" · "}
                     {item.quantity} {item.quantityType === "pack" ? "packs" : "units"} ×{" "}
                     {formatPrice(item.salePrice)}
                   </p>
                 </div>
-                <span className="font-medium font-mono tabular-nums">
+                <span className="font-mono font-medium tabular-nums">
                   {formatPrice(item.quantity * item.salePrice)}
                 </span>
               </FrameHeader>
@@ -85,14 +86,14 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
           ))}
         </div>
 
-        <div className="flex flex-col gap-1 border p-4 rounded-2xl">
+        <div className="flex flex-col gap-1 rounded-2xl border p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span>Items</span>
             <span className="font-mono tabular-nums">
               {invoice.items.length} {invoice.items.length === 1 ? "line" : "lines"} · {unitsSold}
             </span>
           </div>
-          <div className="flex items-center justify-between font-medium text-xl">
+          <div className="flex items-center justify-between text-xl font-medium">
             <span>Total</span>
             <span className="font-mono tabular-nums">{formatPrice(invoice.total)}</span>
           </div>

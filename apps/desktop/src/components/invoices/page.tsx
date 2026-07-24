@@ -2,9 +2,9 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
+
 import { DataTable, DataTableFilter } from "@/components/data-table";
-import { InvoicesTable, useInvoicesTable } from "@/components/invoices/invoice-table";
-import { Button } from "@/components/ui/button";
+import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
 import {
   PageAction,
   PageContent,
@@ -12,6 +12,7 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
+import { Button } from "@/components/ui/button";
 
 function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
   const navigate = useNavigate();

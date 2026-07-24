@@ -1,4 +1,3 @@
-import type { ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -8,8 +7,12 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
 import { createContext, use, useEffect, useRef, useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import { Frame, FrameFooter } from "@/components/ui/frame";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import {
   Menu,
   MenuCheckboxItem,
@@ -19,8 +22,6 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import { Frame, FrameFooter } from "@/components/ui/frame";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import {
   Select,
   SelectContent,
@@ -287,7 +288,7 @@ function DataTableColumnHeader({ column, title, className, ...props }: DataTable
   const toggle = column.getToggleSortingHandler();
   return (
     <div
-      className={cn("flex h-full cursor-pointer select-none items-center gap-2", className)}
+      className={cn("flex h-full cursor-pointer items-center gap-2 select-none", className)}
       onClick={toggle}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {

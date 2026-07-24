@@ -1,6 +1,7 @@
-import { FrameCard } from "@/components/frame-card";
 import type { DashboardAnalytics } from "@store/contracts";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+
+import { FrameCard } from "@/components/frame-card";
 import {
   type ChartConfig,
   ChartContainer,

@@ -1,15 +1,16 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
+
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthPage } from "@/components/auth/page";
+import { CommandMenuProvider } from "@/components/command-menu";
+import { CreateOrganizationPage } from "@/components/create-organization-page";
 import { NotFound } from "@/components/not-found";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
-import { AuthPage } from "@/components/auth/auth-page";
-import { CreateOrganizationPage } from "@/components/create-organization-page";
-import { AuthProvider, useAuth } from "@/lib/auth";
-import { CommandMenuProvider } from "@/components/command-menu";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -40,7 +41,7 @@ function AuthenticatedLayout() {
       <CommandMenuProvider>
         <SidebarProvider className="h-svh min-h-0 overflow-hidden">
           <AppSidebar />
-          <SidebarInset className="min-h-0 overflow-y-auto scrollbar-gutter-stable [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
+          <SidebarInset className="min-h-0 scrollbar-gutter-stable overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40">
             <SiteHeader />
             <Outlet />
           </SidebarInset>

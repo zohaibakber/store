@@ -1,6 +1,6 @@
 export function AuthBrand() {
   return (
-    <span className="flex text-lg items-center gap-2 font-medium">
+    <span className="flex items-center gap-2 text-lg font-medium">
       {/* vite-plugin-electron builds with base: "./" so the packaged app can
           load index.html via file://; a root-absolute "/logo.svg" would
           resolve to the filesystem root instead of the public dir. */}

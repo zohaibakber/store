@@ -1,4 +1,3 @@
-import { createInsertSchema, createSelectSchema } from "drizzle-orm/effect-schema";
 import {
   batches,
   categories,
@@ -7,6 +6,7 @@ import {
   products,
   stockMovements,
 } from "@store/db/store.schema";
+import { createInsertSchema, createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Schema from "effect/Schema";
 
 // Wire schemas are derived from the drizzle tables so the database schema stays

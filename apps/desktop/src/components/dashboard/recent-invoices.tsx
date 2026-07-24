@@ -1,9 +1,10 @@
-import { FrameCard } from "@/components/frame-card";
-import type { DashboardAnalytics } from "@store/contracts";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { ArrowRight01Icon, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DashboardAnalytics } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link } from "@tanstack/react-router";
+
+import { FrameCard } from "@/components/frame-card";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Empty,
@@ -56,10 +57,10 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
                     {invoice.customerName ?? "Walk-in customer"}
                   </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-muted-foreground tabular-nums">
+                <TableCell className="font-mono whitespace-nowrap text-muted-foreground tabular-nums">
                   {formatRelativeTime(invoice.createdAt)}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right font-mono tabular-nums">
+                <TableCell className="text-right font-mono whitespace-nowrap tabular-nums">
                   {formatPrice(invoice.total)}
                 </TableCell>
               </TableRow>

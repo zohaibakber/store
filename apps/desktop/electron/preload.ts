@@ -1,5 +1,6 @@
-import { ipcRenderer, contextBridge } from "electron";
 import type { InvoiceExtraction, OfflineStoreApi } from "@store/contracts";
+import { ipcRenderer, contextBridge } from "electron";
+
 import type { AuthSnapshot } from "./auth";
 import type { UpdaterEvent } from "./updater";
 

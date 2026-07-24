@@ -1,13 +1,14 @@
-import { FrameCard } from "@/components/frame-card";
-import type { DashboardAnalytics } from "@store/contracts";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DashboardAnalytics } from "@store/contracts";
 import { useCallback, useEffect, useState } from "react";
+
 import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-health";
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
 import { TopProducts } from "@/components/dashboard/top-products";
+import { FrameCard } from "@/components/frame-card";
 import { PageContent, PageLayout } from "@/components/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,10 +33,14 @@ export function HomePage() {
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setAnalytics(await window.offlineStore.getDashboardAnalytics());
-    setError(null);
-  }, []);
+  const refresh = useCallback(
+    () =>
+      window.offlineStore.getDashboardAnalytics().then((nextAnalytics) => {
+        setAnalytics(nextAnalytics);
+        setError(null);
+      }),
+    [],
+  );
 
   useEffect(() => {
     refresh().catch((cause: unknown) => setError(storeErrorMessage(cause)));

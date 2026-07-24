@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
-import type { AuthSnapshot } from "@/lib/auth";
 import type { InvoiceExtraction } from "@store/contracts";
+
+import type { AuthSnapshot } from "@/lib/auth";
 
 declare global {
   const __APP_VERSION__: string;

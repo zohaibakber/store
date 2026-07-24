@@ -1,11 +1,12 @@
 import * as React from "react";
-import { AuthBrand } from "@/components/auth/auth-brand";
-import { WindowControls } from "@/components/window-controls";
+
+import { AuthBrand } from "@/components/auth/brand";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
 
 type CreateOrganizationErrors = Record<string, string | string[]>;
@@ -44,7 +45,7 @@ export function CreateOrganizationPage() {
             <Fieldset className="flex w-full flex-col gap-6">
               <div className="flex flex-col items-center gap-1 text-center">
                 <h1 className="text-2xl font-medium">Create your organization</h1>
-                <p className="text-muted-foreground text-sm">
+                <p className="text-sm text-muted-foreground">
                   The workspace your store data will sync to.
                 </p>
               </div>

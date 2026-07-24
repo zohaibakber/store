@@ -1,9 +1,11 @@
-import { defineConfig, lazyPlugins } from "vite-plus";
 import path from "node:path";
-import electron from "vite-plugin-electron/simple";
-import react from "@vitejs/plugin-react";
+
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import react from "@vitejs/plugin-react";
+import electron from "vite-plugin-electron/simple";
+import { defineConfig, lazyPlugins } from "vite-plus";
+
 import packageJson from "./package.json";
 
 // https://vitejs.dev/config/

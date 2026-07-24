@@ -13,6 +13,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, Fragment, useCallback, useContext, useEffect, useState } from "react";
+
 import {
   Command,
   CommandCollection,
@@ -122,21 +123,23 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) setQuery("");
-  }, [isOpen]);
-
   // Product search lives on its own page (/search) where the Autocomplete has
   // room for prices and stock; the palette only routes there.
   const handleNavigate = (url: CommandRoute) => {
     setIsOpen(false);
+    setQuery("");
     void navigate({ to: url });
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setIsOpen(nextOpen);
+    if (!nextOpen) setQuery("");
   };
 
   return (
     <CommandMenuContext.Provider value={{ open }}>
       {children}
-      <CommandDialog open={isOpen} onOpenChange={setIsOpen}>
+      <CommandDialog open={isOpen} onOpenChange={handleOpenChange}>
         <CommandDialogPopup aria-label="Command menu">
           <Command
             filter={matchesLabel}

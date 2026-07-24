@@ -1,8 +1,9 @@
-import { FrameCard } from "@/components/frame-card";
-import type { DashboardAnalytics } from "@store/contracts";
 import { Alert02Icon, PackageIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DashboardAnalytics } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
+
+import { FrameCard } from "@/components/frame-card";
 import { Badge } from "@/components/ui/badge";
 import {
   Empty,

@@ -1,4 +1,5 @@
 import type { DashboardAnalytics } from "@store/contracts";
+
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPrice } from "@/lib/format";
@@ -39,7 +40,7 @@ export function StatTiles({ totals }: { totals: DashboardAnalytics["totals"] }) 
         <Card key={tile.label}>
           <CardHeader className="gap-1">
             <CardDescription>{tile.label}</CardDescription>
-            <p className="font-medium font-mono text-2xl tracking-tighter tabular-nums">
+            <p className="font-mono text-2xl font-medium tracking-tighter tabular-nums">
               {tile.value}
             </p>
           </CardHeader>

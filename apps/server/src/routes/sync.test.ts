@@ -1,5 +1,6 @@
 import type { SyncRequest } from "@store/contracts";
 import { describe, expect, it, vi } from "vitest";
+
 import type { SyncActor } from "../sync/service";
 import { appFor, requestFor } from "../testing/app";
 

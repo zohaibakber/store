@@ -1,20 +1,21 @@
-import { FrameCard } from "@/components/frame-card";
-import { useMemo, useState } from "react";
+import { Add01Icon, PackageIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
 import {
   productLooseUnitStock,
   productPackStock,
   productStock,
 } from "@store/contracts/store-helpers";
-import { Add01Icon, PackageIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
+
 import { DatePicker } from "@/components/date-picker";
+import { FormFieldError } from "@/components/form-field-error";
+import { FrameCard } from "@/components/frame-card";
 import { Button } from "@/components/ui/button";
-import { Frame, FrameHeader } from "@/components/ui/frame";
 import {
   type ChartConfig,
   ChartContainer,
@@ -28,8 +29,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { FormFieldError } from "@/components/form-field-error";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
+import { Frame, FrameHeader } from "@/components/ui/frame";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetClose,
@@ -41,8 +44,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Fieldset } from "@/components/ui/fieldset";
-import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
 import { formatDate } from "@/lib/format";
 
@@ -253,7 +254,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
               <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{batch.batchNumber ?? "Unnumbered batch"}</p>
-                  <p className="truncate text-muted-foreground text-xs">
+                  <p className="truncate text-xs text-muted-foreground">
                     {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
                     {" · "}added {formatDate(batch.createdAt)}
                   </p>

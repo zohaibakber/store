@@ -1,11 +1,12 @@
-import type { SyncStatus } from "@store/contracts";
 import {
   CellularNetworkIcon,
   CellularNetworkOfflineIcon,
   ReloadIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { SyncStatus } from "@store/contracts";
 import { useCallback, useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOnline } from "@/hooks/use-online";
@@ -20,9 +21,10 @@ export function SyncStatusIndicator() {
   const isOnline = useOnline();
   const isSyncing = status?.phase === "syncing";
 
-  const refresh = useCallback(async () => {
-    setStatus(await window.offlineStore.getSyncStatus());
-  }, []);
+  const refresh = useCallback(
+    () => window.offlineStore.getSyncStatus().then((nextStatus) => setStatus(nextStatus)),
+    [],
+  );
 
   useEffect(() => {
     void refresh();

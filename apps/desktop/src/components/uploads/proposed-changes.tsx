@@ -1,9 +1,11 @@
 import { CheckmarkCircle02Icon, FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
-import { useUpload } from "./upload-context";
+
+import { useUpload } from "./context";
 
 function UploadProposedChanges() {
   const {
@@ -22,7 +24,7 @@ function UploadProposedChanges() {
             Proposed changes{" "}
             <span className="font-mono text-muted-foreground tabular-nums">({changes.length})</span>
           </p>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-muted-foreground">
             Nothing changes in your store until you apply this review.
           </p>
         </div>
@@ -45,7 +47,7 @@ function UploadProposedChanges() {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{change.name}</p>
-                  <p className="truncate text-muted-foreground text-xs">
+                  <p className="truncate text-xs text-muted-foreground">
                     {change.packQuantity} packs · {change.unitQuantity} units
                     {change.batchNumber ? ` · Batch ${change.batchNumber}` : ""}
                   </p>

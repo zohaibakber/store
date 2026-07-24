@@ -1,4 +1,3 @@
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
   ComputerIcon,
@@ -6,6 +5,8 @@ import {
   Moon02Icon,
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -66,7 +67,7 @@ export function AccountMenu() {
         <Menu>
           <MenuTrigger
             render={
-              <SidebarMenuButton className="aria-expanded:bg-muted aria-expanded:text-foreground w-fit" />
+              <SidebarMenuButton className="w-fit aria-expanded:bg-muted aria-expanded:text-foreground" />
             }
           >
             {/* vite-plugin-electron builds with base: "./" so the packaged app
@@ -91,7 +92,7 @@ export function AccountMenu() {
                 </Avatar>
                 <span className="grid min-w-0">
                   <span className="block truncate font-medium">{user.name}</span>
-                  <span className="block truncate font-normal text-muted-foreground text-xs">
+                  <span className="block truncate text-xs font-normal text-muted-foreground">
                     {user.email}
                   </span>
                 </span>
@@ -112,7 +113,7 @@ export function AccountMenu() {
                 >
                   <MenuPrimitive.RadioItem
                     aria-label="Use system theme"
-                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring data-highlighted:bg-accent data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs"
                     closeOnClick={false}
                     value="system"
                   >
@@ -120,7 +121,7 @@ export function AccountMenu() {
                   </MenuPrimitive.RadioItem>
                   <MenuPrimitive.RadioItem
                     aria-label="Use light theme"
-                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring data-highlighted:bg-accent data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs"
                     closeOnClick={false}
                     value="light"
                   >
@@ -128,7 +129,7 @@ export function AccountMenu() {
                   </MenuPrimitive.RadioItem>
                   <MenuPrimitive.RadioItem
                     aria-label="Use dark theme"
-                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex size-6 cursor-default items-center justify-center rounded-md text-muted-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring data-highlighted:bg-accent data-checked:bg-background data-checked:text-foreground data-checked:shadow-xs"
                     closeOnClick={false}
                     value="dark"
                   >

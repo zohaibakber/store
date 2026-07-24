@@ -1,5 +1,6 @@
 import type { AuthSession } from "@store/auth";
 import type { SyncRequest, SyncResponse } from "@store/contracts";
+
 import type { SyncActor } from "../sync/model";
 
 export type AuthApi = {

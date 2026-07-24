@@ -1,6 +1,7 @@
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCanGoBack, useRouter, useRouterState } from "@tanstack/react-router";
+
 import { Button } from "@/components/ui/button";
 
 export function NavHistory() {

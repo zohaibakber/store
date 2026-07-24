@@ -1,6 +1,6 @@
 import type { Product } from "@store/contracts";
-import { Link } from "@tanstack/react-router";
 import { rankItem } from "@tanstack/match-sorter-utils";
+import { Link } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
@@ -16,8 +16,9 @@ import {
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
-import { formatDate, formatPrice } from "@/lib/format";
+
 import { DataTableColumnHeader } from "@/components/data-table";
+import { formatDate, formatPrice } from "@/lib/format";
 
 // v9: features, row models and fn registries are stitched together statically
 // so the bundle only carries what this table uses.

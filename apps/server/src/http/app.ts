@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+
 import { requireOrganization } from "../auth/require-organization";
 import { syncRoute } from "../routes/sync";
 import { uploadsRoute } from "../routes/uploads";
