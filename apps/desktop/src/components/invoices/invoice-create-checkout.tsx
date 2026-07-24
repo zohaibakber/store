@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { CardFooter } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,10 +15,11 @@ import { formatPrice } from "@/lib/format";
 
 function InvoiceCheckout() {
   const {
-    state: { bulkDiscount, customerName },
+    state: { bulkDiscount, customerName, lines },
     actions: { completeSale, setBulkDiscount, setCustomerName },
     meta: { canSubmit, discountTotal, subtotal, total, validBulkDiscount },
   } = useInvoiceCreate();
+  const itemCount = lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
 
   return (
     <CardFooter className="flex-wrap items-start justify-between gap-6 border-t">
@@ -49,10 +50,19 @@ function InvoiceCheckout() {
               <NumberFieldIncrement aria-label="Increase bulk discount" />
             </NumberFieldGroup>
           </NumberField>
+          {!validBulkDiscount && (
+            <FieldError match>Enter a discount between 0% and 100%.</FieldError>
+          )}
         </Field>
       </Fieldset>
       <div className="ml-auto flex flex-col items-end gap-4">
         <div className="grid min-w-40 grid-cols-2 gap-x-6 gap-y-1 text-right">
+          <span className="text-muted-foreground">Items</span>
+          <span className="tabular-nums">
+            {lines.length === 0
+              ? "—"
+              : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · ${itemCount}`}
+          </span>
           <span className="text-muted-foreground">Subtotal</span>
           <span>{formatPrice(subtotal)}</span>
           <span className="text-muted-foreground">Discount</span>
@@ -64,7 +74,7 @@ function InvoiceCheckout() {
         </div>
         <div className="flex items-center gap-2">
           <Button disabled={!canSubmit} onClick={() => void completeSale()}>
-            Complete sale
+            Complete sale{canSubmit && ` · ${formatPrice(total)}`}
           </Button>
         </div>
       </div>

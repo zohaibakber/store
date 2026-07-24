@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { Group } from "@/components/ui/group";
 import {
   Item,
   ItemActions,
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import {
   AUTO_BATCH,
+  lineTotal,
   paisaToRupees,
   suggestedPrice,
   useInvoiceCreate,
@@ -43,6 +44,27 @@ const quantityItems = [
   { label: "Unit", value: "unit" },
   { label: "Pack", value: "pack" },
 ] as const;
+
+// What this line contributes to the sale, with the pre-discount figure struck
+// through when a per-line price or discount moved it. Fixed width so the
+// column lines up across rows.
+function LineTotal({ line }: { line: SaleLine }) {
+  const total = lineTotal(line);
+  const suggestedPaisa = suggestedPrice(line.product, line.quantityUnit);
+  const original =
+    line.quantity != null && suggestedPaisa != null ? line.quantity * suggestedPaisa : null;
+
+  return (
+    <div className="flex min-w-24 flex-col items-end justify-center">
+      <span className="font-medium tabular-nums">{total == null ? "—" : formatPrice(total)}</span>
+      {original != null && total != null && original !== total && (
+        <span className="text-muted-foreground text-xs line-through tabular-nums">
+          {formatPrice(original)}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLine }) {
   const {
@@ -95,7 +117,11 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             onValueChange={(value) => value && updateLine(line.key, { batchId: value })}
             value={line.batchId}
           >
-            <SelectTrigger aria-label="Batch" className="border-0 bg-transparent! px-px" size="sm">
+            <SelectTrigger
+              aria-label="Batch"
+              className="w-auto min-w-0 border-0 bg-transparent! px-px shadow-none"
+              size="sm"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
@@ -113,13 +139,14 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
         </div>
       </ItemContent>
       <ItemActions className="flex-wrap justify-end">
-        <ButtonGroup aria-label="Quantity and unit">
+        <LineTotal line={line} />
+        <Group aria-label="Quantity and unit">
           <Select
             items={quantityItems}
             onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
             value={line.quantityUnit}
           >
-            <SelectTrigger aria-label="Quantity unit" className="w-18">
+            <SelectTrigger aria-label="Quantity unit" className="w-20 min-w-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -148,7 +175,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
               <NumberFieldIncrement aria-label="Increase quantity" />
             </NumberFieldGroup>
           </NumberField>
-        </ButtonGroup>
+        </Group>
         <InvoicePricingDialog line={line} />
         <Button
           aria-label={`Remove ${line.product.name}`}

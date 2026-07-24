@@ -3,7 +3,7 @@ import { DiscountIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { Group } from "@/components/ui/group";
 import {
   Dialog,
   DialogClose,
@@ -103,13 +103,13 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
         <Fieldset className="flex w-full flex-col gap-6">
           <Field>
             <FieldLabel>Adjustment</FieldLabel>
-            <ButtonGroup aria-label="Price adjustment" className="w-full">
+            <Group aria-label="Price adjustment" className="w-full">
               <Select
                 items={pricingItems}
                 onValueChange={(value) => value && setPricingMode(value)}
                 value={pricingMode}
               >
-                <SelectTrigger aria-label="Price adjustment type" className="w-24">
+                <SelectTrigger aria-label="Price adjustment type" className="w-28 min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -123,7 +123,7 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
                 </SelectContent>
               </Select>
               <NumberField
-                className="flex-1"
+                className="min-w-0 flex-1"
                 format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
                 max={pricingMode === "discount" ? 100 : undefined}
                 min={0}
@@ -145,7 +145,7 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
                   </span>
                 </NumberFieldGroup>
               </NumberField>
-            </ButtonGroup>
+            </Group>
           </Field>
         </Fieldset>
         <DialogFooter>

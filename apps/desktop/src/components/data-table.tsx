@@ -350,7 +350,7 @@ function DataTablePagination({ className, ...props }: React.ComponentProps<"div"
           onValueChange={(value) => table.setPageSize(Number(value))}
           value={String(pageSize)}
         >
-          <SelectTrigger aria-label="Displayed result range" size="sm">
+          <SelectTrigger aria-label="Displayed result range" className="w-auto min-w-0" size="sm">
             <SelectValue>{() => resultRange}</SelectValue>
           </SelectTrigger>
           <SelectContent>

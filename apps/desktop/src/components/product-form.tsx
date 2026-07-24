@@ -7,7 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { Group } from "@/components/ui/group";
 import {
   Dialog,
   DialogClose,
@@ -299,9 +299,9 @@ function ProductForm({
               return (
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Strength</FieldLabel>
-                  <ButtonGroup aria-label="Strength" className="w-full">
+                  <Group aria-label="Strength" className="w-full">
                     <NumberField
-                      className="flex-1"
+                      className="min-w-0 flex-1"
                       format={{ maximumFractionDigits: 2 }}
                       id={field.name}
                       min={0}
@@ -330,7 +330,7 @@ function ProductForm({
                           onValueChange={(value) => value && unitField.handleChange(value)}
                           value={unitField.state.value}
                         >
-                          <SelectTrigger aria-label="Strength unit">
+                          <SelectTrigger aria-label="Strength unit" className="w-24 min-w-0">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent alignItemWithTrigger={false}>
@@ -345,7 +345,7 @@ function ProductForm({
                         </Select>
                       )}
                     />
-                  </ButtonGroup>
+                  </Group>
                   {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
