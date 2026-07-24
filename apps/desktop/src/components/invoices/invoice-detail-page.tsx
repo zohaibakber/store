@@ -46,13 +46,19 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
   return (
     <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center">
           <BackToInvoices />
           <HugeiconsIcon aria-hidden="true" className="size-4" icon={ArrowRightFreeIcons} />
-          <PageHeading>Invoice #{formatInvoiceNumber(invoice.invoiceNumber)}</PageHeading>
+          <PageHeading className="ml-2">
+            Invoice{" "}
+            <span className="font-mono tabular-nums">
+              #{formatInvoiceNumber(invoice.invoiceNumber)}
+            </span>
+          </PageHeading>
         </div>
         <PageDescription>
-          {invoice.customerName ?? "Walk-in customer"} · {formatDateTime(invoice.createdAt)}
+          {invoice.customerName ?? "Walk-in customer"} ·{" "}
+          <span className="font-mono tabular-nums">{formatDateTime(invoice.createdAt)}</span>
         </PageDescription>
       </PageHeader>
 
@@ -64,14 +70,14 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
               <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{item.productName}</p>
-                  <p className="truncate text-muted-foreground text-xs">
+                  <p className="truncate font-mono text-muted-foreground text-xs tabular-nums">
                     {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
                     {" · "}
                     {item.quantity} {item.quantityType === "pack" ? "packs" : "units"} ×{" "}
                     {formatPrice(item.salePrice)}
                   </p>
                 </div>
-                <span className="font-medium tabular-nums">
+                <span className="font-medium font-mono tabular-nums">
                   {formatPrice(item.quantity * item.salePrice)}
                 </span>
               </FrameHeader>
@@ -79,16 +85,16 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
           ))}
         </div>
 
-        <div className="flex flex-col gap-1 border-t pt-4">
+        <div className="flex flex-col gap-1 border p-4 rounded-2xl">
           <div className="flex items-center justify-between text-muted-foreground">
             <span>Items</span>
-            <span className="tabular-nums">
+            <span className="font-mono tabular-nums">
               {invoice.items.length} {invoice.items.length === 1 ? "line" : "lines"} · {unitsSold}
             </span>
           </div>
-          <div className="flex items-center justify-between font-medium">
+          <div className="flex items-center justify-between font-medium text-xl">
             <span>Total</span>
-            <span className="tabular-nums">{formatPrice(invoice.total)}</span>
+            <span className="font-mono tabular-nums">{formatPrice(invoice.total)}</span>
           </div>
         </div>
       </PageContent>

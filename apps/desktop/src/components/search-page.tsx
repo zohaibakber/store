@@ -131,7 +131,7 @@ export function SearchPage() {
                           <span className="ml-1 text-muted-foreground">{product.strength}</span>
                         )}
                       </span>
-                      <span className="text-muted-foreground tabular-nums">
+                      <span className="font-mono text-muted-foreground tabular-nums">
                         {formatPrice(product.unitPrice)}
                       </span>
                       <Badge variant={stock === 0 ? "outline" : "secondary"}>

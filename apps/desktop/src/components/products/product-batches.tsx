@@ -258,7 +258,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
                     {" · "}added {formatDate(batch.createdAt)}
                   </p>
                 </div>
-                <span className="shrink-0 tabular-nums">
+                <span className="shrink-0 font-mono tabular-nums">
                   {batch.packQuantity + batch.unitQuantity === 0
                     ? "Empty"
                     : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}

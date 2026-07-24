@@ -78,7 +78,7 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
                 />
               ))}
               <LabelList
-                className="fill-foreground"
+                className="fill-foreground font-mono tabular-nums"
                 dataKey="revenue"
                 formatter={(value) => formatPrice(Number(value))}
                 offset={8}

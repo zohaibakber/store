@@ -129,7 +129,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             </ControlGroupAddon>
           </ControlGroup>
 
-          <span className="min-w-24 text-right font-medium tabular-nums">
+          <span className="min-w-24 text-right font-medium font-mono tabular-nums">
             {total == null ? "—" : formatPrice(total)}
           </span>
 

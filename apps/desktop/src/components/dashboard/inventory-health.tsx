@@ -72,7 +72,7 @@ export function ExpiringBatches({ batches }: { batches: DashboardAnalytics["expi
                     {batch.unitQuantity} loose
                   </p>
                 </div>
-                <Badge className="shrink-0" variant={urgency.variant}>
+                <Badge className="shrink-0 font-mono tabular-nums" variant={urgency.variant}>
                   {formatDate(batch.expiresAt)} · {urgency.days}d
                 </Badge>
               </DashboardListRow>
@@ -112,7 +112,7 @@ export function LowStock({
             <DashboardListRow key={product.productId} productId={product.productId}>
               <p className="min-w-0 truncate font-medium">{product.productName}</p>
               <Badge
-                className="shrink-0"
+                className="shrink-0 font-mono tabular-nums"
                 variant={product.packQuantity + product.unitQuantity === 0 ? "error" : "warning"}
               >
                 {product.packQuantity + product.unitQuantity === 0

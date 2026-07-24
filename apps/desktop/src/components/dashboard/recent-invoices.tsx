@@ -44,7 +44,7 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
               <TableRow key={invoice.id}>
                 <TableCell className="font-medium">
                   <Link
-                    className="hover:underline"
+                    className="font-mono tabular-nums hover:underline"
                     params={{ invoiceId: invoice.id }}
                     to="/invoices/$invoiceId"
                   >
@@ -56,10 +56,10 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
                     {invoice.customerName ?? "Walk-in customer"}
                   </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-muted-foreground">
+                <TableCell className="whitespace-nowrap font-mono text-muted-foreground tabular-nums">
                   {formatRelativeTime(invoice.createdAt)}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                <TableCell className="whitespace-nowrap text-right font-mono tabular-nums">
                   {formatPrice(invoice.total)}
                 </TableCell>
               </TableRow>

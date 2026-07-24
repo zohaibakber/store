@@ -43,7 +43,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Invoice" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-medium hover:underline"
+        className="font-medium font-mono tabular-nums hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ invoiceId: row.original.id }}
         to="/invoices/$invoiceId"
@@ -68,17 +68,22 @@ const columns = columnHelper.columns([
   columnHelper.accessor((invoice) => invoice.items.length, {
     id: "items",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Items" />,
+    cell: ({ getValue }) => <span className="font-mono tabular-nums">{getValue()}</span>,
     meta: { label: "Items" },
   }),
   columnHelper.accessor("total", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Total" />,
-    cell: ({ getValue }) => formatPrice(getValue()),
+    cell: ({ getValue }) => (
+      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
+    ),
     meta: { label: "Total" },
   }),
   columnHelper.accessor("createdAt", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
     cell: ({ getValue }) => (
-      <span className="text-muted-foreground">{formatDateTime(getValue())}</span>
+      <span className="font-mono text-muted-foreground tabular-nums">
+        {formatDateTime(getValue())}
+      </span>
     ),
     meta: { label: "Created" },
   }),

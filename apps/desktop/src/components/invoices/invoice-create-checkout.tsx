@@ -73,9 +73,9 @@ function InvoiceCheckout() {
               : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · ${itemCount}`}
           </span>
           <span className="text-muted-foreground">Subtotal</span>
-          <span>{formatPrice(subtotal)}</span>
+          <span className="font-mono tabular-nums">{formatPrice(subtotal)}</span>
           <span className="text-muted-foreground">Discount</span>
-          <span>
+          <span className="font-mono tabular-nums">
             {bulkDiscount != null && bulkDiscount > 0 ? `−${formatPrice(discountTotal)}` : "–"}
           </span>
           <span className="font-medium text-lg">Total</span>

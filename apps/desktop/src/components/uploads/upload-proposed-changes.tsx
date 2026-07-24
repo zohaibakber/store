@@ -20,7 +20,7 @@ function UploadProposedChanges() {
         <div className="min-w-0">
           <p className="font-medium">
             Proposed changes{" "}
-            <span className="text-muted-foreground tabular-nums">({changes.length})</span>
+            <span className="font-mono text-muted-foreground tabular-nums">({changes.length})</span>
           </p>
           <p className="text-muted-foreground text-sm">
             Nothing changes in your store until you apply this review.

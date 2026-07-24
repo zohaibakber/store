@@ -4,6 +4,8 @@ import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react
 import { routeTree } from "@/routeTree.gen";
 import { ThemeProvider } from "@/components/theme-provider";
 import { bootstrapAuth } from "@/lib/auth";
+import "@fontsource-variable/geist/index.css";
+import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";
 
 const router = createRouter({

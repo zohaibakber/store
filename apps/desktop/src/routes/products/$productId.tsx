@@ -96,20 +96,35 @@ function ProductDetailPage() {
     { label: "Aisle", value: product.aisle ?? "—" },
     { label: "Composition", value: product.composition ?? "—" },
     { label: "Strength", value: product.strength ?? "—" },
-    { label: "Units per pack", value: product.unitsPerPack },
-    { label: "Pack price", value: formatPrice(product.packPrice) },
-    { label: "Unit price", value: formatPrice(product.unitPrice) },
-    { label: "Created", value: formatDate(product.createdAt) },
-    { label: "Updated", value: formatDate(product.updatedAt) },
+    {
+      label: "Units per pack",
+      value: <span className="font-mono tabular-nums">{product.unitsPerPack}</span>,
+    },
+    {
+      label: "Pack price",
+      value: <span className="font-mono tabular-nums">{formatPrice(product.packPrice)}</span>,
+    },
+    {
+      label: "Unit price",
+      value: <span className="font-mono tabular-nums">{formatPrice(product.unitPrice)}</span>,
+    },
+    {
+      label: "Created",
+      value: <span className="font-mono tabular-nums">{formatDate(product.createdAt)}</span>,
+    },
+    {
+      label: "Updated",
+      value: <span className="font-mono tabular-nums">{formatDate(product.updatedAt)}</span>,
+    },
   ];
 
   return (
     <PageLayout>
       <PageHeader>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center">
           <BackToProducts />
           <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
-          <PageHeading>{product.name}</PageHeading>
+          <PageHeading className="ml-2">{product.name}</PageHeading>
         </div>
         <PageAction>
           <AlertDialog>

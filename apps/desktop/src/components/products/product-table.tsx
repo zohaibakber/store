@@ -90,21 +90,28 @@ const columns = columnHelper.columns([
   }),
   columnHelper.accessor("unitsPerPack", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Units / pack" />,
+    cell: ({ getValue }) => <span className="font-mono tabular-nums">{getValue()}</span>,
     meta: { label: "Units / pack" },
   }),
   columnHelper.accessor("packPrice", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Pack price" />,
-    cell: ({ getValue }) => formatPrice(getValue()),
+    cell: ({ getValue }) => (
+      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
+    ),
     meta: { label: "Pack price" },
   }),
   columnHelper.accessor("unitPrice", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Unit price" />,
-    cell: ({ getValue }) => formatPrice(getValue()),
+    cell: ({ getValue }) => (
+      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
+    ),
     meta: { label: "Unit price" },
   }),
   columnHelper.accessor("updatedAt", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
-    cell: ({ getValue }) => <span className="text-muted-foreground">{formatDate(getValue())}</span>,
+    cell: ({ getValue }) => (
+      <span className="font-mono text-muted-foreground tabular-nums">{formatDate(getValue())}</span>
+    ),
     meta: { label: "Updated" },
   }),
 ]);

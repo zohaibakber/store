@@ -52,7 +52,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <div className="flex items-center justify-between gap-2 px-1">
           <span
             aria-label={`App version ${__APP_VERSION__}`}
-            className="text-muted-foreground text-xs tabular-nums"
+            className="font-mono text-muted-foreground text-xs tabular-nums"
           >
             v{__APP_VERSION__}
           </span>

@@ -71,7 +71,7 @@ export function ProgressValue({
 }: ProgressPrimitive.Value.Props): React.ReactElement {
   return (
     <ProgressPrimitive.Value
-      className={cn("text-sm tabular-nums", className)}
+      className={cn("font-mono text-sm tabular-nums", className)}
       data-slot="progress-value"
       {...props}
     />

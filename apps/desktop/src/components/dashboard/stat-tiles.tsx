@@ -39,7 +39,9 @@ export function StatTiles({ totals }: { totals: DashboardAnalytics["totals"] }) 
         <Card key={tile.label}>
           <CardHeader className="gap-1">
             <CardDescription>{tile.label}</CardDescription>
-            <p className="font-semibold text-2xl tracking-tight">{tile.value}</p>
+            <p className="font-medium font-mono text-2xl tracking-tighter tabular-nums">
+              {tile.value}
+            </p>
           </CardHeader>
           <CardContent className="text-muted-foreground">{tile.detail}</CardContent>
         </Card>

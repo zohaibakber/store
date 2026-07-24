@@ -36,7 +36,7 @@ function PrivateStockValue({ value }: { value: string }) {
       <p className="truncate text-muted-foreground text-xs">Stock value</p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}
-        className="font-medium text-lg tabular-nums"
+        className="font-medium font-mono text-lg tabular-nums"
       >
         {visible ? value : "••••••"}
       </p>
@@ -89,14 +89,18 @@ export function ProductAnalytics({ products }: { products: readonly Product[] })
       {tiles.slice(0, 3).map((tile) => (
         <div className="bg-background px-3 py-2" key={tile.label}>
           <p className="truncate text-muted-foreground text-xs">{tile.label}</p>
-          <p className={`font-medium text-lg tabular-nums ${tile.tone ?? ""}`}>{tile.value}</p>
+          <p className={`font-medium font-mono text-lg tabular-nums ${tile.tone ?? ""}`}>
+            {tile.value}
+          </p>
         </div>
       ))}
       <PrivateStockValue value={formatPrice(stockValue)} />
       {tiles.slice(3).map((tile) => (
         <div className="bg-background px-3 py-2" key={tile.label}>
           <p className="truncate text-muted-foreground text-xs">{tile.label}</p>
-          <p className={`font-medium text-lg tabular-nums ${tile.tone ?? ""}`}>{tile.value}</p>
+          <p className={`font-medium font-mono text-lg tabular-nums ${tile.tone ?? ""}`}>
+            {tile.value}
+          </p>
         </div>
       ))}
     </div>
