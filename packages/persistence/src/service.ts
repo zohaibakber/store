@@ -2,6 +2,7 @@ import type {
   Batch,
   Category,
   CreateBatchInput,
+  CreateCategoryInput,
   CreateInvoiceInput,
   CreateProductInput,
   DashboardAnalytics,
@@ -36,6 +37,9 @@ export class OfflineStore extends Context.Service<
   OfflineStore,
   {
     readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
+    readonly createCategory: (
+      input: CreateCategoryInput,
+    ) => Effect.Effect<Category, PersistenceError>;
     readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
     readonly searchProducts: (
       input: SearchProductsInput,

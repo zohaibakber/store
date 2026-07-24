@@ -84,6 +84,7 @@ const invokeStore = async <A>(channel: string, input?: unknown): Promise<A> => {
 
 const offlineStore: OfflineStoreApi = {
   listCategories: () => invokeStore("store:categories:list"),
+  createCategory: (input) => invokeStore("store:categories:create", input),
   listProducts: () => invokeStore("store:products:list"),
   searchProducts: (input) => invokeStore("store:products:search", input),
   getProduct: (input) => invokeStore("store:products:get", input),

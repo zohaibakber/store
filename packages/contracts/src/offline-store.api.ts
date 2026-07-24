@@ -2,6 +2,7 @@ import type {
   Batch,
   Category,
   CreateBatchInput,
+  CreateCategoryInput,
   CreateInvoiceInput,
   CreateProductInput,
   DashboardAnalytics,
@@ -19,6 +20,7 @@ import type { SyncStatus } from "./sync.schema";
 
 export interface OfflineStoreApi {
   readonly listCategories: () => Promise<ReadonlyArray<Category>>;
+  readonly createCategory: (input: CreateCategoryInput) => Promise<Category>;
   readonly listProducts: () => Promise<ReadonlyArray<Product>>;
   readonly searchProducts: (input: SearchProductsInput) => Promise<ReadonlyArray<Product>>;
   readonly getProduct: (input: ProductIdInput) => Promise<Product>;

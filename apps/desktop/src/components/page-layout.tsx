@@ -42,7 +42,7 @@ function PageHeading({ className, ...props }: ComponentProps<"h1">) {
   return (
     <h1
       data-slot="page-heading"
-      className={cn("text-lg font-medium tracking-tight", className)}
+      className={cn("text-xl font-medium tracking-tight", className)}
       {...props}
     />
   );

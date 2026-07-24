@@ -14,24 +14,14 @@ import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { DatePicker } from "@/components/date-picker";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Frame, FrameHeader } from "@/components/ui/frame";
 import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyDescription,
@@ -41,9 +31,19 @@ import {
 } from "@/components/ui/empty";
 import { FormFieldError } from "@/components/form-field-error";
 import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Sheet,
+  SheetClose,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetPanel,
+  SheetPopup,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { formatDate } from "@/lib/format";
 
 const parseISODate = (value: string): Date | undefined => {
@@ -106,92 +106,43 @@ function AddBatchDialog({ productId }: { productId: string }) {
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" variant="outline" />}>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger render={<Button size="sm" variant="outline" />}>
         <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
         Add batch
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add batch</DialogTitle>
-          <DialogDescription>
+      </SheetTrigger>
+      <SheetPopup variant="inset">
+        <SheetHeader>
+          <SheetTitle>Add batch</SheetTitle>
+          <SheetDescription>
             Record sealed packs and loose units separately for this batch.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="add-batch-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.handleSubmit();
-          }}
-        >
-          <Fieldset className="flex w-full flex-col gap-6">
-            <Fieldset className="grid gap-4 sm:grid-cols-2">
-              <form.Field
-                name="batchNumber"
-                children={(field) => {
-                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={invalid}>
-                      <FieldLabel htmlFor={field.name}>Batch number</FieldLabel>
-                      <Input
-                        aria-invalid={invalid || undefined}
-                        autoFocus
-                        id={field.name}
-                        name={field.name}
-                        onBlur={field.handleBlur}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder="Optional"
-                        value={field.state.value}
-                      />
-                      {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                    </Field>
-                  );
-                }}
-              />
-              <form.Field
-                name="expiresAt"
-                children={(field) => {
-                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={invalid}>
-                      <FieldLabel htmlFor={field.name}>Expiry date</FieldLabel>
-                      <DatePicker
-                        id={field.name}
-                        value={field.state.value ? parseISODate(field.state.value) : undefined}
-                        onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
-                        onBlur={field.handleBlur}
-                        placeholder="No expiry"
-                        startMonth={new Date(new Date().getFullYear() - 1, 0)}
-                        endMonth={new Date(new Date().getFullYear() + 15, 11)}
-                      />
-                      {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                    </Field>
-                  );
-                }}
-              />
-            </Fieldset>
-            <Fieldset className="grid gap-4 sm:grid-cols-2">
-              {(["packQuantity", "unitQuantity"] as const).map((name) => (
+          </SheetDescription>
+        </SheetHeader>
+        <SheetPanel>
+          <form
+            id="add-batch-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void form.handleSubmit();
+            }}
+          >
+            <Fieldset className="flex w-full flex-col gap-6">
+              <Fieldset className="grid gap-4">
                 <form.Field
-                  key={name}
-                  name={name}
+                  name="batchNumber"
                   children={(field) => {
                     const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
                     return (
                       <Field data-invalid={invalid}>
-                        <FieldLabel htmlFor={field.name}>
-                          {name === "packQuantity" ? "Sealed packs" : "Loose units"}
-                        </FieldLabel>
+                        <FieldLabel htmlFor={field.name}>Batch number</FieldLabel>
                         <Input
                           aria-invalid={invalid || undefined}
+                          autoFocus
                           id={field.name}
-                          min="0"
                           name={field.name}
                           onBlur={field.handleBlur}
                           onChange={(event) => field.handleChange(event.target.value)}
-                          step="1"
-                          type="number"
+                          placeholder="Optional"
                           value={field.state.value}
                         />
                         {invalid && <FormFieldError errors={field.state.meta.errors} />}
@@ -199,12 +150,63 @@ function AddBatchDialog({ productId }: { productId: string }) {
                     );
                   }}
                 />
-              ))}
+                <form.Field
+                  name="expiresAt"
+                  children={(field) => {
+                    const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                    return (
+                      <Field data-invalid={invalid}>
+                        <FieldLabel htmlFor={field.name}>Expiry date</FieldLabel>
+                        <DatePicker
+                          id={field.name}
+                          value={field.state.value ? parseISODate(field.state.value) : undefined}
+                          onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
+                          onBlur={field.handleBlur}
+                          placeholder="No expiry"
+                          startMonth={new Date(new Date().getFullYear() - 1, 0)}
+                          endMonth={new Date(new Date().getFullYear() + 15, 11)}
+                        />
+                        {invalid && <FormFieldError errors={field.state.meta.errors} />}
+                      </Field>
+                    );
+                  }}
+                />
+              </Fieldset>
+              <Fieldset className="grid gap-4">
+                {(["packQuantity", "unitQuantity"] as const).map((name) => (
+                  <form.Field
+                    key={name}
+                    name={name}
+                    children={(field) => {
+                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={invalid}>
+                          <FieldLabel htmlFor={field.name}>
+                            {name === "packQuantity" ? "Sealed packs" : "Loose units"}
+                          </FieldLabel>
+                          <Input
+                            aria-invalid={invalid || undefined}
+                            id={field.name}
+                            min="0"
+                            name={field.name}
+                            onBlur={field.handleBlur}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            step="1"
+                            type="number"
+                            value={field.state.value}
+                          />
+                          {invalid && <FormFieldError errors={field.state.meta.errors} />}
+                        </Field>
+                      );
+                    }}
+                  />
+                ))}
+              </Fieldset>
             </Fieldset>
-          </Fieldset>
-        </form>
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          </form>
+        </SheetPanel>
+        <SheetFooter>
+          <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
           <form.Subscribe selector={(state) => state.canSubmit}>
             {(canSubmit) => (
               <Button disabled={!canSubmit} form="add-batch-form" type="submit">
@@ -212,9 +214,9 @@ function AddBatchDialog({ productId }: { productId: string }) {
               </Button>
             )}
           </form.Subscribe>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetPopup>
+    </Sheet>
   );
 }
 
@@ -242,26 +244,26 @@ export function ProductBatchesCard({ product }: { product: Product }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <ItemGroup className="gap-2">
+        <div className="flex flex-col gap-2">
           {product.batches.map((batch) => (
-            <Item key={batch.id} variant="outline">
-              <ItemContent>
-                <ItemTitle>{batch.batchNumber ?? "Unnumbered batch"}</ItemTitle>
-                <ItemDescription>
-                  {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
-                  {" · "}added {formatDate(batch.createdAt)}
-                </ItemDescription>
-              </ItemContent>
-              <Badge
-                variant={batch.packQuantity + batch.unitQuantity === 0 ? "outline" : "secondary"}
-              >
-                {batch.packQuantity + batch.unitQuantity === 0
-                  ? "Empty"
-                  : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
-              </Badge>
-            </Item>
+            <Frame className="w-full" key={batch.id}>
+              <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{batch.batchNumber ?? "Unnumbered batch"}</p>
+                  <p className="truncate text-muted-foreground text-xs">
+                    {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
+                    {" · "}added {formatDate(batch.createdAt)}
+                  </p>
+                </div>
+                <span className="shrink-0 tabular-nums">
+                  {batch.packQuantity + batch.unitQuantity === 0
+                    ? "Empty"
+                    : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
+                </span>
+              </FrameHeader>
+            </Frame>
           ))}
-        </ItemGroup>
+        </div>
       )}
     </FrameCard>
   );
@@ -345,11 +347,11 @@ export function ProductStockMovementsCard({
           </ChartContainer>
           <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockInColor }} />
+              <span className="size-2 rounded-xs" style={{ backgroundColor: stockInColor }} />
               Stock in
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockOutColor }} />
+              <span className="size-2 rounded-xs" style={{ backgroundColor: stockOutColor }} />
               Stock out
             </span>
           </div>

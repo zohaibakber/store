@@ -2,6 +2,7 @@ import type {
   Batch,
   Category,
   CreateBatchInput,
+  CreateCategoryInput,
   CreateProductInput,
   ImportInventoryInput,
   ImportInventoryResult,
@@ -11,7 +12,7 @@ import type {
   SyncEntityChange,
   UpdateProductInput,
 } from "@store/contracts";
-import { batches, products, stockMovements } from "@store/db/local/schema";
+import { batches, categories, products, stockMovements } from "@store/db/local/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type { MutationContext } from "./config";
@@ -27,6 +28,9 @@ import { enqueueOperation } from "./outbox";
 
 export interface ProductStore {
   readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
+  readonly createCategory: (
+    input: CreateCategoryInput,
+  ) => Effect.Effect<Category, PersistenceError>;
   readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
   readonly searchProducts: (
     input: SearchProductsInput,
@@ -84,6 +88,76 @@ export const makeProductStore = (
         Effect.map((rows) => rows.map(toCategory)),
         mapPersistenceError("list categories"),
       );
+  });
+
+  // Ids are slugged from the name so they read well in sync payloads and stay
+  // stable across devices that add the same category offline; a collision on
+  // the slug reuses the existing row rather than failing the product save.
+  const categoryId = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || crypto.randomUUID();
+
+  const createCategory = Effect.fn("OfflineStore.createCategory")(function* (
+    input: CreateCategoryInput,
+  ) {
+    const name = input.name.trim();
+    if (name.length === 0)
+      return yield* PersistenceError.make({
+        operation: "create category",
+        message: "Enter a category name",
+      });
+
+    const actor = mutationContext();
+    const occurredAt = Date.now();
+    const operationId = crypto.randomUUID();
+    const id = categoryId(name);
+
+    const row = yield* database
+      .transaction((transaction) =>
+        Effect.gen(function* () {
+          const existing = yield* transaction.query.categories.findFirst({
+            where: { organizationId: actor.organizationId, id, deletedAt: { isNull: true } },
+          });
+          if (existing) return existing;
+
+          const [created] = yield* transaction
+            .insert(categories)
+            .values({
+              id,
+              name,
+              organizationId: actor.organizationId,
+              createdByUserId: actor.userId,
+              updatedByUserId: actor.userId,
+              deviceId: actor.deviceId,
+              operationId,
+              rowVersion: 1,
+              createdAt: occurredAt,
+              updatedAt: occurredAt,
+            })
+            .returning();
+          if (!created)
+            return yield* PersistenceError.make({
+              operation: "create category",
+              message: "Created category could not be loaded",
+            });
+          yield* enqueueOperation(transaction, actor, operationId, occurredAt, [
+            {
+              entity: "category",
+              action: "upsert",
+              entityId: created.id,
+              rowVersion: created.rowVersion,
+              row: created,
+            },
+          ]);
+          return created;
+        }),
+      )
+      .pipe(mapPersistenceError("create category"));
+    yield* signalSync;
+    return toCategory(row);
   });
 
   const listProducts = Effect.suspend(() => {
@@ -621,6 +695,7 @@ export const makeProductStore = (
 
   return {
     listCategories,
+    createCategory,
     listProducts,
     searchProducts,
     getProduct,

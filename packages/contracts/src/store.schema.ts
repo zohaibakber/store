@@ -22,6 +22,11 @@ const { deletedAt: _categoryDeletedAt, ...categoryFields } = categoryRow.fields;
 export const Category = Schema.Struct(categoryFields);
 export type Category = typeof Category.Type;
 
+// Categories are created inline from the product form, so the only thing the
+// caller supplies is a name; the id is slugged from it by the store.
+export const CreateCategoryInput = Schema.Struct({ name: Schema.String });
+export type CreateCategoryInput = typeof CreateCategoryInput.Type;
+
 const batchRow = createSelectSchema(batches);
 const batchInsert = createInsertSchema(batches);
 

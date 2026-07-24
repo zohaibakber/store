@@ -1,5 +1,6 @@
 import {
   CreateBatchInput,
+  CreateCategoryInput,
   CreateInvoiceInput,
   CreateProductInput,
   encodeStoreError,
@@ -167,6 +168,13 @@ const withStore = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =
 function registerStoreIpc() {
   ipcMain.handle("store:categories:list", () =>
     runStore(withStore((store) => store.listCategories)),
+  );
+  ipcMain.handle("store:categories:create", (_event, input: unknown) =>
+    runStore(
+      Schema.decodeUnknownEffect(CreateCategoryInput)(input).pipe(
+        Effect.flatMap((input) => withStore((store) => store.createCategory(input))),
+      ),
+    ),
   );
   ipcMain.handle("store:products:list", () => runStore(withStore((store) => store.listProducts)));
   ipcMain.handle("store:products:search", (_event, input: unknown) =>

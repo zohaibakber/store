@@ -10,6 +10,7 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/control-group";
+import { CategoryField } from "@/components/category-field";
 import { FormFieldError } from "@/components/form-field-error";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
@@ -212,32 +213,14 @@ function ProductForm({
               return (
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Category</FieldLabel>
-                  <Select
-                    items={categories.map((category) => ({
-                      label: category.name,
-                      value: category.id,
-                    }))}
+                  <CategoryField
+                    id={field.name}
+                    invalid={invalid}
                     name={field.name}
-                    onValueChange={(value) => value && field.handleChange(value)}
+                    onChange={(categoryId) => field.handleChange(categoryId)}
+                    seed={categories}
                     value={field.state.value}
-                  >
-                    <SelectTrigger
-                      aria-invalid={invalid || undefined}
-                      className="w-full"
-                      id={field.name}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  />
                   {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
