@@ -40,3 +40,4 @@ release
 !.dev.vars.example
 
 plans/
+.claude/worktrees/

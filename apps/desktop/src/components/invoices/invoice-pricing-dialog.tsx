@@ -14,13 +14,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import {
-  NumberField,
-  NumberFieldAddon,
-  NumberFieldGroup,
-  NumberFieldInput,
-} from "@/components/ui/number-field";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
+import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
 import {
   Select,
   SelectContent,
@@ -104,7 +100,7 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
             Set a unit price or apply a discount to {line.product.name}.
           </DialogDescription>
         </DialogHeader>
-        <FieldGroup>
+        <Fieldset className="flex w-full flex-col gap-6">
           <Field>
             <FieldLabel>Adjustment</FieldLabel>
             <ButtonGroup aria-label="Price adjustment" className="w-full">
@@ -144,14 +140,14 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
                     }
                     className="text-right"
                   />
-                  <NumberFieldAddon align="inline-end">
+                  <span className="flex select-none items-center pe-3 text-muted-foreground">
                     {pricingMode === "price" ? "PKR" : "%"}
-                  </NumberFieldAddon>
+                  </span>
                 </NumberFieldGroup>
               </NumberField>
             </ButtonGroup>
           </Field>
-        </FieldGroup>
+        </Fieldset>
         <DialogFooter>
           <Button
             className="sm:mr-auto"

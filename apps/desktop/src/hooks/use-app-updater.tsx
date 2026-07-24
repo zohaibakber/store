@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 
 const UPDATE_TOAST_ID = "app-update";

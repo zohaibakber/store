@@ -1,17 +1,28 @@
 import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
+  CommandCollection,
   CommandDialog,
+  CommandDialogPopup,
   CommandEmpty,
   CommandGroup,
+  CommandGroupLabel,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
+  CommandPanel,
 } from "@/components/ui/command";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -63,6 +74,27 @@ export function useCommandMenu(): CommandMenuContextValue {
 }
 
 type CommandPage = "home" | "products";
+
+interface HomeItem {
+  readonly value: string;
+  readonly label: string;
+  readonly icon: React.ReactNode;
+}
+
+interface HomeGroup {
+  readonly value: string;
+  readonly items: ReadonlyArray<HomeItem>;
+}
+
+// "Search products" stays visible for any query so the nested products page is
+// always reachable; everything else matches on its label.
+const homeFilter = (itemValue: unknown, query: string) => {
+  const item = itemValue as HomeItem;
+  return (
+    item.value === "search-products" ||
+    item.label.toLowerCase().includes(query.trim().toLowerCase())
+  );
+};
 
 export function CommandMenuProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -144,7 +176,7 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
   };
 
   // Selecting "Search products" pushes into a dedicated page, carrying over
-  // whatever was already typed on the home page — mirrors cmdk's nested-page pattern.
+  // whatever was already typed on the home page.
   const enterProductsPage = () => setPage("products");
 
   const exitProductsPage = () => {
@@ -157,107 +189,120 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
   const term = query.trim();
   const showEmpty = term.length > 0 && !isSearching && results.length === 0;
 
+  const homeGroups: ReadonlyArray<HomeGroup> = useMemo(
+    () => [
+      {
+        value: "Links",
+        items: linkItems.map((item) => ({
+          value: item.url,
+          label: item.label,
+          icon: item.icon,
+        })),
+      },
+      {
+        value: "Actions",
+        items: [
+          ...actionItems.map((item) => ({
+            value: item.url,
+            label: item.label,
+            icon: item.icon,
+          })),
+          {
+            value: "search-products",
+            label: term ? `Search products for "${term}"` : "Search products",
+            icon: <HugeiconsIcon icon={SearchIcon} />,
+          },
+        ],
+      },
+    ],
+    [term],
+  );
+
+  const runHomeAction = (value: string) => {
+    if (value === "search-products") {
+      enterProductsPage();
+      return;
+    }
+    handleNavigate(value as CommandRoute);
+  };
+
+  // Escape (or Backspace on an empty query) leaves the products page instead
+  // of closing the whole palette.
+  const handleProductsKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape" || (event.key === "Backspace" && query.length === 0)) {
+      event.preventDefault();
+      event.stopPropagation();
+      exitProductsPage();
+    }
+  };
+
   return (
     <CommandMenuContext.Provider value={{ open }}>
       {children}
-      <CommandDialog
-        open={isOpen}
-        onOpenChange={setIsOpen}
-        title="Command menu"
-        description="Jump to a page, run an action, or search products."
-      >
-        <Command
-          shouldFilter={page === "home"}
-          onKeyDown={(event) => {
-            const atHomeInput = page === "home";
-            if (
-              !atHomeInput &&
-              (event.key === "Escape" || (event.key === "Backspace" && query.length === 0))
-            ) {
-              event.preventDefault();
-              exitProductsPage();
-            }
-          }}
-        >
-          <CommandInput
-            placeholder={page === "products" ? "Search products…" : "Search or jump to…"}
-            value={query}
-            onValueChange={setQuery}
-            autoFocus
-          />
-          <CommandList>
-            {page === "home" && (
-              <>
+      <CommandDialog open={isOpen} onOpenChange={setIsOpen}>
+        <CommandDialogPopup aria-label="Command menu">
+          {page === "home" ? (
+            <Command filter={homeFilter} items={homeGroups} onValueChange={setQuery} value={query}>
+              <CommandInput placeholder="Search or jump to…" />
+              <CommandPanel>
                 <CommandEmpty>No results found.</CommandEmpty>
-                <CommandGroup heading="Links">
-                  {linkItems.map((item) => (
-                    <CommandItem
-                      key={item.url}
-                      value={item.label}
-                      onSelect={() => handleNavigate(item.url)}
-                    >
-                      {item.icon}
-                      <span>{item.label}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="Actions">
-                  {actionItems.map((item) => (
-                    <CommandItem
-                      key={item.url}
-                      value={item.label}
-                      onSelect={() => handleNavigate(item.url)}
-                    >
-                      {item.icon}
-                      <span>{item.label}</span>
-                    </CommandItem>
-                  ))}
-                  <CommandItem
-                    value="search-products"
-                    keywords={term ? [term] : undefined}
-                    onSelect={enterProductsPage}
-                  >
-                    <HugeiconsIcon icon={SearchIcon} />
-                    <span>{term ? `Search products for "${term}"` : "Search products"}</span>
-                  </CommandItem>
-                </CommandGroup>
-              </>
-            )}
-            {page === "products" && (
-              <>
+                <CommandList>
+                  {(group: HomeGroup) => (
+                    <Fragment key={group.value}>
+                      <CommandGroup items={group.items}>
+                        <CommandGroupLabel>{group.value}</CommandGroupLabel>
+                        <CommandCollection>
+                          {(item: HomeItem) => (
+                            <CommandItem
+                              key={item.value}
+                              onClick={() => runHomeAction(item.value)}
+                              value={item.value}
+                            >
+                              {item.icon}
+                              <span>{item.label}</span>
+                            </CommandItem>
+                          )}
+                        </CommandCollection>
+                      </CommandGroup>
+                    </Fragment>
+                  )}
+                </CommandList>
+              </CommandPanel>
+            </Command>
+          ) : (
+            <Command filter={null} items={results} onValueChange={setQuery} value={query}>
+              <CommandInput onKeyDown={handleProductsKeyDown} placeholder="Search products…" />
+              <CommandPanel>
                 {isSearching && results.length === 0 && (
                   <p className="p-4 text-center text-xs text-muted-foreground">Searching…</p>
                 )}
                 {showEmpty && <CommandEmpty>No products found.</CommandEmpty>}
-                {results.length > 0 && (
-                  <CommandGroup heading="Products">
-                    {results.map((product) => {
-                      const stock = productStock(product);
-                      return (
-                        <CommandItem
-                          key={product.id}
-                          value={product.id}
-                          onSelect={() => handleSelectProduct(product)}
-                        >
-                          <span className="flex-1 truncate">
-                            {product.name}
-                            {product.strength && (
-                              <span className="ml-1 text-muted-foreground">{product.strength}</span>
-                            )}
-                          </span>
-                          <Badge variant={stock === 0 ? "outline" : "secondary"}>
-                            {stock === 0 ? "Out of stock" : `${stock} in stock`}
-                          </Badge>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                )}
-              </>
-            )}
-          </CommandList>
-        </Command>
+                <CommandList>
+                  {(product: Product) => {
+                    const stock = productStock(product);
+                    return (
+                      <CommandItem
+                        key={product.id}
+                        onClick={() => handleSelectProduct(product)}
+                        value={product}
+                      >
+                        <span className="flex-1 truncate">
+                          {product.name}
+                          {product.strength && (
+                            <span className="ml-1 text-muted-foreground">{product.strength}</span>
+                          )}
+                        </span>
+                        <Badge variant={stock === 0 ? "outline" : "secondary"}>
+                          {stock === 0 ? "Out of stock" : `${stock} in stock`}
+                        </Badge>
+                      </CommandItem>
+                    );
+                  }}
+                </CommandList>
+              </CommandPanel>
+            </Command>
+          )}
+        </CommandDialogPopup>
       </CommandDialog>
     </CommandMenuContext.Provider>
   );

@@ -1,12 +1,8 @@
 import * as React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { EyeIcon, EyeClosedIcon } from "@hugeicons/core-free-icons";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Button } from "../ui/button";
 
 export function AuthPasswordInput({
   value,
@@ -25,14 +21,14 @@ export function AuthPasswordInput({
       />
       {typeof value === "string" && value.length > 0 && (
         <InputGroupAddon align="inline-end">
-          <InputGroupButton
+          <Button
             type="button"
             size="icon-xs"
             aria-label={showPassword ? "Hide password" : "Show password"}
             onClick={() => setShowPassword((current) => !current)}
           >
             <HugeiconsIcon icon={showPassword ? EyeClosedIcon : EyeIcon} />
-          </InputGroupButton>
+          </Button>
         </InputGroupAddon>
       )}
     </InputGroup>

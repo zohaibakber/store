@@ -117,7 +117,7 @@ export function HomePage() {
         </Card>
 
         {error && (
-          <Alert variant="destructive">
+          <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
             <AlertTitle>Operation failed</AlertTitle>
             <AlertDescription>{error}</AlertDescription>

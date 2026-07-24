@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { CardFooter } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import {
   NumberField,
-  NumberFieldAddon,
   NumberFieldDecrement,
   NumberFieldGroup,
   NumberFieldIncrement,
@@ -22,7 +22,7 @@ function InvoiceCheckout() {
 
   return (
     <CardFooter className="flex-wrap items-start justify-between gap-6 border-t">
-      <FieldGroup className="max-w-64">
+      <Fieldset className="flex w-full max-w-64 flex-col gap-6">
         <Field>
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
           <Input
@@ -45,12 +45,12 @@ function InvoiceCheckout() {
             <NumberFieldGroup>
               <NumberFieldDecrement aria-label="Decrease bulk discount" />
               <NumberFieldInput aria-label="Bulk discount percentage" />
-              <NumberFieldAddon align="inline-end">%</NumberFieldAddon>
+              <span className="flex select-none items-center pe-1 text-muted-foreground">%</span>
               <NumberFieldIncrement aria-label="Increase bulk discount" />
             </NumberFieldGroup>
           </NumberField>
         </Field>
-      </FieldGroup>
+      </Fieldset>
       <div className="ml-auto flex flex-col items-end gap-4">
         <div className="grid min-w-40 grid-cols-2 gap-x-6 gap-y-1 text-right">
           <span className="text-muted-foreground">Subtotal</span>

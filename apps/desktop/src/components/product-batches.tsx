@@ -10,7 +10,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "@tanstack/react-router";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { DatePicker } from "@/components/date-picker";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FormFieldError } from "@/components/form-field-error";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { formatDate } from "@/lib/format";
@@ -123,8 +125,8 @@ function AddBatchDialog({ productId }: { productId: string }) {
             void form.handleSubmit();
           }}
         >
-          <FieldGroup>
-            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+          <Fieldset className="flex w-full flex-col gap-6">
+            <Fieldset className="grid gap-4 sm:grid-cols-2">
               <form.Field
                 name="batchNumber"
                 children={(field) => {
@@ -142,7 +144,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
                         placeholder="Optional"
                         value={field.state.value}
                       />
-                      {invalid && <FieldError errors={field.state.meta.errors} />}
+                      {invalid && <FormFieldError errors={field.state.meta.errors} />}
                     </Field>
                   );
                 }}
@@ -163,13 +165,13 @@ function AddBatchDialog({ productId }: { productId: string }) {
                         startMonth={new Date(new Date().getFullYear() - 1, 0)}
                         endMonth={new Date(new Date().getFullYear() + 15, 11)}
                       />
-                      {invalid && <FieldError errors={field.state.meta.errors} />}
+                      {invalid && <FormFieldError errors={field.state.meta.errors} />}
                     </Field>
                   );
                 }}
               />
-            </FieldGroup>
-            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+            </Fieldset>
+            <Fieldset className="grid gap-4 sm:grid-cols-2">
               {(["packQuantity", "unitQuantity"] as const).map((name) => (
                 <form.Field
                   key={name}
@@ -192,14 +194,14 @@ function AddBatchDialog({ productId }: { productId: string }) {
                           type="number"
                           value={field.state.value}
                         />
-                        {invalid && <FieldError errors={field.state.meta.errors} />}
+                        {invalid && <FormFieldError errors={field.state.meta.errors} />}
                       </Field>
                     );
                   }}
                 />
               ))}
-            </FieldGroup>
-          </FieldGroup>
+            </Fieldset>
+          </Fieldset>
         </form>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>

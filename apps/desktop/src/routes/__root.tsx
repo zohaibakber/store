@@ -4,7 +4,7 @@ import { NotFound } from "@/components/not-found";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "@/components/ui/sonner";
+import { ToastProvider } from "@/components/ui/toast";
 import { AuthPage } from "@/components/auth/auth-page";
 import { CreateOrganizationPage } from "@/components/create-organization-page";
 import { AuthProvider, useAuth } from "@/lib/auth";
@@ -21,8 +21,9 @@ export function RootLayout() {
   useAppUpdater();
   return (
     <AuthProvider>
-      <AuthenticatedLayout />
-      <Toaster />
+      <ToastProvider>
+        <AuthenticatedLayout />
+      </ToastProvider>
     </AuthProvider>
   );
 }

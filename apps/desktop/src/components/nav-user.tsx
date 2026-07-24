@@ -1,13 +1,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Menu,
+  MenuPopup,
+  MenuGroup,
+  MenuItem,
+  MenuGroupLabel,
+  MenuSeparator,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -18,7 +18,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { LogoutIcon, Moon02Icon, Sun02Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
 import { useTheme } from "@/components/theme-provider";
 import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const initials = (name: string) =>
   name
@@ -57,8 +57,8 @@ export function NavUser() {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger
+        <Menu>
+          <MenuTrigger
             render={
               <SidebarMenuButton
                 size="lg"
@@ -75,40 +75,40 @@ export function NavUser() {
               <span className="truncate text-xs">{user.email}</span>
             </div>
             <HugeiconsIcon icon={UnfoldMoreIcon} className="ml-auto" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
+          </MenuTrigger>
+          <MenuPopup
             className="min-w-56 rounded-lg"
             side={isMobile ? "bottom" : "top"}
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>
+            <MenuGroup>
+              <MenuGroupLabel>
                 <span className="block truncate font-medium">{user.name}</span>
                 <span className="block truncate text-xs font-normal text-muted-foreground">
                   {user.email}
                 </span>
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem
+              </MenuGroupLabel>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuItem
                 closeOnClick={false}
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               >
                 <HugeiconsIcon icon={theme === "dark" ? Sun02Icon : Moon02Icon} />
                 {theme === "dark" ? "Light mode" : "Dark mode"}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => void signOut()} variant="destructive">
+              </MenuItem>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuItem onClick={() => void signOut()} variant="destructive">
                 <HugeiconsIcon icon={LogoutIcon} />
                 Log out
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              </MenuItem>
+            </MenuGroup>
+          </MenuPopup>
+        </Menu>
       </SidebarMenuItem>
     </SidebarMenu>
   );

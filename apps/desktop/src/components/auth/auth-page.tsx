@@ -1,7 +1,8 @@
 import * as React from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { WindowControls } from "@/components/window-controls";
@@ -62,7 +63,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
         <div className="flex w-full justify-center">
           <div className="w-full max-w-xs">
             <form id="auth-form" onSubmit={submit}>
-              <FieldGroup>
+              <Fieldset className="flex w-full flex-col gap-6">
                 <div className="flex flex-col items-center gap-1 text-center">
                   <h1 className="text-2xl font-bold">
                     {mode === "sign-in" ? "Welcome back" : "Set up your store"}
@@ -98,7 +99,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                  {error && <FieldError>{error}</FieldError>}
+                  {error && <FieldError match>{error}</FieldError>}
                 </Field>
                 <Field>
                   <Button type="submit" disabled={pending}>
@@ -109,7 +110,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                     <AuthModeToggle mode={mode} onToggle={toggleMode} />
                   </FieldDescription>
                 </Field>
-              </FieldGroup>
+              </Fieldset>
             </form>
             {bridgeError && (
               <Alert className="mt-6">

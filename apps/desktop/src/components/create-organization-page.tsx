@@ -10,7 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
@@ -53,7 +54,7 @@ export function CreateOrganizationPage() {
           </CardHeader>
           <CardContent>
             <form id="create-organization-form" onSubmit={submit}>
-              <FieldGroup>
+              <Fieldset className="flex w-full flex-col gap-6">
                 <Field data-invalid={Boolean(error)}>
                   <FieldLabel htmlFor="organizationName">Organization name</FieldLabel>
                   <Input
@@ -63,9 +64,9 @@ export function CreateOrganizationPage() {
                     required
                     aria-invalid={Boolean(error)}
                   />
-                  {error && <FieldError>{error}</FieldError>}
+                  {error && <FieldError match>{error}</FieldError>}
                 </Field>
-              </FieldGroup>
+              </Fieldset>
             </form>
           </CardContent>
           <CardFooter>

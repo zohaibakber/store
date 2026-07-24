@@ -39,7 +39,7 @@ function InvoiceDetailError({ error }: { error: Error }) {
         <BackToInvoices />
       </PageHeader>
       <PageContent>
-        <Alert variant="destructive">
+        <Alert variant="error">
           <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
           <AlertTitle>Could not load invoice</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>

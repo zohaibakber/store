@@ -140,10 +140,11 @@ export function ProductsTable({ products }: { products: readonly Product[] }) {
         <DataTableFilter columnId="name" placeholder="Search products" />
         <DataTableViewOptions />
       </DataTableHeader>
-      <DataTableContent />
-      <DataTableFooter>
-        <DataTablePagination />
-      </DataTableFooter>
+      <DataTableContent>
+        <DataTableFooter>
+          <DataTablePagination />
+        </DataTableFooter>
+      </DataTableContent>
     </DataTable>
   );
 }

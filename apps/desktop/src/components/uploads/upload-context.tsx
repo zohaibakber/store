@@ -1,7 +1,7 @@
 import { createContext, use, useState, type ReactNode } from "react";
 import type { Category, InvoiceExtractionLine, Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 

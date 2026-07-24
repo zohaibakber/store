@@ -4,7 +4,7 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { Category, Product } from "@store/contracts";
 import { PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -18,14 +18,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FormFieldError } from "@/components/form-field-error";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import {
-  NumberField,
-  NumberFieldAddon,
-  NumberFieldGroup,
-  NumberFieldInput,
-} from "@/components/ui/number-field";
+import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
 import {
   Select,
   SelectContent,
@@ -191,7 +188,7 @@ function ProductForm({
         void form.handleSubmit();
       }}
     >
-      <FieldGroup>
+      <Fieldset className="flex w-full flex-col gap-6">
         <form.Field
           name="name"
           children={(field) => {
@@ -209,13 +206,13 @@ function ProductForm({
                   placeholder="e.g. Panadol 500mg"
                   value={field.state.value}
                 />
-                {invalid && <FieldError errors={field.state.meta.errors} />}
+                {invalid && <FormFieldError errors={field.state.meta.errors} />}
               </Field>
             );
           }}
         />
 
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
+        <Fieldset className="grid gap-4 sm:grid-cols-2">
           <form.Field
             name="categoryId"
             children={(field) => {
@@ -245,7 +242,7 @@ function ProductForm({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
+                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
             }}
@@ -266,14 +263,14 @@ function ProductForm({
                     placeholder="e.g. A3"
                     value={field.state.value}
                   />
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
+                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
             }}
           />
-        </FieldGroup>
+        </Fieldset>
 
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
+        <Fieldset className="grid gap-4 sm:grid-cols-2">
           <form.Field
             name="composition"
             children={(field) => {
@@ -290,7 +287,7 @@ function ProductForm({
                     placeholder="e.g. Paracetamol"
                     value={field.state.value}
                   />
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
+                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
             }}
@@ -349,15 +346,15 @@ function ProductForm({
                       )}
                     />
                   </ButtonGroup>
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
+                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
             }}
           />
-        </FieldGroup>
+        </Fieldset>
 
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
-          <FieldGroup className="grid grid-cols-2 gap-4">
+        <Fieldset className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-4">
             <form.Field
               listeners={{
                 onChange: ({ value, fieldApi }) => {
@@ -395,7 +392,7 @@ function ProductForm({
                       </NumberFieldGroup>
                     </NumberField>
                     <FieldDescription>Use 1 when the item is sold as-is.</FieldDescription>
-                    {invalid && <FieldError errors={field.state.meta.errors} />}
+                    {invalid && <FormFieldError errors={field.state.meta.errors} />}
                   </Field>
                 );
               }}
@@ -433,15 +430,17 @@ function ProductForm({
                           name={field.name}
                           onBlur={field.handleBlur}
                         />
-                        <NumberFieldAddon align="inline-end">PKR</NumberFieldAddon>
+                        <span className="flex select-none items-center pe-3 text-muted-foreground">
+                          PKR
+                        </span>
                       </NumberFieldGroup>
                     </NumberField>
-                    {invalid && <FieldError errors={field.state.meta.errors} />}
+                    {invalid && <FormFieldError errors={field.state.meta.errors} />}
                   </Field>
                 );
               }}
             />
-          </FieldGroup>
+          </div>
 
           <form.Field
             name="unitPrice"
@@ -467,19 +466,21 @@ function ProductForm({
                         name={field.name}
                         onBlur={field.handleBlur}
                       />
-                      <NumberFieldAddon align="inline-end">PKR</NumberFieldAddon>
+                      <span className="flex select-none items-center pe-3 text-muted-foreground">
+                        PKR
+                      </span>
                     </NumberFieldGroup>
                   </NumberField>
                   <FieldDescription>
                     Auto-filled from pack price ÷ units per pack, rounded. Edit to override.
                   </FieldDescription>
-                  {invalid && <FieldError errors={field.state.meta.errors} />}
+                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
             }}
           />
-        </FieldGroup>
-      </FieldGroup>
+        </Fieldset>
+      </Fieldset>
     </form>
   );
 }

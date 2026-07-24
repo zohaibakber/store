@@ -4,11 +4,11 @@ import { productStock } from "@store/contracts/store-helpers";
 import { Badge } from "@/components/ui/badge";
 import {
   Combobox,
-  ComboboxContent,
   ComboboxEmpty,
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
+  ComboboxPopup,
 } from "@/components/ui/combobox";
 import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 
@@ -27,7 +27,7 @@ function InvoiceProductPicker() {
       onValueChange={(product: Product | null) => product && addProduct(product)}
     >
       <ComboboxInput autoFocus className="w-full" placeholder="Search products…" />
-      <ComboboxContent>
+      <ComboboxPopup>
         <ComboboxEmpty>No matching products.</ComboboxEmpty>
         <ComboboxList>
           {(product: Product) => {
@@ -47,7 +47,7 @@ function InvoiceProductPicker() {
             );
           }}
         </ComboboxList>
-      </ComboboxContent>
+      </ComboboxPopup>
     </Combobox>
   );
 }

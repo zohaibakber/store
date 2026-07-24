@@ -2,7 +2,7 @@ import { createContext, use, useState, type ReactNode } from "react";
 import type { Product } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { decodeStoreError, storeErrorMessage } from "@/lib/errors";
 
 const AUTO_BATCH = "auto";

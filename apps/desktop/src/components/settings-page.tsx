@@ -17,11 +17,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { getErrorMessage, type AuthSnapshot, useAuth } from "@/lib/auth";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function SettingsPage() {
   const { snapshot } = useAuth();
@@ -80,7 +81,7 @@ export function SettingsPage() {
             </div>
             <Separator />
             <form id="create-organization-form" onSubmit={createOrganization}>
-              <FieldGroup>
+              <Fieldset className="flex w-full flex-col gap-6">
                 <Field data-invalid={Boolean(error)}>
                   <FieldLabel htmlFor="new-organization-name">New organization</FieldLabel>
                   <Input
@@ -90,9 +91,9 @@ export function SettingsPage() {
                     required
                     aria-invalid={Boolean(error)}
                   />
-                  {error && <FieldError>{error}</FieldError>}
+                  {error && <FieldError match>{error}</FieldError>}
                 </Field>
-              </FieldGroup>
+              </Fieldset>
             </form>
           </CardContent>
           <CardFooter>

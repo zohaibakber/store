@@ -108,10 +108,11 @@ export function InvoicesTable({ invoices }: { invoices: readonly Invoice[] }) {
       <DataTableHeader>
         <DataTableFilter columnId="customer" placeholder="Filter by customer…" />
       </DataTableHeader>
-      <DataTableContent />
-      <DataTableFooter>
-        <DataTablePagination />
-      </DataTableFooter>
+      <DataTableContent>
+        <DataTableFooter>
+          <DataTablePagination />
+        </DataTableFooter>
+      </DataTableContent>
     </DataTable>
   );
 }

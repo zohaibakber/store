@@ -4,8 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
+  AlertDialogClose,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -26,7 +25,7 @@ import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/prod
 import { EditProductDialog } from "@/components/product-form";
 import { ProductVisibilityCard } from "@/components/product-visibility";
 import { formatDate, formatPrice } from "@/lib/format";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ params }) => {
@@ -49,7 +48,7 @@ function ProductDetailError({ error }: { error: Error }) {
         <BackToProducts />
       </PageHeader>
       <PageContent>
-        <Alert variant="destructive">
+        <Alert variant="error">
           <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
           <AlertTitle>Could not load product</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -117,10 +116,10 @@ function ProductDetailPage() {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={deleteProduct}>
+                <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
+                <AlertDialogClose onClick={deleteProduct} render={<Button variant="destructive" />}>
                   Delete
-                </AlertDialogAction>
+                </AlertDialogClose>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

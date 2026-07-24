@@ -68,7 +68,7 @@ function UploadPage() {
       </PageHeader>
       <PageContent>
         {!isOnline && (
-          <Alert variant="destructive">
+          <Alert variant="error">
             <HugeiconsIcon icon={Alert02Icon} />
             <AlertTitle>You’re offline</AlertTitle>
             <AlertDescription>

@@ -13,20 +13,16 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { createContext, use } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "@/components/ui/menu";
+import { Frame, FrameFooter } from "@/components/ui/frame";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import {
   Select,
   SelectContent,
@@ -160,8 +156,8 @@ function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function DataTableFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("py-2", className)} data-slot="data-table-footer" {...props} />;
+function DataTableFooter({ className, ...props }: React.ComponentProps<"footer">) {
+  return <FrameFooter className={cn("p-2", className)} data-slot="data-table-footer" {...props} />;
 }
 
 interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInput> {
@@ -186,13 +182,15 @@ function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps
       </InputGroupAddon>
       {value && (
         <InputGroupAddon align="inline-end">
-          <InputGroupButton
+          <Button
             aria-label="Clear search"
             onClick={() => column?.setFilterValue("")}
             size="icon-xs"
+            type="button"
+            variant="ghost"
           >
             <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} strokeWidth={2} />
-          </InputGroupButton>
+          </Button>
         </InputGroupAddon>
       )}
     </InputGroup>
@@ -203,32 +201,32 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
   const { table } = useDataTable();
   const columns = table.getAllColumns().filter((column) => column.getCanHide());
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
+    <Menu>
+      <MenuTrigger
         render={
           <Button className={cn("ml-auto", className)} size="icon" variant="ghost" {...props}>
             <HugeiconsIcon aria-hidden="true" icon={ColumnsThreeCogIcon} />
           </Button>
         }
       />
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
+      <MenuPopup align="end" className="w-40">
+        <MenuGroup>
+          <MenuGroupLabel>Toggle columns</MenuGroupLabel>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
           {columns.map((column) => (
-            <DropdownMenuCheckboxItem
+            <MenuCheckboxItem
               checked={column.getIsVisible()}
               key={column.id}
               onCheckedChange={(checked) => column.toggleVisibility(checked)}
             >
               {column.columnDef.meta?.label ?? column.id}
-            </DropdownMenuCheckboxItem>
+            </MenuCheckboxItem>
           ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -246,35 +244,54 @@ function DataTableColumnHeader({ column, title, className, ...props }: DataTable
     );
   }
   const sorted = column.getIsSorted();
+  const toggle = column.getToggleSortingHandler();
   return (
-    <Button
-      className={cn("-ml-2 cursor-pointer", className)}
-      onClick={column.getToggleSortingHandler()}
-      size="sm"
-      type="button"
-      variant="ghost"
+    <div
+      className={cn("flex h-full cursor-pointer select-none items-center gap-2", className)}
+      onClick={toggle}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle?.(event);
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      {...props}
     >
       {title}
       {sorted === "asc" ? (
-        <HugeiconsIcon aria-hidden="true" icon={ArrowUp01Icon} />
+        <HugeiconsIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 opacity-80"
+          icon={ArrowUp01Icon}
+        />
       ) : sorted === "desc" ? (
-        <HugeiconsIcon aria-hidden="true" icon={ArrowDown01Icon} />
+        <HugeiconsIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 opacity-80"
+          icon={ArrowDown01Icon}
+        />
       ) : (
-        <HugeiconsIcon aria-hidden="true" icon={UnfoldMoreIcon} className="text-muted-foreground" />
+        <HugeiconsIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground opacity-80"
+          icon={UnfoldMoreIcon}
+        />
       )}
-    </Button>
+    </div>
   );
 }
 
-function DataTableContent({ className, ...props }: React.ComponentProps<"div">) {
+function DataTableContent({ className, children, ...props }: React.ComponentProps<"div">) {
   const { table, onRowClick } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
-    <div className={cn("overflow-hidden border rounded-lg", className)} {...props}>
-      <Table>
-        <TableHeader className="bg-muted">
+    <Frame className={cn("w-full", className)} {...props}>
+      <Table variant="card">
+        <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
+            <TableRow className="hover:bg-transparent" key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
                 <TableHead colSpan={header.colSpan} key={header.id}>
                   {header.isPlaceholder ? null : <table.FlexRender header={header} />}
@@ -310,7 +327,8 @@ function DataTableContent({ className, ...props }: React.ComponentProps<"div">) 
           )}
         </TableBody>
       </Table>
-    </div>
+      {children}
+    </Frame>
   );
 }
 
