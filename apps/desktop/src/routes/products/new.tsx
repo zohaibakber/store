@@ -1,16 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-
-import {
+  PageAction,
   PageContent,
   PageDescription,
   PageHeader,
@@ -33,41 +24,24 @@ function NewProductPage() {
       <PageHeader>
         <PageHeading>Add product</PageHeading>
         <PageDescription>
-          Add an item to the local catalog. Prices are entered in Pakistani rupees.
+          Stored locally first and included in the next sync. Prices are in Pakistani rupees.
         </PageDescription>
+        <PageAction className="flex items-center gap-2">
+          <Link className={buttonVariants({ variant: "outline" })} to="/products">
+            Cancel
+          </Link>
+          <form.Subscribe selector={(state) => state.canSubmit}>
+            {(canSubmit) => (
+              <Button disabled={!canSubmit} form="new-product-form" type="submit">
+                Create product
+              </Button>
+            )}
+          </form.Subscribe>
+        </PageAction>
       </PageHeader>
 
       <PageContent>
-        <Card>
-          <CardHeader>
-            <CardTitle>Product details</CardTitle>
-            <CardDescription>
-              Name and units per pack are required. Pack and unit prices can be set independently.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ProductForm categories={categories} form={form} formId="new-product-form" />
-          </CardContent>
-          <CardFooter className="justify-end gap-2 border-t">
-            <Link className={buttonVariants({ variant: "outline" })} to="/products">
-              Cancel
-            </Link>
-            <form.Subscribe selector={(state) => state.canSubmit}>
-              {(canSubmit) => (
-                <Button disabled={!canSubmit} form="new-product-form" type="submit">
-                  Create product
-                </Button>
-              )}
-            </form.Subscribe>
-          </CardFooter>
-        </Card>
-
-        <Alert>
-          <AlertTitle>Stored locally first</AlertTitle>
-          <AlertDescription>
-            The product is available offline immediately and will be included in the next sync.
-          </AlertDescription>
-        </Alert>
+        <ProductForm categories={categories} form={form} formId="new-product-form" />
       </PageContent>
     </PageLayout>
   );
