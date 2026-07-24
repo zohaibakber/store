@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as InvoicesIndexRouteImport } from './routes/invoices/index'
@@ -22,6 +23,11 @@ import { Route as InvoicesInvoiceIdRouteImport } from './routes/invoices/$invoic
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -67,6 +73,7 @@ const InvoicesInvoiceIdRoute = InvoicesInvoiceIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
@@ -90,6 +98,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/search'
     | '/settings'
     | '/invoices/$invoiceId'
     | '/invoices/new'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/search'
     | '/settings'
     | '/invoices/$invoiceId'
     | '/invoices/new'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/search'
     | '/settings'
     | '/invoices/$invoiceId'
     | '/invoices/new'
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
   InvoicesInvoiceIdRoute: typeof InvoicesInvoiceIdRoute
   InvoicesNewRoute: typeof InvoicesNewRoute
@@ -154,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -217,6 +237,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
   InvoicesInvoiceIdRoute: InvoicesInvoiceIdRoute,
   InvoicesNewRoute: InvoicesNewRoute,
