@@ -10,6 +10,24 @@ export const formatDate = (value: number) => format(value, "d MMM yyyy");
 
 export const formatDateTime = (value: number) => format(value, "d MMM yyyy, h:mm a");
 
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "narrow" });
+const relativeUnits: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
+  ["year", 31_536_000_000],
+  ["month", 2_592_000_000],
+  ["day", 86_400_000],
+  ["hour", 3_600_000],
+  ["minute", 60_000],
+];
+
+/** Compact "3h ago" style stamp for dense lists where a full date will not fit. */
+export const formatRelativeTime = (value: number) => {
+  const elapsed = value - Date.now();
+  for (const [unit, size] of relativeUnits) {
+    if (Math.abs(elapsed) >= size) return relative.format(Math.round(elapsed / size), unit);
+  }
+  return relative.format(Math.round(elapsed / 1000), "second");
+};
+
 // Invoice expiry dates arrive as day-first strings (see `InvoiceLine.expiresAt`
 // in @store/services). `Date.parse` cannot be used here: it returns NaN for
 // "31-12-2027" and, worse, silently reads "05-06-2027" as 5 June — a US

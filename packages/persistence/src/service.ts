@@ -4,6 +4,7 @@ import type {
   CreateBatchInput,
   CreateInvoiceInput,
   CreateProductInput,
+  DashboardAnalytics,
   ImportInventoryInput,
   ImportInventoryResult,
   Invoice,
@@ -26,6 +27,7 @@ import {
   ProductNotFoundError,
   type StoreError,
 } from "./errors";
+import { makeAnalyticsStore } from "./analytics-store";
 import { makeInvoiceStore } from "./invoice-store";
 import { makeProductStore } from "./product-store";
 import { makeSyncEngine } from "./sync-engine";
@@ -52,6 +54,7 @@ export class OfflineStore extends Context.Service<
     readonly listInvoices: Effect.Effect<ReadonlyArray<Invoice>, PersistenceError>;
     readonly getInvoice: (id: string) => Effect.Effect<Invoice, StoreError>;
     readonly createInvoice: (input: CreateInvoiceInput) => Effect.Effect<Invoice, PersistenceError>;
+    readonly getDashboardAnalytics: Effect.Effect<DashboardAnalytics, PersistenceError>;
     readonly getSyncStatus: Effect.Effect<SyncStatus>;
     readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
   }
@@ -66,10 +69,12 @@ const make = (config: PersistenceConfig) =>
     const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
     const productStore = makeProductStore(database, mutationContext, syncEngine.signal);
     const invoiceStore = makeInvoiceStore(database, mutationContext, syncEngine.signal);
+    const analyticsStore = makeAnalyticsStore(database, mutationContext);
 
     return OfflineStore.of({
       ...productStore,
       ...invoiceStore,
+      ...analyticsStore,
       getSyncStatus: syncEngine.status,
       sync: syncEngine.sync,
     });

@@ -96,6 +96,7 @@ const offlineStore: OfflineStoreApi = {
   listInvoices: () => invokeStore("store:invoices:list"),
   getInvoice: (input) => invokeStore("store:invoices:get", input),
   createInvoice: (input) => invokeStore("store:invoices:create", input),
+  getDashboardAnalytics: () => invokeStore("store:analytics:dashboard"),
   getSyncStatus: () => invokeStore("store:sync:status"),
   sync: () => invokeStore("store:sync:run"),
 };

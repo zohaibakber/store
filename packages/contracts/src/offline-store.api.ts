@@ -4,6 +4,7 @@ import type {
   CreateBatchInput,
   CreateInvoiceInput,
   CreateProductInput,
+  DashboardAnalytics,
   ImportInventoryInput,
   ImportInventoryResult,
   Invoice,
@@ -30,6 +31,7 @@ export interface OfflineStoreApi {
   readonly listInvoices: () => Promise<ReadonlyArray<Invoice>>;
   readonly getInvoice: (input: InvoiceIdInput) => Promise<Invoice>;
   readonly createInvoice: (input: CreateInvoiceInput) => Promise<Invoice>;
+  readonly getDashboardAnalytics: () => Promise<DashboardAnalytics>;
   readonly getSyncStatus: () => Promise<SyncStatus>;
   readonly sync: () => Promise<SyncStatus>;
 }

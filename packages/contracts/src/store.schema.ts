@@ -143,3 +143,60 @@ export type InvoiceIdInput = typeof InvoiceIdInput.Type;
 const stockMovementRow = createSelectSchema(stockMovements);
 export const StockMovement = Schema.Struct(stockMovementRow.fields);
 export type StockMovement = typeof StockMovement.Type;
+
+// One round-trip payload for the home dashboard. Money is integer paisa and
+// `revenueByDay` is a zero-filled 30-day series of UTC days (`YYYY-MM-DD`).
+export const DashboardAnalytics = Schema.Struct({
+  totals: Schema.Struct({
+    revenueToday: Schema.Number,
+    revenue7d: Schema.Number,
+    revenue30d: Schema.Number,
+    invoicesToday: Schema.Number,
+    invoices30d: Schema.Number,
+    averageInvoice30d: Schema.Number,
+    activeProducts: Schema.Number,
+  }),
+  revenueByDay: Schema.Array(
+    Schema.Struct({
+      date: Schema.String,
+      revenue: Schema.Number,
+      invoices: Schema.Number,
+    }),
+  ),
+  topProducts: Schema.Array(
+    Schema.Struct({
+      productId: Schema.String,
+      productName: Schema.String,
+      unitsSold: Schema.Number,
+      revenue: Schema.Number,
+    }),
+  ),
+  expiringBatches: Schema.Array(
+    Schema.Struct({
+      productId: Schema.String,
+      productName: Schema.String,
+      batchNumber: Schema.NullOr(Schema.String),
+      expiresAt: Schema.Number,
+      packQuantity: Schema.Number,
+      unitQuantity: Schema.Number,
+    }),
+  ),
+  lowStock: Schema.Array(
+    Schema.Struct({
+      productId: Schema.String,
+      productName: Schema.String,
+      packQuantity: Schema.Number,
+      unitQuantity: Schema.Number,
+    }),
+  ),
+  recentInvoices: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      invoiceNumber: Schema.Number,
+      customerName: Schema.NullOr(Schema.String),
+      total: Schema.Number,
+      createdAt: Schema.Number,
+    }),
+  ),
+});
+export type DashboardAnalytics = typeof DashboardAnalytics.Type;

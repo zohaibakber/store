@@ -1,26 +1,29 @@
-import type { SyncPhase, SyncStatus } from "@store/contracts";
-import { Link } from "@tanstack/react-router";
-import { Alert02Icon, ArrowRight01Icon, CloudIcon, CloudOffIcon } from "@hugeicons/core-free-icons";
+import type { DashboardAnalytics, SyncStatus } from "@store/contracts";
+import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-health";
+import { RecentInvoices } from "@/components/dashboard/recent-invoices";
+import { RevenueChart } from "@/components/dashboard/revenue-chart";
+import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
+import { SyncStatusBadge } from "@/components/dashboard/sync-status-badge";
+import { TopProducts } from "@/components/dashboard/top-products";
 import {
+  PageAction,
   PageContent,
   PageDescription,
   PageHeader,
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { storeErrorMessage } from "@/lib/errors";
+
+// Mirrors LOW_STOCK_THRESHOLD in @store/persistence — the store decides which
+// products qualify; the page only names the number in its description.
+const LOW_STOCK_THRESHOLD = 10;
 
 const initialStatus: SyncStatus = {
   phase: "local-only",
@@ -29,115 +32,86 @@ const initialStatus: SyncStatus = {
   message: "Loading local database…",
 };
 
-const phaseBadge: Record<
-  SyncPhase,
-  { label: string; variant: "outline" | "secondary" | "destructive"; className?: string }
-> = {
-  "local-only": { label: "Local only", variant: "outline" },
-  idle: {
-    label: "Cloud ready",
-    variant: "secondary",
-    className: "bg-info/10 text-info-foreground",
-  },
-  syncing: {
-    label: "Syncing",
-    variant: "secondary",
-    className: "bg-warning/10 text-warning-foreground",
-  },
-  error: { label: "Sync paused", variant: "destructive" },
-};
-
-const errorMessage = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Something unexpected happened";
+function ChartSkeleton() {
+  return (
+    <Card>
+      <CardHeader className="gap-2">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-3 w-48" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-56 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
 
 export function HomePage() {
   const [status, setStatus] = useState(initialStatus);
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setStatus(await window.offlineStore.getSyncStatus());
+    const [nextStatus, nextAnalytics] = await Promise.all([
+      window.offlineStore.getSyncStatus(),
+      window.offlineStore.getDashboardAnalytics(),
+    ]);
+    setStatus(nextStatus);
+    setAnalytics(nextAnalytics);
+    setError(null);
   }, []);
 
   useEffect(() => {
-    refresh().catch((cause: unknown) => setError(errorMessage(cause)));
+    refresh().catch((cause: unknown) => setError(storeErrorMessage(cause)));
   }, [refresh]);
 
   useEffect(() => {
     const handleSync = () => {
-      void refresh().catch((cause: unknown) => setError(errorMessage(cause)));
+      void refresh().catch((cause: unknown) => setError(storeErrorMessage(cause)));
     };
 
     window.addEventListener("offline-store:sync", handleSync);
     return () => window.removeEventListener("offline-store:sync", handleSync);
   }, [refresh]);
 
-  const badge = phaseBadge[status.phase];
-
   return (
     <PageLayout>
       <PageHeader>
-        <p className="font-medium text-primary text-sm">Offline-first store</p>
-        <PageHeading>Welcome back</PageHeading>
-        <PageDescription className="max-w-2xl">
-          Every edit is committed to the on-device PostgreSQL database first. Background sync never
-          blocks local work.
-        </PageDescription>
+        <PageHeading>Dashboard</PageHeading>
+        <PageDescription>Sales and stock health from the on-device database.</PageDescription>
+        <PageAction>
+          <SyncStatusBadge status={status} />
+        </PageAction>
       </PageHeader>
 
       <PageContent>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {status.configured ? (
-                <HugeiconsIcon aria-hidden="true" icon={CloudIcon} />
-              ) : (
-                <HugeiconsIcon aria-hidden="true" icon={CloudOffIcon} />
-              )}
-              Sync status
-            </CardTitle>
-            <CardDescription>{status.message}</CardDescription>
-            <CardAction>
-              <Badge className={badge.className} variant={badge.variant}>
-                {badge.label}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <span>
-              <strong className="font-medium">Storage:</strong>{" "}
-              <span className="text-muted-foreground">local database</span>
-            </span>
-            <span>
-              <strong className="font-medium">Last sync:</strong>{" "}
-              <span className="text-muted-foreground">
-                {status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString() : "Never"}
-              </span>
-            </span>
-          </CardContent>
-        </Card>
-
         {error && (
           <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>Operation failed</AlertTitle>
+            <AlertTitle>Could not load the dashboard</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Products</CardTitle>
-            <CardDescription>
-              Browse and manage everything the shop sells — stock, prices and batches.
-            </CardDescription>
-            <CardAction>
-              <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/products">
-                Open products
-                <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
-              </Link>
-            </CardAction>
-          </CardHeader>
-        </Card>
+        {analytics === null ? (
+          <>
+            <StatTilesSkeleton />
+            <ChartSkeleton />
+          </>
+        ) : (
+          <>
+            <StatTiles totals={analytics.totals} />
+            <RevenueChart data={analytics.revenueByDay} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <TopProducts products={analytics.topProducts} />
+              <RecentInvoices invoices={analytics.recentInvoices} />
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ExpiringBatches batches={analytics.expiringBatches} />
+              <LowStock products={analytics.lowStock} threshold={LOW_STOCK_THRESHOLD} />
+            </div>
+          </>
+        )}
       </PageContent>
     </PageLayout>
   );

@@ -206,7 +206,9 @@
   --border: --alpha(var(--color-white) / 6%);
   --input: --alpha(var(--color-white) / 8%);
   --ring: var(--color-neutral-500);
-  --chart-1: var(--color-blue-700);
+  /* blue-500 rather than the coss default blue-700: on the dark card surface
+     700 lands at 2.88:1, below the 3:1 a chart mark needs. */
+  --chart-1: var(--color-blue-500);
   --chart-2: var(--color-emerald-500);
   --chart-3: var(--color-amber-500);
   --chart-4: var(--color-purple-500);

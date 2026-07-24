@@ -240,6 +240,9 @@ function registerStoreIpc() {
       ),
     ),
   );
+  ipcMain.handle("store:analytics:dashboard", () =>
+    runStore(withStore((store) => store.getDashboardAnalytics)),
+  );
   ipcMain.handle("store:sync:status", () => runStore(withStore((store) => store.getSyncStatus)));
   ipcMain.handle("store:sync:run", () => runStore(withStore((store) => store.sync)));
 }

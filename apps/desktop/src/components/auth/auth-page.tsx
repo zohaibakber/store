@@ -3,30 +3,32 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
 import { AuthBrand } from "@/components/auth/auth-brand";
 import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
-import { AuthPasswordInput } from "@/components/auth/auth-password-input";
+import { PasswordInput } from "@/components/auth/password-input";
 
 function formValue(form: FormData, key: string) {
   const value = form.get(key);
   return typeof value === "string" ? value : "";
 }
 
+type AuthFormErrors = Record<string, string | string[]>;
+
 export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
   const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(bridgeError ?? null);
+  const [errors, setErrors] = React.useState<AuthFormErrors>({});
   const [password, setPassword] = React.useState("");
 
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setPending(true);
-    setError(null);
+    setErrors({});
     try {
       if (!window.auth) throw new Error("Authentication is unavailable in this build.");
       const email = formValue(form, "email");
@@ -41,7 +43,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
             });
       window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
     } catch (cause) {
-      setError(getErrorMessage(cause));
+      setErrors({ password: getErrorMessage(cause) });
     } finally {
       setPending(false);
     }
@@ -49,7 +51,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
 
   function toggleMode() {
     setMode(mode === "sign-in" ? "sign-up" : "sign-in");
-    setError(null);
+    setErrors({});
     setPassword("");
   }
 
@@ -62,20 +64,21 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
         <AuthBrand />
         <div className="flex w-full justify-center">
           <div className="w-full max-w-xs">
-            <form id="auth-form" onSubmit={submit}>
+            <Form id="auth-form" errors={errors} onChange={() => setErrors({})} onSubmit={submit}>
               <Fieldset className="flex w-full flex-col gap-6">
                 <div className="flex flex-col items-center gap-1 text-center">
-                  <h1 className="text-2xl font-bold">
+                  <h1 className="text-2xl font-medium">
                     {mode === "sign-in" ? "Welcome back" : "Set up your store"}
                   </h1>
                 </div>
                 {mode === "sign-up" && (
-                  <Field>
+                  <Field name="name">
                     <FieldLabel htmlFor="name">Your name</FieldLabel>
                     <Input id="name" name="name" autoComplete="name" required />
+                    <FieldError />
                   </Field>
                 )}
-                <Field data-invalid={Boolean(error)}>
+                <Field name="email">
                   <FieldLabel htmlFor="email">Email</FieldLabel>
                   <Input
                     id="email"
@@ -84,34 +87,32 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
                     placeholder="m@example.com"
                     autoComplete="email"
                     required
-                    aria-invalid={Boolean(error)}
                   />
+                  <FieldError />
                 </Field>
-                <Field data-invalid={Boolean(error)}>
+                <Field name="password">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <AuthPasswordInput
+                  <PasswordInput
                     id="password"
                     name="password"
                     autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
                     minLength={8}
                     required
-                    aria-invalid={Boolean(error)}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                  {error && <FieldError match>{error}</FieldError>}
+                  <FieldError />
                 </Field>
                 <Field>
-                  <Button type="submit" disabled={pending}>
-                    {pending && <Spinner data-icon="inline-start" />}
+                  <Button type="submit" disabled={pending} loading={pending} className="w-full">
                     {mode === "sign-in" ? "Sign in" : "Create account"}
                   </Button>
-                  <FieldDescription className="text-center">
+                  <FieldDescription className="text-center mx-auto mt-2">
                     <AuthModeToggle mode={mode} onToggle={toggleMode} />
                   </FieldDescription>
                 </Field>
               </Fieldset>
-            </form>
+            </Form>
             {bridgeError && (
               <Alert className="mt-6">
                 <AlertTitle>Offline sign-in is not ready</AlertTitle>

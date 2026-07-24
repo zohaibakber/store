@@ -1,10 +1,10 @@
 import * as React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { EyeIcon, EyeClosedIcon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Button } from "../ui/button";
 
-export function AuthPasswordInput({
+export function PasswordInput({
   value,
   onChange,
   ...props
@@ -24,6 +24,7 @@ export function AuthPasswordInput({
           <Button
             type="button"
             size="icon-xs"
+            variant="ghost"
             aria-label={showPassword ? "Hide password" : "Show password"}
             onClick={() => setShowPassword((current) => !current)}
           >
