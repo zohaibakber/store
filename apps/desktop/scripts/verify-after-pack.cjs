@@ -71,7 +71,9 @@ const verifyDesktopAsar = (archivePath) => {
     );
   }
 
-  const entries = listPackage(archivePath);
+  // @electron/asar returns OS-native separators (backslash on Windows), but every
+  // check below compares against posix-style constants and splits on "/".
+  const entries = listPackage(archivePath).map((entry) => entry.replaceAll("\\", "/"));
   const entrySet = new Set(entries);
   const packageRoots = new Set(entries.map(packageRoot).filter(Boolean));
   const topLevelRoots = new Set(
