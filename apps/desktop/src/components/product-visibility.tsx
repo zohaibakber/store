@@ -1,7 +1,7 @@
+import { FrameCard } from "@/components/frame-card";
 import type { Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "@/lib/toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -39,35 +39,32 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Visibility</CardTitle>
-        <CardDescription>
-          {product.visible
-            ? "Shown in the catalog and at checkout."
-            : "Hidden from the catalog and checkout."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Select
-          items={visibilityOptions}
-          onValueChange={(value) => value && void setVisible(value === "visible")}
-          value={product.visible ? "visible" : "hidden"}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {visibilityOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </CardContent>
-    </Card>
+    <FrameCard
+      description={
+        product.visible
+          ? "Shown in the catalog and at checkout."
+          : "Hidden from the catalog and checkout."
+      }
+      title="Visibility"
+    >
+      <Select
+        items={visibilityOptions}
+        onValueChange={(value) => value && void setVisible(value === "visible")}
+        value={product.visible ? "visible" : "hidden"}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {visibilityOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </FrameCard>
   );
 }

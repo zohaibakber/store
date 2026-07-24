@@ -1,5 +1,5 @@
+import { FrameCard } from "@/components/frame-card";
 import type { DashboardAnalytics } from "@store/contracts";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPrice } from "@/lib/format";
 
@@ -36,13 +36,10 @@ export function StatTiles({ totals }: { totals: DashboardAnalytics["totals"] }) 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {tilesFrom(totals).map((tile) => (
-        <Card key={tile.label}>
-          <CardHeader className="gap-1">
-            <CardDescription>{tile.label}</CardDescription>
-            <p className="font-semibold text-2xl tracking-tight">{tile.value}</p>
-          </CardHeader>
-          <CardContent className="text-muted-foreground">{tile.detail}</CardContent>
-        </Card>
+        <FrameCard key={tile.label} title={tile.label}>
+          <p className="font-semibold text-2xl tracking-tight">{tile.value}</p>
+          <p className="text-muted-foreground">{tile.detail}</p>
+        </FrameCard>
       ))}
     </div>
   );
@@ -52,15 +49,10 @@ export function StatTilesSkeleton() {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {[0, 1, 2, 3].map((slot) => (
-        <Card key={slot}>
-          <CardHeader className="gap-2">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-7 w-28" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-3 w-20" />
-          </CardContent>
-        </Card>
+        <FrameCard key={slot} title={<Skeleton className="h-3 w-24" />}>
+          <Skeleton className="h-7 w-28" />
+          <Skeleton className="mt-2 h-3 w-20" />
+        </FrameCard>
       ))}
     </div>
   );

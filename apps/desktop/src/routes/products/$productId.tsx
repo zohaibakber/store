@@ -1,3 +1,4 @@
+import { FrameCard } from "@/components/frame-card";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Alert02Icon,
@@ -19,7 +20,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PageAction,
   PageContent,
@@ -132,33 +132,28 @@ function ProductDetailPage() {
 
       <PageContent className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
-              <CardAction>
-                <Button
-                  render={
-                    <Link params={{ productId: product.id }} to="/products/$productId/edit" />
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
-                  Edit
-                </Button>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
-                {details.map((detail) => (
-                  <div className="flex items-baseline justify-between gap-4" key={detail.label}>
-                    <dt className="text-muted-foreground">{detail.label}</dt>
-                    <dd className="text-right">{detail.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
+          <FrameCard
+            action={
+              <Button
+                render={<Link params={{ productId: product.id }} to="/products/$productId/edit" />}
+                size="sm"
+                variant="outline"
+              >
+                <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+                Edit
+              </Button>
+            }
+            title="Details"
+          >
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+              {details.map((detail) => (
+                <div className="flex items-baseline justify-between gap-4" key={detail.label}>
+                  <dt className="text-muted-foreground">{detail.label}</dt>
+                  <dd className="text-right">{detail.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </FrameCard>
 
           <ProductBatchesCard product={product} />
         </div>

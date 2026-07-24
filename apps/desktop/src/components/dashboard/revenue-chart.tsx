@@ -1,7 +1,6 @@
+import { FrameCard } from "@/components/frame-card";
 import type { DashboardAnalytics } from "@store/contracts";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CardContent } from "@/components/ui/card";
 import {
   type ChartConfig,
   ChartContainer,
@@ -25,56 +24,50 @@ const dayLabel = (value: unknown) =>
 
 export function RevenueChart({ data }: { data: DashboardAnalytics["revenueByDay"] }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Revenue</CardTitle>
-        <CardDescription>Daily sales over the last 30 days.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer className="aspect-auto h-56 w-full" config={revenueChartConfig}>
-          <AreaChart data={data as Array<DashboardAnalytics["revenueByDay"][number]>}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="date"
-              interval="preserveStartEnd"
-              minTickGap={24}
-              tickFormatter={dayLabel}
-              tickLine={false}
-              tickMargin={8}
-            />
-            <YAxis
-              axisLine={false}
-              tickFormatter={(value: number) => formatPrice(value)}
-              tickLine={false}
-              tickMargin={8}
-              width={80}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value, _name, item) => {
-                    const invoices = (item?.payload as { invoices?: number } | undefined)?.invoices;
-                    return `${formatPrice(Number(value))} · ${invoices ?? 0} ${
-                      invoices === 1 ? "invoice" : "invoices"
-                    }`;
-                  }}
-                  labelFormatter={dayLabel}
-                />
-              }
-              cursor={false}
-            />
-            <Area
-              dataKey="revenue"
-              fill="var(--color-revenue)"
-              fillOpacity={0.1}
-              stroke="var(--color-revenue)"
-              strokeWidth={2}
-              type="monotone"
-            />
-          </AreaChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    <FrameCard description="Daily sales over the last 30 days." title="Revenue">
+      <ChartContainer className="aspect-auto h-56 w-full" config={revenueChartConfig}>
+        <AreaChart data={data as Array<DashboardAnalytics["revenueByDay"][number]>}>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            axisLine={false}
+            dataKey="date"
+            interval="preserveStartEnd"
+            minTickGap={24}
+            tickFormatter={dayLabel}
+            tickLine={false}
+            tickMargin={8}
+          />
+          <YAxis
+            axisLine={false}
+            tickFormatter={(value: number) => formatPrice(value)}
+            tickLine={false}
+            tickMargin={8}
+            width={80}
+          />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                formatter={(value, _name, item) => {
+                  const invoices = (item?.payload as { invoices?: number } | undefined)?.invoices;
+                  return `${formatPrice(Number(value))} · ${invoices ?? 0} ${
+                    invoices === 1 ? "invoice" : "invoices"
+                  }`;
+                }}
+                labelFormatter={dayLabel}
+              />
+            }
+            cursor={false}
+          />
+          <Area
+            dataKey="revenue"
+            fill="var(--color-revenue)"
+            fillOpacity={0.1}
+            stroke="var(--color-revenue)"
+            strokeWidth={2}
+            type="monotone"
+          />
+        </AreaChart>
+      </ChartContainer>
+    </FrameCard>
   );
 }

@@ -1,3 +1,4 @@
+import { FrameCard } from "@/components/frame-card";
 import { useMemo, useState } from "react";
 import type { Product, StockMovement } from "@store/contracts";
 import {
@@ -15,7 +16,6 @@ import * as z from "zod";
 import { DatePicker } from "@/components/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   type ChartConfig,
   ChartContainer,
@@ -224,55 +224,46 @@ export function ProductBatchesCard({ product }: { product: Product }) {
   const looseUnits = productLooseUnitStock(product);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          Batches
-          <Badge className="ml-2" variant="secondary">
-            {packs} packs · {looseUnits} loose · {stock} total units
-          </Badge>
-        </CardTitle>
-        <CardAction>
-          <AddBatchDialog productId={product.id} />
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {product.batches.length === 0 ? (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
-              </EmptyMedia>
-              <EmptyTitle>No batches yet</EmptyTitle>
-              <EmptyDescription>
-                Add a batch to put this product in stock — sales draw from batches.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <ItemGroup className="gap-2">
-            {product.batches.map((batch) => (
-              <Item key={batch.id} variant="outline">
-                <ItemContent>
-                  <ItemTitle>{batch.batchNumber ?? "Unnumbered batch"}</ItemTitle>
-                  <ItemDescription>
-                    {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
-                    {" · "}added {formatDate(batch.createdAt)}
-                  </ItemDescription>
-                </ItemContent>
-                <Badge
-                  variant={batch.packQuantity + batch.unitQuantity === 0 ? "outline" : "secondary"}
-                >
-                  {batch.packQuantity + batch.unitQuantity === 0
-                    ? "Empty"
-                    : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
-                </Badge>
-              </Item>
-            ))}
-          </ItemGroup>
-        )}
-      </CardContent>
-    </Card>
+    <FrameCard
+      action={<AddBatchDialog productId={product.id} />}
+      description={`${packs} packs · ${looseUnits} loose · ${stock} total units`}
+      title="Batches"
+    >
+      {product.batches.length === 0 ? (
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
+            </EmptyMedia>
+            <EmptyTitle>No batches yet</EmptyTitle>
+            <EmptyDescription>
+              Add a batch to put this product in stock — sales draw from batches.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <ItemGroup className="gap-2">
+          {product.batches.map((batch) => (
+            <Item key={batch.id} variant="outline">
+              <ItemContent>
+                <ItemTitle>{batch.batchNumber ?? "Unnumbered batch"}</ItemTitle>
+                <ItemDescription>
+                  {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
+                  {" · "}added {formatDate(batch.createdAt)}
+                </ItemDescription>
+              </ItemContent>
+              <Badge
+                variant={batch.packQuantity + batch.unitQuantity === 0 ? "outline" : "secondary"}
+              >
+                {batch.packQuantity + batch.unitQuantity === 0
+                  ? "Empty"
+                  : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
+              </Badge>
+            </Item>
+          ))}
+        </ItemGroup>
+      )}
+    </FrameCard>
   );
 }
 
@@ -318,57 +309,52 @@ export function ProductStockMovementsCard({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Stock movements</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {data.length === 0 ? (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
-              </EmptyMedia>
-              <EmptyTitle>No movements yet</EmptyTitle>
-              <EmptyDescription>Stock receipts and sales will appear here.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <>
-            <ChartContainer className="aspect-auto h-56 w-full" config={movementsChartConfig}>
-              <BarChart data={data}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  axisLine={false}
-                  dataKey="date"
-                  tickFormatter={formatDayTick}
-                  tickLine={false}
-                  tickMargin={8}
-                />
-                <ChartTooltip
-                  content={<ChartTooltipContent labelFormatter={formatDayTick} />}
-                  cursor={false}
-                />
-                <Bar dataKey="net" radius={4}>
-                  {data.map((entry) => (
-                    <Cell fill={entry.net >= 0 ? stockInColor : stockOutColor} key={entry.date} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ChartContainer>
-            <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockInColor }} />
-                Stock in
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockOutColor }} />
-                Stock out
-              </span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <FrameCard title="Stock movements">
+      {data.length === 0 ? (
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
+            </EmptyMedia>
+            <EmptyTitle>No movements yet</EmptyTitle>
+            <EmptyDescription>Stock receipts and sales will appear here.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <>
+          <ChartContainer className="aspect-auto h-56 w-full" config={movementsChartConfig}>
+            <BarChart data={data}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                axisLine={false}
+                dataKey="date"
+                tickFormatter={formatDayTick}
+                tickLine={false}
+                tickMargin={8}
+              />
+              <ChartTooltip
+                content={<ChartTooltipContent labelFormatter={formatDayTick} />}
+                cursor={false}
+              />
+              <Bar dataKey="net" radius={4}>
+                {data.map((entry) => (
+                  <Cell fill={entry.net >= 0 ? stockInColor : stockOutColor} key={entry.date} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+          <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockInColor }} />
+              Stock in
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-[2px]" style={{ backgroundColor: stockOutColor }} />
+              Stock out
+            </span>
+          </div>
+        </>
+      )}
+    </FrameCard>
   );
 }

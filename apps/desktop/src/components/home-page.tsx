@@ -1,3 +1,4 @@
+import { FrameCard } from "@/components/frame-card";
 import type { DashboardAnalytics, SyncStatus } from "@store/contracts";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -17,7 +18,6 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { storeErrorMessage } from "@/lib/errors";
 
@@ -34,15 +34,12 @@ const initialStatus: SyncStatus = {
 
 function ChartSkeleton() {
   return (
-    <Card>
-      <CardHeader className="gap-2">
-        <Skeleton className="h-4 w-28" />
-        <Skeleton className="h-3 w-48" />
-      </CardHeader>
-      <CardContent>
-        <Skeleton className="h-56 w-full" />
-      </CardContent>
-    </Card>
+    <FrameCard
+      description={<Skeleton className="h-3 w-48" />}
+      title={<Skeleton className="h-4 w-28" />}
+    >
+      <Skeleton className="h-56 w-full" />
+    </FrameCard>
   );
 }
 
