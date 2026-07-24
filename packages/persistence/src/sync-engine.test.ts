@@ -194,7 +194,8 @@ test("an offline transport never rolls back local writes and leaves outbox work 
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
   const dataDir = path.join(directory, "pglite");
   const transport = {
-    exchange: () => Effect.fail(SyncTransportError.make({ message: "network unavailable" })),
+    exchange: () =>
+      Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
   };
   const runtime = ManagedRuntime.make(
     layer({ dataDir, migrationsFolder, syncTransport: transport }),
@@ -252,7 +253,12 @@ test("a flaky transport is retried and the outbox drains", async () => {
     exchange: (request: SyncRequest) => {
       attempts += 1;
       return attempts <= 2
-        ? Effect.fail(SyncTransportError.make({ message: "temporary network failure" }))
+        ? Effect.fail(
+            SyncTransportError.make({
+              message: "temporary network failure",
+              retryable: true,
+            }),
+          )
         : Effect.succeed(responseFor(request));
     },
   };
@@ -295,7 +301,9 @@ test("a permanently failing transport still fails after retries", async () => {
   const transport = {
     exchange: () => {
       attempts += 1;
-      return Effect.fail(SyncTransportError.make({ message: "network unavailable" }));
+      return Effect.fail(
+        SyncTransportError.make({ message: "network unavailable", retryable: true }),
+      );
     },
   };
   const runtime = ManagedRuntime.make(
@@ -331,6 +339,45 @@ test("a permanently failing transport still fails after retries", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 }, 15_000);
+
+test("a non-retryable transport error fails once with its protocol details", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-validation-"));
+  const dataDir = path.join(directory, "pglite");
+  let attempts = 0;
+  const transport = {
+    exchange: () => {
+      attempts += 1;
+      return Effect.fail(
+        SyncTransportError.make({
+          message: "operations[0].changes must contain at most 1,000 items",
+          retryable: false,
+          status: 400,
+          code: "INVALID_SYNC_REQUEST",
+        }),
+      );
+    },
+  };
+  const runtime = ManagedRuntime.make(
+    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  );
+
+  try {
+    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+      _tag: "PersistenceError",
+      operation: "exchange sync changes",
+      message: expect.stringContaining("INVALID_SYNC_REQUEST"),
+      cause: expect.objectContaining({
+        _tag: "SyncTransportError",
+        status: 400,
+        retryable: false,
+      }),
+    });
+    expect(attempts).toBe(1);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("a remote product change creates a product that does not exist locally", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));

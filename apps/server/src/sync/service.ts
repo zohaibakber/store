@@ -1,4 +1,9 @@
-import type { SyncRequest, SyncResponse } from "@store/contracts";
+import {
+  MAX_SYNC_CHANGES_PER_REQUEST,
+  MAX_SYNC_OPERATIONS_PER_REQUEST,
+  type SyncRequest,
+  type SyncResponse,
+} from "@store/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -42,10 +47,10 @@ export const syncServiceLayer = Layer.effect(
         return yield* invalid("INVALID_DEVICE", "The sync device id is invalid.");
       if (!Number.isSafeInteger(request.cursor) || request.cursor < 0)
         return yield* invalid("INVALID_CURSOR", "The sync cursor must be a non-negative integer.");
-      if (request.operations.length > 100)
+      if (request.operations.length > MAX_SYNC_OPERATIONS_PER_REQUEST)
         return yield* invalid(
           "TOO_MANY_OPERATIONS",
-          "A sync request may contain at most 100 operations.",
+          `A sync request may contain at most ${MAX_SYNC_OPERATIONS_PER_REQUEST} operations.`,
         );
       let changeCount = 0;
       const operationIds = new Set<string>();
@@ -64,10 +69,10 @@ export const syncServiceLayer = Layer.effect(
         if (operation.changes.length === 0)
           return yield* invalid("EMPTY_OPERATION", "A sync operation must contain a change.");
         changeCount += operation.changes.length;
-        if (changeCount > 1_000)
+        if (changeCount > MAX_SYNC_CHANGES_PER_REQUEST)
           return yield* invalid(
             "TOO_MANY_CHANGES",
-            "A sync request may contain at most 1,000 changes.",
+            `A sync request may contain at most ${MAX_SYNC_CHANGES_PER_REQUEST} changes.`,
           );
         if (operationIds.has(operation.operationId))
           return yield* invalid(

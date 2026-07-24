@@ -9,7 +9,8 @@ import {
   InvoiceIdInput,
   ProductIdInput,
   SearchProductsInput,
-  type SyncResponse,
+  SyncResponse,
+  type SyncRequest,
   UpdateProductInput,
 } from "@store/contracts";
 import {
@@ -26,7 +27,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { AuthBroker, type AuthSnapshot } from "./auth";
+import { AuthBroker, type AuthSnapshot, RequestError } from "./auth";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -305,18 +306,42 @@ async function activateOrganization(organizationId: string) {
       dataDir,
       migrationsFolder: migrationsFolder(),
       syncTransport: {
-        exchange: (request) =>
-          Effect.tryPromise({
-            try: () =>
-              authBroker.apiRequest<SyncResponse>("/api/sync", {
+        exchange: Effect.fn("SyncTransport.exchange")(function* (request: SyncRequest) {
+          const response = yield* Effect.tryPromise({
+            try: (signal) =>
+              authBroker.apiRequest<unknown>("/api/sync", {
                 method: "POST",
                 body: request,
+                signal,
               }),
             catch: (cause) =>
-              new SyncTransportError({
+              SyncTransportError.make({
                 message: cause instanceof Error ? cause.message : String(cause),
+                retryable:
+                  !(cause instanceof RequestError) ||
+                  cause.status === 408 ||
+                  cause.status === 429 ||
+                  cause.status >= 500,
+                ...(cause instanceof RequestError
+                  ? {
+                      status: cause.status,
+                      ...(cause.code ? { code: cause.code } : {}),
+                    }
+                  : {}),
+                cause,
               }),
-          }),
+          });
+          return yield* Schema.decodeUnknownEffect(SyncResponse)(response).pipe(
+            Effect.mapError((cause) =>
+              SyncTransportError.make({
+                message: "The sync server returned an invalid response.",
+                retryable: false,
+                code: "INVALID_SYNC_RESPONSE",
+                cause,
+              }),
+            ),
+          );
+        }),
       },
       mutationContext: () => ({
         organizationId,

@@ -22,11 +22,12 @@ export class SyncEntityChange extends Schema.Class<SyncEntityChange>("SyncEntity
 }) {}
 
 // Bounds keep a single sync request within Hyperdrive's 60s query/transaction
-// limit: every operation and its changes are applied sequentially in one
-// transaction (see apps/server/src/sync/database.ts), so batch size is capped
-// well above the client's 100-operation push batch (packages/persistence/src/sync-engine.ts).
-const MAX_OPERATIONS_PER_REQUEST = 200;
-const MAX_CHANGES_PER_OPERATION = 200;
+// limit. New bulk mutations are split into smaller operations by persistence,
+// while the higher per-operation ceiling keeps operations queued by older
+// clients syncable.
+export const MAX_SYNC_OPERATIONS_PER_REQUEST = 100;
+export const MAX_SYNC_CHANGES_PER_OPERATION = 1_000;
+export const MAX_SYNC_CHANGES_PER_REQUEST = 1_000;
 
 // payloadHash is the SHA-256 hex digest of canonical stable-key JSON for every
 // field below except payloadHash itself. Both peers validate the claimed hash.
@@ -38,14 +39,16 @@ export class SyncOperation extends Schema.Class<SyncOperation>("SyncOperation")(
   clientSequence: Schema.Number,
   occurredAt: Schema.Number,
   payloadHash: Schema.String,
-  changes: Schema.Array(SyncEntityChange).check(Schema.isMaxLength(MAX_CHANGES_PER_OPERATION)),
+  changes: Schema.Array(SyncEntityChange).check(Schema.isMaxLength(MAX_SYNC_CHANGES_PER_OPERATION)),
 }) {}
 
 export class SyncRequest extends Schema.Class<SyncRequest>("SyncRequest")({
   organizationId: Schema.String,
   deviceId: Schema.String,
   cursor: Schema.Number,
-  operations: Schema.Array(SyncOperation).check(Schema.isMaxLength(MAX_OPERATIONS_PER_REQUEST)),
+  operations: Schema.Array(SyncOperation).check(
+    Schema.isMaxLength(MAX_SYNC_OPERATIONS_PER_REQUEST),
+  ),
 }) {}
 
 export class SyncAck extends Schema.Class<SyncAck>("SyncAck")({

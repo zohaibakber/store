@@ -48,4 +48,44 @@ describe("sync authorization", () => {
     const apiResponse = await appFor(true).request("/api");
     expect(JSON.stringify(await apiResponse.json())).not.toContain("authToken");
   });
+
+  it("returns the Effect schema failure for an invalid sync request", async () => {
+    const request = requestFor();
+    const operation = request.operations[0];
+    if (!operation) throw new Error("Expected a sync operation");
+    const change = operation.changes[0];
+    if (!change) throw new Error("Expected a sync change");
+
+    const response = await appFor(true).request("/api/sync", {
+      method: "POST",
+      body: JSON.stringify({
+        organizationId: request.organizationId,
+        deviceId: request.deviceId,
+        cursor: request.cursor,
+        operations: [
+          {
+            operationId: operation.operationId,
+            organizationId: operation.organizationId,
+            deviceId: operation.deviceId,
+            actorUserId: operation.actorUserId,
+            clientSequence: operation.clientSequence,
+            occurredAt: operation.occurredAt,
+            payloadHash: operation.payloadHash,
+            changes: Array.from({ length: 1_001 }, () => change),
+          },
+        ],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "INVALID_SYNC_REQUEST",
+        message: expect.stringContaining(
+          "operations[0].changes contains 1001 items; at most 1000 are allowed",
+        ),
+      },
+    });
+  });
 });

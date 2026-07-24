@@ -11,7 +11,13 @@ export { InvoiceNotFoundError, PersistenceError, ProductNotFoundError, type Stor
 
 export class SyncTransportError extends Schema.TaggedErrorClass<SyncTransportError>()(
   "SyncTransportError",
-  { message: Schema.String },
+  {
+    message: Schema.String,
+    retryable: Schema.Boolean,
+    status: Schema.optionalKey(Schema.Number),
+    code: Schema.optionalKey(Schema.String),
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
 ) {}
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));

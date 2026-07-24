@@ -108,6 +108,32 @@ test("duplicate names in one import share one created product", async () => {
   }
 });
 
+test("large imports are committed locally once and queued in bounded sync operations", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
+  const dataDir = path.join(directory, "pglite");
+  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
+  const lines = Array.from({ length: 100 }, (_, index) =>
+    importLine(`Imported product ${index + 1}`),
+  );
+
+  try {
+    await expect(
+      runtime.runPromise(store((store) => store.importInventory({ categoryId: "general", lines }))),
+    ).resolves.toEqual({ createdProducts: 100, createdBatches: 100 });
+
+    expect(await runtime.runPromise(store((store) => store.listProducts))).toHaveLength(100);
+    await runtime.dispose();
+
+    const outbox = await readOutbox(dataDir);
+    const importOperations = outbox.slice(1);
+    expect(importOperations.map((operation) => operation.payload.length)).toEqual([198, 102]);
+    expect(importOperations.every((operation) => operation.payload.length <= 200)).toBe(true);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
+
 test("an invalid line rolls back every row and outbox change", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
   const dataDir = path.join(directory, "pglite");

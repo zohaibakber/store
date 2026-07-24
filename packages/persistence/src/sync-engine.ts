@@ -1,4 +1,12 @@
-import type { SyncEntityChange, SyncOperation, SyncRequest, SyncStatus } from "@store/contracts";
+import {
+  MAX_SYNC_CHANGES_PER_OPERATION,
+  MAX_SYNC_CHANGES_PER_REQUEST,
+  MAX_SYNC_OPERATIONS_PER_REQUEST,
+  type SyncEntityChange,
+  type SyncOperation,
+  type SyncRequest,
+  type SyncStatus,
+} from "@store/contracts";
 import {
   batches,
   categories,
@@ -191,9 +199,31 @@ export const makeSyncEngine = (
           ),
         )
         .orderBy(asc(syncOutbox.clientSequence))
-        .limit(100)
+        .limit(MAX_SYNC_OPERATIONS_PER_REQUEST + 1)
         .pipe(mapPersistenceError("load pending sync operations"));
-      const operations: SyncOperation[] = pending.map((queued) => ({
+      const selected: typeof pending = [];
+      let requestChangeCount = 0;
+      for (const queued of pending) {
+        if (selected.length >= MAX_SYNC_OPERATIONS_PER_REQUEST) break;
+        if (queued.payload.length === 0)
+          return yield* PersistenceError.make({
+            operation: "build sync request",
+            message: `Queued operation ${queued.operationId} contains no changes`,
+          });
+        if (queued.payload.length > MAX_SYNC_CHANGES_PER_OPERATION)
+          return yield* PersistenceError.make({
+            operation: "build sync request",
+            message: `Queued operation ${queued.operationId} contains ${queued.payload.length} changes; the supported maximum is ${MAX_SYNC_CHANGES_PER_OPERATION}`,
+          });
+        if (
+          selected.length > 0 &&
+          requestChangeCount + queued.payload.length > MAX_SYNC_CHANGES_PER_REQUEST
+        )
+          break;
+        selected.push(queued);
+        requestChangeCount += queued.payload.length;
+      }
+      const operations: SyncOperation[] = selected.map((queued) => ({
         operationId: queued.operationId,
         organizationId: queued.organizationId,
         deviceId: queued.deviceId,
@@ -226,7 +256,7 @@ export const makeSyncEngine = (
                     eq(syncOutbox.organizationId, currentActor.organizationId),
                     lte(
                       syncOutbox.clientSequence,
-                      pending[pending.length - 1]?.clientSequence ?? 0,
+                      selected[selected.length - 1]?.clientSequence ?? 0,
                     ),
                     isNull(syncOutbox.acknowledgedAt),
                   ),
@@ -239,9 +269,29 @@ export const makeSyncEngine = (
         Effect.retry({
           schedule: Schedule.exponential("500 millis").pipe(Schedule.jittered),
           times: 3,
+          while: (error) => error.retryable,
         }),
+        Effect.tapError((error) =>
+          Effect.logWarning("Sync exchange failed", error).pipe(
+            Effect.annotateLogs({
+              cursor,
+              operationCount: operations.length,
+              changeCount: requestChangeCount,
+            }),
+          ),
+        ),
         Effect.mapError((error) =>
-          PersistenceError.make({ operation: "exchange sync changes", message: error.message }),
+          PersistenceError.make({
+            operation: "exchange sync changes",
+            message: [
+              error.code ? `[${error.code}]` : undefined,
+              error.message,
+              error.status ? `(HTTP ${error.status})` : undefined,
+            ]
+              .filter((part) => part !== undefined)
+              .join(" "),
+            cause: error,
+          }),
         ),
       );
       if (response.organizationId !== currentActor.organizationId || response.cursor < cursor)
@@ -285,7 +335,7 @@ export const makeSyncEngine = (
           }),
         )
         .pipe(mapPersistenceError("apply sync response"));
-      return response.hasMore || operations.length === 100;
+      return response.hasMore || pending.length > selected.length;
     });
 
     const sync = (): Effect.Effect<SyncStatus, PersistenceError> => {

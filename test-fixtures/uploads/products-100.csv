@@ -1,0 +1,101 @@
+name,batch number,expiry,pack quantity,unit quantity,units per pack,pack price
+Paracetamol 500mg Tablets,TST-001,10-01-2028,5,0,20,180.00
+Paracetamol 650mg Tablets,TST-002,11-02-2029,6,1,10,220.00
+Paracetamol 120mg per 5ml Syrup,TST-003,12-03-2030,7,2,1,145.00
+Paracetamol 250mg per 5ml Suspension,TST-004,13-04-2028,8,3,1,195.00
+Ibuprofen 200mg Tablets,TST-005,14-05-2029,9,0,20,210.00
+Ibuprofen 400mg Tablets,TST-006,15-06-2030,10,1,20,320.00
+Ibuprofen 100mg per 5ml Suspension,TST-007,16-07-2028,11,2,1,175.00
+Ibuprofen 200mg per 5ml Suspension,TST-008,17-08-2029,12,3,1,245.00
+Aspirin 75mg Tablets,TST-009,18-09-2030,13,0,30,160.00
+Aspirin 100mg Tablets,TST-010,19-10-2028,14,1,30,185.00
+Aspirin 300mg Tablets,TST-011,20-11-2029,15,2,20,240.00
+Aspirin Dispersible 75mg Tablets,TST-012,21-12-2030,16,3,20,210.00
+Amoxicillin 250mg Capsules,TST-013,22-01-2028,17,0,20,420.00
+Amoxicillin 500mg Capsules,TST-014,23-02-2029,18,1,20,760.00
+Amoxicillin 125mg per 5ml Suspension,TST-015,24-03-2030,19,2,1,310.00
+Amoxicillin 250mg per 5ml Suspension,TST-016,25-04-2028,20,3,1,480.00
+Azithromycin 250mg Tablets,TST-017,26-05-2029,5,0,6,490.00
+Azithromycin 500mg Tablets,TST-018,27-06-2030,6,1,3,520.00
+Azithromycin 100mg per 5ml Suspension,TST-019,10-07-2028,7,2,1,385.00
+Azithromycin 200mg per 5ml Suspension,TST-020,11-08-2029,8,3,1,560.00
+Cefixime 200mg Tablets,TST-021,12-09-2030,9,0,10,690.00
+Cefixime 400mg Tablets,TST-022,13-10-2028,10,1,5,740.00
+Cefixime 100mg per 5ml Suspension,TST-023,14-11-2029,11,2,1,510.00
+Cefixime 200mg per 5ml Suspension,TST-024,15-12-2030,12,3,1,720.00
+Metformin 500mg Tablets,TST-025,16-01-2028,13,0,30,260.00
+Metformin 850mg Tablets,TST-026,17-02-2029,14,1,30,390.00
+Metformin 1000mg Tablets,TST-027,18-03-2030,15,2,30,520.00
+Metformin 500mg XR Tablets,TST-028,19-04-2028,16,3,30,450.00
+Glimepiride 1mg Tablets,TST-029,20-05-2029,17,0,30,300.00
+Glimepiride 2mg Tablets,TST-030,21-06-2030,18,1,30,420.00
+Glimepiride 3mg Tablets,TST-031,22-07-2028,19,2,30,540.00
+Glimepiride 4mg Tablets,TST-032,23-08-2029,20,3,30,650.00
+Amlodipine 2.5mg Tablets,TST-033,24-09-2030,5,0,30,210.00
+Amlodipine 5mg Tablets,TST-034,25-10-2028,6,1,30,290.00
+Amlodipine 10mg Tablets,TST-035,26-11-2029,7,2,30,410.00
+Amlodipine 5mg plus Valsartan 80mg Tablets,TST-036,27-12-2030,8,3,28,780.00
+Losartan 25mg Tablets,TST-037,10-01-2028,9,0,30,240.00
+Losartan 50mg Tablets,TST-038,11-02-2029,10,1,30,360.00
+Losartan 100mg Tablets,TST-039,12-03-2030,11,2,30,520.00
+Losartan 50mg plus HCTZ 12.5mg Tablets,TST-040,13-04-2028,12,3,28,640.00
+Atorvastatin 10mg Tablets,TST-041,14-05-2029,13,0,30,430.00
+Atorvastatin 20mg Tablets,TST-042,15-06-2030,14,1,30,590.00
+Atorvastatin 40mg Tablets,TST-043,16-07-2028,15,2,30,790.00
+Atorvastatin 80mg Tablets,TST-044,17-08-2029,16,3,30,980.00
+Omeprazole 20mg Capsules,TST-045,18-09-2030,17,0,20,340.00
+Omeprazole 40mg Capsules,TST-046,19-10-2028,18,1,20,510.00
+Omeprazole 20mg Tablets,TST-047,20-11-2029,19,2,14,290.00
+Omeprazole 40mg Injection,TST-048,21-12-2030,20,3,1,260.00
+Pantoprazole 20mg Tablets,TST-049,22-01-2028,5,0,14,310.00
+Pantoprazole 40mg Tablets,TST-050,23-02-2029,6,1,14,430.00
+Pantoprazole 40mg Injection,TST-051,24-03-2030,7,2,1,295.00
+Pantoprazole 40mg plus Domperidone Capsules,TST-052,25-04-2028,8,3,14,520.00
+Cetirizine 5mg Tablets,TST-053,26-05-2029,9,0,20,130.00
+Cetirizine 10mg Tablets,TST-054,27-06-2030,10,1,20,175.00
+Cetirizine 5mg per 5ml Syrup,TST-055,10-07-2028,11,2,1,155.00
+Cetirizine 10mg Chewable Tablets,TST-056,11-08-2029,12,3,10,190.00
+Loratadine 5mg Tablets,TST-057,12-09-2030,13,0,20,160.00
+Loratadine 10mg Tablets,TST-058,13-10-2028,14,1,20,220.00
+Loratadine 5mg per 5ml Syrup,TST-059,14-11-2029,15,2,1,185.00
+Loratadine 10mg Dispersible Tablets,TST-060,15-12-2030,16,3,10,245.00
+Montelukast 4mg Chewable Tablets,TST-061,16-01-2028,17,0,14,390.00
+Montelukast 5mg Chewable Tablets,TST-062,17-02-2029,18,1,14,460.00
+Montelukast 10mg Tablets,TST-063,18-03-2030,19,2,14,520.00
+Montelukast 4mg Granules Sachets,TST-064,19-04-2028,20,3,14,570.00
+Salbutamol 2mg Tablets,TST-065,20-05-2029,5,0,20,120.00
+Salbutamol 4mg Tablets,TST-066,21-06-2030,6,1,20,165.00
+Salbutamol 2mg per 5ml Syrup,TST-067,22-07-2028,7,2,1,140.00
+Salbutamol 100mcg Inhaler,TST-068,23-08-2029,8,3,1,480.00
+Diclofenac 25mg Tablets,TST-069,24-09-2030,9,0,20,150.00
+Diclofenac 50mg Tablets,TST-070,25-10-2028,10,1,20,210.00
+Diclofenac 75mg Injection,TST-071,26-11-2029,11,2,5,290.00
+Diclofenac 1 Percent Gel,TST-072,27-12-2030,12,3,1,260.00
+Naproxen 250mg Tablets,TST-073,10-01-2028,13,0,20,310.00
+Naproxen 500mg Tablets,TST-074,11-02-2029,14,1,20,480.00
+Naproxen 275mg Tablets,TST-075,12-03-2030,15,2,20,340.00
+Naproxen 550mg Tablets,TST-076,13-04-2028,16,3,20,520.00
+Ciprofloxacin 250mg Tablets,TST-077,14-05-2029,17,0,10,310.00
+Ciprofloxacin 500mg Tablets,TST-078,15-06-2030,18,1,10,520.00
+Ciprofloxacin 750mg Tablets,TST-079,16-07-2028,19,2,10,760.00
+Ciprofloxacin 0.3 Percent Eye Drops,TST-080,17-08-2029,20,3,1,190.00
+Doxycycline 50mg Capsules,TST-081,18-09-2030,5,0,20,260.00
+Doxycycline 100mg Capsules,TST-082,19-10-2028,6,1,20,390.00
+Doxycycline 100mg Tablets,TST-083,20-11-2029,7,2,10,250.00
+Doxycycline 200mg Tablets,TST-084,21-12-2030,8,3,10,430.00
+Fluconazole 50mg Capsules,TST-085,22-01-2028,9,0,7,260.00
+Fluconazole 100mg Capsules,TST-086,23-02-2029,10,1,7,390.00
+Fluconazole 150mg Capsule,TST-087,24-03-2030,11,2,1,145.00
+Fluconazole 200mg Capsules,TST-088,25-04-2028,12,3,7,590.00
+Vitamin D3 1000 IU Tablets,TST-089,26-05-2029,13,0,30,270.00
+Vitamin D3 2000 IU Tablets,TST-090,27-06-2030,14,1,30,390.00
+Vitamin D3 50000 IU Capsules,TST-091,10-07-2028,15,2,4,310.00
+Vitamin D3 200000 IU Injection,TST-092,11-08-2029,16,3,1,240.00
+Calcium Carbonate 500mg Tablets,TST-093,12-09-2030,17,0,30,290.00
+Calcium Carbonate 600mg Tablets,TST-094,13-10-2028,18,1,30,360.00
+Calcium Carbonate 500mg plus Vitamin D Tablets,TST-095,14-11-2029,19,2,30,430.00
+Calcium Carbonate 1250mg Chewable Tablets,TST-096,15-12-2030,20,3,20,390.00
+Oral Rehydration Salts WHO Formula Sachets,TST-097,16-01-2028,5,0,20,240.00
+Oral Rehydration Salts Low Osmolarity Sachets,TST-098,17-02-2029,6,1,20,280.00
+Oral Rehydration Salts Orange Flavor Sachets,TST-099,18-03-2030,7,2,20,310.00
+Oral Rehydration Salts Lemon Flavor Sachets,TST-100,19-04-2028,8,3,20,310.00

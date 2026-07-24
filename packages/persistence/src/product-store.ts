@@ -58,6 +58,8 @@ export interface ProductStore {
 
 const queryConfig = <const Config>(config: Config) => config;
 
+const IMPORT_SYNC_CHANGES_PER_OPERATION = 200;
+
 const productRelations = queryConfig({
   category: true,
   batches: {
@@ -494,27 +496,44 @@ export const makeProductStore = (
     return toBatch(row);
   });
 
-  // Applies an entire invoice-upload import as one local transaction and one
-  // outbox operation: every product resolution, batch insert, and stock
-  // movement either all commit together or none do, so a retry after a local
-  // failure is safe. Products are matched to an existing line by normalized
-  // name, or created once and reused for duplicate names within the same
-  // import.
+  // Applies an entire invoice-upload import as one local transaction. The
+  // resulting sync changes are queued as bounded, ordered outbox operations so
+  // large imports do not create one oversized network/database transaction.
+  // Products are matched to an existing line by normalized name, or created
+  // once and reused for duplicate names within the same import.
   const importInventory = Effect.fn("OfflineStore.importInventory")(function* (
     input: ImportInventoryInput,
   ) {
     const actor = mutationContext();
     const occurredAt = Date.now();
-    const operationId = crypto.randomUUID();
 
     const result = yield* database
       .transaction((transaction) =>
         Effect.gen(function* () {
-          const productChanges: SyncEntityChange[] = [];
-          const batchChanges: SyncEntityChange[] = [];
-          const movementChanges: SyncEntityChange[] = [];
+          const queuedOperations: Array<{
+            readonly operationId: string;
+            readonly changes: ReadonlyArray<SyncEntityChange>;
+          }> = [];
+          let operationId = crypto.randomUUID();
+          let productChanges: SyncEntityChange[] = [];
+          let batchChanges: SyncEntityChange[] = [];
+          let movementChanges: SyncEntityChange[] = [];
+          let operationChangeCount = 0;
           let createdProductCount = 0;
           let createdBatchCount = 0;
+
+          const finishOperation = () => {
+            if (operationChangeCount === 0) return;
+            queuedOperations.push({
+              operationId,
+              changes: [...productChanges, ...batchChanges, ...movementChanges],
+            });
+            operationId = crypto.randomUUID();
+            productChanges = [];
+            batchChanges = [];
+            movementChanges = [];
+            operationChangeCount = 0;
+          };
 
           const existingProducts = yield* transaction.query.products.findMany({
             where: { organizationId: actor.organizationId, deletedAt: { isNull: true } },
@@ -540,16 +559,27 @@ export const makeProductStore = (
                 message: "Pack and unit quantities must be non-negative whole numbers",
               });
 
+            const normalizedName = line.name.trim().toLocaleLowerCase();
+            const existingProductId = line.productId
+              ? undefined
+              : productIdsByName.get(normalizedName);
+            const createsProduct = line.productId === null && existingProductId === undefined;
+            const createsBatch = packQuantity + unitQuantity > 0;
+            const lineChangeCount = (createsProduct ? 1 : 0) + (createsBatch ? 2 : 0);
+            if (
+              operationChangeCount > 0 &&
+              operationChangeCount + lineChangeCount > IMPORT_SYNC_CHANGES_PER_OPERATION
+            )
+              finishOperation();
+
             let productId: string;
             if (line.productId) {
               if (!knownProductIds.has(line.productId))
                 return yield* ProductNotFoundError.make({ id: line.productId });
               productId = line.productId;
             } else {
-              const key = line.name.trim().toLocaleLowerCase();
-              const existingId = productIdsByName.get(key);
-              if (existingId) {
-                productId = existingId;
+              if (existingProductId) {
+                productId = existingProductId;
               } else {
                 const id = crypto.randomUUID();
                 const [created] = yield* transaction
@@ -586,7 +616,7 @@ export const makeProductStore = (
                   rowVersion: created.rowVersion,
                   row: created,
                 });
-                productIdsByName.set(key, created.id);
+                productIdsByName.set(normalizedName, created.id);
                 knownProductIds.add(created.id);
                 createdProductCount += 1;
                 productId = created.id;
@@ -658,13 +688,18 @@ export const makeProductStore = (
               });
               createdBatchCount += 1;
             }
+            operationChangeCount += lineChangeCount;
           }
 
-          yield* enqueueOperation(transaction, actor, operationId, occurredAt, [
-            ...productChanges,
-            ...batchChanges,
-            ...movementChanges,
-          ]);
+          finishOperation();
+          for (const queued of queuedOperations)
+            yield* enqueueOperation(
+              transaction,
+              actor,
+              queued.operationId,
+              occurredAt,
+              queued.changes,
+            );
           return { createdProducts: createdProductCount, createdBatches: createdBatchCount };
         }),
       )

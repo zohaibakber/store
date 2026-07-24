@@ -1,8 +1,8 @@
 import { Delete02Icon, FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { ThinkingOrb } from "thinking-orbs";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
-import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
 import { fileDescription, useUpload } from "./upload-context";
 
 function UploadAttachmentList() {
@@ -42,13 +42,25 @@ function UploadAttachmentList() {
         </Frame>
       ))}
 
+      {/* Neither step reports real progress, so an indeterminate orb is honest
+          where a percentage bar was not. */}
       {processing && (
-        <Progress className="mt-2" value={phase === "syncing" ? 75 : 45}>
-          <ProgressLabel>
-            {phase === "syncing" ? "Applying changes" : "Reading invoices with AI"}
-          </ProgressLabel>
-          <ProgressValue>{() => (phase === "syncing" ? "Applying" : "Analysing")}</ProgressValue>
-        </Progress>
+        <div
+          aria-live="polite"
+          className="mt-2 flex items-center gap-3 rounded-2xl border border-dashed px-4 py-3"
+        >
+          <ThinkingOrb size={20} state={phase === "syncing" ? "solving" : "searching"} />
+          <div className="min-w-0">
+            <p className="font-medium">
+              {phase === "syncing" ? "Applying changes" : "Reading invoices with AI"}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {phase === "syncing"
+                ? "Writing the approved stock into the local database."
+                : "Extracting products and quantities from the attached files."}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

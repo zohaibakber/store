@@ -26,7 +26,7 @@ export function WindowControls() {
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label="Minimize window"
         onClick={() => window.windowControls.minimize()}
       >
@@ -35,7 +35,7 @@ export function WindowControls() {
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label={isMaximized ? "Restore window" : "Maximize window"}
         onClick={() => {
           void window.windowControls.toggleMaximize().then(setIsMaximized);
@@ -50,7 +50,7 @@ export function WindowControls() {
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label="Close window"
         onClick={() => window.windowControls.close()}
       >

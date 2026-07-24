@@ -31,10 +31,11 @@ interface PersistedAuth {
 
 type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
 
-class RequestError extends Error {
+export class RequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -234,7 +235,7 @@ export class AuthBroker {
     }
     const response = await net.fetch(`${this.#baseUrl}${pathname}`, { ...init, headers, body });
     const payload = (await response.json().catch(() => null)) as
-      | (T & { message?: string; error?: string | { message?: string } })
+      | (T & { message?: string; error?: string | { code?: string; message?: string } })
       | null;
     if (!response.ok) {
       const nested = payload?.error;
@@ -242,7 +243,11 @@ export class AuthBroker {
         payload?.message ??
         (typeof nested === "string" ? nested : nested?.message) ??
         `Request failed (${response.status})`;
-      throw new RequestError(message, response.status);
+      throw new RequestError(
+        message,
+        response.status,
+        typeof nested === "object" ? nested.code : undefined,
+      );
     }
     return { data: payload as T, response };
   }
