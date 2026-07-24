@@ -5,11 +5,9 @@ import {
   ControlGroupText,
 } from "@/components/control-group";
 import { Button } from "@/components/ui/button";
-import { CardFooter } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import { NumberFieldDecrement, NumberFieldIncrement } from "@/components/ui/number-field";
 import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
@@ -22,7 +20,7 @@ function InvoiceCheckout() {
   const itemCount = lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
 
   return (
-    <CardFooter className="flex-wrap items-start justify-between gap-6 border-t">
+    <div className="flex flex-wrap items-start justify-between gap-6 border-t pt-6">
       <Fieldset className="flex w-full max-w-64 flex-col gap-6">
         <Field>
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
@@ -43,19 +41,10 @@ function InvoiceCheckout() {
               min={0}
               onValueChange={setBulkDiscount}
               value={bulkDiscount}
-            >
-              <ControlGroupAddon className="gap-0">
-                <ControlGroupText className="pe-1">%</ControlGroupText>
-                <NumberFieldDecrement
-                  aria-label="Decrease bulk discount"
-                  className="rounded-md px-2"
-                />
-                <NumberFieldIncrement
-                  aria-label="Increase bulk discount"
-                  className="rounded-md px-2"
-                />
-              </ControlGroupAddon>
-            </ControlGroupNumberInput>
+            />
+            <ControlGroupAddon>
+              <ControlGroupText>%</ControlGroupText>
+            </ControlGroupAddon>
           </ControlGroup>
           {!validBulkDiscount && (
             <FieldError match>Enter a discount between 0% and 100%.</FieldError>
@@ -85,7 +74,7 @@ function InvoiceCheckout() {
           </Button>
         </div>
       </div>
-    </CardFooter>
+    </div>
   );
 }
 

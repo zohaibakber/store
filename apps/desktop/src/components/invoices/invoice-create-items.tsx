@@ -1,7 +1,6 @@
 import { ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -9,7 +8,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { ItemGroup } from "@/components/ui/item";
 import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { InvoiceCreateLine } from "@/components/invoices/invoice-create-line";
 import { InvoiceProductPicker } from "@/components/invoices/invoice-product-picker";
@@ -35,24 +33,18 @@ function InvoiceItems() {
   } = useInvoiceCreate();
 
   return (
-    <>
-      <CardHeader>
-        <CardTitle>Items</CardTitle>
-        <CardDescription>Quantities are counted in units.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <InvoiceProductPicker />
-        {lines.length === 0 ? (
-          <EmptyInvoiceItems />
-        ) : (
-          <ItemGroup className="gap-2">
-            {lines.map((line, index) => (
-              <InvoiceCreateLine error={errors[index]} key={line.key} line={line} />
-            ))}
-          </ItemGroup>
-        )}
-      </CardContent>
-    </>
+    <div className="flex flex-col gap-3">
+      <InvoiceProductPicker />
+      {lines.length === 0 ? (
+        <EmptyInvoiceItems />
+      ) : (
+        <div className="flex flex-col gap-2">
+          {lines.map((line, index) => (
+            <InvoiceCreateLine error={errors[index]} key={line.key} line={line} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

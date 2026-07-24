@@ -1,6 +1,5 @@
 import type { Product } from "@store/contracts";
 
-import { Card } from "@/components/ui/card";
 import { InvoiceCheckout } from "@/components/invoices/invoice-create-checkout";
 import { InvoiceCreateProvider } from "@/components/invoices/invoice-create-context";
 import { InvoiceItems } from "@/components/invoices/invoice-create-items";
@@ -24,11 +23,9 @@ function InvoiceCreatePage({ products }: { products: readonly Product[] }) {
           </PageDescription>
         </PageHeader>
 
-        <PageContent>
-          <Card>
-            <InvoiceItems />
-            <InvoiceCheckout />
-          </Card>
+        <PageContent className="gap-6">
+          <InvoiceItems />
+          <InvoiceCheckout />
         </PageContent>
       </PageLayout>
     </InvoiceCreateProvider>
