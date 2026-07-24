@@ -1,5 +1,5 @@
 import type { Category } from "@store/contracts";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import {
@@ -77,8 +77,9 @@ export function CategoryField({
           ? current
           : [...current, { id: created.id, name: created.name }].sort(byName),
       );
+      // No need to clear the query: Base UI fills the input with the selected
+      // label immediately after this resolves.
       onChange(created.id);
-      setQuery("");
       toast.success(`Category “${created.name}” added`);
     } catch (error) {
       toast.error(storeErrorMessage(error));
@@ -89,6 +90,9 @@ export function CategoryField({
 
   return (
     <Combobox
+      // Keeps a row under the cursor so Enter always has something to act on —
+      // with nothing highlighted it would fall through to the form.
+      autoHighlight
       disabled={pending}
       filter={null}
       inputValue={query}
@@ -106,6 +110,12 @@ export function CategoryField({
         aria-invalid={invalid || undefined}
         className="w-full"
         id={id}
+        onKeyDown={(event) => {
+          // This input lives inside the product form, so a bare Enter would
+          // submit the whole product. Enter belongs to the combobox here —
+          // Base UI still runs its own selection on the same event.
+          if (event.key === "Enter") event.preventDefault();
+        }}
         placeholder={selected ? selected.name : "Search or add a category…"}
       />
       <ComboboxPopup>
@@ -113,13 +123,17 @@ export function CategoryField({
           {(option: CategoryOption) =>
             option.create ? (
               <ComboboxItem
-                className="border-t text-muted-foreground data-highlighted:text-accent-foreground"
+                className="border-t data-highlighted:text-accent-foreground py-1.5"
                 disabled={!canCreate}
                 key="create"
                 value={option}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <HugeiconsIcon aria-hidden="true" className="size-4 shrink-0" icon={Add01Icon} />
+                  <HugeiconsIcon
+                    aria-hidden="true"
+                    className="size-4 shrink-0"
+                    icon={PlusSignCircleIcon}
+                  />
                   <span className="truncate">
                     {canCreate ? `Add “${option.name}”` : "Type a name to add a category"}
                   </span>
