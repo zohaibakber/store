@@ -95,13 +95,21 @@ export function CategoryField({
       autoHighlight
       disabled={pending}
       filter={null}
-      inputValue={query}
       items={options as CategoryOption[]}
       itemToStringLabel={(item: unknown) => (item as CategoryOption).name}
       itemToStringValue={(item: unknown) => (item as CategoryOption).name}
       name={name}
-      onInputValueChange={setQuery}
+      // The input's displayed text is Base UI's to own — selecting an item
+      // writes the label into it. `query` is only the search term, so it must
+      // ignore that write ("item-press"), otherwise reopening the popup on a
+      // product that already has a category filters the list down to that one
+      // name until the field is cleared by hand.
+      onInputValueChange={(next: string, details: { reason?: string }) => {
+        if (details.reason === "item-press") return;
+        setQuery(next);
+      }}
       onValueChange={(option: unknown) => {
+        setQuery("");
         void select(option as CategoryOption | null);
       }}
       value={selected}
@@ -110,6 +118,11 @@ export function CategoryField({
         aria-invalid={invalid || undefined}
         className="w-full"
         id={id}
+        onFocus={(event) => {
+          // The input carries the selected category's label, so without this
+          // typing would append to it ("General" + "Syrups").
+          event.currentTarget.select();
+        }}
         onKeyDown={(event) => {
           // This input lives inside the product form, so a bare Enter would
           // submit the whole product. Enter belongs to the combobox here —
