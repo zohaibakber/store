@@ -5,15 +5,7 @@ import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemSeparator,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Frame, FrameHeader } from "@/components/ui/frame";
 import {
   PageContent,
   PageDescription,
@@ -22,11 +14,10 @@ import {
   PageLayout,
 } from "@/components/page-layout";
 import { formatDateTime, formatPrice } from "@/lib/format";
-import { Fragment } from "react";
 
 function BackToInvoices() {
   return (
-    <Button render={<Link to="/invoices" />} className="-ml-1" variant="ghost" size="sm">
+    <Button className="-ml-1" render={<Link to="/invoices" />} size="sm" variant="ghost">
       <HugeiconsIcon aria-hidden="true" icon={Invoice01Icon} />
     </Button>
   );
@@ -50,12 +41,14 @@ function InvoiceDetailError({ error }: { error: Error }) {
 }
 
 function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
+  const unitsSold = invoice.items.reduce((sum, item) => sum + item.quantity, 0);
+
   return (
     <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
         <div className="flex items-center gap-1">
           <BackToInvoices />
-          <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
+          <HugeiconsIcon aria-hidden="true" className="size-4" icon={ArrowRightFreeIcons} />
           <PageHeading>Invoice #{formatInvoiceNumber(invoice.invoiceNumber)}</PageHeading>
         </div>
         <PageDescription>
@@ -63,39 +56,41 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
         </PageDescription>
       </PageHeader>
 
-      <PageContent>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sold items</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ItemGroup className="gap-0">
-              {invoice.items.map((item, index) => (
-                <Fragment key={item.id}>
-                  {index > 0 && <ItemSeparator />}
-                  <Item size="sm" variant={"outline"}>
-                    <ItemContent>
-                      <ItemTitle>{item.productName}</ItemTitle>
-                      <ItemDescription>
-                        {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
-                        {" · "}
-                        {item.quantity} {item.quantityType === "pack" ? "packs" : "units"} ×{" "}
-                        {formatPrice(item.salePrice)}
-                      </ItemDescription>
-                    </ItemContent>
-                    <span className="font-medium">
-                      {formatPrice(item.quantity * item.salePrice)}
-                    </span>
-                  </Item>
-                </Fragment>
-              ))}
-            </ItemGroup>
-          </CardContent>
-          <CardFooter className="justify-between border-t">
-            <span className="text-muted-foreground">Total</span>
-            <span className="font-medium">{formatPrice(invoice.total)}</span>
-          </CardFooter>
-        </Card>
+      <PageContent className="gap-4">
+        {/* Same row shape as the new-sale page, minus the controls. */}
+        <div className="flex flex-col gap-2">
+          {invoice.items.map((item) => (
+            <Frame className="w-full" key={item.id}>
+              <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{item.productName}</p>
+                  <p className="truncate text-muted-foreground text-xs">
+                    {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
+                    {" · "}
+                    {item.quantity} {item.quantityType === "pack" ? "packs" : "units"} ×{" "}
+                    {formatPrice(item.salePrice)}
+                  </p>
+                </div>
+                <span className="font-medium tabular-nums">
+                  {formatPrice(item.quantity * item.salePrice)}
+                </span>
+              </FrameHeader>
+            </Frame>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-1 border-t pt-4">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span>Items</span>
+            <span className="tabular-nums">
+              {invoice.items.length} {invoice.items.length === 1 ? "line" : "lines"} · {unitsSold}
+            </span>
+          </div>
+          <div className="flex items-center justify-between font-medium">
+            <span>Total</span>
+            <span className="tabular-nums">{formatPrice(invoice.total)}</span>
+          </div>
+        </div>
       </PageContent>
     </PageLayout>
   );
