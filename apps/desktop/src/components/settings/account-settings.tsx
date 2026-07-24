@@ -3,8 +3,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { FrameCard } from "@/components/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
 import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
-import { toast } from "@/lib/toast";
 
 const initials = (name: string) =>
   name
@@ -29,7 +29,7 @@ async function signOut() {
       }),
     );
   } catch (error) {
-    toast.error(getErrorMessage(error));
+    toastManager.add({ title: getErrorMessage(error), type: "error" });
   }
 }
 

@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DataTable, DataTableFilter } from "@/components/data-table";
-import { InvoicesTable, useInvoicesTable } from "@/components/invoice-table";
+import { InvoicesTable, useInvoicesTable } from "@/components/invoices/invoice-table";
 import { Button } from "@/components/ui/button";
 import {
   PageAction,

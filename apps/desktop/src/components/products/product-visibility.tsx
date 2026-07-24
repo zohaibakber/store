@@ -1,7 +1,6 @@
 import { FrameCard } from "@/components/frame-card";
 import type { Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { toast } from "@/lib/toast";
 import {
   Select,
   SelectContent,
@@ -10,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toastManager } from "@/components/ui/toast";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible" },
@@ -31,10 +31,16 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
         ...rest
       } = product;
       await window.offlineStore.updateProduct({ id, ...rest, visible: next });
-      toast.success(next ? "Product is visible to customers" : "Product hidden from customers");
+      toastManager.add({
+        title: next ? "Product is visible to customers" : "Product hidden from customers",
+        type: "success",
+      });
       await router.invalidate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update visibility.");
+      toastManager.add({
+        title: error instanceof Error ? error.message : "Could not update visibility.",
+        type: "error",
+      });
     }
   };
 

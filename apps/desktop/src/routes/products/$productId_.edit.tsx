@@ -8,7 +8,7 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductForm, useProductUpdateForm } from "@/components/product-form";
+import { ProductForm, useProductUpdateForm } from "@/components/products/product-form";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ params }) => {

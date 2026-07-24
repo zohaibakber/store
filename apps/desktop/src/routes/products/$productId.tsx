@@ -27,10 +27,13 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/product-batches";
-import { ProductVisibilityCard } from "@/components/product-visibility";
+import {
+  ProductBatchesCard,
+  ProductStockMovementsCard,
+} from "@/components/products/product-batches";
+import { ProductVisibilityCard } from "@/components/products/product-visibility";
+import { toastManager } from "@/components/ui/toast";
 import { formatDate, formatPrice } from "@/lib/format";
-import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ params }) => {
@@ -78,11 +81,14 @@ function ProductDetailPage() {
   const deleteProduct = async () => {
     try {
       await window.offlineStore.deleteProduct({ id: product.id });
-      toast.success(`${product.name} deleted`);
+      toastManager.add({ title: `${product.name} deleted`, type: "success" });
       await navigate({ to: "/products" });
       await router.invalidate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not delete the product.");
+      toastManager.add({
+        title: error instanceof Error ? error.message : "Could not delete the product.",
+        type: "error",
+      });
     }
   };
 

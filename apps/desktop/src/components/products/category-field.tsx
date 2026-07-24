@@ -9,8 +9,8 @@ import {
   ComboboxList,
   ComboboxPopup,
 } from "@/components/ui/combobox";
+import { toastManager } from "@/components/ui/toast";
 import { storeErrorMessage } from "@/lib/errors";
-import { toast } from "@/lib/toast";
 
 interface CategoryOption {
   readonly id: string;
@@ -80,9 +80,9 @@ export function CategoryField({
       // No need to clear the query: Base UI fills the input with the selected
       // label immediately after this resolves.
       onChange(created.id);
-      toast.success(`Category “${created.name}” added`);
+      toastManager.add({ title: `Category “${created.name}” added`, type: "success" });
     } catch (error) {
-      toast.error(storeErrorMessage(error));
+      toastManager.add({ title: storeErrorMessage(error), type: "error" });
     } finally {
       setPending(false);
     }

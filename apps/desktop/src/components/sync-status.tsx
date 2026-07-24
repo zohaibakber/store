@@ -1,12 +1,9 @@
 import type { SyncStatus } from "@store/contracts";
-import {
-  CellularNetworkIcon,
-  CellularNetworkOfflineIcon,
-  ReloadIcon,
-} from "@hugeicons/core-free-icons";
+import { CellularNetworkIcon, CellularNetworkOfflineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatRelativeTime } from "@/lib/format";
 
@@ -69,11 +66,14 @@ export function SyncStatusIndicator() {
           />
         }
       >
-        <HugeiconsIcon
-          aria-hidden="true"
-          className={isSyncing ? "animate-spin" : undefined}
-          icon={isSyncing ? ReloadIcon : online ? CellularNetworkIcon : CellularNetworkOfflineIcon}
-        />
+        {isSyncing ? (
+          <Spinner aria-hidden="true" />
+        ) : (
+          <HugeiconsIcon
+            aria-hidden="true"
+            icon={online ? CellularNetworkIcon : CellularNetworkOfflineIcon}
+          />
+        )}
         <span className="truncate">{label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">

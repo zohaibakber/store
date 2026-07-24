@@ -1,7 +1,7 @@
 import { createContext, use, useState, type ReactNode } from "react";
 import type { Category, InvoiceExtractionLine, Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { toast } from "@/lib/toast";
+import { toastManager } from "@/components/ui/toast";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 
@@ -66,7 +66,10 @@ function UploadProvider({
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
     if (valid.length !== Array.from(incoming).length)
-      toast.error("Only PDF and CSV invoice files can be uploaded.");
+      toastManager.add({
+        title: "Only PDF and CSV invoice files can be uploaded.",
+        type: "error",
+      });
     setFiles((current) =>
       [...current, ...valid].filter(
         (file, index, list) =>
@@ -83,11 +86,14 @@ function UploadProvider({
 
   const analyse = async () => {
     if (!isOnline) {
-      toast.error("You’re offline. Connect to the internet before analysing invoices.");
+      toastManager.add({
+        title: "You’re offline. Connect to the internet before analysing invoices.",
+        type: "error",
+      });
       return;
     }
     if (!files.length) {
-      toast.error("Add at least one invoice first.");
+      toastManager.add({ title: "Add at least one invoice first.", type: "error" });
       return;
     }
     setPhase("processing");
@@ -111,16 +117,25 @@ function UploadProvider({
         }),
       );
       setPhase("ready");
-      toast.success("Invoice analysis complete. Review the proposed changes.");
+      toastManager.add({
+        title: "Invoice analysis complete. Review the proposed changes.",
+        type: "success",
+      });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not analyse invoices.");
+      toastManager.add({
+        title: error instanceof Error ? error.message : "Could not analyse invoices.",
+        type: "error",
+      });
       setPhase("idle");
     }
   };
 
   const applyChanges = async () => {
     if (!isOnline) {
-      toast.error("You’re offline. Changes remain ready to apply when you reconnect.");
+      toastManager.add({
+        title: "You’re offline. Changes remain ready to apply when you reconnect.",
+        type: "error",
+      });
       return;
     }
     setPhase("syncing");
@@ -142,25 +157,40 @@ function UploadProvider({
         })),
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not apply changes.");
+      toastManager.add({
+        title: error instanceof Error ? error.message : "Could not apply changes.",
+        type: "error",
+      });
       setPhase("ready");
       return;
     }
 
     setChanges([]);
     setFiles([]);
-    toast.success(`${changes.length} inventory changes applied locally.`);
+    toastManager.add({
+      title: `${changes.length} inventory changes applied locally.`,
+      type: "success",
+    });
     try {
       await router.invalidate();
     } catch {
-      toast.warning("Inventory imported, but the current view could not be refreshed.");
+      toastManager.add({
+        title: "Inventory imported, but the current view could not be refreshed.",
+        type: "warning",
+      });
     }
     try {
       const syncStatus = await window.offlineStore.sync();
       if (syncStatus.phase === "error")
-        toast.warning("Inventory imported locally; synchronization will retry automatically.");
+        toastManager.add({
+          title: "Inventory imported locally; synchronization will retry automatically.",
+          type: "warning",
+        });
     } catch {
-      toast.warning("Inventory imported locally; synchronization will retry automatically.");
+      toastManager.add({
+        title: "Inventory imported locally; synchronization will retry automatically.",
+        type: "warning",
+      });
     }
     setPhase("idle");
   };

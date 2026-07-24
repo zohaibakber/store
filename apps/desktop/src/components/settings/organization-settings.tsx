@@ -6,8 +6,8 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { toastManager } from "@/components/ui/toast";
 import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
-import { toast } from "@/lib/toast";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
@@ -28,7 +28,7 @@ export function OrganizationSettings() {
       });
       window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
       form.reset();
-      toast.success("Organization created");
+      toastManager.add({ title: "Organization created", type: "success" });
     } catch (cause) {
       setError(getErrorMessage(cause));
     } finally {

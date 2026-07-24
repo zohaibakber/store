@@ -1,7 +1,6 @@
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import type { Category, Product } from "@store/contracts";
-import { toast } from "@/lib/toast";
 import * as z from "zod";
 import {
   ControlGroup,
@@ -10,7 +9,7 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/control-group";
-import { CategoryField } from "@/components/category-field";
+import { CategoryField } from "@/components/products/category-field";
 import { FormFieldError } from "@/components/form-field-error";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
@@ -24,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toastManager } from "@/components/ui/toast";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
@@ -128,10 +128,13 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
           packPrice: priceInPaisa(value.packPrice),
           unitPrice: priceInPaisa(value.unitPrice),
         });
-        toast.success("Product created");
+        toastManager.add({ title: "Product created", type: "success" });
         await navigate({ to: "/products/$productId", params: { productId: product.id } });
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not create the product.");
+        toastManager.add({
+          title: error instanceof Error ? error.message : "Could not create the product.",
+          type: "error",
+        });
       }
     },
   });
@@ -155,10 +158,13 @@ function useProductUpdateForm(product: Product, onUpdated: () => void) {
           packPrice: priceInPaisa(value.packPrice),
           unitPrice: priceInPaisa(value.unitPrice),
         });
-        toast.success("Product updated");
+        toastManager.add({ title: "Product updated", type: "success" });
         onUpdated();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not update the product.");
+        toastManager.add({
+          title: error instanceof Error ? error.message : "Could not update the product.",
+          type: "error",
+        });
       }
     },
   });

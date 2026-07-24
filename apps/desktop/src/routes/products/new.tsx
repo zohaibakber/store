@@ -8,7 +8,7 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductForm, useProductCreateForm } from "@/components/product-form";
+import { ProductForm, useProductCreateForm } from "@/components/products/product-form";
 
 export const Route = createFileRoute("/products/new")({
   loader: () => window.offlineStore.listCategories(),

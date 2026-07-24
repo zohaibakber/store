@@ -1,28 +1,37 @@
 import { useEffect, useRef } from "react";
-import { toast } from "@/lib/toast";
-import { Progress, ProgressValue } from "@/components/ui/progress";
+import { toastManager } from "@/components/ui/toast";
 
-const UPDATE_TOAST_ID = "app-update";
-
-function DownloadProgress({ percent }: { percent: number }) {
-  // `Progress` already renders its own ProgressTrack/ProgressIndicator after
-  // its children, so only pass the value label here.
-  return (
-    <Progress value={percent} className="mt-1 min-w-48 flex-col items-stretch gap-1">
-      <ProgressValue className="ml-0" />
-    </Progress>
-  );
-}
+const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 
 const startDownload = (version: string) => {
-  toast.loading(`Downloading version ${version}…`, {
-    id: UPDATE_TOAST_ID,
-    description: <DownloadProgress percent={0} />,
-    duration: Infinity,
-  });
-  void window.updater.download().catch(() => {
-    // Failures are reported through the updater `error` event.
-  });
+  void toastManager
+    .promise(window.updater.download(), {
+      error: (error) => ({
+        description: error instanceof Error ? error.message : "Please try again.",
+        priority: "high",
+        title: "Update failed",
+        type: "error",
+      }),
+      loading: {
+        description: `Downloading version ${version}.`,
+        timeout: 0,
+        title: "Downloading update…",
+        type: "loading",
+      },
+      success: {
+        actionProps: {
+          children: "Restart now",
+          onClick: () => window.updater.install(),
+        },
+        description: `Restart to install version ${version}.`,
+        timeout: 0,
+        title: "Update ready",
+        type: "success",
+      },
+    })
+    .catch(() => {
+      // The promise toast renders the rejected download state.
+    });
 };
 
 export function useAppUpdater() {
@@ -39,14 +48,16 @@ export function useAppUpdater() {
       switch (event.type) {
         case "available":
           if (downloadingRef.current) break;
-          toast(`Update available`, {
-            id: UPDATE_TOAST_ID,
+          toastManager.add({
+            id: UPDATE_AVAILABLE_TOAST_ID,
+            title: "Update available",
             description: `Version ${event.version} is ready to download.`,
-            duration: Infinity,
-            action: {
-              label: "Download",
+            timeout: 0,
+            actionProps: {
+              children: "Download",
               onClick: () => {
                 downloadingRef.current = true;
+                toastManager.close(UPDATE_AVAILABLE_TOAST_ID);
                 startDownload(event.version);
               },
             },
@@ -54,30 +65,20 @@ export function useAppUpdater() {
           break;
         case "progress":
           downloadingRef.current = true;
-          toast.loading("Downloading update…", {
-            id: UPDATE_TOAST_ID,
-            description: <DownloadProgress percent={event.percent} />,
-            duration: Infinity,
-          });
           break;
         case "downloaded":
           downloadingRef.current = false;
-          toast.success("Update ready", {
-            id: UPDATE_TOAST_ID,
-            description: `Restart to install version ${event.version}.`,
-            duration: Infinity,
-            action: {
-              label: "Restart now",
-              onClick: () => window.updater.install(),
-            },
-          });
           break;
         case "error":
+          if (!downloadingRef.current) {
+            toastManager.add({
+              description: event.message,
+              priority: "high",
+              title: "Update check failed",
+              type: "error",
+            });
+          }
           downloadingRef.current = false;
-          toast.error("Update failed", {
-            id: UPDATE_TOAST_ID,
-            description: event.message,
-          });
           break;
         default:
           break;

@@ -13,8 +13,8 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { toastManager } from "@/components/ui/toast";
 import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
-import { toast } from "@/lib/toast";
 
 const initials = (name: string) =>
   name
@@ -39,7 +39,7 @@ async function signOut() {
       }),
     );
   } catch (error) {
-    toast.error(getErrorMessage(error));
+    toastManager.add({ title: getErrorMessage(error), type: "error" });
   }
 }
 

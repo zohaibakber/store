@@ -16,8 +16,8 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/page-layout";
-import { ProductAnalytics } from "@/components/product-analytics";
-import { useProductsTable } from "@/components/product-table";
+import { ProductAnalytics } from "@/components/products/product-analytics";
+import { useProductsTable } from "@/components/products/product-table";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/")({

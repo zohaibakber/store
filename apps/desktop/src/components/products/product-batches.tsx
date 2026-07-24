@@ -11,7 +11,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "@tanstack/react-router";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
-import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { DatePicker } from "@/components/date-picker";
 import { Button } from "@/components/ui/button";
@@ -44,6 +43,7 @@ import {
 } from "@/components/ui/sheet";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
+import { toastManager } from "@/components/ui/toast";
 import { formatDate } from "@/lib/format";
 
 const parseISODate = (value: string): Date | undefined => {
@@ -95,12 +95,15 @@ function AddBatchDialog({ productId }: { productId: string }) {
           packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
-        toast.success("Batch added");
+        toastManager.add({ title: "Batch added", type: "success" });
         setOpen(false);
         form.reset();
         await router.invalidate();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not add the batch.");
+        toastManager.add({
+          title: error instanceof Error ? error.message : "Could not add the batch.",
+          type: "error",
+        });
       }
     },
   });

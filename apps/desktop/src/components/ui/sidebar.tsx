@@ -3,7 +3,10 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
-import { SidebarLeftIcon as HugeSidebarLeftIcon } from "@hugeicons/core-free-icons";
+import {
+  SidebarLeftIcon as HugeSidebarLeftIcon,
+  SidebarRight01Icon as HugeSidebarRight01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as React from "react";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -26,6 +29,12 @@ function PanelLeftIcon(
   props: Omit<React.ComponentProps<typeof HugeiconsIcon>, "icon">,
 ): React.ReactElement {
   return <HugeiconsIcon icon={HugeSidebarLeftIcon} {...props} />;
+}
+
+function PanelRightIcon(
+  props: Omit<React.ComponentProps<typeof HugeiconsIcon>, "icon">,
+): React.ReactElement {
+  return <HugeiconsIcon icon={HugeSidebarRight01Icon} {...props} />;
 }
 
 const SIDEBAR_COOKIE_NAME: string = "sidebar_state";
@@ -284,7 +293,7 @@ export function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>): React.ReactElement {
-  const { toggleSidebar } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
 
   return (
     <Button
@@ -299,7 +308,7 @@ export function SidebarTrigger({
       variant="ghost"
       {...props}
     >
-      <PanelLeftIcon />
+      {state === "collapsed" ? <PanelRightIcon /> : <PanelLeftIcon />}
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );

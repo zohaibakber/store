@@ -2,7 +2,7 @@ import { createContext, use, useState, type ReactNode } from "react";
 import type { Product } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { toast } from "@/lib/toast";
+import { toastManager } from "@/components/ui/toast";
 import { decodeStoreError, storeErrorMessage } from "@/lib/errors";
 
 const AUTO_BATCH = "auto";
@@ -211,15 +211,20 @@ function InvoiceCreateProvider({
           salePrice: discountedSalePrice(line, bulkDiscount!)!,
         })),
       });
-      toast.success(`Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`);
+      toastManager.add({
+        title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,
+        type: "success",
+      });
       await navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
     } catch (error) {
       const storeError = decodeStoreError(error);
-      toast.error(
-        storeError?._tag === "PersistenceError"
-          ? "Saving failed locally — your data is safe, try again."
-          : storeErrorMessage(error),
-      );
+      toastManager.add({
+        title:
+          storeError?._tag === "PersistenceError"
+            ? "Saving failed locally — your data is safe, try again."
+            : storeErrorMessage(error),
+        type: "error",
+      });
     }
   };
 
