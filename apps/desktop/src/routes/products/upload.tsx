@@ -15,14 +15,6 @@ import {
 } from "@/components/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 
 export const Route = createFileRoute("/products/upload")({
   loader: async () => {
@@ -46,63 +38,45 @@ function UploadInvoicesPage() {
 
 function UploadPage() {
   const {
-    state: { files, changes },
+    state: { files },
     actions: { analyse },
     meta: { processing, isOnline },
   } = useUpload();
 
   return (
-    <PageLayout>
+    <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
         <PageHeading>Upload invoices</PageHeading>
         <PageDescription>
-          Upload supplier CSVs and PDFs. AI extracts stock, then you approve every local inventory
-          change.
+          Supplier CSVs and PDFs are read by AI into a list of local inventory changes you approve.
         </PageDescription>
         <PageAction>
           <Button disabled={processing || !files.length} onClick={() => void analyse()}>
-            <HugeiconsIcon data-icon="inline-start" icon={Upload01Icon} />
+            <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
             Analyse invoices
           </Button>
         </PageAction>
       </PageHeader>
-      <PageContent>
+
+      <PageContent className="gap-6">
         {!isOnline && (
           <Alert variant="error">
-            <HugeiconsIcon icon={Alert02Icon} />
+            <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
             <AlertTitle>You’re offline</AlertTitle>
             <AlertDescription>
               Invoice uploads need a connection. Your selected files and review stay on this screen.
             </AlertDescription>
           </Alert>
         )}
-        <Card>
-          <CardHeader>
-            <CardTitle>Attachments</CardTitle>
-            <CardDescription>
-              Choose one or more supplier invoices in PDF or CSV format.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <UploadDropzone />
-            <UploadAttachmentList />
-          </CardContent>
-        </Card>
+
+        {/* The dropzone doubles as the empty state — a separate one on top of it
+            said the same thing twice. */}
+        <div className="flex flex-col gap-3">
+          <UploadDropzone />
+          <UploadAttachmentList />
+        </div>
+
         <UploadProposedChanges />
-        {!files.length && !changes.length && (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Upload01Icon} />
-              </EmptyMedia>
-              <EmptyTitle>No invoices selected</EmptyTitle>
-              <EmptyDescription>
-                Upload supplier files to turn received stock into a reviewable list of local
-                changes.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
       </PageContent>
     </PageLayout>
   );

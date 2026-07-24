@@ -1,37 +1,54 @@
-import { useRef } from "react";
-import { FileAttachmentIcon } from "@hugeicons/core-free-icons";
+import { useRef, useState } from "react";
+import { Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { cn } from "@/lib/utils";
 import { useUpload } from "./upload-context";
 
 function UploadDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const {
     actions: { addFiles },
+    meta: { processing },
   } = useUpload();
 
   return (
     <>
       <input
-        ref={inputRef}
         accept=".csv,application/pdf"
         className="sr-only"
         multiple
         onChange={(event) => event.target.files && addFiles(event.target.files)}
+        ref={inputRef}
         type="file"
       />
       <button
-        className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 p-4 text-center"
+        className={cn(
+          "flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-muted/40 p-6 text-center transition-colors",
+          "hover:border-ring hover:bg-muted/72 disabled:pointer-events-none disabled:opacity-64",
+          isDragging && "border-ring bg-muted/72",
+        )}
+        disabled={processing}
         onClick={() => inputRef.current?.click()}
-        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={() => setIsDragging(false)}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
         onDrop={(event) => {
           event.preventDefault();
+          setIsDragging(false);
           addFiles(event.dataTransfer.files);
         }}
         type="button"
       >
-        <HugeiconsIcon icon={FileAttachmentIcon} />
-        <span className="font-medium">Drop invoices here or browse</span>
-        <span className="text-xs text-muted-foreground">PDF and CSV files</span>
+        <HugeiconsIcon
+          aria-hidden="true"
+          className="size-5 text-muted-foreground"
+          icon={Upload01Icon}
+        />
+        <span className="font-medium">Drop invoices here, or browse</span>
+        <span className="text-muted-foreground text-xs">PDF and CSV files</span>
       </button>
     </>
   );

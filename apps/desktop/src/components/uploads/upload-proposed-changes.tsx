@@ -2,8 +2,7 @@ import { CheckmarkCircle02Icon, FileAttachmentIcon } from "@hugeicons/core-free-
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Frame, FrameHeader } from "@/components/ui/frame";
 import { useUpload } from "./upload-context";
 
 function UploadProposedChanges() {
@@ -16,47 +15,50 @@ function UploadProposedChanges() {
   if (changes.length === 0) return null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          Proposed changes{" "}
-          <Badge className="ml-2" variant="secondary">
-            {changes.length}
-          </Badge>
-        </CardTitle>
-        <CardDescription>
-          Nothing changes in your store until you apply this review.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <ItemGroup>
-          {changes.map((change, index) => (
-            <Item key={`${change.name}-${index}`} variant="outline">
-              <HugeiconsIcon
-                icon={change.type === "create_product" ? FileAttachmentIcon : CheckmarkCircle02Icon}
-              />
-              <ItemContent>
-                <ItemTitle>{change.name}</ItemTitle>
-                <ItemDescription>
-                  {change.type === "create_product"
-                    ? "New product will be created"
-                    : "Existing product inventory will be updated"}
-                  {` · ${change.packQuantity} packs · ${change.unitQuantity} units`}
-                  {change.batchNumber ? ` · Batch ${change.batchNumber}` : ""}
-                </ItemDescription>
-              </ItemContent>
-              <Badge variant={change.type === "create_product" ? "default" : "secondary"}>
-                {change.type === "create_product" ? "New product" : "Inventory update"}
-              </Badge>
-            </Item>
-          ))}
-        </ItemGroup>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium">
+            Proposed changes{" "}
+            <span className="text-muted-foreground tabular-nums">({changes.length})</span>
+          </p>
+          <p className="text-muted-foreground text-sm">
+            Nothing changes in your store until you apply this review.
+          </p>
+        </div>
         <Button disabled={processing} onClick={() => void applyChanges()}>
-          <HugeiconsIcon data-icon="inline-start" icon={CheckmarkCircle02Icon} />
+          <HugeiconsIcon aria-hidden="true" icon={CheckmarkCircle02Icon} />
           Apply {changes.length} changes
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {changes.map((change, index) => {
+          const isNew = change.type === "create_product";
+          return (
+            <Frame className="w-full" key={`${change.name}-${index}`}>
+              <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
+                <HugeiconsIcon
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-muted-foreground"
+                  icon={isNew ? FileAttachmentIcon : CheckmarkCircle02Icon}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{change.name}</p>
+                  <p className="truncate text-muted-foreground text-xs">
+                    {change.packQuantity} packs · {change.unitQuantity} units
+                    {change.batchNumber ? ` · Batch ${change.batchNumber}` : ""}
+                  </p>
+                </div>
+                <Badge className="shrink-0" variant={isNew ? "default" : "secondary"}>
+                  {isNew ? "New product" : "Inventory update"}
+                </Badge>
+              </FrameHeader>
+            </Frame>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
