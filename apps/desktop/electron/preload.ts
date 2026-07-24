@@ -98,6 +98,12 @@ const offlineStore: OfflineStoreApi = {
   createInvoice: (input) => invokeStore("store:invoices:create", input),
   getDashboardAnalytics: () => invokeStore("store:analytics:dashboard"),
   getSyncStatus: () => invokeStore("store:sync:status"),
+  onSyncStatusChange(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
+      callback(status);
+    ipcRenderer.on("store:sync:status-changed", listener);
+    return () => ipcRenderer.off("store:sync:status-changed", listener);
+  },
   sync: () => invokeStore("store:sync:run"),
 };
 

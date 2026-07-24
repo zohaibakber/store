@@ -35,5 +35,6 @@ export interface OfflineStoreApi {
   readonly createInvoice: (input: CreateInvoiceInput) => Promise<Invoice>;
   readonly getDashboardAnalytics: () => Promise<DashboardAnalytics>;
   readonly getSyncStatus: () => Promise<SyncStatus>;
+  readonly onSyncStatusChange: (callback: (status: SyncStatus) => void) => () => void;
   readonly sync: () => Promise<SyncStatus>;
 }

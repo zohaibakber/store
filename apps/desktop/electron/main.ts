@@ -23,6 +23,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -68,6 +69,7 @@ for (const file of envFiles) {
 
 let win: BrowserWindow | null;
 let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
+let stopSyncStatusForwarding: (() => void) | undefined;
 let activeOrganizationId: string | null = null;
 let deviceId = "local";
 
@@ -278,9 +280,25 @@ async function loadDeviceId() {
 
 async function disposeRuntime() {
   const current = runtime;
+  stopSyncStatusForwarding?.();
+  stopSyncStatusForwarding = undefined;
   runtime = undefined;
   activeOrganizationId = null;
   if (current) await current.dispose();
+}
+
+function forwardSyncStatus() {
+  const current = runtime;
+  if (!current) return;
+  stopSyncStatusForwarding = current.runCallback(
+    withStore((store) =>
+      store.syncStatusChanges.pipe(
+        Stream.runForEach((status) =>
+          Effect.sync(() => win?.webContents.send("store:sync:status-changed", status)),
+        ),
+      ),
+    ),
+  );
 }
 
 async function activateLockedRuntime() {
@@ -293,6 +311,7 @@ async function activateLockedRuntime() {
       migrationsFolder: migrationsFolder(),
     }),
   );
+  forwardSyncStatus();
 }
 
 async function activateOrganization(organizationId: string) {
@@ -350,6 +369,7 @@ async function activateOrganization(organizationId: string) {
       }),
     }),
   );
+  forwardSyncStatus();
   activeOrganizationId = organizationId;
 }
 

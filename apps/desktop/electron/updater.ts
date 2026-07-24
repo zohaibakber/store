@@ -1,11 +1,15 @@
 import { app, ipcMain, type BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Schedule from "effect/Schedule";
 
 // electron-updater is CJS; grab the instance off the default export so the
 // import works from the ESM main bundle.
 const { autoUpdater } = electronUpdater;
 
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const RETRY_CHECK_DELAY_MS = 30_000;
 // Give the renderer time to mount and subscribe before the first check can
 // emit an `available` event.
@@ -29,6 +33,8 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   // while a download is already running or finished, which would resurface
   // the "Download" action in the renderer mid-download.
   let downloadState: "idle" | "downloading" | "downloaded" = "idle";
+  let checkInFlight = false;
+  let lastCheckStartedAt = 0;
   let retryCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
   const isPendingReleaseMetadata = (error: Error) =>
@@ -42,17 +48,31 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
     return error.message.split("\n")[0] || "Unable to check for updates.";
   };
 
-  const check = () => {
-    if (!app.isPackaged || downloadState !== "idle") return;
+  const check = (force = false) => {
+    const now = Date.now();
+    if (
+      !app.isPackaged ||
+      downloadState !== "idle" ||
+      checkInFlight ||
+      (!force && now - lastCheckStartedAt < MIN_CHECK_INTERVAL_MS)
+    )
+      return;
+    checkInFlight = true;
+    lastCheckStartedAt = now;
     // Failures also surface through the `error` event below.
-    autoUpdater.checkForUpdates().catch(() => {});
+    void autoUpdater
+      .checkForUpdates()
+      .catch(() => {})
+      .finally(() => {
+        checkInFlight = false;
+      });
   };
 
   const scheduleRetryCheck = () => {
     if (retryCheckTimer) return;
     retryCheckTimer = setTimeout(() => {
       retryCheckTimer = undefined;
-      check();
+      check(true);
     }, RETRY_CHECK_DELAY_MS);
   };
 
@@ -84,7 +104,13 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   ipcMain.on("updater:install", () => autoUpdater.quitAndInstall());
 
   if (app.isPackaged) {
-    setTimeout(check, INITIAL_CHECK_DELAY_MS);
-    setInterval(check, CHECK_INTERVAL_MS);
+    const periodicCheck = Effect.sync(check).pipe(
+      Effect.delay(INITIAL_CHECK_DELAY_MS),
+      Effect.repeat(Schedule.spaced(CHECK_INTERVAL_MS)),
+    );
+    const periodicCheckFiber = Effect.runFork(periodicCheck);
+    app.once("before-quit", () => {
+      Effect.runFork(Fiber.interrupt(periodicCheckFiber));
+    });
   }
 }

@@ -18,6 +18,7 @@ import type {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Stream from "effect/Stream";
 import { initializeDatabase } from "./bootstrap";
 import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
@@ -60,6 +61,7 @@ export class OfflineStore extends Context.Service<
     readonly createInvoice: (input: CreateInvoiceInput) => Effect.Effect<Invoice, PersistenceError>;
     readonly getDashboardAnalytics: Effect.Effect<DashboardAnalytics, PersistenceError>;
     readonly getSyncStatus: Effect.Effect<SyncStatus>;
+    readonly syncStatusChanges: Stream.Stream<SyncStatus>;
     readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
   }
 >()("@store/persistence/OfflineStore") {}
@@ -80,6 +82,7 @@ const make = (config: PersistenceConfig) =>
       ...invoiceStore,
       ...analyticsStore,
       getSyncStatus: syncEngine.status,
+      syncStatusChanges: syncEngine.statusChanges,
       sync: syncEngine.sync,
     });
   });

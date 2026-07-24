@@ -22,10 +22,11 @@ import { createSelectSchema } from "drizzle-orm/effect-schema";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
-import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import type * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MutationContext, PersistenceConfig } from "./config";
 import type { StoreDatabase, StoreTransaction } from "./database";
 import { PersistenceError, mapPersistenceError } from "./errors";
@@ -33,6 +34,7 @@ import { PersistenceError, mapPersistenceError } from "./errors";
 export interface SyncEngine {
   readonly signal: Effect.Effect<void>;
   readonly status: Effect.Effect<SyncStatus>;
+  readonly statusChanges: Stream.Stream<SyncStatus>;
   readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
 }
 
@@ -172,7 +174,7 @@ export const makeSyncEngine = (
       .findFirst({ where: { organizationId: actor.organizationId } })
       .pipe(mapPersistenceError("load sync state"));
     const configured = config.syncTransport !== undefined;
-    const status = yield* Ref.make<SyncStatus>({
+    const status = yield* SubscriptionRef.make<SyncStatus>({
       phase: configured ? "idle" : "local-only",
       configured,
       lastSyncedAt: initialState?.lastSuccessAt ?? null,
@@ -339,11 +341,11 @@ export const makeSyncEngine = (
     });
 
     const sync = (): Effect.Effect<SyncStatus, PersistenceError> => {
-      if (!config.syncTransport) return Ref.get(status);
+      if (!config.syncTransport) return SubscriptionRef.get(status);
       return lock
         .withPermit(
           Effect.gen(function* () {
-            yield* Ref.update(status, (current) => {
+            yield* SubscriptionRef.update(status, (current) => {
               const next: SyncStatus = {
                 ...current,
                 phase: "syncing",
@@ -371,7 +373,7 @@ export const makeSyncEngine = (
               lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
               message: "Local and cloud data are in sync",
             };
-            yield* Ref.set(status, next);
+            yield* SubscriptionRef.set(status, next);
             return next;
           }),
         )
@@ -379,7 +381,7 @@ export const makeSyncEngine = (
           Effect.tapError((error) =>
             Effect.gen(function* () {
               const currentActor = mutationContext();
-              yield* Ref.update(status, (current) => {
+              yield* SubscriptionRef.update(status, (current) => {
                 const next: SyncStatus = {
                   ...current,
                   phase: "error",
@@ -434,7 +436,8 @@ export const makeSyncEngine = (
 
     return {
       signal: configured ? Queue.offer(signals, undefined).pipe(Effect.asVoid) : Effect.void,
-      status: Ref.get(status),
+      status: SubscriptionRef.get(status),
+      statusChanges: SubscriptionRef.changes(status),
       sync: sync(),
     } satisfies SyncEngine;
   });

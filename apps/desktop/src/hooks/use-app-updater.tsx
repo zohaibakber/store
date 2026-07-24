@@ -61,7 +61,7 @@ export function useAppUpdater() {
     // The bridge is absent outside Electron (e.g. vitest with a bare jsdom).
     if (!window.updater) return;
 
-    return window.updater.onEvent((event) => {
+    const unsubscribe = window.updater.onEvent((event) => {
       switch (event.type) {
         case "available":
           if (downloadingRef.current) break;
@@ -102,5 +102,21 @@ export function useAppUpdater() {
           break;
       }
     });
+
+    const requestCheck = () => void window.updater.check();
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") requestCheck();
+    };
+
+    window.addEventListener("focus", requestCheck);
+    window.addEventListener("online", requestCheck);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", requestCheck);
+      window.removeEventListener("online", requestCheck);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
   }, []);
 }

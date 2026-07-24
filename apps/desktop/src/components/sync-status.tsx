@@ -17,8 +17,8 @@ import { formatRelativeTime } from "@/lib/format";
  */
 export function SyncStatusIndicator() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const isOnline = useOnline();
+  const isSyncing = status?.phase === "syncing";
 
   const refresh = useCallback(async () => {
     setStatus(await window.offlineStore.getSyncStatus());
@@ -27,19 +27,30 @@ export function SyncStatusIndicator() {
   useEffect(() => {
     void refresh();
     const onSync = () => void refresh();
+    const unsubscribe = window.offlineStore.onSyncStatusChange(setStatus);
     window.addEventListener("offline-store:sync", onSync);
-    return () => window.removeEventListener("offline-store:sync", onSync);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("offline-store:sync", onSync);
+    };
   }, [refresh]);
 
   const sync = async () => {
     if (!isOnline || !status?.configured || isSyncing) return;
-    setIsSyncing(true);
+    setStatus((current) =>
+      current
+        ? {
+            ...current,
+            phase: "syncing",
+            message: "Synchronizing local and cloud changes…",
+          }
+        : current,
+    );
     try {
       setStatus(await window.offlineStore.sync());
     } catch {
       await refresh();
     } finally {
-      setIsSyncing(false);
       window.dispatchEvent(new Event("offline-store:sync"));
     }
   };
