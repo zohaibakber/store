@@ -41,9 +41,9 @@ const pricingItems = [
   { label: "Discount", value: "discount" },
 ] as const;
 
-// The row shows only what a cashier needs to ring up an item — name, quantity,
-// total, remove. Batch, unit and pricing overrides live in the collapsed panel
-// so the common path stays a single line.
+// The row shows what a cashier needs to ring up an item — name, quantity and
+// its unit, total, remove. Batch and pricing overrides live in the collapsed
+// panel so the common path stays a single line.
 function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLine }) {
   const {
     actions: { removeLine, setLineQuantityUnit, updateLine },
@@ -74,7 +74,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
         <FrameHeader className="flex-row items-center gap-3 px-2 py-2">
           <CollapsibleTrigger
             className="data-panel-open:[&_svg]:rotate-180"
-            render={<Button className="min-w-0 flex-1 justify-start" variant="ghost" />}
+            render={<Button className="min-w-0 flex-1 justify-start ps-0" variant="ghost" />}
           >
             <HugeiconsIcon
               aria-hidden="true"
@@ -94,7 +94,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             )}
           </CollapsibleTrigger>
 
-          <ControlGroup className="w-28">
+          <ControlGroup className="w-40">
             <ControlGroupNumberInput
               aria-label="Quantity"
               inputProps={{ "aria-label": "Quantity" }}
@@ -104,7 +104,28 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
               value={line.quantity}
             />
             <ControlGroupAddon>
-              <ControlGroupText>{line.quantityUnit === "pack" ? "pack" : "unit"}</ControlGroupText>
+              <Select
+                items={quantityItems}
+                onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
+                value={line.quantityUnit}
+              >
+                <SelectTrigger
+                  aria-label="Quantity unit"
+                  className={controlGroupSelectTrigger}
+                  size="sm"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {quantityItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </ControlGroupAddon>
           </ControlGroup>
 
@@ -123,29 +144,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
         </FrameHeader>
 
         <CollapsiblePanel>
-          <FramePanel className="grid gap-4 sm:grid-cols-3">
-            <Field>
-              <FieldLabel>Sold as</FieldLabel>
-              <Select
-                items={quantityItems}
-                onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
-                value={line.quantityUnit}
-              >
-                <SelectTrigger aria-label="Quantity unit">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {quantityItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-
+          <FramePanel className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel>Batch</FieldLabel>
               <Select
