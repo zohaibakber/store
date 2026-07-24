@@ -172,38 +172,43 @@ function Toasts({
               toast={toast}
             >
               <Toast.Content className="pointer-events-auto flex items-center justify-between gap-1.5 overflow-hidden px-3.5 py-3 text-sm transition-opacity duration-250 data-behind:not-data-expanded:pointer-events-none data-behind:opacity-0 data-expanded:opacity-100">
-                <div className="flex min-w-0 flex-1 gap-2">
-                  {Icon && (
-                    <div
-                      className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
-                      data-slot="toast-icon"
-                    >
-                      <Icon
-                        aria-hidden="true"
-                        className="in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80"
+                {toastData?.progress ? (
+                  <div className="min-w-0 flex-1">
+                    <Toast.Title className="sr-only" data-slot="toast-title" />
+                    <Toast.Description className="sr-only" data-slot="toast-description" />
+                    <Progress value={toastData.progress.value}>
+                      <div className="flex items-center justify-between gap-3">
+                        <ProgressLabel>{toastData.progress.label}</ProgressLabel>
+                        <ProgressValue className="text-muted-foreground" />
+                      </div>
+                      <ProgressTrack>
+                        <ProgressIndicator />
+                      </ProgressTrack>
+                    </Progress>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-1 gap-2">
+                    {Icon && (
+                      <div
+                        className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+                        data-slot="toast-icon"
+                      >
+                        <Icon
+                          aria-hidden="true"
+                          className="in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <Toast.Title className="font-medium" data-slot="toast-title" />
+                      <Toast.Description
+                        className="text-muted-foreground"
+                        data-slot="toast-description"
                       />
                     </div>
-                  )}
-
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <Toast.Title className="font-medium" data-slot="toast-title" />
-                    <Toast.Description
-                      className="text-muted-foreground"
-                      data-slot="toast-description"
-                    />
-                    {toastData?.progress && (
-                      <Progress className="mt-1.5" value={toastData.progress.value}>
-                        <div className="flex items-center justify-between gap-2">
-                          <ProgressLabel>{toastData.progress.label}</ProgressLabel>
-                          <ProgressValue />
-                        </div>
-                        <ProgressTrack>
-                          <ProgressIndicator />
-                        </ProgressTrack>
-                      </Progress>
-                    )}
                   </div>
-                </div>
+                )}
                 {toast.actionProps && (
                   <Toast.Action className={buttonVariants({ size: "xs" })} data-slot="toast-action">
                     {toast.actionProps.children}

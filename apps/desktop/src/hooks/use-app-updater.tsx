@@ -4,21 +4,24 @@ import { toastManager } from "@/components/ui/toast";
 const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
 
-const startDownload = (version: string) => {
+const showDownloadProgress = (value: number, description: string) => {
   toastManager.add({
     data: {
       progress: {
-        label: "Downloading",
-        value: 0,
+        label: "Downloading update…",
+        value,
       },
     },
-    description: `Downloading version ${version}.`,
+    description,
     id: UPDATE_DOWNLOAD_TOAST_ID,
     timeout: 0,
     title: "Downloading update…",
     type: "loading",
   });
+};
 
+const startDownload = (version: string) => {
+  showDownloadProgress(0, `Downloading version ${version}.`);
   void window.updater
     .download()
     .then(() => {
@@ -55,6 +58,10 @@ export function useAppUpdater() {
   const downloadingRef = useRef(false);
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      showDownloadProgress(42, "The update will be ready to install shortly.");
+    }
+
     // The bridge is absent outside Electron (e.g. vitest with a bare jsdom).
     if (!window.updater) return;
 
@@ -79,19 +86,7 @@ export function useAppUpdater() {
           break;
         case "progress":
           downloadingRef.current = true;
-          toastManager.add({
-            data: {
-              progress: {
-                label: "Downloading",
-                value: event.percent,
-              },
-            },
-            description: "The update will be ready to install shortly.",
-            id: UPDATE_DOWNLOAD_TOAST_ID,
-            timeout: 0,
-            title: "Downloading update…",
-            type: "loading",
-          });
+          showDownloadProgress(event.percent, "The update will be ready to install shortly.");
           break;
         case "downloaded":
           downloadingRef.current = false;
