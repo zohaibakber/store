@@ -40,6 +40,13 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   const isPendingReleaseMetadata = (error: Error) =>
     error.message.includes("latest-linux.yml") && error.message.includes("404");
 
+  // Tabaaq is offline-first: a failed check because there's no network
+  // connectivity is expected, not an error worth interrupting the user for.
+  const isNetworkError = (error: Error) =>
+    /net::ERR_INTERNET_DISCONNECTED|ENOTFOUND|ENETUNREACH|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT/.test(
+      error.message,
+    );
+
   const updateErrorMessage = (error: Error) => {
     if (isPendingReleaseMetadata(error)) {
       return "The latest release is still publishing its Linux update details. Tabaaq will retry automatically.";
@@ -89,8 +96,15 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   });
   autoUpdater.on("error", (error) => {
     downloadState = "idle";
-    const retrying = isPendingReleaseMetadata(error);
     console.warn("Auto-update failed", error);
+
+    if (isNetworkError(error)) {
+      // Stay quiet: the periodic check and the renderer's `online`/`focus`
+      // listeners will retry once connectivity is back.
+      return;
+    }
+
+    const retrying = isPendingReleaseMetadata(error);
     send({ type: "error", message: updateErrorMessage(error), retrying });
     if (retrying) scheduleRetryCheck();
   });

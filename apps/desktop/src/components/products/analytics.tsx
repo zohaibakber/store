@@ -47,7 +47,7 @@ function PrivateStockValue({ value }: { value: string }) {
             <Button
               aria-label={actionLabel}
               aria-pressed={visible}
-              className="absolute end-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-visible:opacity-100 in-hover:opacity-100 pointer-coarse:opacity-100"
+              className="absolute inset-e-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-visible:opacity-100 in-hover:opacity-100 pointer-coarse:opacity-100"
               onClick={() => setVisible((current) => !current)}
               size="icon-xs"
               type="button"
