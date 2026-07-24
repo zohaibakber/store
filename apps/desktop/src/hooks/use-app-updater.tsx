@@ -1,20 +1,14 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import {
-  Progress,
-  ProgressTrack,
-  ProgressIndicator,
-  ProgressValue,
-} from "@/components/ui/progress";
+import { Progress, ProgressValue } from "@/components/ui/progress";
 
 const UPDATE_TOAST_ID = "app-update";
 
 function DownloadProgress({ percent }: { percent: number }) {
+  // `Progress` already renders its own ProgressTrack/ProgressIndicator after
+  // its children, so only pass the value label here.
   return (
     <Progress value={percent} className="mt-1 min-w-48 flex-col items-stretch gap-1">
-      <ProgressTrack>
-        <ProgressIndicator />
-      </ProgressTrack>
       <ProgressValue className="ml-0" />
     </Progress>
   );

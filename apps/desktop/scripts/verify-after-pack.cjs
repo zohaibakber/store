@@ -72,8 +72,13 @@ const verifyDesktopAsar = (archivePath) => {
   }
 
   // @electron/asar returns OS-native separators (backslash on Windows), but every
-  // check below compares against posix-style constants and splits on "/".
-  const entries = listPackage(archivePath).map((entry) => entry.replaceAll("\\", "/"));
+  // check below compares against posix-style constants and splits on "/". Keep the
+  // raw form too: extractFile() internally splits on path.sep, so feeding it a
+  // posix-normalized path fails to resolve the file on Windows.
+  const rawEntries = listPackage(archivePath);
+  const toPosix = (entry) => entry.replaceAll("\\", "/");
+  const entries = rawEntries.map(toPosix);
+  const rawByPosix = new Map(entries.map((entry, index) => [entry, rawEntries[index]]));
   const entrySet = new Set(entries);
   const packageRoots = new Set(entries.map(packageRoot).filter(Boolean));
   const topLevelRoots = new Set(
@@ -130,7 +135,7 @@ const verifyDesktopAsar = (archivePath) => {
   );
   const rendererLeaks = [];
   for (const entry of rendererEntries) {
-    const source = extractFile(archivePath, entry.slice(1)).toString("utf8");
+    const source = extractFile(archivePath, rawByPosix.get(entry).slice(1)).toString("utf8");
     for (const marker of forbiddenRendererMarkers) {
       if (source.includes(marker)) rendererLeaks.push(`${entry}: ${marker}`);
     }
@@ -146,7 +151,7 @@ const verifyDesktopAsar = (archivePath) => {
   );
   const serverLeaks = [];
   for (const entry of desktopJavaScriptEntries) {
-    const source = extractFile(archivePath, entry.slice(1)).toString("utf8");
+    const source = extractFile(archivePath, rawByPosix.get(entry).slice(1)).toString("utf8");
     for (const marker of forbiddenServerMarkers) {
       if (source.includes(marker)) serverLeaks.push(`${entry}: ${marker}`);
     }
