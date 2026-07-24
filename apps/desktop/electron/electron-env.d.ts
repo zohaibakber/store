@@ -45,7 +45,6 @@ interface Window {
     }) => Promise<import("@store/contracts").InvoiceExtraction>;
   };
   updater: {
-    getVersion: () => Promise<string>;
     check: () => Promise<void>;
     download: () => Promise<void>;
     install: () => void;

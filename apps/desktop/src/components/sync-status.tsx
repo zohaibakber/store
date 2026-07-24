@@ -1,10 +1,14 @@
 import type { SyncStatus } from "@store/contracts";
-import { CellularNetworkIcon, CellularNetworkOfflineIcon } from "@hugeicons/core-free-icons";
+import {
+  CellularNetworkIcon,
+  CellularNetworkOfflineIcon,
+  ReloadIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useOnline } from "@/hooks/use-online";
 import { formatRelativeTime } from "@/lib/format";
 
 /**
@@ -14,6 +18,7 @@ import { formatRelativeTime } from "@/lib/format";
 export function SyncStatusIndicator() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const isOnline = useOnline();
 
   const refresh = useCallback(async () => {
     setStatus(await window.offlineStore.getSyncStatus());
@@ -27,7 +32,7 @@ export function SyncStatusIndicator() {
   }, [refresh]);
 
   const sync = async () => {
-    if (!status?.configured || isSyncing) return;
+    if (!isOnline || !status?.configured || isSyncing) return;
     setIsSyncing(true);
     try {
       setStatus(await window.offlineStore.sync());
@@ -39,14 +44,12 @@ export function SyncStatusIndicator() {
     }
   };
 
-  const online = status?.configured === true && status.phase !== "error";
-  const label = isSyncing
-    ? "Syncing…"
-    : status?.configured
-      ? status.phase === "error"
-        ? "Sync paused"
-        : "Cloud ready"
-      : "Local only";
+  const connectionLabel = isSyncing ? "Syncing…" : isOnline ? "Online" : "Offline";
+  const syncLabel = status?.configured
+    ? status.phase === "error"
+      ? "Sync paused"
+      : "Cloud ready"
+    : "Local only";
   const lastSynced = status?.lastSyncedAt
     ? `Last sync ${formatRelativeTime(status.lastSyncedAt)}`
     : "Never synced";
@@ -56,28 +59,26 @@ export function SyncStatusIndicator() {
       <TooltipTrigger
         render={
           <Button
-            aria-label={`${label}. ${lastSynced}.`}
-            className="w-full justify-start gap-2 text-muted-foreground"
-            disabled={!status?.configured || isSyncing}
+            aria-label={`${connectionLabel}. ${syncLabel}. ${lastSynced}.`}
+            disabled={isSyncing}
             onClick={() => void sync()}
-            size="sm"
+            size="icon-xs"
             type="button"
             variant="ghost"
           />
         }
       >
         {isSyncing ? (
-          <Spinner aria-hidden="true" />
+          <HugeiconsIcon aria-hidden="true" className="animate-spin" icon={ReloadIcon} />
         ) : (
           <HugeiconsIcon
             aria-hidden="true"
-            icon={online ? CellularNetworkIcon : CellularNetworkOfflineIcon}
+            icon={isOnline ? CellularNetworkIcon : CellularNetworkOfflineIcon}
           />
         )}
-        <span className="truncate">{label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">
-        {status?.message ?? "Checking the local database…"} · {lastSynced}
+        {connectionLabel} · {syncLabel} · {lastSynced}
       </TooltipPopup>
     </Tooltip>
   );

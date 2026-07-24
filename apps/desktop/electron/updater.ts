@@ -75,7 +75,6 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
     if (retrying) scheduleRetryCheck();
   });
 
-  ipcMain.handle("updater:version", () => app.getVersion());
   ipcMain.handle("updater:check", () => check());
   ipcMain.handle("updater:download", async () => {
     if (downloadState !== "idle") return;

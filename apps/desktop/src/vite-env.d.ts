@@ -4,6 +4,8 @@ import type { AuthSnapshot } from "@/lib/auth";
 import type { InvoiceExtraction } from "@store/contracts";
 
 declare global {
+  const __APP_VERSION__: string;
+
   interface Window {
     auth?: {
       getSession(): Promise<AuthSnapshot>;

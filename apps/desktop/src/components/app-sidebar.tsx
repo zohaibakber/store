@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 
 import { AccountMenu } from "@/components/account-menu";
 import { NavHistory } from "@/components/nav-history";
@@ -49,7 +49,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <SyncStatusIndicator />
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span
+            aria-label={`App version ${__APP_VERSION__}`}
+            className="text-muted-foreground text-xs tabular-nums"
+          >
+            v{__APP_VERSION__}
+          </span>
+          <SyncStatusIndicator />
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

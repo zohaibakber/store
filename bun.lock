@@ -12,7 +12,7 @@
     },
     "apps/desktop": {
       "name": "@store/desktop",
-      "version": "0.0.0",
+      "version": "0.2.18",
       "dependencies": {
         "@electric-sql/pglite": "^0.5.4",
         "electron-updater": "^6.8.9",

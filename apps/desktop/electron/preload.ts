@@ -55,7 +55,6 @@ contextBridge.exposeInMainWorld("windowControls", {
 });
 
 contextBridge.exposeInMainWorld("updater", {
-  getVersion: () => ipcRenderer.invoke("updater:version") as Promise<string>,
   check: () => ipcRenderer.invoke("updater:check") as Promise<void>,
   download: () => ipcRenderer.invoke("updater:download") as Promise<void>,
   install() {
