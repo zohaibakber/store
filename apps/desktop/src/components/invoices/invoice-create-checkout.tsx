@@ -1,15 +1,15 @@
+import {
+  ControlGroup,
+  ControlGroupAddon,
+  ControlGroupNumberInput,
+  ControlGroupText,
+} from "@/components/control-group";
 import { Button } from "@/components/ui/button";
 import { CardFooter } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "@/components/ui/number-field";
+import { NumberFieldDecrement, NumberFieldIncrement } from "@/components/ui/number-field";
 import { useInvoiceCreate } from "@/components/invoices/invoice-create-context";
 import { formatPrice } from "@/lib/format";
 
@@ -35,21 +35,28 @@ function InvoiceCheckout() {
         </Field>
         <Field data-invalid={!validBulkDiscount || undefined}>
           <FieldLabel htmlFor="bulk-discount">Bulk discount</FieldLabel>
-          <NumberField
-            className="w-full"
-            id="bulk-discount"
-            max={100}
-            min={0}
-            onValueChange={setBulkDiscount}
-            value={bulkDiscount}
-          >
-            <NumberFieldGroup>
-              <NumberFieldDecrement aria-label="Decrease bulk discount" />
-              <NumberFieldInput aria-label="Bulk discount percentage" />
-              <span className="flex select-none items-center pe-1 text-muted-foreground">%</span>
-              <NumberFieldIncrement aria-label="Increase bulk discount" />
-            </NumberFieldGroup>
-          </NumberField>
+          <ControlGroup>
+            <ControlGroupNumberInput
+              id="bulk-discount"
+              inputProps={{ "aria-label": "Bulk discount percentage" }}
+              max={100}
+              min={0}
+              onValueChange={setBulkDiscount}
+              value={bulkDiscount}
+            >
+              <ControlGroupAddon className="gap-0">
+                <ControlGroupText className="pe-1">%</ControlGroupText>
+                <NumberFieldDecrement
+                  aria-label="Decrease bulk discount"
+                  className="rounded-md px-2"
+                />
+                <NumberFieldIncrement
+                  aria-label="Increase bulk discount"
+                  className="rounded-md px-2"
+                />
+              </ControlGroupAddon>
+            </ControlGroupNumberInput>
+          </ControlGroup>
           {!validBulkDiscount && (
             <FieldError match>Enter a discount between 0% and 100%.</FieldError>
           )}

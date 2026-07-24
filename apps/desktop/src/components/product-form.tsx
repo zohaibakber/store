@@ -7,7 +7,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "@/lib/toast";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
-import { Group } from "@/components/ui/group";
+import {
+  ControlGroup,
+  ControlGroupAddon,
+  ControlGroupNumberInput,
+  ControlGroupText,
+  controlGroupSelectTrigger,
+} from "@/components/control-group";
 import {
   Dialog,
   DialogClose,
@@ -299,53 +305,54 @@ function ProductForm({
               return (
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Strength</FieldLabel>
-                  <Group aria-label="Strength" className="w-full">
-                    <NumberField
-                      className="min-w-0 flex-1"
+                  <ControlGroup>
+                    <ControlGroupNumberInput
                       format={{ maximumFractionDigits: 2 }}
                       id={field.name}
+                      inputProps={{
+                        "aria-invalid": invalid,
+                        "aria-label": "Strength value",
+                        name: field.name,
+                        onBlur: field.handleBlur,
+                        placeholder: "e.g. 500",
+                      }}
                       min={0}
                       onValueChange={(value) =>
                         field.handleChange(value === null ? "" : String(value))
                       }
                       value={numberFieldValue(field.state.value)}
-                    >
-                      <NumberFieldGroup>
-                        <NumberFieldInput
-                          aria-invalid={invalid}
-                          aria-label="Strength value"
-                          className="text-left"
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                          placeholder="e.g. 500"
-                        />
-                      </NumberFieldGroup>
-                    </NumberField>
-                    <form.Field
-                      name="strengthUnit"
-                      children={(unitField) => (
-                        <Select
-                          items={strengthUnitItems}
-                          name={unitField.name}
-                          onValueChange={(value) => value && unitField.handleChange(value)}
-                          value={unitField.state.value}
-                        >
-                          <SelectTrigger aria-label="Strength unit" className="w-24 min-w-0">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent alignItemWithTrigger={false}>
-                            <SelectGroup>
-                              {strengthUnitItems.map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {item.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      )}
                     />
-                  </Group>
+                    <ControlGroupAddon>
+                      <form.Field
+                        name="strengthUnit"
+                        children={(unitField) => (
+                          <Select
+                            items={strengthUnitItems}
+                            name={unitField.name}
+                            onValueChange={(value) => value && unitField.handleChange(value)}
+                            value={unitField.state.value}
+                          >
+                            <SelectTrigger
+                              aria-label="Strength unit"
+                              className={controlGroupSelectTrigger}
+                              size="sm"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {strengthUnitItems.map((item) => (
+                                  <SelectItem key={item.value} value={item.value}>
+                                    {item.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </ControlGroupAddon>
+                  </ControlGroup>
                   {invalid && <FormFieldError errors={field.state.meta.errors} />}
                 </Field>
               );
@@ -413,28 +420,26 @@ function ProductForm({
                 return (
                   <Field data-invalid={invalid}>
                     <FieldLabel htmlFor={field.name}>Pack price</FieldLabel>
-                    <NumberField
-                      format={{ maximumFractionDigits: 2 }}
-                      id={field.name}
-                      min={0}
-                      onValueChange={(value) =>
-                        field.handleChange(value === null ? "" : String(value))
-                      }
-                      step={0.01}
-                      value={numberFieldValue(field.state.value)}
-                    >
-                      <NumberFieldGroup>
-                        <NumberFieldInput
-                          aria-invalid={invalid}
-                          className="text-left"
-                          name={field.name}
-                          onBlur={field.handleBlur}
-                        />
-                        <span className="flex select-none items-center pe-3 text-muted-foreground">
-                          PKR
-                        </span>
-                      </NumberFieldGroup>
-                    </NumberField>
+                    <ControlGroup>
+                      <ControlGroupNumberInput
+                        format={{ maximumFractionDigits: 2 }}
+                        id={field.name}
+                        inputProps={{
+                          "aria-invalid": invalid,
+                          name: field.name,
+                          onBlur: field.handleBlur,
+                        }}
+                        min={0}
+                        onValueChange={(value) =>
+                          field.handleChange(value === null ? "" : String(value))
+                        }
+                        step={0.01}
+                        value={numberFieldValue(field.state.value)}
+                      />
+                      <ControlGroupAddon>
+                        <ControlGroupText>PKR</ControlGroupText>
+                      </ControlGroupAddon>
+                    </ControlGroup>
                     {invalid && <FormFieldError errors={field.state.meta.errors} />}
                   </Field>
                 );
@@ -449,28 +454,26 @@ function ProductForm({
               return (
                 <Field data-invalid={invalid}>
                   <FieldLabel htmlFor={field.name}>Unit price</FieldLabel>
-                  <NumberField
-                    format={{ maximumFractionDigits: 0 }}
-                    id={field.name}
-                    min={0}
-                    onValueChange={(value) =>
-                      field.handleChange(value === null ? "" : String(value))
-                    }
-                    step={1}
-                    value={numberFieldValue(field.state.value)}
-                  >
-                    <NumberFieldGroup>
-                      <NumberFieldInput
-                        aria-invalid={invalid}
-                        className="text-left"
-                        name={field.name}
-                        onBlur={field.handleBlur}
-                      />
-                      <span className="flex select-none items-center pe-3 text-muted-foreground">
-                        PKR
-                      </span>
-                    </NumberFieldGroup>
-                  </NumberField>
+                  <ControlGroup>
+                    <ControlGroupNumberInput
+                      format={{ maximumFractionDigits: 0 }}
+                      id={field.name}
+                      inputProps={{
+                        "aria-invalid": invalid,
+                        name: field.name,
+                        onBlur: field.handleBlur,
+                      }}
+                      min={0}
+                      onValueChange={(value) =>
+                        field.handleChange(value === null ? "" : String(value))
+                      }
+                      step={1}
+                      value={numberFieldValue(field.state.value)}
+                    />
+                    <ControlGroupAddon>
+                      <ControlGroupText>PKR</ControlGroupText>
+                    </ControlGroupAddon>
+                  </ControlGroup>
                   <FieldDescription>
                     Auto-filled from pack price ÷ units per pack, rounded. Edit to override.
                   </FieldDescription>

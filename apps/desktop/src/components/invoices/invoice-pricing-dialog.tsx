@@ -3,7 +3,13 @@ import { DiscountIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
-import { Group } from "@/components/ui/group";
+import {
+  ControlGroup,
+  ControlGroupAddon,
+  ControlGroupNumberInput,
+  ControlGroupText,
+  controlGroupSelectTrigger,
+} from "@/components/control-group";
 import {
   Dialog,
   DialogClose,
@@ -16,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
-import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
 import {
   Select,
   SelectContent,
@@ -103,28 +108,38 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
         <Fieldset className="flex w-full flex-col gap-6">
           <Field>
             <FieldLabel>Adjustment</FieldLabel>
-            <Group aria-label="Price adjustment" className="w-full">
-              <Select
-                items={pricingItems}
-                onValueChange={(value) => value && setPricingMode(value)}
-                value={pricingMode}
-              >
-                <SelectTrigger aria-label="Price adjustment type" className="w-28 min-w-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {pricingItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <NumberField
-                className="min-w-0 flex-1"
+            <ControlGroup>
+              <ControlGroupAddon align="inline-start">
+                <Select
+                  items={pricingItems}
+                  onValueChange={(value) => value && setPricingMode(value)}
+                  value={pricingMode}
+                >
+                  <SelectTrigger
+                    aria-label="Price adjustment type"
+                    className={controlGroupSelectTrigger}
+                    size="sm"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {pricingItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </ControlGroupAddon>
+              <ControlGroupNumberInput
                 format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
+                inputProps={{
+                  "aria-label":
+                    pricingMode === "price" ? "Unit price in PKR" : "Item discount percentage",
+                  className: "text-right",
+                }}
                 max={pricingMode === "discount" ? 100 : undefined}
                 min={0}
                 onValueChange={(value) =>
@@ -132,20 +147,11 @@ function InvoicePricingDialog({ line }: { line: SaleLine }) {
                 }
                 step={pricingMode === "price" ? 0.01 : 1}
                 value={pricingMode === "price" ? salePrice : discount}
-              >
-                <NumberFieldGroup>
-                  <NumberFieldInput
-                    aria-label={
-                      pricingMode === "price" ? "Unit price in PKR" : "Item discount percentage"
-                    }
-                    className="text-right"
-                  />
-                  <span className="flex select-none items-center pe-3 text-muted-foreground">
-                    {pricingMode === "price" ? "PKR" : "%"}
-                  </span>
-                </NumberFieldGroup>
-              </NumberField>
-            </Group>
+              />
+              <ControlGroupAddon>
+                <ControlGroupText>{pricingMode === "price" ? "PKR" : "%"}</ControlGroupText>
+              </ControlGroupAddon>
+            </ControlGroup>
           </Field>
         </Fieldset>
         <DialogFooter>

@@ -3,7 +3,12 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Group } from "@/components/ui/group";
+import {
+  ControlGroup,
+  ControlGroupAddon,
+  ControlGroupNumberInput,
+  controlGroupSelectTrigger,
+} from "@/components/control-group";
 import {
   Item,
   ItemActions,
@@ -12,13 +17,7 @@ import {
   ItemFooter,
   ItemTitle,
 } from "@/components/ui/item";
-import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "@/components/ui/number-field";
+import { NumberFieldDecrement, NumberFieldIncrement } from "@/components/ui/number-field";
 import {
   Select,
   SelectContent,
@@ -140,42 +139,45 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
       </ItemContent>
       <ItemActions className="flex-wrap justify-end">
         <LineTotal line={line} />
-        <Group aria-label="Quantity and unit">
-          <Select
-            items={quantityItems}
-            onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
-            value={line.quantityUnit}
-          >
-            <SelectTrigger aria-label="Quantity unit" className="w-20 min-w-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {quantityItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <NumberField
+        <ControlGroup className="w-44">
+          <ControlGroupAddon align="inline-start">
+            <Select
+              items={quantityItems}
+              onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
+              value={line.quantityUnit}
+            >
+              <SelectTrigger
+                aria-label="Quantity unit"
+                className={controlGroupSelectTrigger}
+                size="sm"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {quantityItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </ControlGroupAddon>
+          <ControlGroupNumberInput
             aria-label="Quantity"
+            inputProps={{ "aria-label": "Quantity" }}
             min={1}
             onValueChange={(quantity) => updateLine(line.key, { quantity })}
             step={1}
             value={line.quantity}
           >
-            <NumberFieldGroup className="w-24">
-              <NumberFieldInput aria-label="Quantity" className="text-left" />
-              <NumberFieldDecrement
-                aria-label="Decrease quantity"
-                className="rounded-l-none border-r-0 border-l"
-              />
-              <NumberFieldIncrement aria-label="Increase quantity" />
-            </NumberFieldGroup>
-          </NumberField>
-        </Group>
+            <ControlGroupAddon className="gap-0">
+              <NumberFieldDecrement aria-label="Decrease quantity" className="rounded-md px-2" />
+              <NumberFieldIncrement aria-label="Increase quantity" className="rounded-md px-2" />
+            </ControlGroupAddon>
+          </ControlGroupNumberInput>
+        </ControlGroup>
         <InvoicePricingDialog line={line} />
         <Button
           aria-label={`Remove ${line.product.name}`}
