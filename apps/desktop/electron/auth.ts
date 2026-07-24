@@ -233,7 +233,12 @@ export class AuthBroker {
       headers.set("content-type", "application/json");
       body = JSON.stringify(body);
     }
-    const response = await net.fetch(`${this.#baseUrl}${pathname}`, { ...init, headers, body });
+    const response = await net.fetch(`${this.#baseUrl}${pathname}`, {
+      ...init,
+      body,
+      credentials: "omit",
+      headers,
+    });
     const payload = (await response.json().catch(() => null)) as
       | (T & { message?: string; error?: string | { code?: string; message?: string } })
       | null;
