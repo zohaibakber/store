@@ -19,7 +19,6 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "tsc --noEmit",
     "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {

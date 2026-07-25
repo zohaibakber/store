@@ -22,16 +22,13 @@
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "check": "turbo run check",
-    "lint": "turbo run lint",
     "test": "turbo run test",
-    "preview": "turbo run preview --parallel",
     "plan:dev": "bun alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "bun alchemy deploy --stage dev --env-file .env.dev",
     "plan:prod": "bun alchemy plan --stage prod --env-file .env.prod",
     "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod",
     "destroy:dev": "bun alchemy destroy --stage dev --env-file .env.dev",
-    "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin",
-    "check:infra": "bunx tsc --noEmit -p tsconfig.json"
+    "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250805.0",

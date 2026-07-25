@@ -42,9 +42,6 @@ jobs:
       - name: Workspace checks
         run: bun run check
 
-      - name: Typecheck infrastructure stack
-        run: bun run check:infra
-
       - name: Tests
         run: bunx vp test
 

@@ -19,18 +19,10 @@
     "check": {
       "dependsOn": ["^check"]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
     "test": {
-      "dependsOn": ["^build"],
       "cache": false
     },
     "dev": {
-      "cache": false,
-      "persistent": true
-    },
-    "preview": {
       "cache": false,
       "persistent": true
     }

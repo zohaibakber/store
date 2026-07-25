@@ -13,8 +13,6 @@
     "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always",
     "check": "vp check",
     "test": "vitest run --root ../.. apps/desktop/test",
-    "lint": "vp lint",
-    "preview": "vp preview",
     "prepare": "vp config"
   },
   "dependencies": {
