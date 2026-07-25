@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { DashboardAnalytics } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
 
-import { FrameCard } from "@/components/frame-card";
+import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import {
   Empty,
@@ -16,8 +16,6 @@ import { formatDate } from "@/lib/format";
 
 const DAY_MS = 86_400_000;
 
-// Urgency mirrors the FEFO windows the analytics query uses: inside 30 days is
-// destructive, the rest of the 90-day window is a warning.
 const expiryUrgency = (expiresAt: number) => {
   const days = Math.max(0, Math.ceil((expiresAt - Date.now()) / DAY_MS));
   return {

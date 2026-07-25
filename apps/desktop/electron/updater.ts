@@ -1,3 +1,11 @@
+import {
+  classifyUpdateFailure,
+  forwardsToRenderer,
+  nextUpdatePhase,
+  updateFailureMessage,
+  type UpdaterEvent,
+  type UpdatePhase,
+} from "@store/contracts/updater";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schedule from "effect/Schedule";
@@ -11,62 +19,33 @@ const { autoUpdater } = electronUpdater;
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const RETRY_CHECK_DELAY_MS = 30_000;
-// Give the renderer time to mount and subscribe before the first check can
-// emit an `available` event.
 const INITIAL_CHECK_DELAY_MS = 5_000;
 
-export type UpdaterEvent =
-  | { type: "checking" }
-  | { type: "available"; version: string }
-  | { type: "not-available" }
-  | { type: "progress"; percent: number }
-  | { type: "downloaded"; version: string }
-  | { type: "error"; message: string; retrying: boolean };
-
 export function setupUpdater(getWindow: () => BrowserWindow | null) {
-  const send = (event: UpdaterEvent) => getWindow()?.webContents.send("updater:event", event);
-
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  // The periodic background check (below) can otherwise re-emit `available`
-  // while a download is already running or finished, which would resurface
-  // the "Download" action in the renderer mid-download.
-  let downloadState: "idle" | "downloading" | "downloaded" = "idle";
+  let phase: UpdatePhase = "idle";
   let checkInFlight = false;
   let lastCheckStartedAt = 0;
   let retryCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const isPendingReleaseMetadata = (error: Error) =>
-    error.message.includes("latest-linux.yml") && error.message.includes("404");
-
-  // Tabaaq is offline-first: a failed check because there's no network
-  // connectivity is expected, not an error worth interrupting the user for.
-  const isNetworkError = (error: Error) =>
-    /net::ERR_INTERNET_DISCONNECTED|ENOTFOUND|ENETUNREACH|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT/.test(
-      error.message,
-    );
-
-  const updateErrorMessage = (error: Error) => {
-    if (isPendingReleaseMetadata(error)) {
-      return "The latest release is still publishing its Linux update details. Tabaaq will retry automatically.";
-    }
-
-    return error.message.split("\n")[0] || "Unable to check for updates.";
+  const send = (event: UpdaterEvent) => {
+    if (forwardsToRenderer(phase, event)) getWindow()?.webContents.send("updater:event", event);
+    phase = nextUpdatePhase(phase, event);
   };
 
   const check = (force = false) => {
     const now = Date.now();
     if (
       !app.isPackaged ||
-      downloadState !== "idle" ||
+      phase !== "idle" ||
       checkInFlight ||
       (!force && now - lastCheckStartedAt < MIN_CHECK_INTERVAL_MS)
     )
       return;
     checkInFlight = true;
     lastCheckStartedAt = now;
-    // Failures also surface through the `error` event below.
     void autoUpdater
       .checkForUpdates()
       .catch(() => {})
@@ -86,33 +65,30 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   autoUpdater.on("checking-for-update", () => send({ type: "checking" }));
   autoUpdater.on("update-available", (info) => send({ type: "available", version: info.version }));
   autoUpdater.on("update-not-available", () => send({ type: "not-available" }));
-  autoUpdater.on("download-progress", (progress) => {
-    downloadState = "downloading";
-    send({ type: "progress", percent: progress.percent });
-  });
-  autoUpdater.on("update-downloaded", (info) => {
-    downloadState = "downloaded";
-    send({ type: "downloaded", version: info.version });
-  });
+  autoUpdater.on("download-progress", (progress) =>
+    send({ type: "progress", percent: progress.percent }),
+  );
+  autoUpdater.on("update-downloaded", (info) =>
+    send({ type: "downloaded", version: info.version }),
+  );
   autoUpdater.on("error", (error) => {
-    downloadState = "idle";
     console.warn("Auto-update failed", error);
+    const failure = classifyUpdateFailure(error.message);
 
-    if (isNetworkError(error)) {
-      // Stay quiet: the periodic check and the renderer's `online`/`focus`
-      // listeners will retry once connectivity is back.
+    if (failure === "network") {
+      phase = nextUpdatePhase(phase, { type: "error", message: error.message, retrying: false });
       return;
     }
 
-    const retrying = isPendingReleaseMetadata(error);
-    send({ type: "error", message: updateErrorMessage(error), retrying });
+    const retrying = failure === "pending-release";
+    send({ type: "error", message: updateFailureMessage(error.message), retrying });
     if (retrying) scheduleRetryCheck();
   });
 
   ipcMain.handle("updater:check", () => check());
   ipcMain.handle("updater:download", async () => {
-    if (downloadState !== "idle") return;
-    downloadState = "downloading";
+    if (phase !== "idle") return;
+    phase = "downloading";
     await autoUpdater.downloadUpdate();
   });
   ipcMain.on("updater:install", () => autoUpdater.quitAndInstall());

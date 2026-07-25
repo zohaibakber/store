@@ -5,16 +5,22 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./canonical-json": "./src/canonical-json.ts",
-    "./offline-store.api": "./src/offline-store.api.ts",
-    "./store-errors": "./src/store-errors.ts",
-    "./store-helpers": "./src/store-helpers.ts",
-    "./store.schema": "./src/store.schema.ts",
-    "./sync.schema": "./src/sync.schema.ts"
+    "./canonical-json": "./src/sync/canonical-json.ts",
+    "./entity-rows": "./src/sync/entity-rows.ts",
+    "./managed-columns": "./src/sync/managed-columns.ts",
+    "./offline-store.api": "./src/store/api.ts",
+    "./operation-hash": "./src/sync/operation-hash.ts",
+    "./server-api.schema": "./src/server/schema.ts",
+    "./store-errors": "./src/store/errors.ts",
+    "./store-helpers": "./src/store/helpers.ts",
+    "./store.schema": "./src/store/schema.ts",
+    "./sync.schema": "./src/sync/schema.ts",
+    "./updater": "./src/updater.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
     "@store/db": "workspace:*",
@@ -22,6 +28,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "^24.13.3",
+    "typescript": "catalog:",
+    "vitest": "^4.1.10"
   }
 }

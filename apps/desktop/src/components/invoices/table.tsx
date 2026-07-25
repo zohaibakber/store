@@ -8,10 +8,12 @@ import {
   createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
-  filterFns,
+  filterFn_includesString,
+  metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
-  sortFns,
+  sortFn_alphanumeric,
+  sortFn_text,
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
@@ -21,7 +23,7 @@ import {
   DataTableContent,
   DataTableFooter,
   DataTablePagination,
-} from "@/components/data-table";
+} from "@/components/shared/data-table";
 import { formatDateTime, formatPrice } from "@/lib/format";
 
 const features = tableFeatures({
@@ -32,9 +34,12 @@ const features = tableFeatures({
   filteredRowModel: createFilteredRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
   sortedRowModel: createSortedRowModel(),
-  filterFns,
-  sortFns,
-  columnMeta: {} as { label?: string },
+  filterFns: { includesString: filterFn_includesString },
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    text: sortFn_text,
+  },
+  columnMeta: metaHelper<{ label?: string }>(),
 });
 
 const columnHelper = createColumnHelper<typeof features, Invoice>();

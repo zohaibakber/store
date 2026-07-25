@@ -1,8 +1,9 @@
 import type { InvoiceExtraction, OfflineStoreApi } from "@store/contracts";
+import type { UpdaterEvent } from "@store/contracts/updater";
 import { ipcRenderer, contextBridge } from "electron";
 
 import type { AuthSnapshot } from "./auth";
-import type { UpdaterEvent } from "./updater";
+import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 
 contextBridge.exposeInMainWorld("auth", {
   getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<AuthSnapshot>,
@@ -82,30 +83,21 @@ const invokeStore = async <A>(channel: string, input?: unknown): Promise<A> => {
   throw result.error;
 };
 
+const requestMethods = Object.fromEntries(
+  Object.entries(STORE_CHANNELS).map(([method, channel]) => [
+    method,
+    (input?: unknown) => invokeStore(channel, input),
+  ]),
+) as Omit<OfflineStoreApi, "onSyncStatusChange">;
+
 const offlineStore: OfflineStoreApi = {
-  listCategories: () => invokeStore("store:categories:list"),
-  createCategory: (input) => invokeStore("store:categories:create", input),
-  listProducts: () => invokeStore("store:products:list"),
-  searchProducts: (input) => invokeStore("store:products:search", input),
-  getProduct: (input) => invokeStore("store:products:get", input),
-  createProduct: (input) => invokeStore("store:products:create", input),
-  updateProduct: (input) => invokeStore("store:products:update", input),
-  deleteProduct: (input) => invokeStore("store:products:delete", input),
-  createBatch: (input) => invokeStore("store:batches:create", input),
-  importInventory: (input) => invokeStore("store:inventory:import", input),
-  listStockMovements: (input) => invokeStore("store:stock-movements:list", input),
-  listInvoices: () => invokeStore("store:invoices:list"),
-  getInvoice: (input) => invokeStore("store:invoices:get", input),
-  createInvoice: (input) => invokeStore("store:invoices:create", input),
-  getDashboardAnalytics: () => invokeStore("store:analytics:dashboard"),
-  getSyncStatus: () => invokeStore("store:sync:status"),
+  ...requestMethods,
   onSyncStatusChange(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
       callback(status);
-    ipcRenderer.on("store:sync:status-changed", listener);
-    return () => ipcRenderer.off("store:sync:status-changed", listener);
+    ipcRenderer.on(STORE_SYNC_STATUS_CHANNEL, listener);
+    return () => ipcRenderer.off(STORE_SYNC_STATUS_CHANNEL, listener);
   },
-  sync: () => invokeStore("store:sync:run"),
 };
 
 contextBridge.exposeInMainWorld("offlineStore", offlineStore);

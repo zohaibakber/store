@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { FrameCard } from "@/components/frame-card";
+import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";

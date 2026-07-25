@@ -31,22 +31,13 @@ import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 
 import { AuthBroker, type AuthSnapshot, RequestError } from "./auth";
+import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL, type StoreMethod } from "./store-channels";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// The built directory structure
-//
-// ├─┬─┬ dist
-// │ │ └── index.html
-// │ │
-// │ ├─┬ dist-electron
-// │ │ ├── main.js
-// │ │ └── preload.mjs
-// │
 process.env.APP_ROOT = path.join(__dirname, "..");
 
-// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
 export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
@@ -64,9 +55,7 @@ const envFiles = [
 for (const file of envFiles) {
   try {
     process.loadEnvFile(file);
-  } catch {
-    // file does not exist
-  }
+  } catch {}
 }
 
 let win: BrowserWindow | null;
@@ -170,94 +159,56 @@ type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
 const withStore = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =>
   Effect.flatMap(OfflineStore, f);
 
+const decoding =
+  <S extends Schema.Top, A, E, R>(schema: S, run: (input: S["Type"]) => Effect.Effect<A, E, R>) =>
+  (input: unknown) =>
+    Schema.decodeUnknownEffect(schema)(input).pipe(Effect.flatMap(run));
+
+const storeHandlers: {
+  [K in StoreMethod]: (input: unknown) => Effect.Effect<unknown, unknown, OfflineStore>;
+} = {
+  listCategories: () => withStore((store) => store.listCategories),
+  createCategory: decoding(CreateCategoryInput, (input) =>
+    withStore((store) => store.createCategory(input)),
+  ),
+  listProducts: () => withStore((store) => store.listProducts),
+  searchProducts: decoding(SearchProductsInput, (input) =>
+    withStore((store) => store.searchProducts(input)),
+  ),
+  getProduct: decoding(ProductIdInput, ({ id }) => withStore((store) => store.getProduct(id))),
+  createProduct: decoding(CreateProductInput, (input) =>
+    withStore((store) => store.createProduct(input)),
+  ),
+  updateProduct: decoding(UpdateProductInput, (input) =>
+    withStore((store) => store.updateProduct(input)),
+  ),
+  deleteProduct: decoding(ProductIdInput, ({ id }) =>
+    withStore((store) => store.deleteProduct(id)),
+  ),
+  createBatch: decoding(CreateBatchInput, (input) =>
+    withStore((store) => store.createBatch(input)),
+  ),
+  importInventory: decoding(ImportInventoryInput, (input) =>
+    withStore((store) => store.importInventory(input)),
+  ),
+  listStockMovements: decoding(ProductIdInput, ({ id }) =>
+    withStore((store) => store.listStockMovements(id)),
+  ),
+  listInvoices: () => withStore((store) => store.listInvoices),
+  getInvoice: decoding(InvoiceIdInput, ({ id }) => withStore((store) => store.getInvoice(id))),
+  createInvoice: decoding(CreateInvoiceInput, (input) =>
+    withStore((store) => store.createInvoice(input)),
+  ),
+  getDashboardAnalytics: () => withStore((store) => store.getDashboardAnalytics),
+  getSyncStatus: () => withStore((store) => store.getSyncStatus),
+  sync: () => withStore((store) => store.sync),
+};
+
 function registerStoreIpc() {
-  ipcMain.handle("store:categories:list", () =>
-    runStore(withStore((store) => store.listCategories)),
-  );
-  ipcMain.handle("store:categories:create", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(CreateCategoryInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.createCategory(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:products:list", () => runStore(withStore((store) => store.listProducts)));
-  ipcMain.handle("store:products:search", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(SearchProductsInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.searchProducts(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:products:get", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => withStore((store) => store.getProduct(id))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:products:create", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(CreateProductInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.createProduct(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:products:update", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(UpdateProductInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.updateProduct(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:products:delete", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => withStore((store) => store.deleteProduct(id))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:batches:create", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(CreateBatchInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.createBatch(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:inventory:import", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(ImportInventoryInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.importInventory(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:stock-movements:list", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(ProductIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => withStore((store) => store.listStockMovements(id))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:invoices:list", () => runStore(withStore((store) => store.listInvoices)));
-  ipcMain.handle("store:invoices:get", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(InvoiceIdInput)(input).pipe(
-        Effect.flatMap(({ id }) => withStore((store) => store.getInvoice(id))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:invoices:create", (_event, input: unknown) =>
-    runStore(
-      Schema.decodeUnknownEffect(CreateInvoiceInput)(input).pipe(
-        Effect.flatMap((input) => withStore((store) => store.createInvoice(input))),
-      ),
-    ),
-  );
-  ipcMain.handle("store:analytics:dashboard", () =>
-    runStore(withStore((store) => store.getDashboardAnalytics)),
-  );
-  ipcMain.handle("store:sync:status", () => runStore(withStore((store) => store.getSyncStatus)));
-  ipcMain.handle("store:sync:run", () => runStore(withStore((store) => store.sync)));
+  for (const [method, channel] of Object.entries(STORE_CHANNELS))
+    ipcMain.handle(channel, (_event, input: unknown) =>
+      runStore(storeHandlers[method as StoreMethod](input)),
+    );
 }
 
 const organizationKey = (organizationId: string) =>
@@ -296,7 +247,7 @@ function forwardSyncStatus() {
     withStore((store) =>
       store.syncStatusChanges.pipe(
         Stream.runForEach((status) =>
-          Effect.sync(() => win?.webContents.send("store:sync:status-changed", status)),
+          Effect.sync(() => win?.webContents.send(STORE_SYNC_STATUS_CHANNEL, status)),
         ),
       ),
     ),
@@ -496,7 +447,6 @@ function createWindow() {
   if (VITE_DEV_SERVER_URL) {
     void win.loadURL(VITE_DEV_SERVER_URL);
   } else {
-    // win.loadFile('dist/index.html')
     void win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
 }
@@ -530,9 +480,6 @@ ipcMain.on("window-controls:close", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -541,8 +488,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }

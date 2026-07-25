@@ -1,4 +1,4 @@
-import { useTheme, type ThemePreference } from "@/components/theme-provider";
+import { useTheme, type ThemePreference } from "@/components/theme/provider";
 import { Field, FieldItem, FieldLabel } from "@/components/ui/field";
 import { Fieldset, FieldsetLegend } from "@/components/ui/fieldset";
 import { Radio, RadioGroup } from "@/components/ui/radio-group";
@@ -9,8 +9,6 @@ const options: ReadonlyArray<{ label: string; value: ThemePreference }> = [
   { label: "Dark", value: "dark" },
 ];
 
-// Miniature app previews, drawn from neutral steps rather than theme tokens so
-// each swatch shows its own theme regardless of the one in use.
 const previews: Record<ThemePreference, React.ReactNode> = {
   dark: (
     <svg aria-hidden="true" className="size-full" fill="none" viewBox="0 0 88 70">

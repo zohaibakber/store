@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 
@@ -53,19 +53,12 @@ const startDownload = (version: string) => {
 };
 
 export function useAppUpdater() {
-  // Guards against a stray `available` event (e.g. a periodic background
-  // check racing a download) resurfacing the "Download" action while a
-  // download is already in flight.
-  const downloadingRef = useRef(false);
-
   useEffect(() => {
-    // The bridge is absent outside Electron (e.g. vitest with a bare jsdom).
     if (!window.updater) return;
 
     const unsubscribe = window.updater.onEvent((event) => {
       switch (event.type) {
         case "available":
-          if (downloadingRef.current) break;
           toastManager.add({
             id: UPDATE_AVAILABLE_TOAST_ID,
             title: "Update available",
@@ -74,7 +67,6 @@ export function useAppUpdater() {
             actionProps: {
               children: "Download",
               onClick: () => {
-                downloadingRef.current = true;
                 toastManager.close(UPDATE_AVAILABLE_TOAST_ID);
                 startDownload(event.version);
               },
@@ -82,22 +74,15 @@ export function useAppUpdater() {
           });
           break;
         case "progress":
-          downloadingRef.current = true;
           showDownloadProgress(event.percent, "The update will be ready to install shortly.");
           break;
-        case "downloaded":
-          downloadingRef.current = false;
-          break;
         case "error":
-          if (!downloadingRef.current) {
-            toastManager.add({
-              description: event.message,
-              priority: "high",
-              title: event.retrying ? "Update check delayed" : "Update check failed",
-              type: event.retrying ? "info" : "error",
-            });
-          }
-          downloadingRef.current = false;
+          toastManager.add({
+            description: event.message,
+            priority: "high",
+            title: event.retrying ? "Update check delayed" : "Update check failed",
+            type: event.retrying ? "info" : "error",
+          });
           break;
         default:
           break;

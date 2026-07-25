@@ -15,8 +15,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatPrice } from "@/lib/format";
 
-// The catalog is already in memory from the route loader, so matching happens
-// here rather than through the store's fuzzy search.
 const matches = (itemValue: unknown, query: string) => {
   const product = itemValue as Product;
   const term = query.trim().toLowerCase();

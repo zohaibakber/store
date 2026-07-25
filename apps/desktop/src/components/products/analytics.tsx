@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatPrice } from "@/lib/format";
 
-// Mirrors the dashboard's low-stock rule so the two pages agree.
 const LOW_STOCK_THRESHOLD = 10;
 
 const summarize = (products: readonly Product[]) => {
@@ -63,10 +62,6 @@ function PrivateStockValue({ value }: { value: string }) {
   );
 }
 
-/**
- * A compact summary strip above the catalog — derived from the products the
- * route already loaded, so it costs no extra round-trip.
- */
 export function ProductAnalytics({ products }: { products: readonly Product[] }) {
   const { outOfStock, lowStock, hidden, stockValue } = summarize(products);
 

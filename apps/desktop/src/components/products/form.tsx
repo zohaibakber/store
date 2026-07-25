@@ -3,15 +3,15 @@ import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import * as z from "zod";
 
+import { CategoryField } from "@/components/products/category-field";
 import {
   ControlGroup,
   ControlGroupAddon,
   ControlGroupNumberInput,
   ControlGroupText,
   controlGroupSelectTrigger,
-} from "@/components/control-group";
-import { FormFieldError } from "@/components/form-field-error";
-import { CategoryField } from "@/components/products/category-field";
+} from "@/components/shared/control-group";
+import { FormFieldError } from "@/components/shared/form-field-error";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { useStore } from "@/lib/store";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
@@ -75,8 +76,6 @@ const parseStrength = (value: string | null) => {
   };
 };
 
-// Shared shape and validation for both the create and edit flows — each hook
-// below spreads this in and only differs in defaultValues and onSubmit.
 const productFormOpts = formOptions({
   defaultValues: {
     name: "",
@@ -112,6 +111,7 @@ const productToFormValues = (product: Product) => {
 
 function useProductCreateForm(categories: ReadonlyArray<Category>) {
   const navigate = useNavigate();
+  const store = useStore();
 
   return useForm({
     ...productFormOpts,
@@ -119,7 +119,7 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
     onSubmit: async ({ value }) => {
       try {
         const strengthValue = value.strength.trim();
-        const product = await window.offlineStore.createProduct({
+        const product = await store.createProduct({
           name: value.name.trim(),
           categoryId: value.categoryId,
           aisle: nullableText(value.aisle),
@@ -142,13 +142,14 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
 }
 
 function useProductUpdateForm(product: Product, onUpdated: () => void) {
+  const store = useStore();
   return useForm({
     ...productFormOpts,
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
       try {
         const strengthValue = value.strength.trim();
-        await window.offlineStore.updateProduct({
+        await store.updateProduct({
           id: product.id,
           name: value.name.trim(),
           categoryId: value.categoryId,

@@ -8,14 +8,13 @@ import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
 import { TopProducts } from "@/components/dashboard/top-products";
-import { FrameCard } from "@/components/frame-card";
-import { PageContent, PageLayout } from "@/components/page-layout";
+import { FrameCard } from "@/components/shared/frame-card";
+import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { storeErrorMessage } from "@/lib/errors";
+import { useStore } from "@/lib/store";
 
-// Mirrors LOW_STOCK_THRESHOLD in @store/persistence — the store decides which
-// products qualify; the page only names the number in its description.
 const LOW_STOCK_THRESHOLD = 10;
 
 function ChartSkeleton() {
@@ -31,15 +30,16 @@ function ChartSkeleton() {
 
 export function HomePage() {
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
+  const store = useStore();
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(
     () =>
-      window.offlineStore.getDashboardAnalytics().then((nextAnalytics) => {
+      store.getDashboardAnalytics().then((nextAnalytics) => {
         setAnalytics(nextAnalytics);
         setError(null);
       }),
-    [],
+    [store],
   );
 
   useEffect(() => {

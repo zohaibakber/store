@@ -1,4 +1,5 @@
 import { SyncEntityChange, type SyncOperation } from "@store/contracts";
+import { omitManaged } from "@store/contracts/managed-columns";
 import {
   batches,
   categories,
@@ -14,18 +15,7 @@ import * as Effect from "effect/Effect";
 import type { SyncTransaction } from "./database.client";
 import { protocolError } from "./errors";
 import type { SyncActor } from "./model";
-import {
-  booleanValue,
-  commonMutable,
-  integerValue,
-  movementTypeValue,
-  nullableInteger,
-  nullableString,
-  quantityTypeValue,
-  rowOf,
-  signedInteger,
-  stringValue,
-} from "./row-validation";
+import { decodeEntityRow, serverOwnedColumns } from "./row-validation";
 
 const writeFailed = (entity: string) =>
   Effect.fail(protocolError("ENTITY_WRITE_FAILED", `${entity} could not be saved.`));
@@ -45,9 +35,9 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
   operation: SyncOperation,
   change: SyncEntityChange,
 ) {
-  const row = yield* rowOf(change);
   switch (change.entity) {
     case "category": {
+      const row = yield* decodeEntityRow("category", change);
       const [current] = yield* tx
         .select()
         .from(categories)
@@ -59,8 +49,9 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        name: (yield* stringValue(row, "name")).trim(),
-        ...(yield* commonMutable(actor, operation, change, row, current)),
+        ...omitManaged(row),
+        name: row.name.trim(),
+        ...serverOwnedColumns(actor, operation, change, row, current),
       };
       const [saved] = yield* tx
         .insert(categories)
@@ -71,6 +62,7 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
       return canonicalChange(change, saved.rowVersion, saved);
     }
     case "product": {
+      const row = yield* decodeEntityRow("product", change);
       const [current] = yield* tx
         .select()
         .from(products)
@@ -79,16 +71,9 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        name: (yield* stringValue(row, "name")).trim(),
-        categoryId: yield* stringValue(row, "categoryId"),
-        aisle: yield* nullableString(row, "aisle"),
-        composition: yield* nullableString(row, "composition"),
-        strength: yield* nullableString(row, "strength"),
-        unitsPerPack: yield* integerValue(row, "unitsPerPack", 1),
-        packPrice: yield* nullableInteger(row, "packPrice"),
-        unitPrice: yield* nullableInteger(row, "unitPrice"),
-        visible: yield* booleanValue(row, "visible"),
-        ...(yield* commonMutable(actor, operation, change, row, current)),
+        ...omitManaged(row),
+        name: row.name.trim(),
+        ...serverOwnedColumns(actor, operation, change, row, current),
       };
       const [saved] = yield* tx
         .insert(products)
@@ -99,6 +84,7 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
       return canonicalChange(change, saved.rowVersion, saved);
     }
     case "batch": {
+      const row = yield* decodeEntityRow("batch", change);
       const [current] = yield* tx
         .select()
         .from(batches)
@@ -107,12 +93,8 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        productId: yield* stringValue(row, "productId"),
-        batchNumber: yield* nullableString(row, "batchNumber"),
-        expiresAt: yield* nullableInteger(row, "expiresAt"),
-        packQuantity: yield* integerValue(row, "packQuantity"),
-        unitQuantity: yield* integerValue(row, "unitQuantity"),
-        ...(yield* commonMutable(actor, operation, change, row, current)),
+        ...omitManaged(row),
+        ...serverOwnedColumns(actor, operation, change, row, current),
       };
       const [saved] = yield* tx
         .insert(batches)
@@ -123,6 +105,7 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
       return canonicalChange(change, saved.rowVersion, saved);
     }
     case "invoice": {
+      const row = yield* decodeEntityRow("invoice", change);
       const [current] = yield* tx
         .select()
         .from(invoices)
@@ -131,10 +114,8 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        invoiceNumber: yield* integerValue(row, "invoiceNumber", 1),
-        customerName: yield* nullableString(row, "customerName"),
-        total: yield* integerValue(row, "total"),
-        ...(yield* commonMutable(actor, operation, change, row, current)),
+        ...omitManaged(row),
+        ...serverOwnedColumns(actor, operation, change, row, current),
       };
       const [saved] = yield* tx
         .insert(invoices)
@@ -157,6 +138,7 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
       return canonicalChange(change, saved.rowVersion, saved);
     }
     case "invoiceItem": {
+      const row = yield* decodeEntityRow("invoiceItem", change);
       const [current] = yield* tx
         .select()
         .from(invoiceItems)
@@ -168,16 +150,8 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         )
         .limit(1);
       const values = {
-        invoiceId: yield* stringValue(row, "invoiceId"),
-        productId: yield* stringValue(row, "productId"),
-        batchId: yield* stringValue(row, "batchId"),
-        productName: yield* stringValue(row, "productName"),
-        batchNumber: yield* nullableString(row, "batchNumber"),
-        quantity: yield* integerValue(row, "quantity", 1),
-        quantityType: yield* quantityTypeValue(row),
-        baseUnitQuantity: yield* integerValue(row, "baseUnitQuantity", 1),
-        salePrice: yield* integerValue(row, "salePrice"),
-        ...(yield* commonMutable(actor, operation, change, row, current)),
+        ...omitManaged(row),
+        ...serverOwnedColumns(actor, operation, change, row, current),
       };
       const [saved] = yield* tx
         .insert(invoiceItems)
@@ -192,20 +166,15 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         return yield* Effect.fail(
           protocolError("IMMUTABLE_ENTITY", "Stock movements cannot be deleted."),
         );
+      const row = yield* decodeEntityRow("stockMovement", change);
       const values = {
+        ...omitManaged(row),
         id: change.entityId,
-        productId: yield* stringValue(row, "productId"),
-        batchId: yield* stringValue(row, "batchId"),
-        invoiceId: yield* nullableString(row, "invoiceId"),
-        type: yield* movementTypeValue(row),
-        packDelta: yield* signedInteger(row, "packDelta"),
-        unitDelta: yield* signedInteger(row, "unitDelta"),
-        note: yield* nullableString(row, "note"),
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
         deviceId: operation.deviceId,
         operationId: operation.operationId,
-        createdAt: (yield* nullableInteger(row, "createdAt")) ?? operation.occurredAt,
+        createdAt: row.createdAt ?? operation.occurredAt,
       };
       const inserted = yield* tx
         .insert(stockMovements)

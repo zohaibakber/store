@@ -17,9 +17,6 @@ export const reconcileBatch = Effect.fn("SyncDatabase.reconcileBatch")(function*
     .select({ rowVersion: batches.rowVersion })
     .from(batches)
     .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batchId)))
-    // Was `SELECT ... FOR UPDATE`. SQLite has no row locks, and a Durable
-    // Object serializes requests and owns its storage, so there is no concurrent
-    // writer to lock against.
     .limit(1);
   if (!current)
     return yield* Effect.fail(

@@ -1,17 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
+import { ProductForm, useProductCreateForm } from "@/components/products/form";
 import {
   PageAction,
   PageContent,
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
-import { ProductForm, useProductCreateForm } from "@/components/products/form";
+} from "@/components/shared/page-layout";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/new")({
-  loader: () => window.offlineStore.listCategories(),
+  loader: ({ context }) => context.store.listCategories(),
   component: NewProductPage,
 });
 

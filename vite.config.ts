@@ -1,6 +1,9 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   fmt: {
     ignorePatterns: [
       ".repos/**",
@@ -20,7 +23,7 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   test: {
-    include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
+    include: ["apps/*/test/**/*.test.{ts,tsx}", "packages/*/test/**/*.test.ts"],
     testTimeout: 15_000,
   },
   lint: {

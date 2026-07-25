@@ -5,6 +5,7 @@ import { createContext, use, useState, type ReactNode } from "react";
 import { toastManager } from "@/components/ui/toast";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
+import { useStore } from "@/lib/store";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
@@ -59,6 +60,7 @@ function UploadProvider({
   categories: readonly Category[];
 }) {
   const router = useRouter();
+  const store = useStore();
   const isOnline = useOnline();
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
@@ -144,7 +146,7 @@ function UploadProvider({
       const generalCategory =
         categories.find((category) => category.id === "general") ?? categories[0];
       if (!generalCategory) throw new Error("Create a category before importing inventory.");
-      await window.offlineStore.importInventory({
+      await store.importInventory({
         categoryId: generalCategory.id,
         lines: changes.map((change) => ({
           name: change.name,
@@ -181,7 +183,7 @@ function UploadProvider({
       });
     }
     try {
-      const syncStatus = await window.offlineStore.sync();
+      const syncStatus = await store.sync();
       if (syncStatus.phase === "error")
         toastManager.add({
           title: "Inventory imported locally; synchronization will retry automatically.",

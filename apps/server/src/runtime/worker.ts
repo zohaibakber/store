@@ -35,9 +35,6 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
     c.set("authHandler", (request) =>
       auth.handler(withElectronOrigin(request, c.env.ELECTRON_PROTOCOL)),
     );
-    // Sync runs inside the organization's Durable Object, which owns that
-    // organization's SQLite database. Sharding on organizationId means one
-    // shop's sync never serializes behind another's.
     c.set("runSync", (actor: SyncActor, request) =>
       exchangeWithOrganizationStore(c.env.ORGANIZATION_STORE, actor, request),
     );

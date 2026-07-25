@@ -8,16 +8,16 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 
-import { FrameCard } from "@/components/frame-card";
+import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
+import { ProductVisibilityCard } from "@/components/products/visibility";
+import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
   PageContent,
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
-import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
-import { ProductVisibilityCard } from "@/components/products/visibility";
+} from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -32,13 +32,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { formatDate, formatPrice } from "@/lib/format";
+import { useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/products/$productId")({
-  loader: async ({ params }) => {
+  loader: async ({ context, params }) => {
     const input = { id: params.productId };
     const [product, movements] = await Promise.all([
-      window.offlineStore.getProduct(input),
-      window.offlineStore.listStockMovements(input),
+      context.store.getProduct(input),
+      context.store.listStockMovements(input),
     ]);
     return { product, movements };
   },
@@ -75,10 +76,11 @@ function ProductDetailPage() {
   const { product, movements } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
+  const store = useStore();
 
   const deleteProduct = async () => {
     try {
-      await window.offlineStore.deleteProduct({ id: product.id });
+      await store.deleteProduct({ id: product.id });
       toastManager.add({ title: `${product.name} deleted`, type: "success" });
       await navigate({ to: "/products" });
       await router.invalidate();

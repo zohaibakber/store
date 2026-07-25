@@ -3,15 +3,15 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 
-import { DataTable, DataTableFilter } from "@/components/data-table";
 import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
+import { DataTable, DataTableFilter } from "@/components/shared/data-table";
 import {
   PageAction,
   PageContent,
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
+} from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
 function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {

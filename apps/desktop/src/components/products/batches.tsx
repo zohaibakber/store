@@ -12,9 +12,9 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
 
-import { DatePicker } from "@/components/date-picker";
-import { FormFieldError } from "@/components/form-field-error";
-import { FrameCard } from "@/components/frame-card";
+import { DatePicker } from "@/components/shared/date-picker";
+import { FormFieldError } from "@/components/shared/form-field-error";
+import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import {
   type ChartConfig,
@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/sheet";
 import { toastManager } from "@/components/ui/toast";
 import { formatDate } from "@/lib/format";
+import { useStore } from "@/lib/store";
 
 const parseISODate = (value: string): Date | undefined => {
   const [year, month, day] = value.split("-").map(Number);
@@ -78,6 +79,7 @@ const batchFormSchema = z
 
 function AddBatchDialog({ productId }: { productId: string }) {
   const router = useRouter();
+  const store = useStore();
   const [open, setOpen] = useState(false);
   const form = useForm({
     defaultValues: {
@@ -89,7 +91,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
     validators: { onSubmit: batchFormSchema },
     onSubmit: async ({ value }) => {
       try {
-        await window.offlineStore.createBatch({
+        await store.createBatch({
           productId,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: value.expiresAt ? Date.parse(value.expiresAt) : null,

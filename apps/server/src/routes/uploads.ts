@@ -6,7 +6,6 @@ import { invoiceAiClient } from "../ai/invoice-ai";
 import type { AppEnv } from "../http/context";
 import { publicError } from "../http/errors";
 
-/** Mirrors what the desktop uploader accepts before it sends anything. */
 const isInvoice = (name: string) => /\.(csv|pdf)$/i.test(name);
 
 const MAX_FILES = 10;

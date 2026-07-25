@@ -1,11 +1,11 @@
 import { Building01Icon, PaintBoardIcon, UserIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { FrameCard } from "@/components/frame-card";
-import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/page-layout";
 import { AccountSettings } from "@/components/settings/account-settings";
 import { OrganizationSettings } from "@/components/settings/organization-settings";
 import { ThemePicker } from "@/components/settings/theme-picker";
+import { FrameCard } from "@/components/shared/frame-card";
+import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/shared/page-layout";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 
 const tabs = [

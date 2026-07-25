@@ -1,70 +1,31 @@
-import type {
-  Batch,
-  Category,
-  CreateBatchInput,
-  CreateCategoryInput,
-  CreateInvoiceInput,
-  CreateProductInput,
-  DashboardAnalytics,
-  ImportInventoryInput,
-  ImportInventoryResult,
-  Invoice,
-  Product,
-  SearchProductsInput,
-  StockMovement,
-  SyncStatus,
-  UpdateProductInput,
-} from "@store/contracts";
+import type { SyncStatus } from "@store/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Stream from "effect/Stream";
 
-import { makeAnalyticsStore } from "./analytics-store";
-import { initializeDatabase } from "./bootstrap";
+import type { AnalyticsStore } from "./analytics/store";
+import { makeAnalyticsStore } from "./analytics/store";
 import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
-import { clientLayer, makeDatabase } from "./database";
-import {
-  InvoiceNotFoundError,
-  PersistenceError,
-  ProductNotFoundError,
-  type StoreError,
-} from "./errors";
-import { makeInvoiceStore } from "./invoice-store";
-import { makeProductStore } from "./product-store";
-import { makeSyncEngine } from "./sync-engine";
+import { initializeDatabase } from "./database/bootstrap";
+import { clientLayer, makeDatabase } from "./database/client";
+import { InvoiceNotFoundError, PersistenceError, ProductNotFoundError } from "./errors";
+import type { InvoiceStore } from "./inventory/invoice-store";
+import { makeInvoiceStore } from "./inventory/invoice-store";
+import type { ProductStore } from "./inventory/product-store";
+import { makeProductStore } from "./inventory/product-store";
+import { makeSyncEngine } from "./sync/engine";
+
+interface SyncMembers {
+  readonly getSyncStatus: Effect.Effect<SyncStatus>;
+  readonly syncStatusChanges: Stream.Stream<SyncStatus>;
+  readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
+}
 
 export class OfflineStore extends Context.Service<
   OfflineStore,
-  {
-    readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
-    readonly createCategory: (
-      input: CreateCategoryInput,
-    ) => Effect.Effect<Category, PersistenceError>;
-    readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
-    readonly searchProducts: (
-      input: SearchProductsInput,
-    ) => Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
-    readonly getProduct: (id: string) => Effect.Effect<Product, StoreError>;
-    readonly createProduct: (input: CreateProductInput) => Effect.Effect<Product, PersistenceError>;
-    readonly updateProduct: (input: UpdateProductInput) => Effect.Effect<Product, StoreError>;
-    readonly deleteProduct: (id: string) => Effect.Effect<void, StoreError>;
-    readonly createBatch: (input: CreateBatchInput) => Effect.Effect<Batch, StoreError>;
-    readonly importInventory: (
-      input: ImportInventoryInput,
-    ) => Effect.Effect<ImportInventoryResult, StoreError>;
-    readonly listStockMovements: (
-      productId: string,
-    ) => Effect.Effect<ReadonlyArray<StockMovement>, PersistenceError>;
-    readonly listInvoices: Effect.Effect<ReadonlyArray<Invoice>, PersistenceError>;
-    readonly getInvoice: (id: string) => Effect.Effect<Invoice, StoreError>;
-    readonly createInvoice: (input: CreateInvoiceInput) => Effect.Effect<Invoice, PersistenceError>;
-    readonly getDashboardAnalytics: Effect.Effect<DashboardAnalytics, PersistenceError>;
-    readonly getSyncStatus: Effect.Effect<SyncStatus>;
-    readonly syncStatusChanges: Stream.Stream<SyncStatus>;
-    readonly sync: Effect.Effect<SyncStatus, PersistenceError>;
-  }
+  ProductStore & InvoiceStore & AnalyticsStore & SyncMembers
 >()("@store/persistence/OfflineStore") {}
 
 const make = (config: PersistenceConfig) =>
@@ -90,6 +51,4 @@ const make = (config: PersistenceConfig) =>
 export const layer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(Layer.provide(clientLayer(config)));
 
-// Keep the error classes referenced by the public service shape available to
-// generated declaration tools even when consumers import only this module.
 export type PublicStoreErrors = PersistenceError | ProductNotFoundError | InvoiceNotFoundError;

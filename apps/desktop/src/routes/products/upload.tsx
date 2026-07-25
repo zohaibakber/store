@@ -9,7 +9,7 @@ import {
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
+} from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { UploadAttachmentList } from "@/components/uploads/attachment-list";
@@ -18,10 +18,10 @@ import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
 
 export const Route = createFileRoute("/products/upload")({
-  loader: async () => {
+  loader: async ({ context }) => {
     const [products, categories] = await Promise.all([
-      window.offlineStore.listProducts(),
-      window.offlineStore.listCategories(),
+      context.store.listProducts(),
+      context.store.listCategories(),
     ]);
     return { products, categories };
   },

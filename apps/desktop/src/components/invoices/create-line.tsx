@@ -2,13 +2,6 @@ import { ArrowDown01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import {
-  ControlGroup,
-  ControlGroupAddon,
-  ControlGroupNumberInput,
-  ControlGroupText,
-  controlGroupSelectTrigger,
-} from "@/components/control-group";
-import {
   AUTO_BATCH,
   lineTotal,
   paisaToRupees,
@@ -16,6 +9,13 @@ import {
   useInvoiceCreate,
   type SaleLine,
 } from "@/components/invoices/create-context";
+import {
+  ControlGroup,
+  ControlGroupAddon,
+  ControlGroupNumberInput,
+  ControlGroupText,
+  controlGroupSelectTrigger,
+} from "@/components/shared/control-group";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -41,9 +41,6 @@ const pricingItems = [
   { label: "Discount", value: "discount" },
 ] as const;
 
-// The row shows what a cashier needs to ring up an item — name, quantity and
-// its unit, total, remove. Batch and pricing overrides live in the collapsed
-// panel so the common path stays a single line.
 function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLine }) {
   const {
     actions: { removeLine, setLineQuantityUnit, updateLine },

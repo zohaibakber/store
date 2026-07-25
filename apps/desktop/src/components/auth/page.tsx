@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { WindowControls } from "@/components/app/window-controls";
 import { AuthBrand } from "@/components/auth/brand";
 import { AuthModeToggle } from "@/components/auth/mode-toggle";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -9,7 +10,6 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { WindowControls } from "@/components/window-controls";
 import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
 
 function formValue(form: FormData, key: string) {

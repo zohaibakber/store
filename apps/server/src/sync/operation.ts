@@ -8,7 +8,7 @@ import type { SyncTransaction } from "./database.client";
 import { protocolError } from "./errors";
 import { reconcileBatch } from "./inventory";
 import type { SyncActor } from "./model";
-import { rowOf, stringValue } from "./row-validation";
+import { decodeEntityRow } from "./row-validation";
 
 const dependencyOrder = {
   category: 0,
@@ -30,11 +30,6 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
   actor: SyncActor,
   operation: SyncOperation,
 ) {
-  // Under Postgres this began with `pg_advisory_xact_lock` to serialize a
-  // device's operation sequence. A Durable Object processes one request at a
-  // time and owns its storage exclusively, so the race that lock defended
-  // against cannot occur; the sequence check below plus the inbox primary key
-  // carry idempotency on their own.
   const [sequenceReceipt] = yield* tx
     .select({ operationId: syncInbox.operationId })
     .from(syncInbox)
@@ -102,8 +97,8 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
     canonicalChanges.set(changeKey(canonicalChange), canonicalChange);
     if (canonicalChange.entity === "batch") affectedBatchIds.add(canonicalChange.entityId);
     if (canonicalChange.entity === "stockMovement") {
-      const row = yield* rowOf(canonicalChange);
-      affectedBatchIds.add(yield* stringValue(row, "batchId"));
+      const row = yield* decodeEntityRow("stockMovement", canonicalChange);
+      affectedBatchIds.add(row.batchId);
     }
   }
 

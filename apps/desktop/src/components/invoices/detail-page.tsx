@@ -10,7 +10,7 @@ import {
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
+} from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";

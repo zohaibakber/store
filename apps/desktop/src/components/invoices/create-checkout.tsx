@@ -1,10 +1,10 @@
+import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   ControlGroup,
   ControlGroupAddon,
   ControlGroupNumberInput,
   ControlGroupText,
-} from "@/components/control-group";
-import { useInvoiceCreate } from "@/components/invoices/create-context";
+} from "@/components/shared/control-group";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";

@@ -5,6 +5,7 @@ import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { decodeStoreError, storeErrorMessage } from "@/lib/errors";
+import { useStore } from "@/lib/store";
 
 const AUTO_BATCH = "auto";
 
@@ -131,6 +132,7 @@ function InvoiceCreateProvider({
   products: readonly Product[];
 }) {
   const navigate = useNavigate();
+  const store = useStore();
   const [customerName, setCustomerName] = useState("");
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
@@ -202,7 +204,7 @@ function InvoiceCreateProvider({
 
   const completeSale = async () => {
     try {
-      const invoice = await window.offlineStore.createInvoice({
+      const invoice = await store.createInvoice({
         customerName: customerName.trim() || null,
         items: lines.map((line) => ({
           productId: line.product.id,

@@ -34,9 +34,6 @@ const messageFrom = (error: unknown) => {
   return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 };
 
-// The main process settles the session before the window loads, so resolving it
-// once before the first React render means the initial paint is already correct
-// and the sign-in screen never flashes for signed-in users.
 let initialSnapshot: AuthSnapshot | null = null;
 let initialError: string | null = null;
 

@@ -9,7 +9,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/persistence/src"
+    "test": "vitest run --root ../.. packages/persistence/test"
   },
   "dependencies": {
     "@effect/sql-libsql": "catalog:",

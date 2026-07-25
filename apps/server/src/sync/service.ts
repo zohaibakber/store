@@ -4,13 +4,13 @@ import {
   type SyncRequest,
   type SyncResponse,
 } from "@store/contracts";
+import { operationPayloadHash } from "@store/contracts/operation-hash";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { SyncDatabase } from "./database.service";
 import { protocolError, type SyncDatabaseError, type SyncProtocolError } from "./errors";
-import { operationPayloadHash } from "./hash";
 import type { SyncActor } from "./model";
 
 export type { SyncActor } from "./model";

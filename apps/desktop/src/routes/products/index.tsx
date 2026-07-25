@@ -2,6 +2,8 @@ import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
+import { ProductAnalytics } from "@/components/products/analytics";
+import { useProductsTable } from "@/components/products/table";
 import {
   DataTable,
   DataTableContent,
@@ -9,20 +11,18 @@ import {
   DataTableFooter,
   DataTablePagination,
   DataTableViewOptions,
-} from "@/components/data-table";
+} from "@/components/shared/data-table";
 import {
   PageAction,
   PageContent,
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
-import { ProductAnalytics } from "@/components/products/analytics";
-import { useProductsTable } from "@/components/products/table";
+} from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/")({
-  loader: () => window.offlineStore.listProducts(),
+  loader: ({ context }) => context.store.listProducts(),
   component: ProductsPage,
 });
 
@@ -31,8 +31,6 @@ function ProductsPage() {
   const navigate = useNavigate();
   const table = useProductsTable(products);
 
-  // The provider wraps the whole page so the search box and column toggles can
-  // sit in the page header while still reaching the table's context.
   return (
     <DataTable
       onRowClick={(row) => navigate({ to: "/products/$productId", params: { productId: row.id } })}

@@ -9,7 +9,6 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
 
-// https://vitejs.dev/config/
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
@@ -46,15 +45,8 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] }),
     electron({
       main: {
-        // Shortcut of `build.lib.entry`.
         entry: "electron/main.ts",
-        // libSQL ships a prebuilt N-API binary (`@libsql/<platform>/index.node`)
-        // that is resolved at runtime, so it must stay external rather than being
-        // folded into main.js — a bundler cannot inline a native addon. The
-        // platform packages are optional dependencies, hence the broad pattern.
-        //
-        // electron-builder must also keep these unpacked from the asar archive;
-        // see the `asarUnpack` entry in electron-builder.json.
+        // Native libSQL packages must remain external and unpacked from asar.
         vite: {
           build: {
             rolldownOptions: {
@@ -64,13 +56,8 @@ export default defineConfig({
         },
       },
       preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
         input: path.join(__dirname, "electron/preload.ts"),
       },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
       renderer:
         process.env.NODE_ENV === "test"
           ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808

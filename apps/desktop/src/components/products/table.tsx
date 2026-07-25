@@ -8,23 +8,19 @@ import {
   createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
-  filterFns as builtInFilterFns,
   type FilterFn,
+  metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
-  sortFns,
+  sortFn_alphanumeric,
+  sortFn_text,
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
 
-import { DataTableColumnHeader } from "@/components/data-table";
+import { DataTableColumnHeader } from "@/components/shared/data-table";
 import { formatDate, formatPrice } from "@/lib/format";
 
-// v9: features, row models and fn registries are stitched together statically
-// so the bundle only carries what this table uses.
-
-// Fuzzy-ranks name and composition together so a search matches on either
-// field and tolerates typos, per TanStack's fuzzy filtering guide.
 const fuzzyProductFilter: FilterFn<any, Product> = (row, _columnId, filterValue) => {
   const { passed } = rankItem(row.original, String(filterValue ?? ""), {
     accessors: [
@@ -43,9 +39,12 @@ const features = tableFeatures({
   filteredRowModel: createFilteredRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
   sortedRowModel: createSortedRowModel(),
-  filterFns: { ...builtInFilterFns, fuzzy: fuzzyProductFilter },
-  sortFns,
-  columnMeta: {} as { label?: string },
+  filterFns: { fuzzy: fuzzyProductFilter },
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    text: sortFn_text,
+  },
+  columnMeta: metaHelper<{ label?: string }>(),
 });
 
 const columnHelper = createColumnHelper<typeof features, Product>();
@@ -116,11 +115,6 @@ const columns = columnHelper.columns([
     meta: { label: "Updated" },
   }),
 ]);
-/**
- * The table instance lives in the page rather than a self-contained component:
- * the filter and column-visibility controls now sit in the page header, which
- * is outside the table's markup but must share its context.
- */
 export function useProductsTable(products: readonly Product[]) {
   return useTable({
     features,

@@ -11,14 +11,6 @@ import { makeSyncDrizzle } from "./database.client";
 import { SyncDatabase } from "./database.service";
 import { syncProgram, syncServiceLayer, type SyncActor } from "./service";
 
-/**
- * Builds the sync runtime over one organization's Durable Object storage.
- *
- * Migrations run as part of building the database layer rather than at a
- * separate startup boundary: a Durable Object has no startup event, and the
- * object may be created on any request. `migrate` records applied migrations in
- * its own table, so repeated construction is cheap and idempotent.
- */
 export const makeSyncRuntime = (storage: DurableObjectStorage) => {
   const sqliteLayer = SqliteClient.layer({ storage });
   const databaseLayer = Layer.effect(

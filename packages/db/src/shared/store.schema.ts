@@ -11,9 +11,6 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 
-// SQLite INTEGER is already a signed 64-bit value, so epoch milliseconds and
-// money in paisa need no widening. This also removes the Postgres hazard where
-// a bigint aggregate came back from the driver as a string.
 export const epochMilliseconds = () => integer({ mode: "number" });
 
 const timestamps = {
@@ -37,6 +34,18 @@ const mutableSyncMetadata = {
   operationId: text().notNull(),
   rowVersion: epochMilliseconds().notNull().default(1),
 };
+
+export type StoreManagedColumn =
+  | "id"
+  | "actorUserId"
+  | keyof typeof timestamps
+  | keyof typeof mutableSyncMetadata;
+export const storeManagedColumnNames: ReadonlyArray<StoreManagedColumn> = [
+  "id",
+  "actorUserId",
+  ...(Object.keys(timestamps) as ReadonlyArray<keyof typeof timestamps>),
+  ...(Object.keys(mutableSyncMetadata) as ReadonlyArray<keyof typeof mutableSyncMetadata>),
+];
 
 export const categories = sqliteTable(
   "categories",
@@ -146,8 +155,6 @@ export const invoices = sqliteTable(
   ],
 );
 
-// The counter is internal database state rather than a synced entity. Updating
-// one row per organization makes invoice allocation atomic within a database.
 export const invoiceCounters = sqliteTable(
   "invoice_counters",
   {
@@ -159,9 +166,6 @@ export const invoiceCounters = sqliteTable(
   ],
 );
 
-// Line items snapshot the product name, batch number, sale unit, and price at
-// the time of sale so invoices stay accurate when the catalog changes later. A
-// sale line that spans several batches is stored as one row per batch taken from.
 export const invoiceItems = sqliteTable(
   "invoice_items",
   {
@@ -202,9 +206,6 @@ export const invoiceItems = sqliteTable(
   ],
 );
 
-// Stock movements are append-only ledger facts. Several movements can share an
-// operation id (for example, opening a pack and selling loose units), so the
-// operation id is intentionally indexed but not unique here.
 export const stockMovements = sqliteTable(
   "stock_movements",
   {

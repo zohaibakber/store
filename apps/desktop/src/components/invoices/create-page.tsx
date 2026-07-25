@@ -9,7 +9,7 @@ import {
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
+} from "@/components/shared/page-layout";
 
 function InvoiceCreatePage({ products }: { products: readonly Product[] }) {
   return (

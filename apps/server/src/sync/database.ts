@@ -32,9 +32,6 @@ const constraintProtocolError = (cause: unknown) => {
   return undefined;
 };
 
-// The layer that provides this lives in `runtime.ts`, which owns the Durable
-// Object storage handle. Taking the client as an argument keeps this file free
-// of driver concerns and lets tests supply their own.
 export const makeDatabase = (db: SyncDatabaseClient) => {
   const exchange = Effect.fn("SyncDatabase.exchange")(
     function* (actor: SyncActor, request: SyncRequest) {

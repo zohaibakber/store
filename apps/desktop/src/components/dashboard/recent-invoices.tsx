@@ -4,7 +4,7 @@ import type { DashboardAnalytics } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link } from "@tanstack/react-router";
 
-import { FrameCard } from "@/components/frame-card";
+import { FrameCard } from "@/components/shared/frame-card";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Empty,

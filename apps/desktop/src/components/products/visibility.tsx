@@ -1,7 +1,7 @@
 import type { Product } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 
-import { FrameCard } from "@/components/frame-card";
+import { FrameCard } from "@/components/shared/frame-card";
 import {
   Select,
   SelectContent,
@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { useStore } from "@/lib/store";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible" },
@@ -18,6 +19,7 @@ const visibilityOptions = [
 ] as const;
 
 export function ProductVisibilityCard({ product }: { product: Product }) {
+  const store = useStore();
   const router = useRouter();
 
   const setVisible = async (next: boolean) => {
@@ -31,7 +33,7 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
         batches: _batches,
         ...rest
       } = product;
-      await window.offlineStore.updateProduct({ id, ...rest, visible: next });
+      await store.updateProduct({ id, ...rest, visible: next });
       toastManager.add({
         title: next ? "Product is visible to customers" : "Product hidden from customers",
         type: "success",

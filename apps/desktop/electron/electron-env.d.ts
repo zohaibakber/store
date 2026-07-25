@@ -2,26 +2,11 @@
 
 declare namespace NodeJS {
   interface ProcessEnv {
-    /**
-     * The built directory structure
-     *
-     * ```tree
-     * ├─┬─┬ dist
-     * │ │ └── index.html
-     * │ │
-     * │ ├─┬ dist-electron
-     * │ │ ├── main.js
-     * │ │ └── preload.js
-     * │
-     * ```
-     */
     APP_ROOT: string;
-    /** /dist/ or /public/ */
     VITE_PUBLIC: string;
   }
 }
 
-// Used in Renderer process, expose in `preload.ts`
 interface Window {
   offlineStore: import("@store/contracts").OfflineStoreApi;
   auth: {
@@ -48,7 +33,9 @@ interface Window {
     check: () => Promise<void>;
     download: () => Promise<void>;
     install: () => void;
-    onEvent: (callback: (event: import("./updater").UpdaterEvent) => void) => () => void;
+    onEvent: (
+      callback: (event: import("@store/contracts/updater").UpdaterEvent) => void,
+    ) => () => void;
   };
   windowControls: {
     minimize: () => void;

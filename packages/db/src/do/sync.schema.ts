@@ -10,12 +10,6 @@ import {
 import { epochMilliseconds, tenantId } from "../shared/store.schema";
 import type { SyncEntity, SyncEntityChangePayload } from "../shared/sync";
 
-// Server-side operation receipt. The payload hash makes retries idempotent and
-// rejects operation-id reuse with different content.
-//
-// Under Postgres this was additionally guarded by `pg_advisory_xact_lock`. A
-// Durable Object executes one request at a time, so the primary key below is
-// sufficient on its own — see plans/021-dead-code-register.md.
 export const syncInbox = sqliteTable(
   "sync_inbox",
   {
@@ -41,14 +35,9 @@ export const syncInbox = sqliteTable(
   ],
 );
 
-// Server-side append-only feed. Cursors are scoped to an organization.
 export const syncChangeLog = sqliteTable(
   "sync_change_log",
   {
-    // Was `bigserial` under Postgres. Here the cursor IS the primary key, so
-    // SQLite's INTEGER PRIMARY KEY AUTOINCREMENT applies directly — unlike the
-    // client outbox, where `operationId` occupies the primary key and the
-    // sequence has to be assigned by the application.
     cursor: integer().primaryKey({ autoIncrement: true }),
     organizationId: tenantId(),
     operationId: text().notNull(),

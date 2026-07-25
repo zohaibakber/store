@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 
+import { ProductForm, useProductUpdateForm } from "@/components/products/form";
 import {
   PageAction,
   PageContent,
@@ -7,15 +8,14 @@ import {
   PageHeader,
   PageHeading,
   PageLayout,
-} from "@/components/page-layout";
-import { ProductForm, useProductUpdateForm } from "@/components/products/form";
+} from "@/components/shared/page-layout";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
-  loader: async ({ params }) => {
+  loader: async ({ context, params }) => {
     const [product, categories] = await Promise.all([
-      window.offlineStore.getProduct({ id: params.productId }),
-      window.offlineStore.listCategories(),
+      context.store.getProduct({ id: params.productId }),
+      context.store.listCategories(),
     ]);
     return { product, categories };
   },

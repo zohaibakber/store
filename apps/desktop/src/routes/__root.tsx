@@ -1,24 +1,28 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
-import { AppSidebar } from "@/components/app-sidebar";
+import { CommandMenuProvider } from "@/components/app/command-menu";
+import { NotFound } from "@/components/app/not-found";
+import { AppSidebar } from "@/components/app/sidebar";
+import { SiteHeader } from "@/components/app/site-header";
+import { CreateOrganizationPage } from "@/components/auth/create-organization-page";
 import { AuthPage } from "@/components/auth/page";
-import { CommandMenuProvider } from "@/components/command-menu";
-import { CreateOrganizationPage } from "@/components/create-organization-page";
-import { NotFound } from "@/components/not-found";
-import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import type { Store } from "@/lib/store";
 
-export const Route = createRootRoute({
+export interface RouterContext {
+  readonly store: Store;
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   notFoundComponent: NotFound,
 });
 
 export function RootLayout() {
-  // Mounted at the root so update toasts also reach the auth screen.
   useAppUpdater();
   return (
     <AuthProvider>
@@ -31,8 +35,6 @@ export function RootLayout() {
 
 function AuthenticatedLayout() {
   const { snapshot, loading, error } = useAuth();
-  // Hide the previous tenant while its active route is being reloaded against
-  // the newly activated organization.
   if (loading) return null;
   if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;

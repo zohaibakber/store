@@ -1,11 +1,5 @@
 import type { ConvertedDocument, InvoiceAiClient } from "@store/services";
 
-/**
- * Llama 4 Scout is the Workers AI text model that supports `response_format`
- * with a JSON schema, which is what constrains extraction output. Model choice
- * lives here rather than in `@store/services` because only this package has the
- * binding types that validate the name.
- */
 const INVOICE_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 
 export const invoiceAiClient = (ai: Ai): InvoiceAiClient => ({
