@@ -38,7 +38,13 @@
     },
   ],
   "vars": {
-    "AUTH_TRUSTED_ORIGINS": "http://localhost:5173",
+    // Extra *browser* origins to trust for CORS and Better Auth's origin
+    // check, comma-separated. Empty is the correct production value: the
+    // Worker's own origin and the Electron protocol origin are trusted
+    // independently. For browser-based local development set this in
+    // apps/server/.dev.vars instead, which wrangler dev reads and which
+    // overrides this file.
+    "AUTH_TRUSTED_ORIGINS": "",
     "ELECTRON_PROTOCOL": "com.tabaaq.desktop",
   },
   "observability": {

@@ -3,7 +3,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   PageAction,
   PageContent,
-  PageDescription,
   PageHeader,
   PageHeading,
   PageLayout,
@@ -24,9 +23,6 @@ function NewProductPage() {
     <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
         <PageHeading>Add product</PageHeading>
-        <PageDescription>
-          Stored locally first and included in the next sync. Prices are in Pakistani rupees.
-        </PageDescription>
         <PageAction className="flex items-center gap-2">
           <Link className={buttonVariants({ variant: "outline" })} to="/products">
             Cancel
@@ -41,7 +37,7 @@ function NewProductPage() {
         </PageAction>
       </PageHeader>
 
-      <PageContent>
+      <PageContent className="mt-4">
         <ProductForm categories={categories} form={form} formId="new-product-form" />
       </PageContent>
     </PageLayout>
