@@ -39,5 +39,4 @@ release
 .dev.vars.*
 !.dev.vars.example
 
-plans/
 .claude/worktrees/
