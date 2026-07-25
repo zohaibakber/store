@@ -6,6 +6,8 @@
   "exports": {
     "./auth.database": "./src/remote/auth.database.ts",
     "./auth.schema": "./src/remote/auth.schema.ts",
+    "./do/relations": "./src/do/relations.ts",
+    "./do/schema": "./src/do/schema.ts",
     "./local/relations": "./src/local/relations.ts",
     "./local/schema": "./src/local/schema.ts",
     "./remote/relations": "./src/remote/relations.ts",
@@ -15,7 +17,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit && node scripts/drizzle-kit.cjs check --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.remote.config.ts",
-    "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.remote.config.ts",
+    "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.do.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.remote.config.ts",
     "db:migrate": "node scripts/drizzle-kit.cjs migrate --config drizzle.remote.config.ts"
   },
   "dependencies": {
