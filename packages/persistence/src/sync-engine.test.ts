@@ -2,21 +2,38 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
 import {
   SyncEntityChange,
   SyncResponse,
   SyncServerChange,
   type SyncRequest,
 } from "@store/contracts";
-import { products } from "@store/db/local/schema";
+import { products, syncOutbox } from "@store/db/local/schema";
+import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { expect, test } from "vitest";
 
+import { databaseFile } from "./database";
 import { layer, SyncTransportError, type OfflineStore, type PersistenceError } from "./index";
+import { QUARANTINE_ATTEMPTS, retryDelayMillis } from "./sync-engine";
 import { migrationsFolder, readOutbox, store } from "./test-support";
+
+// Directly manipulates the persisted `nextAttemptAt` deadline so tests can
+// cross a backoff window without sleeping — real waits are explicitly out of
+// scope for this suite. Opens the store database a second time, mirroring
+// `readOutbox` in test-support.
+const setOutboxNextAttemptAt = (dataDir: string, nextAttemptAt: number | null) =>
+  Effect.gen(function* () {
+    const database = yield* LibsqlDrizzle.makeWithDefaults();
+    yield* database.update(syncOutbox).set({ nextAttemptAt });
+  }).pipe(
+    Effect.provide(LibsqlClient.layer({ url: `file:${databaseFile(dataDir)}`, intMode: "number" })),
+    Effect.runPromise,
+  );
 
 const responseFor = (request: SyncRequest): SyncResponse => ({
   organizationId: request.organizationId,
@@ -475,6 +492,220 @@ test("a newer remote product change replaces the local row", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("retryDelayMillis grows with attemptCount and never exceeds the cap", () => {
+  expect(retryDelayMillis(1)).toBe(1_000);
+  expect(retryDelayMillis(2)).toBe(2_000);
+  expect(retryDelayMillis(3)).toBe(4_000);
+  expect(retryDelayMillis(4)).toBe(8_000);
+  expect(retryDelayMillis(0)).toBe(1_000);
+  expect(retryDelayMillis(-1)).toBe(1_000);
+  expect(retryDelayMillis(30)).toBe(5 * 60 * 1_000);
+  expect(retryDelayMillis(QUARANTINE_ATTEMPTS)).toBeLessThanOrEqual(5 * 60 * 1_000);
+});
+
+test("a failed exchange sets a future nextAttemptAt and increments attemptCount", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-backoff-"));
+  const dataDir = path.join(directory, "data");
+  const transport = {
+    exchange: () =>
+      Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
+  };
+  const runtime = ManagedRuntime.make(
+    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  );
+
+  try {
+    await runtime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Backoff candidate",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
+    );
+    const before = Date.now();
+    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+      _tag: "PersistenceError",
+    });
+    await runtime.dispose();
+
+    const outbox = await readOutbox(dataDir);
+    expect(outbox.length).toBeGreaterThan(0);
+    for (const operation of outbox) {
+      expect(operation.attemptCount).toBeGreaterThan(0);
+      expect(operation.nextAttemptAt).not.toBeNull();
+      expect(operation.nextAttemptAt as number).toBeGreaterThan(before);
+    }
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("an operation that is not yet due is not resent", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-backoff-"));
+  const dataDir = path.join(directory, "data");
+  // Sync always exchanges, because it pulls server changes even when it has
+  // nothing to push. So "not resent" is a claim about the *contents* of the
+  // request, not about whether a request happens: the second exchange must
+  // carry zero operations. Only the first attempt fails, so the second cycle
+  // can reach a clean `idle` and have its request inspected.
+  // Gated on a flag rather than a request count: a single sync cycle retries
+  // the transport internally, so counting requests would let the retry succeed
+  // and the first cycle would never reach its failure.
+  const requests: Array<SyncRequest> = [];
+  let offline = true;
+  const transport = {
+    exchange: (request: SyncRequest) => {
+      requests.push(request);
+      return offline
+        ? Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true }))
+        : Effect.succeed(responseFor(request));
+    },
+  };
+  const runtime = ManagedRuntime.make(
+    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  );
+
+  try {
+    await runtime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Not yet due",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
+    );
+    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+      _tag: "PersistenceError",
+    });
+    const requestsAfterFirstFailure = requests.length;
+    expect(requestsAfterFirstFailure).toBeGreaterThan(0);
+    expect(requests[0]?.operations.length).toBeGreaterThan(0);
+
+    // Push the deadline far into the future so the second cycle below has
+    // nothing due, then invoke sync again immediately.
+    await setOutboxNextAttemptAt(dataDir, Date.now() + 60_000);
+    offline = false;
+    await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
+      phase: "idle",
+    });
+
+    // The pull still happened; the withheld operation is what matters.
+    expect(requests.length).toBe(requestsAfterFirstFailure + 1);
+    expect(requests.at(-1)?.operations).toEqual([]);
+
+    const outbox = await readOutbox(dataDir);
+    expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("status reports the stuck queue after a failure", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-status-"));
+  const dataDir = path.join(directory, "data");
+  const transport = {
+    exchange: () =>
+      Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
+  };
+  const runtime = ManagedRuntime.make(
+    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  );
+
+  try {
+    await runtime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Stuck status",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
+    );
+    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+      _tag: "PersistenceError",
+    });
+
+    const outbox = await readOutbox(dataDir);
+    const status = await runtime.runPromise(store((store) => store.getSyncStatus));
+
+    expect(status.pendingOperations).toBe(outbox.length);
+    expect(status.oldestPendingAt).not.toBeNull();
+    expect(status.lastError).toBe("network unavailable");
+    expect(status.quarantined).toBe(false);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("a subsequent successful exchange clears the backoff and status", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-recover-"));
+  const dataDir = path.join(directory, "data");
+  let shouldFail = true;
+  const transport = {
+    exchange: (request: SyncRequest) => {
+      if (shouldFail) {
+        return Effect.fail(
+          SyncTransportError.make({ message: "network unavailable", retryable: true }),
+        );
+      }
+      return Effect.succeed(responseFor(request));
+    },
+  };
+  const runtime = ManagedRuntime.make(
+    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  );
+
+  try {
+    await runtime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Recovers",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
+    );
+    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+      _tag: "PersistenceError",
+    });
+
+    shouldFail = false;
+    // The failed attempt set a future nextAttemptAt; clear it directly
+    // rather than sleeping past the backoff window.
+    await setOutboxNextAttemptAt(dataDir, null);
+    const status = await runtime.runPromise(store((store) => store.sync));
+
+    expect(status.phase).toBe("idle");
+    expect(status.pendingOperations).toBe(0);
+    expect(status.quarantined).toBe(false);
+
+    const outbox = await readOutbox(dataDir);
+    expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
+    expect(outbox.every((operation) => operation.nextAttemptAt === null)).toBe(true);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));

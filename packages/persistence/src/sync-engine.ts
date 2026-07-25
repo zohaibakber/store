@@ -18,7 +18,7 @@ import {
   syncOutbox,
   syncState,
 } from "@store/db/local/schema";
-import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -52,6 +52,21 @@ const StockMovementRow = createSelectSchema(stockMovements, {
 
 const invalidResponse = (message: string) =>
   PersistenceError.make({ operation: "apply sync response", message });
+
+// Backoff for operations that keep failing after the in-request transport
+// retry (see Effect.retry below) is exhausted. Pure and deterministic on
+// purpose: jitter belongs only to the transport retry, not to a persisted
+// deadline, or tests that manipulate `nextAttemptAt` directly become flaky.
+const RETRY_BASE_MILLIS = 1_000;
+const RETRY_CAP_MILLIS = 5 * 60 * 1_000;
+
+export const retryDelayMillis = (attemptCount: number): number =>
+  Math.min(RETRY_BASE_MILLIS * 2 ** Math.max(attemptCount - 1, 0), RETRY_CAP_MILLIS);
+
+// An operation that has failed this many consecutive attempts is treated as
+// stuck rather than merely retrying. Computed at read time from
+// `attemptCount` — no schema change needed.
+export const QUARANTINE_ATTEMPTS = 10;
 
 const ensureIdentity = (
   row: { readonly organizationId: string; readonly id: string },
@@ -164,6 +179,20 @@ const upsertRemoteChange = (
     }
   });
 
+interface OutboxHealth {
+  readonly pendingOperations: number;
+  readonly oldestPendingAt: number | null;
+  readonly lastError: string | null;
+  readonly quarantined: boolean;
+}
+
+const localOnlyOutboxHealth: OutboxHealth = {
+  pendingOperations: 0,
+  oldestPendingAt: null,
+  lastError: null,
+  quarantined: false,
+};
+
 export const makeSyncEngine = (
   database: StoreDatabase,
   config: PersistenceConfig,
@@ -171,15 +200,71 @@ export const makeSyncEngine = (
 ) =>
   Effect.gen(function* () {
     const actor = mutationContext();
+
+    const readOutboxHealth = Effect.fn("OfflineStore.readOutboxHealth")(function* () {
+      const currentActor = mutationContext();
+      const [health] = yield* database
+        .select({
+          pendingOperations: sql<number>`count(*)`,
+          // `occurredAt` is a plain integer column under SQLite and libSQL is
+          // configured with intMode "number", so min() arrives as a number.
+          // Under Postgres this was a bigint that the driver returned as a
+          // string, which had to be converted; that hazard is gone.
+          oldestPendingAt: sql<number | null>`min(${syncOutbox.occurredAt})`,
+          // Postgres expressed this as
+          // `(array_agg(... order by ...) filter (where ...))[1]`. SQLite has
+          // neither array_agg nor array subscripting, so take the most recent
+          // non-null error with an ordered subquery instead. It is not
+          // correlated — every term is either a bound parameter or a constant —
+          // so re-opening sync_outbox inside the aggregate is unambiguous.
+          lastError: sql<string | null>`(
+            select ${syncOutbox.lastError} from ${syncOutbox}
+            where ${syncOutbox.organizationId} = ${currentActor.organizationId}
+              and ${syncOutbox.acknowledgedAt} is null
+              and ${syncOutbox.lastError} is not null
+            order by ${syncOutbox.clientSequence} desc
+            limit 1
+          )`,
+          // SQLite has no bool_or. max() is equivalent here because
+          // attemptCount is non-negative, and it shares bool_or's null-over-
+          // zero-rows behaviour, so the coalesce is still required: count(*)
+          // returns a row even when the outbox is empty, which means the
+          // `?? localOnlyOutboxHealth` fallback below never fires for it.
+          quarantined: sql<number>`coalesce(max(${syncOutbox.attemptCount}), 0) >= ${QUARANTINE_ATTEMPTS}`,
+        })
+        .from(syncOutbox)
+        .where(
+          and(
+            eq(syncOutbox.organizationId, currentActor.organizationId),
+            isNull(syncOutbox.acknowledgedAt),
+          ),
+        )
+        .pipe(mapPersistenceError("read outbox health"));
+      const result: OutboxHealth =
+        health === undefined
+          ? localOnlyOutboxHealth
+          : {
+              pendingOperations: health.pendingOperations,
+              oldestPendingAt: health.oldestPendingAt,
+              lastError: health.lastError,
+              // SQLite has no boolean type, so the comparison above returns 0
+              // or 1, and a raw sql`` bypasses drizzle's column mapper.
+              quarantined: health.quarantined === 1,
+            };
+      return result;
+    });
+
     const initialState = yield* database.query.syncState
       .findFirst({ where: { organizationId: actor.organizationId } })
       .pipe(mapPersistenceError("load sync state"));
     const configured = config.syncTransport !== undefined;
+    const initialHealth = configured ? yield* readOutboxHealth() : localOnlyOutboxHealth;
     const status = yield* SubscriptionRef.make<SyncStatus>({
       phase: configured ? "idle" : "local-only",
       configured,
       lastSyncedAt: initialState?.lastSuccessAt ?? null,
       message: configured ? "Ready to sync" : "Cloud sync is not configured",
+      ...initialHealth,
     });
     const lock = yield* Semaphore.make(1);
     const signals = yield* Queue.sliding<void>(1);
@@ -192,6 +277,7 @@ export const makeSyncEngine = (
         .findFirst({ where: { organizationId: currentActor.organizationId } })
         .pipe(mapPersistenceError("load sync state"));
       const cursor = localState?.cursor ?? 0;
+      const now = Date.now();
       const pending = yield* database
         .select()
         .from(syncOutbox)
@@ -199,6 +285,7 @@ export const makeSyncEngine = (
           and(
             eq(syncOutbox.organizationId, currentActor.organizationId),
             isNull(syncOutbox.acknowledgedAt),
+            or(isNull(syncOutbox.nextAttemptAt), lte(syncOutbox.nextAttemptAt, now)),
           ),
         )
         .orderBy(asc(syncOutbox.clientSequence))
@@ -368,11 +455,13 @@ export const makeSyncEngine = (
             const state = yield* database.query.syncState
               .findFirst({ where: { organizationId: mutationContext().organizationId } })
               .pipe(mapPersistenceError("load completed sync state"));
+            const health = yield* readOutboxHealth();
             const next: SyncStatus = {
               phase: "idle",
               configured: true,
               lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
               message: "Local and cloud data are in sync",
+              ...health,
             };
             yield* SubscriptionRef.set(status, next);
             return next;
@@ -382,16 +471,32 @@ export const makeSyncEngine = (
           Effect.tapError((error) =>
             Effect.gen(function* () {
               const currentActor = mutationContext();
-              yield* SubscriptionRef.update(status, (current) => {
-                const next: SyncStatus = {
-                  ...current,
-                  phase: "error",
-                  message: error.message,
-                };
-                return next;
-              });
-              const recorded = yield* Effect.result(
-                Effect.all(
+              const recorded = yield* Effect.gen(function* () {
+                // Backoff is uniform across the whole unacknowledged queue for
+                // this org: it is driven by the head-of-line operation's
+                // attempt count (already incremented before the exchange was
+                // attempted), and the same deadline is written to every
+                // pending row. A per-row deadline computed from each row's own
+                // attemptCount would let a later, less-tried operation become
+                // due before the head-of-line operation it is causally behind
+                // — reintroducing the skip-ahead this plan deliberately avoids.
+                const head = yield* database
+                  .select({ attemptCount: syncOutbox.attemptCount })
+                  .from(syncOutbox)
+                  .where(
+                    and(
+                      eq(syncOutbox.organizationId, currentActor.organizationId),
+                      isNull(syncOutbox.acknowledgedAt),
+                    ),
+                  )
+                  .orderBy(asc(syncOutbox.clientSequence))
+                  .limit(1)
+                  .pipe(mapPersistenceError("read outbox head for backoff"));
+                const nextAttemptAt =
+                  head[0] === undefined
+                    ? null
+                    : Date.now() + retryDelayMillis(head[0].attemptCount);
+                yield* Effect.all(
                   [
                     database
                       .update(syncState)
@@ -399,7 +504,7 @@ export const makeSyncEngine = (
                       .where(eq(syncState.organizationId, currentActor.organizationId)),
                     database
                       .update(syncOutbox)
-                      .set({ lastError: error.message })
+                      .set({ lastError: error.message, nextAttemptAt })
                       .where(
                         and(
                           eq(syncOutbox.organizationId, currentActor.organizationId),
@@ -408,10 +513,20 @@ export const makeSyncEngine = (
                       ),
                   ],
                   { concurrency: 1, discard: true },
-                ).pipe(mapPersistenceError("record sync failure")),
-              );
+                );
+              }).pipe(mapPersistenceError("record sync failure"), Effect.result);
               if (recorded._tag === "Failure")
                 yield* Effect.logWarning("Could not persist sync failure status", recorded.failure);
+              const health = yield* Effect.result(readOutboxHealth());
+              yield* SubscriptionRef.update(status, (current) => {
+                const next: SyncStatus = {
+                  ...current,
+                  ...(health._tag === "Success" ? health.success : {}),
+                  phase: "error",
+                  message: error.message,
+                };
+                return next;
+              });
             }),
           ),
         );

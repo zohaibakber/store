@@ -79,4 +79,8 @@ export interface SyncStatus {
   readonly configured: boolean;
   readonly lastSyncedAt: number | null;
   readonly message: string;
+  readonly pendingOperations: number;
+  readonly oldestPendingAt: number | null;
+  readonly lastError: string | null;
+  readonly quarantined: boolean;
 }
