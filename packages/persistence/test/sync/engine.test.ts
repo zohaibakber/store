@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
 import {
   SyncEntityChange,
@@ -13,19 +9,13 @@ import { products, syncOutbox } from "@store/db/local/schema";
 import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { expect, test } from "vitest";
 
 import { databaseFile } from "../../src/database/client";
-import {
-  layer,
-  SyncTransportError,
-  type OfflineStore,
-  type PersistenceError,
-} from "../../src/index";
+import { SyncTransportError } from "../../src/index";
 import { QUARANTINE_ATTEMPTS, remoteChangeWins, retryDelayMillis } from "../../src/sync/engine";
-import { migrationsFolder, readOutbox, store } from "../lib/store";
+import { readOutbox, store, type TestStoreRuntime, withTestStore } from "../lib/store";
 
 const setOutboxNextAttemptAt = (dataDir: string, nextAttemptAt: number | null) =>
   Effect.gen(function* () {
@@ -51,13 +41,27 @@ const responseFor = (request: SyncRequest): SyncResponse => ({
 const ProductRow = createSelectSchema(products);
 type ProductRow = typeof ProductRow.Type;
 
-const seedProduct = async (dataDir: string, rowVersion: 1 | 3) => {
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-  try {
-    let product = await runtime.runPromise(
+const seedProduct = async (runtime: TestStoreRuntime, rowVersion: 1 | 3) => {
+  let product = await runtime.runPromise(
+    store((store) =>
+      store.createProduct({
+        name: "Local product v1",
+        categoryId: "general",
+        aisle: "A1",
+        composition: "Test composition",
+        strength: "100mg",
+        unitsPerPack: 10,
+        packPrice: 1_000,
+        unitPrice: 100,
+      }),
+    ),
+  );
+  for (let version = 2; version <= rowVersion; version += 1) {
+    product = await runtime.runPromise(
       store((store) =>
-        store.createProduct({
-          name: "Local product v1",
+        store.updateProduct({
+          id: product.id,
+          name: `Local product v${version}`,
           categoryId: "general",
           aisle: "A1",
           composition: "Test composition",
@@ -68,27 +72,8 @@ const seedProduct = async (dataDir: string, rowVersion: 1 | 3) => {
         }),
       ),
     );
-    for (let version = 2; version <= rowVersion; version += 1) {
-      product = await runtime.runPromise(
-        store((store) =>
-          store.updateProduct({
-            id: product.id,
-            name: `Local product v${version}`,
-            categoryId: "general",
-            aisle: "A1",
-            composition: "Test composition",
-            strength: "100mg",
-            unitsPerPack: 10,
-            packPrice: 1_000,
-            unitPrice: 100,
-          }),
-        ),
-      );
-    }
-    return product;
-  } finally {
-    await runtime.dispose();
   }
+  return product;
 };
 
 const capturedProductRow = async (dataDir: string, productId: string): Promise<ProductRow> => {
@@ -157,11 +142,7 @@ const transportFor = (changes: ReadonlyArray<SyncServerChange>) => ({
 });
 
 test("each business mutation commits one durable sync operation", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "data");
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-
-  try {
+  await withTestStore(async ({ dataDir, runtime }) => {
     const product = await runtime.runPromise(
       store((store) =>
         store.createProduct({
@@ -204,70 +185,55 @@ test("each business mutation commits one durable sync operation", async () => {
     ]);
     expect(queued.every((operation) => operation.payloadHash.length === 64)).toBe(true);
     expect(queued.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("an offline transport never rolls back local writes and leaves outbox work pending", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "data");
   const transport = {
     exchange: () =>
       Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
-  );
+  await withTestStore(
+    async ({ dataDir, runtime, makeRuntime }) => {
+      const product = await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Offline write",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toThrow(
+        /network unavailable/,
+      );
+      expect(await runtime.runPromise(store((store) => store.getProduct(product.id)))).toEqual(
+        product,
+      );
+      expect(await runtime.runPromise(store((store) => store.getSyncStatus))).toMatchObject({
+        configured: true,
+        phase: "error",
+      });
+      await runtime.dispose();
 
-  try {
-    const product = await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Offline write",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toThrow(
-      /network unavailable/,
-    );
-    expect(await runtime.runPromise(store((store) => store.getProduct(product.id)))).toEqual(
-      product,
-    );
-    expect(await runtime.runPromise(store((store) => store.getSyncStatus))).toMatchObject({
-      configured: true,
-      phase: "error",
-    });
-    await runtime.dispose();
-
-    const reopened = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-    try {
+      const reopened = makeRuntime({ syncTransport: undefined });
       expect(await reopened.runPromise(store((store) => store.getProduct(product.id)))).toEqual(
         product,
       );
-    } finally {
-      await reopened.dispose();
-    }
 
-    const pending = await readOutbox(dataDir);
-    expect(pending).toHaveLength(2);
-    expect(pending.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-    expect(pending.every((operation) => operation.attemptCount > 0)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+      const pending = await readOutbox(dataDir);
+      expect(pending).toHaveLength(2);
+      expect(pending.every((operation) => operation.acknowledgedAt === null)).toBe(true);
+      expect(pending.every((operation) => operation.attemptCount > 0)).toBe(true);
+    },
+    { syncTransport: transport },
+  );
 }, 15_000);
 
 test("a flaky transport is retried and the outbox drains", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-retry-"));
-  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: (request: SyncRequest) => {
@@ -282,41 +248,35 @@ test("a flaky transport is retried and the outbox drains", async () => {
         : Effect.succeed(responseFor(request));
     },
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Eventually synced",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
+        phase: "idle",
+      });
+      expect(attempts).toBeGreaterThanOrEqual(3);
+      await runtime.dispose();
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox.length).toBeGreaterThan(0);
+      expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Eventually synced",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
-      phase: "idle",
-    });
-    expect(attempts).toBeGreaterThanOrEqual(3);
-    await runtime.dispose();
-
-    const outbox = await readOutbox(dataDir);
-    expect(outbox.length).toBeGreaterThan(0);
-    expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 });
 
 test("a permanently failing transport still fails after retries", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-retry-"));
-  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: () => {
@@ -326,43 +286,37 @@ test("a permanently failing transport still fails after retries", async () => {
       );
     },
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Still pending",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+        operation: "exchange sync changes",
+      });
+      expect(attempts).toBeGreaterThanOrEqual(4);
+      await runtime.dispose();
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox.length).toBeGreaterThan(0);
+      expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
+      expect(outbox.every((operation) => operation.lastError === "network unavailable")).toBe(true);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Still pending",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-      operation: "exchange sync changes",
-    });
-    expect(attempts).toBeGreaterThanOrEqual(4);
-    await runtime.dispose();
-
-    const outbox = await readOutbox(dataDir);
-    expect(outbox.length).toBeGreaterThan(0);
-    expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-    expect(outbox.every((operation) => operation.lastError === "network unavailable")).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 }, 15_000);
 
 test("a non-retryable transport error fails once with its protocol details", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-validation-"));
-  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: () => {
@@ -377,35 +331,28 @@ test("a non-retryable transport error fails once with its protocol details", asy
       );
     },
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ runtime }) => {
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+        operation: "exchange sync changes",
+        message: expect.stringContaining("INVALID_SYNC_REQUEST"),
+        cause: expect.objectContaining({
+          _tag: "SyncTransportError",
+          status: 400,
+          retryable: false,
+        }),
+      });
+      expect(attempts).toBe(1);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-      operation: "exchange sync changes",
-      message: expect.stringContaining("INVALID_SYNC_REQUEST"),
-      cause: expect.objectContaining({
-        _tag: "SyncTransportError",
-        status: 400,
-        retryable: false,
-      }),
-    });
-    expect(attempts).toBe(1);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 });
 
 test("a remote product change creates a product that does not exist locally", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "data");
-  let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
-
-  try {
-    const template = await seedProduct(dataDir, 1);
+  await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
+    const template = await seedProduct(seedRuntime, 1);
+    await seedRuntime.dispose();
     const source = await capturedProductRow(dataDir, template.id);
     const remoteId = "remote-product";
     const remote = remoteProductChange({
@@ -415,9 +362,7 @@ test("a remote product change creates a product that does not exist locally", as
       name: "Remote product",
       rowVersion: 4,
     });
-    runtime = ManagedRuntime.make(
-      layer({ dataDir, migrationsFolder, syncTransport: transportFor([remote]) }),
-    );
+    const runtime = makeRuntime({ syncTransport: transportFor([remote]) });
 
     await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
       phase: "idle",
@@ -426,19 +371,13 @@ test("a remote product change creates a product that does not exist locally", as
 
     expect(product).toMatchObject({ id: remoteId, name: "Remote product", rowVersion: 4 });
     expect(await runtime.runPromise(store((store) => store.listProducts))).toHaveLength(2);
-  } finally {
-    await runtime?.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("a stale remote product change is skipped", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "data");
-  let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
-
-  try {
-    const local = await seedProduct(dataDir, 3);
+  await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
+    const local = await seedProduct(seedRuntime, 3);
+    await seedRuntime.dispose();
     const source = await capturedProductRow(dataDir, local.id);
     const stale = remoteProductChange({
       cursor: 1,
@@ -446,9 +385,7 @@ test("a stale remote product change is skipped", async () => {
       name: "Stale remote name",
       rowVersion: 2,
     });
-    runtime = ManagedRuntime.make(
-      layer({ dataDir, migrationsFolder, syncTransport: transportFor([stale]) }),
-    );
+    const runtime = makeRuntime({ syncTransport: transportFor([stale]) });
 
     await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
       phase: "idle",
@@ -457,19 +394,13 @@ test("a stale remote product change is skipped", async () => {
 
     expect(product.name).toBe("Local product v3");
     expect(product.rowVersion).toBe(3);
-  } finally {
-    await runtime?.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("a newer remote product change replaces the local row", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "data");
-  let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
-
-  try {
-    const local = await seedProduct(dataDir, 3);
+  await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
+    const local = await seedProduct(seedRuntime, 3);
+    await seedRuntime.dispose();
     const source = await capturedProductRow(dataDir, local.id);
     const newer = remoteProductChange({
       cursor: 1,
@@ -477,9 +408,7 @@ test("a newer remote product change replaces the local row", async () => {
       name: "Newer remote name",
       rowVersion: 4,
     });
-    runtime = ManagedRuntime.make(
-      layer({ dataDir, migrationsFolder, syncTransport: transportFor([newer]) }),
-    );
+    const runtime = makeRuntime({ syncTransport: transportFor([newer]) });
 
     await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
       phase: "idle",
@@ -488,10 +417,7 @@ test("a newer remote product change replaces the local row", async () => {
 
     expect(product.name).toBe("Newer remote name");
     expect(product.rowVersion).toBe(4);
-  } finally {
-    await runtime?.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("retryDelayMillis grows with attemptCount and never exceeds the cap", () => {
@@ -513,51 +439,43 @@ test("remoteChangeWins keeps a strictly newer local row and overwrites on a tie"
 });
 
 test("a failed exchange sets a future nextAttemptAt and increments attemptCount", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-backoff-"));
-  const dataDir = path.join(directory, "data");
   const transport = {
     exchange: () =>
       Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Backoff candidate",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      const before = Date.now();
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+      await runtime.dispose();
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox.length).toBeGreaterThan(0);
+      for (const operation of outbox) {
+        expect(operation.attemptCount).toBeGreaterThan(0);
+        expect(operation.nextAttemptAt).not.toBeNull();
+        expect(operation.nextAttemptAt as number).toBeGreaterThan(before);
+      }
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Backoff candidate",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    const before = Date.now();
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-    });
-    await runtime.dispose();
-
-    const outbox = await readOutbox(dataDir);
-    expect(outbox.length).toBeGreaterThan(0);
-    for (const operation of outbox) {
-      expect(operation.attemptCount).toBeGreaterThan(0);
-      expect(operation.nextAttemptAt).not.toBeNull();
-      expect(operation.nextAttemptAt as number).toBeGreaterThan(before);
-    }
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 }, 15_000);
 
 test("an operation that is not yet due is not resent", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-backoff-"));
-  const dataDir = path.join(directory, "data");
   const requests: Array<SyncRequest> = [];
   let offline = true;
   const transport = {
@@ -568,91 +486,79 @@ test("an operation that is not yet due is not resent", async () => {
         : Effect.succeed(responseFor(request));
     },
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Not yet due",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+      const requestsAfterFirstFailure = requests.length;
+      expect(requestsAfterFirstFailure).toBeGreaterThan(0);
+      expect(requests[0]?.operations.length).toBeGreaterThan(0);
+
+      await setOutboxNextAttemptAt(dataDir, Date.now() + 60_000);
+      offline = false;
+      await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
+        phase: "idle",
+      });
+
+      expect(requests.length).toBe(requestsAfterFirstFailure + 1);
+      expect(requests.at(-1)?.operations).toEqual([]);
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Not yet due",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-    });
-    const requestsAfterFirstFailure = requests.length;
-    expect(requestsAfterFirstFailure).toBeGreaterThan(0);
-    expect(requests[0]?.operations.length).toBeGreaterThan(0);
-
-    await setOutboxNextAttemptAt(dataDir, Date.now() + 60_000);
-    offline = false;
-    await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
-      phase: "idle",
-    });
-
-    expect(requests.length).toBe(requestsAfterFirstFailure + 1);
-    expect(requests.at(-1)?.operations).toEqual([]);
-
-    const outbox = await readOutbox(dataDir);
-    expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 }, 15_000);
 
 test("status reports the stuck queue after a failure", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-status-"));
-  const dataDir = path.join(directory, "data");
   const transport = {
     exchange: () =>
       Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Stuck status",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+
+      const outbox = await readOutbox(dataDir);
+      const status = await runtime.runPromise(store((store) => store.getSyncStatus));
+
+      expect(status.pendingOperations).toBe(outbox.length);
+      expect(status.oldestPendingAt).not.toBeNull();
+      expect(status.lastError).toBe("network unavailable");
+      expect(status.quarantined).toBe(false);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Stuck status",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-    });
-
-    const outbox = await readOutbox(dataDir);
-    const status = await runtime.runPromise(store((store) => store.getSyncStatus));
-
-    expect(status.pendingOperations).toBe(outbox.length);
-    expect(status.oldestPendingAt).not.toBeNull();
-    expect(status.lastError).toBe("network unavailable");
-    expect(status.quarantined).toBe(false);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 }, 15_000);
 
 test("a subsequent successful exchange clears the backoff and status", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-recover-"));
-  const dataDir = path.join(directory, "data");
   let shouldFail = true;
   const transport = {
     exchange: (request: SyncRequest) => {
@@ -664,51 +570,44 @@ test("a subsequent successful exchange clears the backoff and status", async () 
       return Effect.succeed(responseFor(request));
     },
   };
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir, migrationsFolder, syncTransport: transport }),
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Recovers",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+
+      shouldFail = false;
+      await setOutboxNextAttemptAt(dataDir, null);
+      const status = await runtime.runPromise(store((store) => store.sync));
+
+      expect(status.phase).toBe("idle");
+      expect(status.pendingOperations).toBe(0);
+      expect(status.quarantined).toBe(false);
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
+      expect(outbox.every((operation) => operation.nextAttemptAt === null)).toBe(true);
+    },
+    { syncTransport: transport },
   );
-
-  try {
-    await runtime.runPromise(
-      store((store) =>
-        store.createProduct({
-          name: "Recovers",
-          aisle: null,
-          composition: null,
-          strength: null,
-          packPrice: null,
-          unitPrice: null,
-        }),
-      ),
-    );
-    await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
-      _tag: "PersistenceError",
-    });
-
-    shouldFail = false;
-    await setOutboxNextAttemptAt(dataDir, null);
-    const status = await runtime.runPromise(store((store) => store.sync));
-
-    expect(status.phase).toBe("idle");
-    expect(status.pendingOperations).toBe(0);
-    expect(status.quarantined).toBe(false);
-
-    const outbox = await readOutbox(dataDir);
-    expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
-    expect(outbox.every((operation) => operation.nextAttemptAt === null)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
 }, 15_000);
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "data");
-  let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
-
-  try {
-    const template = await seedProduct(dataDir, 1);
+  await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
+    const template = await seedProduct(seedRuntime, 1);
+    await seedRuntime.dispose();
     const source = await capturedProductRow(dataDir, template.id);
     const outOfOrder = [
       remoteProductChange({
@@ -726,9 +625,7 @@ test("out-of-order remote cursors reject and roll back every pulled row", async 
         rowVersion: 2,
       }),
     ];
-    runtime = ManagedRuntime.make(
-      layer({ dataDir, migrationsFolder, syncTransport: transportFor(outOfOrder) }),
-    );
+    const runtime = makeRuntime({ syncTransport: transportFor(outOfOrder) });
     const countBefore = (await runtime.runPromise(store((store) => store.listProducts))).length;
 
     await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
@@ -743,8 +640,5 @@ test("out-of-order remote cursors reject and roll back every pulled row", async 
     await expect(
       runtime.runPromise(store((store) => store.getProduct("remote-product-a"))),
     ).rejects.toMatchObject({ _tag: "ProductNotFoundError" });
-  } finally {
-    await runtime?.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });

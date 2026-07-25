@@ -1,12 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
-import { layer } from "../../src/index";
-import { migrationsFolder, store } from "../lib/store";
+import { store, type TestStoreRuntime, withTestStore } from "../lib/store";
 
 const seed = [
   { name: "Panadol", composition: "Paracetamol 500mg" },
@@ -17,10 +11,8 @@ const seed = [
   { name: "Brufen", composition: "Ibuprofen 400mg" },
 ];
 
-const withStore = async (run: (runtime: ReturnType<typeof makeRuntime>) => Promise<void>) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-search-"));
-  const runtime = makeRuntime(directory);
-  try {
+const withSeededStore = async (run: (runtime: TestStoreRuntime) => Promise<void>) =>
+  withTestStore(async ({ runtime }) => {
     for (const item of seed) {
       await runtime.runPromise(
         store((store) =>
@@ -37,29 +29,22 @@ const withStore = async (run: (runtime: ReturnType<typeof makeRuntime>) => Promi
       );
     }
     await run(runtime);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
-};
+  });
 
-const makeRuntime = (directory: string) =>
-  ManagedRuntime.make(layer({ dataDir: path.join(directory, "data"), migrationsFolder }));
-
-const names = async (runtime: ReturnType<typeof makeRuntime>, query: string) =>
+const names = async (runtime: TestStoreRuntime, query: string) =>
   (await runtime.runPromise(store((store) => store.searchProducts({ query })))).map(
     (product) => product.name,
   );
 
 test("phonetic misspelling 'pendal' finds Panadol (trigram alone would miss it)", async () => {
-  await withStore(async (runtime) => {
+  await withSeededStore(async (runtime) => {
     const results = await names(runtime, "pendal");
     expect(results[0]).toBe("Panadol");
   });
 });
 
 test("plain typos resolve to the intended product", async () => {
-  await withStore(async (runtime) => {
+  await withSeededStore(async (runtime) => {
     expect((await names(runtime, "panadl"))[0]).toBe("Panadol");
     expect((await names(runtime, "calpl"))[0]).toBe("Calpol");
     expect((await names(runtime, "augmentn"))[0]).toBe("Augmentin");
@@ -67,7 +52,7 @@ test("plain typos resolve to the intended product", async () => {
 });
 
 test("composition terms surface matching products", async () => {
-  await withStore(async (runtime) => {
+  await withSeededStore(async (runtime) => {
     const results = await names(runtime, "para");
     expect(results).toEqual(expect.arrayContaining(["Panadol", "Calpol"]));
     expect(results).not.toContain("Brufen");
@@ -75,13 +60,13 @@ test("composition terms surface matching products", async () => {
 });
 
 test("blank query returns nothing", async () => {
-  await withStore(async (runtime) => {
+  await withSeededStore(async (runtime) => {
     expect(await names(runtime, "   ")).toEqual([]);
   });
 });
 
 test("hidden products are excluded from search results", async () => {
-  await withStore(async (runtime) => {
+  await withSeededStore(async (runtime) => {
     expect(await names(runtime, "panadol")).toContain("Panadol Extra");
 
     const listed = await runtime.runPromise(store((store) => store.listProducts));

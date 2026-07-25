@@ -11,8 +11,8 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "catalog:",
-    "zod": "^4.4.0"
+    "@store/contracts": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "typescript": "catalog:"

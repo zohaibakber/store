@@ -1,14 +1,20 @@
+import {
+  InvoiceExtraction,
+  type InvoiceExtractionLine,
+  invoiceExtractionJsonSchema,
+} from "@store/contracts";
 import * as Context from "effect/Context";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
-import { InvoiceExtraction, InvoiceLine, invoiceExtractionJsonSchema } from "./schema";
-
-export class InvoiceExtractionError extends Data.TaggedError("InvoiceExtractionError")<{
-  readonly message: string;
-  readonly cause: unknown;
-}> {}
+export class InvoiceExtractionError extends Schema.TaggedErrorClass<InvoiceExtractionError>()(
+  "InvoiceExtractionError",
+  {
+    message: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {}
 
 export class InvoiceExtractionService extends Context.Service<
   InvoiceExtractionService,
@@ -37,10 +43,6 @@ export interface InvoiceAiConfig {
   readonly ai: InvoiceAiClient;
 }
 
-// Wording matters more than it looks. An earlier, terser version of these rules
-// made the model copy `unitsPerPack` into `unitQuantity`, which silently
-// inflated received stock by a whole pack's worth per line; spelling out that
-// loose units are only the remainder fixed it.
 const instructions = [
   "Extract received inventory from the supplier invoices below.",
   "Rules:",
@@ -55,40 +57,84 @@ const instructions = [
   "Respond with JSON matching the provided schema and nothing else.",
 ].join("\n");
 
-const parseCsv = (contents: string): InvoiceExtraction => {
-  const [headerRow = "", ...rows] = contents.trim().split(/\r?\n/);
-  const headers = headerRow.split(",").map((value) => value.trim().toLowerCase());
-  const valueAt = (row: string[], name: string) => row[headers.indexOf(name)]?.trim() ?? "";
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
+
+const nullableString = (value: unknown): string | null => {
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+    return String(value);
+  return null;
+};
+
+const count = (value: unknown, fallback: number, minimum: number): number =>
+  Math.max(minimum, Math.round(toFiniteNumber(value) ?? fallback));
+
+const normalizeLine = (value: unknown): InvoiceExtractionLine => ({
+  name: nullableString(field(value, "name")) ?? "Unspecified item",
+  batchNumber: nullableString(field(value, "batchNumber")),
+  expiresAt: nullableString(field(value, "expiresAt")),
+  packQuantity: count(field(value, "packQuantity"), 0, 0),
+  unitQuantity: count(field(value, "unitQuantity"), 0, 0),
+  unitsPerPack: count(field(value, "unitsPerPack"), 1, 1),
+  packPrice:
+    field(value, "packPrice") == null
+      ? null
+      : Math.max(0, Math.round(toFiniteNumber(field(value, "packPrice")) ?? 0)),
+});
+
+const normalizeExtraction = (value: unknown): unknown => {
+  const lines = field(value, "lines");
   return {
-    supplier: null,
-    invoiceNumber: null,
-    lines: rows.filter(Boolean).map((row) => {
-      const values = row.split(",");
-      return InvoiceLine.parse({
-        name:
-          valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
-        batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
-        expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
-        packQuantity: Number(valueAt(values, "packs") || valueAt(values, "pack quantity") || 0),
-        unitQuantity: Number(valueAt(values, "units") || valueAt(values, "unit quantity") || 0),
-        unitsPerPack: Number(valueAt(values, "units per pack") || 1),
-        packPrice: valueAt(values, "pack price")
-          ? Math.round(Number(valueAt(values, "pack price")) * 100)
-          : null,
-      });
-    }),
+    supplier: nullableString(field(value, "supplier")),
+    invoiceNumber: nullableString(field(value, "invoiceNumber")),
+    lines: Array.isArray(lines) ? lines.map(normalizeLine) : lines,
   };
 };
 
+const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
+  const [headerRow = "", ...rows] = contents.trim().split(/\r?\n/);
+  const headers = headerRow.split(",").map((value) => value.trim().toLowerCase());
+  const valueAt = (row: string[], name: string) => row[headers.indexOf(name)]?.trim() ?? "";
+  return rows.filter(Boolean).map((row) => {
+    const values = row.split(",");
+    return normalizeLine({
+      name:
+        valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
+      batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
+      expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
+      packQuantity: Number(valueAt(values, "packs") || valueAt(values, "pack quantity") || 0),
+      unitQuantity: Number(valueAt(values, "units") || valueAt(values, "unit quantity") || 0),
+      unitsPerPack: Number(valueAt(values, "units per pack") || 1),
+      packPrice: valueAt(values, "pack price")
+        ? Math.round(Number(valueAt(values, "pack price")) * 100)
+        : null,
+    });
+  });
+};
+
+const isFailure = (
+  document: ConvertedDocument,
+): document is { readonly name: string; readonly error: string } => "error" in document;
+
+const isSuccess = (
+  document: ConvertedDocument,
+): document is { readonly name: string; readonly data: string } => "data" in document;
+
 const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<File>) => {
-  const converted = await ai.toMarkdown(
-    files.map((file) => ({ name: file.name, blob: file as unknown as Blob })),
-  );
-  const failures = converted.filter((document) => "error" in document);
+  const converted = await ai.toMarkdown(files.map((file) => ({ name: file.name, blob: file })));
+  const failures = converted.filter(isFailure);
   for (const failure of failures)
     console.error("Invoice extraction: attachment could not be converted", {
       name: failure.name,
-      error: (failure as { error: string }).error,
+      error: failure.error,
     });
   if (failures.length === converted.length)
     throw new Error(
@@ -97,13 +143,13 @@ const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<Fil
         : "None of the attachments could be read.",
     );
   return converted
-    .filter((document): document is { name: string; data: string } => "data" in document)
+    .filter(isSuccess)
     .filter((document) => document.data.trim())
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 };
 
 const parseModelOutput = (raw: unknown): unknown => {
-  const response = (raw as { response?: unknown } | null)?.response ?? raw;
+  const response = field(raw, "response") ?? raw;
   if (typeof response !== "string") return response;
   const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = (fenced?.[1] ?? response).trim();
@@ -119,59 +165,54 @@ const parseModelOutput = (raw: unknown): unknown => {
 
 export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
   Layer.succeed(InvoiceExtractionService, {
-    extract: (files) =>
-      Effect.tryPromise({
-        try: async () => {
-          const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv"));
-          const csvLines = (await Promise.all(csvFiles.map((file) => file.text()))).flatMap(
-            (text) => parseCsv(text).lines,
+    extract: Effect.fn("InvoiceExtraction.extract")(
+      function* (files: ReadonlyArray<File>) {
+        const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv"));
+        const csvContents = yield* Effect.tryPromise(() =>
+          Promise.all(csvFiles.map((file) => file.text())),
+        );
+        const csvLines = csvContents.flatMap(parseCsv);
+        const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
+        if (!aiFiles.length)
+          return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
+            supplier: null,
+            invoiceNumber: null,
+            lines: csvLines,
+          });
+
+        const documents = yield* Effect.tryPromise(() => documentsToMarkdown(config.ai, aiFiles));
+        if (!documents.length)
+          return yield* Effect.fail(
+            new Error("No readable text could be extracted from the attachments."),
           );
-          const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
-          if (!aiFiles.length)
-            return InvoiceExtraction.parse({
-              supplier: null,
-              invoiceNumber: null,
-              lines: csvLines,
-            });
 
-          const documents = await documentsToMarkdown(config.ai, aiFiles);
-          if (!documents.length)
-            throw new Error("No readable text could be extracted from the attachments.");
-
-          const raw = await config.ai.generate({
+        const raw = yield* Effect.tryPromise(() =>
+          config.ai.generate({
             messages: [
               { role: "system", content: instructions },
               { role: "user", content: documents.join("\n\n") },
             ],
             jsonSchema: invoiceExtractionJsonSchema,
-          });
-
-          let output: unknown;
-          try {
-            output = parseModelOutput(raw);
-          } catch (cause) {
-            console.error("Invoice extraction: model output was not valid JSON", { raw });
-            throw cause;
-          }
-
-          const parsed = InvoiceExtraction.safeParse(output);
-          if (!parsed.success) {
-            console.error("Invoice extraction: model output failed schema validation", {
-              output,
-              issues: parsed.error.issues,
-            });
-            throw new Error("The model output did not match the expected invoice shape.");
-          }
-
-          return InvoiceExtraction.parse({
-            ...parsed.data,
-            lines: [...csvLines, ...parsed.data.lines],
-          });
-        },
-        catch: (cause) =>
-          new InvoiceExtractionError({
-            message: "Could not extract invoice attachments.",
-            cause,
           }),
-      }),
+        );
+        const output = yield* Effect.try(() => parseModelOutput(raw));
+        const extracted = yield* Schema.decodeUnknownEffect(InvoiceExtraction)(
+          normalizeExtraction(output),
+        );
+        return InvoiceExtraction.make({
+          ...extracted,
+          lines: [...csvLines, ...extracted.lines],
+        });
+      },
+      (effect) =>
+        effect.pipe(
+          Effect.mapError(
+            (cause) =>
+              new InvoiceExtractionError({
+                message: "Could not extract invoice attachments.",
+                cause,
+              }),
+          ),
+        ),
+    ),
   });

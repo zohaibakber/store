@@ -1,15 +1,36 @@
+import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
 import { SyncResponse, SyncServerChange, type SyncAck, type SyncRequest } from "@store/contracts";
+import { durableObjectMigrations } from "@store/db/do/migrations";
+import { durableObjectRelations } from "@store/db/do/relations";
 import { syncChangeLog } from "@store/db/do/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
+import * as DoDrizzle from "drizzle-orm/effect-sqlite-do";
+import { migrate } from "drizzle-orm/effect-sqlite-do/migrator";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { ConstraintError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
-import type { SyncDrizzle } from "./database.client";
-import { SyncDatabase } from "./database.service";
 import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
 import { applyOperation } from "./operation";
+
+export const makeSyncDrizzle = (storage: DurableObjectStorage) =>
+  DoDrizzle.makeWithDefaults({ relations: durableObjectRelations, storage });
+
+export type SyncDrizzle = Effect.Success<ReturnType<typeof makeSyncDrizzle>>;
+export type SyncTransaction = Parameters<Parameters<SyncDrizzle["transaction"]>[0]>[0];
+
+export class SyncDatabase extends Context.Service<
+  SyncDatabase,
+  {
+    readonly exchange: (
+      actor: SyncActor,
+      request: SyncRequest,
+    ) => Effect.Effect<SyncResponse, SyncDatabaseError | SyncProtocolError>;
+  }
+>()("@store/server/SyncDatabase") {}
 
 const PAGE_SIZE = 500;
 type SyncDatabaseClient = Pick<SyncDrizzle, "transaction">;
@@ -81,3 +102,13 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
   );
   return SyncDatabase.of({ exchange });
 };
+
+export const syncDatabaseLayer = (storage: DurableObjectStorage) =>
+  Layer.effect(
+    SyncDatabase,
+    Effect.gen(function* () {
+      const drizzle = yield* makeSyncDrizzle(storage);
+      yield* migrate(drizzle, { migrations: durableObjectMigrations });
+      return makeDatabase(drizzle);
+    }),
+  ).pipe(Layer.provide(SqliteClient.layer({ storage })));

@@ -156,8 +156,8 @@
       "name": "@store/services",
       "version": "0.0.0",
       "dependencies": {
+        "@store/contracts": "workspace:*",
         "effect": "catalog:",
-        "zod": "^4.4.0",
       },
       "devDependencies": {
         "typescript": "catalog:",

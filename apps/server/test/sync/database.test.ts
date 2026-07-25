@@ -191,7 +191,7 @@ const BatchQuantities = Schema.Struct({
   unitQuantity: Schema.Number,
 });
 
-describe("SyncDatabase with PGlite", () => {
+describe("SyncDatabase with libSQL", () => {
   it.effect("applies a category operation and returns its canonical change", () =>
     withDatabase(({ exchange }) =>
       Effect.gen(function* () {

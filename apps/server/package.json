@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "wrangler dev --port 8787",
     "deploy": "wrangler deploy",
     "typegen": "wrangler types ",
     "check": "wrangler types --check && tsc --noEmit",

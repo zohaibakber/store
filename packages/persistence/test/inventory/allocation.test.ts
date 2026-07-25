@@ -1,21 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
-import { layer } from "../../src/index";
-import { migrationsFolder, store } from "../lib/store";
+import { store, withTestStore } from "../lib/store";
 
 test("selling draws stock from batches, earliest expiry first", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
-  );
-
-  try {
+  await withTestStore(async ({ runtime }) => {
     const product = await runtime.runPromise(
       store((store) =>
         store.createProduct({
@@ -161,8 +150,5 @@ test("selling draws stock from batches, earliest expiry first", async () => {
     );
     expect(formatInvoiceNumber(9999)).toBe("9999");
     expect(formatInvoiceNumber(10000)).toBe("10000");
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });

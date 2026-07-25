@@ -3,7 +3,7 @@ import { batches, stockMovements } from "@store/db/do/schema";
 import { and, eq, sum } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { SyncTransaction } from "./database.client";
+import type { SyncTransaction } from "./database";
 import { protocolError } from "./errors";
 import type { SyncActor } from "./model";
 

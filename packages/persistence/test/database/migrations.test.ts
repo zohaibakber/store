@@ -1,16 +1,14 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
-import { layer } from "../../src/index";
 import {
   authMigrationsFolder,
   durableObjectMigrationsFolder,
   migrationsFolder,
   store,
+  withTestStore,
 } from "../lib/store";
 
 const readMigrations = async (folder: string) => {
@@ -62,12 +60,8 @@ test("each database's migrations contain only its own tables", async () => {
 });
 
 test("migrations are idempotent and preserve existing products", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "data");
-
-  try {
-    const firstRuntime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-    const created = await firstRuntime.runPromise(
+  await withTestStore(async ({ runtime, makeRuntime }) => {
+    const created = await runtime.runPromise(
       store((store) =>
         store.createProduct({
           name: "Aspirin",
@@ -79,12 +73,9 @@ test("migrations are idempotent and preserve existing products", async () => {
         }),
       ),
     );
-    await firstRuntime.dispose();
+    await runtime.dispose();
 
-    const secondRuntime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
+    const secondRuntime = makeRuntime();
     expect(await secondRuntime.runPromise(store((store) => store.listProducts))).toEqual([created]);
-    await secondRuntime.dispose();
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });

@@ -1,19 +1,7 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-// Better Auth's identity tables, stored in D1.
-//
-// Column names are deliberately camelCase and match the property names. The
-// Postgres implementation used snake_case with Kysely's CamelCasePlugin to
-// translate; passing the D1 binding straight to Better Auth means it builds
-// Kysely itself, so no plugin can be injected and the columns must match Better
-// Auth's own field names exactly.
-//
-// These are SQLite, but they do NOT use the store schema's `epochMilliseconds`
-// helper: Better Auth reads and writes JavaScript `Date` values, so the columns
-// are declared as `integer({ mode: "timestamp" })` and drizzle handles the
-// conversion. Using a plain number column here would hand Better Auth integers
-// where it expects Dates.
+// Better Auth expects camelCase columns and timestamp-mode Date values.
 const timestamp = () => integer({ mode: "timestamp" });
 const nowDefault = sql`(unixepoch())`;
 

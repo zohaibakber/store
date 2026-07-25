@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./auth.schema": "./src/remote/auth.schema.ts",
+    "./auth.schema": "./src/auth/schema.ts",
     "./do/migrations": "./src/do/migrations.ts",
     "./do/relations": "./src/do/relations.ts",
     "./do/schema": "./src/do/schema.ts",

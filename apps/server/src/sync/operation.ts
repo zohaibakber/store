@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { applyChange } from "./apply-change";
-import type { SyncTransaction } from "./database.client";
+import type { SyncTransaction } from "./database";
 import { protocolError } from "./errors";
 import { reconcileBatch } from "./inventory";
 import type { SyncActor } from "./model";

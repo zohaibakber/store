@@ -1,13 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import type { ImportInventoryLine } from "@store/contracts";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
-import { layer } from "../../src/index";
-import { migrationsFolder, readOutbox, store } from "../lib/store";
+import { readOutbox, store, withTestStore } from "../lib/store";
 
 const importLine = (name: string, productId: string | null = null): ImportInventoryLine => ({
   name,
@@ -21,11 +15,8 @@ const importLine = (name: string, productId: string | null = null): ImportInvent
 });
 
 test("bulk inventory import creates one ordered outbox operation", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "data");
-  let runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-
-  try {
+  await withTestStore(async ({ dataDir, runtime: initialRuntime, makeRuntime }) => {
+    let runtime = initialRuntime;
     const existing = await runtime.runPromise(
       store((store) =>
         store.createProduct({
@@ -42,7 +33,7 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
     );
     await runtime.dispose();
     const before = await readOutbox(dataDir);
-    runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
+    runtime = makeRuntime();
 
     await expect(
       runtime.runPromise(
@@ -78,18 +69,11 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
       "stockMovement",
       "stockMovement",
     ]);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 }, 30_000);
 
 test("duplicate names in one import share one created product", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "data");
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-
-  try {
+  await withTestStore(async ({ runtime }) => {
     const result = await runtime.runPromise(
       store((store) =>
         store.importInventory({
@@ -104,21 +88,15 @@ test("duplicate names in one import share one created product", async () => {
     expect(storedProducts).toHaveLength(1);
     expect(storedProducts[0]?.name).toBe("Panadol");
     expect(storedProducts[0]?.batches).toHaveLength(2);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("large imports are committed locally once and queued in bounded sync operations", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "data");
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
   const lines = Array.from({ length: 100 }, (_, index) =>
     importLine(`Imported product ${index + 1}`),
   );
 
-  try {
+  await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
       runtime.runPromise(store((store) => store.importInventory({ categoryId: "general", lines }))),
     ).resolves.toEqual({ createdProducts: 100, createdBatches: 100 });
@@ -130,18 +108,11 @@ test("large imports are committed locally once and queued in bounded sync operat
     const importOperations = outbox.slice(1);
     expect(importOperations.map((operation) => operation.payload.length)).toEqual([198, 102]);
     expect(importOperations.every((operation) => operation.payload.length <= 200)).toBe(true);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 }, 30_000);
 
 test("an invalid line rolls back every row and outbox change", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "data");
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
-
-  try {
+  await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
       runtime.runPromise(
         store((store) =>
@@ -168,19 +139,13 @@ test("an invalid line rolls back every row and outbox change", async () => {
       "category",
       "category",
     ]);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("a repeated import reuses products by normalized name", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "data");
-  const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
   const input = { categoryId: "general", lines: [importLine("Brufen")] };
 
-  try {
+  await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
       runtime.runPromise(store((store) => store.importInventory(input))),
     ).resolves.toEqual({
@@ -208,8 +173,5 @@ test("a repeated import reuses products by normalized name", async () => {
     ).toHaveLength(2);
     await runtime.dispose();
     expect(await readOutbox(dataDir)).toHaveLength(3);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });

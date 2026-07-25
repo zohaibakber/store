@@ -10,7 +10,7 @@ import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
 import { initializeDatabase } from "./database/bootstrap";
 import { clientLayer, makeDatabase } from "./database/client";
-import { InvoiceNotFoundError, PersistenceError, ProductNotFoundError } from "./errors";
+import { PersistenceError } from "./errors";
 import type { InvoiceStore } from "./inventory/invoice-store";
 import { makeInvoiceStore } from "./inventory/invoice-store";
 import type { ProductStore } from "./inventory/product-store";
@@ -50,5 +50,3 @@ const make = (config: PersistenceConfig) =>
 
 export const layer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(Layer.provide(clientLayer(config)));
-
-export type PublicStoreErrors = PersistenceError | ProductNotFoundError | InvoiceNotFoundError;

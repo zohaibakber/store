@@ -9,12 +9,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { SyncDatabase } from "./database.service";
+import { SyncDatabase } from "./database";
 import { protocolError, type SyncDatabaseError, type SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
 
 export type { SyncActor } from "./model";
-export { SyncDatabase } from "./database.service";
+export { SyncDatabase } from "./database";
 export { SyncDatabaseError, SyncProtocolError } from "./errors";
 
 export class SyncService extends Context.Service<

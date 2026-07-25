@@ -1,27 +1,14 @@
-import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
 import type { SyncRequest } from "@store/contracts";
-import { durableObjectMigrations } from "@store/db/do/migrations";
-import { migrate } from "drizzle-orm/effect-sqlite-do/migrator";
-import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
-import { makeDatabase } from "./database";
-import { makeSyncDrizzle } from "./database.client";
-import { SyncDatabase } from "./database.service";
+import { syncDatabaseLayer } from "./database";
 import { syncProgram, syncServiceLayer, type SyncActor } from "./service";
 
 export const makeSyncRuntime = (storage: DurableObjectStorage) => {
-  const sqliteLayer = SqliteClient.layer({ storage });
-  const databaseLayer = Layer.effect(
-    SyncDatabase,
-    Effect.gen(function* () {
-      const drizzle = yield* makeSyncDrizzle(storage);
-      yield* migrate(drizzle, { migrations: durableObjectMigrations });
-      return makeDatabase(drizzle);
-    }),
-  ).pipe(Layer.provide(sqliteLayer));
-  const runtime = ManagedRuntime.make(syncServiceLayer.pipe(Layer.provide(databaseLayer)));
+  const runtime = ManagedRuntime.make(
+    syncServiceLayer.pipe(Layer.provide(syncDatabaseLayer(storage))),
+  );
 
   return {
     runSync: (actor: SyncActor, request: SyncRequest) =>

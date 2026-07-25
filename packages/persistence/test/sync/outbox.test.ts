@@ -5,7 +5,7 @@ import {
 } from "@store/contracts";
 import { expect, test } from "vitest";
 
-import { exchangeOutcome, selectBatch } from "../../src/sync/outbox-batch";
+import { exchangeOutcome, selectBatch } from "../../src/sync/outbox";
 
 const queued = (operationId: string, changes: number) => ({
   operationId,

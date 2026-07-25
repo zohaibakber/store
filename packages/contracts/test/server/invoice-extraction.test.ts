@@ -1,8 +1,9 @@
-import { InvoiceExtraction } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, test } from "vitest";
+
+import { InvoiceExtraction, invoiceExtractionJsonSchema } from "../../src/server/schema";
 
 describe("server API response contracts", () => {
   test("decodes a valid invoice extraction", () => {
@@ -36,5 +37,12 @@ describe("server API response contracts", () => {
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("derives the model JSON schema from the transport contract", () => {
+    expect(invoiceExtractionJsonSchema).toMatchObject({
+      type: "object",
+      required: ["supplier", "invoiceNumber", "lines"],
+    });
   });
 });

@@ -1,20 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
-import { layer } from "../../src/index";
-import { migrationsFolder, store } from "../lib/store";
+import { store, withTestStore } from "../lib/store";
 
 test("product CRUD remains available without sync configuration", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
-  );
-
-  try {
+  await withTestStore(async ({ runtime }) => {
     const created = await runtime.runPromise(
       store((store) =>
         store.createProduct({
@@ -62,19 +51,11 @@ test("product CRUD remains available without sync configuration", async () => {
       configured: false,
       phase: "local-only",
     });
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });
 
 test("category and units default when omitted", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
-  );
-
-  try {
+  await withTestStore(async ({ runtime }) => {
     const created = await runtime.runPromise(
       store((store) =>
         store.createProduct({
@@ -89,8 +70,5 @@ test("category and units default when omitted", async () => {
     );
     expect(created.category).toMatchObject({ id: "general", name: "General" });
     expect(created.unitsPerPack).toBe(1);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+  });
 });

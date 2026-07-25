@@ -12,7 +12,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { SyncTransaction } from "./database.client";
+import type { SyncTransaction } from "./database";
 import { protocolError } from "./errors";
 import type { SyncActor } from "./model";
 import { decodeEntityRow, serverOwnedColumns } from "./row-validation";

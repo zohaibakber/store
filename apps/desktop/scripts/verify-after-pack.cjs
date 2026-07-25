@@ -29,7 +29,8 @@ const forbiddenRendererMarkers = [
 ];
 
 const forbiddenServerMarkers = [
-  "HYPERDRIVE",
+  "ORGANIZATION_STORE",
+  "AUTH_DB",
   "@cf/meta/llama",
   "Store Invoice API",
   "sync_inbox_organization_operation_pk",

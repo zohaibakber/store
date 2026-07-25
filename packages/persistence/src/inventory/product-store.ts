@@ -176,7 +176,7 @@ export const makeProductStore = (
       );
   });
 
-  const searchProducts = (input: SearchProductsInput) =>
+  const searchProducts = Effect.fn("OfflineStore.searchProducts")((input: SearchProductsInput) =>
     Effect.suspend(() => {
       const actor = mutationContext();
       const raw = input.query.trim();
@@ -224,7 +224,8 @@ export const makeProductStore = (
           }),
           mapPersistenceError("search products"),
         );
-    });
+    }),
+  );
 
   const getProduct = Effect.fn("OfflineStore.getProduct")(function* (id: string) {
     const actor = mutationContext();
@@ -688,7 +689,7 @@ export const makeProductStore = (
     return result;
   });
 
-  const listStockMovements = (productId: string) =>
+  const listStockMovements = Effect.fn("OfflineStore.listStockMovements")((productId: string) =>
     Effect.suspend(() => {
       const actor = mutationContext();
       return database.query.stockMovements
@@ -700,7 +701,8 @@ export const makeProductStore = (
           Effect.map((rows) => rows.map(toStockMovement)),
           mapPersistenceError("list stock movements"),
         );
-    });
+    }),
+  );
 
   return {
     listCategories,

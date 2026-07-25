@@ -22,7 +22,6 @@ jobs:
         run: |
           cat > apps/server/.env <<'EOF'
           BETTER_AUTH_SECRET=
-          BETTER_AUTH_URL=
           AUTH_TRUSTED_ORIGINS=
           ELECTRON_PROTOCOL=
           EOF
