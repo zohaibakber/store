@@ -31,9 +31,7 @@
     "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod",
     "destroy:dev": "bun alchemy destroy --stage dev --env-file .env.dev",
     "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin",
-    "check:infra": "bunx tsc --noEmit -p tsconfig.json",
-    "outputs:dev": "bun alchemy state --stage dev",
-    "outputs:prod": "bun alchemy state --stage prod"
+    "check:infra": "bunx tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250805.0",
