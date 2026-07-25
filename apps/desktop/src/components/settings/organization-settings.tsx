@@ -8,7 +8,7 @@ import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { toastManager } from "@/components/ui/toast";
-import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
+import { getErrorMessage, useAuth } from "@/lib/auth";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
@@ -24,10 +24,9 @@ export function OrganizationSettings() {
     setError(null);
     try {
       if (!window.auth) throw new Error("Authentication is unavailable.");
-      const next = await window.auth.createOrganization({
+      await window.auth.createOrganization({
         name: typeof value === "string" ? value : "",
       });
-      window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
       form.reset();
       toastManager.add({ title: "Organization created", type: "success" });
     } catch (cause) {

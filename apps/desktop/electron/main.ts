@@ -14,25 +14,23 @@ import {
   InvoiceIdInput,
   ProductIdInput,
   SearchProductsInput,
-  SyncResponse,
-  type SyncRequest,
   UpdateProductInput,
 } from "@store/contracts";
-import {
-  OfflineStore,
-  PersistenceError,
-  SyncTransportError,
-  layer as persistenceLayer,
-} from "@store/persistence";
+import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 
-import { AuthBroker, type AuthSnapshot, RequestError } from "./auth";
+import { AuthBroker } from "./auth";
 import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL, type StoreMethod } from "./store-channels";
 import { setupUpdater } from "./updater";
+import {
+  AuthenticatedWorkspace,
+  type WorkspaceStoreAdapter,
+  type WorkspaceTarget,
+} from "./workspace";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,10 +57,8 @@ for (const file of envFiles) {
 }
 
 let win: BrowserWindow | null;
-let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
-let stopSyncStatusForwarding: (() => void) | undefined;
-let activeOrganizationId: string | null = null;
-let deviceId = "local";
+let workspace: AuthenticatedWorkspace | undefined;
+let disposeUpdater: (() => Promise<void>) | undefined;
 
 function appIconPath() {
   // nativeImage (which BrowserWindow's `icon` option uses under the hood)
@@ -138,7 +134,7 @@ const encodeStoreErrorSafely = (cause: unknown) => {
 const runStore = async <A, E>(
   effect: Effect.Effect<A, E, OfflineStore>,
 ): Promise<StoreIpcResult<A>> => {
-  if (!runtime)
+  if (!workspace)
     return {
       ok: false,
       error: encodeStoreError(
@@ -149,7 +145,7 @@ const runStore = async <A, E>(
       ),
     };
   try {
-    return { ok: true, value: await runtime.runPromise(effect) };
+    return { ok: true, value: await workspace.runStore(effect) };
   } catch (cause) {
     return { ok: false, error: encodeStoreErrorSafely(cause) };
   }
@@ -231,107 +227,82 @@ async function loadDeviceId() {
   }
 }
 
-async function disposeRuntime() {
-  const current = runtime;
-  stopSyncStatusForwarding?.();
-  stopSyncStatusForwarding = undefined;
-  runtime = undefined;
-  activeOrganizationId = null;
-  if (current) await current.dispose();
-}
+const dataDirectory = (target: WorkspaceTarget) =>
+  target._tag === "Locked"
+    ? path.join(app.getPath("userData"), "locked", "data")
+    : path.join(
+        app.getPath("userData"),
+        "organizations",
+        organizationKey(target.organizationId),
+        "data",
+      );
 
-function forwardSyncStatus() {
-  const current = runtime;
-  if (!current) return;
-  stopSyncStatusForwarding = current.runCallback(
-    withStore((store) =>
-      store.syncStatusChanges.pipe(
-        Stream.runForEach((status) =>
-          Effect.sync(() => win?.webContents.send(STORE_SYNC_STATUS_CHANNEL, status)),
-        ),
-      ),
-    ),
-  );
-}
-
-async function activateLockedRuntime() {
-  await disposeRuntime();
-  const dataDir = path.join(app.getPath("userData"), "locked", "data");
-  await mkdir(path.dirname(dataDir), { recursive: true });
-  runtime = ManagedRuntime.make(
-    persistenceLayer({
-      dataDir,
-      migrationsFolder: migrationsFolder(),
-    }),
-  );
-  forwardSyncStatus();
-}
-
-async function activateOrganization(organizationId: string) {
-  if (activeOrganizationId === organizationId && runtime) return;
-  await disposeRuntime();
-  const key = organizationKey(organizationId);
-  const dataDir = path.join(app.getPath("userData"), "organizations", key, "data");
-  await mkdir(path.dirname(dataDir), { recursive: true });
-  runtime = ManagedRuntime.make(
-    persistenceLayer({
-      dataDir,
-      migrationsFolder: migrationsFolder(),
-      syncTransport: {
-        exchange: Effect.fn("SyncTransport.exchange")(function* (request: SyncRequest) {
-          const response = yield* Effect.tryPromise({
-            try: (signal) =>
-              authBroker.apiRequest<unknown>("/api/sync", {
-                method: "POST",
-                body: request,
-                signal,
+const workspaceStores: WorkspaceStoreAdapter = {
+  open: async (target) => {
+    const dataDir = dataDirectory(target);
+    await mkdir(path.dirname(dataDir), { recursive: true });
+    const runtime = ManagedRuntime.make(
+      persistenceLayer({
+        dataDir,
+        migrationsFolder: migrationsFolder(),
+        ...(target._tag === "Authenticated"
+          ? {
+              syncTransport: { exchange: target.exchange },
+              mutationContext: () => ({
+                organizationId: target.organizationId,
+                userId: target.userId,
+                deviceId: target.deviceId,
               }),
-            catch: (cause) =>
-              SyncTransportError.make({
-                message: cause instanceof Error ? cause.message : String(cause),
-                retryable:
-                  !(cause instanceof RequestError) ||
-                  cause.status === 408 ||
-                  cause.status === 429 ||
-                  cause.status >= 500,
-                ...(cause instanceof RequestError
-                  ? {
-                      status: cause.status,
-                      ...(cause.code ? { code: cause.code } : {}),
-                    }
-                  : {}),
-                cause,
-              }),
-          });
-          return yield* Schema.decodeUnknownEffect(SyncResponse)(response).pipe(
-            Effect.mapError((cause) =>
-              SyncTransportError.make({
-                message: "The sync server returned an invalid response.",
-                retryable: false,
-                code: "INVALID_SYNC_RESPONSE",
-                cause,
-              }),
-            ),
-          );
-        }),
-      },
-      mutationContext: () => ({
-        organizationId,
-        userId: authBroker.snapshot.user?.id ?? "offline",
-        deviceId,
+            }
+          : {}),
       }),
-    }),
-  );
-  forwardSyncStatus();
-  activeOrganizationId = organizationId;
+    );
+    try {
+      await runtime.runPromise(OfflineStore.pipe(Effect.asVoid));
+    } catch (cause) {
+      await runtime.dispose();
+      throw cause;
+    }
+    return {
+      run: (effect) => runtime.runPromise(effect),
+      onSyncStatusChange: (listener) =>
+        runtime.runCallback(
+          withStore((store) =>
+            store.syncStatusChanges.pipe(
+              Stream.runForEach((status) => Effect.sync(() => listener(status))),
+            ),
+          ),
+        ),
+      dispose: () => runtime.dispose(),
+    };
+  },
+};
+
+const makeWorkspace = (deviceId: string) =>
+  new AuthenticatedWorkspace({
+    auth: authBroker,
+    stores: workspaceStores,
+    deviceId,
+    events: {
+      publishSnapshot: (snapshot) => win?.webContents.send("auth:session-changed", snapshot),
+      publishSyncStatus: (status) => win?.webContents.send(STORE_SYNC_STATUS_CHANNEL, status),
+    },
+  });
+
+const currentWorkspace = () => {
+  if (!workspace) throw new Error("The authenticated workspace is not ready.");
+  return workspace;
+};
+
+async function initializeWorkspace(deviceId: string) {
+  workspace = makeWorkspace(deviceId);
+  return workspace.initialize();
 }
 
-async function applyAuthSnapshot(snapshot: AuthSnapshot) {
-  if (snapshot.status === "authenticated" && snapshot.activeOrganization)
-    await activateOrganization(snapshot.activeOrganization.id);
-  else await activateLockedRuntime();
-  win?.webContents.send("auth:session-changed", snapshot);
-  return snapshot;
+async function disposeWorkspace() {
+  const current = workspace;
+  workspace = undefined;
+  if (current) await current.dispose();
 }
 
 const inputString = (input: unknown, key: string, maximum = 160) => {
@@ -343,35 +314,34 @@ const inputString = (input: unknown, key: string, maximum = 160) => {
 };
 
 function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", () => authBroker.snapshot);
+  ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
   ipcMain.handle("auth:sign-in", async (_event, input: unknown) =>
-    applyAuthSnapshot(
-      await authBroker.signIn({
-        email: inputString(input, "email"),
-        password: inputString(input, "password", 256),
-      }),
-    ),
+    currentWorkspace().execute({
+      _tag: "SignIn",
+      email: inputString(input, "email"),
+      password: inputString(input, "password", 256),
+    }),
   );
   ipcMain.handle("auth:sign-up", async (_event, input: unknown) =>
-    applyAuthSnapshot(
-      await authBroker.signUp({
-        name: inputString(input, "name"),
-        email: inputString(input, "email"),
-        password: inputString(input, "password", 256),
-      }),
-    ),
+    currentWorkspace().execute({
+      _tag: "SignUp",
+      name: inputString(input, "name"),
+      email: inputString(input, "email"),
+      password: inputString(input, "password", 256),
+    }),
   );
-  ipcMain.handle("auth:sign-out", async () => {
-    await authBroker.signOut();
-    await applyAuthSnapshot(authBroker.snapshot);
-  });
+  ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
   ipcMain.handle("auth:organization:switch", async (_event, input: unknown) =>
-    applyAuthSnapshot(
-      await authBroker.switchOrganization({ organizationId: inputString(input, "organizationId") }),
-    ),
+    currentWorkspace().execute({
+      _tag: "SwitchOrganization",
+      organizationId: inputString(input, "organizationId"),
+    }),
   );
   ipcMain.handle("auth:organization:create", async (_event, input: unknown) =>
-    applyAuthSnapshot(await authBroker.createOrganization({ name: inputString(input, "name") })),
+    currentWorkspace().execute({
+      _tag: "CreateOrganization",
+      name: inputString(input, "name"),
+    }),
   );
 }
 
@@ -402,7 +372,7 @@ function registerServerIpc() {
           new File([file.bytes], file.name, { type: file.type || inferredType }),
         );
       }
-      const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
+      const raw = await currentWorkspace().request("/api/uploads", { method: "POST", body });
       return await Effect.runPromise(
         Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
           Effect.mapError(
@@ -494,19 +464,17 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  void disposeRuntime();
+  void disposeWorkspace();
+  void disposeUpdater?.();
 });
 
 void app.whenReady().then(async () => {
   registerRendererCsp();
-  deviceId = await loadDeviceId();
-  const snapshot = await authBroker.initialize();
+  const deviceId = await loadDeviceId();
+  await initializeWorkspace(deviceId);
   registerStoreIpc();
   registerAuthIpc();
   registerServerIpc();
-  setupUpdater(() => win);
-  if (snapshot.status === "authenticated" && snapshot.activeOrganization)
-    await activateOrganization(snapshot.activeOrganization.id);
-  else await activateLockedRuntime();
+  disposeUpdater = await setupUpdater(() => win);
   createWindow();
 });

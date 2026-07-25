@@ -13,6 +13,7 @@ import { clientLayer, makeDatabase } from "./database/client";
 import { PersistenceError } from "./errors";
 import type { InvoiceStore } from "./inventory/invoice-store";
 import { makeInvoiceStore } from "./inventory/invoice-store";
+import { makeInventoryMutation, MutationIds } from "./inventory/mutation";
 import type { ProductStore } from "./inventory/product-store";
 import { makeProductStore } from "./inventory/product-store";
 import { makeSyncEngine } from "./sync/engine";
@@ -34,8 +35,9 @@ const make = (config: PersistenceConfig) =>
     const database = yield* makeDatabase(config.migrationsFolder);
     yield* initializeDatabase(database, mutationContext());
     const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
-    const productStore = makeProductStore(database, mutationContext, syncEngine.signal);
-    const invoiceStore = makeInvoiceStore(database, mutationContext, syncEngine.signal);
+    const mutation = yield* makeInventoryMutation(database, mutationContext, syncEngine.signal);
+    const productStore = makeProductStore(database, mutationContext, mutation);
+    const invoiceStore = makeInvoiceStore(database, mutationContext, mutation);
     const analyticsStore = makeAnalyticsStore(database, mutationContext);
 
     return OfflineStore.of({
@@ -49,4 +51,7 @@ const make = (config: PersistenceConfig) =>
   });
 
 export const layer = (config: PersistenceConfig) =>
-  Layer.effect(OfflineStore, make(config)).pipe(Layer.provide(clientLayer(config)));
+  Layer.effect(OfflineStore, make(config)).pipe(
+    Layer.provide(MutationIds.live),
+    Layer.provide(clientLayer(config)),
+  );

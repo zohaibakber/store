@@ -10,19 +10,26 @@ declare namespace NodeJS {
 interface Window {
   offlineStore: import("@store/contracts").OfflineStoreApi;
   auth: {
-    getSession: () => Promise<import("./auth").AuthSnapshot>;
-    signIn: (input: { email: string; password: string }) => Promise<import("./auth").AuthSnapshot>;
+    getSession: () => Promise<import("@store/contracts").WorkspaceSnapshot>;
+    signIn: (input: {
+      email: string;
+      password: string;
+    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
     signUp: (input: {
       name: string;
       email: string;
       password: string;
-    }) => Promise<import("./auth").AuthSnapshot>;
+    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
     signOut: () => Promise<void>;
     switchOrganization: (input: {
       organizationId: string;
-    }) => Promise<import("./auth").AuthSnapshot>;
-    createOrganization: (input: { name: string }) => Promise<import("./auth").AuthSnapshot>;
-    onSessionChange: (callback: (snapshot: import("./auth").AuthSnapshot) => void) => () => void;
+    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
+    createOrganization: (input: {
+      name: string;
+    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
+    onSessionChange: (
+      callback: (snapshot: import("@store/contracts").WorkspaceSnapshot) => void,
+    ) => () => void;
   };
   serverApi: {
     analyseInvoices: (input: {

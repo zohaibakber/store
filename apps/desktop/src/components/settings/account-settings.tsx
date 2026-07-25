@@ -5,7 +5,7 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
-import { getErrorMessage, useAuth, type AuthSnapshot } from "@/lib/auth";
+import { getErrorMessage, useAuth } from "@/lib/auth";
 
 const initials = (name: string) =>
   name
@@ -18,17 +18,6 @@ const initials = (name: string) =>
 async function signOut() {
   try {
     await window.auth?.signOut();
-    window.dispatchEvent(
-      new CustomEvent<AuthSnapshot>("auth:session", {
-        detail: {
-          status: "unauthenticated",
-          user: null,
-          activeOrganization: null,
-          organizations: [],
-          isOnline: navigator.onLine,
-        },
-      }),
-    );
   } catch (error) {
     toastManager.add({ title: getErrorMessage(error), type: "error" });
   }

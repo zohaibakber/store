@@ -1,30 +1,15 @@
+import type { WorkspaceSnapshot } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
-export type AuthUser = { id: string; name: string; email: string; image?: string | null };
-export type AuthOrganization = { id: string; name: string; slug?: string | null; role: string };
-export type AuthSnapshot = {
-  status: "authenticated" | "unauthenticated";
-  user: AuthUser | null;
-  activeOrganization: AuthOrganization | null;
-  organizations: AuthOrganization[];
-  isOnline: boolean;
-};
-
-declare global {
-  interface WindowEventMap {
-    "auth:session": CustomEvent<AuthSnapshot>;
-  }
-}
-
 type AuthContextValue = {
-  snapshot: AuthSnapshot | null;
+  snapshot: WorkspaceSnapshot | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
 };
 const AuthContext = React.createContext<AuthContextValue | null>(null);
-const authScope = (snapshot: AuthSnapshot | null): string | null =>
+const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
   snapshot?.status === "authenticated" && snapshot.user && snapshot.activeOrganization
     ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
     : null;
@@ -34,13 +19,14 @@ const messageFrom = (error: unknown) => {
   return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 };
 
-let initialSnapshot: AuthSnapshot | null = null;
+let initialSnapshot: WorkspaceSnapshot | null = null;
 let initialError: string | null = null;
 
 export async function bootstrapAuth() {
   try {
     if (!window.auth) throw new Error("Authentication is unavailable in this build.");
     initialSnapshot = await window.auth.getSession();
+    initialError = initialSnapshot.workspaceError ?? null;
   } catch (cause) {
     initialError = messageFrom(cause);
   }
@@ -49,7 +35,7 @@ export async function bootstrapAuth() {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = React.useState<AuthSnapshot | null>(initialSnapshot);
+  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(initialSnapshot);
   const [loading, setLoading] = React.useState(initialSnapshot === null && initialError === null);
   const [error, setError] = React.useState<string | null>(initialError);
   const currentScopeRef = React.useRef(authScope(initialSnapshot));
@@ -57,12 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const transitionRef = React.useRef(0);
 
   const apply = React.useCallback(
-    async (next: AuthSnapshot) => {
+    async (next: WorkspaceSnapshot) => {
       const nextScope = authScope(next);
       if (nextScope === pendingScopeRef.current) return;
       if (nextScope === currentScopeRef.current && pendingScopeRef.current === undefined) {
         setSnapshot(next);
-        setError(null);
+        setError(next.workspaceError ?? null);
         setLoading(false);
         return;
       }
@@ -70,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const transition = transitionRef.current + 1;
       transitionRef.current = transition;
       pendingScopeRef.current = nextScope;
-      setError(null);
+      setError(next.workspaceError ?? null);
       setLoading(true);
 
       if (nextScope === null) {
@@ -102,12 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     const dispose = window.auth?.onSessionChange((next) => void apply(next));
-    const handleLocal = (event: CustomEvent<AuthSnapshot>) => void apply(event.detail);
-    window.addEventListener("auth:session", handleLocal);
-    return () => {
-      dispose?.();
-      window.removeEventListener("auth:session", handleLocal);
-    };
+    return () => dispose?.();
   }, [apply]);
 
   return (
@@ -123,3 +104,4 @@ export function useAuth() {
   return value;
 }
 export const getErrorMessage = messageFrom;
+export type { WorkspaceSnapshot };

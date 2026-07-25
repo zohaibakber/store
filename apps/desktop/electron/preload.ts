@@ -1,23 +1,22 @@
-import type { InvoiceExtraction, OfflineStoreApi } from "@store/contracts";
+import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import { ipcRenderer, contextBridge } from "electron";
 
-import type { AuthSnapshot } from "./auth";
 import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 
 contextBridge.exposeInMainWorld("auth", {
-  getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<AuthSnapshot>,
+  getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<WorkspaceSnapshot>,
   signIn: (input: { email: string; password: string }) =>
-    ipcRenderer.invoke("auth:sign-in", input) as Promise<AuthSnapshot>,
+    ipcRenderer.invoke("auth:sign-in", input) as Promise<WorkspaceSnapshot>,
   signUp: (input: { name: string; email: string; password: string }) =>
-    ipcRenderer.invoke("auth:sign-up", input) as Promise<AuthSnapshot>,
+    ipcRenderer.invoke("auth:sign-up", input) as Promise<WorkspaceSnapshot>,
   signOut: () => ipcRenderer.invoke("auth:sign-out") as Promise<void>,
   switchOrganization: (input: { organizationId: string }) =>
-    ipcRenderer.invoke("auth:organization:switch", input) as Promise<AuthSnapshot>,
+    ipcRenderer.invoke("auth:organization:switch", input) as Promise<WorkspaceSnapshot>,
   createOrganization: (input: { name: string }) =>
-    ipcRenderer.invoke("auth:organization:create", input) as Promise<AuthSnapshot>,
-  onSessionChange(callback: (snapshot: AuthSnapshot) => void) {
-    const listener = (_event: Electron.IpcRendererEvent, snapshot: AuthSnapshot) =>
+    ipcRenderer.invoke("auth:organization:create", input) as Promise<WorkspaceSnapshot>,
+  onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: WorkspaceSnapshot) =>
       callback(snapshot);
     ipcRenderer.on("auth:session-changed", listener);
     return () => ipcRenderer.off("auth:session-changed", listener);

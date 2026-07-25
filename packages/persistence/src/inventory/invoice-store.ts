@@ -13,8 +13,8 @@ import * as Effect from "effect/Effect";
 import type { MutationContext } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { InvoiceNotFoundError, PersistenceError, mapPersistenceError } from "../errors";
-import { enqueueOperation } from "../sync/outbox";
 import { byEarliestExpiry, toInvoice } from "./models";
+import type { InventoryMutation } from "./mutation";
 
 export interface InvoiceStore {
   readonly listInvoices: Effect.Effect<ReadonlyArray<Invoice>, PersistenceError>;
@@ -74,7 +74,7 @@ const movementChange = (
 export const makeInvoiceStore = (
   database: StoreDatabase,
   mutationContext: () => MutationContext,
-  signalSync: Effect.Effect<void>,
+  mutation: InventoryMutation,
 ): InvoiceStore => {
   const listInvoices = Effect.suspend(() => {
     const actor = mutationContext();
@@ -113,33 +113,22 @@ export const makeInvoiceStore = (
         return yield* invalidInvoice("Sale prices cannot be negative");
     }
 
-    const occurredAt = Date.now();
-    const actor = mutationContext();
-    const operationId = crypto.randomUUID();
-    const created = yield* database
-      .transaction((transaction) =>
+    const created = yield* mutation
+      .run("create invoice", (transaction, scope) =>
         Effect.gen(function* () {
           const allocations: Allocation[] = [];
           const changes: SyncEntityChange[] = [];
-          const id = crypto.randomUUID();
-          const invoiceNumber = yield* allocateInvoiceNumber(transaction, actor.organizationId);
+          const id = yield* scope.nextId;
+          const invoiceNumber = yield* allocateInvoiceNumber(transaction, scope.organizationId);
           const displayInvoiceNumber = formatInvoiceNumber(invoiceNumber);
           const total = input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
           const [invoice] = yield* transaction
             .insert(invoices)
             .values({
-              id,
               invoiceNumber,
               customerName: input.customerName?.trim() || null,
               total,
-              organizationId: actor.organizationId,
-              createdByUserId: actor.userId,
-              updatedByUserId: actor.userId,
-              deviceId: actor.deviceId,
-              operationId,
-              rowVersion: 1,
-              createdAt: occurredAt,
-              updatedAt: occurredAt,
+              ...scope.createVersioned(id),
             })
             .returning();
           if (!invoice) return yield* invalidInvoice("Created invoice could not be loaded");
@@ -154,7 +143,7 @@ export const makeInvoiceStore = (
           for (const line of input.items) {
             const product = yield* transaction.query.products.findFirst({
               where: {
-                organizationId: actor.organizationId,
+                organizationId: scope.organizationId,
                 id: line.productId,
                 deletedAt: { isNull: true },
               },
@@ -162,7 +151,7 @@ export const makeInvoiceStore = (
             if (!product) return yield* invalidInvoice("One of the products no longer exists");
             const productBatches = yield* transaction.query.batches.findMany({
               where: {
-                organizationId: actor.organizationId,
+                organizationId: scope.organizationId,
                 productId: line.productId,
                 deletedAt: { isNull: true },
               },
@@ -220,14 +209,10 @@ export const makeInvoiceStore = (
                   .update(batches)
                   .set({
                     packQuantity: batch.packQuantity - taken,
-                    updatedAt: occurredAt,
-                    updatedByUserId: actor.userId,
-                    deviceId: actor.deviceId,
-                    operationId,
-                    rowVersion: nextRowVersion,
+                    ...scope.updateVersioned(nextRowVersion),
                   })
                   .where(
-                    and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)),
+                    and(eq(batches.organizationId, scope.organizationId), eq(batches.id, batch.id)),
                   )
                   .returning();
                 if (!updatedBatch) return yield* invalidInvoice("The batch could not be updated");
@@ -240,7 +225,7 @@ export const makeInvoiceStore = (
                 });
                 changes.push(
                   yield* movementChange(transaction, {
-                    id: crypto.randomUUID(),
+                    ...scope.createMovement(yield* scope.nextId),
                     productId: product.id,
                     batchId: batch.id,
                     invoiceId: id,
@@ -248,11 +233,6 @@ export const makeInvoiceStore = (
                     packDelta: -taken,
                     unitDelta: 0,
                     note: `Invoice #${displayInvoiceNumber}`,
-                    organizationId: actor.organizationId,
-                    actorUserId: actor.userId,
-                    deviceId: actor.deviceId,
-                    operationId,
-                    createdAt: occurredAt,
                   }),
                 );
               } else {
@@ -266,14 +246,10 @@ export const makeInvoiceStore = (
                   .set({
                     packQuantity: batch.packQuantity - packsOpened,
                     unitQuantity: looseUnits - taken,
-                    updatedAt: occurredAt,
-                    updatedByUserId: actor.userId,
-                    deviceId: actor.deviceId,
-                    operationId,
-                    rowVersion: nextRowVersion,
+                    ...scope.updateVersioned(nextRowVersion),
                   })
                   .where(
-                    and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)),
+                    and(eq(batches.organizationId, scope.organizationId), eq(batches.id, batch.id)),
                   )
                   .returning();
                 if (!updatedBatch) return yield* invalidInvoice("The batch could not be updated");
@@ -287,7 +263,7 @@ export const makeInvoiceStore = (
                 if (packsOpened > 0)
                   changes.push(
                     yield* movementChange(transaction, {
-                      id: crypto.randomUUID(),
+                      ...scope.createMovement(yield* scope.nextId),
                       productId: product.id,
                       batchId: batch.id,
                       invoiceId: id,
@@ -295,16 +271,11 @@ export const makeInvoiceStore = (
                       packDelta: -packsOpened,
                       unitDelta: packsOpened * product.unitsPerPack,
                       note: `Opened for invoice #${displayInvoiceNumber}`,
-                      organizationId: actor.organizationId,
-                      actorUserId: actor.userId,
-                      deviceId: actor.deviceId,
-                      operationId,
-                      createdAt: occurredAt,
                     }),
                   );
                 changes.push(
                   yield* movementChange(transaction, {
-                    id: crypto.randomUUID(),
+                    ...scope.createMovement(yield* scope.nextId),
                     productId: product.id,
                     batchId: batch.id,
                     invoiceId: id,
@@ -312,11 +283,6 @@ export const makeInvoiceStore = (
                     packDelta: 0,
                     unitDelta: -taken,
                     note: `Invoice #${displayInvoiceNumber}`,
-                    organizationId: actor.organizationId,
-                    actorUserId: actor.userId,
-                    deviceId: actor.deviceId,
-                    operationId,
-                    createdAt: occurredAt,
                   }),
                 );
               }
@@ -328,16 +294,8 @@ export const makeInvoiceStore = (
               .insert(invoiceItems)
               .values({
                 ...allocation,
-                id: crypto.randomUUID(),
                 invoiceId: id,
-                organizationId: actor.organizationId,
-                createdByUserId: actor.userId,
-                updatedByUserId: actor.userId,
-                deviceId: actor.deviceId,
-                operationId,
-                rowVersion: 1,
-                createdAt: occurredAt,
-                updatedAt: occurredAt,
+                ...scope.createVersioned(yield* scope.nextId),
               })
               .returning();
             if (!item) return yield* invalidInvoice("The invoice item could not be recorded");
@@ -349,9 +307,9 @@ export const makeInvoiceStore = (
               row: item,
             });
           }
-          yield* enqueueOperation(transaction, actor, operationId, occurredAt, changes);
+          yield* scope.capture(changes);
           const invoiceWithItems = yield* transaction.query.invoices.findFirst({
-            where: { organizationId: actor.organizationId, id },
+            where: { organizationId: scope.organizationId, id },
             with: { items: true },
           });
           if (!invoiceWithItems)
@@ -360,7 +318,6 @@ export const makeInvoiceStore = (
         }),
       )
       .pipe(mapPersistenceError("create invoice"));
-    yield* signalSync;
     return toInvoice(created);
   });
 

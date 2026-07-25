@@ -1,21 +1,19 @@
 /// <reference types="vite/client" />
 
-import type { InvoiceExtraction } from "@store/contracts";
-
-import type { AuthSnapshot } from "@/lib/auth";
+import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
 
 declare global {
   const __APP_VERSION__: string;
 
   interface Window {
     auth?: {
-      getSession(): Promise<AuthSnapshot>;
-      signIn(input: { email: string; password: string }): Promise<AuthSnapshot>;
-      signUp(input: { name: string; email: string; password: string }): Promise<AuthSnapshot>;
+      getSession(): Promise<WorkspaceSnapshot>;
+      signIn(input: { email: string; password: string }): Promise<WorkspaceSnapshot>;
+      signUp(input: { name: string; email: string; password: string }): Promise<WorkspaceSnapshot>;
       signOut(): Promise<void>;
-      switchOrganization(input: { organizationId: string }): Promise<AuthSnapshot>;
-      createOrganization(input: { name: string }): Promise<AuthSnapshot>;
-      onSessionChange(listener: (snapshot: AuthSnapshot) => void): () => void;
+      switchOrganization(input: { organizationId: string }): Promise<WorkspaceSnapshot>;
+      createOrganization(input: { name: string }): Promise<WorkspaceSnapshot>;
+      onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;
     };
     serverApi?: {
       analyseInvoices(input: {

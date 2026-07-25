@@ -7,7 +7,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { getErrorMessage, type AuthSnapshot } from "@/lib/auth";
+import { getErrorMessage } from "@/lib/auth";
 
 type CreateOrganizationErrors = Record<string, string | string[]>;
 
@@ -22,10 +22,9 @@ export function CreateOrganizationPage() {
     setErrors({});
     try {
       if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-      const next = await window.auth.createOrganization({
+      await window.auth.createOrganization({
         name: typeof name === "string" ? name : "",
       });
-      window.dispatchEvent(new CustomEvent<AuthSnapshot>("auth:session", { detail: next }));
     } catch (cause) {
       setErrors({ organizationName: getErrorMessage(cause) });
     } finally {

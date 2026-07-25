@@ -2,32 +2,11 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
+import type { WorkspaceSnapshot, WorkspaceUser } from "@store/contracts";
 import { app, net, safeStorage } from "electron";
 
-export interface AuthUser {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string;
-  readonly image?: string | null;
-}
-
-export interface AuthOrganization {
-  readonly id: string;
-  readonly name: string;
-  readonly slug?: string | null;
-  readonly role: string;
-}
-
-export interface AuthSnapshot {
-  readonly status: "authenticated" | "unauthenticated";
-  readonly user: AuthUser | null;
-  readonly activeOrganization: AuthOrganization | null;
-  readonly organizations: AuthOrganization[];
-  readonly isOnline: boolean;
-}
-
 interface PersistedAuth {
-  readonly snapshot: AuthSnapshot;
+  readonly snapshot: WorkspaceSnapshot;
 }
 
 type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
@@ -45,7 +24,7 @@ export class RequestError extends Error {
 const requestError = (error: { readonly message?: string; readonly status: number }) =>
   new RequestError(error.message ?? "Authentication request failed.", error.status);
 
-const unauthenticated = (isOnline: boolean): AuthSnapshot => ({
+const unauthenticated = (isOnline: boolean): WorkspaceSnapshot => ({
   status: "unauthenticated",
   user: null,
   activeOrganization: null,
@@ -65,8 +44,8 @@ export class AuthBroker {
   readonly #baseUrl: string;
   readonly #client: ElectronAuthClient;
   readonly #electronOrigin: string;
-  readonly #listeners = new Set<(snapshot: AuthSnapshot) => void>();
-  #snapshot: AuthSnapshot = unauthenticated(false);
+  readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
+  #snapshot: WorkspaceSnapshot = unauthenticated(false);
 
   constructor(baseUrl: string, electronProtocol = "com.tabaaq.desktop") {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -85,7 +64,7 @@ export class AuthBroker {
     this.#client.setupMain({ bridges: false, csp: false, scheme: false });
   }
 
-  onChange(listener: (snapshot: AuthSnapshot) => void) {
+  onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
@@ -181,7 +160,7 @@ export class AuthBroker {
     return this.#request<T>(pathname, init);
   }
 
-  async #loadOrganizations(user: AuthUser) {
+  async #loadOrganizations(user: WorkspaceUser) {
     const listResult = await this.#client.organization.list();
     if (listResult.error) throw requestError(listResult.error);
     const rows = listResult.data ?? [];
@@ -258,13 +237,13 @@ export class AuthBroker {
     return { data: payload as T, response };
   }
 
-  #publish(snapshot: AuthSnapshot) {
+  #publish(snapshot: WorkspaceSnapshot) {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener(snapshot);
     return snapshot;
   }
 
-  async #persistAndPublish(snapshot: AuthSnapshot) {
+  async #persistAndPublish(snapshot: WorkspaceSnapshot) {
     this.#publish(snapshot);
     await this.#writePersisted({ snapshot });
     return snapshot;
