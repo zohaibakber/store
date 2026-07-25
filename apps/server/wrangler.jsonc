@@ -23,6 +23,12 @@
       "migrations_pattern": "../../packages/db/migrations/auth/*/migration.sql",
     },
   ],
+  "kv_namespaces": [
+    {
+      "binding": "AUTH_KV",
+      "id": "0265eae861ea4facaff3fda5098299e1",
+    },
+  ],
   // One Durable Object per organization, each with its own SQLite database.
   "durable_objects": {
     "bindings": [

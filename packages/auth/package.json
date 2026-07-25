@@ -5,10 +5,12 @@
   "type": "module",
   "exports": {
     ".": "./src/auth.ts",
-    "./electron-client": "./src/electron-client.ts"
+    "./electron-client": "./src/electron-client.ts",
+    "./security": "./src/security.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/auth/test"
   },
   "dependencies": {
     "@better-auth/electron": "^1.6.23",
@@ -19,7 +21,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250109.0",
     "@types/node": "^24.13.3",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "^4.1.10"
   },
   "peerDependencies": {
     "electron": "^43.1.0"

@@ -1,27 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { withElectronOrigin } from "../../src/auth/electron-origin";
+import { normalizeElectronOrigin } from "../../src/auth/electron-origin";
 
-describe("withElectronOrigin", () => {
-  it("replaces a null Origin with the API origin for a verified Electron request", () => {
+describe("normalizeElectronOrigin", () => {
+  it("removes a null Origin so the verified Electron plugin can supply its scheme", () => {
     const request = new Request("https://api.example.com/api/auth/sign-in/email", {
       headers: { origin: "null", "electron-origin": "com.tabaaq.desktop:/" },
       method: "POST",
     });
 
-    expect(withElectronOrigin(request, "com.tabaaq.desktop").headers.get("origin")).toBe(
-      "https://api.example.com",
-    );
+    expect(normalizeElectronOrigin(request, "com.tabaaq.desktop").headers.get("origin")).toBeNull();
   });
 
-  it("adds the API origin when Origin is missing from a verified Electron request", () => {
+  it("leaves a missing Origin for the Electron plugin to handle", () => {
     const request = new Request("https://api.example.com/api/auth/get-session", {
       headers: { "electron-origin": "com.tabaaq.desktop:/" },
     });
 
-    expect(withElectronOrigin(request, "com.tabaaq.desktop").headers.get("origin")).toBe(
-      "https://api.example.com",
-    );
+    expect(normalizeElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
   });
 
   it("preserves a real browser Origin", () => {
@@ -32,7 +28,7 @@ describe("withElectronOrigin", () => {
       },
     });
 
-    expect(withElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
+    expect(normalizeElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
   });
 
   it("does not trust a different Electron protocol", () => {
@@ -40,6 +36,6 @@ describe("withElectronOrigin", () => {
       headers: { origin: "null", "electron-origin": "com.attacker.app:/" },
     });
 
-    expect(withElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
+    expect(normalizeElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
   });
 });
