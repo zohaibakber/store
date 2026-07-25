@@ -2,9 +2,10 @@ export const normalizeElectronOrigin = (request: Request, electronProtocol: stri
   const electronOrigin = request.headers.get("electron-origin");
   const origin = request.headers.get("origin");
   const expectedElectronOrigin = `${electronProtocol.replace(/:\/?$/, "")}:/`;
-  if (electronOrigin !== expectedElectronOrigin || origin !== "null") return request;
+  if (electronOrigin !== expectedElectronOrigin || (origin !== null && origin !== "null"))
+    return request;
 
   const headers = new Headers(request.headers);
-  headers.delete("origin");
+  if (origin === "null") headers.delete("origin");
   return new Request(request, { headers });
 };

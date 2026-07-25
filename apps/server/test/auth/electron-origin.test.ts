@@ -12,12 +12,14 @@ describe("normalizeElectronOrigin", () => {
     expect(normalizeElectronOrigin(request, "com.tabaaq.desktop").headers.get("origin")).toBeNull();
   });
 
-  it("leaves a missing Origin for the Electron plugin to handle", () => {
+  it("clones a verified request so the Electron plugin can set Origin", () => {
     const request = new Request("https://api.example.com/api/auth/get-session", {
       headers: { "electron-origin": "com.tabaaq.desktop:/" },
     });
+    const normalized = normalizeElectronOrigin(request, "com.tabaaq.desktop");
 
-    expect(normalizeElectronOrigin(request, "com.tabaaq.desktop")).toBe(request);
+    expect(normalized).not.toBe(request);
+    expect(() => normalized.headers.set("origin", "com.tabaaq.desktop:/")).not.toThrow();
   });
 
   it("preserves a real browser Origin", () => {
