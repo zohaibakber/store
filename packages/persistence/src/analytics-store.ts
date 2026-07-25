@@ -43,9 +43,9 @@ export const makeAnalyticsStore = (
 
     const revenueByDayQuery = database
       .select({
-        date: sql<string>`to_char((to_timestamp(${invoices.createdAt} / 1000.0) AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD')`,
-        revenue: sql<number>`coalesce(sum(${invoices.total}), 0)::int`,
-        invoices: sql<number>`count(*)::int`,
+        date: sql<string>`strftime('%Y-%m-%d', ${invoices.createdAt} / 1000, 'unixepoch')`,
+        revenue: sql<number>`CAST(coalesce(sum(${invoices.total}), 0) AS INTEGER)`,
+        invoices: sql<number>`count(*)`,
       })
       .from(invoices)
       .where(and(invoiceScope, gte(invoices.createdAt, windowStart)))
@@ -56,8 +56,8 @@ export const makeAnalyticsStore = (
       .select({
         productId: invoiceItems.productId,
         productName: sql<string>`max(${invoiceItems.productName})`,
-        unitsSold: sql<number>`coalesce(sum(${invoiceItems.baseUnitQuantity}), 0)::int`,
-        revenue: sql<number>`${itemRevenue}::int`,
+        unitsSold: sql<number>`CAST(coalesce(sum(${invoiceItems.baseUnitQuantity}), 0) AS INTEGER)`,
+        revenue: sql<number>`CAST(${itemRevenue} AS INTEGER)`,
       })
       .from(invoiceItems)
       .where(
@@ -107,8 +107,8 @@ export const makeAnalyticsStore = (
       .select({
         productId: products.id,
         productName: products.name,
-        packQuantity: sql<number>`coalesce(sum(CASE WHEN ${liveBatch} THEN ${batches.packQuantity} ELSE 0 END), 0)::int`,
-        unitQuantity: sql<number>`coalesce(sum(CASE WHEN ${liveBatch} THEN ${batches.unitQuantity} ELSE 0 END), 0)::int`,
+        packQuantity: sql<number>`CAST(coalesce(sum(CASE WHEN ${liveBatch} THEN ${batches.packQuantity} ELSE 0 END), 0) AS INTEGER)`,
+        unitQuantity: sql<number>`CAST(coalesce(sum(CASE WHEN ${liveBatch} THEN ${batches.unitQuantity} ELSE 0 END), 0) AS INTEGER)`,
       })
       .from(products)
       .leftJoin(
@@ -144,7 +144,7 @@ export const makeAnalyticsStore = (
       .limit(5);
 
     const activeProductsQuery = database
-      .select({ count: sql<number>`count(*)::int` })
+      .select({ count: sql<number>`count(*)` })
       .from(products)
       .where(
         and(

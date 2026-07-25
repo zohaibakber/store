@@ -13,7 +13,7 @@ import type {
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { MutationContext } from "./config";
@@ -26,6 +26,7 @@ import {
 } from "./errors";
 import { toBatch, toCategory, toProduct, toStockMovement } from "./models";
 import { enqueueOperation } from "./outbox";
+import { prepare as prepareProduct, rank as rankProducts } from "./product-ranking";
 
 export interface ProductStore {
   readonly listCategories: Effect.Effect<ReadonlyArray<Category>, PersistenceError>;
@@ -181,8 +182,18 @@ export const makeProductStore = (
   // trigram similarity misses cases like "pendal" -> "panadol" (they share
   // almost no trigrams), so the ranking blends trigram similarity, prefix match,
   // Levenshtein distance, and phonetics (dmetaphone/soundex) — phonetics do the
-  // heavy lifting for that class of misspelling. Runs entirely on the local
-  // PGlite database against the pg_trgm/fuzzystrmatch/unaccent extensions.
+  // heavy lifting for that class of misspelling.
+  //
+  // This used to run in SQL against the pg_trgm/fuzzystrmatch/unaccent
+  // extensions. SQLite has none of those functions, so the database now only
+  // supplies candidate rows and the ranking happens in `product-ranking.ts`,
+  // which reproduces the Postgres scoring (verified differentially; see
+  // plans/021-libsql-migration.md).
+  //
+  // Every visible product is scanned per query. That is fine at the catalogue
+  // sizes measured (~7ms at 500 products, ~26ms at 2000) but grows linearly; if
+  // it ever becomes hot, cache the prepared rows and invalidate them on write
+  // rather than reaching back for a SQL-side ranking that SQLite cannot express.
   const searchProducts = (input: SearchProductsInput) =>
     Effect.suspend(() => {
       const actor = mutationContext();
@@ -190,41 +201,19 @@ export const makeProductStore = (
       if (raw.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
       const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
 
-      const normalized = sql`lower(unaccent(${raw}))`;
-      const nameNorm = sql`lower(unaccent(${products.name}))`;
-      const compNorm = sql`lower(unaccent(coalesce(${products.composition}, '')))`;
-      const score = sql<number>`(
-          0.45 * similarity(${nameNorm}, ${normalized})
-        + 0.25 * word_similarity(${normalized}, ${compNorm})
-        + (CASE WHEN ${nameNorm} LIKE ${normalized} || '%' THEN 0.30 ELSE 0 END)
-        + (CASE WHEN dmetaphone(${products.name}) = dmetaphone(${raw}) THEN 0.40 ELSE 0 END)
-        + (CASE WHEN soundex(${products.name}) = soundex(${raw}) THEN 0.25 ELSE 0 END)
-        + (CASE WHEN levenshtein(${nameNorm}, ${normalized}) <= 2 THEN 0.20 ELSE 0 END)
-      )`;
-      const matches = sql`(
-           similarity(${nameNorm}, ${normalized}) > 0.15
-        OR word_similarity(${normalized}, ${compNorm}) > 0.4
-        OR dmetaphone(${products.name}) = dmetaphone(${raw})
-        OR soundex(${products.name}) = soundex(${raw})
-        OR levenshtein(${nameNorm}, ${normalized}) <= 2
-        OR ${nameNorm} LIKE '%' || ${normalized} || '%'
-      )`;
-
       return database
-        .select({ id: products.id })
+        .select({
+          id: products.id,
+          name: products.name,
+          composition: products.composition,
+        })
         .from(products)
-        .where(
-          and(
-            eq(products.organizationId, actor.organizationId),
-            isNull(products.deletedAt),
-            matches,
-          ),
-        )
-        .orderBy(sql`${score} DESC`)
-        .limit(limit)
+        .where(and(eq(products.organizationId, actor.organizationId), isNull(products.deletedAt)))
         .pipe(
-          Effect.flatMap((ranked) => {
-            const ids = ranked.map((row) => row.id);
+          Effect.flatMap((candidates) => {
+            const ids = rankProducts(candidates.map(prepareProduct), raw, limit).map(
+              (entry) => entry.product.id,
+            );
             if (ids.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
             return database.query.products
               .findMany({

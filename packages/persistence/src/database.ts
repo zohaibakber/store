@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
@@ -5,6 +6,7 @@ import { localRelations } from "@store/db/local/relations";
 import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import { migrate } from "drizzle-orm/effect-libsql/migrator";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import type { PersistenceConfig } from "./config";
 import { mapPersistenceError } from "./errors";
@@ -27,6 +29,17 @@ export const makeDatabase = (migrationsFolder: string) =>
   });
 
 export const clientLayer = (config: PersistenceConfig) =>
+  Layer.unwrap(
+    // PGlite created its data directory on open; libSQL does not, and fails with
+    // SQLITE_CANTOPEN (14) if the parent is missing. On a fresh install nothing
+    // else has created this path yet, so ensure it before connecting.
+    Effect.sync(() => {
+      mkdirSync(config.dataDir, { recursive: true });
+      return libsqlLayer(config);
+    }),
+  );
+
+const libsqlLayer = (config: PersistenceConfig) =>
   LibsqlClient.layer({
     url: `file:${databaseFile(config.dataDir)}`,
     // `intMode: "number"` is the libSQL default and the correct choice here: the
