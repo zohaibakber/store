@@ -27,7 +27,7 @@ export function SettingsPage() {
         <PageHeading>Settings</PageHeading>
       </PageHeader>
 
-      <PageContent>
+      <PageContent className="mt-2">
         <Tabs className="w-full items-start gap-6" defaultValue="account" orientation="vertical">
           <TabsList className="w-44 shrink-0">
             {tabs.map((tab) => (

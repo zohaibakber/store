@@ -5,7 +5,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   PageAction,
   PageContent,
-  PageDescription,
   PageHeader,
   PageHeading,
   PageLayout,
@@ -49,9 +48,6 @@ function UploadPage() {
     <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
         <PageHeading>Upload invoices</PageHeading>
-        <PageDescription>
-          Supplier CSVs and PDFs are read by AI into a list of local inventory changes you approve.
-        </PageDescription>
         <PageAction>
           <Button disabled={processing || !files.length} onClick={() => void analyse()}>
             <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
@@ -60,7 +56,7 @@ function UploadPage() {
         </PageAction>
       </PageHeader>
 
-      <PageContent className="gap-6">
+      <PageContent className="mt-2 gap-6">
         {!isOnline && (
           <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />

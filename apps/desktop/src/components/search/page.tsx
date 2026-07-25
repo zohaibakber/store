@@ -5,13 +5,7 @@ import { productStock } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import {
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/shared/page-layout";
 import {
   Autocomplete,
   AutocompleteInput,
@@ -92,13 +86,9 @@ export function SearchPage() {
     <PageLayout contentClassName="max-w-2xl">
       <PageHeader>
         <PageHeading>Search products</PageHeading>
-        <PageDescription>
-          Fuzzy matching on name and composition — misspellings and partial words still find the
-          product.
-        </PageDescription>
       </PageHeader>
 
-      <PageContent>
+      <PageContent className="mt-2">
         <Autocomplete
           filter={null}
           items={results as Array<Product>}
