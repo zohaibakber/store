@@ -27,8 +27,8 @@ wrangler d1 migrations apply store-auth --local
 vp run dev
 ```
 
-The local Worker listens on port 8787. Set `STORE_API_URL` or `VITE_API_URL` for the desktop when
-using another origin.
+The local Worker listens on port 8787. Set `STORE_API_URL` for the desktop when using another
+development origin. `VITE_API_URL` is reserved for packaged builds.
 
 ## Deployment
 

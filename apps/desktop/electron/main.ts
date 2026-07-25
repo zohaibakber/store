@@ -74,9 +74,9 @@ function appIconPath() {
 // process.env reads stay as runtime overrides for local development.
 const API_BASE_URL =
   process.env["STORE_API_URL"] ??
-  process.env["VITE_API_URL"] ??
-  import.meta.env.VITE_API_URL ??
-  "http://localhost:8787";
+  (VITE_DEV_SERVER_URL
+    ? "http://localhost:8787"
+    : (process.env["VITE_API_URL"] ?? import.meta.env.VITE_API_URL ?? "http://localhost:8787"));
 const authBroker = new AuthBroker(
   API_BASE_URL,
   process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
