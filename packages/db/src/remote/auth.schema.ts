@@ -1,25 +1,36 @@
-import { pgTable, text, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const user = pgTable("user", {
+// Better Auth's identity tables, stored in D1.
+//
+// These are SQLite, but they do NOT use the store schema's `epochMilliseconds`
+// helper: Better Auth reads and writes JavaScript `Date` values, so the columns
+// are declared as `integer({ mode: "timestamp" })` and drizzle handles the
+// conversion. Using a plain number column here would hand Better Auth integers
+// where it expects Dates.
+const timestamp = (name: string) => integer(name, { mode: "timestamp" });
+const nowDefault = sql`(unixepoch())`;
+
+export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
+  emailVerified: integer("email_verified", { mode: "boolean" }).default(false).notNull(),
   image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").default(nowDefault).notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
+    .default(nowDefault)
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
 
-export const session = pgTable(
+export const session = sqliteTable(
   "session",
   {
     id: text("id").primaryKey(),
     expiresAt: timestamp("expires_at").notNull(),
     token: text("token").notNull().unique(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").default(nowDefault).notNull(),
     updatedAt: timestamp("updated_at")
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
@@ -33,7 +44,7 @@ export const session = pgTable(
   (table) => [index("session_userId_idx").on(table.userId)],
 );
 
-export const account = pgTable(
+export const account = sqliteTable(
   "account",
   {
     id: text("id").primaryKey(),
@@ -49,7 +60,7 @@ export const account = pgTable(
     refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
     scope: text("scope"),
     password: text("password"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").default(nowDefault).notNull(),
     updatedAt: timestamp("updated_at")
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
@@ -57,23 +68,23 @@ export const account = pgTable(
   (table) => [index("account_userId_idx").on(table.userId)],
 );
 
-export const verification = pgTable(
+export const verification = sqliteTable(
   "verification",
   {
     id: text("id").primaryKey(),
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").default(nowDefault).notNull(),
     updatedAt: timestamp("updated_at")
-      .defaultNow()
+      .default(nowDefault)
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-export const organization = pgTable(
+export const organization = sqliteTable(
   "organization",
   {
     id: text("id").primaryKey(),
@@ -86,7 +97,7 @@ export const organization = pgTable(
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
 
-export const member = pgTable(
+export const member = sqliteTable(
   "member",
   {
     id: text("id").primaryKey(),
@@ -105,7 +116,7 @@ export const member = pgTable(
   ],
 );
 
-export const invitation = pgTable(
+export const invitation = sqliteTable(
   "invitation",
   {
     id: text("id").primaryKey(),
@@ -116,7 +127,7 @@ export const invitation = pgTable(
     role: text("role"),
     status: text("status").default("pending").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").default(nowDefault).notNull(),
     inviterId: text("inviter_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),

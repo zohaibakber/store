@@ -10,6 +10,16 @@
   "ai": {
     "binding": "AI",
   },
+  // Better Auth identity tables. The per-organization store lives in Durable
+  // Object SQLite, not here — D1 holds only what needs a global lookup.
+  "d1_databases": [
+    {
+      "binding": "AUTH_DB",
+      "database_name": "store-auth",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "../../packages/db/migrations/auth",
+    },
+  ],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

@@ -1,5 +1,4 @@
 import { makeAuth } from "@store/auth";
-import { createAuthDatabase } from "@store/db/auth.database";
 
 import { withElectronOrigin } from "../auth/electron-origin";
 import { factory } from "../http/factory";
@@ -22,10 +21,9 @@ const reportError = (event: string, cause: unknown) => {
 };
 
 export const workerRuntime = factory.createMiddleware(async (c, next) => {
-  const authDatabase = createAuthDatabase(c.env.HYPERDRIVE.connectionString);
   const syncRuntime = makeSyncRuntime(c.env.HYPERDRIVE.connectionString);
   const dispose = async () => {
-    const results = await Promise.allSettled([authDatabase.destroy(), syncRuntime.dispose()]);
+    const results = await Promise.allSettled([syncRuntime.dispose()]);
     for (const result of results)
       if (result.status === "rejected")
         reportError("worker.resource_dispose_failed", result.reason);
@@ -35,7 +33,7 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
     const trustedOrigins = commaSeparated(c.env.AUTH_TRUSTED_ORIGINS);
     const auth = makeAuth({
       baseURL: new URL(c.req.url).origin,
-      database: authDatabase,
+      database: c.env.AUTH_DB,
       electronProtocol: c.env.ELECTRON_PROTOCOL,
       secret: c.env.BETTER_AUTH_SECRET,
       trustedOrigins,

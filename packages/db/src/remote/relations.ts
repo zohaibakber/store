@@ -2,55 +2,10 @@ import { defineRelations } from "drizzle-orm";
 
 import * as schema from "./schema";
 
+// Auth relations live in D1 and are reached through Better Auth's kysely
+// adapter, not drizzle, so they are deliberately absent here.
+
 export const remoteRelations = defineRelations(schema, (r) => ({
-  user: {
-    sessions: r.many.session(),
-    accounts: r.many.account(),
-    memberships: r.many.member(),
-    invitations: r.many.invitation(),
-  },
-  session: {
-    user: r.one.user({
-      from: r.session.userId,
-      to: r.user.id,
-      optional: false,
-    }),
-  },
-  account: {
-    user: r.one.user({
-      from: r.account.userId,
-      to: r.user.id,
-      optional: false,
-    }),
-  },
-  organization: {
-    members: r.many.member(),
-    invitations: r.many.invitation(),
-  },
-  member: {
-    organization: r.one.organization({
-      from: r.member.organizationId,
-      to: r.organization.id,
-      optional: false,
-    }),
-    user: r.one.user({
-      from: r.member.userId,
-      to: r.user.id,
-      optional: false,
-    }),
-  },
-  invitation: {
-    organization: r.one.organization({
-      from: r.invitation.organizationId,
-      to: r.organization.id,
-      optional: false,
-    }),
-    inviter: r.one.user({
-      from: r.invitation.inviterId,
-      to: r.user.id,
-      optional: false,
-    }),
-  },
   categories: {
     products: r.many.products(),
   },

@@ -1,11 +1,10 @@
 import { electron } from "@better-auth/electron";
-import type { AuthDatabase } from "@store/db/auth.database";
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
 
 export interface AuthConfig {
   readonly baseURL: string;
-  readonly database: AuthDatabase;
+  readonly database: D1Database;
   readonly electronProtocol: string;
   readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
@@ -18,11 +17,10 @@ export const makeAuth = (config: AuthConfig) => {
     appName: "Store",
     baseURL: config.baseURL,
     secret: config.secret,
-    database: {
-      db: config.database,
-      type: "postgres",
-      transaction: true,
-    },
+    // Passing the D1 binding directly lets Better Auth's kysely adapter select
+    // its built-in D1SqliteDialect. That path reports no transaction support,
+    // which is correct: D1 has no interactive transactions.
+    database: config.database,
     emailAndPassword: { enabled: true },
     trustedOrigins,
     plugins: [

@@ -17,6 +17,7 @@
     "conf": "^15.1.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
     "@types/node": "^24.13.3",
     "typescript": "catalog:"
   },
