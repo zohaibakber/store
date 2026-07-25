@@ -3,22 +3,28 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 
 // Better Auth's identity tables, stored in D1.
 //
+// Column names are deliberately camelCase and match the property names. The
+// Postgres implementation used snake_case with Kysely's CamelCasePlugin to
+// translate; passing the D1 binding straight to Better Auth means it builds
+// Kysely itself, so no plugin can be injected and the columns must match Better
+// Auth's own field names exactly.
+//
 // These are SQLite, but they do NOT use the store schema's `epochMilliseconds`
 // helper: Better Auth reads and writes JavaScript `Date` values, so the columns
 // are declared as `integer({ mode: "timestamp" })` and drizzle handles the
 // conversion. Using a plain number column here would hand Better Auth integers
 // where it expects Dates.
-const timestamp = (name: string) => integer(name, { mode: "timestamp" });
+const timestamp = () => integer({ mode: "timestamp" });
 const nowDefault = sql`(unixepoch())`;
 
 export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" }).default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at").default(nowDefault).notNull(),
-  updatedAt: timestamp("updated_at")
+  id: text().primaryKey(),
+  name: text().notNull(),
+  email: text().notNull().unique(),
+  emailVerified: integer({ mode: "boolean" }).default(false).notNull(),
+  image: text(),
+  createdAt: timestamp().default(nowDefault).notNull(),
+  updatedAt: timestamp()
     .default(nowDefault)
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
@@ -27,19 +33,19 @@ export const user = sqliteTable("user", {
 export const session = sqliteTable(
   "session",
   {
-    id: text("id").primaryKey(),
-    expiresAt: timestamp("expires_at").notNull(),
-    token: text("token").notNull().unique(),
-    createdAt: timestamp("created_at").default(nowDefault).notNull(),
-    updatedAt: timestamp("updated_at")
+    id: text().primaryKey(),
+    expiresAt: timestamp().notNull(),
+    token: text().notNull().unique(),
+    createdAt: timestamp().default(nowDefault).notNull(),
+    updatedAt: timestamp()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    userId: text("user_id")
+    ipAddress: text(),
+    userAgent: text(),
+    userId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    activeOrganizationId: text("active_organization_id"),
+    activeOrganizationId: text(),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -47,21 +53,21 @@ export const session = sqliteTable(
 export const account = sqliteTable(
   "account",
   {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
+    id: text().primaryKey(),
+    accountId: text().notNull(),
+    providerId: text().notNull(),
+    userId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: timestamp("access_token_expires_at"),
-    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-    scope: text("scope"),
-    password: text("password"),
-    createdAt: timestamp("created_at").default(nowDefault).notNull(),
-    updatedAt: timestamp("updated_at")
+    accessToken: text(),
+    refreshToken: text(),
+    idToken: text(),
+    accessTokenExpiresAt: timestamp(),
+    refreshTokenExpiresAt: timestamp(),
+    scope: text(),
+    password: text(),
+    createdAt: timestamp().default(nowDefault).notNull(),
+    updatedAt: timestamp()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
@@ -71,12 +77,12 @@ export const account = sqliteTable(
 export const verification = sqliteTable(
   "verification",
   {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").default(nowDefault).notNull(),
-    updatedAt: timestamp("updated_at")
+    id: text().primaryKey(),
+    identifier: text().notNull(),
+    value: text().notNull(),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().default(nowDefault).notNull(),
+    updatedAt: timestamp()
       .default(nowDefault)
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
@@ -87,12 +93,12 @@ export const verification = sqliteTable(
 export const organization = sqliteTable(
   "organization",
   {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    slug: text("slug").notNull().unique(),
-    logo: text("logo"),
-    createdAt: timestamp("created_at").notNull(),
-    metadata: text("metadata"),
+    id: text().primaryKey(),
+    name: text().notNull(),
+    slug: text().notNull().unique(),
+    logo: text(),
+    createdAt: timestamp().notNull(),
+    metadata: text(),
   },
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
@@ -100,15 +106,15 @@ export const organization = sqliteTable(
 export const member = sqliteTable(
   "member",
   {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
+    id: text().primaryKey(),
+    organizationId: text()
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    userId: text("user_id")
+    userId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    role: text("role").default("member").notNull(),
-    createdAt: timestamp("created_at").notNull(),
+    role: text().default("member").notNull(),
+    createdAt: timestamp().notNull(),
   },
   (table) => [
     index("member_organizationId_idx").on(table.organizationId),
@@ -119,16 +125,16 @@ export const member = sqliteTable(
 export const invitation = sqliteTable(
   "invitation",
   {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
+    id: text().primaryKey(),
+    organizationId: text()
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    role: text("role"),
-    status: text("status").default("pending").notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").default(nowDefault).notNull(),
-    inviterId: text("inviter_id")
+    email: text().notNull(),
+    role: text(),
+    status: text().default("pending").notNull(),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().default(nowDefault).notNull(),
+    inviterId: text()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },

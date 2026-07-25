@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f76acbcc-0205-4592-9800-13b6e0bdbb2c",
+  "id": "13f46bbd-182e-4ab4-a42f-923ff5f60aa8",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
@@ -48,7 +48,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "account_id",
+      "name": "accountId",
       "entityType": "columns",
       "table": "account"
     },
@@ -58,7 +58,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "provider_id",
+      "name": "providerId",
       "entityType": "columns",
       "table": "account"
     },
@@ -68,7 +68,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "user_id",
+      "name": "userId",
       "entityType": "columns",
       "table": "account"
     },
@@ -78,7 +78,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "access_token",
+      "name": "accessToken",
       "entityType": "columns",
       "table": "account"
     },
@@ -88,7 +88,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "refresh_token",
+      "name": "refreshToken",
       "entityType": "columns",
       "table": "account"
     },
@@ -98,7 +98,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "id_token",
+      "name": "idToken",
       "entityType": "columns",
       "table": "account"
     },
@@ -108,7 +108,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "access_token_expires_at",
+      "name": "accessTokenExpiresAt",
       "entityType": "columns",
       "table": "account"
     },
@@ -118,7 +118,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "refresh_token_expires_at",
+      "name": "refreshTokenExpiresAt",
       "entityType": "columns",
       "table": "account"
     },
@@ -148,7 +148,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "account"
     },
@@ -158,7 +158,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "account"
     },
@@ -178,7 +178,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "organization_id",
+      "name": "organizationId",
       "entityType": "columns",
       "table": "invitation"
     },
@@ -218,7 +218,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expires_at",
+      "name": "expiresAt",
       "entityType": "columns",
       "table": "invitation"
     },
@@ -228,7 +228,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "invitation"
     },
@@ -238,7 +238,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "inviter_id",
+      "name": "inviterId",
       "entityType": "columns",
       "table": "invitation"
     },
@@ -258,7 +258,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "organization_id",
+      "name": "organizationId",
       "entityType": "columns",
       "table": "member"
     },
@@ -268,7 +268,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "user_id",
+      "name": "userId",
       "entityType": "columns",
       "table": "member"
     },
@@ -288,7 +288,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "member"
     },
@@ -338,7 +338,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "organization"
     },
@@ -368,7 +368,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expires_at",
+      "name": "expiresAt",
       "entityType": "columns",
       "table": "session"
     },
@@ -388,7 +388,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "session"
     },
@@ -398,7 +398,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "session"
     },
@@ -408,7 +408,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "ip_address",
+      "name": "ipAddress",
       "entityType": "columns",
       "table": "session"
     },
@@ -418,7 +418,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "user_agent",
+      "name": "userAgent",
       "entityType": "columns",
       "table": "session"
     },
@@ -428,7 +428,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "user_id",
+      "name": "userId",
       "entityType": "columns",
       "table": "session"
     },
@@ -438,7 +438,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "active_organization_id",
+      "name": "activeOrganizationId",
       "entityType": "columns",
       "table": "session"
     },
@@ -478,7 +478,7 @@
       "autoincrement": false,
       "default": "false",
       "generated": null,
-      "name": "email_verified",
+      "name": "emailVerified",
       "entityType": "columns",
       "table": "user"
     },
@@ -498,7 +498,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "user"
     },
@@ -508,7 +508,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "user"
     },
@@ -548,7 +548,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expires_at",
+      "name": "expiresAt",
       "entityType": "columns",
       "table": "verification"
     },
@@ -558,7 +558,7 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "created_at",
+      "name": "createdAt",
       "entityType": "columns",
       "table": "verification"
     },
@@ -568,73 +568,73 @@
       "autoincrement": false,
       "default": "(unixepoch())",
       "generated": null,
-      "name": "updated_at",
+      "name": "updatedAt",
       "entityType": "columns",
       "table": "verification"
     },
     {
-      "columns": ["user_id"],
+      "columns": ["userId"],
       "tableTo": "user",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_account_user_id_user_id_fk",
+      "name": "fk_account_userId_user_id_fk",
       "entityType": "fks",
       "table": "account"
     },
     {
-      "columns": ["organization_id"],
+      "columns": ["organizationId"],
       "tableTo": "organization",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_invitation_organization_id_organization_id_fk",
+      "name": "fk_invitation_organizationId_organization_id_fk",
       "entityType": "fks",
       "table": "invitation"
     },
     {
-      "columns": ["inviter_id"],
+      "columns": ["inviterId"],
       "tableTo": "user",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_invitation_inviter_id_user_id_fk",
+      "name": "fk_invitation_inviterId_user_id_fk",
       "entityType": "fks",
       "table": "invitation"
     },
     {
-      "columns": ["organization_id"],
+      "columns": ["organizationId"],
       "tableTo": "organization",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_member_organization_id_organization_id_fk",
+      "name": "fk_member_organizationId_organization_id_fk",
       "entityType": "fks",
       "table": "member"
     },
     {
-      "columns": ["user_id"],
+      "columns": ["userId"],
       "tableTo": "user",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_member_user_id_user_id_fk",
+      "name": "fk_member_userId_user_id_fk",
       "entityType": "fks",
       "table": "member"
     },
     {
-      "columns": ["user_id"],
+      "columns": ["userId"],
       "tableTo": "user",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_session_user_id_user_id_fk",
+      "name": "fk_session_userId_user_id_fk",
       "entityType": "fks",
       "table": "session"
     },
@@ -690,7 +690,7 @@
     {
       "columns": [
         {
-          "value": "user_id",
+          "value": "userId",
           "isExpression": false
         }
       ],
@@ -704,7 +704,7 @@
     {
       "columns": [
         {
-          "value": "organization_id",
+          "value": "organizationId",
           "isExpression": false
         }
       ],
@@ -732,7 +732,7 @@
     {
       "columns": [
         {
-          "value": "organization_id",
+          "value": "organizationId",
           "isExpression": false
         }
       ],
@@ -746,7 +746,7 @@
     {
       "columns": [
         {
-          "value": "user_id",
+          "value": "userId",
           "isExpression": false
         }
       ],
@@ -774,7 +774,7 @@
     {
       "columns": [
         {
-          "value": "user_id",
+          "value": "userId",
           "isExpression": false
         }
       ],

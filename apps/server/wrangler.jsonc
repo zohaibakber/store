@@ -16,8 +16,10 @@
     {
       "binding": "AUTH_DB",
       "database_name": "store-auth",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "1047eb8f-22ef-4fa1-b4e1-6a7acec7bfde",
       "migrations_dir": "../../packages/db/migrations/auth",
+      // drizzle-kit emits `<tag>/migration.sql` rather than flat files.
+      "migrations_pattern": "../../packages/db/migrations/auth/*/migration.sql",
     },
   ],
   // One Durable Object per organization, each with its own SQLite database.

@@ -3,6 +3,7 @@ import { makeAuth } from "@store/auth";
 import { withElectronOrigin } from "../auth/electron-origin";
 import { factory } from "../http/factory";
 import type { SyncActor } from "../sync/model";
+import { exchangeWithOrganizationStore } from "../sync/organization-store";
 
 const commaSeparated = (value: string): ReadonlyArray<string> =>
   value
@@ -37,10 +38,9 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
     // Sync runs inside the organization's Durable Object, which owns that
     // organization's SQLite database. Sharding on organizationId means one
     // shop's sync never serializes behind another's.
-    c.set("runSync", (actor: SyncActor, request) => {
-      const id = c.env.ORGANIZATION_STORE.idFromName(actor.organizationId);
-      return c.env.ORGANIZATION_STORE.get(id).exchange(actor, request);
-    });
+    c.set("runSync", (actor: SyncActor, request) =>
+      exchangeWithOrganizationStore(c.env.ORGANIZATION_STORE, actor, request),
+    );
     c.set("trustedOrigins", trustedOrigins);
     await next();
   } catch (cause) {
