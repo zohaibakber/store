@@ -5,7 +5,17 @@
   executableName: "store-electron",
   asar: true,
   // libSQL ships a prebuilt N-API binary that cannot be read from inside the
-  // asar archive, so it must stay unpacked.
+  // asar archive, so it must stay unpacked. Being N-API, it needs no rebuild
+  // per Electron version.
+  //
+  // It is published as one optional dependency per platform
+  // (@libsql/linux-x64-gnu, @libsql/darwin-arm64, @libsql/win32-x64-msvc, ...)
+  // and a package manager installs only the one matching the current machine.
+  // So each target below must be built on its own platform, or force-install
+  // the matching optional dependency first — otherwise the artifact ships
+  // without a loadable index.node. electron-builder reports the absent ones as
+  // "missing optional dependencies"; on a single-platform build that warning is
+  // expected, not a fault.
   asarUnpack: ["**/*.node"],
   // Fail before signing or publishing if monorepo/server sources, credentials,
   // or database schema code cross into the packaged desktop boundaries.
