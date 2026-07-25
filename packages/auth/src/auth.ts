@@ -17,10 +17,15 @@ export interface AuthAuditEvent {
   readonly userAgent?: string | null;
 }
 
-export interface AuthSecondaryStorage {
-  readonly get: (key: string) => Promise<unknown>;
-  readonly set: (key: string, value: string, ttl?: number) => Promise<void>;
-  readonly delete: (key: string) => Promise<void>;
+export interface AuthRateLimitRecord {
+  readonly count: number;
+  readonly key: string;
+  readonly lastRequest: number;
+}
+
+export interface AuthRateLimitStorage {
+  readonly get: (key: string) => Promise<AuthRateLimitRecord | null | undefined>;
+  readonly set: (key: string, value: AuthRateLimitRecord, update?: boolean) => Promise<void>;
 }
 
 export interface AuthConfig {
@@ -28,7 +33,7 @@ export interface AuthConfig {
   readonly baseURL: string;
   readonly database: D1Database;
   readonly electronProtocol: string;
-  readonly secondaryStorage: AuthSecondaryStorage;
+  readonly rateLimitStorage: AuthRateLimitStorage;
   readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly waitUntil?: (promise: Promise<unknown>) => void;
@@ -37,7 +42,15 @@ export interface AuthConfig {
 export const makeAuth = (config: AuthConfig) => {
   const security = resolveAuthSecurity(config);
   const audit = async (event: AuthAuditEvent) => {
-    await config.audit?.(event);
+    if (!config.audit) return;
+    const task = Promise.resolve().then(async () => {
+      await config.audit?.(event);
+    });
+    if (config.waitUntil) {
+      config.waitUntil(task);
+      return;
+    }
+    await task;
   };
 
   return betterAuth({
@@ -45,12 +58,11 @@ export const makeAuth = (config: AuthConfig) => {
     baseURL: security.baseURL,
     secret: config.secret,
     database: config.database,
-    secondaryStorage: config.secondaryStorage,
     emailAndPassword: { enabled: true },
     trustedOrigins: [...security.trustedOrigins],
     rateLimit: {
       enabled: true,
-      storage: "secondary-storage",
+      customStorage: config.rateLimitStorage,
       window: 60,
       max: 100,
       customRules: {
@@ -64,7 +76,6 @@ export const makeAuth = (config: AuthConfig) => {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
       freshAge: 60 * 60,
-      storeSessionInDatabase: true,
     },
     verification: { storeInDatabase: true },
     account: {
