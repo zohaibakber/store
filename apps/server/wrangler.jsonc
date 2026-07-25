@@ -9,6 +9,7 @@
   },
   "ai": {
     "binding": "AI",
+    "remote": true,
   },
   // Better Auth identity tables. The per-organization store lives in Durable
   // Object SQLite, not here — D1 holds only what needs a global lookup.

@@ -22,7 +22,7 @@ function InvoiceCreatePage({ products }: { products: readonly Product[] }) {
           </PageAction>
         </PageHeader>
 
-        <PageContent className="gap-6">
+        <PageContent className="mt-2 gap-6">
           <InvoiceItems />
           <InvoiceCheckout />
         </PageContent>
