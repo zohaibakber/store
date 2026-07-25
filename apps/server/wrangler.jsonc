@@ -20,10 +20,19 @@
       "migrations_dir": "../../packages/db/migrations/auth",
     },
   ],
-  "hyperdrive": [
+  // One Durable Object per organization, each with its own SQLite database.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORGANIZATION_STORE",
+        "class_name": "OrganizationStore",
+      },
+    ],
+  },
+  "migrations": [
     {
-      "binding": "HYPERDRIVE",
-      "id": "341f49c9178a47e59a73a5ef5b296bea",
+      "tag": "v1",
+      "new_sqlite_classes": ["OrganizationStore"],
     },
   ],
   "vars": {

@@ -6,7 +6,12 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import { expect, test } from "vitest";
 
 import { layer } from "./index";
-import { migrationsFolder, remoteMigrationsFolder, store } from "./test-support";
+import {
+  authMigrationsFolder,
+  durableObjectMigrationsFolder,
+  migrationsFolder,
+  store,
+} from "./test-support";
 
 const readMigrations = async (folder: string) => {
   const entries = await readdir(folder, { withFileTypes: true });
@@ -20,17 +25,16 @@ const readMigrations = async (folder: string) => {
   return migrations.join("\n");
 };
 
-test("local migrations exclude remote-only auth and sync tables", async () => {
-  const localMigration = await readMigrations(migrationsFolder);
-  const remoteMigration = await readMigrations(remoteMigrationsFolder);
+// Three databases, three migration sets, all SQLite now: the client store, the
+// per-organization Durable Object store, and the D1 identity database. This
+// guards the boundary between them — each must hold only what belongs to it.
+test("each database's migrations contain only its own tables", async () => {
+  const local = await readMigrations(migrationsFolder);
+  const durableObject = await readMigrations(durableObjectMigrationsFolder);
+  const auth = await readMigrations(authMigrationsFolder);
 
-  // The local database is SQLite and the remote one is Postgres, so they quote
-  // identifiers differently: backticks locally, double quotes remotely.
-  const localTable = (name: string) => `CREATE TABLE \`${name}\``;
-
-  expect(localMigration).toContain(localTable("invoices"));
-  expect(localMigration).toContain(localTable("sync_outbox"));
-  for (const remoteOnlyTable of [
+  const table = (name: string) => `CREATE TABLE \`${name}\``;
+  const authTables = [
     "user",
     "session",
     "account",
@@ -38,16 +42,30 @@ test("local migrations exclude remote-only auth and sync tables", async () => {
     "organization",
     "member",
     "invitation",
-    "sync_inbox",
-    "sync_change_log",
-  ]) {
-    expect(localMigration).not.toContain(localTable(remoteOnlyTable));
+  ];
+
+  // The client owns the outbox and its sync cursor.
+  expect(local).toContain(table("invoices"));
+  expect(local).toContain(table("sync_outbox"));
+  expect(local).toContain(table("sync_state"));
+  for (const name of [...authTables, "sync_inbox", "sync_change_log"]) {
+    expect(local).not.toContain(table(name));
   }
 
-  expect(remoteMigration).toContain('CREATE TABLE "user"');
-  expect(remoteMigration).toContain('CREATE TABLE "sync_inbox"');
-  expect(remoteMigration).not.toContain('CREATE TABLE "sync_outbox"');
-  expect(remoteMigration).not.toContain('CREATE TABLE "sync_state"');
+  // The Durable Object owns the server-side inbox and change log, and shares the
+  // store tables with the client.
+  expect(durableObject).toContain(table("invoices"));
+  expect(durableObject).toContain(table("sync_inbox"));
+  expect(durableObject).toContain(table("sync_change_log"));
+  for (const name of [...authTables, "sync_outbox", "sync_state"]) {
+    expect(durableObject).not.toContain(table(name));
+  }
+
+  // D1 holds identity only — no store or sync tables.
+  for (const name of authTables) expect(auth).toContain(table(name));
+  for (const name of ["invoices", "products", "sync_outbox", "sync_inbox"]) {
+    expect(auth).not.toContain(table(name));
+  }
 });
 
 test("migrations are idempotent and preserve existing products", async () => {

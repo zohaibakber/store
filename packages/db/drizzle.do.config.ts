@@ -4,6 +4,7 @@ import { defineConfig } from "drizzle-kit";
 // the client, so `shared/store.schema.ts` is shared by both.
 export default defineConfig({
   dialect: "sqlite",
+  driver: "durable-sqlite",
   schema: "./src/do/schema.ts",
   out: "./migrations/do",
   migrations: {

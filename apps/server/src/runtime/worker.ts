@@ -2,7 +2,7 @@ import { makeAuth } from "@store/auth";
 
 import { withElectronOrigin } from "../auth/electron-origin";
 import { factory } from "../http/factory";
-import { makeSyncRuntime } from "../sync/runtime";
+import type { SyncActor } from "../sync/model";
 
 const commaSeparated = (value: string): ReadonlyArray<string> =>
   value
@@ -21,14 +21,6 @@ const reportError = (event: string, cause: unknown) => {
 };
 
 export const workerRuntime = factory.createMiddleware(async (c, next) => {
-  const syncRuntime = makeSyncRuntime(c.env.HYPERDRIVE.connectionString);
-  const dispose = async () => {
-    const results = await Promise.allSettled([syncRuntime.dispose()]);
-    for (const result of results)
-      if (result.status === "rejected")
-        reportError("worker.resource_dispose_failed", result.reason);
-  };
-
   try {
     const trustedOrigins = commaSeparated(c.env.AUTH_TRUSTED_ORIGINS);
     const auth = makeAuth({
@@ -42,11 +34,18 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
     c.set("authHandler", (request) =>
       auth.handler(withElectronOrigin(request, c.env.ELECTRON_PROTOCOL)),
     );
-    c.set("runSync", syncRuntime.runSync);
+    // Sync runs inside the organization's Durable Object, which owns that
+    // organization's SQLite database. Sharding on organizationId means one
+    // shop's sync never serializes behind another's.
+    c.set("runSync", (actor: SyncActor, request) => {
+      const id = c.env.ORGANIZATION_STORE.idFromName(actor.organizationId);
+      return c.env.ORGANIZATION_STORE.get(id).exchange(actor, request);
+    });
     c.set("trustedOrigins", trustedOrigins);
     await next();
-  } finally {
-    c.executionCtx.waitUntil(dispose());
+  } catch (cause) {
+    reportError("worker.request_failed", cause);
+    throw cause;
   }
 });
 

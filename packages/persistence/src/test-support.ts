@@ -15,10 +15,11 @@ export const store = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>
   Effect.flatMap(OfflineStore, f);
 
 export const migrationsFolder = path.resolve(import.meta.dirname, "../../db/migrations/local");
-export const remoteMigrationsFolder = path.resolve(
+export const durableObjectMigrationsFolder = path.resolve(
   import.meta.dirname,
-  "../../db/migrations/remote",
+  "../../db/migrations/do",
 );
+export const authMigrationsFolder = path.resolve(import.meta.dirname, "../../db/migrations/auth");
 
 /** Opens the store database a second time, read-only, to assert on outbox state. */
 export const readOutbox = (dataDir: string) =>

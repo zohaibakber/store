@@ -2,13 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
+import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
 import { assert, describe, it } from "@effect/vitest";
 import { SyncEntityChange, SyncOperation, SyncRequest } from "@store/contracts";
-import { remoteRelations } from "@store/db/remote/relations";
-import { categories, syncChangeLog, syncInbox } from "@store/db/remote/schema";
-import * as PgDrizzle from "drizzle-orm/effect-pglite";
-import { migrate } from "drizzle-orm/effect-pglite/migrator";
+import { durableObjectRelations } from "@store/db/do/relations";
+import { categories, syncChangeLog, syncInbox } from "@store/db/do/schema";
+import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
+import { migrate } from "drizzle-orm/effect-libsql/migrator";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -16,12 +16,14 @@ import { makeDatabase } from "./database";
 import { operationPayloadHash } from "./hash";
 import type { SyncActor } from "./model";
 
-const remoteMigrationsFolder = path.resolve(
+// The server store is SQLite now, so these tests run against an in-memory
+// libSQL database using the same migrations the Durable Object applies.
+const durableObjectMigrationsFolder = path.resolve(
   import.meta.dirname,
-  "../../../../packages/db/migrations/remote",
+  "../../../../packages/db/migrations/do",
 );
 
-const makeTestDrizzle = () => PgDrizzle.makeWithDefaults({ relations: remoteRelations });
+const makeTestDrizzle = () => LibsqlDrizzle.makeWithDefaults({ relations: durableObjectRelations });
 type TestDrizzle = Effect.Success<ReturnType<typeof makeTestDrizzle>>;
 
 interface Fixture {
@@ -36,13 +38,16 @@ const withDatabase = <A, E, R>(use: (fixture: Fixture) => Effect.Effect<A, E, R>
       Effect.gen(function* () {
         const database = yield* makeTestDrizzle();
         yield* migrate(database, {
-          migrationsFolder: remoteMigrationsFolder,
-          migrationsSchema: "store_migrations",
+          migrationsFolder: durableObjectMigrationsFolder,
           migrationsTable: "__store_drizzle_migrations",
         });
         const service = makeDatabase(database);
         return yield* use({ database, exchange: service.exchange });
-      }).pipe(Effect.provide(PgliteClient.layer({ dataDir: path.join(directory, "pglite") }))),
+      }).pipe(
+        Effect.provide(
+          LibsqlClient.layer({ url: `file:${path.join(directory, "sync.db")}`, intMode: "number" }),
+        ),
+      ),
     (directory) =>
       Effect.promise(() => rm(directory, { recursive: true, force: true })).pipe(Effect.orDie),
   );

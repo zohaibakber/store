@@ -1,12 +1,11 @@
 import { SyncResponse, SyncServerChange, type SyncAck, type SyncRequest } from "@store/contracts";
-import { syncChangeLog } from "@store/db/remote/schema";
+import { syncChangeLog } from "@store/db/do/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import { ConstraintError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
-import { makeSyncDrizzle, type SyncDrizzle } from "./database.client";
+import type { SyncDrizzle } from "./database.client";
 import { SyncDatabase } from "./database.service";
 import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
@@ -33,8 +32,9 @@ const constraintProtocolError = (cause: unknown) => {
   return undefined;
 };
 
-// Exported for tests only: lets database.test.ts build a real `exchange`
-// implementation over a PGlite-backed Drizzle client instead of the network.
+// The layer that provides this lives in `runtime.ts`, which owns the Durable
+// Object storage handle. Taking the client as an argument keeps this file free
+// of driver concerns and lets tests supply their own.
 export const makeDatabase = (db: SyncDatabaseClient) => {
   const exchange = Effect.fn("SyncDatabase.exchange")(
     function* (actor: SyncActor, request: SyncRequest) {
@@ -84,8 +84,3 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
   );
   return SyncDatabase.of({ exchange });
 };
-
-export const syncDatabaseLayer = Layer.effect(
-  SyncDatabase,
-  makeSyncDrizzle().pipe(Effect.map(makeDatabase)),
-);

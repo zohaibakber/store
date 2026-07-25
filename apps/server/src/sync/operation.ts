@@ -1,6 +1,6 @@
 import { compareCodeUnits, SyncAck, SyncEntityChange, type SyncOperation } from "@store/contracts";
-import { syncChangeLog, syncInbox } from "@store/db/remote/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { syncChangeLog, syncInbox } from "@store/db/do/schema";
+import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { applyChange } from "./apply-change";
@@ -30,14 +30,11 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
   actor: SyncActor,
   operation: SyncOperation,
 ) {
-  // Serialize a device's operation sequence so sequence reuse cannot race the
-  // unique constraint and surface as an untyped infrastructure failure.
-  yield* tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
-      actor.organizationId,
-      operation.deviceId,
-    ])}, 0))`,
-  );
+  // Under Postgres this began with `pg_advisory_xact_lock` to serialize a
+  // device's operation sequence. A Durable Object processes one request at a
+  // time and owns its storage exclusively, so the race that lock defended
+  // against cannot occur; the sequence check below plus the inbox primary key
+  // carry idempotency on their own.
   const [sequenceReceipt] = yield* tx
     .select({ operationId: syncInbox.operationId })
     .from(syncInbox)
@@ -82,8 +79,7 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
           eq(syncInbox.operationId, operation.operationId),
         ),
       )
-      .limit(1)
-      .for("update");
+      .limit(1);
     if (!existing)
       return yield* Effect.fail(
         protocolError("OPERATION_COLLISION", "The operation sequence is already in use."),

@@ -7,7 +7,7 @@ import {
   invoices,
   products,
   stockMovements,
-} from "@store/db/remote/schema";
+} from "@store/db/do/schema";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
