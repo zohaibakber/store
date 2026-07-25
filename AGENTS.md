@@ -23,8 +23,9 @@ live in `apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
 These are conventions, not constraints: the `@theme` block defines the font
 family, but nothing clamps weights or sizes. Following them is on you.
 
-- **Font**: Geist (`"Geist Variable"`, loaded via `@fontsource-variable/geist`).
-  Geist Mono for code only.
+- **Font**: Inter (`"Inter Variable"`, loaded via `@fontsource-variable/inter`).
+  JetBrains Mono (`"JetBrains Mono Variable"`, loaded via
+  `@fontsource-variable/jetbrains-mono`) is for code only.
 - **Weights**: regular (400) and medium (500) only — medium is the maximum.
   Avoid `font-semibold` and `font-bold`. Nothing prevents them, so a few uses
   have crept in; don't add more.
