@@ -24,7 +24,7 @@ import { makeAnalyticsStore } from "./analytics-store";
 import { initializeDatabase } from "./bootstrap";
 import type { PersistenceConfig } from "./config";
 import { mutationContextFrom } from "./config";
-import { clientLayer, ensureLocalSearchIndexes, makeDatabase } from "./database";
+import { clientLayer, makeDatabase } from "./database";
 import {
   InvoiceNotFoundError,
   PersistenceError,
@@ -71,7 +71,6 @@ const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
     const mutationContext = mutationContextFrom(config);
     const database = yield* makeDatabase(config.migrationsFolder);
-    yield* ensureLocalSearchIndexes(database);
     yield* initializeDatabase(database, mutationContext());
     const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
     const productStore = makeProductStore(database, mutationContext, syncEngine.signal);

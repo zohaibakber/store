@@ -1,48 +1,42 @@
-import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
+import path from "node:path";
+
+import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
 import { localRelations } from "@store/db/local/relations";
-import { sql } from "drizzle-orm";
-import * as PgDrizzle from "drizzle-orm/effect-pglite";
-import { migrate } from "drizzle-orm/effect-pglite/migrator";
+import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
+import { migrate } from "drizzle-orm/effect-libsql/migrator";
 import * as Effect from "effect/Effect";
 
 import type { PersistenceConfig } from "./config";
-import { mapPersistenceError, persistenceError } from "./errors";
-import { pgliteExtensions } from "./pglite-extensions";
+import { mapPersistenceError } from "./errors";
 
-export type StoreDatabase = PgDrizzle.EffectPgDatabase<typeof localRelations>;
+export type StoreDatabase = LibsqlDrizzle.EffectLibsqlDatabase<typeof localRelations>;
 export type StoreTransaction = Parameters<Parameters<StoreDatabase["transaction"]>[0]>[0];
+
+/** The single database file inside the application's data directory. */
+export const databaseFile = (dataDir: string) => path.join(dataDir, "store.db");
 
 export const makeDatabase = (migrationsFolder: string) =>
   Effect.gen(function* () {
-    const database = yield* PgDrizzle.makeWithDefaults({ relations: localRelations });
+    const database = yield* LibsqlDrizzle.makeWithDefaults({ relations: localRelations });
+    // No `migrationsSchema`: SQLite has no schema namespaces.
     yield* migrate(database, {
       migrationsFolder,
-      migrationsSchema: "store_migrations",
       migrationsTable: "__store_drizzle_migrations",
     }).pipe(mapPersistenceError("migrate database"));
     return database;
   });
 
-// The fuzzy-search extensions and their trigram indexes live only in PGlite.
-// They remain runtime setup rather than migrations because the remote database
-// does not install these extensions. The statements are safe on every startup.
-export const ensureLocalSearchIndexes = (database: StoreDatabase) =>
-  Effect.gen(function* () {
-    yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
-    yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS fuzzystrmatch`);
-    yield* database.execute(sql`CREATE EXTENSION IF NOT EXISTS unaccent`);
-    yield* database.execute(
-      sql`CREATE INDEX IF NOT EXISTS products_name_trgm_idx ON products USING gin (name gin_trgm_ops)`,
-    );
-    yield* database.execute(
-      sql`CREATE INDEX IF NOT EXISTS products_composition_trgm_idx ON products USING gin (composition gin_trgm_ops)`,
-    );
-  }).pipe(mapPersistenceError("enable local search indexes"));
-
 export const clientLayer = (config: PersistenceConfig) =>
-  PgliteClient.layerFrom(
-    PgliteClient.make({
-      dataDir: config.dataDir,
-      extensions: pgliteExtensions,
-    }).pipe(Effect.mapError((cause) => persistenceError("open local database", cause))),
-  );
+  LibsqlClient.layer({
+    url: `file:${databaseFile(config.dataDir)}`,
+    // `intMode: "number"` is the libSQL default and the correct choice here: the
+    // schema declares integer columns as `integer({ mode: "number" })`, so
+    // drizzle expects JS numbers. "bigint" would hand BigInts to those columns.
+    //
+    // The trade-off is that libSQL THROWS when a value exceeds
+    // Number.MAX_SAFE_INTEGER rather than degrading silently. For money in paisa
+    // that ceiling is ~₨90 trillion of lifetime turnover, and failing loudly is
+    // strictly better than the Postgres behaviour it replaces, where a bigint
+    // aggregate came back as a string and silently concatenated.
+    intMode: "number",
+  });

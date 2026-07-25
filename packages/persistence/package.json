@@ -12,10 +12,11 @@
     "test": "vitest run --root ../.. packages/persistence/src"
   },
   "dependencies": {
-    "@effect/sql-pglite": "catalog:",
-    "@electric-sql/pglite": "^0.5.4",
+    "@effect/sql-libsql": "catalog:",
+    "@libsql/client": "^0.17.4",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
+    "double-metaphone": "^2.0.1",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "catalog:"
   },

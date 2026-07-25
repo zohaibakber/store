@@ -1,6 +1,6 @@
 import type { SyncEntityChange, SyncOperation } from "@store/contracts";
 import { syncOutbox } from "@store/db/local/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { MutationContext } from "./config";
@@ -16,6 +16,23 @@ export const enqueueOperation = (
   changes: ReadonlyArray<SyncEntityChange>,
 ) =>
   Effect.gen(function* () {
+    // Postgres allocated this from a `bigserial`. SQLite's AUTOINCREMENT only
+    // applies to an INTEGER PRIMARY KEY, which `operationId` already occupies,
+    // so the sequence is allocated here instead. This is safe because the whole
+    // enqueue runs inside the caller's transaction and SQLite admits one writer
+    // at a time; the unique index on (organizationId, deviceId, clientSequence)
+    // is the backstop if that ever stops being true.
+    const [highest] = yield* transaction
+      .select({ last: sql<number | null>`max(${syncOutbox.clientSequence})` })
+      .from(syncOutbox)
+      .where(
+        and(
+          eq(syncOutbox.organizationId, actor.organizationId),
+          eq(syncOutbox.deviceId, actor.deviceId),
+        ),
+      );
+    const clientSequence = (highest?.last ?? 0) + 1;
+
     const [queued] = yield* transaction
       .insert(syncOutbox)
       .values({
@@ -23,6 +40,7 @@ export const enqueueOperation = (
         organizationId: actor.organizationId,
         deviceId: actor.deviceId,
         actorUserId: actor.userId,
+        clientSequence,
         occurredAt,
         payload: changes,
         payloadHash: "",

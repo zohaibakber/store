@@ -9,7 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-import { epochMilliseconds, tenantId } from "../shared/store.schema";
+import { epochMilliseconds, tenantId } from "../shared/store.schema.pg";
 import type { SyncEntity, SyncEntityChangePayload } from "../shared/sync";
 
 // Server-side operation receipt. The payload hash makes retries idempotent and

@@ -1,20 +1,26 @@
+// TEMPORARY (plan 021, phase 3). This is the Postgres copy of the shared store
+// schema, kept only so the sync server keeps compiling while the local side
+// moves to SQLite. `shared/store.schema.ts` is now the SQLite definition.
+//
+// DELETE THIS FILE in phase 5, when the server moves to Durable Object SQLite
+// storage and both sides share one dialect again. Until then, any change made
+// to `store.schema.ts` MUST be mirrored here.
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  pgTable,
   primaryKey,
-  sqliteTable,
   text,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 import { nanoid } from "nanoid";
 
-// SQLite INTEGER is already a signed 64-bit value, so epoch milliseconds and
-// money in paisa need no widening. This also removes the Postgres hazard where
-// a bigint aggregate came back from the driver as a string.
-export const epochMilliseconds = () => integer({ mode: "number" });
+export const epochMilliseconds = () => bigint({ mode: "number" });
 
 const timestamps = {
   createdAt: epochMilliseconds().notNull(),
@@ -38,7 +44,7 @@ const mutableSyncMetadata = {
   rowVersion: epochMilliseconds().notNull().default(1),
 };
 
-export const categories = sqliteTable(
+export const categories = pgTable(
   "categories",
   {
     id: entityId(),
@@ -56,7 +62,7 @@ export const categories = sqliteTable(
   ],
 );
 
-export const products = sqliteTable(
+export const products = pgTable(
   "products",
   {
     id: entityId(),
@@ -68,7 +74,7 @@ export const products = sqliteTable(
     unitsPerPack: integer().notNull().default(1),
     packPrice: integer(),
     unitPrice: integer(),
-    visible: integer({ mode: "boolean" }).notNull().default(true),
+    visible: boolean().notNull().default(true),
     ...timestamps,
     ...mutableSyncMetadata,
   },
@@ -87,7 +93,7 @@ export const products = sqliteTable(
   ],
 );
 
-export const batches = sqliteTable(
+export const batches = pgTable(
   "batches",
   {
     id: entityId(),
@@ -118,7 +124,7 @@ export const batches = sqliteTable(
   ],
 );
 
-export const invoices = sqliteTable(
+export const invoices = pgTable(
   "invoices",
   {
     id: entityId(),
@@ -148,7 +154,7 @@ export const invoices = sqliteTable(
 
 // The counter is internal database state rather than a synced entity. Updating
 // one row per organization makes invoice allocation atomic within a database.
-export const invoiceCounters = sqliteTable(
+export const invoiceCounters = pgTable(
   "invoice_counters",
   {
     organizationId: tenantId().primaryKey(),
@@ -162,7 +168,7 @@ export const invoiceCounters = sqliteTable(
 // Line items snapshot the product name, batch number, sale unit, and price at
 // the time of sale so invoices stay accurate when the catalog changes later. A
 // sale line that spans several batches is stored as one row per batch taken from.
-export const invoiceItems = sqliteTable(
+export const invoiceItems = pgTable(
   "invoice_items",
   {
     id: entityId(),
@@ -205,7 +211,7 @@ export const invoiceItems = sqliteTable(
 // Stock movements are append-only ledger facts. Several movements can share an
 // operation id (for example, opening a pack and selling loose units), so the
 // operation id is intentionally indexed but not unique here.
-export const stockMovements = sqliteTable(
+export const stockMovements = pgTable(
   "stock_movements",
   {
     id: entityId(),

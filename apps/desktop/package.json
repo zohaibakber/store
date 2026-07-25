@@ -18,7 +18,7 @@
     "prepare": "vp config"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.4",
+    "@libsql/client": "^0.17.4",
     "electron-updater": "^6.8.9",
     "thinking-orbs": "^0.1.1"
   },

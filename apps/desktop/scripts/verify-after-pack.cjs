@@ -122,7 +122,7 @@ const verifyDesktopAsar = (archivePath) => {
     "/dist/index.html",
     "/dist-electron/main.js",
     "/dist-electron/preload.mjs",
-    "/node_modules/@electric-sql/pglite/package.json",
+    "/node_modules/@libsql/client/package.json",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));

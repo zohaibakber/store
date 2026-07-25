@@ -48,17 +48,17 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: "electron/main.ts",
-        // PGlite loads its PostgreSQL WASM and data assets at runtime, so keep the
-        // package intact for electron-builder instead of folding it into main.js.
-        // This must also cover subpaths like `@electric-sql/pglite/contrib/pg_trgm`:
-        // when bundled, each contrib module inlines its `*.tar.gz` as a `data:` URL,
-        // but PGlite's Node loader reads bundles via `fs.createReadStream` and can
-        // only handle `file://` paths — so a bundled contrib makes `CREATE EXTENSION`
-        // fail. Keeping the subpaths external preserves their on-disk tarball URLs.
+        // libSQL ships a prebuilt N-API binary (`@libsql/<platform>/index.node`)
+        // that is resolved at runtime, so it must stay external rather than being
+        // folded into main.js — a bundler cannot inline a native addon. The
+        // platform packages are optional dependencies, hence the broad pattern.
+        //
+        // electron-builder must also keep these unpacked from the asar archive;
+        // see the `asarUnpack` entry in electron-builder.json.
         vite: {
           build: {
             rolldownOptions: {
-              external: [/^@electric-sql\/pglite(\/|$)/, "electron-updater"],
+              external: [/^@libsql(\/|$)/, "libsql", "electron-updater"],
             },
           },
         },

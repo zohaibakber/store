@@ -14,7 +14,7 @@
       "name": "@store/desktop",
       "version": "0.2.21",
       "dependencies": {
-        "@electric-sql/pglite": "^0.5.4",
+        "@libsql/client": "^0.17.4",
         "electron-updater": "^6.8.9",
         "thinking-orbs": "^0.1.1",
       },
@@ -136,10 +136,11 @@
       "name": "@store/persistence",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/sql-pglite": "catalog:",
-        "@electric-sql/pglite": "^0.5.4",
+        "@effect/sql-libsql": "catalog:",
+        "@libsql/client": "^0.17.4",
         "@store/contracts": "workspace:*",
         "@store/db": "workspace:*",
+        "double-metaphone": "^2.0.1",
         "drizzle-orm": "1.0.0-rc.4",
         "effect": "catalog:",
       },
@@ -166,6 +167,7 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
   },
   "catalog": {
+    "@effect/sql-libsql": "4.0.0-beta.101",
     "@effect/sql-pg": "4.0.0-beta.101",
     "@effect/sql-pglite": "4.0.0-beta.101",
     "@effect/vitest": "4.0.0-beta.101",
@@ -292,6 +294,8 @@
     "@edge-runtime/primitives": ["@edge-runtime/primitives@4.1.0", "", {}, "sha512-Vw0lbJ2lvRUqc7/soqygUX216Xb8T3WBZ987oywz6aJqRxcwSVWwr9e+Nqo2m9bxobA9mdbWNNoRY6S9eko1EQ=="],
 
     "@edge-runtime/vm": ["@edge-runtime/vm@3.2.0", "", { "dependencies": { "@edge-runtime/primitives": "4.1.0" } }, "sha512-0dEVyRLM/lG4gp1R/Ik5bfPl/1wX00xFwd5KcNH602tzBa09oF7pbTKETEhR1GjZ75K6OJnYFu8II2dyMhONMw=="],
+
+    "@effect/sql-libsql": ["@effect/sql-libsql@4.0.0-beta.101", "", { "dependencies": { "@libsql/client": "^0.17.4" }, "peerDependencies": { "effect": "^4.0.0-beta.101" } }, "sha512-mIWCIpvYUd9ynXGaEs0PNQyDda8ogOkNgnJmfk2QbhjyMgXF1v1aZAhc0nClBIjo07JaYw+jIjn8PdBfBvQjuA=="],
 
     "@effect/sql-pg": ["@effect/sql-pg@4.0.0-beta.101", "", { "dependencies": { "pg": "^8.22.0", "pg-connection-string": "2.14.0", "pg-cursor": "^2.21.0", "pg-pool": "^3.14.0", "pg-types": "^4.1.0" }, "peerDependencies": { "effect": "^4.0.0-beta.101" } }, "sha512-Ur8SZFqVefviQzMyM/utVjPvKvYO139NLMrJlS1ZaNWfdT0HbwCsfEhY/cn0OolxbzJ2UX/dx24gqOe/NDuu4w=="],
 
@@ -1306,6 +1310,8 @@
     "dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 
     "dotenv-expand": ["dotenv-expand@11.0.7", "", { "dependencies": { "dotenv": "^16.4.5" } }, "sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA=="],
+
+    "double-metaphone": ["double-metaphone@2.0.1", "", { "bin": { "double-metaphone": "cli.js" } }, "sha512-oHqGfNo2bG/VTZSGFz98TWpyv3WD+d9TDOxwAY8L+zqwm4sGawNvEynegjPU+4HowE4HnIXSYAq0lst2YJgfzA=="],
 
     "drizzle-kit": ["drizzle-kit@1.0.0-rc.4", "", { "dependencies": { "@drizzle-team/brocli": "^0.12.0", "@js-temporal/polyfill": "^0.5.1", "esbuild": "^0.25.10", "get-tsconfig": "^4.13.6", "jiti": "^2.6.1" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-KZCpjRyu+oYHLj/UJogfFlOkWhHVkaEI2EOT1U3NDVXUzLoTyPjqwFxwOrlQxsY6jzRyxcz4EacqboGfhEeYrA=="],
 
