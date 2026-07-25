@@ -140,7 +140,7 @@ const transportFor = (changes: ReadonlyArray<SyncServerChange>) => ({
 
 test("each business mutation commits one durable sync operation", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
 
   try {
@@ -194,7 +194,7 @@ test("each business mutation commits one durable sync operation", async () => {
 
 test("an offline transport never rolls back local writes and leaves outbox work pending", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const transport = {
     exchange: () =>
       Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
@@ -249,7 +249,7 @@ test("an offline transport never rolls back local writes and leaves outbox work 
 
 test("a flaky transport is retried and the outbox drains", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-retry-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: (request: SyncRequest) => {
@@ -298,7 +298,7 @@ test("a flaky transport is retried and the outbox drains", async () => {
 
 test("a permanently failing transport still fails after retries", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-retry-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: () => {
@@ -344,7 +344,7 @@ test("a permanently failing transport still fails after retries", async () => {
 
 test("a non-retryable transport error fails once with its protocol details", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-validation-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let attempts = 0;
   const transport = {
     exchange: () => {
@@ -383,7 +383,7 @@ test("a non-retryable transport error fails once with its protocol details", asy
 
 test("a remote product change creates a product that does not exist locally", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 
   try {
@@ -416,7 +416,7 @@ test("a remote product change creates a product that does not exist locally", as
 
 test("a stale remote product change is skipped", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 
   try {
@@ -447,7 +447,7 @@ test("a stale remote product change is skipped", async () => {
 
 test("a newer remote product change replaces the local row", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 
   try {
@@ -478,7 +478,7 @@ test("a newer remote product change replaces the local row", async () => {
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-sync-pull-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let runtime: ManagedRuntime.ManagedRuntime<OfflineStore, PersistenceError> | undefined;
 
   try {

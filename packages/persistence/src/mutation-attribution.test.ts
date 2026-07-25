@@ -17,7 +17,7 @@ test("offline mutations keep immutable organization, actor, device, and operatio
   };
   const runtime = ManagedRuntime.make(
     layer({
-      dataDir: path.join(directory, "pglite"),
+      dataDir: path.join(directory, "data"),
       migrationsFolder,
       mutationContext: () => context,
     }),

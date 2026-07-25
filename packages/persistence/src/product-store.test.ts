@@ -11,7 +11,7 @@ import { migrationsFolder, store } from "./test-support";
 test("product CRUD remains available without sync configuration", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
   const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "pglite"), migrationsFolder }),
+    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
   );
 
   try {
@@ -71,7 +71,7 @@ test("product CRUD remains available without sync configuration", async () => {
 test("category and units default when omitted", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
   const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "pglite"), migrationsFolder }),
+    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
   );
 
   try {

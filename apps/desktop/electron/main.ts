@@ -305,7 +305,7 @@ function forwardSyncStatus() {
 
 async function activateLockedRuntime() {
   await disposeRuntime();
-  const dataDir = path.join(app.getPath("userData"), "locked", "pglite");
+  const dataDir = path.join(app.getPath("userData"), "locked", "data");
   await mkdir(path.dirname(dataDir), { recursive: true });
   runtime = ManagedRuntime.make(
     persistenceLayer({
@@ -320,7 +320,7 @@ async function activateOrganization(organizationId: string) {
   if (activeOrganizationId === organizationId && runtime) return;
   await disposeRuntime();
   const key = organizationKey(organizationId);
-  const dataDir = path.join(app.getPath("userData"), "organizations", key, "pglite");
+  const dataDir = path.join(app.getPath("userData"), "organizations", key, "data");
   await mkdir(path.dirname(dataDir), { recursive: true });
   runtime = ManagedRuntime.make(
     persistenceLayer({

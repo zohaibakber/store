@@ -4,7 +4,9 @@
   appId: "com.tabaaq.desktop",
   executableName: "store-electron",
   asar: true,
-  asarUnpack: ["**/*.node", "**/*.wasm", "**/*.data"],
+  // libSQL ships a prebuilt N-API binary that cannot be read from inside the
+  // asar archive, so it must stay unpacked.
+  asarUnpack: ["**/*.node"],
   // Fail before signing or publishing if monorepo/server sources, credentials,
   // or database schema code cross into the packaged desktop boundaries.
   afterPack: "./scripts/verify-after-pack.cjs",

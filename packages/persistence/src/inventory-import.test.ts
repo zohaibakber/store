@@ -22,7 +22,7 @@ const importLine = (name: string, productId: string | null = null): ImportInvent
 
 test("bulk inventory import creates one ordered outbox operation", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   let runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
 
   try {
@@ -86,7 +86,7 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
 
 test("duplicate names in one import share one created product", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
 
   try {
@@ -112,7 +112,7 @@ test("duplicate names in one import share one created product", async () => {
 
 test("large imports are committed locally once and queued in bounded sync operations", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
   const lines = Array.from({ length: 100 }, (_, index) =>
     importLine(`Imported product ${index + 1}`),
@@ -138,7 +138,7 @@ test("large imports are committed locally once and queued in bounded sync operat
 
 test("an invalid line rolls back every row and outbox change", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
 
   try {
@@ -176,7 +176,7 @@ test("an invalid line rolls back every row and outbox change", async () => {
 
 test("a repeated import reuses products by normalized name", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-import-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
   const runtime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));
   const input = { categoryId: "general", lines: [importLine("Brufen")] };
 

@@ -25,7 +25,7 @@ test("dashboard analytics aggregates revenue, stock health, and recent activity"
   let organizationId = "org-a";
   const runtime = ManagedRuntime.make(
     layer({
-      dataDir: path.join(directory, "pglite"),
+      dataDir: path.join(directory, "data"),
       migrationsFolder,
       mutationContext: () => ({ organizationId, userId: "tester", deviceId: "device-1" }),
     }),

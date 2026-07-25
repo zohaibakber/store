@@ -11,7 +11,7 @@ import { migrationsFolder, store } from "./test-support";
 test("sealed packs and loose units remain distinct through sales", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
   const runtime = ManagedRuntime.make(
-    layer({ dataDir: path.join(directory, "pglite"), migrationsFolder }),
+    layer({ dataDir: path.join(directory, "data"), migrationsFolder }),
   );
 
   try {

@@ -24,8 +24,12 @@ test("local migrations exclude remote-only auth and sync tables", async () => {
   const localMigration = await readMigrations(migrationsFolder);
   const remoteMigration = await readMigrations(remoteMigrationsFolder);
 
-  expect(localMigration).toContain('CREATE TABLE "invoices"');
-  expect(localMigration).toContain('CREATE TABLE "sync_outbox"');
+  // The local database is SQLite and the remote one is Postgres, so they quote
+  // identifiers differently: backticks locally, double quotes remotely.
+  const localTable = (name: string) => `CREATE TABLE \`${name}\``;
+
+  expect(localMigration).toContain(localTable("invoices"));
+  expect(localMigration).toContain(localTable("sync_outbox"));
   for (const remoteOnlyTable of [
     "user",
     "session",
@@ -37,7 +41,7 @@ test("local migrations exclude remote-only auth and sync tables", async () => {
     "sync_inbox",
     "sync_change_log",
   ]) {
-    expect(localMigration).not.toContain(`CREATE TABLE "${remoteOnlyTable}"`);
+    expect(localMigration).not.toContain(localTable(remoteOnlyTable));
   }
 
   expect(remoteMigration).toContain('CREATE TABLE "user"');
@@ -48,7 +52,7 @@ test("local migrations exclude remote-only auth and sync tables", async () => {
 
 test("migrations are idempotent and preserve existing products", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-offline-"));
-  const dataDir = path.join(directory, "pglite");
+  const dataDir = path.join(directory, "data");
 
   try {
     const firstRuntime = ManagedRuntime.make(layer({ dataDir, migrationsFolder }));

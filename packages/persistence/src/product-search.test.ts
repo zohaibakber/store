@@ -44,7 +44,7 @@ const withStore = async (run: (runtime: ReturnType<typeof makeRuntime>) => Promi
 };
 
 const makeRuntime = (directory: string) =>
-  ManagedRuntime.make(layer({ dataDir: path.join(directory, "pglite"), migrationsFolder }));
+  ManagedRuntime.make(layer({ dataDir: path.join(directory, "data"), migrationsFolder }));
 
 const names = async (runtime: ReturnType<typeof makeRuntime>, query: string) =>
   (await runtime.runPromise(store((store) => store.searchProducts({ query })))).map(
