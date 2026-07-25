@@ -11,6 +11,7 @@
       "@effect/sql-libsql": "4.0.0-beta.101",
       "@effect/sql-sqlite-do": "4.0.0-beta.101",
       "@effect/vitest": "4.0.0-beta.101",
+      "alchemy": "2.0.0-beta.64",
       "effect": "4.0.0-beta.101",
       "typescript": "7.0.2",
       "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
@@ -23,12 +24,28 @@
     "check": "turbo run check",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "preview": "turbo run preview --parallel"
+    "preview": "turbo run preview --parallel",
+    "plan:dev": "bun alchemy plan --stage dev --env-file .env.dev",
+    "deploy:dev": "bun alchemy deploy --stage dev --env-file .env.dev",
+    "plan:prod": "bun alchemy plan --stage prod --env-file .env.prod",
+    "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod",
+    "destroy:dev": "bun alchemy destroy --stage dev --env-file .env.dev",
+    "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin",
+    "check:infra": "bunx tsc --noEmit -p tsconfig.json",
+    "outputs:dev": "bun alchemy state --stage dev",
+    "outputs:prod": "bun alchemy state --stage prod"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250805.0",
+    "@effect/platform-bun": "4.0.0-beta.101",
+    "@effect/platform-node": "4.0.0-beta.101",
+    "@types/node": "^24.13.3",
+    "alchemy": "catalog:",
+    "effect": "4.0.0-beta.101",
     "turbo": "^2.10.6",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "wrangler": "^4.114.0"
   },
   "overrides": {
     "drizzle-orm": "1.0.0-rc.4",

@@ -44,8 +44,12 @@ jobs:
           # Publishes to this repo directly now that it's public; the default
           # GITHUB_TOKEN has contents:write (see workflow permissions above).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          ELECTRON_PROTOCOL: ${{ secrets.ELECTRON_PROTOCOL }}
+          # Repository variables, not secrets: an API hostname and a URL scheme
+          # are not confidential, and keeping them visible means a build that
+          # points somewhere unexpected is obvious in the logs rather than
+          # masked as ***.
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
   publish:
     needs: release

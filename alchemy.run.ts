@@ -1,0 +1,60 @@
+import * as Alchemy from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Drizzle from "alchemy/Drizzle";
+import * as GitHub from "alchemy/GitHub";
+import * as Output from "alchemy/Output";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+
+import { Api } from "./apps/server/infra";
+
+/**
+ * Composition root for the Cloudflare infrastructure behind `apps/server`.
+ * Resources live next to the code that owns them — the Worker in
+ * `apps/server/infra.ts`, the auth database in `packages/db/src/auth/infra.ts`.
+ *
+ * Every deploy targets an explicit stage:
+ *
+ *   bun run deploy:dev    # or plan:dev
+ *   bun run deploy:prod
+ *
+ * Running `alchemy deploy` bare would silently create a `dev_$USER` stage, so
+ * the package scripts always pass `--stage`.
+ */
+export default Alchemy.Stack(
+  "Tabaaq",
+  {
+    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers(), GitHub.providers()),
+    // Remote state, so local deploys and CI converge on the same history.
+    state: Cloudflare.state(),
+  },
+  Effect.gen(function* () {
+    const { stage } = yield* Alchemy.Stack;
+    const api = yield* Api;
+
+    if (process.env.PULL_REQUEST) {
+      yield* GitHub.Comment("PreviewComment", {
+        owner: "zohaibakber",
+        repository: "store",
+        issueNumber: Number(process.env.PULL_REQUEST),
+        body: Output.interpolate`
+          ## Preview deployed
+
+          **API:** ${api.url}
+
+          Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
+
+          ---
+          _This comment updates automatically with each push._
+        `,
+      });
+    }
+
+    // Non-secret outputs only — never surface BETTER_AUTH_SECRET here.
+    return {
+      stage,
+      apiUrl: api.url,
+      workerName: api.workerName,
+    };
+  }),
+);

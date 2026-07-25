@@ -31,9 +31,35 @@ vp install
 vp run dev
 ```
 
-The Worker setup and deployment commands are documented in `apps/server/README.md`.
+Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts` and
+the `infra.ts` modules beside the code that owns each resource. There are two isolated cloud
+stages, `dev` and `prod`:
+
+```sh
+bun run plan:dev      # preview
+bun run deploy:dev
+bun run deploy:prod
+```
+
+Copy `.env.example` to `.env.dev` and `.env.prod` (both gitignored) and give each stage its own
+`BETTER_AUTH_SECRET`. The Worker setup and stage details are documented in `apps/server/README.md`.
 An authenticated user can continue using a previously opened organization offline; a first sign-in
 and organization creation require the API.
+
+GitHub Actions verifies every change, deploys each same-repository pull request to an isolated
+`pr-<number>` stage, comments its API URL on the pull request, removes that stage when the pull
+request closes, and deploys `main` to `prod`. Bootstrap its least-privilege Cloudflare credentials
+once:
+
+```sh
+bun alchemy login --profile admin
+CLOUDFLARE_ACCOUNT_ID=<account-id> bun run setup:ci
+```
+
+The bootstrap stack creates the `Development` and `Production` GitHub environments and stores
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repository secrets. Add a different
+`BETTER_AUTH_SECRET` to each environment before enabling deployments. The admin profile can mint
+API tokens and should only be used for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
 `vp run build`.

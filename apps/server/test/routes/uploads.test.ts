@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { ApiEnv } from "../../infra";
 import { appFor } from "../lib/app";
 
 const invoiceForm = (files: ReadonlyArray<File>) => {
@@ -26,7 +27,7 @@ const extraction = {
   ],
 };
 
-const envWith = (ai: { toMarkdown: unknown; run: unknown }) => ({ AI: ai }) as unknown as Env;
+const envWith = (ai: { toMarkdown: unknown; run: unknown }) => ({ AI: ai }) as unknown as ApiEnv;
 
 const markdownFor = (documents: ReadonlyArray<{ name: string }>) =>
   documents.map((document) => ({

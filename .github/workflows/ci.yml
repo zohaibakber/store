@@ -4,9 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: >-
+    deploy-${{ github.event_name == 'pull_request'
+      && format('pr-{0}', github.event.number)
+      || 'prod' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  STAGE: >-
+    ${{ github.event_name == 'pull_request'
+      && format('pr-{0}', github.event.number)
+      || 'prod' }}
 
 jobs:
   verify:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,19 +36,89 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Server env placeholders
-        run: |
-          cat > apps/server/.env <<'EOF'
-          BETTER_AUTH_SECRET=
-          AUTH_TRUSTED_ORIGINS=
-          ELECTRON_PROTOCOL=
-          EOF
-
       - name: Check (format, lint, typecheck)
         run: bunx vp check
 
       - name: Workspace checks
         run: bun run check
 
+      - name: Typecheck infrastructure stack
+        run: bun run check:infra
+
       - name: Tests
         run: bunx vp test
+
+  deploy:
+    needs: verify
+    if: >-
+      github.event_name == 'push'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'Production' || 'Development' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Deploy ${{ env.STAGE }}
+        run: bun alchemy deploy --stage "${STAGE}" --yes
+        env:
+          CI: "1"
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stack outputs
+        run: bun alchemy state --stage "${STAGE}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CI: "1"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  cleanup:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: Development
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Refuse to destroy production
+        run: |
+          if [ "${STAGE}" = "prod" ]; then
+            echo "::error::Refusing to destroy the production stage."
+            exit 1
+          fi
+
+      - name: Destroy preview
+        run: bun alchemy destroy --stage "${STAGE}" --yes
+        env:
+          CI: "1"
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PULL_REQUEST: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

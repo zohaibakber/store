@@ -40,3 +40,6 @@ release
 !.dev.vars.example
 
 .claude/worktrees/
+
+# Alchemy local state and credentials
+.alchemy

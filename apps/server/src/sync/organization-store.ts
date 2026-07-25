@@ -21,7 +21,10 @@ export const SyncExchangeResult = Schema.Union([
 const decodePayload = Schema.decodeUnknownSync(SyncExchangePayload);
 const encodeResult = Schema.encodeSync(SyncExchangeResult);
 
-export class OrganizationStore extends DurableObject<Env> {
+// No env type parameter on purpose. This class never reads `this.env`, and
+// `apps/server/infra.ts` types the ORGANIZATION_STORE binding from this class —
+// naming the Worker's env here would make that a circular type reference.
+export class OrganizationStore extends DurableObject {
   readonly #runtime = makeSyncRuntime(this.ctx.storage);
 
   override async fetch(request: Request): Promise<Response> {

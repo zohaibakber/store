@@ -1,6 +1,16 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalPassThroughEnv": ["STORE_API_URL", "VITE_API_URL", "BETTER_AUTH_SECRET"],
+  "globalPassThroughEnv": [
+    "STORE_API_URL",
+    "VITE_API_URL",
+    "BETTER_AUTH_SECRET",
+    "AUTH_TRUSTED_ORIGINS",
+    "ELECTRON_PROTOCOL",
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "ALCHEMY_PROFILE",
+    "STAGE"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

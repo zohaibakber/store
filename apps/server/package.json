@@ -4,12 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8787",
-    "deploy": "wrangler deploy",
-    "typegen": "wrangler types ",
-    "check": "wrangler types --check && tsc --noEmit",
-    "test": "vitest run --root ../.. apps/server/test",
-    "build": "wrangler deploy --dry-run --outdir dist"
+    "dev": "cd ../.. && bun alchemy dev --stage dev --env-file .env.dev",
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
     "@effect/sql-sqlite-do": "catalog:",
@@ -26,8 +23,8 @@
     "@effect/vitest": "catalog:",
     "@libsql/client": "^0.17.4",
     "@types/node": "^24.13.3",
+    "alchemy": "catalog:",
     "typescript": "catalog:",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.114.0"
+    "vitest": "^4.1.10"
   }
 }

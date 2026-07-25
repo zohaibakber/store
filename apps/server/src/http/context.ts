@@ -1,6 +1,7 @@
 import type { AuthSession } from "@store/auth";
 import type { SyncRequest, SyncResponse } from "@store/contracts";
 
+import type { ApiEnv } from "../../infra";
 import type { SyncActor } from "../sync/model";
 
 export type AuthApi = {
@@ -11,7 +12,7 @@ export type AuthApi = {
 export type SyncRunner = (actor: SyncActor, request: SyncRequest) => Promise<SyncResponse>;
 
 export type AppEnv = {
-  Bindings: Env;
+  Bindings: ApiEnv;
   Variables: {
     authApi: AuthApi;
     authHandler: (request: Request) => Promise<Response>;
