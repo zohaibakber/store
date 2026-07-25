@@ -10,7 +10,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { getErrorMessage } from "@/lib/auth";
+import { storeErrorMessage } from "@/lib/errors";
 
 function formValue(form: FormData, key: string) {
   const value = form.get(key);
@@ -42,7 +42,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
           password,
         });
     } catch (cause) {
-      setErrors({ password: getErrorMessage(cause) });
+      setErrors({ password: storeErrorMessage(cause) });
     } finally {
       setPending(false);
     }

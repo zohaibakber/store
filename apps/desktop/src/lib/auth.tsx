@@ -2,6 +2,8 @@ import type { WorkspaceSnapshot } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
+import { storeErrorMessage, toastStoreError } from "@/lib/errors";
+
 type AuthContextValue = {
   snapshot: WorkspaceSnapshot | null;
   loading: boolean;
@@ -14,31 +16,47 @@ const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
     ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
     : null;
 
-const messageFrom = (error: unknown) => {
-  if (!(error instanceof Error)) return "Something went wrong. Please try again.";
-  return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+const authSession = () => {
+  if (!window.auth) throw new Error("Authentication is unavailable in this build.");
+  return window.auth;
 };
 
-let initialSnapshot: WorkspaceSnapshot | null = null;
-let initialError: string | null = null;
-
-export async function bootstrapAuth() {
-  try {
-    if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-    initialSnapshot = await window.auth.getSession();
-    initialError = initialSnapshot.workspaceError ?? null;
-  } catch (cause) {
-    initialError = messageFrom(cause);
-  }
-  return initialSnapshot;
+/** The session read once at startup, handed to {@link AuthProvider} as props. */
+export interface InitialAuth {
+  readonly snapshot: WorkspaceSnapshot | null;
+  readonly error: string | null;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+/** Ends the session; the main process broadcasts the resulting snapshot. */
+export async function signOut() {
+  try {
+    await window.auth?.signOut();
+  } catch (error) {
+    toastStoreError(error);
+  }
+}
+
+export async function bootstrapAuth(): Promise<InitialAuth> {
+  try {
+    const snapshot = await authSession().getSession();
+    return { snapshot, error: snapshot.workspaceError ?? null };
+  } catch (cause) {
+    return { snapshot: null, error: storeErrorMessage(cause) };
+  }
+}
+
+export function AuthProvider({
+  children,
+  initial,
+}: {
+  children: React.ReactNode;
+  initial: InitialAuth;
+}) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(initialSnapshot);
-  const [loading, setLoading] = React.useState(initialSnapshot === null && initialError === null);
-  const [error, setError] = React.useState<string | null>(initialError);
-  const currentScopeRef = React.useRef(authScope(initialSnapshot));
+  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(initial.snapshot);
+  const [loading, setLoading] = React.useState(initial.snapshot === null && initial.error === null);
+  const [error, setError] = React.useState<string | null>(initial.error);
+  const currentScopeRef = React.useRef(authScope(initial.snapshot));
   const pendingScopeRef = React.useRef<string | null | undefined>(undefined);
   const transitionRef = React.useRef(0);
 
@@ -78,10 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-      await apply(await window.auth.getSession());
+      await apply(await authSession().getSession());
     } catch (cause) {
-      setError(messageFrom(cause));
+      setError(storeErrorMessage(cause));
       setLoading(false);
     }
   }, [apply]);
@@ -103,5 +120,4 @@ export function useAuth() {
   if (!value) throw new Error("useAuth must be used inside AuthProvider");
   return value;
 }
-export const getErrorMessage = messageFrom;
 export type { WorkspaceSnapshot };

@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
+import { toastStoreError } from "@/lib/errors";
 import { formatDate, formatPrice } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
@@ -89,10 +90,7 @@ function ProductDetailPage() {
       await navigate({ to: "/products" });
       await router.invalidate();
     } catch (error) {
-      toastManager.add({
-        title: error instanceof Error ? error.message : "Could not delete the product.",
-        type: "error",
-      });
+      toastStoreError(error, "Could not delete the product.");
     }
   };
 

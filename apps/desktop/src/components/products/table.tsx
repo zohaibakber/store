@@ -8,7 +8,6 @@ import {
   createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
-  type FilterFn,
   metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
@@ -21,8 +20,15 @@ import {
 import { DataTableColumnHeader } from "@/components/shared/data-table";
 import { formatDate, formatPrice } from "@/lib/format";
 
-const fuzzyProductFilter: FilterFn<any, Product> = (row, _columnId, filterValue) => {
-  const { passed } = rankItem(row.original, String(filterValue ?? ""), {
+// Typed structurally rather than as `FilterFn<typeof features, Product>`:
+// `features` is declared below in terms of this filter, so naming it here
+// would be circular.
+const fuzzyProductFilter = (
+  row: { readonly original: Product },
+  _columnId: string,
+  filterValue: string | undefined,
+) => {
+  const { passed } = rankItem(row.original, filterValue ?? "", {
     accessors: [
       (product: Product) => product.name,
       (product: Product) => product.composition ?? "",

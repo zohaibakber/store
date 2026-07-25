@@ -1,4 +1,5 @@
-export type { MutationContext, PersistenceConfig, SyncTransport } from "./config";
+export type { PersistenceConfig, SyncTransport, Workspace } from "./config";
+export { AuthenticatedWorkspace } from "./config";
 export {
   InvoiceNotFoundError,
   PersistenceError,

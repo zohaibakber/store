@@ -11,8 +11,7 @@ import {
   ControlGroupText,
   controlGroupSelectTrigger,
 } from "@/components/shared/control-group";
-import { FormFieldError } from "@/components/shared/form-field-error";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { FormField, type FormControlProps } from "@/components/shared/form-field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
@@ -25,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { toastStoreError } from "@/lib/errors";
 import { useStore } from "@/lib/store";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
@@ -91,6 +91,22 @@ const productFormOpts = formOptions({
   validators: { onSubmit: productFormSchema },
 });
 
+type ProductFormValues = typeof productFormOpts.defaultValues;
+
+const formValuesToInput = (value: ProductFormValues) => {
+  const strength = value.strength.trim();
+  return {
+    name: value.name.trim(),
+    categoryId: value.categoryId,
+    aisle: nullableText(value.aisle),
+    composition: nullableText(value.composition),
+    strength: strength ? `${strength}${value.strengthUnit}` : null,
+    unitsPerPack: Number(value.unitsPerPack),
+    packPrice: priceInPaisa(value.packPrice),
+    unitPrice: priceInPaisa(value.unitPrice),
+  };
+};
+
 const defaultCategoryId = (categories: ReadonlyArray<Category>) =>
   categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "";
 
@@ -118,24 +134,11 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
     defaultValues: { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
     onSubmit: async ({ value }) => {
       try {
-        const strengthValue = value.strength.trim();
-        const product = await store.createProduct({
-          name: value.name.trim(),
-          categoryId: value.categoryId,
-          aisle: nullableText(value.aisle),
-          composition: nullableText(value.composition),
-          strength: strengthValue ? `${strengthValue}${value.strengthUnit}` : null,
-          unitsPerPack: Number(value.unitsPerPack),
-          packPrice: priceInPaisa(value.packPrice),
-          unitPrice: priceInPaisa(value.unitPrice),
-        });
+        const product = await store.createProduct(formValuesToInput(value));
         toastManager.add({ title: "Product created", type: "success" });
         await navigate({ to: "/products/$productId", params: { productId: product.id } });
       } catch (error) {
-        toastManager.add({
-          title: error instanceof Error ? error.message : "Could not create the product.",
-          type: "error",
-        });
+        toastStoreError(error, "Could not create the product.");
       }
     },
   });
@@ -148,28 +151,53 @@ function useProductUpdateForm(product: Product, onUpdated: () => void) {
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
       try {
-        const strengthValue = value.strength.trim();
-        await store.updateProduct({
-          id: product.id,
-          name: value.name.trim(),
-          categoryId: value.categoryId,
-          aisle: nullableText(value.aisle),
-          composition: nullableText(value.composition),
-          strength: strengthValue ? `${strengthValue}${value.strengthUnit}` : null,
-          unitsPerPack: Number(value.unitsPerPack),
-          packPrice: priceInPaisa(value.packPrice),
-          unitPrice: priceInPaisa(value.unitPrice),
-        });
+        await store.updateProduct({ id: product.id, ...formValuesToInput(value) });
         toastManager.add({ title: "Product updated", type: "success" });
         onUpdated();
       } catch (error) {
-        toastManager.add({
-          title: error instanceof Error ? error.message : "Could not update the product.",
-          type: "error",
-        });
+        toastStoreError(error, "Could not update the product.");
       }
     },
   });
+}
+
+type PriceField = {
+  handleBlur: () => void;
+  handleChange: (value: string) => void;
+  state: { value: string };
+};
+
+function PriceInput({
+  control,
+  field,
+  fractionDigits,
+  step,
+}: {
+  control: FormControlProps;
+  field: PriceField;
+  fractionDigits: number;
+  step: number;
+}) {
+  return (
+    <ControlGroup>
+      <ControlGroupNumberInput
+        format={{ maximumFractionDigits: fractionDigits }}
+        id={control.id}
+        inputProps={{
+          "aria-invalid": control["aria-invalid"],
+          name: control.name,
+          onBlur: field.handleBlur,
+        }}
+        min={0}
+        onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
+        step={step}
+        value={numberFieldValue(field.state.value)}
+      />
+      <ControlGroupAddon>
+        <ControlGroupText>PKR</ControlGroupText>
+      </ControlGroupAddon>
+    </ControlGroup>
+  );
 }
 
 function ProductForm({
@@ -192,108 +220,88 @@ function ProductForm({
       <Fieldset className="flex w-full flex-col gap-6">
         <form.Field
           name="name"
-          children={(field) => {
-            const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-            return (
-              <Field data-invalid={invalid}>
-                <FieldLabel htmlFor={field.name}>Product name</FieldLabel>
+          children={(field) => (
+            <FormField field={field} label="Product name">
+              {(control) => (
                 <Input
-                  aria-invalid={invalid || undefined}
+                  {...control}
                   autoFocus
-                  id={field.name}
-                  name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
                   placeholder="e.g. Panadol 500mg"
                   value={field.state.value}
                 />
-                {invalid && <FormFieldError errors={field.state.meta.errors} />}
-              </Field>
-            );
-          }}
+              )}
+            </FormField>
+          )}
         />
 
         <Fieldset className="grid gap-4 sm:grid-cols-2">
           <form.Field
             name="categoryId"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Category</FieldLabel>
+            children={(field) => (
+              <FormField field={field} label="Category">
+                {(control, invalid) => (
                   <CategoryField
-                    id={field.name}
+                    id={control.id}
                     invalid={invalid}
-                    name={field.name}
+                    name={control.name}
                     onChange={(categoryId) => field.handleChange(categoryId)}
                     seed={categories}
                     value={field.state.value}
                   />
-                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
+                )}
+              </FormField>
+            )}
           />
           <form.Field
             name="aisle"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Aisle</FieldLabel>
+            children={(field) => (
+              <FormField field={field} label="Aisle">
+                {(control) => (
                   <Input
-                    aria-invalid={invalid || undefined}
-                    id={field.name}
-                    name={field.name}
+                    {...control}
                     onBlur={field.handleBlur}
                     onChange={(event) => field.handleChange(event.target.value)}
                     placeholder="e.g. A3"
                     value={field.state.value}
                   />
-                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
+                )}
+              </FormField>
+            )}
           />
         </Fieldset>
 
         <Fieldset className="grid gap-4 sm:grid-cols-2">
           <form.Field
             name="composition"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Composition</FieldLabel>
+            children={(field) => (
+              <FormField field={field} label="Composition">
+                {(control) => (
                   <Input
-                    aria-invalid={invalid || undefined}
-                    id={field.name}
-                    name={field.name}
+                    {...control}
                     onBlur={field.handleBlur}
                     onChange={(event) => field.handleChange(event.target.value)}
                     placeholder="e.g. Paracetamol"
                     value={field.state.value}
                   />
-                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
+                )}
+              </FormField>
+            )}
           />
           <form.Field
             name="strength"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Strength</FieldLabel>
+            children={(field) => (
+              <FormField field={field} label="Strength">
+                {(control) => (
                   <ControlGroup>
                     <ControlGroupNumberInput
                       format={{ maximumFractionDigits: 2 }}
-                      id={field.name}
+                      id={control.id}
                       inputProps={{
-                        "aria-invalid": invalid || undefined,
+                        "aria-invalid": control["aria-invalid"],
                         "aria-label": "Strength value",
-                        name: field.name,
+                        name: control.name,
                         onBlur: field.handleBlur,
                         placeholder: "e.g. 500",
                       }}
@@ -334,10 +342,9 @@ function ProductForm({
                       />
                     </ControlGroupAddon>
                   </ControlGroup>
-                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
+                )}
+              </FormField>
+            )}
           />
         </Fieldset>
 
@@ -354,14 +361,16 @@ function ProductForm({
                 },
               }}
               name="unitsPerPack"
-              children={(field) => {
-                const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={invalid}>
-                    <FieldLabel htmlFor={field.name}>Units per pack</FieldLabel>
+              children={(field) => (
+                <FormField
+                  description="Use 1 when the item is sold as-is."
+                  field={field}
+                  label="Units per pack"
+                >
+                  {(control) => (
                     <NumberField
                       format={{ maximumFractionDigits: 0 }}
-                      id={field.name}
+                      id={control.id}
                       min={1}
                       onValueChange={(value) =>
                         field.handleChange(value === null ? "" : String(value))
@@ -371,19 +380,17 @@ function ProductForm({
                     >
                       <NumberFieldGroup>
                         <NumberFieldInput
-                          aria-invalid={invalid || undefined}
+                          aria-invalid={control["aria-invalid"]}
                           className="text-left"
-                          name={field.name}
+                          name={control.name}
                           onBlur={field.handleBlur}
                           placeholder="1"
                         />
                       </NumberFieldGroup>
                     </NumberField>
-                    <FieldDescription>Use 1 when the item is sold as-is.</FieldDescription>
-                    {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
+                  )}
+                </FormField>
+              )}
             />
             <form.Field
               listeners={{
@@ -396,72 +403,29 @@ function ProductForm({
                 },
               }}
               name="packPrice"
-              children={(field) => {
-                const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={invalid}>
-                    <FieldLabel htmlFor={field.name}>Pack price</FieldLabel>
-                    <ControlGroup>
-                      <ControlGroupNumberInput
-                        format={{ maximumFractionDigits: 2 }}
-                        id={field.name}
-                        inputProps={{
-                          "aria-invalid": invalid || undefined,
-                          name: field.name,
-                          onBlur: field.handleBlur,
-                        }}
-                        min={0}
-                        onValueChange={(value) =>
-                          field.handleChange(value === null ? "" : String(value))
-                        }
-                        step={0.01}
-                        value={numberFieldValue(field.state.value)}
-                      />
-                      <ControlGroupAddon>
-                        <ControlGroupText>PKR</ControlGroupText>
-                      </ControlGroupAddon>
-                    </ControlGroup>
-                    {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
+              children={(field) => (
+                <FormField field={field} label="Pack price">
+                  {(control) => (
+                    <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
+                  )}
+                </FormField>
+              )}
             />
           </div>
 
           <form.Field
             name="unitPrice"
-            children={(field) => {
-              const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor={field.name}>Unit price</FieldLabel>
-                  <ControlGroup>
-                    <ControlGroupNumberInput
-                      format={{ maximumFractionDigits: 0 }}
-                      id={field.name}
-                      inputProps={{
-                        "aria-invalid": invalid || undefined,
-                        name: field.name,
-                        onBlur: field.handleBlur,
-                      }}
-                      min={0}
-                      onValueChange={(value) =>
-                        field.handleChange(value === null ? "" : String(value))
-                      }
-                      step={1}
-                      value={numberFieldValue(field.state.value)}
-                    />
-                    <ControlGroupAddon>
-                      <ControlGroupText>PKR</ControlGroupText>
-                    </ControlGroupAddon>
-                  </ControlGroup>
-                  <FieldDescription>
-                    Auto-filled from pack price ÷ units per pack, rounded. Edit to override.
-                  </FieldDescription>
-                  {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
+            children={(field) => (
+              <FormField
+                description="Auto-filled from pack price ÷ units per pack, rounded. Edit to override."
+                field={field}
+                label="Unit price"
+              >
+                {(control) => (
+                  <PriceInput control={control} field={field} fractionDigits={0} step={1} />
+                )}
+              </FormField>
+            )}
           />
         </Fieldset>
       </Fieldset>

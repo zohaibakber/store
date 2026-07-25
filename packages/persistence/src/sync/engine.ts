@@ -5,17 +5,9 @@ import {
   type SyncStatus,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
-import {
-  batches,
-  categories,
-  invoiceCounters,
-  invoiceItems,
-  invoices,
-  products,
-  stockMovements,
-  syncState,
-} from "@store/db/local/schema";
+import { categories, invoiceCounters, stockMovements, syncState } from "@store/db/local/schema";
 import { and, eq, sql } from "drizzle-orm";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
@@ -24,7 +16,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import type { MutationContext, PersistenceConfig } from "../config";
+import type { PersistenceConfig, Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { PersistenceError, mapPersistenceError } from "../errors";
 import { emptyOutboxHealth, exchangeOutcome, makeOutbox, type ExchangeOutcome } from "./outbox";
@@ -45,10 +37,10 @@ const MAX_EXCHANGE_ROUNDS = 100;
 
 const ensureIdentity = (
   row: { readonly organizationId: string; readonly id: string },
-  actor: MutationContext,
+  workspace: Workspace,
   change: SyncEntityChange,
 ) =>
-  row.organizationId === actor.organizationId && row.id === change.entityId
+  row.organizationId === workspace.organizationId && row.id === change.entityId
     ? Effect.void
     : Effect.fail(invalidResponse(`Remote ${change.entity} change has invalid identity`));
 
@@ -73,151 +65,88 @@ const applyIfRemoteWins = <A, E, R>(
     return true;
   });
 
+/** A decoded remote row: every synced table carries this identity triple. */
+interface RemoteRow {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly rowVersion: number;
+}
+
+/**
+ * Last-writer-wins upsert keyed on `(organizationId, id)`. Every versioned
+ * entity applies the identical shape, so the table comes from the entity
+ * registry rather than a per-entity branch.
+ */
+const upsertVersionedRow = (
+  transaction: StoreTransaction,
+  workspace: Workspace,
+  change: SyncEntityChange,
+  row: RemoteRow,
+) => {
+  // The registry maps each entity to its table; drizzle cannot narrow the
+  // resulting union, so the column handles are read through a shared shape.
+  const table = syncEntityRows[change.entity].table as unknown as typeof categories;
+  const { id: _id, organizationId: _organizationId, ...set } = row;
+  return applyIfRemoteWins(
+    change,
+    transaction
+      .select({ rowVersion: table.rowVersion })
+      .from(table)
+      .where(and(eq(table.organizationId, workspace.organizationId), eq(table.id, row.id)))
+      .limit(1)
+      .pipe(Effect.map((rows) => rows[0])),
+    transaction
+      .insert(table)
+      .values(row as typeof categories.$inferInsert)
+      .onConflictDoUpdate({ target: [table.organizationId, table.id], set }),
+  );
+};
+
 const upsertRemoteChange = (
   transaction: StoreTransaction,
-  actor: MutationContext,
+  workspace: Workspace,
   change: SyncEntityChange,
 ) =>
   Effect.gen(function* () {
     switch (change.entity) {
-      case "category": {
-        const row = yield* decodeRow(syncEntityRows.category.schema, change.row, change.entity);
-        yield* ensureIdentity(row, actor, change);
-        const { id: _id, organizationId: _organizationId, ...set } = row;
-        yield* applyIfRemoteWins(
-          change,
-          transaction
-            .select({ rowVersion: categories.rowVersion })
-            .from(categories)
-            .where(
-              and(eq(categories.organizationId, actor.organizationId), eq(categories.id, row.id)),
-            )
-            .limit(1)
-            .pipe(Effect.map((rows) => rows[0])),
-          transaction
-            .insert(categories)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [categories.organizationId, categories.id],
-              set,
-            }),
-        );
-        return;
-      }
-      case "product": {
-        const row = yield* decodeRow(syncEntityRows.product.schema, change.row, change.entity);
-        yield* ensureIdentity(row, actor, change);
-        const { id: _id, organizationId: _organizationId, ...set } = row;
-        yield* applyIfRemoteWins(
-          change,
-          transaction
-            .select({ rowVersion: products.rowVersion })
-            .from(products)
-            .where(and(eq(products.organizationId, actor.organizationId), eq(products.id, row.id)))
-            .limit(1)
-            .pipe(Effect.map((rows) => rows[0])),
-          transaction
-            .insert(products)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [products.organizationId, products.id],
-              set,
-            }),
-        );
-        return;
-      }
-      case "batch": {
-        const row = yield* decodeRow(syncEntityRows.batch.schema, change.row, change.entity);
-        yield* ensureIdentity(row, actor, change);
-        const { id: _id, organizationId: _organizationId, ...set } = row;
-        yield* applyIfRemoteWins(
-          change,
-          transaction
-            .select({ rowVersion: batches.rowVersion })
-            .from(batches)
-            .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, row.id)))
-            .limit(1)
-            .pipe(Effect.map((rows) => rows[0])),
-          transaction
-            .insert(batches)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [batches.organizationId, batches.id],
-              set,
-            }),
-        );
-        return;
-      }
-      case "invoice": {
-        const row = yield* decodeRow(syncEntityRows.invoice.schema, change.row, change.entity);
-        yield* ensureIdentity(row, actor, change);
-        const { id: _id, organizationId: _organizationId, ...set } = row;
-        const applied = yield* applyIfRemoteWins(
-          change,
-          transaction
-            .select({ rowVersion: invoices.rowVersion })
-            .from(invoices)
-            .where(and(eq(invoices.organizationId, actor.organizationId), eq(invoices.id, row.id)))
-            .limit(1)
-            .pipe(Effect.map((rows) => rows[0])),
-          transaction
-            .insert(invoices)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [invoices.organizationId, invoices.id],
-              set,
-            }),
-        );
-        if (applied)
-          yield* transaction
-            .insert(invoiceCounters)
-            .values({
-              organizationId: actor.organizationId,
-              lastInvoiceNumber: row.invoiceNumber,
-            })
-            .onConflictDoUpdate({
-              target: invoiceCounters.organizationId,
-              set: {
-                lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
-              },
-            });
-        return;
-      }
-      case "invoiceItem": {
-        const row = yield* decodeRow(syncEntityRows.invoiceItem.schema, change.row, change.entity);
-        yield* ensureIdentity(row, actor, change);
-        const { id: _id, organizationId: _organizationId, ...set } = row;
-        yield* applyIfRemoteWins(
-          change,
-          transaction
-            .select({ rowVersion: invoiceItems.rowVersion })
-            .from(invoiceItems)
-            .where(
-              and(
-                eq(invoiceItems.organizationId, actor.organizationId),
-                eq(invoiceItems.id, row.id),
-              ),
-            )
-            .limit(1)
-            .pipe(Effect.map((rows) => rows[0])),
-          transaction
-            .insert(invoiceItems)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [invoiceItems.organizationId, invoiceItems.id],
-              set,
-            }),
-        );
-        return;
-      }
+      // Stock movements are append-only: an existing row is never rewritten.
       case "stockMovement": {
         const row = yield* decodeRow(
           syncEntityRows.stockMovement.schema,
           change.row,
           change.entity,
         );
-        yield* ensureIdentity(row, actor, change);
+        yield* ensureIdentity(row, workspace, change);
         yield* transaction.insert(stockMovements).values(row).onConflictDoNothing();
+        return;
+      }
+      // Invoices additionally advance the organization's invoice counter.
+      case "invoice": {
+        const row = yield* decodeRow(syncEntityRows.invoice.schema, change.row, change.entity);
+        yield* ensureIdentity(row, workspace, change);
+        if (!(yield* upsertVersionedRow(transaction, workspace, change, row))) return;
+        yield* transaction
+          .insert(invoiceCounters)
+          .values({
+            organizationId: workspace.organizationId,
+            lastInvoiceNumber: row.invoiceNumber,
+          })
+          .onConflictDoUpdate({
+            target: invoiceCounters.organizationId,
+            set: {
+              lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
+            },
+          });
+        return;
+      }
+      default: {
+        const row = yield* decodeRow(
+          syncEntityRows[change.entity].schema,
+          change.row,
+          change.entity,
+        );
+        yield* ensureIdentity(row, workspace, change);
+        yield* upsertVersionedRow(transaction, workspace, change, row);
       }
     }
   });
@@ -225,14 +154,13 @@ const upsertRemoteChange = (
 export const makeSyncEngine = (
   database: StoreDatabase,
   config: PersistenceConfig,
-  mutationContext: () => MutationContext,
+  workspace: Workspace,
 ) =>
   Effect.gen(function* () {
-    const actor = mutationContext();
-    const outbox = makeOutbox(database, mutationContext);
+    const outbox = makeOutbox(database, workspace);
 
     const initialState = yield* database.query.syncState
-      .findFirst({ where: { organizationId: actor.organizationId } })
+      .findFirst({ where: { organizationId: workspace.organizationId } })
       .pipe(mapPersistenceError("load sync state"));
     const configured = config.syncTransport !== undefined;
     const initialHealth = configured ? yield* outbox.health : emptyOutboxHealth;
@@ -249,9 +177,8 @@ export const makeSyncEngine = (
     const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* () {
       const transport = config.syncTransport;
       if (!transport) return { _tag: "Drained" } satisfies ExchangeOutcome;
-      const currentActor = mutationContext();
       const localState = yield* database.query.syncState
-        .findFirst({ where: { organizationId: currentActor.organizationId } })
+        .findFirst({ where: { organizationId: workspace.organizationId } })
         .pipe(mapPersistenceError("load sync state"));
       const cursor = localState?.cursor ?? 0;
       const batch = yield* outbox.nextBatch;
@@ -273,8 +200,8 @@ export const makeSyncEngine = (
         changes: queued.payload,
       }));
       const request: SyncRequest = {
-        organizationId: currentActor.organizationId,
-        deviceId: currentActor.deviceId,
+        organizationId: workspace.organizationId,
+        deviceId: workspace.deviceId,
         cursor,
         operations,
       };
@@ -284,7 +211,7 @@ export const makeSyncEngine = (
           database
             .update(syncState)
             .set({ lastAttemptAt: attemptedAt })
-            .where(eq(syncState.organizationId, currentActor.organizationId)),
+            .where(eq(syncState.organizationId, workspace.organizationId)),
           outbox.markAttempt(selected.map((queued) => queued.operationId)),
         ],
         { concurrency: 1, discard: true },
@@ -292,7 +219,9 @@ export const makeSyncEngine = (
 
       const response = yield* Effect.suspend(() => transport.exchange(request)).pipe(
         Effect.retry({
-          schedule: Schedule.exponential("500 millis").pipe(Schedule.jittered),
+          schedule: Schedule.exponential(
+            Duration.millis(config.exchangeRetryBaseMillis ?? 500),
+          ).pipe(Schedule.jittered),
           times: 3,
           while: (error) => error.retryable,
         }),
@@ -319,7 +248,7 @@ export const makeSyncEngine = (
           }),
         ),
       );
-      if (response.organizationId !== currentActor.organizationId || response.cursor < cursor)
+      if (response.organizationId !== workspace.organizationId || response.cursor < cursor)
         return yield* invalidResponse("The sync response has an invalid organization or cursor");
       const acknowledgementIds = new Set(response.acknowledgements.map((ack) => ack.operationId));
       if (operations.some((operation) => !acknowledgementIds.has(operation.operationId)))
@@ -335,7 +264,7 @@ export const makeSyncEngine = (
               if (serverChange.cursor <= previousCursor || serverChange.cursor > response.cursor)
                 return yield* invalidResponse("Remote changes are not in strict cursor order");
               previousCursor = serverChange.cursor;
-              yield* upsertRemoteChange(transaction, currentActor, serverChange.change);
+              yield* upsertRemoteChange(transaction, workspace, serverChange.change);
             }
             const completedAt = Date.now();
             yield* outbox.acknowledge(
@@ -351,7 +280,7 @@ export const makeSyncEngine = (
                 lastAttemptAt: completedAt,
                 lastError: null,
               })
-              .where(eq(syncState.organizationId, currentActor.organizationId));
+              .where(eq(syncState.organizationId, workspace.organizationId));
           }),
         )
         .pipe(mapPersistenceError("apply sync response"));
@@ -386,7 +315,7 @@ export const makeSyncEngine = (
                     : `The outbox still had work after ${MAX_EXCHANGE_ROUNDS} exchanges`,
               });
             const state = yield* database.query.syncState
-              .findFirst({ where: { organizationId: mutationContext().organizationId } })
+              .findFirst({ where: { organizationId: workspace.organizationId } })
               .pipe(mapPersistenceError("load completed sync state"));
             const health = yield* outbox.health;
             const next: SyncStatus = {
@@ -403,14 +332,13 @@ export const makeSyncEngine = (
         .pipe(
           Effect.tapError((error) =>
             Effect.gen(function* () {
-              const currentActor = mutationContext();
               const recorded = yield* Effect.gen(function* () {
                 yield* Effect.all(
                   [
                     database
                       .update(syncState)
                       .set({ lastAttemptAt: Date.now(), lastError: error.message })
-                      .where(eq(syncState.organizationId, currentActor.organizationId)),
+                      .where(eq(syncState.organizationId, workspace.organizationId)),
                     outbox.markFailure(error.message),
                   ],
                   { concurrency: 1, discard: true },

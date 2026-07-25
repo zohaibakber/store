@@ -5,7 +5,12 @@ import {
 } from "@store/contracts";
 import { expect, test } from "vitest";
 
-import { exchangeOutcome, selectBatch } from "../../src/sync/outbox";
+import {
+  exchangeOutcome,
+  QUARANTINE_ATTEMPTS,
+  selectBatch,
+  sendableUntilQuarantined,
+} from "../../src/sync/outbox";
 
 const queued = (operationId: string, changes: number) => ({
   operationId,
@@ -73,6 +78,25 @@ test("an unsendable operation is reported even when it follows a sendable one", 
   const batch = selectBatch([queued("fine", 1), queued("empty", 0)]);
   expect(batch._tag).toBe("Unsendable");
   if (batch._tag === "Unsendable") expect(batch.operationId).toBe("empty");
+});
+
+const attempted = (operationId: string, attemptCount: number) => ({ operationId, attemptCount });
+
+test("a queue with nothing quarantined is sent in full", () => {
+  const pending = [attempted("a", 0), attempted("b", QUARANTINE_ATTEMPTS - 1)];
+  expect(sendableUntilQuarantined(pending)).toEqual(pending);
+});
+
+test("a quarantined operation halts the queue instead of being skipped", () => {
+  const pending = [attempted("a", 1), attempted("poison", QUARANTINE_ATTEMPTS), attempted("c", 0)];
+  expect(sendableUntilQuarantined(pending).map((operation) => operation.operationId)).toEqual([
+    "a",
+  ]);
+});
+
+test("a quarantined operation at the head stops the queue entirely", () => {
+  const pending = [attempted("poison", QUARANTINE_ATTEMPTS + 3), attempted("b", 0)];
+  expect(sendableUntilQuarantined(pending)).toEqual([]);
 });
 
 test("exchangeOutcome distinguishes why an exchange stopped", () => {

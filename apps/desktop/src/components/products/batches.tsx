@@ -13,7 +13,7 @@ import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
 
 import { DatePicker } from "@/components/shared/date-picker";
-import { FormFieldError } from "@/components/shared/form-field-error";
+import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +29,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Frame, FrameHeader } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
@@ -45,6 +44,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { toastManager } from "@/components/ui/toast";
+import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
@@ -103,10 +103,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
         form.reset();
         await router.invalidate();
       } catch (error) {
-        toastManager.add({
-          title: error instanceof Error ? error.message : "Could not add the batch.",
-          type: "error",
-        });
+        toastStoreError(error, "Could not add the batch.");
       }
     },
   });
@@ -136,35 +133,28 @@ function AddBatchDialog({ productId }: { productId: string }) {
               <Fieldset className="grid gap-4">
                 <form.Field
                   name="batchNumber"
-                  children={(field) => {
-                    const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={invalid}>
-                        <FieldLabel htmlFor={field.name}>Batch number</FieldLabel>
+                  children={(field) => (
+                    <FormField field={field} label="Batch number">
+                      {(control) => (
                         <Input
-                          aria-invalid={invalid || undefined}
+                          {...control}
                           autoFocus
-                          id={field.name}
-                          name={field.name}
                           onBlur={field.handleBlur}
                           onChange={(event) => field.handleChange(event.target.value)}
                           placeholder="Optional"
                           value={field.state.value}
                         />
-                        {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                      </Field>
-                    );
-                  }}
+                      )}
+                    </FormField>
+                  )}
                 />
                 <form.Field
                   name="expiresAt"
-                  children={(field) => {
-                    const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={invalid}>
-                        <FieldLabel htmlFor={field.name}>Expiry date</FieldLabel>
+                  children={(field) => (
+                    <FormField field={field} label="Expiry date">
+                      {(control) => (
                         <DatePicker
-                          id={field.name}
+                          id={control.id}
                           value={field.state.value ? parseISODate(field.state.value) : undefined}
                           onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
                           onBlur={field.handleBlur}
@@ -172,10 +162,9 @@ function AddBatchDialog({ productId }: { productId: string }) {
                           startMonth={new Date(new Date().getFullYear() - 1, 0)}
                           endMonth={new Date(new Date().getFullYear() + 15, 11)}
                         />
-                        {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                      </Field>
-                    );
-                  }}
+                      )}
+                    </FormField>
+                  )}
                 />
               </Fieldset>
               <Fieldset className="grid gap-4">
@@ -183,28 +172,24 @@ function AddBatchDialog({ productId }: { productId: string }) {
                   <form.Field
                     key={name}
                     name={name}
-                    children={(field) => {
-                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                      return (
-                        <Field data-invalid={invalid}>
-                          <FieldLabel htmlFor={field.name}>
-                            {name === "packQuantity" ? "Sealed packs" : "Loose units"}
-                          </FieldLabel>
+                    children={(field) => (
+                      <FormField
+                        field={field}
+                        label={name === "packQuantity" ? "Sealed packs" : "Loose units"}
+                      >
+                        {(control) => (
                           <Input
-                            aria-invalid={invalid || undefined}
-                            id={field.name}
+                            {...control}
                             min="0"
-                            name={field.name}
                             onBlur={field.handleBlur}
                             onChange={(event) => field.handleChange(event.target.value)}
                             step="1"
                             type="number"
                             value={field.state.value}
                           />
-                          {invalid && <FormFieldError errors={field.state.meta.errors} />}
-                        </Field>
-                      );
-                    }}
+                        )}
+                      </FormField>
+                    )}
                   />
                 ))}
               </Fieldset>

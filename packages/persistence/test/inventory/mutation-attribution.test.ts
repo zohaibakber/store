@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { store, withTestStore } from "../lib/store";
 
 test("offline mutations keep immutable organization, actor, device, and operation attribution", async () => {
-  const context = {
+  const workspace = {
     organizationId: "org-pharmacy",
     userId: "user-owner",
     deviceId: "device-counter-one",
@@ -52,9 +52,9 @@ test("offline mutations keep immutable organization, actor, device, and operatio
       );
 
       expect(invoice).toMatchObject({
-        organizationId: context.organizationId,
-        createdByUserId: context.userId,
-        deviceId: context.deviceId,
+        organizationId: workspace.organizationId,
+        createdByUserId: workspace.userId,
+        deviceId: workspace.deviceId,
       });
       expect(invoice.invoiceNumber).toBe(1);
 
@@ -69,13 +69,13 @@ test("offline mutations keep immutable organization, actor, device, and operatio
       expect(saleMovements).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            organizationId: context.organizationId,
-            actorUserId: context.userId,
-            deviceId: context.deviceId,
+            organizationId: workspace.organizationId,
+            actorUserId: workspace.userId,
+            deviceId: workspace.deviceId,
           }),
         ]),
       );
     },
-    { mutationContext: () => context },
+    { workspace },
   );
 });

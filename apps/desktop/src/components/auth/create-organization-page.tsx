@@ -7,7 +7,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { getErrorMessage } from "@/lib/auth";
+import { storeErrorMessage } from "@/lib/errors";
 
 type CreateOrganizationErrors = Record<string, string | string[]>;
 
@@ -26,7 +26,7 @@ export function CreateOrganizationPage() {
         name: typeof name === "string" ? name : "",
       });
     } catch (cause) {
-      setErrors({ organizationName: getErrorMessage(cause) });
+      setErrors({ organizationName: storeErrorMessage(cause) });
     } finally {
       setPending(false);
     }

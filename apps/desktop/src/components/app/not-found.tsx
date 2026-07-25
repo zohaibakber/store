@@ -25,11 +25,9 @@ export function NotFound() {
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
-        <Button size="sm">
-          <Link to="/">
-            <HugeiconsIcon aria-hidden="true" icon={Home01Icon} />
-            Return home
-          </Link>
+        <Button render={<Link to="/" />} size="sm">
+          <HugeiconsIcon aria-hidden="true" icon={Home01Icon} />
+          Return home
         </Button>
       </EmptyContent>
     </Empty>

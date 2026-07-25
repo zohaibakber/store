@@ -10,7 +10,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { InvoiceNotFoundError, PersistenceError, mapPersistenceError } from "../errors";
 import { byEarliestExpiry, toInvoice } from "./models";
@@ -73,28 +73,24 @@ const movementChange = (
 
 export const makeInvoiceStore = (
   database: StoreDatabase,
-  mutationContext: () => MutationContext,
+  workspace: Workspace,
   mutation: InventoryMutation,
 ): InvoiceStore => {
-  const listInvoices = Effect.suspend(() => {
-    const actor = mutationContext();
-    return database.query.invoices
-      .findMany({
-        orderBy: { createdAt: "desc" },
-        where: { organizationId: actor.organizationId, deletedAt: { isNull: true } },
-        with: { items: true },
-      })
-      .pipe(
-        Effect.map((rows) => rows.map(toInvoice)),
-        mapPersistenceError("list invoices"),
-      );
-  });
+  const listInvoices = database.query.invoices
+    .findMany({
+      orderBy: { createdAt: "desc" },
+      where: { organizationId: workspace.organizationId, deletedAt: { isNull: true } },
+      with: { items: true },
+    })
+    .pipe(
+      Effect.map((rows) => rows.map(toInvoice)),
+      mapPersistenceError("list invoices"),
+    );
 
   const getInvoice = Effect.fn("OfflineStore.getInvoice")(function* (id: string) {
-    const actor = mutationContext();
     const row = yield* database.query.invoices
       .findFirst({
-        where: { organizationId: actor.organizationId, id, deletedAt: { isNull: true } },
+        where: { organizationId: workspace.organizationId, id, deletedAt: { isNull: true } },
         with: { items: true },
       })
       .pipe(mapPersistenceError("find invoice"));

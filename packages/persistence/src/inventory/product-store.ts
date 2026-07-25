@@ -15,7 +15,7 @@ import { batches, categories, products, stockMovements } from "@store/db/local/s
 import { and, eq, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import type { StoreDatabase } from "../database/client";
 import {
   PersistenceError,
@@ -71,7 +71,7 @@ const productRelations = queryConfig({
 
 export const makeProductStore = (
   database: StoreDatabase,
-  mutationContext: () => MutationContext,
+  workspace: Workspace,
   mutation: InventoryMutation,
 ): ProductStore => {
   const findProduct = (organizationId: string, id: string) =>
@@ -80,18 +80,15 @@ export const makeProductStore = (
       with: productRelations,
     });
 
-  const listCategories = Effect.suspend(() => {
-    const actor = mutationContext();
-    return database.query.categories
-      .findMany({
-        orderBy: { name: "asc" },
-        where: { organizationId: actor.organizationId, deletedAt: { isNull: true } },
-      })
-      .pipe(
-        Effect.map((rows) => rows.map(toCategory)),
-        mapPersistenceError("list categories"),
-      );
-  });
+  const listCategories = database.query.categories
+    .findMany({
+      orderBy: { name: "asc" },
+      where: { organizationId: workspace.organizationId, deletedAt: { isNull: true } },
+    })
+    .pipe(
+      Effect.map((rows) => rows.map(toCategory)),
+      mapPersistenceError("list categories"),
+    );
 
   const categoryId = (name: string) =>
     name
@@ -142,74 +139,67 @@ export const makeProductStore = (
     return toCategory(row);
   });
 
-  const listProducts = Effect.suspend(() => {
-    const actor = mutationContext();
-    return database.query.products
-      .findMany({
-        orderBy: { name: "asc" },
-        where: { organizationId: actor.organizationId, deletedAt: { isNull: true } },
-        with: productRelations,
+  const listProducts = database.query.products
+    .findMany({
+      orderBy: { name: "asc" },
+      where: { organizationId: workspace.organizationId, deletedAt: { isNull: true } },
+      with: productRelations,
+    })
+    .pipe(
+      Effect.map((rows) => rows.map(toProduct)),
+      mapPersistenceError("list products"),
+    );
+
+  const searchProducts = Effect.fn("OfflineStore.searchProducts")((input: SearchProductsInput) => {
+    const raw = input.query.trim();
+    if (raw.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
+    const limit = input.limit ?? 20;
+
+    return database
+      .select({
+        id: products.id,
+        name: products.name,
+        composition: products.composition,
       })
+      .from(products)
+      .where(
+        and(
+          eq(products.organizationId, workspace.organizationId),
+          eq(products.visible, true),
+          isNull(products.deletedAt),
+        ),
+      )
       .pipe(
-        Effect.map((rows) => rows.map(toProduct)),
-        mapPersistenceError("list products"),
+        Effect.flatMap((candidates) => {
+          const ids = rankProducts(candidates.map(prepareProduct), raw, limit).map(
+            (entry) => entry.product.id,
+          );
+          if (ids.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
+          return database.query.products
+            .findMany({
+              where: {
+                organizationId: workspace.organizationId,
+                id: { in: ids },
+                visible: true,
+                deletedAt: { isNull: true },
+              },
+              with: productRelations,
+            })
+            .pipe(
+              Effect.map((rows) => {
+                const rank = new Map(ids.map((id, index) => [id, index] as const));
+                return rows
+                  .map(toProduct)
+                  .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+              }),
+            );
+        }),
+        mapPersistenceError("search products"),
       );
   });
 
-  const searchProducts = Effect.fn("OfflineStore.searchProducts")((input: SearchProductsInput) =>
-    Effect.suspend(() => {
-      const actor = mutationContext();
-      const raw = input.query.trim();
-      if (raw.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
-      const limit = input.limit ?? 20;
-
-      return database
-        .select({
-          id: products.id,
-          name: products.name,
-          composition: products.composition,
-        })
-        .from(products)
-        .where(
-          and(
-            eq(products.organizationId, actor.organizationId),
-            eq(products.visible, true),
-            isNull(products.deletedAt),
-          ),
-        )
-        .pipe(
-          Effect.flatMap((candidates) => {
-            const ids = rankProducts(candidates.map(prepareProduct), raw, limit).map(
-              (entry) => entry.product.id,
-            );
-            if (ids.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
-            return database.query.products
-              .findMany({
-                where: {
-                  organizationId: actor.organizationId,
-                  id: { in: ids },
-                  visible: true,
-                  deletedAt: { isNull: true },
-                },
-                with: productRelations,
-              })
-              .pipe(
-                Effect.map((rows) => {
-                  const rank = new Map(ids.map((id, index) => [id, index] as const));
-                  return rows
-                    .map(toProduct)
-                    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
-                }),
-              );
-          }),
-          mapPersistenceError("search products"),
-        );
-    }),
-  );
-
   const getProduct = Effect.fn("OfflineStore.getProduct")(function* (id: string) {
-    const actor = mutationContext();
-    const row = yield* findProduct(actor.organizationId, id).pipe(
+    const row = yield* findProduct(workspace.organizationId, id).pipe(
       mapPersistenceError("find product"),
     );
     if (!row) return yield* ProductNotFoundError.make({ id });
@@ -247,8 +237,7 @@ export const makeProductStore = (
         }),
       )
       .pipe(mapPersistenceError("create product"));
-    const actor = mutationContext();
-    const row = yield* findProduct(actor.organizationId, id).pipe(
+    const row = yield* findProduct(workspace.organizationId, id).pipe(
       mapPersistenceError("load created product"),
     );
     if (!row)
@@ -292,8 +281,7 @@ export const makeProductStore = (
       )
       .pipe(mapPersistenceError("update product"));
     if (!updated) return yield* ProductNotFoundError.make({ id });
-    const actor = mutationContext();
-    const loaded = yield* findProduct(actor.organizationId, id).pipe(
+    const loaded = yield* findProduct(workspace.organizationId, id).pipe(
       mapPersistenceError("load updated product"),
     );
     if (!loaded) return yield* ProductNotFoundError.make({ id });
@@ -345,8 +333,7 @@ export const makeProductStore = (
         operation: "create batch",
         message: "Pack and unit quantities must be non-negative whole numbers with some stock",
       });
-    const actor = mutationContext();
-    const product = yield* findProduct(actor.organizationId, input.productId).pipe(
+    const product = yield* findProduct(workspace.organizationId, input.productId).pipe(
       mapPersistenceError("find product"),
     );
     if (!product) return yield* ProductNotFoundError.make({ id: input.productId });
@@ -568,18 +555,15 @@ export const makeProductStore = (
   });
 
   const listStockMovements = Effect.fn("OfflineStore.listStockMovements")((productId: string) =>
-    Effect.suspend(() => {
-      const actor = mutationContext();
-      return database.query.stockMovements
-        .findMany({
-          orderBy: { createdAt: "desc" },
-          where: { organizationId: actor.organizationId, productId },
-        })
-        .pipe(
-          Effect.map((rows) => rows.map(toStockMovement)),
-          mapPersistenceError("list stock movements"),
-        );
-    }),
+    database.query.stockMovements
+      .findMany({
+        orderBy: { createdAt: "desc" },
+        where: { organizationId: workspace.organizationId, productId },
+      })
+      .pipe(
+        Effect.map((rows) => rows.map(toStockMovement)),
+        mapPersistenceError("list stock movements"),
+      ),
   );
 
   return {

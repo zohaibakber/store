@@ -2,7 +2,7 @@ import type { SyncEntityChange } from "@store/contracts";
 import { categories, syncState } from "@store/db/local/schema";
 import * as Effect from "effect/Effect";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import { mapPersistenceError } from "../errors";
 import { enqueueOperation } from "../sync/outbox";
 import type { StoreDatabase } from "./client";
@@ -13,22 +13,22 @@ const defaultCategories = [
   { id: "cosmetics", name: "Cosmetics" },
 ];
 
-export const initializeDatabase = (database: StoreDatabase, actor: MutationContext) =>
+export const initializeDatabase = (database: StoreDatabase, workspace: Workspace) =>
   database
     .transaction((transaction) =>
       Effect.gen(function* () {
         const occurredAt = Date.now();
-        const operationId = `bootstrap:${actor.organizationId}:categories:v1`;
+        const operationId = `bootstrap:${workspace.organizationId}:categories:v1`;
         yield* transaction
           .insert(categories)
           .values(
             defaultCategories.map(({ id, name }) => ({
               id,
               name,
-              organizationId: actor.organizationId,
-              createdByUserId: actor.userId,
-              updatedByUserId: actor.userId,
-              deviceId: actor.deviceId,
+              organizationId: workspace.organizationId,
+              createdByUserId: workspace.userId,
+              updatedByUserId: workspace.userId,
+              deviceId: workspace.deviceId,
               operationId,
               rowVersion: 1,
               createdAt: occurredAt,
@@ -38,7 +38,7 @@ export const initializeDatabase = (database: StoreDatabase, actor: MutationConte
           .onConflictDoNothing();
         yield* transaction
           .insert(syncState)
-          .values({ organizationId: actor.organizationId, cursor: 0 })
+          .values({ organizationId: workspace.organizationId, cursor: 0 })
           .onConflictDoNothing();
 
         const existing = yield* transaction.query.syncOutbox.findFirst({
@@ -46,7 +46,7 @@ export const initializeDatabase = (database: StoreDatabase, actor: MutationConte
         });
         if (existing) return;
         const rows = yield* transaction.query.categories.findMany({
-          where: { organizationId: actor.organizationId },
+          where: { organizationId: workspace.organizationId },
           orderBy: { id: "asc" },
         });
         const changes: ReadonlyArray<SyncEntityChange> = rows.map((row) => ({
@@ -56,7 +56,7 @@ export const initializeDatabase = (database: StoreDatabase, actor: MutationConte
           rowVersion: row.rowVersion,
           row,
         }));
-        yield* enqueueOperation(transaction, actor, operationId, occurredAt, changes);
+        yield* enqueueOperation(transaction, workspace, operationId, occurredAt, changes);
       }),
     )
     .pipe(mapPersistenceError("initialize local database"));

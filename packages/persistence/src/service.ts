@@ -7,7 +7,7 @@ import type * as Stream from "effect/Stream";
 import type { AnalyticsStore } from "./analytics/store";
 import { makeAnalyticsStore } from "./analytics/store";
 import type { PersistenceConfig } from "./config";
-import { mutationContextFrom } from "./config";
+import { AuthenticatedWorkspace } from "./config";
 import { initializeDatabase } from "./database/bootstrap";
 import { clientLayer, makeDatabase } from "./database/client";
 import { PersistenceError } from "./errors";
@@ -31,14 +31,14 @@ export class OfflineStore extends Context.Service<
 
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
-    const mutationContext = mutationContextFrom(config);
+    const workspace = yield* AuthenticatedWorkspace;
     const database = yield* makeDatabase(config.migrationsFolder);
-    yield* initializeDatabase(database, mutationContext());
-    const syncEngine = yield* makeSyncEngine(database, config, mutationContext);
-    const mutation = yield* makeInventoryMutation(database, mutationContext, syncEngine.signal);
-    const productStore = makeProductStore(database, mutationContext, mutation);
-    const invoiceStore = makeInvoiceStore(database, mutationContext, mutation);
-    const analyticsStore = makeAnalyticsStore(database, mutationContext);
+    yield* initializeDatabase(database, workspace);
+    const syncEngine = yield* makeSyncEngine(database, config, workspace);
+    const mutation = yield* makeInventoryMutation(database, workspace, syncEngine.signal);
+    const productStore = makeProductStore(database, workspace, mutation);
+    const invoiceStore = makeInvoiceStore(database, workspace, mutation);
+    const analyticsStore = makeAnalyticsStore(database, workspace);
 
     return OfflineStore.of({
       ...productStore,
@@ -54,4 +54,5 @@ export const layer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(
     Layer.provide(MutationIds.live),
     Layer.provide(clientLayer(config)),
+    Layer.provide(AuthenticatedWorkspace.layer(config.workspace ?? AuthenticatedWorkspace.locked)),
   );

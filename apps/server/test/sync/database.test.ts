@@ -389,3 +389,69 @@ describe("SyncDatabase with libSQL", () => {
     ),
   );
 });
+
+describe("stock movement immutability", () => {
+  const protocolCodeOf = (failure: { readonly _tag: string; readonly code?: string }) => {
+    if (failure._tag !== "SyncProtocolError")
+      throw new Error(`Expected a protocol error, got ${failure._tag}`);
+    return failure.code;
+  };
+
+  const seedOperation = operationFor({
+    operationId: "operation-seed",
+    deviceId: "device-1",
+    clientSequence: 1,
+    occurredAt: 1_750_000_000_000,
+    changes: [
+      categoryChange("category-1", "Category"),
+      productChange("product-1", "category-1"),
+      batchChange("batch-1", "product-1", {
+        batchNumber: "B1",
+        packQuantity: 10,
+        unitQuantity: 0,
+      }),
+      movementChange("movement-1", "product-1", "batch-1", 10, 0),
+    ],
+  });
+
+  // The comparison covers the operation-owned columns too, so an identical
+  // payload arriving under a different operation still counts as a rewrite.
+  it.effect("reusing a movement id from another operation is rejected", () =>
+    withDatabase(({ exchange }) =>
+      Effect.gen(function* () {
+        yield* exchange(actor, requestFor(seedOperation));
+        const replay = operationFor({
+          operationId: "operation-replay",
+          deviceId: "device-1",
+          clientSequence: 2,
+          occurredAt: 1_750_000_000_001,
+          changes: [movementChange("movement-1", "product-1", "batch-1", 10, 0)],
+        });
+
+        const failure = yield* exchange(actor, requestFor(replay)).pipe(Effect.flip);
+
+        assert.strictEqual(protocolCodeOf(failure), "IMMUTABLE_ENTITY_REUSED");
+      }),
+    ),
+  );
+
+  it.effect("reusing a movement id with different content is rejected", () =>
+    withDatabase(({ exchange }) =>
+      Effect.gen(function* () {
+        yield* exchange(actor, requestFor(seedOperation));
+        const rewrite = operationFor({
+          operationId: "operation-rewrite",
+          deviceId: "device-1",
+          clientSequence: 2,
+          occurredAt: 1_750_000_000_001,
+          // Same id, different quantities.
+          changes: [movementChange("movement-1", "product-1", "batch-1", 99, 5)],
+        });
+
+        const failure = yield* exchange(actor, requestFor(rewrite)).pipe(Effect.flip);
+
+        assert.strictEqual(protocolCodeOf(failure), "IMMUTABLE_ENTITY_REUSED");
+      }),
+    ),
+  );
+});

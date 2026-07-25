@@ -3,7 +3,7 @@ import { batches, invoices, invoiceItems, products } from "@store/db/local/schem
 import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import type { StoreDatabase } from "../database/client";
 import type { PersistenceError } from "../errors";
 import { mapPersistenceError } from "../errors";
@@ -22,10 +22,9 @@ export interface AnalyticsStore {
 
 export const makeAnalyticsStore = (
   database: StoreDatabase,
-  mutationContext: () => MutationContext,
+  workspace: Workspace,
 ): AnalyticsStore => {
   const getDashboardAnalytics = Effect.suspend(() => {
-    const actor = mutationContext();
     const now = Date.now();
     const todayStart = utcDayStart(now);
     const windowStart = todayStart - (REVENUE_WINDOW_DAYS - 1) * DAY_MS;
@@ -33,7 +32,7 @@ export const makeAnalyticsStore = (
     const expiryWindowEnd = now + EXPIRY_WINDOW_DAYS * DAY_MS;
 
     const invoiceScope = and(
-      eq(invoices.organizationId, actor.organizationId),
+      eq(invoices.organizationId, workspace.organizationId),
       isNull(invoices.deletedAt),
     );
 
@@ -58,7 +57,7 @@ export const makeAnalyticsStore = (
       .from(invoiceItems)
       .where(
         and(
-          eq(invoiceItems.organizationId, actor.organizationId),
+          eq(invoiceItems.organizationId, workspace.organizationId),
           isNull(invoiceItems.deletedAt),
           gte(invoiceItems.createdAt, windowStart),
         ),
@@ -86,7 +85,7 @@ export const makeAnalyticsStore = (
       )
       .where(
         and(
-          eq(batches.organizationId, actor.organizationId),
+          eq(batches.organizationId, workspace.organizationId),
           isNull(batches.deletedAt),
           isNull(products.deletedAt),
           gte(batches.expiresAt, now),
@@ -116,7 +115,7 @@ export const makeAnalyticsStore = (
       )
       .where(
         and(
-          eq(products.organizationId, actor.organizationId),
+          eq(products.organizationId, workspace.organizationId),
           isNull(products.deletedAt),
           eq(products.visible, true),
         ),
@@ -144,7 +143,7 @@ export const makeAnalyticsStore = (
       .from(products)
       .where(
         and(
-          eq(products.organizationId, actor.organizationId),
+          eq(products.organizationId, workspace.organizationId),
           isNull(products.deletedAt),
           eq(products.visible, true),
         ),

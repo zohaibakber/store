@@ -4,7 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { PersistenceError, persistenceError } from "../errors";
 import { enqueueOperation } from "../sync/outbox";
@@ -71,7 +71,7 @@ interface PendingOperation {
 
 export const makeInventoryMutation = (
   database: StoreDatabase,
-  mutationContext: () => MutationContext,
+  workspace: Workspace,
   signalSync: Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
@@ -79,7 +79,6 @@ export const makeInventoryMutation = (
 
     const run: InventoryMutation["run"] = (operation, write, options) =>
       Effect.gen(function* () {
-        const actor = mutationContext();
         const occurredAt = yield* Clock.currentTimeMillis;
         const maxChanges = options?.maxChangesPerOperation ?? Number.MAX_SAFE_INTEGER;
         let current: PendingOperation = { operationId: yield* ids.next, changes: [] };
@@ -110,7 +109,7 @@ export const makeInventoryMutation = (
         });
 
         const scope: InventoryMutationScope = {
-          organizationId: actor.organizationId,
+          organizationId: workspace.organizationId,
           occurredAt,
           get operationId() {
             return current.operationId;
@@ -120,27 +119,27 @@ export const makeInventoryMutation = (
           capture,
           createVersioned: (id) => ({
             id,
-            organizationId: actor.organizationId,
-            createdByUserId: actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: actor.deviceId,
+            organizationId: workspace.organizationId,
+            createdByUserId: workspace.userId,
+            updatedByUserId: workspace.userId,
+            deviceId: workspace.deviceId,
             operationId: current.operationId,
             rowVersion: 1,
             createdAt: occurredAt,
             updatedAt: occurredAt,
           }),
           updateVersioned: (rowVersion) => ({
-            updatedByUserId: actor.userId,
-            deviceId: actor.deviceId,
+            updatedByUserId: workspace.userId,
+            deviceId: workspace.deviceId,
             operationId: current.operationId,
             rowVersion,
             updatedAt: occurredAt,
           }),
           createMovement: (id) => ({
             id,
-            organizationId: actor.organizationId,
-            actorUserId: actor.userId,
-            deviceId: actor.deviceId,
+            organizationId: workspace.organizationId,
+            actorUserId: workspace.userId,
+            deviceId: workspace.deviceId,
             operationId: current.operationId,
             createdAt: occurredAt,
           }),
@@ -154,7 +153,7 @@ export const makeInventoryMutation = (
               for (const pending of queued)
                 yield* enqueueOperation(
                   transaction,
-                  actor,
+                  workspace,
                   pending.operationId,
                   occurredAt,
                   orderSyncEntityChanges(pending.changes),

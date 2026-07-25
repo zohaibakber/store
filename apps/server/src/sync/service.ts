@@ -27,7 +27,7 @@ export class SyncService extends Context.Service<
   }
 >()("@store/server/SyncService") {}
 
-const invalid = (code: string, message: string) => protocolError(code, message);
+const invalid = protocolError;
 
 const validIdentifier = (value: string) => value.length > 0 && value.length <= 200;
 

@@ -8,7 +8,8 @@ import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { toastManager } from "@/components/ui/toast";
-import { getErrorMessage, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { storeErrorMessage } from "@/lib/errors";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
@@ -30,7 +31,7 @@ export function OrganizationSettings() {
       form.reset();
       toastManager.add({ title: "Organization created", type: "success" });
     } catch (cause) {
-      setError(getErrorMessage(cause));
+      setError(storeErrorMessage(cause));
     } finally {
       setPending(false);
     }

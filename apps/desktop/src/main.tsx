@@ -3,7 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
-import { bootstrapAuth } from "@/lib/auth";
+import { bootstrapAuth, type InitialAuth } from "@/lib/auth";
 import { electronStore, StoreProvider } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
@@ -13,22 +13,23 @@ import "@/styles.css";
 
 const store = electronStore();
 
-const router = createRouter({
-  routeTree,
-  context: { store },
-  history: createHashHistory(),
-  defaultPreload: "intent",
-  scrollRestoration: true,
-});
+const createAppRouter = (initialAuth: InitialAuth) =>
+  createRouter({
+    routeTree,
+    context: { store, initialAuth },
+    history: createHashHistory(),
+    defaultPreload: "intent",
+    scrollRestoration: true,
+  });
 
 declare module "@tanstack/react-router" {
   interface Register {
-    router: typeof router;
+    router: ReturnType<typeof createAppRouter>;
   }
 }
 
 async function start() {
-  await bootstrapAuth();
+  const router = createAppRouter(await bootstrapAuth());
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <ThemeProvider>

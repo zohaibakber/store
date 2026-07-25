@@ -12,11 +12,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const workspaceFor = (organizationId: string) => ({
+  organizationId,
+  userId: "tester",
+  deviceId: "device-1",
+});
+
 test("dashboard analytics aggregates revenue, stock health, and recent activity", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
-  let organizationId = "org-a";
   await withTestStore(
-    async ({ runtime }) => {
+    async ({ runtime, makeRuntime }) => {
       vi.setSystemTime(NOW);
       const amoxil = await runtime.runPromise(
         store((s) =>
@@ -199,8 +204,10 @@ test("dashboard analytics aggregates revenue, stock health, and recent activity"
       ]);
       expect(analytics.recentInvoices[0]?.createdAt).toBe(NOW);
 
-      organizationId = "org-b";
-      const other = await runtime.runPromise(store((s) => s.getDashboardAnalytics));
+      // The same database, opened as a different organization: none of the
+      // seeded activity belongs to it.
+      const otherOrganization = makeRuntime({ workspace: workspaceFor("org-b") });
+      const other = await otherOrganization.runPromise(store((s) => s.getDashboardAnalytics));
       expect(other.totals).toEqual({
         revenueToday: 0,
         revenue7d: 0,
@@ -216,8 +223,6 @@ test("dashboard analytics aggregates revenue, stock health, and recent activity"
       expect(other.recentInvoices).toEqual([]);
       expect(other.revenueByDay.every((day) => day.revenue === 0 && day.invoices === 0)).toBe(true);
     },
-    {
-      mutationContext: () => ({ organizationId, userId: "tester", deviceId: "device-1" }),
-    },
+    { workspace: workspaceFor("org-a") },
   );
 });

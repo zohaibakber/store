@@ -1,9 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 
-import { ProductForm, useProductUpdateForm } from "@/components/products/form";
-import { FrameCard } from "@/components/shared/frame-card";
-import { PageContent, PageLayout } from "@/components/shared/page-layout";
-import { Button } from "@/components/ui/button";
+import { useProductUpdateForm } from "@/components/products/form";
+import { ProductFormPage } from "@/components/products/form-page";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ context, params }) => {
@@ -32,32 +30,13 @@ function EditProductPage() {
   });
 
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageContent>
-        <FrameCard
-          action={
-            <div className="flex items-center gap-2">
-              <Button
-                render={<Link params={{ productId: product.id }} to="/products/$productId" />}
-                size="sm"
-                variant="outline"
-              >
-                Cancel
-              </Button>
-              <form.Subscribe selector={(state) => state.canSubmit}>
-                {(canSubmit) => (
-                  <Button disabled={!canSubmit} form="edit-product-form" size="sm" type="submit">
-                    Save changes
-                  </Button>
-                )}
-              </form.Subscribe>
-            </div>
-          }
-          title={<h1 className="font-medium">Edit {product.name}</h1>}
-        >
-          <ProductForm categories={categories} form={form} formId="edit-product-form" />
-        </FrameCard>
-      </PageContent>
-    </PageLayout>
+    <ProductFormPage
+      cancelTo={<Link params={{ productId: product.id }} to="/products/$productId" />}
+      categories={categories}
+      form={form}
+      formId="edit-product-form"
+      submitLabel="Save changes"
+      title={`Edit ${product.name}`}
+    />
   );
 }

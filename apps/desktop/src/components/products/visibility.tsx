@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { toastStoreError } from "@/lib/errors";
 import { useStore } from "@/lib/store";
 
 const visibilityOptions = [
@@ -40,10 +41,7 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
       });
       await router.invalidate();
     } catch (error) {
-      toastManager.add({
-        title: error instanceof Error ? error.message : "Could not update visibility.",
-        type: "error",
-      });
+      toastStoreError(error, "Could not update visibility.");
     }
   };
 

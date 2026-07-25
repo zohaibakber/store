@@ -248,11 +248,11 @@ const workspaceStores: WorkspaceStoreAdapter = {
         ...(target._tag === "Authenticated"
           ? {
               syncTransport: { exchange: target.exchange },
-              mutationContext: () => ({
+              workspace: {
                 organizationId: target.organizationId,
                 userId: target.userId,
                 deviceId: target.deviceId,
-              }),
+              },
             }
           : {}),
       }),

@@ -20,7 +20,23 @@ export class SyncTransportError extends Schema.TaggedErrorClass<SyncTransportErr
   },
 ) {}
 
-const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+// Reaches the desktop UI, so a bare `String(cause)` — "[object Object]" for
+// any thrown non-Error — is not good enough.
+const messageOf = (cause: unknown): string => {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "string") return cause;
+  if (typeof cause === "object" && cause !== null) {
+    const { message } = cause as { message?: unknown };
+    if (typeof message === "string" && message.length > 0) return message;
+    try {
+      const serialized = JSON.stringify(cause);
+      if (serialized !== undefined && serialized !== "{}") return serialized;
+    } catch {
+      // Circular or non-serializable — fall through to String().
+    }
+  }
+  return String(cause);
+};
 
 export const persistenceError = (operation: string, cause: unknown) =>
   cause instanceof PersistenceError

@@ -1,7 +1,7 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   Combobox,
@@ -11,7 +11,7 @@ import {
   ComboboxPopup,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
-import { storeErrorMessage } from "@/lib/errors";
+import { toastStoreError } from "@/lib/errors";
 import { useStore } from "@/lib/store";
 
 interface CategoryOption {
@@ -38,9 +38,15 @@ export function CategoryField({
   value: string;
 }) {
   const store = useStore();
-  const [categories, setCategories] = useState<ReadonlyArray<CategoryOption>>(() =>
-    [...seed].map((category) => ({ id: category.id, name: category.name })).sort(byName),
-  );
+  // Categories created here are merged over the loader-provided seed rather
+  // than copied into state, so route invalidation stays reflected.
+  const [created, setCreated] = useState<ReadonlyArray<CategoryOption>>([]);
+  const categories = useMemo(() => {
+    const byId = new Map<string, CategoryOption>();
+    for (const category of seed) byId.set(category.id, { id: category.id, name: category.name });
+    for (const category of created) byId.set(category.id, category);
+    return [...byId.values()].sort(byName);
+  }, [seed, created]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -64,16 +70,16 @@ export function CategoryField({
 
     setPending(true);
     try {
-      const created = await store.createCategory({ name: option.name });
-      setCategories((current) =>
-        current.some((category) => category.id === created.id)
+      const category = await store.createCategory({ name: option.name });
+      setCreated((current) =>
+        current.some((existing) => existing.id === category.id)
           ? current
-          : [...current, { id: created.id, name: created.name }].sort(byName),
+          : [...current, { id: category.id, name: category.name }],
       );
-      onChange(created.id);
-      toastManager.add({ title: `Category “${created.name}” added`, type: "success" });
+      onChange(category.id);
+      toastManager.add({ title: `Category “${category.name}” added`, type: "success" });
     } catch (error) {
-      toastManager.add({ title: storeErrorMessage(error), type: "error" });
+      toastStoreError(error);
     } finally {
       setPending(false);
     }

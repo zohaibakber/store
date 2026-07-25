@@ -9,7 +9,7 @@ import { Hono } from "hono";
 
 import type { AppEnv } from "../http/context";
 import { publicError } from "../http/errors";
-import { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
+import { SyncDatabaseError, type SyncProtocolCode, SyncProtocolError } from "../sync/errors";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
@@ -33,18 +33,41 @@ const validationMessage = (cause: unknown, input: unknown) => {
   return `Sync request validation failed: ${reason}`.slice(0, 1_000);
 };
 
-const protocolStatus = (code: string): 400 | 403 | 409 | 422 => {
-  if (code === "ORGANIZATION_MISMATCH" || code === "ACTOR_MISMATCH") return 403;
-  if (
-    code === "CLIENT_SEQUENCE_REUSED" ||
-    code === "OPERATION_COLLISION" ||
-    code === "OPERATION_ID_REUSED" ||
-    code === "IMMUTABLE_ENTITY_REUSED" ||
-    code === "ENTITY_CONFLICT"
-  )
-    return 409;
-  if (code === "ENTITY_RELATION_INVALID" || code === "INVALID_ENTITY_ROW") return 422;
-  return 400;
+/**
+ * A total mapping, so a new protocol code cannot silently default to 400.
+ * 500s are server-side faults the client cannot fix by retrying differently.
+ */
+const protocolStatus: Record<SyncProtocolCode, 400 | 403 | 409 | 422 | 500> = {
+  INVALID_JSON: 400,
+  INVALID_SYNC_REQUEST: 400,
+  INVALID_DEVICE: 400,
+  INVALID_CURSOR: 400,
+  INVALID_OPERATION: 400,
+  INVALID_OCCURRED_AT: 400,
+  INVALID_PAYLOAD_HASH: 400,
+  INVALID_CLIENT_SEQUENCE: 400,
+  INVALID_ENTITY_ID: 400,
+  INVALID_ROW_VERSION: 400,
+  EMPTY_OPERATION: 400,
+  TOO_MANY_OPERATIONS: 400,
+  TOO_MANY_CHANGES: 400,
+  ORGANIZATION_MISMATCH: 403,
+  ACTOR_MISMATCH: 403,
+  DEVICE_MISMATCH: 403,
+  CLIENT_SEQUENCE_REUSED: 409,
+  OPERATION_COLLISION: 409,
+  OPERATION_ID_REUSED: 409,
+  DUPLICATE_OPERATION: 409,
+  IMMUTABLE_ENTITY: 409,
+  IMMUTABLE_ENTITY_REUSED: 409,
+  ENTITY_CONFLICT: 409,
+  ENTITY_RELATION_INVALID: 422,
+  ENTITY_ID_MISMATCH: 422,
+  INVALID_ENTITY_ROW: 422,
+  BATCH_NOT_FOUND: 422,
+  PAYLOAD_HASH_MISMATCH: 422,
+  ENTITY_WRITE_FAILED: 500,
+  CHANGE_LOG_FAILED: 500,
 };
 
 export const syncRoute = new Hono<AppEnv>().post("/", async (c) => {
@@ -84,7 +107,7 @@ export const syncRoute = new Hono<AppEnv>().post("/", async (c) => {
     return c.json(response);
   } catch (cause) {
     if (cause instanceof SyncProtocolError)
-      return c.json(publicError(cause.code, cause.message), protocolStatus(cause.code));
+      return c.json(publicError(cause.code, cause.message), protocolStatus[cause.code]);
     if (cause instanceof SyncDatabaseError)
       return c.json(
         publicError("SYNC_UNAVAILABLE", "Synchronization is temporarily unavailable."),

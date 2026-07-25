@@ -2,10 +2,15 @@ import { expect, test } from "vitest";
 
 import { store, withTestStore } from "../lib/store";
 
+const workspaceFor = (organizationId: string) => ({
+  organizationId,
+  userId: "tester",
+  deviceId: "device-1",
+});
+
 test("categories are created from a name, slugged and deduplicated", async () => {
-  let organizationId = "org-a";
   await withTestStore(
-    async ({ runtime }) => {
+    async ({ runtime, makeRuntime }) => {
       const created = await runtime.runPromise(
         store((s) => s.createCategory({ name: "  Cough Syrups  " })),
       );
@@ -24,16 +29,16 @@ test("categories are created from a name, slugged and deduplicated", async () =>
         runtime.runPromise(store((s) => s.createCategory({ name: "   " }))),
       ).rejects.toThrow();
 
-      organizationId = "org-b";
-      const other = await runtime.runPromise(store((s) => s.listCategories));
+      // The same database, opened as a different organization: categories are
+      // scoped to the workspace, so the slug is free to be reused there.
+      const otherOrganization = makeRuntime({ workspace: workspaceFor("org-b") });
+      const other = await otherOrganization.runPromise(store((s) => s.listCategories));
       expect(other.some((category) => category.id === "cough-syrups")).toBe(false);
-      const reused = await runtime.runPromise(
+      const reused = await otherOrganization.runPromise(
         store((s) => s.createCategory({ name: "Cough Syrups" })),
       );
       expect(reused.id).toBe("cough-syrups");
     },
-    {
-      mutationContext: () => ({ organizationId, userId: "tester", deviceId: "device-1" }),
-    },
+    { workspace: workspaceFor("org-a") },
   );
 });

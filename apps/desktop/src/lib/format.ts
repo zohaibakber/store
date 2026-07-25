@@ -39,3 +39,12 @@ export const parseExpiryDate = (value: string | null): number | null => {
   }
   return null;
 };
+
+/** Up to two initials, for avatar fallbacks. */
+export const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();

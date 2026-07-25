@@ -10,7 +10,7 @@ import { syncOutbox } from "@store/db/local/schema";
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { MutationContext } from "../config";
+import type { Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { mapPersistenceError, PersistenceError } from "../errors";
 
@@ -98,9 +98,24 @@ export const retryDelayMillis = (attemptCount: number): number =>
 
 export const QUARANTINE_ATTEMPTS = 10;
 
+/**
+ * Cuts the queue at the first quarantined operation. It is not skipped:
+ * later operations may depend on it, so the queue halts there instead —
+ * which is what makes the `quarantined` flag in {@link OutboxHealth} mean
+ * "nothing is moving" rather than merely "something failed a lot".
+ */
+export const sendableUntilQuarantined = <T extends { readonly attemptCount: number }>(
+  pending: ReadonlyArray<T>,
+): ReadonlyArray<T> => {
+  const quarantinedAt = pending.findIndex(
+    (operation) => operation.attemptCount >= QUARANTINE_ATTEMPTS,
+  );
+  return quarantinedAt === -1 ? pending : pending.slice(0, quarantinedAt);
+};
+
 export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
   transaction: StoreTransaction,
-  actor: MutationContext,
+  workspace: Workspace,
   operationId: string,
   occurredAt: number,
   changes: ReadonlyArray<SyncEntityChange>,
@@ -110,8 +125,8 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
     .from(syncOutbox)
     .where(
       and(
-        eq(syncOutbox.organizationId, actor.organizationId),
-        eq(syncOutbox.deviceId, actor.deviceId),
+        eq(syncOutbox.organizationId, workspace.organizationId),
+        eq(syncOutbox.deviceId, workspace.deviceId),
       ),
     )
     .pipe(mapPersistenceError("read outbox sequence"));
@@ -121,9 +136,9 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
     .insert(syncOutbox)
     .values({
       operationId,
-      organizationId: actor.organizationId,
-      deviceId: actor.deviceId,
-      actorUserId: actor.userId,
+      organizationId: workspace.organizationId,
+      deviceId: workspace.deviceId,
+      actorUserId: workspace.userId,
       clientSequence,
       occurredAt,
       payload: changes,
@@ -138,9 +153,9 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
     });
   const unhashed = {
     operationId,
-    organizationId: actor.organizationId,
-    deviceId: actor.deviceId,
-    actorUserId: actor.userId,
+    organizationId: workspace.organizationId,
+    deviceId: workspace.deviceId,
+    actorUserId: workspace.userId,
     clientSequence: queued.clientSequence,
     occurredAt,
     changes,
@@ -152,16 +167,15 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
     .pipe(mapPersistenceError("hash sync operation"));
 });
 
-export const makeOutbox = (database: StoreDatabase, mutationContext: () => MutationContext) => {
+export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
   const health = Effect.fn("Outbox.health")(function* () {
-    const actor = mutationContext();
     const [row] = yield* database
       .select({
         pendingOperations: sql<number>`count(*)`,
         oldestPendingAt: sql<number | null>`min(${syncOutbox.occurredAt})`,
         lastError: sql<string | null>`(
           select ${syncOutbox.lastError} from ${syncOutbox}
-          where ${syncOutbox.organizationId} = ${actor.organizationId}
+          where ${syncOutbox.organizationId} = ${workspace.organizationId}
             and ${syncOutbox.acknowledgedAt} is null
             and ${syncOutbox.lastError} is not null
           order by ${syncOutbox.clientSequence} desc
@@ -171,7 +185,10 @@ export const makeOutbox = (database: StoreDatabase, mutationContext: () => Mutat
       })
       .from(syncOutbox)
       .where(
-        and(eq(syncOutbox.organizationId, actor.organizationId), isNull(syncOutbox.acknowledgedAt)),
+        and(
+          eq(syncOutbox.organizationId, workspace.organizationId),
+          isNull(syncOutbox.acknowledgedAt),
+        ),
       )
       .pipe(mapPersistenceError("read outbox health"));
     return row === undefined
@@ -185,13 +202,12 @@ export const makeOutbox = (database: StoreDatabase, mutationContext: () => Mutat
   });
 
   const nextBatch = Effect.fn("Outbox.nextBatch")(function* () {
-    const actor = mutationContext();
     const pending = yield* database
       .select()
       .from(syncOutbox)
       .where(
         and(
-          eq(syncOutbox.organizationId, actor.organizationId),
+          eq(syncOutbox.organizationId, workspace.organizationId),
           isNull(syncOutbox.acknowledgedAt),
           or(isNull(syncOutbox.nextAttemptAt), lte(syncOutbox.nextAttemptAt, Date.now())),
         ),
@@ -199,20 +215,19 @@ export const makeOutbox = (database: StoreDatabase, mutationContext: () => Mutat
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(MAX_SYNC_OPERATIONS_PER_REQUEST + 1)
       .pipe(mapPersistenceError("load pending sync operations"));
-    return selectBatch(pending);
+    return selectBatch(sendableUntilQuarantined(pending));
   });
 
   const markAttempt = Effect.fn("Outbox.markAttempt")(function* (
     operationIds: ReadonlyArray<string>,
   ) {
     if (operationIds.length === 0) return;
-    const actor = mutationContext();
     yield* database
       .update(syncOutbox)
       .set({ attemptCount: sql`${syncOutbox.attemptCount} + 1`, lastError: null })
       .where(
         and(
-          eq(syncOutbox.organizationId, actor.organizationId),
+          eq(syncOutbox.organizationId, workspace.organizationId),
           inArray(syncOutbox.operationId, operationIds),
           isNull(syncOutbox.acknowledgedAt),
         ),
@@ -226,25 +241,26 @@ export const makeOutbox = (database: StoreDatabase, mutationContext: () => Mutat
     completedAt: number,
   ) {
     if (operationIds.length === 0) return;
-    const actor = mutationContext();
     yield* transaction
       .update(syncOutbox)
       .set({ acknowledgedAt: completedAt, lastError: null, nextAttemptAt: null })
       .where(
         and(
-          eq(syncOutbox.organizationId, actor.organizationId),
+          eq(syncOutbox.organizationId, workspace.organizationId),
           inArray(syncOutbox.operationId, operationIds),
         ),
       );
   });
 
   const markFailure = Effect.fn("Outbox.markFailure")(function* (message: string) {
-    const actor = mutationContext();
     const [head] = yield* database
       .select({ attemptCount: syncOutbox.attemptCount })
       .from(syncOutbox)
       .where(
-        and(eq(syncOutbox.organizationId, actor.organizationId), isNull(syncOutbox.acknowledgedAt)),
+        and(
+          eq(syncOutbox.organizationId, workspace.organizationId),
+          isNull(syncOutbox.acknowledgedAt),
+        ),
       )
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(1)
@@ -255,7 +271,10 @@ export const makeOutbox = (database: StoreDatabase, mutationContext: () => Mutat
       .update(syncOutbox)
       .set({ lastError: message, nextAttemptAt })
       .where(
-        and(eq(syncOutbox.organizationId, actor.organizationId), isNull(syncOutbox.acknowledgedAt)),
+        and(
+          eq(syncOutbox.organizationId, workspace.organizationId),
+          isNull(syncOutbox.acknowledgedAt),
+        ),
       )
       .pipe(mapPersistenceError("record outbox failure"));
   });

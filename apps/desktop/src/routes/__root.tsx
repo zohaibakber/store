@@ -10,11 +10,12 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
-import { AuthProvider, useAuth } from "@/lib/auth";
+import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
   readonly store: Store;
+  readonly initialAuth: InitialAuth;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -24,9 +25,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 export function RootLayout() {
+  const { initialAuth } = Route.useRouteContext();
   useAppUpdater();
   return (
-    <AuthProvider>
+    <AuthProvider initial={initialAuth}>
       <ToastProvider>
         <AuthenticatedLayout />
       </ToastProvider>

@@ -2,7 +2,7 @@ import { SyncRequest, SyncResponse } from "@store/contracts";
 import { DurableObject } from "cloudflare:workers";
 import * as Schema from "effect/Schema";
 
-import { SyncDatabaseError, SyncProtocolError } from "./errors";
+import { SyncDatabaseError, SyncProtocolCode, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
 import { makeSyncRuntime } from "./runtime";
 
@@ -14,7 +14,7 @@ export const SyncExchangePayload = Schema.Struct({
 
 export const SyncExchangeResult = Schema.Union([
   Schema.TaggedStruct("Success", { response: SyncResponse }),
-  Schema.TaggedStruct("ProtocolFailure", { code: Schema.String, message: Schema.String }),
+  Schema.TaggedStruct("ProtocolFailure", { code: SyncProtocolCode, message: Schema.String }),
   Schema.TaggedStruct("DatabaseFailure", { message: Schema.String }),
 ]);
 

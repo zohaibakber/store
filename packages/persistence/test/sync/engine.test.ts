@@ -231,7 +231,7 @@ test("an offline transport never rolls back local writes and leaves outbox work 
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("a flaky transport is retried and the outbox drains", async () => {
   let attempts = 0;
@@ -314,7 +314,7 @@ test("a permanently failing transport still fails after retries", async () => {
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("a non-retryable transport error fails once with its protocol details", async () => {
   let attempts = 0;
@@ -473,7 +473,7 @@ test("a failed exchange sets a future nextAttemptAt and increments attemptCount"
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("an operation that is not yet due is not resent", async () => {
   const requests: Array<SyncRequest> = [];
@@ -521,7 +521,7 @@ test("an operation that is not yet due is not resent", async () => {
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("status reports the stuck queue after a failure", async () => {
   const transport = {
@@ -556,7 +556,7 @@ test("status reports the stuck queue after a failure", async () => {
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("a subsequent successful exchange clears the backoff and status", async () => {
   let shouldFail = true;
@@ -602,7 +602,7 @@ test("a subsequent successful exchange clears the backoff and status", async () 
     },
     { syncTransport: transport },
   );
-}, 15_000);
+});
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {
   await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {

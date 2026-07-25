@@ -4,24 +4,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { toastManager } from "@/components/ui/toast";
-import { getErrorMessage, useAuth } from "@/lib/auth";
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-
-async function signOut() {
-  try {
-    await window.auth?.signOut();
-  } catch (error) {
-    toastManager.add({ title: getErrorMessage(error), type: "error" });
-  }
-}
+import { signOut, useAuth } from "@/lib/auth";
+import { initials } from "@/lib/format";
 
 export function AccountSettings() {
   const { snapshot } = useAuth();
