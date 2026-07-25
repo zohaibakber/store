@@ -7,7 +7,13 @@ import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { SearchForm } from "@/components/app/search-form";
 import { SyncStatusIndicator } from "@/components/app/sync-status";
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 
 const data = {
   navMain: [
@@ -35,28 +41,27 @@ const data = {
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar variant="inset" {...props}>
+    <Sidebar collapsible="icon" variant="inset" {...props}>
       <SidebarHeader>
-        <div className="-mx-1 flex items-center gap-1">
-          <div className="min-w-0 flex-1">
+        <div className="-mx-1 flex items-center gap-1 group-data-[collapsible=icon]:mx-0 group-data-[collapsible=icon]:justify-center">
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <AccountMenu />
           </div>
-          <NavHistory />
+          <SidebarTrigger className="shrink-0" />
         </div>
-        <SearchForm />
+        <div className="group-data-[collapsible=icon]:hidden">
+          <SearchForm />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-between gap-2 px-1">
-          <span
-            aria-label={`App version ${__APP_VERSION__}`}
-            className="font-mono text-xs text-muted-foreground tabular-nums"
-          >
-            v{__APP_VERSION__}
-          </span>
           <SyncStatusIndicator />
+          <div className="group-data-[collapsible=icon]:hidden">
+            <NavHistory />
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>

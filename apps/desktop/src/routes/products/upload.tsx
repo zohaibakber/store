@@ -26,6 +26,7 @@ export const Route = createFileRoute("/products/upload")({
     return { products, categories };
   },
   component: UploadInvoicesPage,
+  staticData: { breadcrumb: "Import products" },
 });
 
 function UploadInvoicesPage() {

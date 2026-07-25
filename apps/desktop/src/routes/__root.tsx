@@ -20,6 +20,7 @@ export interface RouterContext {
 export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   notFoundComponent: NotFound,
+  staticData: { breadcrumb: "Home" },
 });
 
 export function RootLayout() {

@@ -1,18 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { ProductForm, useProductCreateForm } from "@/components/products/form";
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { FrameCard } from "@/components/shared/frame-card";
+import { PageContent, PageLayout } from "@/components/shared/page-layout";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/new")({
   loader: ({ context }) => context.store.listCategories(),
   component: NewProductPage,
+  staticData: { breadcrumb: "Add product" },
 });
 
 function NewProductPage() {
@@ -21,24 +17,26 @@ function NewProductPage() {
 
   return (
     <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <PageHeading>Add product</PageHeading>
-        <PageAction className="flex items-center gap-2">
-          <Link className={buttonVariants({ variant: "outline" })} to="/products">
-            Cancel
-          </Link>
-          <form.Subscribe selector={(state) => state.canSubmit}>
-            {(canSubmit) => (
-              <Button disabled={!canSubmit} form="new-product-form" type="submit">
-                Create product
+      <PageContent>
+        <FrameCard
+          action={
+            <div className="flex items-center gap-2">
+              <Button render={<Link to="/products" />} size="sm" variant="outline">
+                Cancel
               </Button>
-            )}
-          </form.Subscribe>
-        </PageAction>
-      </PageHeader>
-
-      <PageContent className="mt-4">
-        <ProductForm categories={categories} form={form} formId="new-product-form" />
+              <form.Subscribe selector={(state) => state.canSubmit}>
+                {(canSubmit) => (
+                  <Button disabled={!canSubmit} form="new-product-form" size="sm" type="submit">
+                    Create product
+                  </Button>
+                )}
+              </form.Subscribe>
+            </div>
+          }
+          title={<h1 className="font-medium">Add product</h1>}
+        >
+          <ProductForm categories={categories} form={form} formId="new-product-form" />
+        </FrameCard>
       </PageContent>
     </PageLayout>
   );

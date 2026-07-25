@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InvoicesRouteImport } from './routes/invoices'
+import { Route as ProductsRouteImport } from './routes/products'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as InvoicesIndexRouteImport } from './routes/invoices/index'
@@ -26,6 +28,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvoicesRoute = InvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsRoute = ProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
@@ -37,48 +49,50 @@ const SettingsRoute = SettingsRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvoicesIndexRoute = InvoicesIndexRouteImport.update({
-  id: '/invoices/',
-  path: '/invoices/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => InvoicesRoute,
 } as any)
 const InvoicesInvoiceIdRoute = InvoicesInvoiceIdRouteImport.update({
-  id: '/invoices/$invoiceId',
-  path: '/invoices/$invoiceId',
-  getParentRoute: () => rootRouteImport,
+  id: '/$invoiceId',
+  path: '/$invoiceId',
+  getParentRoute: () => InvoicesRoute,
 } as any)
 const InvoicesNewRoute = InvoicesNewRouteImport.update({
-  id: '/invoices/new',
-  path: '/invoices/new',
-  getParentRoute: () => rootRouteImport,
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => InvoicesRoute,
 } as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
-  id: '/products/',
-  path: '/products/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const ProductsProductIdRoute = ProductsProductIdRouteImport.update({
-  id: '/products/$productId',
-  path: '/products/$productId',
-  getParentRoute: () => rootRouteImport,
+  id: '/$productId',
+  path: '/$productId',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const ProductsNewRoute = ProductsNewRouteImport.update({
-  id: '/products/new',
-  path: '/products/new',
-  getParentRoute: () => rootRouteImport,
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const ProductsUploadRoute = ProductsUploadRouteImport.update({
-  id: '/products/upload',
-  path: '/products/upload',
-  getParentRoute: () => rootRouteImport,
+  id: '/upload',
+  path: '/upload',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const ProductsProductIdEditRoute = ProductsProductIdEditRouteImport.update({
-  id: '/products/$productId_/edit',
-  path: '/products/$productId/edit',
-  getParentRoute: () => rootRouteImport,
+  id: '/$productId_/edit',
+  path: '/$productId/edit',
+  getParentRoute: () => ProductsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/invoices': typeof InvoicesRouteWithChildren
+  '/products': typeof ProductsRouteWithChildren
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
@@ -106,6 +120,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/invoices': typeof InvoicesRouteWithChildren
+  '/products': typeof ProductsRouteWithChildren
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
@@ -121,6 +137,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/invoices'
+    | '/products'
     | '/search'
     | '/settings'
     | '/invoices/$invoiceId'
@@ -147,6 +165,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/invoices'
+    | '/products'
     | '/search'
     | '/settings'
     | '/invoices/$invoiceId'
@@ -161,16 +181,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  InvoicesRoute: typeof InvoicesRouteWithChildren
+  ProductsRoute: typeof ProductsRouteWithChildren
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
-  InvoicesInvoiceIdRoute: typeof InvoicesInvoiceIdRoute
-  InvoicesNewRoute: typeof InvoicesNewRoute
-  ProductsProductIdRoute: typeof ProductsProductIdRoute
-  ProductsNewRoute: typeof ProductsNewRoute
-  ProductsUploadRoute: typeof ProductsUploadRoute
-  InvoicesIndexRoute: typeof InvoicesIndexRoute
-  ProductsIndexRoute: typeof ProductsIndexRoute
-  ProductsProductIdEditRoute: typeof ProductsProductIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -180,6 +194,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invoices': {
+      id: '/invoices'
+      path: '/invoices'
+      fullPath: '/invoices'
+      preLoaderRoute: typeof InvoicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products': {
+      id: '/products'
+      path: '/products'
+      fullPath: '/products'
+      preLoaderRoute: typeof ProductsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -198,75 +226,105 @@ declare module '@tanstack/react-router' {
     }
     '/invoices/': {
       id: '/invoices/'
-      path: '/invoices'
+      path: '/'
       fullPath: '/invoices/'
       preLoaderRoute: typeof InvoicesIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof InvoicesRoute
     }
     '/invoices/$invoiceId': {
       id: '/invoices/$invoiceId'
-      path: '/invoices/$invoiceId'
+      path: '/$invoiceId'
       fullPath: '/invoices/$invoiceId'
       preLoaderRoute: typeof InvoicesInvoiceIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof InvoicesRoute
     }
     '/invoices/new': {
       id: '/invoices/new'
-      path: '/invoices/new'
+      path: '/new'
       fullPath: '/invoices/new'
       preLoaderRoute: typeof InvoicesNewRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof InvoicesRoute
     }
     '/products/': {
       id: '/products/'
-      path: '/products'
+      path: '/'
       fullPath: '/products/'
       preLoaderRoute: typeof ProductsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/products/$productId': {
       id: '/products/$productId'
-      path: '/products/$productId'
+      path: '/$productId'
       fullPath: '/products/$productId'
       preLoaderRoute: typeof ProductsProductIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/products/new': {
       id: '/products/new'
-      path: '/products/new'
+      path: '/new'
       fullPath: '/products/new'
       preLoaderRoute: typeof ProductsNewRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/products/upload': {
       id: '/products/upload'
-      path: '/products/upload'
+      path: '/upload'
       fullPath: '/products/upload'
       preLoaderRoute: typeof ProductsUploadRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/products/$productId_/edit': {
       id: '/products/$productId_/edit'
-      path: '/products/$productId/edit'
+      path: '/$productId/edit'
       fullPath: '/products/$productId/edit'
       preLoaderRoute: typeof ProductsProductIdEditRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ProductsRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  SearchRoute: SearchRoute,
-  SettingsRoute: SettingsRoute,
+interface InvoicesRouteChildren {
+  InvoicesInvoiceIdRoute: typeof InvoicesInvoiceIdRoute
+  InvoicesNewRoute: typeof InvoicesNewRoute
+  InvoicesIndexRoute: typeof InvoicesIndexRoute
+}
+
+const InvoicesRouteChildren: InvoicesRouteChildren = {
   InvoicesInvoiceIdRoute: InvoicesInvoiceIdRoute,
   InvoicesNewRoute: InvoicesNewRoute,
+  InvoicesIndexRoute: InvoicesIndexRoute,
+}
+
+const InvoicesRouteWithChildren = InvoicesRoute._addFileChildren(
+  InvoicesRouteChildren,
+)
+
+interface ProductsRouteChildren {
+  ProductsProductIdRoute: typeof ProductsProductIdRoute
+  ProductsNewRoute: typeof ProductsNewRoute
+  ProductsUploadRoute: typeof ProductsUploadRoute
+  ProductsIndexRoute: typeof ProductsIndexRoute
+  ProductsProductIdEditRoute: typeof ProductsProductIdEditRoute
+}
+
+const ProductsRouteChildren: ProductsRouteChildren = {
   ProductsProductIdRoute: ProductsProductIdRoute,
   ProductsNewRoute: ProductsNewRoute,
   ProductsUploadRoute: ProductsUploadRoute,
-  InvoicesIndexRoute: InvoicesIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
   ProductsProductIdEditRoute: ProductsProductIdEditRoute,
+}
+
+const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
+  ProductsRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  InvoicesRoute: InvoicesRouteWithChildren,
+  ProductsRoute: ProductsRouteWithChildren,
+  SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

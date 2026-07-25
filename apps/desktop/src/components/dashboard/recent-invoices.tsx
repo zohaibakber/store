@@ -5,7 +5,7 @@ import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { Link } from "@tanstack/react-router";
 
 import { FrameCard } from "@/components/shared/frame-card";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
@@ -20,10 +20,10 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
   return (
     <FrameCard
       action={
-        <Link className={buttonVariants({ size: "sm", variant: "ghost" })} to="/invoices">
+        <Button render={<Link to="/invoices" />} size="sm" variant="ghost">
           View all
           <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
-        </Link>
+        </Button>
       }
       description="The latest sales recorded on this device."
       title="Recent invoices"

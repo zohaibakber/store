@@ -8,7 +8,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type React from "react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Progress,
   ProgressIndicator,
@@ -197,9 +197,9 @@ function Toasts({
                   </div>
                 )}
                 {toast.actionProps && (
-                  <Toast.Action className={buttonVariants({ size: "xs" })} data-slot="toast-action">
+                  <Button data-slot="toast-action" render={<Toast.Action />} size="xs">
                     {toast.actionProps.children}
-                  </Toast.Action>
+                  </Button>
                 )}
               </Toast.Content>
             </Toast.Root>
@@ -278,12 +278,9 @@ function AnchoredToasts({
                       </div>
                     </div>
                     {toast.actionProps && (
-                      <Toast.Action
-                        className={buttonVariants({ size: "xs" })}
-                        data-slot="toast-action"
-                      >
+                      <Button data-slot="toast-action" render={<Toast.Action />} size="xs">
                         {toast.actionProps.children}
-                      </Toast.Action>
+                      </Button>
                     )}
                   </Toast.Content>
                 )}

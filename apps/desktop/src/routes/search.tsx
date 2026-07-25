@@ -4,4 +4,5 @@ import { SearchPage } from "@/components/search/page";
 
 export const Route = createFileRoute("/search")({
   component: SearchPage,
+  staticData: { breadcrumb: "Search" },
 });

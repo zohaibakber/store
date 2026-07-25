@@ -1,15 +1,9 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 
 import { ProductForm, useProductUpdateForm } from "@/components/products/form";
-import {
-  PageAction,
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { FrameCard } from "@/components/shared/frame-card";
+import { PageContent, PageLayout } from "@/components/shared/page-layout";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ context, params }) => {
@@ -20,6 +14,12 @@ export const Route = createFileRoute("/products/$productId_/edit")({
     return { product, categories };
   },
   component: EditProductPage,
+  staticData: {
+    breadcrumb: (loaderData) => {
+      const productName = (loaderData as { product?: { name: string } } | undefined)?.product?.name;
+      return productName ? `Edit ${productName}` : "Edit product";
+    },
+  },
 });
 
 function EditProductPage() {
@@ -33,31 +33,30 @@ function EditProductPage() {
 
   return (
     <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <PageHeading>Edit {product.name}</PageHeading>
-        <PageDescription>
-          Changes apply to the local catalog first and sync in the background.
-        </PageDescription>
-        <PageAction className="flex items-center gap-2">
-          <Link
-            className={buttonVariants({ variant: "outline" })}
-            params={{ productId: product.id }}
-            to="/products/$productId"
-          >
-            Cancel
-          </Link>
-          <form.Subscribe selector={(state) => state.canSubmit}>
-            {(canSubmit) => (
-              <Button disabled={!canSubmit} form="edit-product-form" type="submit">
-                Save changes
-              </Button>
-            )}
-          </form.Subscribe>
-        </PageAction>
-      </PageHeader>
-
       <PageContent>
-        <ProductForm categories={categories} form={form} formId="edit-product-form" />
+        <FrameCard
+          action={
+            <div className="flex items-center gap-2">
+              <Button
+                render={<Link params={{ productId: product.id }} to="/products/$productId" />}
+                size="sm"
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <form.Subscribe selector={(state) => state.canSubmit}>
+                {(canSubmit) => (
+                  <Button disabled={!canSubmit} form="edit-product-form" size="sm" type="submit">
+                    Save changes
+                  </Button>
+                )}
+              </form.Subscribe>
+            </div>
+          }
+          title={<h1 className="font-medium">Edit {product.name}</h1>}
+        >
+          <ProductForm categories={categories} form={form} formId="edit-product-form" />
+        </FrameCard>
       </PageContent>
     </PageLayout>
   );

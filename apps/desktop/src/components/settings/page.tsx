@@ -1,4 +1,9 @@
-import { Building01Icon, PaintBoardIcon, UserIcon } from "@hugeicons/core-free-icons";
+import {
+  Building01Icon,
+  InformationCircleIcon,
+  PaintBoardIcon,
+  UserIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { AccountSettings } from "@/components/settings/account-settings";
@@ -12,6 +17,7 @@ const tabs = [
   { value: "account", label: "Account", icon: UserIcon },
   { value: "organization", label: "Organization", icon: Building01Icon },
   { value: "appearance", label: "Appearance", icon: PaintBoardIcon },
+  { value: "about", label: "About", icon: InformationCircleIcon },
 ] as const;
 
 export function SettingsPage() {
@@ -41,6 +47,14 @@ export function SettingsPage() {
           <TabsPanel className="min-w-0 flex-1" value="appearance">
             <FrameCard description="Applies immediately on this device." title="Appearance">
               <ThemePicker />
+            </FrameCard>
+          </TabsPanel>
+          <TabsPanel className="min-w-0 flex-1" value="about">
+            <FrameCard title="About Tabaaq">
+              <dl className="flex items-center justify-between gap-4">
+                <dt className="text-muted-foreground">Version</dt>
+                <dd className="font-mono tabular-nums">v{__APP_VERSION__}</dd>
+              </dl>
             </FrameCard>
           </TabsPanel>
         </Tabs>
