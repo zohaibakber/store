@@ -40,11 +40,15 @@ const encodeResult = Schema.encodeSync(SyncExchangeResult);
  * and the row locks the Postgres implementation used.
  */
 export class OrganizationStore extends DurableObject<Env> {
+  // Built once per object rather than per request. The Effect layer memoises,
+  // so migrations run on the first exchange and not again; rebuilding per
+  // request would re-run the migrator every time.
+  readonly #runtime = makeSyncRuntime(this.ctx.storage);
+
   override async fetch(request: Request): Promise<Response> {
     const payload = decodePayload(await request.json());
-    const runtime = makeSyncRuntime(this.ctx.storage);
     try {
-      const response = await runtime.runSync(payload.actor, payload.request);
+      const response = await this.#runtime.runSync(payload.actor, payload.request);
       return Response.json(encodeResult({ _tag: "Success", response }));
     } catch (cause) {
       if (cause instanceof SyncProtocolError)
@@ -53,8 +57,6 @@ export class OrganizationStore extends DurableObject<Env> {
         );
       const message = cause instanceof Error ? cause.message : String(cause);
       return Response.json(encodeResult({ _tag: "DatabaseFailure", message }));
-    } finally {
-      await runtime.dispose();
     }
   }
 }
@@ -68,7 +70,7 @@ export const exchangeWithOrganizationStore = async (
   actor: SyncActor,
   request: SyncRequest,
 ): Promise<SyncResponse> => {
-  const stub = namespace.get(namespace.idFromName(actor.organizationId));
+  const stub = namespace.getByName(actor.organizationId);
   // The URL is required by the Request constructor but never routed on; the
   // stub already identifies the target object.
   const response = await stub.fetch("https://organization-store/sync", {
