@@ -134,7 +134,8 @@ const upsertRemoteChange = (
           .onConflictDoUpdate({
             target: invoiceCounters.organizationId,
             set: {
-              lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
+              // SQLite has no `greatest`; two-argument `max` is its scalar equivalent.
+              lastInvoiceNumber: sql`max(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
             },
           });
         return;

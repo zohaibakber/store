@@ -106,7 +106,8 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         .onConflictDoUpdate({
           target: invoiceCounters.organizationId,
           set: {
-            lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${saved.invoiceNumber})`,
+            // SQLite has no `greatest`; two-argument `max` is its scalar equivalent.
+            lastInvoiceNumber: sql`max(${invoiceCounters.lastInvoiceNumber}, ${saved.invoiceNumber})`,
           },
         });
       return canonicalChange(change, saved.rowVersion, saved);

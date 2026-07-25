@@ -5,7 +5,7 @@ import {
   SyncServerChange,
   type SyncRequest,
 } from "@store/contracts";
-import { products, syncOutbox } from "@store/db/local/schema";
+import { invoices, products, syncOutbox } from "@store/db/local/schema";
 import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
@@ -113,6 +113,48 @@ const remoteProductChange = (input: {
         deviceId: "remote-device",
         operationId,
         rowVersion: input.rowVersion,
+      },
+    }),
+  });
+};
+
+const InvoiceRow = createSelectSchema(invoices);
+type InvoiceRow = typeof InvoiceRow.Type;
+
+const capturedInvoiceRow = async (dataDir: string, invoiceId: string): Promise<InvoiceRow> => {
+  const outbox = await readOutbox(dataDir);
+  const captured = outbox
+    .flatMap((operation) => operation.payload)
+    .find((change) => change.entity === "invoice" && change.entityId === invoiceId);
+  if (!captured) throw new Error(`No invoice change was captured for ${invoiceId}`);
+  return Schema.decodeUnknownSync(InvoiceRow)(captured.row);
+};
+
+const remoteInvoiceChange = (input: {
+  readonly cursor: number;
+  readonly source: InvoiceRow;
+  readonly id: string;
+  readonly invoiceNumber: number;
+}) => {
+  const operationId = `remote-invoice-operation-${input.cursor}`;
+  return SyncServerChange.make({
+    cursor: input.cursor,
+    operationId,
+    changedAt: input.source.updatedAt + input.cursor,
+    change: SyncEntityChange.make({
+      entity: "invoice",
+      action: "upsert",
+      entityId: input.id,
+      rowVersion: 1,
+      row: {
+        ...input.source,
+        id: input.id,
+        invoiceNumber: input.invoiceNumber,
+        updatedAt: input.source.updatedAt + input.cursor,
+        updatedByUserId: "remote-user",
+        deviceId: "remote-device",
+        operationId,
+        rowVersion: 1,
       },
     }),
   });
@@ -417,6 +459,70 @@ test("a newer remote product change replaces the local row", async () => {
 
     expect(product.name).toBe("Newer remote name");
     expect(product.rowVersion).toBe(4);
+  });
+});
+
+// The local invoice already created the counter row, so the remote invoice
+// takes the conflict branch — the path where a Postgres `greatest` would have
+// thrown "no such function" against SQLite.
+test("a remote invoice advances the local invoice counter past its own number", async () => {
+  await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
+    const product = await seedRuntime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Counter product",
+          aisle: null,
+          composition: null,
+          strength: null,
+          unitsPerPack: 1,
+          packPrice: null,
+          unitPrice: 100,
+        }),
+      ),
+    );
+    const batch = await seedRuntime.runPromise(
+      store((store) =>
+        store.createBatch({
+          productId: product.id,
+          batchNumber: null,
+          expiresAt: null,
+          packQuantity: 0,
+          unitQuantity: 10,
+        }),
+      ),
+    );
+    const sale = {
+      customerName: null,
+      items: [
+        {
+          productId: product.id,
+          batchId: batch.id,
+          quantity: 1,
+          quantityType: "unit" as const,
+          salePrice: 100,
+        },
+      ],
+    };
+    const local = await seedRuntime.runPromise(store((store) => store.createInvoice(sale)));
+    expect(local.invoiceNumber).toBe(1);
+    await seedRuntime.dispose();
+
+    const source = await capturedInvoiceRow(dataDir, local.id);
+    const remote = remoteInvoiceChange({
+      cursor: 1,
+      source,
+      id: "remote-invoice",
+      invoiceNumber: 7,
+    });
+    const runtime = makeRuntime({ syncTransport: transportFor([remote]) });
+
+    await expect(runtime.runPromise(store((store) => store.sync))).resolves.toMatchObject({
+      phase: "idle",
+    });
+
+    // The counter is only observable through the number it hands out next.
+    const next = await runtime.runPromise(store((store) => store.createInvoice(sale)));
+    expect(next.invoiceNumber).toBe(8);
   });
 });
 

@@ -181,6 +181,15 @@ const movementChange = (
     },
   });
 
+const invoiceChange = (id: string, invoiceNumber: number, total: number) =>
+  SyncEntityChange.make({
+    entity: "invoice",
+    action: "upsert",
+    entityId: id,
+    rowVersion: 1,
+    row: { id, invoiceNumber, customerName: null, total },
+  });
+
 const requireValue = <A>(value: A | undefined, message: string): A => {
   if (value === undefined) throw new Error(message);
   return value;
@@ -349,6 +358,47 @@ describe("SyncDatabase with libSQL", () => {
         assert.strictEqual(stored?.deviceId, "device-b");
         assert.strictEqual(stored?.operationId, "operation-update-b");
         assert.strictEqual(stored?.rowVersion, 6);
+      }),
+    ),
+  );
+
+  // The counter row exists after the first invoice, so every later invoice
+  // takes the conflict branch — the path where a Postgres `greatest` would
+  // have thrown "no such function" against SQLite.
+  it.effect("advances the invoice counter to the highest invoice number applied", () =>
+    withDatabase(({ database, exchange }) =>
+      Effect.gen(function* () {
+        const first = operationFor({
+          operationId: "operation-invoice-1",
+          deviceId: "device-1",
+          clientSequence: 1,
+          occurredAt: 1_750_000_000_000,
+          changes: [invoiceChange("invoice-1", 1, 500)],
+        });
+        const higher = operationFor({
+          operationId: "operation-invoice-2",
+          deviceId: "device-1",
+          clientSequence: 2,
+          occurredAt: 1_750_000_000_100,
+          changes: [invoiceChange("invoice-2", 7, 700)],
+        });
+        // Arrives last but must not pull the counter back down.
+        const lower = operationFor({
+          operationId: "operation-invoice-3",
+          deviceId: "device-2",
+          clientSequence: 1,
+          occurredAt: 1_750_000_000_200,
+          changes: [invoiceChange("invoice-3", 3, 300)],
+        });
+
+        yield* exchange(actor, requestFor(first));
+        yield* exchange(actor, requestFor(higher));
+        yield* exchange(actor, requestFor(lower));
+        const counter = yield* database.query.invoiceCounters.findFirst({
+          where: { organizationId: actor.organizationId },
+        });
+
+        assert.strictEqual(counter?.lastInvoiceNumber, 7);
       }),
     ),
   );
