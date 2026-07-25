@@ -76,7 +76,6 @@ export const makeAuth = (config: AuthConfig) => {
       disableCSRFCheck: false,
       disableOriginCheck: false,
       trustedProxyHeaders: false,
-      cookiePrefix: "tabaaq",
       defaultCookieAttributes: {
         httpOnly: true,
         sameSite: "lax",
@@ -133,7 +132,7 @@ export const makeAuth = (config: AuthConfig) => {
         creatorRole: "owner",
         membershipLimit: 100,
       }),
-      electron({ clientID: "store-electron", cookiePrefix: "tabaaq" }),
+      electron({ clientID: "store-electron" }),
     ],
   });
 };
