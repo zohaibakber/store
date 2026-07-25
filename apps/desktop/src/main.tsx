@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { bootstrapAuth } from "@/lib/auth";
 import { routeTree } from "@/routeTree.gen";
 
-import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";
 
