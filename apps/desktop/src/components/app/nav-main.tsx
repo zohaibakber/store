@@ -1,17 +1,13 @@
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   SidebarGroup,
+  SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar";
 
@@ -21,11 +17,6 @@ export type NavMainItem = {
   title: string;
   url: AppRoute;
   icon: React.ReactNode;
-  isActive?: boolean;
-  items?: {
-    title: string;
-    url: AppRoute;
-  }[];
 };
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
@@ -37,49 +28,39 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
 
   return (
     <SidebarGroup>
-      <SidebarMenu>
-        {items.map((item) => (
-          <Collapsible key={item.title} defaultOpen={item.isActive} render={<SidebarMenuItem />}>
+      <SidebarGroupContent className="flex flex-col gap-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip={item.title}
-              render={
-                <Link
-                  activeProps={{ "data-active": true }}
-                  to={item.url}
-                  onClick={closeMobileSidebar}
-                />
-              }
+              tooltip="Create Sale"
+              className="min-w-8 bg-primary text-primary-foreground duration-200 ease-linear hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground"
+              render={<Link to="/invoices/new" onClick={closeMobileSidebar} />}
             >
-              {item.icon}
-              <span>{item.title}</span>
+              <HugeiconsIcon icon={PlusSignCircleIcon} />
+              <span>Create Sale</span>
             </SidebarMenuButton>
-            {item.items?.length ? (
-              <>
-                <SidebarMenuAction
-                  render={<CollapsibleTrigger />}
-                  className="aria-expanded:rotate-90"
-                >
-                  <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} />
-                  <span className="sr-only">Toggle</span>
-                </SidebarMenuAction>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {item.items?.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton
-                          render={<Link to={subItem.url} onClick={closeMobileSidebar} />}
-                        >
-                          <span>{subItem.title}</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </>
-            ) : null}
-          </Collapsible>
-        ))}
-      </SidebarMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarMenu>
+          {items.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton
+                tooltip={item.title}
+                render={
+                  <Link
+                    activeProps={{ "data-active": true }}
+                    to={item.url}
+                    onClick={closeMobileSidebar}
+                  />
+                }
+              >
+                {item.icon}
+                <span>{item.title}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
     </SidebarGroup>
   );
 }
