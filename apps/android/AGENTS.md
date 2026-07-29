@@ -93,12 +93,18 @@ isn't a "Pixel doesn't need it" situation, it's "the on-device path doesn't
 support this feature yet." Revisit if/when Google adds schema support
 on-device.
 
-**Required manual setup, not done here:** Firebase AI Logic needs a real
-Firebase project wired into the app — a `google-services.json` in `app/`
-(there isn't one in this repo) with the Gemini Developer API enabled in the
-Firebase console for that project. Without it, `Firebase.ai(...)` throws at
-call time. This is account/console setup only the project owner can do, same
-category as `STORE_API_BASE_URL` — not something to fake or stub around.
+**Firebase project: wired up.** App registered as `com.tabaaq.storescanner` in
+the `tabaaq-67ffc` Firebase project (`firebase apps:create android` +
+`firebase init ailogic`, which also enables the Gemini Developer API for that
+app — the one step that genuinely needed a real account, not just CLI/API
+calls). `app/google-services.json` and `.firebaserc`/`firebase.json` are
+committed — the API key inside `google-services.json` is a client identifier
+restricted by package name, not a bearer secret, so unlike `.env` this one is
+meant to ship in source control (standard Firebase practice).
+`applicationId` in `app/build.gradle.kts` was renamed from the AI Studio
+placeholder (`com.aistudio.medicinescanner.xyzab`) to `com.tabaaq.storescanner`
+to match — this is effectively permanent once published, so it was worth
+fixing before registering rather than after.
 
 **Not build-verified, flagged as the top risk:** the exact import paths for
 `Firebase.ai(...)`, `Schema`, `generationConfig { }`, and `content { }` were
