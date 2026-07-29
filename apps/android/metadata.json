@@ -1,0 +1,6 @@
+{
+  "name": "Medicine Scanner",
+  "description": "App to extract medicine details and save securely.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
