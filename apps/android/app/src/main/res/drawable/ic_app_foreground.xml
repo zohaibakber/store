@@ -1,10 +1,26 @@
+<!-- Adaptive icon foreground, ported from apps/desktop/public/logo.svg (viewBox 832x832,
+     scaled 66/832 and centered in the 108x108 safe zone). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-  
+    android:viewportWidth="108"
+    android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M19,3H5C3.9,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3ZM17,13H13V17H11V13H7V11H11V7H13V11H17V13Z" />
+        android:fillColor="@color/ic_launcher_glyph"
+        android:pathData="M37.659,35.438 H70.341 A3.490,3.490 0 0 1 73.832,38.928 V42.418 A3.490,3.490 0 0 1 70.341,45.909 H37.659 A3.490,3.490 0 0 1 34.168,42.418 V38.928 A3.490,3.490 0 0 1 37.659,35.438 Z" />
+    <path
+        android:fillColor="@color/ic_launcher_glyph"
+        android:pathData="M52.255,43.688 H55.745 A3.490,3.490 0 0 1 59.236,47.178 V69.072 A3.490,3.490 0 0 1 55.745,72.562 H52.255 A3.490,3.490 0 0 1 48.764,69.072 V47.178 A3.490,3.490 0 0 1 52.255,43.688 Z" />
+    <path
+        android:fillColor="@color/ic_launcher_detail"
+        android:pathData="M65.106,48.764 H68.913 A3.332,3.332 0 0 1 72.245,52.096 V55.904 A3.332,3.332 0 0 1 68.913,59.236 H65.106 A3.332,3.332 0 0 1 61.774,55.904 V52.096 A3.332,3.332 0 0 1 65.106,48.764 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/ic_launcher_surface"
+        android:strokeWidth="1.745"
+        android:strokeLineCap="round"
+        android:pathData="M67.010,51.303 v5.394 M64.313,54.000 h5.394" />
+    <path
+        android:fillColor="@color/ic_launcher_detail"
+        android:pathData="M69.786,36.231 a1.983,1.983 0 1,0 0,3.966 a1.983,1.983 0 1,0 0,-3.966 Z" />
 </vector>

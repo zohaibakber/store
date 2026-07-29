@@ -7,4 +7,9 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- App logo (apps/desktop/public/logo.svg) — light-mode values, see values-night for the swap. -->
+    <color name="ic_launcher_surface">#FF20201E</color>
+    <color name="ic_launcher_glyph">#FFF5F5F4</color>
+    <color name="ic_launcher_detail">#FF159A8A</color>
 </resources>
