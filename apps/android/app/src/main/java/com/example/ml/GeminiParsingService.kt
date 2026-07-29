@@ -1,8 +1,8 @@
 package com.example.ml
 
 import com.google.firebase.Firebase
-import com.google.firebase.ai.GenerativeBackend
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.Schema
 import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.generationConfig

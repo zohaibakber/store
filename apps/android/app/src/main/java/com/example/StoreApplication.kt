@@ -51,8 +51,8 @@ class StoreApplication : Application(), Configuration.Provider {
         SyncWorker.schedulePeriodic(WorkManager.getInstance(this))
     }
 
-    override fun getWorkManagerConfiguration(): Configuration =
-        Configuration.Builder()
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
             .setWorkerFactory(SyncWorkerFactory(syncRepository))
             .build()
 }

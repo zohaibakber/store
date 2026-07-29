@@ -41,6 +41,7 @@ class SessionStore(context: Context) {
         val token = stringPreferencesKey("session_token_enc")
         val userId = stringPreferencesKey("user_id")
         val activeOrganizationId = stringPreferencesKey("active_organization_id")
+        val activeOrganizationName = stringPreferencesKey("active_organization_name")
         val deviceId = stringPreferencesKey("device_id")
         val clientSequence = stringPreferencesKey("client_sequence")
         val syncCursor = stringPreferencesKey("sync_cursor")
@@ -58,6 +59,9 @@ class SessionStore(context: Context) {
 
     val activeOrganizationIdFlow: Flow<String?> =
         appContext.dataStore.data.map { it[Keys.activeOrganizationId] }
+
+    val activeOrganizationNameFlow: Flow<String?> =
+        appContext.dataStore.data.map { it[Keys.activeOrganizationName] }
 
     init {
         appContext.dataStore.data
@@ -87,11 +91,15 @@ class SessionStore(context: Context) {
             it.remove(Keys.token)
             it.remove(Keys.userId)
             it.remove(Keys.activeOrganizationId)
+            it.remove(Keys.activeOrganizationName)
         }
     }
 
-    suspend fun setActiveOrganizationId(organizationId: String) {
-        appContext.dataStore.edit { it[Keys.activeOrganizationId] = organizationId }
+    suspend fun setActiveOrganization(organizationId: String, name: String) {
+        appContext.dataStore.edit {
+            it[Keys.activeOrganizationId] = organizationId
+            it[Keys.activeOrganizationName] = name
+        }
     }
 
     /** Stable per-install id, generated once, reused as the sync protocol's deviceId. */

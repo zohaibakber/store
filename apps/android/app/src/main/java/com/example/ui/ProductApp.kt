@@ -17,7 +17,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
@@ -65,98 +63,28 @@ import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
+fun ProductApp(viewModel: ProductViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val allProducts by viewModel.allProducts.collectAsStateWithLifecycle()
-    val syncPhase by viewModel.syncPhase.collectAsStateWithLifecycle()
 
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
+            TopAppBar(
+                title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Image(
                             painter = painterResource(R.drawable.ic_logo_mark),
                             contentDescription = null,
                             modifier = Modifier.size(28.dp),
                         )
-                        Text(
-                            text = "Store Scanner",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
+                        Text(text = "Tabaaq", style = MaterialTheme.typography.titleMedium)
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 2.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(LocalSemanticColors.current.success, CircleShape),
-                        )
-                        Text(
-                            text = "ON-DEVICE AI ACTIVE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 2.dp),
-                    ) {
-                        val (dotColor, label) = when (syncPhase) {
-                            SyncPhase.SYNCING -> LocalSemanticColors.current.info to "SYNCING"
-                            SyncPhase.ERROR -> LocalSemanticColors.current.warning to "SYNC ERROR"
-                            SyncPhase.IDLE -> MaterialTheme.colorScheme.outline to "SYNCED"
-                        }
-                        Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                if (uiState.isScanning) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(MaterialTheme.colorScheme.secondary, CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                            .clickable { viewModel.stopScanning() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close Camera",
-                            tint = MaterialTheme.colorScheme.onSecondary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                } else {
-                    IconButton(onClick = onSignOut) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Logout,
-                            contentDescription = "Sign out",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
         },
         floatingActionButton = {
             if (!uiState.isScanning) {
@@ -244,7 +172,7 @@ fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
             }
 
             uiState.pendingDraft?.let { draft ->
-                ProductConfirmDialog(
+                ProductEditSheet(
                     draft = draft,
                     onConfirm = { updated -> viewModel.saveDraft(updated) },
                     onDismiss = { viewModel.cancelSave() },
@@ -453,8 +381,9 @@ fun ProductCard(productWithBatches: ProductWithBatches, onDelete: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProductConfirmDialog(
+fun ProductEditSheet(
     draft: ProductDraft,
     onConfirm: (ProductDraft) -> Unit,
     onDismiss: () -> Unit,
@@ -467,88 +396,107 @@ fun ProductConfirmDialog(
     var expiryDate by remember { mutableStateOf(ExpiryDate.format(draft.batch.expiresAt)) }
     var quantityStr by remember { mutableStateOf(draft.batch.unitQuantity.toString()) }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(if (draft.product.name.isEmpty()) "Add Product" else "Confirm Details") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = if (draft.product.name.isEmpty()) "Add Product" else "Confirm Details",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Product Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = composition,
+                onValueChange = { composition = it },
+                label = { Text("Composition") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = strength,
+                onValueChange = { strength = it },
+                label = { Text("Strength") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = batchNumber,
+                onValueChange = { batchNumber = it },
+                label = { Text("Batch Number") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = expiryDate,
+                onValueChange = { expiryDate = it },
+                label = { Text("Expiry Date (MM/yy)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = category,
+                onValueChange = { category = it },
+                label = { Text("Category (medicine/cosmetics/general)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = quantityStr,
+                onValueChange = { quantityStr = it },
+                label = { Text("Quantity") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Product Name") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = composition,
-                    onValueChange = { composition = it },
-                    label = { Text("Composition") },
-                )
-                OutlinedTextField(
-                    value = strength,
-                    onValueChange = { strength = it },
-                    label = { Text("Strength") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = batchNumber,
-                    onValueChange = { batchNumber = it },
-                    label = { Text("Batch Number") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = expiryDate,
-                    onValueChange = { expiryDate = it },
-                    label = { Text("Expiry Date (MM/yy)") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("Category (medicine/cosmetics/general)") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = quantityStr,
-                    onValueChange = { quantityStr = it },
-                    label = { Text("Quantity") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val qty = quantityStr.toIntOrNull() ?: 1
-                    onConfirm(
-                        draft.copy(
-                            product = draft.product.copy(
-                                name = name,
-                                composition = composition,
-                                strength = strength,
-                                category = category,
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        val qty = quantityStr.toIntOrNull() ?: 1
+                        onConfirm(
+                            draft.copy(
+                                product = draft.product.copy(
+                                    name = name,
+                                    composition = composition,
+                                    strength = strength,
+                                    category = category,
+                                ),
+                                batch = draft.batch.copy(
+                                    batchNumber = batchNumber,
+                                    expiresAt = ExpiryDate.parse(expiryDate),
+                                    unitQuantity = qty,
+                                ),
                             ),
-                            batch = draft.batch.copy(
-                                batchNumber = batchNumber,
-                                expiresAt = ExpiryDate.parse(expiryDate),
-                                unitQuantity = qty,
-                            ),
-                        ),
-                    )
-                },
-            ) {
-                Text("Save")
+                        )
+                    },
+                ) {
+                    Text("Save")
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+        }
+    }
 }
 
 /**

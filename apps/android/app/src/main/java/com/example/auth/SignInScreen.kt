@@ -50,7 +50,7 @@ fun SignInScreen(
             modifier = Modifier.size(56.dp).padding(bottom = 8.dp),
         )
         Text(
-            text = "Store Scanner",
+            text = "Tabaaq",
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
