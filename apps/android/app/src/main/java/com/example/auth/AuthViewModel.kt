@@ -30,6 +30,11 @@ class AuthViewModel(
     private val _sessionState = MutableStateFlow<AppSessionState>(AppSessionState.Loading)
     val sessionState: StateFlow<AppSessionState> = _sessionState
 
+    private val _activeOrganization = MutableStateFlow<StoreOrganization?>(null)
+
+    /** The signed-in org, once known — populated on resume from disk or right after selection. */
+    val activeOrganization: StateFlow<StoreOrganization?> = _activeOrganization
+
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy
 
@@ -51,7 +56,10 @@ class AuthViewModel(
     }
 
     private suspend fun resolveOrganization() {
-        if (sessionStore.activeOrganizationIdFlow.first() != null) {
+        val activeId = sessionStore.activeOrganizationIdFlow.first()
+        if (activeId != null) {
+            val activeName = sessionStore.activeOrganizationNameFlow.first().orEmpty()
+            _activeOrganization.value = StoreOrganization(id = activeId, name = activeName)
             _sessionState.value = AppSessionState.Ready
             return
         }
@@ -92,7 +100,10 @@ class AuthViewModel(
         viewModelScope.launch {
             _isBusy.value = true
             authRepository.setActiveOrganization(organizationId)
-                .onSuccess { _sessionState.value = AppSessionState.Ready }
+                .onSuccess {
+                    _activeOrganization.value = it
+                    _sessionState.value = AppSessionState.Ready
+                }
                 .onFailure { _error.value = it.localizedMessage ?: "Couldn't select organization" }
             _isBusy.value = false
         }
@@ -102,6 +113,7 @@ class AuthViewModel(
         viewModelScope.launch {
             authRepository.signOut()
             SyncWorker.cancelPeriodic(workManager)
+            _activeOrganization.value = null
         }
     }
 

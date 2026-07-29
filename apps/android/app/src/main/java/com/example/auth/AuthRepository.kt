@@ -23,9 +23,11 @@ class AuthRepository(
         api.listOrganizations()
     }
 
-    suspend fun setActiveOrganization(organizationId: String): Result<Unit> = runCatching {
-        api.setActiveOrganization(SetActiveOrganizationRequest(organizationId))
-        sessionStore.setActiveOrganizationId(organizationId)
+    suspend fun setActiveOrganization(organizationId: String): Result<StoreOrganization> = runCatching {
+        val organization = api.setActiveOrganization(SetActiveOrganizationRequest(organizationId))
+            ?: error("Couldn't set active organization")
+        sessionStore.setActiveOrganization(organization.id, organization.name)
+        organization
     }
 
     suspend fun signOut() {

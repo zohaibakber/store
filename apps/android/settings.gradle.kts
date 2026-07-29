@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Store Scanner"
+rootProject.name = "Tabaaq"
 
 include(":app")
