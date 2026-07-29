@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "353317807467",
+    "project_id": "tabaaq-67ffc",
+    "storage_bucket": "tabaaq-67ffc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:353317807467:android:b6ec46315fdda07713582e",
+        "android_client_info": {
+          "package_name": "com.tabaaq.storescanner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAoS7o1odwggPS6EXrHhqf96Gas-RASlnU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
