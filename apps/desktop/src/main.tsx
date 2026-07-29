@@ -8,7 +8,7 @@ import { electronStore, StoreProvider } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
 import "@fontsource-variable/inter/index.css";
-import "@fontsource-variable/jetbrains-mono/index.css";
+import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";
 
 const store = electronStore();

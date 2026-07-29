@@ -1,17 +1,30 @@
-import { HomeIcon, Invoice01Icon, SettingsIcon, TagIcon } from "@hugeicons/core-free-icons";
+import {
+  HomeIcon,
+  Invoice01Icon,
+  SearchIcon,
+  SettingsIcon,
+  TagIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type * as React from "react";
 
 import { AccountMenu } from "@/components/app/account-menu";
+import { useCommandMenu } from "@/components/app/command-menu";
 import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
-import { SearchForm } from "@/components/app/search-form";
 import { SyncStatusIndicator } from "@/components/app/sync-status";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
@@ -40,8 +53,10 @@ const data = {
   ] satisfies NavMainItem[],
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { open: openCommandMenu } = useCommandMenu();
+
   return (
-    <Sidebar collapsible="icon" variant="inset" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div className="-mx-1 flex items-center gap-1 group-data-[collapsible=icon]:mx-0 group-data-[collapsible=icon]:justify-center">
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
@@ -49,9 +64,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </div>
           <SidebarTrigger className="shrink-0" />
         </div>
-        <div className="group-data-[collapsible=icon]:hidden">
-          <SearchForm />
-        </div>
+        <SidebarGroup className="p-0">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Search"
+                  aria-keyshortcuts="/"
+                  aria-haspopup="dialog"
+                  onClick={openCommandMenu}
+                >
+                  <HugeiconsIcon icon={SearchIcon} />
+                  <span>Search</span>
+                </SidebarMenuButton>
+                <SidebarMenuBadge>
+                  <Kbd>/</Kbd>
+                </SidebarMenuBadge>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
