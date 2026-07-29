@@ -93,17 +93,21 @@ object RetrofitClient {
     }
 }
 
-data class ParsedMedicine(
+// Field names mirror `products`/`batches` in
+// packages/db/src/shared/store.schema.ts (name, composition, strength,
+// batchNumber, expiresAt, category, unitQuantity).
+data class ParsedProduct(
     val name: String,
     val composition: String,
+    val strength: String,
     val batchNumber: String,
     val expiryDate: String,
     val category: String,
-    val quantity: Int
+    val unitQuantity: Int,
 )
 
 class GeminiParsingService {
-    suspend fun parseMedicineInfo(extractedText: String): ParsedMedicine? = withContext(Dispatchers.IO) {
+    suspend fun parseProductInfo(extractedText: String): ParsedProduct? = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return@withContext null
@@ -114,11 +118,15 @@ class GeminiParsingService {
             putJsonObject("properties") {
                 putJsonObject("name") {
                     put("type", "STRING")
-                    put("description", "The brand name or common name of the medicine.")
+                    put("description", "The brand name or common name of the product.")
                 }
                 putJsonObject("composition") {
                     put("type", "STRING")
-                    put("description", "The active ingredients or composition of the medicine.")
+                    put("description", "The active ingredients or composition of the product, if any.")
+                }
+                putJsonObject("strength") {
+                    put("type", "STRING")
+                    put("description", "The dosage strength (e.g. 500mg, 10mg), if any.")
                 }
                 putJsonObject("batchNumber") {
                     put("type", "STRING")
@@ -126,13 +134,13 @@ class GeminiParsingService {
                 }
                 putJsonObject("expiryDate") {
                     put("type", "STRING")
-                    put("description", "The expiry date of the medicine (e.g. Exp Date, Expiry).")
+                    put("description", "The expiry date of the product (e.g. Exp Date, Expiry), formatted MM/yy.")
                 }
                 putJsonObject("category") {
                     put("type", "STRING")
-                    put("description", "The category of the medicine (e.g. Antibiotic, Painkiller, Vitamin, General). Default to 'General' if unsure.")
+                    put("description", "One of: medicine, cosmetics, general. Default to 'general' if unsure.")
                 }
-                putJsonObject("quantity") {
+                putJsonObject("unitQuantity") {
                     put("type", "INTEGER")
                     put("description", "The quantity or number of units (e.g. tablets, capsules) in the package. Default to 1 if unsure.")
                 }
@@ -141,7 +149,7 @@ class GeminiParsingService {
 
         val request = GenerateContentRequest(
             contents = listOf(Content(
-                parts = listOf(Part(text = "Extract medicine details from the following raw OCR text:\n$extractedText\n\nIf a field is not found, leave it empty. For quantity, look for things like '10 tablets', '50ml', etc. and extract the number. Default category to General and quantity to 1 if not found."))
+                parts = listOf(Part(text = "Extract product details from the following raw OCR text:\n$extractedText\n\nIf a field is not found, leave it empty. For unitQuantity, look for things like '10 tablets', '50ml', etc. and extract the number. Default category to general and unitQuantity to 1 if not found."))
             )),
             generationConfig = GenerationConfig(
                 responseFormat = ResponseFormat(
@@ -153,23 +161,24 @@ class GeminiParsingService {
                 temperature = 0.1f
             ),
             systemInstruction = Content(
-                parts = listOf(Part(text = "You are an expert at extracting structured information from raw OCR text on medicine packaging."))
+                parts = listOf(Part(text = "You are an expert at extracting structured information from raw OCR text on product packaging for a shop that sells medicines and general goods."))
             )
         )
 
         try {
             val response = RetrofitClient.service.generateContent(apiKey, request)
             val jsonString = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: return@withContext null
-            
+
             val json = Json.parseToJsonElement(jsonString).jsonObject
             val name = json["name"]?.jsonPrimitive?.content ?: ""
             val composition = json["composition"]?.jsonPrimitive?.content ?: ""
+            val strength = json["strength"]?.jsonPrimitive?.content ?: ""
             val batchNumber = json["batchNumber"]?.jsonPrimitive?.content ?: ""
             val expiryDate = json["expiryDate"]?.jsonPrimitive?.content ?: ""
-            val category = json["category"]?.jsonPrimitive?.content ?: "General"
-            val quantity = json["quantity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-            
-            ParsedMedicine(name, composition, batchNumber, expiryDate, category, quantity)
+            val category = json["category"]?.jsonPrimitive?.content ?: "general"
+            val unitQuantity = json["unitQuantity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
+
+            ParsedProduct(name, composition, strength, batchNumber, expiryDate, category, unitQuantity)
         } catch (e: Exception) {
             e.printStackTrace()
             null

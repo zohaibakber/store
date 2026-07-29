@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Medicine Scanner"
+rootProject.name = "Store Scanner"
 
 include(":app")

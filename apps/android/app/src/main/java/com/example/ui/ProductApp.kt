@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -35,82 +37,83 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.data.Medicine
+import com.example.data.Batch
+import com.example.data.ExpiryDate
+import com.example.data.Product
+import com.example.data.ProductWithBatches
+import com.example.ui.theme.LocalSemanticColors
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
-import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun MedicineApp(viewModel: MedicineViewModel) {
+fun ProductApp(viewModel: ProductViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val allMedicines by viewModel.allMedicines.collectAsStateWithLifecycle()
-    
+    val allProducts by viewModel.allProducts.collectAsStateWithLifecycle()
+
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
     Scaffold(
-        containerColor = Color(0xFFFEF7FF),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFFEF7FF))
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
                     Text(
-                        text = "MediScan AI",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.5).sp,
-                        color = Color(0xFF1D1B20)
+                        text = "Store Scanner",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 2.dp),
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape)
+                                .background(LocalSemanticColors.current.success, CircleShape),
                         )
                         Text(
                             text = "ON-DEVICE AI ACTIVE",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = 0.5.sp,
-                            color = Color(0xFF49454F)
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                
+
                 if (uiState.isScanning) {
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .background(Color(0xFFF3EDF7), androidx.compose.foundation.shape.CircleShape)
-                            .border(1.dp, Color(0xFFD0BCFF).copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.secondary, CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                             .clickable { viewModel.stopScanning() },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Close Camera",
-                            tint = Color(0xFF6750A4),
-                            modifier = Modifier.size(20.dp)
+                            tint = MaterialTheme.colorScheme.onSecondary,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -121,59 +124,59 @@ fun MedicineApp(viewModel: MedicineViewModel) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     FloatingActionButton(
                         onClick = { viewModel.showManualEntry() },
-                        containerColor = Color(0xFFF3EDF7),
-                        contentColor = Color(0xFF6750A4)
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Manual Entry")
                     }
                     ExtendedFloatingActionButton(
-                        onClick = { 
+                        onClick = {
                             if (cameraPermissionState.status.isGranted) {
-                                viewModel.startScanning() 
+                                viewModel.startScanning()
                             } else {
                                 cameraPermissionState.launchPermissionRequest()
                             }
                         },
-                        containerColor = Color(0xFFD0BCFF),
-                        contentColor = Color(0xFF381E72)
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "Scan Medicine")
+                        Icon(Icons.Default.CameraAlt, contentDescription = "Scan Product")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Scan AI")
                     }
                 }
             }
-        }
+        },
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFFEF7FF)).padding(paddingValues)) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(paddingValues)) {
             if (uiState.isScanning) {
                 CameraScreen(
                     onImageCaptured = { bitmap ->
                         viewModel.processImage(bitmap)
-                    }
+                    },
                 )
             } else {
-                if (allMedicines.isEmpty()) {
+                if (allProducts.isEmpty()) {
                     EmptyState()
                 } else {
-                    MedicineList(
-                        medicines = allMedicines,
-                        onDelete = { viewModel.deleteMedicine(it.id) }
+                    ProductList(
+                        products = allProducts,
+                        onDelete = { viewModel.deleteProduct(it.product.id) },
                     )
                 }
             }
-            
+
             if (uiState.isProcessing) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Card(modifier = Modifier.padding(32.dp)) {
                         Column(
                             modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
@@ -182,15 +185,15 @@ fun MedicineApp(viewModel: MedicineViewModel) {
                     }
                 }
             }
-            
-            uiState.pendingMedicine?.let { medicine ->
-                MedicineConfirmDialog(
-                    medicine = medicine,
-                    onConfirm = { updatedMedicine -> viewModel.saveMedicine(updatedMedicine) },
-                    onDismiss = { viewModel.cancelSave() }
+
+            uiState.pendingDraft?.let { draft ->
+                ProductConfirmDialog(
+                    draft = draft,
+                    onConfirm = { updated -> viewModel.saveDraft(updated) },
+                    onDismiss = { viewModel.cancelSave() },
                 )
             }
-            
+
             uiState.error?.let { error ->
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissError() },
@@ -200,7 +203,7 @@ fun MedicineApp(viewModel: MedicineViewModel) {
                         TextButton(onClick = { viewModel.dismissError() }) {
                             Text("OK")
                         }
-                    }
+                    },
                 )
             }
         }
@@ -212,82 +215,81 @@ fun EmptyState() {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
         Icon(
             imageVector = Icons.Default.CameraAlt,
             contentDescription = null,
             modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "No medicines saved yet",
-            style = MaterialTheme.typography.titleLarge
+            text = "No products saved yet",
+            style = MaterialTheme.typography.titleMedium,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Use the add buttons below to manually add a medicine or scan a label to extract details automatically.",
+            text = "Use the add buttons below to manually add a product or scan a label to extract details automatically.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center,
         )
     }
 }
 
 @Composable
-fun MedicineList(medicines: List<Medicine>, onDelete: (Medicine) -> Unit) {
+fun ProductList(products: List<ProductWithBatches>, onDelete: (ProductWithBatches) -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        items(medicines) { medicine ->
-            MedicineCard(medicine = medicine, onDelete = { onDelete(medicine) })
+        items(products) { productWithBatches ->
+            ProductCard(productWithBatches = productWithBatches, onDelete = { onDelete(productWithBatches) })
         }
     }
 }
 
 @Composable
-fun MedicineCard(medicine: Medicine, onDelete: () -> Unit) {
+fun ProductCard(productWithBatches: ProductWithBatches, onDelete: () -> Unit) {
+    val product = productWithBatches.product
+    val batch = productWithBatches.earliestBatch
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Primary Card: Medicine Name
+        // Primary Card: Product Name
         Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFEADDFF)),
-            modifier = Modifier.fillMaxWidth()
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        text = medicine.category.ifBlank { "GENERAL" }.uppercase(),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF381E72),
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        text = product.category.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                     Text(
-                        text = medicine.name.ifBlank { "Unknown Name" },
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF21005D),
-                        lineHeight = 28.sp
+                        text = product.name.ifBlank { "Unknown Name" },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSecondary,
                     )
                 }
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
                 ) {
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFF381E72).copy(alpha = 0.7f)
+                        tint = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.7f),
                     )
                 }
             }
@@ -296,61 +298,54 @@ fun MedicineCard(medicine: Medicine, onDelete: () -> Unit) {
         // Secondary Cards: Batch & Expiry
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Batch
             Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFCAC4D0)),
-                modifier = Modifier.weight(1f)
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.weight(1f),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = "BATCH NO.",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF49454F),
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                     Text(
-                        text = medicine.batchNumber.ifBlank { "N/A" },
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1D1B20),
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        text = batch?.batchNumber?.ifBlank { "N/A" } ?: "N/A",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontFamily = FontFamily.Monospace,
                     )
                 }
             }
-            
-            // Expiry
+
             Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.weight(1f)
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
+                modifier = Modifier.weight(1f),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = "EXPIRY DATE",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF6750A4),
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                     Text(
-                        text = medicine.expiryDate.ifBlank { "N/A" },
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1D1B20)
+                        text = ExpiryDate.format(batch?.expiresAt).ifBlank { "N/A" },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSecondary,
                     )
                 }
             }
@@ -358,58 +353,43 @@ fun MedicineCard(medicine: Medicine, onDelete: () -> Unit) {
 
         // Tertiary Card: Composition
         Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFCAC4D0)),
-            modifier = Modifier.fillMaxWidth()
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier.padding(20.dp)
+                modifier = Modifier.padding(20.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "CHEMICAL COMPOSITION",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF49454F)
+                        text = "COMPOSITION",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFFE0E7FF), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "QTY: ${medicine.quantity}",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF3730A3)
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFFD1FAE5), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "ENCRYPTED",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF065F46)
-                            )
-                        }
+                    Box(
+                        modifier = Modifier
+                            .background(LocalSemanticColors.current.info.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "QTY: ${productWithBatches.totalUnitQuantity}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LocalSemanticColors.current.info,
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = medicine.composition.ifBlank { "Unknown composition" },
-                    fontSize = 14.sp,
-                    color = Color(0xFF1D1B20),
-                    lineHeight = 20.sp
+                    text = listOfNotNull(product.composition?.ifBlank { null }, product.strength?.ifBlank { null })
+                        .joinToString(" ")
+                        .ifBlank { "Unknown composition" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -417,79 +397,68 @@ fun MedicineCard(medicine: Medicine, onDelete: () -> Unit) {
 }
 
 @Composable
-fun DetailRow(label: String, value: String) {
-    if (value.isNotBlank()) {
-        Row(modifier = Modifier.padding(vertical = 2.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.width(120.dp)
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-fun MedicineConfirmDialog(
-    medicine: Medicine,
-    onConfirm: (Medicine) -> Unit,
-    onDismiss: () -> Unit
+fun ProductConfirmDialog(
+    draft: ProductDraft,
+    onConfirm: (ProductDraft) -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(medicine.name) }
-    var composition by remember { mutableStateOf(medicine.composition) }
-    var batchNumber by remember { mutableStateOf(medicine.batchNumber) }
-    var expiryDate by remember { mutableStateOf(medicine.expiryDate) }
-    var category by remember { mutableStateOf(medicine.category) }
-    var quantityStr by remember { mutableStateOf(medicine.quantity.toString()) }
+    var name by remember { mutableStateOf(draft.product.name) }
+    var composition by remember { mutableStateOf(draft.product.composition ?: "") }
+    var strength by remember { mutableStateOf(draft.product.strength ?: "") }
+    var category by remember { mutableStateOf(draft.product.category) }
+    var batchNumber by remember { mutableStateOf(draft.batch.batchNumber ?: "") }
+    var expiryDate by remember { mutableStateOf(ExpiryDate.format(draft.batch.expiresAt)) }
+    var quantityStr by remember { mutableStateOf(draft.batch.unitQuantity.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (medicine.name.isEmpty()) "Add Medicine" else "Confirm Details") },
+        title = { Text(if (draft.product.name.isEmpty()) "Add Product" else "Confirm Details") },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Medicine Name") },
-                    singleLine = true
+                    label = { Text("Product Name") },
+                    singleLine = true,
                 )
                 OutlinedTextField(
                     value = composition,
                     onValueChange = { composition = it },
-                    label = { Text("Composition") }
+                    label = { Text("Composition") },
+                )
+                OutlinedTextField(
+                    value = strength,
+                    onValueChange = { strength = it },
+                    label = { Text("Strength") },
+                    singleLine = true,
                 )
                 OutlinedTextField(
                     value = batchNumber,
                     onValueChange = { batchNumber = it },
                     label = { Text("Batch Number") },
-                    singleLine = true
+                    singleLine = true,
                 )
                 OutlinedTextField(
                     value = expiryDate,
                     onValueChange = { expiryDate = it },
-                    label = { Text("Expiry Date") },
-                    singleLine = true
+                    label = { Text("Expiry Date (MM/yy)") },
+                    singleLine = true,
                 )
                 OutlinedTextField(
                     value = category,
                     onValueChange = { category = it },
-                    label = { Text("Category") },
-                    singleLine = true
+                    label = { Text("Category (medicine/cosmetics/general)") },
+                    singleLine = true,
                 )
                 OutlinedTextField(
                     value = quantityStr,
                     onValueChange = { quantityStr = it },
                     label = { Text("Quantity") },
                     singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
         },
@@ -498,16 +467,21 @@ fun MedicineConfirmDialog(
                 onClick = {
                     val qty = quantityStr.toIntOrNull() ?: 1
                     onConfirm(
-                        medicine.copy(
-                            name = name,
-                            composition = composition,
-                            batchNumber = batchNumber,
-                            expiryDate = expiryDate,
-                            category = category,
-                            quantity = qty
-                        )
+                        draft.copy(
+                            product = draft.product.copy(
+                                name = name,
+                                composition = composition,
+                                strength = strength,
+                                category = category,
+                            ),
+                            batch = draft.batch.copy(
+                                batchNumber = batchNumber,
+                                expiresAt = ExpiryDate.parse(expiryDate),
+                                unitQuantity = qty,
+                            ),
+                        ),
                     )
-                }
+                },
             ) {
                 Text("Save")
             }
@@ -516,7 +490,7 @@ fun MedicineConfirmDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        }
+        },
     )
 }
 
@@ -526,17 +500,17 @@ fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val imageCapture = remember { ImageCapture.Builder().build() }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1D1B20))) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
+                        ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                 }
-                
+
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
@@ -551,7 +525,7 @@ fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
                             lifecycleOwner,
                             cameraSelector,
                             preview,
-                            imageCapture
+                            imageCapture,
                         )
                     } catch (exc: Exception) {
                         Log.e("CameraScreen", "Use case binding failed", exc)
@@ -559,36 +533,35 @@ fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
                 }, ContextCompat.getMainExecutor(ctx))
 
                 previewView
-            }
+            },
         )
-        
-        // Mock Camera Preview Overlay
+
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.8f)
                 .fillMaxHeight(0.4f)
-                .border(2.dp, Color(0xFFD0BCFF).copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
+                .border(2.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "SCANNING FOR OCR DATA...",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontFamily = FontFamily.Monospace,
                     letterSpacing = 2.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
                 Box(
                     modifier = Modifier
                         .width(180.dp)
                         .height(2.dp)
-                        .background(Color(0xFF6750A4).copy(alpha = 0.5f))
+                        .background(Color.White.copy(alpha = 0.5f)),
                 )
             }
         }
-        
+
         Button(
             onClick = {
                 takePhoto(context, imageCapture, onImageCaptured)
@@ -597,7 +570,7 @@ fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 32.dp)
                 .size(72.dp),
-            shape = RoundedCornerShape(36.dp)
+            shape = CircleShape,
         ) {
             Icon(Icons.Default.CameraAlt, contentDescription = "Take Photo", modifier = Modifier.size(32.dp))
         }
@@ -607,7 +580,7 @@ fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
 private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
-    onImageCaptured: (Bitmap) -> Unit
+    onImageCaptured: (Bitmap) -> Unit,
 ) {
     imageCapture.takePicture(
         ContextCompat.getMainExecutor(context),
@@ -621,7 +594,7 @@ private fun takePhoto(
             override fun onError(exception: ImageCaptureException) {
                 Log.e("CameraScreen", "Photo capture failed: ${exception.message}", exception)
             }
-        }
+        },
     )
 }
 
@@ -631,8 +604,7 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
     val bytes = ByteArray(buffer.remaining())
     buffer.get(bytes)
     val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-    
-    // Handle rotation
+
     val matrix = Matrix()
     matrix.postRotate(image.imageInfo.rotationDegrees.toFloat())
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
