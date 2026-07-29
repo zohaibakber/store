@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
@@ -59,9 +60,10 @@ import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ProductApp(viewModel: ProductViewModel) {
+fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val allProducts by viewModel.allProducts.collectAsStateWithLifecycle()
+    val syncPhase by viewModel.syncPhase.collectAsStateWithLifecycle()
 
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
@@ -98,6 +100,23 @@ fun ProductApp(viewModel: ProductViewModel) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 2.dp),
+                    ) {
+                        val (dotColor, label) = when (syncPhase) {
+                            SyncPhase.SYNCING -> LocalSemanticColors.current.info to "SYNCING"
+                            SyncPhase.ERROR -> LocalSemanticColors.current.warning to "SYNC ERROR"
+                            SyncPhase.IDLE -> MaterialTheme.colorScheme.outline to "SYNCED"
+                        }
+                        Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 if (uiState.isScanning) {
@@ -114,6 +133,14 @@ fun ProductApp(viewModel: ProductViewModel) {
                             contentDescription = "Close Camera",
                             tint = MaterialTheme.colorScheme.onSecondary,
                             modifier = Modifier.size(20.dp),
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onSignOut) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Sign out",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
