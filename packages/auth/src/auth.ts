@@ -1,6 +1,6 @@
 import { electron } from "@better-auth/electron";
 import { betterAuth } from "better-auth";
-import { organization } from "better-auth/plugins";
+import { bearer, organization } from "better-auth/plugins";
 
 import { resolveAuthSecurity } from "./security";
 
@@ -144,6 +144,11 @@ export const makeAuth = (config: AuthConfig) => {
         membershipLimit: 100,
       }),
       electron({ clientID: "store-electron" }),
+      // Lets the Android client authenticate with `Authorization: Bearer <token>`
+      // instead of a cookie jar. Converts the token back into a session cookie
+      // internally before requireOrganization's getSession call, and mirrors
+      // the token into a `set-auth-token` response header on sign-in.
+      bearer(),
     ],
   });
 };
