@@ -75,14 +75,39 @@ This is now wired into the real sync pipeline:
   `categoryId` — syncing Android's category taxonomy against the server's
   real categories is unsolved, not silently assumed away.
 
-## Remote endpoints — Gemini stays direct, sync goes through our server
+## Remote endpoints — Gemini stays cloud-only, sync goes through our server
 
-OCR parsing still calls the Gemini API **directly** from the client
-(`generativelanguage.googleapis.com`, key injected via AI Studio secrets into
-`BuildConfig.GEMINI_API_KEY`) — that was an explicit earlier decision and
-still holds; don't proxy it through our server as a drive-by change.
+OCR still runs on-device (ML Kit, `ml/TextRecognitionService.kt`, no network
+call). Parsing the extracted text into structured fields now goes through the
+**Firebase AI Logic SDK** (`ml/GeminiParsingService.kt`) instead of the
+original hand-rolled Retrofit client — same cloud Gemini model, official
+current SDK.
 
-Auth and sync, by contrast, now go through the store-electron server
+**Why not on-device Gemini Nano (checked, not assumed):** Firebase's own
+hybrid-inference docs for Android state that structured JSON output
+(`responseSchema`) is not supported on the on-device path yet, and explicitly
+recommend `ONLY_IN_CLOUD` for anything that needs it. Since this app's entire
+parsing job _is_ structured extraction (name/composition/batch/expiry/etc.),
+on-device Gemini Nano cannot do this job today regardless of device — this
+isn't a "Pixel doesn't need it" situation, it's "the on-device path doesn't
+support this feature yet." Revisit if/when Google adds schema support
+on-device.
+
+**Required manual setup, not done here:** Firebase AI Logic needs a real
+Firebase project wired into the app — a `google-services.json` in `app/`
+(there isn't one in this repo) with the Gemini Developer API enabled in the
+Firebase console for that project. Without it, `Firebase.ai(...)` throws at
+call time. This is account/console setup only the project owner can do, same
+category as `STORE_API_BASE_URL` — not something to fake or stub around.
+
+**Not build-verified, flagged as the top risk:** the exact import paths for
+`Firebase.ai(...)`, `Schema`, `generationConfig { }`, and `content { }` were
+pieced together from several partial doc fetches that didn't fully agree with
+each other — cross-checked against Firebase's established KTX naming
+conventions, but genuinely unverified since nothing here can compile. Check
+this file first if the build fails on `com.google.firebase.ai.*` imports.
+
+Auth and sync, separately, now go through the store-electron server
 (`BuildConfig.STORE_API_BASE_URL`, set via `apps/android/.env`). That value
 **must** be a real deployed Worker URL (`bun run deploy:dev`/`deploy:prod`
 from the repo root) — the AI Studio remote emulator can't reach a developer
@@ -100,6 +125,32 @@ hand when `styles.css` changes.
 Typography uses the system default font, not Inter — Inter Variable isn't
 bundled as an Android font resource. Adding it (via a `font/` resource or
 `androidx.compose.ui.text.googlefonts`) is a follow-up, not done here.
+
+**Logo:** ported by hand from `apps/desktop/public/logo.svg` (a rounded-square
+mark, not a photo, so it translates directly to vector drawables — no image
+asset pipeline needed). Three drawables carry it:
+`res/drawable/ic_app_background.xml` + `ic_app_foreground.xml` (the adaptive
+launcher icon, referenced by `mipmap-anydpi-v26/ic_launcher*.xml`, scaled/
+centered into the 108dp safe zone) and `res/drawable/ic_logo_mark.xml` (the
+full badge at its native proportions, used in-app next to the title on the
+sign-in screen and the main scanner's top bar). Colors come from
+`res/values/colors.xml` + `res/values-night/colors.xml`
+(`ic_launcher_surface`/`glyph`/`detail`) so the mark flips light/dark the same
+way the SVG's `prefers-color-scheme` rule does on desktop.
+Pre-API-26 `mipmap-*dpi/ic_launcher*.webp` fallback bitmaps were **not**
+regenerated (still the AI Studio default robot icon) — minSdk is 24, so this
+only affects Android 7.0–7.1 devices, a vanishingly small and shrinking slice
+in 2026. Low-priority follow-up, not blocking.
+
+**Camera:** rescanning UX changed from a full-screen camera takeover to a
+floating window (`ui/ProductApp.kt`'s `CameraWindow` — a `Dialog` with
+`usePlatformDefaultWidth = false` sizing its own rounded `Card`) over the
+still-visible, dimmed product list, with its own header/close button and a
+capture button inside the card rather than overlaid on the feed. The
+processing overlay also now shows which stage it's in
+(`ProcessingStage.DETECTING_TEXT` / `PARSING_WITH_GEMINI` in
+`ui/ProductViewModel.kt`) and a preview of the on-device OCR text once it's
+available, instead of one static "Analyzing..." label for the whole pipeline.
 
 ## Caveat
 

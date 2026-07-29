@@ -28,9 +28,13 @@ data class ProductDraft(
 
 enum class SyncPhase { IDLE, SYNCING, ERROR }
 
+enum class ProcessingStage { DETECTING_TEXT, PARSING_WITH_GEMINI }
+
 data class ScannerUiState(
     val isScanning: Boolean = false,
     val isProcessing: Boolean = false,
+    val processingStage: ProcessingStage? = null,
+    val detectedText: String? = null,
     val pendingDraft: ProductDraft? = null,
     val error: String? = null,
 )
@@ -75,14 +79,27 @@ class ProductViewModel(
 
     fun processImage(bitmap: Bitmap) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isScanning = false, isProcessing = true, error = null) }
+            _uiState.update {
+                it.copy(
+                    isScanning = false,
+                    isProcessing = true,
+                    processingStage = ProcessingStage.DETECTING_TEXT,
+                    detectedText = null,
+                    error = null,
+                )
+            }
 
             try {
+                // On-device ML Kit text recognition — no network call, works offline.
                 val rawText = textRecognitionService.extractText(bitmap)
 
                 if (rawText.isBlank()) {
-                    _uiState.update { it.copy(isProcessing = false, error = "No text found in image") }
+                    _uiState.update { it.copy(isProcessing = false, processingStage = null, error = "No text found in image") }
                     return@launch
+                }
+
+                _uiState.update {
+                    it.copy(processingStage = ProcessingStage.PARSING_WITH_GEMINI, detectedText = rawText)
                 }
 
                 val parsed = geminiParsingService.parseProductInfo(rawText)
@@ -103,17 +120,18 @@ class ProductViewModel(
                             unitQuantity = parsed.unitQuantity,
                         ),
                     )
-                    _uiState.update { it.copy(isProcessing = false, pendingDraft = draft) }
+                    _uiState.update { it.copy(isProcessing = false, processingStage = null, pendingDraft = draft) }
                 } else {
                     _uiState.update {
                         it.copy(
                             isProcessing = false,
+                            processingStage = null,
                             error = "Failed to parse product details. Please check your Gemini API Key in AI Studio secrets.",
                         )
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isProcessing = false, error = e.localizedMessage) }
+                _uiState.update { it.copy(isProcessing = false, processingStage = null, error = e.localizedMessage) }
             }
         }
     }

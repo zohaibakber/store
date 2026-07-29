@@ -14,6 +14,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,16 +37,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.Batch
 import com.example.data.ExpiryDate
 import com.example.data.Product
@@ -79,11 +84,18 @@ fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(
-                        text = "Store Scanner",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_logo_mark),
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                        )
+                        Text(
+                            text = "Store Scanner",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -176,21 +188,20 @@ fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
         },
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(paddingValues)) {
-            if (uiState.isScanning) {
-                CameraScreen(
-                    onImageCaptured = { bitmap ->
-                        viewModel.processImage(bitmap)
-                    },
-                )
+            if (allProducts.isEmpty()) {
+                EmptyState()
             } else {
-                if (allProducts.isEmpty()) {
-                    EmptyState()
-                } else {
-                    ProductList(
-                        products = allProducts,
-                        onDelete = { viewModel.deleteProduct(it.product.id) },
-                    )
-                }
+                ProductList(
+                    products = allProducts,
+                    onDelete = { viewModel.deleteProduct(it.product.id) },
+                )
+            }
+
+            if (uiState.isScanning) {
+                CameraWindow(
+                    onDismiss = { viewModel.stopScanning() },
+                    onImageCaptured = { bitmap -> viewModel.processImage(bitmap) },
+                )
             }
 
             if (uiState.isProcessing) {
@@ -200,14 +211,33 @@ fun ProductApp(viewModel: ProductViewModel, onSignOut: () -> Unit = {}) {
                         .background(Color.Black.copy(alpha = 0.5f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Card(modifier = Modifier.padding(32.dp)) {
+                    Card(shape = MaterialTheme.shapes.large, modifier = Modifier.padding(32.dp)) {
                         Column(
-                            modifier = Modifier.padding(24.dp),
+                            modifier = Modifier.padding(24.dp).widthIn(min = 220.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Analyzing with On-Device AI...")
+                            Text(
+                                text = when (uiState.processingStage) {
+                                    ProcessingStage.DETECTING_TEXT -> "Detecting text on-device…"
+                                    ProcessingStage.PARSING_WITH_GEMINI -> "Parsing details with Gemini…"
+                                    null -> "Working…"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            uiState.detectedText?.let { detected ->
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "“${detected.take(120)}${if (detected.length > 120) "…" else ""}”",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .background(MaterialTheme.colorScheme.secondary, MaterialTheme.shapes.small)
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -521,85 +551,108 @@ fun ProductConfirmDialog(
     )
 }
 
+/**
+ * The camera as a floating window rather than a full-screen takeover — a
+ * rounded card centered over the (still-visible, dimmed) product list, with
+ * its own header and action row instead of buttons overlaid on the feed.
+ */
 @Composable
-fun CameraScreen(onImageCaptured: (Bitmap) -> Unit) {
+fun CameraWindow(onDismiss: () -> Unit, onImageCaptured: (Bitmap) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val imageCapture = remember { ImageCapture.Builder().build() }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                val previewView = PreviewView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth(0.92f).padding(vertical = 24.dp),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Scan Product",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(3f / 4f)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(Color.Black),
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            val previewView = PreviewView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                )
+                            }
+
+                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                            cameraProviderFuture.addListener({
+                                val cameraProvider = cameraProviderFuture.get()
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                                try {
+                                    cameraProvider.unbindAll()
+                                    cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        preview,
+                                        imageCapture,
+                                    )
+                                } catch (exc: Exception) {
+                                    Log.e("CameraWindow", "Use case binding failed", exc)
+                                }
+                            }, ContextCompat.getMainExecutor(ctx))
+
+                            previewView
+                        },
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth(0.8f)
+                            .fillMaxHeight(0.5f)
+                            .border(2.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(8.dp)),
                     )
                 }
 
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Button(
+                        onClick = { takePhoto(context, imageCapture, onImageCaptured) },
+                        modifier = Modifier.size(64.dp),
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = "Take Photo", modifier = Modifier.size(28.dp))
                     }
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview,
-                            imageCapture,
-                        )
-                    } catch (exc: Exception) {
-                        Log.e("CameraScreen", "Use case binding failed", exc)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
-
-                previewView
-            },
-        )
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(0.8f)
-                .fillMaxHeight(0.4f)
-                .border(2.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "SCANNING FOR OCR DATA...",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 2.sp,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-                Box(
-                    modifier = Modifier
-                        .width(180.dp)
-                        .height(2.dp)
-                        .background(Color.White.copy(alpha = 0.5f)),
-                )
+                }
             }
-        }
-
-        Button(
-            onClick = {
-                takePhoto(context, imageCapture, onImageCaptured)
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp)
-                .size(72.dp),
-            shape = CircleShape,
-        ) {
-            Icon(Icons.Default.CameraAlt, contentDescription = "Take Photo", modifier = Modifier.size(32.dp))
         }
     }
 }
@@ -619,7 +672,7 @@ private fun takePhoto(
             }
 
             override fun onError(exception: ImageCaptureException) {
-                Log.e("CameraScreen", "Photo capture failed: ${exception.message}", exception)
+                Log.e("CameraWindow", "Photo capture failed: ${exception.message}", exception)
             }
         },
     )

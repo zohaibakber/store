@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App logo (apps/desktop/public/logo.svg) — surface/glyph swap for dark mode, detail stays teal. -->
+    <color name="ic_launcher_surface">#FFF5F5F4</color>
+    <color name="ic_launcher_glyph">#FF20201E</color>
+    <color name="ic_launcher_detail">#FF159A8A</color>
+</resources>

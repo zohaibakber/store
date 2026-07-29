@@ -1,97 +1,16 @@
 package com.example.ml
 
-import com.example.BuildConfig
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import retrofit2.http.Body
-import retrofit2.http.POST
-import retrofit2.http.Query
+import com.google.firebase.Firebase
+import com.google.firebase.ai.GenerativeBackend
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.Schema
+import com.google.firebase.ai.type.content
+import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
-
-@Serializable
-data class GenerateContentRequest(
-    val contents: List<Content>,
-    val generationConfig: GenerationConfig? = null,
-    val systemInstruction: Content? = null
-)
-
-@Serializable
-data class Content(
-    val parts: List<Part>
-)
-
-@Serializable
-data class Part(
-    val text: String
-)
-
-@Serializable
-data class GenerationConfig(
-    val responseFormat: ResponseFormat? = null,
-    val temperature: Float? = null
-)
-
-@Serializable
-data class ResponseFormat(
-    val text: ResponseFormatText? = null
-)
-
-@Serializable
-data class ResponseFormatText(
-    val mimeType: String,
-    val schema: JsonObject? = null
-)
-
-@Serializable
-data class GenerateContentResponse(
-    val candidates: List<Candidate>
-)
-
-@Serializable
-data class Candidate(
-    val content: Content
-)
-
-interface GeminiApiService {
-    @POST("v1beta/models/gemini-3.5-flash:generateContent")
-    suspend fun generateContent(
-        @Query("key") apiKey: String,
-        @Body request: GenerateContentRequest
-    ): GenerateContentResponse
-}
-
-object RetrofitClient {
-    private const val BASE_URL = "https://generativelanguage.googleapis.com/"
-
-    private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
-
-    val service: GeminiApiService by lazy {
-        val json = Json { ignoreUnknownKeys = true }
-        val retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-        retrofit.create(GeminiApiService::class.java)
-    }
-}
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 // Field names mirror `products`/`batches` in
 // packages/db/src/shared/store.schema.ts (name, composition, strength,
@@ -106,79 +25,67 @@ data class ParsedProduct(
     val unitQuantity: Int,
 )
 
+/**
+ * Parses OCR text via the Firebase AI Logic SDK (cloud Gemini). Structured
+ * JSON output (`responseSchema`) is explicitly unsupported on Gemini Nano's
+ * on-device path as of this writing — Firebase's own hybrid-inference docs
+ * say to use the cloud backend whenever you need it — so this deliberately
+ * does not attempt on-device inference; it would silently fail to produce
+ * the structured fields this app actually needs.
+ *
+ * Requires a Firebase project wired into this app (a real
+ * `google-services.json` in app/, not present in this repo — see
+ * apps/android/AGENTS.md) with the Gemini Developer API enabled in the
+ * Firebase console. Without that, `Firebase.ai(...)` throws at call time.
+ */
+private val productResponseSchema = Schema.obj(
+    mapOf(
+        "name" to Schema.string(description = "The brand name or common name of the product."),
+        "composition" to Schema.string(description = "The active ingredients or composition of the product, if any."),
+        "strength" to Schema.string(description = "The dosage strength (e.g. 500mg, 10mg), if any."),
+        "batchNumber" to Schema.string(description = "The batch number or lot number (e.g. B.No, Lot)."),
+        "expiryDate" to Schema.string(description = "The expiry date of the product (e.g. Exp Date, Expiry), formatted MM/yy."),
+        "category" to Schema.string(description = "One of: medicine, cosmetics, general. Default to 'general' if unsure."),
+        "unitQuantity" to Schema.integer(description = "The quantity or number of units (e.g. tablets, capsules) in the package. Default to 1 if unsure."),
+    ),
+)
+
+private const val SYSTEM_INSTRUCTION =
+    "You are an expert at extracting structured information from raw OCR text on product packaging for a shop that sells medicines and general goods."
+
 class GeminiParsingService {
-    suspend fun parseProductInfo(extractedText: String): ParsedProduct? = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext null
-        }
-
-        val schema = buildJsonObject {
-            put("type", "OBJECT")
-            putJsonObject("properties") {
-                putJsonObject("name") {
-                    put("type", "STRING")
-                    put("description", "The brand name or common name of the product.")
-                }
-                putJsonObject("composition") {
-                    put("type", "STRING")
-                    put("description", "The active ingredients or composition of the product, if any.")
-                }
-                putJsonObject("strength") {
-                    put("type", "STRING")
-                    put("description", "The dosage strength (e.g. 500mg, 10mg), if any.")
-                }
-                putJsonObject("batchNumber") {
-                    put("type", "STRING")
-                    put("description", "The batch number or lot number (e.g. B.No, Lot).")
-                }
-                putJsonObject("expiryDate") {
-                    put("type", "STRING")
-                    put("description", "The expiry date of the product (e.g. Exp Date, Expiry), formatted MM/yy.")
-                }
-                putJsonObject("category") {
-                    put("type", "STRING")
-                    put("description", "One of: medicine, cosmetics, general. Default to 'general' if unsure.")
-                }
-                putJsonObject("unitQuantity") {
-                    put("type", "INTEGER")
-                    put("description", "The quantity or number of units (e.g. tablets, capsules) in the package. Default to 1 if unsure.")
-                }
-            }
-        }
-
-        val request = GenerateContentRequest(
-            contents = listOf(Content(
-                parts = listOf(Part(text = "Extract product details from the following raw OCR text:\n$extractedText\n\nIf a field is not found, leave it empty. For unitQuantity, look for things like '10 tablets', '50ml', etc. and extract the number. Default category to general and unitQuantity to 1 if not found."))
-            )),
-            generationConfig = GenerationConfig(
-                responseFormat = ResponseFormat(
-                    text = ResponseFormatText(
-                        mimeType = "application/json",
-                        schema = schema
-                    )
-                ),
+    private val model by lazy {
+        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+            modelName = "gemini-3.6-flash",
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+                responseSchema = productResponseSchema
                 temperature = 0.1f
-            ),
-            systemInstruction = Content(
-                parts = listOf(Part(text = "You are an expert at extracting structured information from raw OCR text on product packaging for a shop that sells medicines and general goods."))
-            )
+            },
+            systemInstruction = content { text(SYSTEM_INSTRUCTION) },
         )
+    }
 
+    suspend fun parseProductInfo(extractedText: String): ParsedProduct? = withContext(Dispatchers.IO) {
         try {
-            val response = RetrofitClient.service.generateContent(apiKey, request)
-            val jsonString = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: return@withContext null
+            val prompt = "Extract product details from the following raw OCR text:\n$extractedText\n\n" +
+                "If a field is not found, leave it empty. For unitQuantity, look for things like " +
+                "'10 tablets', '50ml', etc. and extract the number. Default category to general and " +
+                "unitQuantity to 1 if not found."
+
+            val response = model.generateContent(prompt)
+            val jsonString = response.text ?: return@withContext null
 
             val json = Json.parseToJsonElement(jsonString).jsonObject
-            val name = json["name"]?.jsonPrimitive?.content ?: ""
-            val composition = json["composition"]?.jsonPrimitive?.content ?: ""
-            val strength = json["strength"]?.jsonPrimitive?.content ?: ""
-            val batchNumber = json["batchNumber"]?.jsonPrimitive?.content ?: ""
-            val expiryDate = json["expiryDate"]?.jsonPrimitive?.content ?: ""
-            val category = json["category"]?.jsonPrimitive?.content ?: "general"
-            val unitQuantity = json["unitQuantity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1
-
-            ParsedProduct(name, composition, strength, batchNumber, expiryDate, category, unitQuantity)
+            ParsedProduct(
+                name = json["name"]?.jsonPrimitive?.content ?: "",
+                composition = json["composition"]?.jsonPrimitive?.content ?: "",
+                strength = json["strength"]?.jsonPrimitive?.content ?: "",
+                batchNumber = json["batchNumber"]?.jsonPrimitive?.content ?: "",
+                expiryDate = json["expiryDate"]?.jsonPrimitive?.content ?: "",
+                category = json["category"]?.jsonPrimitive?.content ?: "general",
+                unitQuantity = json["unitQuantity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1,
+            )
         } catch (e: Exception) {
             e.printStackTrace()
             null
