@@ -1,20 +1,23 @@
 package com.example.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
-// Mirrors apps/desktop/src/styles.css :root / .dark tokens — a monochrome
-// neutral scheme rather than Material's default purple, so the two apps read
-// as one product.
+// Fallback for API < 31 (no dynamic color) — mirrors
+// apps/desktop/src/styles.css :root / .dark tokens.
 private val LightColorScheme = lightColorScheme(
     background = Color.White,
     surface = Color.White,
@@ -58,9 +61,20 @@ val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    // Material You: derive the scheme from the device's wallpaper rather than
+    // a hand-matched brand palette — every role (secondaryContainer,
+    // surfaceContainer, etc.) comes out properly contrasted by construction,
+    // rather than only the handful of roles we'd otherwise set by hand.
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val context = LocalContext.current
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
     val semanticColors = if (darkTheme) DarkSemanticColors else LightSemanticColors
 
     CompositionLocalProvider(LocalSemanticColors provides semanticColors) {

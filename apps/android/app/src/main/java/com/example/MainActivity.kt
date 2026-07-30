@@ -12,12 +12,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -167,28 +162,9 @@ private fun MainScreen(authViewModel: AuthViewModel, productViewModel: ProductVi
     val activeOrganization by authViewModel.activeOrganization.collectAsStateWithLifecycle()
     val syncPhase by productViewModel.syncPhase.collectAsStateWithLifecycle()
 
-    // The default NavigationSuiteItem colors are auto-derived from our
-    // partial (neutral-only) ColorScheme and land on a low-contrast
-    // selected-label color against this theme — pin them to known-good
-    // tokens instead of trusting the derived defaults.
-    val navItemColors = NavigationSuiteDefaults.itemColors(
-        navigationBarItemColors = NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onSecondary,
-            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-            indicatorColor = MaterialTheme.colorScheme.secondary,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        navigationRailItemColors = NavigationRailItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onSecondary,
-            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-            indicatorColor = MaterialTheme.colorScheme.secondary,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        navigationDrawerItemColors = NavigationDrawerItemDefaults.colors(),
-    )
-
+    // Material You dynamic color (see ui/theme/Theme.kt) produces a complete,
+    // properly-contrasted ColorScheme by construction, so the default
+    // NavigationSuiteItem colors are trusted here rather than pinned by hand.
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             item(
@@ -196,14 +172,12 @@ private fun MainScreen(authViewModel: AuthViewModel, productViewModel: ProductVi
                 onClick = { destination = MainDestination.Products },
                 icon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
                 label = { Text(MainDestination.Products.label) },
-                colors = navItemColors,
             )
             item(
                 selected = destination == MainDestination.Account,
                 onClick = { destination = MainDestination.Account },
                 icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) },
                 label = { Text(MainDestination.Account.label) },
-                colors = navItemColors,
             )
         },
     ) {
