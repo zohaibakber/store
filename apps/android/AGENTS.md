@@ -1,40 +1,17 @@
 # apps/android
 
-Native Android (Kotlin + Jetpack Compose) app generated in Google AI Studio.
-It scans product/medicine labels on-device (ML Kit OCR) and uses the Gemini
-API to parse the raw text into structured fields, storing them in a local
-SQLCipher-encrypted Room database.
+Native Android (Kotlin + Jetpack Compose) app, originally generated in Google
+AI Studio, now developed directly in this monorepo. It scans product/medicine
+labels on-device (ML Kit OCR) and uses the Gemini API to parse the raw text
+into structured fields, storing them in a local SQLCipher-encrypted Room
+database.
 
-## Why this lives in two places
-
-The canonical remote for this app is
-[github.com/zohaibakber/android-app](https://github.com/zohaibakber/android-app) —
-that's the repo AI Studio's remote build/emulator watches, and it's currently
-the only way to see this app running (no Android SDK/emulator is installed
-locally in this environment).
-
-This directory is a **git subtree** import of that repo into the monorepo, so
-its code can be edited alongside the desktop app and kept aligned with the
-shared data model and design system. It is not a submodule — the files are
-committed directly into this repo's history.
-
-To push local edits back to the AI Studio-watched repo so the remote emulator
-picks them up:
-
-```sh
-git subtree push --prefix=apps/android android-app-remote main
-```
-
-(`android-app-remote` is the git remote pointing at
-`https://github.com/zohaibakber/android-app.git`; add it with
-`git remote add android-app-remote https://github.com/zohaibakber/android-app.git`
-if it isn't configured.)
-
-To pull upstream changes made directly in AI Studio back into the monorepo:
-
-```sh
-git subtree pull --prefix=apps/android android-app-remote main
-```
+This used to also live in a separate GitHub repo
+(`zohaibakber/android-app`, imported here via `git subtree`) so AI Studio's
+remote emulator could preview it. That repo and the subtree relationship are
+gone — this directory is just regular committed files in this repo's history
+now, no special push/pull step. Build and test locally instead (see
+Verification below).
 
 ## Data model and sync
 
@@ -106,27 +83,41 @@ placeholder (`com.aistudio.medicinescanner.xyzab`) to `com.tabaaq.storescanner`
 to match — this is effectively permanent once published, so it was worth
 fixing before registering rather than after.
 
-**Not build-verified, flagged as the top risk:** the exact import paths for
-`Firebase.ai(...)`, `Schema`, `generationConfig { }`, and `content { }` were
-pieced together from several partial doc fetches that didn't fully agree with
-each other — cross-checked against Firebase's established KTX naming
-conventions, but genuinely unverified since nothing here can compile. Check
-this file first if the build fails on `com.google.firebase.ai.*` imports.
+The `com.google.firebase.ai.*` import paths (`Firebase.ai(...)`,
+`GenerativeBackend` under `.type`, `Schema`, `generationConfig { }`,
+`content { }`) are now build-verified against the real `firebase-ai` 17.13.0
+jar (via `javap`, not just doc fetches — those partially disagreed with each
+other before a real build caught two of them: `GenerativeBackend`'s actual
+package and `Configuration.Provider`'s `val` vs. function override shape).
 
-Auth and sync, separately, now go through the store-electron server
-(`BuildConfig.STORE_API_BASE_URL`, set via `apps/android/.env`). That value
-**must** be a real deployed Worker URL (`bun run deploy:dev`/`deploy:prod`
-from the repo root) — the AI Studio remote emulator can't reach a developer
-machine's `localhost`.
+Auth and sync go through the store-electron server
+(`BuildConfig.STORE_API_BASE_URL`, set via `apps/android/.env`). For local
+device testing over USB, point it at `http://localhost:8787` and run
+`adb reverse tcp:8787 tcp:8787` plus `bun run --cwd apps/server dev` — for a
+real release build it needs an actual deployed Worker URL instead
+(`bun run deploy:dev`/`deploy:prod` from the repo root).
 
 ## Design system
 
-Colors, radius, and typography scale in `app/src/main/java/com/example/ui/theme/`
-are hand-ported from `apps/desktop/src/styles.css` (Tailwind `@theme` tokens):
-neutral-800/neutral-100 monochrome primary, semantic warning/success/info
-colors (amber/emerald/blue), `--radius: 0.625rem` → 10dp corner radius. There
-is no shared token package between the two apps yet, so keep them in sync by
-hand when `styles.css` changes.
+`ui/theme/Theme.kt` uses **Material You dynamic color**
+(`dynamicLightColorScheme`/`dynamicDarkColorScheme`, API 31+) derived from the
+device wallpaper, not a hand-matched brand palette — every ColorScheme role
+comes out properly contrasted by construction this way. Below API 31 it falls
+back to a neutral palette hand-ported from `apps/desktop/src/styles.css`
+(Tailwind `@theme` tokens). Semantic warning/success/info colors
+(amber/emerald/blue, `LocalSemanticColors`) stay fixed regardless of dynamic
+color — those are universal meanings, not brand identity. Radius scale
+(`--radius: 0.625rem` → 10dp) also stays fixed via `AppShapes`.
+
+Because the scheme is dynamic, **always pick a color role that's actually
+paired with the container you're drawing on** (e.g. text on a
+`colorScheme.secondary` background must be `onSecondary`, never
+`onSurfaceVariant`) — mismatched pairs render fine against the old fixed
+palette but can go low-contrast or invisible under an arbitrary wallpaper
+scheme. This exact bug hit the bottom-nav selected label and two other spots
+(`AccountScreen`'s sync description, `ProductApp`'s detected-text chip)
+before being caught by eye on a real device — there's no lint rule for it, so
+re-check any new `Card`/`background` + `Text` pairing by hand.
 
 Typography uses the system default font, not Inter — Inter Variable isn't
 bundled as an Android font resource. Adding it (via a `font/` resource or
@@ -158,8 +149,30 @@ processing overlay also now shows which stage it's in
 `ui/ProductViewModel.kt`) and a preview of the on-device OCR text once it's
 available, instead of one static "Analyzing..." label for the whole pipeline.
 
-## Caveat
+## Local development
 
-None of this has been build-verified — there's no Android SDK/emulator in
-this environment to run `./gradlew build` or Compose previews. Push to the
-remote and check the AI Studio emulator to confirm it compiles.
+There's no committed Gradle wrapper in this directory (dropped somewhere in
+the AI Studio export) and no bundled Android SDK — both are installed
+system-wide on this machine instead:
+
+- JDK 21, Gradle (system package, not a wrapper), and the Android SDK
+  (platform 36.1 + build-tools) — installed via `pacman`/`sdkmanager` into
+  `~/Android/Sdk`. `local.properties` (gitignored) points `sdk.dir` there.
+- `debug.keystore` (gitignored, matches the hardcoded `androiddebugkey`/
+  `android` credentials in `app/build.gradle.kts`'s `debugConfig`) — generate
+  once with `keytool -genkey -v -keystore debug.keystore -storepass android
+-alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity
+10000 -dname "CN=Android Debug,O=Android,C=US"` from this directory.
+
+Build + install on a USB-connected device:
+
+```sh
+cd apps/android
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk gradle assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+For a device to reach the store-electron server locally: run
+`bun run --cwd apps/server dev` from the repo root, `adb reverse tcp:8787
+tcp:8787`, and set `STORE_API_BASE_URL=http://localhost:8787` in
+`apps/android/.env` (gitignored).
