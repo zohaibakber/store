@@ -160,7 +160,7 @@ fun ProductApp(viewModel: ProductViewModel) {
                                 Text(
                                     text = "“${detected.take(120)}${if (detected.length > 120) "…" else ""}”",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.onSecondary,
                                     modifier = Modifier
                                         .background(MaterialTheme.colorScheme.secondary, MaterialTheme.shapes.small)
                                         .padding(horizontal = 10.dp, vertical = 6.dp),

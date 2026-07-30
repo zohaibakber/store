@@ -107,7 +107,7 @@ fun AccountScreen(
                 Text(
                     text = status.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSecondary,
                 )
             }
         }
