@@ -2,6 +2,7 @@ import { decodeStoreError, encodeStoreError } from "@store/contracts/store-error
 import { expect, test } from "vitest";
 
 import {
+  BatchNotFoundError,
   InvoiceNotFoundError,
   persistenceError,
   PersistenceError,
@@ -70,6 +71,17 @@ test("ProductNotFoundError survives an encoded structured-clone round trip", () 
   expect(encoded).toEqual({ _tag: "ProductNotFoundError", id: "product-1" });
   expect(decoded).toBeInstanceOf(ProductNotFoundError);
   expect(decoded).toMatchObject({ _tag: "ProductNotFoundError", id: "product-1" });
+});
+
+test("BatchNotFoundError survives an encoded structured-clone round trip", () => {
+  const error = BatchNotFoundError.make({ id: "batch-1" });
+
+  const encoded = structuredClone(encodeStoreError(error));
+  const decoded = decodeStoreError(encoded);
+
+  expect(encoded).toEqual({ _tag: "BatchNotFoundError", id: "batch-1" });
+  expect(decoded).toBeInstanceOf(BatchNotFoundError);
+  expect(decoded).toMatchObject({ _tag: "BatchNotFoundError", id: "batch-1" });
 });
 
 test("InvoiceNotFoundError survives an encoded structured-clone round trip", () => {

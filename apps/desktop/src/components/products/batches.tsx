@@ -1,6 +1,6 @@
-import { Add01Icon, PackageIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Product, StockMovement } from "@store/contracts";
+import type { Batch, Product, StockMovement } from "@store/contracts";
 import {
   productLooseUnitStock,
   productPackStock,
@@ -59,16 +59,28 @@ const formatISODate = (date: Date): string =>
     date.getDate(),
   ).padStart(2, "0")}`;
 
+// Expiries are stored as local midnight, matching `parseExpiryDate` on the
+// import path — so a date written here reads back as the same calendar day.
+const expiryTimestamp = (value: string): number | null =>
+  value ? (parseISODate(value)?.getTime() ?? null) : null;
+
+const expiryInputValue = (timestamp: number | null): string =>
+  timestamp == null ? "" : formatISODate(new Date(timestamp));
+
 const stockQuantity = z
   .string()
   .refine((value) => value === "" || (Number.isInteger(Number(value)) && Number(value) >= 0), {
     message: "Enter a non-negative whole number.",
   });
 
+const batchDetailsFields = {
+  batchNumber: z.string().trim().max(64),
+  expiresAt: z.string(),
+};
+
 const batchFormSchema = z
   .object({
-    batchNumber: z.string().trim().max(64),
-    expiresAt: z.string(),
+    ...batchDetailsFields,
     packQuantity: stockQuantity,
     unitQuantity: stockQuantity,
   })
@@ -76,6 +88,59 @@ const batchFormSchema = z
     message: "Add at least one pack or loose unit.",
     path: ["packQuantity"],
   });
+
+const batchDetailsSchema = z.object(batchDetailsFields);
+
+// Structural shape of a TanStack Form string field, so the two fields both
+// batch forms share stay decoupled from each form's generics.
+interface BatchTextField {
+  readonly name: string;
+  readonly state: {
+    readonly value: string;
+    readonly meta: {
+      readonly isTouched: boolean;
+      readonly isValid: boolean;
+      readonly errors: ReadonlyArray<unknown>;
+    };
+  };
+  readonly handleBlur: () => void;
+  readonly handleChange: (value: string) => void;
+}
+
+function BatchNumberField({ field }: { field: BatchTextField }) {
+  return (
+    <FormField field={field} label="Batch number">
+      {(control) => (
+        <Input
+          {...control}
+          autoFocus
+          onBlur={field.handleBlur}
+          onChange={(event) => field.handleChange(event.target.value)}
+          placeholder="Optional"
+          value={field.state.value}
+        />
+      )}
+    </FormField>
+  );
+}
+
+function BatchExpiryField({ field }: { field: BatchTextField }) {
+  return (
+    <FormField field={field} label="Expiry date">
+      {(control) => (
+        <DatePicker
+          id={control.id}
+          value={field.state.value ? parseISODate(field.state.value) : undefined}
+          onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
+          onBlur={field.handleBlur}
+          placeholder="No expiry"
+          startMonth={new Date(new Date().getFullYear() - 1, 0)}
+          endMonth={new Date(new Date().getFullYear() + 15, 11)}
+        />
+      )}
+    </FormField>
+  );
+}
 
 function AddBatchDialog({ productId }: { productId: string }) {
   const router = useRouter();
@@ -94,7 +159,7 @@ function AddBatchDialog({ productId }: { productId: string }) {
         await store.createBatch({
           productId,
           batchNumber: value.batchNumber.trim() || null,
-          expiresAt: value.expiresAt ? Date.parse(value.expiresAt) : null,
+          expiresAt: expiryTimestamp(value.expiresAt),
           packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
@@ -133,38 +198,11 @@ function AddBatchDialog({ productId }: { productId: string }) {
               <Fieldset className="grid gap-4">
                 <form.Field
                   name="batchNumber"
-                  children={(field) => (
-                    <FormField field={field} label="Batch number">
-                      {(control) => (
-                        <Input
-                          {...control}
-                          autoFocus
-                          onBlur={field.handleBlur}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder="Optional"
-                          value={field.state.value}
-                        />
-                      )}
-                    </FormField>
-                  )}
+                  children={(field) => <BatchNumberField field={field} />}
                 />
                 <form.Field
                   name="expiresAt"
-                  children={(field) => (
-                    <FormField field={field} label="Expiry date">
-                      {(control) => (
-                        <DatePicker
-                          id={control.id}
-                          value={field.state.value ? parseISODate(field.state.value) : undefined}
-                          onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
-                          onBlur={field.handleBlur}
-                          placeholder="No expiry"
-                          startMonth={new Date(new Date().getFullYear() - 1, 0)}
-                          endMonth={new Date(new Date().getFullYear() + 15, 11)}
-                        />
-                      )}
-                    </FormField>
-                  )}
+                  children={(field) => <BatchExpiryField field={field} />}
                 />
               </Fieldset>
               <Fieldset className="grid gap-4">
@@ -202,6 +240,90 @@ function AddBatchDialog({ productId }: { productId: string }) {
             {(canSubmit) => (
               <Button disabled={!canSubmit} form="add-batch-form" type="submit">
                 Add batch
+              </Button>
+            )}
+          </form.Subscribe>
+        </SheetFooter>
+      </SheetPopup>
+    </Sheet>
+  );
+}
+
+const batchToFormValues = (batch: Batch) => ({
+  batchNumber: batch.batchNumber ?? "",
+  expiresAt: expiryInputValue(batch.expiresAt),
+});
+
+function EditBatchDialog({ batch }: { batch: Batch }) {
+  const router = useRouter();
+  const store = useStore();
+  const [open, setOpen] = useState(false);
+  const formId = `edit-batch-form-${batch.id}`;
+  const form = useForm({
+    defaultValues: batchToFormValues(batch),
+    validators: { onSubmit: batchDetailsSchema },
+    onSubmit: async ({ value }) => {
+      try {
+        await store.updateBatch({
+          id: batch.id,
+          batchNumber: value.batchNumber.trim() || null,
+          expiresAt: expiryTimestamp(value.expiresAt),
+        });
+        toastManager.add({ title: "Batch updated", type: "success" });
+        setOpen(false);
+        await router.invalidate();
+      } catch (error) {
+        toastStoreError(error, "Could not update the batch.");
+      }
+    },
+  });
+
+  return (
+    <Sheet
+      open={open}
+      // Reset from the batch itself rather than the mount-time defaults, so a
+      // reopened sheet shows the saved values and not an abandoned edit.
+      onOpenChange={(next) => {
+        if (!next) form.reset(batchToFormValues(batch));
+        setOpen(next);
+      }}
+    >
+      <SheetTrigger render={<Button aria-label="Edit batch" size="icon-sm" variant="ghost" />}>
+        <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+      </SheetTrigger>
+      <SheetPopup variant="inset">
+        <SheetHeader>
+          <SheetTitle>Edit batch</SheetTitle>
+          <SheetDescription>
+            Correct the batch number or expiry date. Quantities change through stock movements.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetPanel>
+          <form
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void form.handleSubmit();
+            }}
+          >
+            <Fieldset className="grid w-full gap-4">
+              <form.Field
+                name="batchNumber"
+                children={(field) => <BatchNumberField field={field} />}
+              />
+              <form.Field
+                name="expiresAt"
+                children={(field) => <BatchExpiryField field={field} />}
+              />
+            </Fieldset>
+          </form>
+        </SheetPanel>
+        <SheetFooter>
+          <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
+          <form.Subscribe selector={(state) => state.canSubmit}>
+            {(canSubmit) => (
+              <Button disabled={!canSubmit} form={formId} type="submit">
+                Save changes
               </Button>
             )}
           </form.Subscribe>
@@ -251,6 +373,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
                     ? "Empty"
                     : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
                 </span>
+                <EditBatchDialog batch={batch} />
               </FrameHeader>
             </Frame>
           ))}

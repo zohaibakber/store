@@ -9,6 +9,7 @@ import type {
   Product,
   SearchProductsInput,
   StockMovement,
+  UpdateBatchInput,
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
@@ -18,6 +19,7 @@ import * as Effect from "effect/Effect";
 import type { Workspace } from "../config";
 import type { StoreDatabase } from "../database/client";
 import {
+  BatchNotFoundError,
   PersistenceError,
   ProductNotFoundError,
   mapPersistenceError,
@@ -49,6 +51,9 @@ export interface ProductStore {
   readonly createBatch: (
     input: CreateBatchInput,
   ) => Effect.Effect<Batch, PersistenceError | ProductNotFoundError>;
+  readonly updateBatch: (
+    input: UpdateBatchInput,
+  ) => Effect.Effect<Batch, PersistenceError | BatchNotFoundError>;
   readonly importInventory: (
     input: ImportInventoryInput,
   ) => Effect.Effect<ImportInventoryResult, PersistenceError | ProductNotFoundError>;
@@ -397,6 +402,47 @@ export const makeProductStore = (
     return toBatch(row);
   });
 
+  const updateBatch = Effect.fn("OfflineStore.updateBatch")(function* (input: UpdateBatchInput) {
+    const { id, expiresAt } = input;
+    if (expiresAt !== null && (!Number.isInteger(expiresAt) || expiresAt < 0))
+      return yield* PersistenceError.make({
+        operation: "update batch",
+        message: "Expiry date must be a valid timestamp",
+      });
+    const batchNumber = input.batchNumber?.trim() || null;
+
+    const updated = yield* mutation
+      .run("update batch", (transaction, scope) =>
+        Effect.gen(function* () {
+          const current = yield* transaction.query.batches.findFirst({
+            where: { organizationId: scope.organizationId, id, deletedAt: { isNull: true } },
+          });
+          if (!current) return undefined;
+          const [row] = yield* transaction
+            .update(batches)
+            .set({
+              batchNumber,
+              expiresAt,
+              ...scope.updateVersioned(current.rowVersion + 1),
+            })
+            .where(and(eq(batches.organizationId, scope.organizationId), eq(batches.id, id)))
+            .returning();
+          if (!row) return undefined;
+          yield* scope.capture({
+            entity: "batch",
+            action: "upsert",
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+            row,
+          });
+          return row;
+        }),
+      )
+      .pipe(mapPersistenceError("update batch"));
+    if (!updated) return yield* BatchNotFoundError.make({ id });
+    return toBatch(updated);
+  });
+
   const importInventory = Effect.fn("OfflineStore.importInventory")(function* (
     input: ImportInventoryInput,
   ) {
@@ -576,6 +622,7 @@ export const makeProductStore = (
     updateProduct,
     deleteProduct,
     createBatch,
+    updateBatch,
     importInventory,
     listStockMovements,
   };

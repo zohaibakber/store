@@ -15,6 +15,7 @@ import type {
   ProductIdInput,
   SearchProductsInput,
   StockMovement,
+  UpdateBatchInput,
   UpdateProductInput,
 } from "./schema";
 
@@ -28,6 +29,7 @@ export interface OfflineStoreApi {
   readonly updateProduct: (input: UpdateProductInput) => Promise<Product>;
   readonly deleteProduct: (input: ProductIdInput) => Promise<void>;
   readonly createBatch: (input: CreateBatchInput) => Promise<Batch>;
+  readonly updateBatch: (input: UpdateBatchInput) => Promise<Batch>;
   readonly importInventory: (input: ImportInventoryInput) => Promise<ImportInventoryResult>;
   readonly listStockMovements: (input: ProductIdInput) => Promise<ReadonlyArray<StockMovement>>;
   readonly listInvoices: () => Promise<ReadonlyArray<Invoice>>;
