@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
 
-import { DatePicker } from "@/components/shared/date-picker";
+import { ExpiryPicker } from "@/components/shared/expiry-picker";
 import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
@@ -126,14 +126,19 @@ function BatchNumberField({ field }: { field: BatchTextField }) {
 
 function BatchExpiryField({ field }: { field: BatchTextField }) {
   return (
-    <FormField field={field} label="Expiry date">
-      {(control) => (
-        <DatePicker
+    <FormField
+      description="Month and year — the calendar is there for an exact day."
+      field={field}
+      label="Expiry date"
+    >
+      {(control, invalid) => (
+        <ExpiryPicker
           id={control.id}
+          name={control.name}
+          invalid={invalid}
           value={field.state.value ? parseISODate(field.state.value) : undefined}
           onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
           onBlur={field.handleBlur}
-          placeholder="No expiry"
           startMonth={new Date(new Date().getFullYear() - 1, 0)}
           endMonth={new Date(new Date().getFullYear() + 15, 11)}
         />
