@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 export function ProductFormPage({
   cancelTo,
   categories,
+  compositions,
   form,
   formId,
   submitLabel,
@@ -21,6 +22,7 @@ export function ProductFormPage({
 }: {
   cancelTo: React.ReactElement;
   categories: ReadonlyArray<Category>;
+  compositions: ReadonlyArray<string>;
   form: ReturnType<typeof useProductCreateForm>;
   formId: string;
   submitLabel: string;
@@ -46,7 +48,12 @@ export function ProductFormPage({
           }
           title={<h1 className="font-medium">{title}</h1>}
         >
-          <ProductForm categories={categories} form={form} formId={formId} />
+          <ProductForm
+            categories={categories}
+            compositions={compositions}
+            form={form}
+            formId={formId}
+          />
         </FrameCard>
       </PageContent>
     </PageLayout>

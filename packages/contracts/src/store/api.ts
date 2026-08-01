@@ -23,6 +23,7 @@ export interface OfflineStoreApi {
   readonly listCategories: () => Promise<ReadonlyArray<Category>>;
   readonly createCategory: (input: CreateCategoryInput) => Promise<Category>;
   readonly listProducts: () => Promise<ReadonlyArray<Product>>;
+  readonly listCompositions: () => Promise<ReadonlyArray<string>>;
   readonly searchProducts: (input: SearchProductsInput) => Promise<ReadonlyArray<Product>>;
   readonly getProduct: (input: ProductIdInput) => Promise<Product>;
   readonly createProduct: (input: CreateProductInput) => Promise<Product>;

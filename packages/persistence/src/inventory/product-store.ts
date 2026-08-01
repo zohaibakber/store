@@ -13,7 +13,7 @@ import type {
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -35,6 +35,7 @@ export interface ProductStore {
     input: CreateCategoryInput,
   ) => Effect.Effect<Category, PersistenceError>;
   readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
+  readonly listCompositions: Effect.Effect<ReadonlyArray<string>, PersistenceError>;
   readonly searchProducts: (
     input: SearchProductsInput,
   ) => Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
@@ -153,6 +154,28 @@ export const makeProductStore = (
     .pipe(
       Effect.map((rows) => rows.map(toProduct)),
       mapPersistenceError("list products"),
+    );
+
+  // Every composition already typed in this workspace, for the product form to
+  // suggest from. The catalog is local, so this is a query, not a network call.
+  const listCompositions = database
+    .selectDistinct({ composition: products.composition })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, workspace.organizationId),
+        isNotNull(products.composition),
+        isNull(products.deletedAt),
+      ),
+    )
+    .pipe(
+      Effect.map((rows) =>
+        rows
+          .map((row) => row.composition?.trim())
+          .filter((composition): composition is string => Boolean(composition))
+          .sort((a, b) => a.localeCompare(b)),
+      ),
+      mapPersistenceError("list compositions"),
     );
 
   const searchProducts = Effect.fn("OfflineStore.searchProducts")((input: SearchProductsInput) => {
@@ -616,6 +639,7 @@ export const makeProductStore = (
     listCategories,
     createCategory,
     listProducts,
+    listCompositions,
     searchProducts,
     getProduct,
     createProduct,

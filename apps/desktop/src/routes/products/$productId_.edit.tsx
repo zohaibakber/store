@@ -5,11 +5,12 @@ import { ProductFormPage } from "@/components/products/form-page";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ context, params }) => {
-    const [product, categories] = await Promise.all([
+    const [product, categories, compositions] = await Promise.all([
       context.store.getProduct({ id: params.productId }),
       context.store.listCategories(),
+      context.store.listCompositions(),
     ]);
-    return { product, categories };
+    return { product, categories, compositions };
   },
   component: EditProductPage,
   staticData: {
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/products/$productId_/edit")({
 });
 
 function EditProductPage() {
-  const { product, categories } = Route.useLoaderData();
+  const { product, categories, compositions } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
   const form = useProductUpdateForm(product, () => {
@@ -33,6 +34,7 @@ function EditProductPage() {
     <ProductFormPage
       cancelTo={<Link params={{ productId: product.id }} to="/products/$productId" />}
       categories={categories}
+      compositions={compositions}
       form={form}
       formId="edit-product-form"
       submitLabel="Save changes"
