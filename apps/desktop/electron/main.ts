@@ -14,6 +14,7 @@ import {
   InvoiceIdInput,
   ProductIdInput,
   SearchProductsInput,
+  UpdateBatchInput,
   UpdateProductInput,
 } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
@@ -183,6 +184,9 @@ const storeHandlers: {
   ),
   createBatch: decoding(CreateBatchInput, (input) =>
     withStore((store) => store.createBatch(input)),
+  ),
+  updateBatch: decoding(UpdateBatchInput, (input) =>
+    withStore((store) => store.updateBatch(input)),
   ),
   importInventory: decoding(ImportInventoryInput, (input) =>
     withStore((store) => store.importInventory(input)),

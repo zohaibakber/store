@@ -12,6 +12,7 @@ export const STORE_CHANNELS = {
   updateProduct: "store:products:update",
   deleteProduct: "store:products:delete",
   createBatch: "store:batches:create",
+  updateBatch: "store:batches:update",
   importInventory: "store:inventory:import",
   listStockMovements: "store:stock-movements:list",
   listInvoices: "store:invoices:list",

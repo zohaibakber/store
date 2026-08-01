@@ -14,6 +14,7 @@ export const storeStub = (overrides: Partial<Store> = {}): Store => {
     updateProduct: unstubbed("updateProduct"),
     deleteProduct: unstubbed("deleteProduct"),
     createBatch: unstubbed("createBatch"),
+    updateBatch: unstubbed("updateBatch"),
     importInventory: unstubbed("importInventory"),
     listStockMovements: unstubbed("listStockMovements"),
     listInvoices: unstubbed("listInvoices"),

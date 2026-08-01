@@ -1,4 +1,5 @@
 import {
+  BatchNotFoundError,
   InvoiceNotFoundError,
   PersistenceError,
   ProductNotFoundError,
@@ -7,7 +8,13 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export { InvoiceNotFoundError, PersistenceError, ProductNotFoundError, type StoreError };
+export {
+  BatchNotFoundError,
+  InvoiceNotFoundError,
+  PersistenceError,
+  ProductNotFoundError,
+  type StoreError,
+};
 
 export class SyncTransportError extends Schema.TaggedErrorClass<SyncTransportError>()(
   "SyncTransportError",
