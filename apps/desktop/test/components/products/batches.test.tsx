@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import type { Batch, Category, Product } from "@store/contracts";
-import { screen, waitFor } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { ProductBatchesCard } from "@/components/products/batches";
@@ -58,19 +57,22 @@ const product: Product = {
   ...syncMetadata,
 };
 
+const openEditSheet = async () => {
+  fireEvent.click(screen.getByRole("button", { name: "Edit batch" }));
+  return (await screen.findByLabelText("Batch number")) as HTMLInputElement;
+};
+
+const save = () => fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
 test("a batch can be renamed from the product page", async () => {
-  const user = userEvent.setup();
   const updateBatch = vi.fn(() => Promise.resolve(batch));
   renderWithStore(<ProductBatchesCard product={product} />, storeStub({ updateBatch }));
 
-  await user.click(screen.getByRole("button", { name: "Edit batch" }));
+  const input = await openEditSheet();
+  expect(input.value).toBe("BN-typo");
 
-  const input = await screen.findByLabelText("Batch number");
-  expect((input as HTMLInputElement).value).toBe("BN-typo");
-
-  await user.clear(input);
-  await user.type(input, "  BN-1234  ");
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.change(input, { target: { value: "  BN-1234  " } });
+  save();
 
   await waitFor(() => {
     expect(updateBatch).toHaveBeenCalledWith({
@@ -82,13 +84,11 @@ test("a batch can be renamed from the product page", async () => {
 });
 
 test("clearing the batch number stores no batch number", async () => {
-  const user = userEvent.setup();
   const updateBatch = vi.fn(() => Promise.resolve(batch));
   renderWithStore(<ProductBatchesCard product={product} />, storeStub({ updateBatch }));
 
-  await user.click(screen.getByRole("button", { name: "Edit batch" }));
-  await user.clear(await screen.findByLabelText("Batch number"));
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.change(await openEditSheet(), { target: { value: "" } });
+  save();
 
   await waitFor(() => {
     expect(updateBatch).toHaveBeenCalledWith({
