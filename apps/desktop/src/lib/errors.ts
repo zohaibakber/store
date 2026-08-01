@@ -24,6 +24,7 @@ export const storeErrorMessage = (
   if (decoded?._tag === "PersistenceError") return decoded.message;
   if (decoded?._tag === "ProductNotFoundError") return `Product ${decoded.id} could not be found.`;
   if (decoded?._tag === "BatchNotFoundError") return "That batch could not be found.";
+  if (decoded?._tag === "CategoryNotFoundError") return "That category could not be found.";
   if (decoded?._tag === "InvoiceNotFoundError") return `Invoice ${decoded.id} could not be found.`;
   return error instanceof Error ? error.message.replace(ipcPrefix, "") : fallback;
 };

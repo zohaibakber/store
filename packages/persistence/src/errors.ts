@@ -1,5 +1,6 @@
 import {
   BatchNotFoundError,
+  CategoryNotFoundError,
   InvoiceNotFoundError,
   PersistenceError,
   ProductNotFoundError,
@@ -10,6 +11,7 @@ import * as Schema from "effect/Schema";
 
 export {
   BatchNotFoundError,
+  CategoryNotFoundError,
   InvoiceNotFoundError,
   PersistenceError,
   ProductNotFoundError,

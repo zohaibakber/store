@@ -10,6 +10,7 @@ import type {
   SearchProductsInput,
   StockMovement,
   UpdateBatchInput,
+  UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
@@ -20,6 +21,7 @@ import type { Workspace } from "../config";
 import type { StoreDatabase } from "../database/client";
 import {
   BatchNotFoundError,
+  CategoryNotFoundError,
   PersistenceError,
   ProductNotFoundError,
   mapPersistenceError,
@@ -34,6 +36,12 @@ export interface ProductStore {
   readonly createCategory: (
     input: CreateCategoryInput,
   ) => Effect.Effect<Category, PersistenceError>;
+  readonly updateCategory: (
+    input: UpdateCategoryInput,
+  ) => Effect.Effect<Category, PersistenceError | CategoryNotFoundError>;
+  readonly deleteCategory: (
+    id: string,
+  ) => Effect.Effect<void, PersistenceError | CategoryNotFoundError>;
   readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
   readonly listCompositions: Effect.Effect<ReadonlyArray<string>, PersistenceError>;
   readonly searchProducts: (
@@ -124,7 +132,7 @@ export const makeProductStore = (
 
           const [created] = yield* transaction
             .insert(categories)
-            .values({ name, ...scope.createVersioned(id) })
+            .values({ name, tracksPacks: input.tracksPacks ?? true, ...scope.createVersioned(id) })
             .returning();
           if (!created)
             return yield* PersistenceError.make({
@@ -143,6 +151,100 @@ export const makeProductStore = (
       )
       .pipe(mapPersistenceError("create category"));
     return toCategory(row);
+  });
+
+  const updateCategory = Effect.fn("OfflineStore.updateCategory")(function* (
+    input: UpdateCategoryInput,
+  ) {
+    const name = input.name.trim();
+    if (name.length === 0)
+      return yield* PersistenceError.make({
+        operation: "update category",
+        message: "Enter a category name",
+      });
+
+    const updated = yield* mutation
+      .run("update category", (transaction, scope) =>
+        Effect.gen(function* () {
+          const current = yield* transaction.query.categories.findFirst({
+            where: {
+              organizationId: scope.organizationId,
+              id: input.id,
+              deletedAt: { isNull: true },
+            },
+          });
+          if (!current) return undefined;
+          const [row] = yield* transaction
+            .update(categories)
+            .set({
+              name,
+              tracksPacks: input.tracksPacks,
+              ...scope.updateVersioned(current.rowVersion + 1),
+            })
+            .where(
+              and(eq(categories.organizationId, scope.organizationId), eq(categories.id, input.id)),
+            )
+            .returning();
+          if (!row) return undefined;
+          yield* scope.capture({
+            entity: "category",
+            action: "upsert",
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+            row,
+          });
+          return row;
+        }),
+      )
+      .pipe(mapPersistenceError("update category"));
+    if (!updated) return yield* CategoryNotFoundError.make({ id: input.id });
+    return toCategory(updated);
+  });
+
+  const deleteCategory = Effect.fn("OfflineStore.deleteCategory")(function* (id: string) {
+    const deleted = yield* mutation
+      .run("delete category", (transaction, scope) =>
+        Effect.gen(function* () {
+          const current = yield* transaction.query.categories.findFirst({
+            where: { organizationId: scope.organizationId, id, deletedAt: { isNull: true } },
+          });
+          if (!current) return undefined;
+          // Products keep a foreign key to their category, so an in-use
+          // category cannot go without orphaning them.
+          const inUse = yield* transaction.query.products.findFirst({
+            where: {
+              organizationId: scope.organizationId,
+              categoryId: id,
+              deletedAt: { isNull: true },
+            },
+          });
+          if (inUse)
+            return yield* PersistenceError.make({
+              operation: "delete category",
+              message: `Move the products in “${current.name}” to another category first`,
+            });
+
+          const [row] = yield* transaction
+            .update(categories)
+            .set({
+              deletedAt: scope.occurredAt,
+              ...scope.updateVersioned(current.rowVersion + 1),
+            })
+            .where(and(eq(categories.organizationId, scope.organizationId), eq(categories.id, id)))
+            .returning();
+          if (!row) return undefined;
+          yield* scope.capture({
+            entity: "category",
+            action: "delete",
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+            row,
+          });
+          return row;
+        }),
+      )
+      .pipe(mapPersistenceError("delete category"));
+    if (!deleted) return yield* CategoryNotFoundError.make({ id });
   });
 
   const listProducts = database.query.products
@@ -240,6 +342,21 @@ export const makeProductStore = (
     const id = yield* mutation
       .run("create product", (transaction, scope) =>
         Effect.gen(function* () {
+          // Nothing seeds categories any more, so a product without one would
+          // fail on the foreign key with a SQL message nobody can act on.
+          const categoryId = input.categoryId ?? "general";
+          const category = yield* transaction.query.categories.findFirst({
+            where: {
+              organizationId: scope.organizationId,
+              id: categoryId,
+              deletedAt: { isNull: true },
+            },
+          });
+          if (!category)
+            return yield* PersistenceError.make({
+              operation: "create product",
+              message: "Pick a category for this product",
+            });
           const id = yield* scope.nextId;
           const [row] = yield* transaction
             .insert(products)
@@ -638,6 +755,8 @@ export const makeProductStore = (
   return {
     listCategories,
     createCategory,
+    updateCategory,
+    deleteCategory,
     listProducts,
     listCompositions,
     searchProducts,

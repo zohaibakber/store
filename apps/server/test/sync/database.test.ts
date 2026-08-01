@@ -109,7 +109,7 @@ const categoryChange = (id: string, name: string) =>
     action: "upsert",
     entityId: id,
     rowVersion: 1,
-    row: { id, name },
+    row: { id, name, tracksPacks: true },
   });
 
 const productChange = (id: string, categoryId: string) =>

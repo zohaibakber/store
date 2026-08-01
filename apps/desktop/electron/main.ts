@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CategoryIdInput,
   CreateBatchInput,
   CreateCategoryInput,
   CreateInvoiceInput,
@@ -15,6 +16,7 @@ import {
   ProductIdInput,
   SearchProductsInput,
   UpdateBatchInput,
+  UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
@@ -167,6 +169,12 @@ const storeHandlers: {
   listCategories: () => withStore((store) => store.listCategories),
   createCategory: decoding(CreateCategoryInput, (input) =>
     withStore((store) => store.createCategory(input)),
+  ),
+  updateCategory: decoding(UpdateCategoryInput, (input) =>
+    withStore((store) => store.updateCategory(input)),
+  ),
+  deleteCategory: decoding(CategoryIdInput, ({ id }) =>
+    withStore((store) => store.deleteCategory(id)),
   ),
   listProducts: () => withStore((store) => store.listProducts),
   listCompositions: () => withStore((store) => store.listCompositions),

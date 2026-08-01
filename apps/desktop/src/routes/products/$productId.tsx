@@ -94,20 +94,27 @@ function ProductDetailPage() {
     }
   };
 
+  // Pack size and pack price are meaningless for a category sold one at a time.
+  const packDetails: Array<{ label: string; value: React.ReactNode }> = product.category.tracksPacks
+    ? [
+        {
+          label: "Units per pack",
+          value: <span className="font-mono tabular-nums">{product.unitsPerPack}</span>,
+        },
+        {
+          label: "Pack price",
+          value: <span className="font-mono tabular-nums">{formatPrice(product.packPrice)}</span>,
+        },
+      ]
+    : [];
+
   const details: Array<{ label: string; value: React.ReactNode }> = [
     { label: "Aisle", value: product.aisle ?? "—" },
     { label: "Composition", value: product.composition ?? "—" },
     { label: "Strength", value: product.strength ?? "—" },
+    ...packDetails,
     {
-      label: "Units per pack",
-      value: <span className="font-mono tabular-nums">{product.unitsPerPack}</span>,
-    },
-    {
-      label: "Pack price",
-      value: <span className="font-mono tabular-nums">{formatPrice(product.packPrice)}</span>,
-    },
-    {
-      label: "Unit price",
+      label: product.category.tracksPacks ? "Unit price" : "Price",
       value: <span className="font-mono tabular-nums">{formatPrice(product.unitPrice)}</span>,
     },
     {

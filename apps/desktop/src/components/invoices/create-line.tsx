@@ -36,6 +36,10 @@ const quantityItems = [
   { label: "Pack", value: "pack" },
 ] as const;
 
+// A product whose category is not sold in packs has nothing to choose between.
+const quantityItemsFor = (line: SaleLine) =>
+  line.product.category.tracksPacks ? quantityItems : quantityItems.slice(0, 1);
+
 const pricingItems = [
   { label: "Price", value: "price" },
   { label: "Discount", value: "discount" },
@@ -102,7 +106,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             />
             <ControlGroupAddon>
               <Select
-                items={quantityItems}
+                items={quantityItemsFor(line)}
                 onValueChange={(value) => value && setLineQuantityUnit(line.key, value)}
                 value={line.quantityUnit}
               >
@@ -115,7 +119,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {quantityItems.map((item) => (
+                    {quantityItemsFor(line).map((item) => (
                       <SelectItem key={item.value} value={item.value}>
                         {item.label}
                       </SelectItem>

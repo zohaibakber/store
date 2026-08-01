@@ -5,6 +5,8 @@ export type StoreMethod = Exclude<keyof OfflineStoreApi, "onSyncStatusChange">;
 export const STORE_CHANNELS = {
   listCategories: "store:categories:list",
   createCategory: "store:categories:create",
+  updateCategory: "store:categories:update",
+  deleteCategory: "store:categories:delete",
   listProducts: "store:products:list",
   listCompositions: "store:products:compositions",
   searchProducts: "store:products:search",

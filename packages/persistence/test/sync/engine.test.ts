@@ -212,12 +212,8 @@ test("each business mutation commits one durable sync operation", async () => {
 
     const queued = await readOutbox(dataDir);
     expect(queued).toHaveLength(3);
-    expect(queued[0]?.operationId).toBe("bootstrap:local:categories:v1");
-    expect(queued[0]?.payload.map((change) => change.entity)).toEqual([
-      "category",
-      "category",
-      "category",
-    ]);
+    // The fixture's category is an ordinary mutation now that nothing is seeded.
+    expect(queued[0]?.payload.map((change) => change.entity)).toEqual(["category"]);
     expect(queued[1]?.payload).toEqual([
       expect.objectContaining({ entity: "product", action: "upsert" }),
     ]);

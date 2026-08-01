@@ -44,9 +44,11 @@ const productFormSchema = z.object({
   composition: z.string().trim().max(160),
   strength: z.string().trim().max(20),
   strengthUnit: z.enum(strengthUnits),
+  // Blank means one: an item sold as-is has no pack size to state, and a
+  // category that isn't sold in packs never shows the field at all.
   unitsPerPack: z
     .string()
-    .refine((value) => Number.isInteger(Number(value)) && Number(value) >= 1, {
+    .refine((value) => value === "" || (Number.isInteger(Number(value)) && Number(value) >= 1), {
       message: "Units per pack must be a whole number of 1 or more.",
     }),
   packPrice: optionalPrice,
@@ -94,7 +96,12 @@ const productFormOpts = formOptions({
 
 type ProductFormValues = typeof productFormOpts.defaultValues;
 
-const formValuesToInput = (value: ProductFormValues) => {
+/**
+ * A category that isn't sold in packs hides the pack fields, so whatever is
+ * sitting in them — from a category change, or an earlier edit — must not reach
+ * the store. One unit per pack and no pack price is what such a product is.
+ */
+const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {
   const strength = value.strength.trim();
   return {
     name: value.name.trim(),
@@ -102,14 +109,16 @@ const formValuesToInput = (value: ProductFormValues) => {
     aisle: nullableText(value.aisle),
     composition: nullableText(value.composition),
     strength: strength ? `${strength}${value.strengthUnit}` : null,
-    unitsPerPack: Number(value.unitsPerPack),
-    packPrice: priceInPaisa(value.packPrice),
+    unitsPerPack: tracksPacks ? Number(value.unitsPerPack || 1) : 1,
+    packPrice: tracksPacks ? priceInPaisa(value.packPrice) : null,
     unitPrice: priceInPaisa(value.unitPrice),
   };
 };
 
-const defaultCategoryId = (categories: ReadonlyArray<Category>) =>
-  categories.find((category) => category.id === "general")?.id ?? categories[0]?.id ?? "";
+const categoryTracksPacks = (categories: ReadonlyArray<Category>, categoryId: string): boolean =>
+  categories.find((category) => category.id === categoryId)?.tracksPacks ?? true;
+
+const defaultCategoryId = (categories: ReadonlyArray<Category>) => categories[0]?.id ?? "";
 
 const productToFormValues = (product: Product) => {
   const { strength, strengthUnit } = parseStrength(product.strength);
@@ -135,7 +144,9 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
     defaultValues: { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
     onSubmit: async ({ value }) => {
       try {
-        const product = await store.createProduct(formValuesToInput(value));
+        const product = await store.createProduct(
+          formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+        );
         toastManager.add({ title: "Product created", type: "success" });
         await navigate({ to: "/products/$productId", params: { productId: product.id } });
       } catch (error) {
@@ -145,14 +156,21 @@ function useProductCreateForm(categories: ReadonlyArray<Category>) {
   });
 }
 
-function useProductUpdateForm(product: Product, onUpdated: () => void) {
+function useProductUpdateForm(
+  product: Product,
+  categories: ReadonlyArray<Category>,
+  onUpdated: () => void,
+) {
   const store = useStore();
   return useForm({
     ...productFormOpts,
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
       try {
-        await store.updateProduct({ id: product.id, ...formValuesToInput(value) });
+        await store.updateProduct({
+          id: product.id,
+          ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+        });
         toastManager.add({ title: "Product updated", type: "success" });
         onUpdated();
       } catch (error) {
@@ -353,89 +371,120 @@ function ProductForm({
           />
         </Fieldset>
 
-        <Fieldset className="grid gap-4 sm:grid-cols-2">
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field
-              listeners={{
-                onChange: ({ value, fieldApi }) => {
-                  const packPrice = fieldApi.form.getFieldValue("packPrice");
-                  const unitPrice = computeUnitPrice(value, packPrice);
-                  if (unitPrice !== null) {
-                    fieldApi.form.setFieldValue("unitPrice", unitPrice);
-                  }
-                },
-              }}
-              name="unitsPerPack"
-              children={(field) => (
-                <FormField
-                  description="Use 1 when the item is sold as-is."
-                  field={field}
-                  label="Units per pack"
-                >
-                  {(control) => (
-                    <NumberField
-                      format={{ maximumFractionDigits: 0 }}
-                      id={control.id}
-                      min={1}
-                      onValueChange={(value) =>
-                        field.handleChange(value === null ? "" : String(value))
-                      }
-                      step={1}
-                      value={numberFieldValue(field.state.value)}
-                    >
-                      <NumberFieldGroup>
-                        <NumberFieldInput
-                          aria-invalid={control["aria-invalid"]}
-                          className="text-left"
-                          name={control.name}
-                          onBlur={field.handleBlur}
-                          placeholder="1"
-                        />
-                      </NumberFieldGroup>
-                    </NumberField>
-                  )}
-                </FormField>
-              )}
-            />
-            <form.Field
-              listeners={{
-                onChange: ({ value, fieldApi }) => {
-                  const unitsPerPack = fieldApi.form.getFieldValue("unitsPerPack");
-                  const unitPrice = computeUnitPrice(unitsPerPack, value);
-                  if (unitPrice !== null) {
-                    fieldApi.form.setFieldValue("unitPrice", unitPrice);
-                  }
-                },
-              }}
-              name="packPrice"
-              children={(field) => (
-                <FormField field={field} label="Pack price">
-                  {(control) => (
-                    <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
-                  )}
-                </FormField>
-              )}
-            />
-          </div>
-
-          <form.Field
-            name="unitPrice"
-            children={(field) => (
-              <FormField
-                description="Auto-filled from pack price ÷ units per pack, rounded. Edit to override."
-                field={field}
-                label="Unit price"
-              >
-                {(control) => (
-                  <PriceInput control={control} field={field} fractionDigits={0} step={1} />
-                )}
-              </FormField>
-            )}
-          />
-        </Fieldset>
+        <form.Subscribe selector={(state) => state.values.categoryId}>
+          {(categoryId) =>
+            categoryTracksPacks(categories, categoryId) ? (
+              <PackPricingFields form={form} />
+            ) : (
+              <SingleUnitPricingField form={form} />
+            )
+          }
+        </form.Subscribe>
       </Fieldset>
     </form>
   );
 }
 
-export { ProductForm, useProductCreateForm, useProductUpdateForm };
+/** Sold in packs: pack size, pack price, and the unit price derived from them. */
+function PackPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+  return (
+    <Fieldset className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-4">
+        <form.Field
+          listeners={{
+            onChange: ({ value, fieldApi }) => {
+              const packPrice = fieldApi.form.getFieldValue("packPrice");
+              const unitPrice = computeUnitPrice(value, packPrice);
+              if (unitPrice !== null) {
+                fieldApi.form.setFieldValue("unitPrice", unitPrice);
+              }
+            },
+          }}
+          name="unitsPerPack"
+          children={(field) => (
+            <FormField
+              description="Use 1 when the item is sold as-is."
+              field={field}
+              label="Units per pack"
+            >
+              {(control) => (
+                <NumberField
+                  format={{ maximumFractionDigits: 0 }}
+                  id={control.id}
+                  min={1}
+                  onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
+                  step={1}
+                  value={numberFieldValue(field.state.value)}
+                >
+                  <NumberFieldGroup>
+                    <NumberFieldInput
+                      aria-invalid={control["aria-invalid"]}
+                      className="text-left"
+                      name={control.name}
+                      onBlur={field.handleBlur}
+                      placeholder="1"
+                    />
+                  </NumberFieldGroup>
+                </NumberField>
+              )}
+            </FormField>
+          )}
+        />
+        <form.Field
+          listeners={{
+            onChange: ({ value, fieldApi }) => {
+              const unitsPerPack = fieldApi.form.getFieldValue("unitsPerPack");
+              const unitPrice = computeUnitPrice(unitsPerPack, value);
+              if (unitPrice !== null) {
+                fieldApi.form.setFieldValue("unitPrice", unitPrice);
+              }
+            },
+          }}
+          name="packPrice"
+          children={(field) => (
+            <FormField field={field} label="Pack price">
+              {(control) => (
+                <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
+              )}
+            </FormField>
+          )}
+        />
+      </div>
+
+      <form.Field
+        name="unitPrice"
+        children={(field) => (
+          <FormField
+            description="Auto-filled from pack price ÷ units per pack, rounded. Edit to override."
+            field={field}
+            label="Unit price"
+          >
+            {(control) => (
+              <PriceInput control={control} field={field} fractionDigits={0} step={1} />
+            )}
+          </FormField>
+        )}
+      />
+    </Fieldset>
+  );
+}
+
+/** Sold one at a time: a single price, and no pack size to state. */
+function SingleUnitPricingField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+  return (
+    <Fieldset className="grid gap-4 sm:grid-cols-2">
+      <form.Field
+        name="unitPrice"
+        children={(field) => (
+          <FormField field={field} label="Price">
+            {(control) => (
+              <PriceInput control={control} field={field} fractionDigits={0} step={1} />
+            )}
+          </FormField>
+        )}
+      />
+    </Fieldset>
+  );
+}
+
+export { ProductForm, categoryTracksPacks, useProductCreateForm, useProductUpdateForm };

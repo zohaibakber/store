@@ -19,6 +19,11 @@ export class BatchNotFoundError extends Schema.TaggedErrorClass<BatchNotFoundErr
   { id: Schema.String },
 ) {}
 
+export class CategoryNotFoundError extends Schema.TaggedErrorClass<CategoryNotFoundError>()(
+  "CategoryNotFoundError",
+  { id: Schema.String },
+) {}
+
 export class InvoiceNotFoundError extends Schema.TaggedErrorClass<InvoiceNotFoundError>()(
   "InvoiceNotFoundError",
   { id: Schema.String },
@@ -28,6 +33,7 @@ export const StoreError = Schema.Union([
   PersistenceError,
   ProductNotFoundError,
   BatchNotFoundError,
+  CategoryNotFoundError,
   InvoiceNotFoundError,
 ]);
 export type StoreError = typeof StoreError.Type;

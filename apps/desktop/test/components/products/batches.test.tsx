@@ -28,7 +28,12 @@ const syncMetadata = {
   updatedAt: Date.UTC(2026, 0, 1),
 };
 
-const category: Category = { id: "general", name: "General", ...syncMetadata };
+const category: Category = {
+  id: "medicine",
+  name: "Medicine",
+  tracksPacks: true,
+  ...syncMetadata,
+};
 
 const batch: Batch = {
   id: "batch-1",

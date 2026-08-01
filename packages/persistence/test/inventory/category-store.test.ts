@@ -23,7 +23,7 @@ test("categories are created from a name, slugged and deduplicated", async () =>
 
       const listed = await runtime.runPromise(store((s) => s.listCategories));
       expect(listed.filter((category) => category.id === "cough-syrups")).toHaveLength(1);
-      expect(listed).toHaveLength(4);
+      expect(listed).toHaveLength(2);
 
       await expect(
         runtime.runPromise(store((s) => s.createCategory({ name: "   " }))),
