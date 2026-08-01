@@ -169,6 +169,7 @@ const storeHandlers: {
     withStore((store) => store.createCategory(input)),
   ),
   listProducts: () => withStore((store) => store.listProducts),
+  listCompositions: () => withStore((store) => store.listCompositions),
   searchProducts: decoding(SearchProductsInput, (input) =>
     withStore((store) => store.searchProducts(input)),
   ),

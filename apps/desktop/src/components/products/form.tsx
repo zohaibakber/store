@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as z from "zod";
 
 import { CategoryField } from "@/components/products/category-field";
+import { CompositionField } from "@/components/products/composition-field";
 import {
   ControlGroup,
   ControlGroupAddon,
@@ -202,10 +203,12 @@ function PriceInput({
 
 function ProductForm({
   categories,
+  compositions,
   form,
   formId,
 }: {
   categories: ReadonlyArray<Category>;
+  compositions: ReadonlyArray<string>;
   form: ReturnType<typeof useProductCreateForm>;
   formId: string;
 }) {
@@ -277,12 +280,14 @@ function ProductForm({
             name="composition"
             children={(field) => (
               <FormField field={field} label="Composition">
-                {(control) => (
-                  <Input
-                    {...control}
+                {(control, invalid) => (
+                  <CompositionField
+                    id={control.id}
+                    invalid={invalid}
+                    name={control.name}
                     onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder="e.g. Paracetamol"
+                    onChange={(composition) => field.handleChange(composition)}
+                    suggestions={compositions}
                     value={field.state.value}
                   />
                 )}

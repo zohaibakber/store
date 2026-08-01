@@ -6,6 +6,7 @@ export const STORE_CHANNELS = {
   listCategories: "store:categories:list",
   createCategory: "store:categories:create",
   listProducts: "store:products:list",
+  listCompositions: "store:products:compositions",
   searchProducts: "store:products:search",
   getProduct: "store:products:get",
   createProduct: "store:products:create",
