@@ -43,3 +43,7 @@ release
 
 # Alchemy local state and credentials
 .alchemy
+
+# drizzle-kit emits this alongside the DO migrations; the bundler script in
+# packages/db replaces it (see scripts/bundle-do-migrations.mjs).
+packages/db/migrations/do/migrations.js

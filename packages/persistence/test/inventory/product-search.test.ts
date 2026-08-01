@@ -12,24 +12,27 @@ const seed = [
 ];
 
 const withSeededStore = async (run: (runtime: TestStoreRuntime) => Promise<void>) =>
-  withTestStore(async ({ runtime }) => {
-    for (const item of seed) {
-      await runtime.runPromise(
-        store((store) =>
-          store.createProduct({
-            name: item.name,
-            categoryId: "medicine",
-            aisle: null,
-            composition: item.composition,
-            strength: null,
-            packPrice: 1000,
-            unitPrice: 100,
-          }),
-        ),
-      );
-    }
-    await run(runtime);
-  });
+  withTestStore(
+    async ({ runtime }) => {
+      for (const item of seed) {
+        await runtime.runPromise(
+          store((store) =>
+            store.createProduct({
+              name: item.name,
+              categoryId: "medicine",
+              aisle: null,
+              composition: item.composition,
+              strength: null,
+              packPrice: 1000,
+              unitPrice: 100,
+            }),
+          ),
+        );
+      }
+      await run(runtime);
+    },
+    { categories: ["Medicine"] },
+  );
 
 const names = async (runtime: TestStoreRuntime, query: string) =>
   (await runtime.runPromise(store((store) => store.searchProducts({ query })))).map(

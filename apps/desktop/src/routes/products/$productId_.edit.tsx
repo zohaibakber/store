@@ -25,7 +25,7 @@ function EditProductPage() {
   const { product, categories, compositions } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
-  const form = useProductUpdateForm(product, () => {
+  const form = useProductUpdateForm(product, categories, () => {
     void router.invalidate();
     void navigate({ to: "/products/$productId", params: { productId: product.id } });
   });

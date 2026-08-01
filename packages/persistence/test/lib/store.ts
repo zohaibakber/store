@@ -30,6 +30,14 @@ export const authMigrationsFolder = path.resolve(
 
 type TestStoreConfig = Partial<Omit<PersistenceConfig, "dataDir" | "migrationsFolder">>;
 
+/**
+ * A workspace starts with no categories — they are the shop's own, nothing is
+ * seeded — so the fixture creates the one most tests write their products into,
+ * as its own sync operation. Pass `categories` for a different set, or `[]` for
+ * a genuinely empty workspace.
+ */
+const DEFAULT_TEST_CATEGORIES = ["General"];
+
 const makeStoreRuntime = (dataDir: string, config: TestStoreConfig = {}) =>
   // Retry backoff is collapsed by default so failure paths do not spend
   // seconds on a real clock; a test can still opt back in via `config`.
@@ -45,7 +53,7 @@ export interface TestStoreFixture {
 
 export const withTestStore = <A>(
   use: (fixture: TestStoreFixture) => Promise<A>,
-  config: TestStoreConfig = {},
+  config: TestStoreConfig & { readonly categories?: ReadonlyArray<string> } = {},
 ): Promise<A> =>
   Effect.gen(function* () {
     const directory = yield* Effect.acquireRelease(
@@ -60,15 +68,30 @@ export const withTestStore = <A>(
       return runtime;
     };
     const runtime = makeRuntime();
+    const categoryNames = config.categories ?? DEFAULT_TEST_CATEGORIES;
     return yield* Effect.acquireUseRelease(
       Effect.succeed({ dataDir, runtime, makeRuntime }),
-      (fixture) => Effect.tryPromise(() => use(fixture)),
+      (fixture) =>
+        Effect.tryPromise(async () => {
+          if (categoryNames.length > 0) await seedCategories(fixture.runtime, ...categoryNames);
+          return use(fixture);
+        }),
       () =>
         Effect.promise(async () => {
           for (const activeRuntime of runtimes.reverse()) await activeRuntime.dispose();
         }),
     );
   }).pipe(Effect.scoped, Effect.runPromise);
+
+/**
+ * A fresh workspace has no categories — they are the shop's own — so a test
+ * creates the ones it needs the way the app does. Names slug into the ids the
+ * tests use: "Medicine" becomes `medicine`.
+ */
+export const seedCategories = (runtime: TestStoreRuntime, ...names: ReadonlyArray<string>) =>
+  runtime.runPromise(
+    store((offlineStore) => Effect.forEach(names, (name) => offlineStore.createCategory({ name }))),
+  );
 
 export const readOutbox = (dataDir: string) =>
   Effect.gen(function* () {

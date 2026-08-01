@@ -19,8 +19,21 @@ const { deletedAt: _categoryDeletedAt, ...categoryFields } = categoryRow.fields;
 export const Category = Schema.Struct(categoryFields);
 export type Category = typeof Category.Type;
 
-export const CreateCategoryInput = Schema.Struct({ name: Schema.String });
+export const CreateCategoryInput = Schema.Struct({
+  name: Schema.String,
+  tracksPacks: Schema.optional(Schema.Boolean),
+});
 export type CreateCategoryInput = typeof CreateCategoryInput.Type;
+
+export const UpdateCategoryInput = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  tracksPacks: Schema.Boolean,
+});
+export type UpdateCategoryInput = typeof UpdateCategoryInput.Type;
+
+export const CategoryIdInput = Schema.Struct({ id: Schema.String });
+export type CategoryIdInput = typeof CategoryIdInput.Type;
 
 const batchRow = createSelectSchema(batches);
 const batchInsert = createInsertSchema(batches);

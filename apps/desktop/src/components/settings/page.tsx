@@ -2,11 +2,14 @@ import {
   Building01Icon,
   InformationCircleIcon,
   PaintBoardIcon,
+  TagIcon,
   UserIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { Category } from "@store/contracts";
 
 import { AccountSettings } from "@/components/settings/account-settings";
+import { CategorySettings } from "@/components/settings/category-settings";
 import { OrganizationSettings } from "@/components/settings/organization-settings";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -16,11 +19,12 @@ import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 const tabs = [
   { value: "account", label: "Account", icon: UserIcon },
   { value: "organization", label: "Organization", icon: Building01Icon },
+  { value: "categories", label: "Categories", icon: TagIcon },
   { value: "appearance", label: "Appearance", icon: PaintBoardIcon },
   { value: "about", label: "About", icon: InformationCircleIcon },
 ] as const;
 
-export function SettingsPage() {
+export function SettingsPage({ categories }: { categories: ReadonlyArray<Category> }) {
   return (
     <PageLayout contentClassName="max-w-5xl">
       <PageHeader>
@@ -43,6 +47,9 @@ export function SettingsPage() {
           </TabsPanel>
           <TabsPanel className="min-w-0 flex-1" value="organization">
             <OrganizationSettings />
+          </TabsPanel>
+          <TabsPanel className="min-w-0 flex-1" value="categories">
+            <CategorySettings categories={categories} />
           </TabsPanel>
           <TabsPanel className="min-w-0 flex-1" value="appearance">
             <FrameCard description="Applies immediately on this device." title="Appearance">

@@ -134,11 +134,7 @@ test("an invalid line rolls back every row and outbox change", async () => {
     await runtime.dispose();
     const outbox = await readOutbox(dataDir);
     expect(outbox).toHaveLength(1);
-    expect(outbox[0]?.payload.map((change) => change.entity)).toEqual([
-      "category",
-      "category",
-      "category",
-    ]);
+    expect(outbox[0]?.payload.map((change) => change.entity)).toEqual(["category"]);
   });
 });
 
