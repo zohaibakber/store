@@ -128,7 +128,7 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
                       onClick={() => handleOpenProduct(product)}
                       value={product}
                     >
-                      <span className="flex-1 truncate">
+                      <span className="flex-1 truncate capitalize">
                         {product.name}
                         {product.strength && (
                           <span className="ml-1 text-muted-foreground">{product.strength}</span>

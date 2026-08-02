@@ -65,7 +65,7 @@ export function ExpiringBatches({ batches }: { batches: DashboardAnalytics["expi
                 productId={batch.productId}
               >
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{batch.productName}</p>
+                  <p className="truncate font-medium capitalize">{batch.productName}</p>
                   <p className="truncate text-muted-foreground">
                     {batch.batchNumber ?? "Unnumbered batch"} · {batch.packQuantity} packs ·{" "}
                     {batch.unitQuantity} loose
@@ -109,7 +109,7 @@ export function LowStock({
         <div className="flex flex-col gap-2">
           {products.map((product) => (
             <DashboardListRow key={product.productId} productId={product.productId}>
-              <p className="min-w-0 truncate font-medium">{product.productName}</p>
+              <p className="min-w-0 truncate font-medium capitalize">{product.productName}</p>
               <Badge
                 className="shrink-0 font-mono tabular-nums"
                 variant={product.packQuantity + product.unitQuantity === 0 ? "error" : "warning"}

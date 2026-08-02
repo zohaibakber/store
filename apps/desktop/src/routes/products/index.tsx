@@ -7,7 +7,6 @@ import { useProductsTable } from "@/components/products/table";
 import {
   DataTable,
   DataTableContent,
-  DataTableFilter,
   DataTableFooter,
   DataTablePagination,
   DataTableViewOptions,
@@ -40,7 +39,6 @@ function ProductsPage() {
         <PageHeader>
           <PageHeading>Products</PageHeading>
           <PageAction className="flex items-center gap-2">
-            <DataTableFilter columnId="name" placeholder="Search products" />
             <DataTableViewOptions className="ml-0" />
             <Button
               aria-label="Import products"

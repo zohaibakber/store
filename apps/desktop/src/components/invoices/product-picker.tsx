@@ -59,7 +59,7 @@ function InvoiceProductPicker() {
                 onClick={() => addProduct(product)}
                 value={product}
               >
-                <span className="flex-1 truncate">
+                <span className="flex-1 truncate capitalize">
                   {product.name}
                   {product.strength && (
                     <span className="ml-1 text-muted-foreground">{product.strength}</span>
