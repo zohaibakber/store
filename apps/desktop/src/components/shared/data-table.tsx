@@ -51,8 +51,10 @@ interface DataTableColumn {
   getCanHide(): boolean;
   getIsVisible(): boolean;
   toggleVisibility(value?: boolean): void;
-  getFilterValue(): unknown;
-  setFilterValue(value: unknown): void;
+  // Optional: a table built without the column filtering feature — the products
+  // table, whose search lives in the command menu — has no filter methods.
+  getFilterValue?(): unknown;
+  setFilterValue?(value: unknown): void;
 }
 
 interface DataTableCell {
@@ -146,7 +148,7 @@ interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInp
 function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const value = (column?.getFilterValue() as string | undefined) ?? "";
+  const value = (column?.getFilterValue?.() as string | undefined) ?? "";
   const [expanded, setExpanded] = useState(value.length > 0);
   const inputRef = useRef<HTMLInputElement>(null);
   const accessibleLabel =
@@ -158,7 +160,7 @@ function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps
   }, [expanded]);
 
   const collapse = () => {
-    column?.setFilterValue("");
+    column?.setFilterValue?.("");
     setExpanded(false);
   };
 
@@ -177,7 +179,7 @@ function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps
           <InputGroupInput
             {...props}
             aria-label={accessibleLabel}
-            onChange={(event) => column?.setFilterValue(event.target.value)}
+            onChange={(event) => column?.setFilterValue?.(event.target.value)}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (!event.defaultPrevented && event.key === "Escape") collapse();

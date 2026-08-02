@@ -133,7 +133,7 @@ function ProductDetailPage() {
         <div className="flex items-center">
           <BackToProducts />
           <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
-          <PageHeading className="ml-2">{product.name}</PageHeading>
+          <PageHeading className="ml-2 capitalize">{product.name}</PageHeading>
         </div>
         <PageAction>
           <AlertDialog>

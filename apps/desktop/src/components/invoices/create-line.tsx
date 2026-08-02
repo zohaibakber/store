@@ -82,7 +82,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
               className="size-4 transition-transform"
               icon={ArrowDown01Icon}
             />
-            <span className="truncate">{line.product.name}</span>
+            <span className="truncate capitalize">{line.product.name}</span>
             {line.product.strength && (
               <span className="text-muted-foreground">{line.product.strength}</span>
             )}

@@ -70,7 +70,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
             <Frame className="w-full" key={item.id}>
               <FrameHeader className="flex-row items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{item.productName}</p>
+                  <p className="truncate font-medium capitalize">{item.productName}</p>
                   <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
                     {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
                     {" · "}

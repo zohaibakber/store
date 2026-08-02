@@ -1,11 +1,8 @@
 import type { Product } from "@store/contracts";
-import { rankItem } from "@tanstack/match-sorter-utils";
 import { Link } from "@tanstack/react-router";
 import {
-  columnFilteringFeature,
   columnVisibilityFeature,
   createColumnHelper,
-  createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
   metaHelper,
@@ -20,32 +17,14 @@ import {
 import { DataTableColumnHeader } from "@/components/shared/data-table";
 import { formatDate, formatPrice } from "@/lib/format";
 
-// Typed structurally rather than as `FilterFn<typeof features, Product>`:
-// `features` is declared below in terms of this filter, so naming it here
-// would be circular.
-const fuzzyProductFilter = (
-  row: { readonly original: Product },
-  _columnId: string,
-  filterValue: string | undefined,
-) => {
-  const { passed } = rankItem(row.original, filterValue ?? "", {
-    accessors: [
-      (product: Product) => product.name,
-      (product: Product) => product.composition ?? "",
-    ],
-  });
-  return passed;
-};
-
+// Searching the catalog is the command menu's job (Ctrl/Cmd+K), so the table
+// sorts and paginates but does not filter.
 const features = tableFeatures({
-  columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
   rowSortingFeature,
-  filteredRowModel: createFilteredRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
   sortedRowModel: createSortedRowModel(),
-  filterFns: { fuzzy: fuzzyProductFilter },
   sortFns: {
     alphanumeric: sortFn_alphanumeric,
     text: sortFn_text,
@@ -60,7 +39,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-medium hover:underline"
+        className="font-medium capitalize hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ productId: row.original.id }}
         to="/products/$productId"
@@ -69,7 +48,6 @@ const columns = columnHelper.columns([
       </Link>
     ),
     enableHiding: false,
-    filterFn: "fuzzy",
     meta: { label: "Name" },
   }),
   columnHelper.accessor((product) => product.category.name, {
@@ -78,7 +56,7 @@ const columns = columnHelper.columns([
     meta: { label: "Category" },
   }),
   columnHelper.accessor("aisle", {
-    header: "Aisle",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Aisle" />,
     cell: ({ getValue }) => getValue() ?? "—",
     meta: { label: "Aisle" },
   }),
