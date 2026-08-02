@@ -89,7 +89,13 @@ const batchFormSchema = z
     path: ["packQuantity"],
   });
 
-const batchDetailsSchema = z.object(batchDetailsFields);
+// Editing may empty a batch — a miscount corrected to zero is a real state,
+// unlike creating one with nothing in it.
+const batchEditSchema = z.object({
+  ...batchDetailsFields,
+  packQuantity: stockQuantity,
+  unitQuantity: stockQuantity,
+});
 
 // Structural shape of a TanStack Form string field, so the two fields both
 // batch forms share stay decoupled from each form's generics.
@@ -267,6 +273,8 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
 const batchToFormValues = (batch: Batch) => ({
   batchNumber: batch.batchNumber ?? "",
   expiresAt: expiryInputValue(batch.expiresAt),
+  packQuantity: String(batch.packQuantity),
+  unitQuantity: String(batch.unitQuantity),
 });
 
 function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: boolean }) {
@@ -276,13 +284,15 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
   const formId = `edit-batch-form-${batch.id}`;
   const form = useForm({
     defaultValues: batchToFormValues(batch),
-    validators: { onSubmit: batchDetailsSchema },
+    validators: { onSubmit: batchEditSchema },
     onSubmit: async ({ value }) => {
       try {
         await store.updateBatch({
           id: batch.id,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: expiryTimestamp(value.expiresAt),
+          packQuantity: tracksPacks ? Number(value.packQuantity || 0) : batch.packQuantity,
+          unitQuantity: Number(value.unitQuantity || 0),
         });
         toastManager.add({
           title: tracksPacks ? "Batch updated" : "Stock updated",
@@ -322,8 +332,8 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
           <SheetTitle>{tracksPacks ? "Edit batch" : "Edit stock"}</SheetTitle>
           <SheetDescription>
             {tracksPacks
-              ? "Correct the batch number or expiry date. Quantities change through stock movements."
-              : "Correct the expiry date. Quantities change through stock movements."}
+              ? "Correct the batch number, expiry date or counts. A changed count is recorded as a stock adjustment."
+              : "Correct the expiry date or the quantity. A changed count is recorded as a stock adjustment."}
           </SheetDescription>
         </SheetHeader>
         <SheetPanel>
@@ -334,17 +344,33 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
               void form.handleSubmit();
             }}
           >
-            <Fieldset className="grid w-full gap-4">
-              {tracksPacks && (
+            <Fieldset className="flex w-full flex-col gap-6">
+              <Fieldset className="grid gap-4">
+                {tracksPacks && (
+                  <form.Field
+                    name="batchNumber"
+                    children={(field) => <BatchNumberField field={field} />}
+                  />
+                )}
                 <form.Field
-                  name="batchNumber"
-                  children={(field) => <BatchNumberField field={field} />}
+                  name="expiresAt"
+                  children={(field) => <BatchExpiryField field={field} />}
                 />
-              )}
-              <form.Field
-                name="expiresAt"
-                children={(field) => <BatchExpiryField field={field} />}
-              />
+              </Fieldset>
+              <Fieldset className="grid gap-4">
+                {tracksPacks && (
+                  <form.Field
+                    name="packQuantity"
+                    children={(field) => <QuantityField field={field} label="Sealed packs" />}
+                  />
+                )}
+                <form.Field
+                  name="unitQuantity"
+                  children={(field) => (
+                    <QuantityField field={field} label={tracksPacks ? "Loose units" : "Quantity"} />
+                  )}
+                />
+              </Fieldset>
             </Fieldset>
           </form>
         </SheetPanel>

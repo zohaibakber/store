@@ -106,6 +106,87 @@ test("updateBatch queues one batch upsert for sync", async () => {
   });
 });
 
+test("updateBatch records an adjustment when the count is corrected", async () => {
+  await withTestStore(async ({ dataDir, runtime }) => {
+    const product = await runtime.runPromise(store((store) => store.createProduct(productInput)));
+    const created = await runtime.runPromise(
+      store((store) =>
+        store.createBatch({
+          productId: product.id,
+          batchNumber: "BN-1",
+          expiresAt: null,
+          packQuantity: 2,
+          unitQuantity: 3,
+        }),
+      ),
+    );
+
+    const updated = await runtime.runPromise(
+      store((store) =>
+        store.updateBatch({
+          id: created.id,
+          batchNumber: "BN-1",
+          expiresAt: null,
+          packQuantity: 5,
+          unitQuantity: 0,
+        }),
+      ),
+    );
+
+    expect(updated).toMatchObject({ packQuantity: 5, unitQuantity: 0 });
+
+    const movements = await runtime.runPromise(
+      store((store) => store.listStockMovements(product.id)),
+    );
+    expect(movements).toHaveLength(2);
+    // Newest first: the correction, then the receipt it corrects.
+    expect(movements[0]).toMatchObject({
+      type: "adjustment",
+      batchId: created.id,
+      packDelta: 3,
+      unitDelta: -3,
+    });
+
+    // The correction syncs as both the new count and the movement explaining it.
+    await runtime.dispose();
+    const queued = await readOutbox(dataDir);
+    expect(queued.at(-1)?.payload).toEqual([
+      expect.objectContaining({ entity: "batch", action: "upsert", entityId: created.id }),
+      expect.objectContaining({ entity: "stockMovement", action: "upsert" }),
+    ]);
+  });
+});
+
+test("updateBatch rejects a negative quantity", async () => {
+  await withTestStore(async ({ runtime }) => {
+    const product = await runtime.runPromise(store((store) => store.createProduct(productInput)));
+    const created = await runtime.runPromise(
+      store((store) =>
+        store.createBatch({
+          productId: product.id,
+          batchNumber: null,
+          expiresAt: null,
+          packQuantity: 1,
+          unitQuantity: 0,
+        }),
+      ),
+    );
+
+    await expect(
+      runtime.runPromise(
+        store((store) =>
+          store.updateBatch({
+            id: created.id,
+            batchNumber: null,
+            expiresAt: null,
+            unitQuantity: -1,
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "PersistenceError", operation: "update batch" });
+  });
+});
+
 test("updateBatch fails with BatchNotFoundError for an unknown batch", async () => {
   await withTestStore(async ({ runtime }) => {
     await expect(

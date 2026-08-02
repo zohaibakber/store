@@ -177,7 +177,7 @@ const storeHandlers: {
     withStore((store) => store.deleteCategory(id)),
   ),
   listProducts: () => withStore((store) => store.listProducts),
-  listCompositions: () => withStore((store) => store.listCompositions),
+  listProductSuggestions: () => withStore((store) => store.listProductSuggestions),
   searchProducts: decoding(SearchProductsInput, (input) =>
     withStore((store) => store.searchProducts(input)),
   ),

@@ -84,6 +84,8 @@ test("a batch can be renamed from the product page", async () => {
       id: "batch-1",
       batchNumber: "BN-1234",
       expiresAt: batch.expiresAt,
+      packQuantity: batch.packQuantity,
+      unitQuantity: batch.unitQuantity,
     });
   });
 });
@@ -100,6 +102,31 @@ test("clearing the batch number stores no batch number", async () => {
       id: "batch-1",
       batchNumber: null,
       expiresAt: batch.expiresAt,
+      packQuantity: batch.packQuantity,
+      unitQuantity: batch.unitQuantity,
+    });
+  });
+});
+
+test("a miscounted batch can be corrected from the edit sheet", async () => {
+  const updateBatch = vi.fn(() => Promise.resolve(batch));
+  renderWithStore(<ProductBatchesCard product={product} />, storeStub({ updateBatch }));
+
+  await openEditSheet();
+  const packs = screen.getByLabelText("Sealed packs") as HTMLInputElement;
+  expect(packs.value).toBe("2");
+
+  fireEvent.change(packs, { target: { value: "5" } });
+  fireEvent.change(screen.getByLabelText("Loose units"), { target: { value: "0" } });
+  save();
+
+  await waitFor(() => {
+    expect(updateBatch).toHaveBeenCalledWith({
+      id: "batch-1",
+      batchNumber: "BN-typo",
+      expiresAt: batch.expiresAt,
+      packQuantity: 5,
+      unitQuantity: 0,
     });
   });
 });
