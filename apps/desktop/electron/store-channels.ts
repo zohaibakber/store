@@ -8,7 +8,7 @@ export const STORE_CHANNELS = {
   updateCategory: "store:categories:update",
   deleteCategory: "store:categories:delete",
   listProducts: "store:products:list",
-  listCompositions: "store:products:compositions",
+  listProductSuggestions: "store:products:suggestions",
   searchProducts: "store:products:search",
   getProduct: "store:products:get",
   createProduct: "store:products:create",

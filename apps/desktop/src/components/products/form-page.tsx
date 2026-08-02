@@ -1,4 +1,4 @@
-import type { Category } from "@store/contracts";
+import type { Category, ProductSuggestions } from "@store/contracts";
 import type * as React from "react";
 
 import { ProductForm, type useProductCreateForm } from "@/components/products/form";
@@ -14,18 +14,18 @@ import { Button } from "@/components/ui/button";
 export function ProductFormPage({
   cancelTo,
   categories,
-  compositions,
   form,
   formId,
   submitLabel,
+  suggestions,
   title,
 }: {
   cancelTo: React.ReactElement;
   categories: ReadonlyArray<Category>;
-  compositions: ReadonlyArray<string>;
   form: ReturnType<typeof useProductCreateForm>;
   formId: string;
   submitLabel: string;
+  suggestions: ProductSuggestions;
   title: React.ReactNode;
 }) {
   return (
@@ -50,9 +50,9 @@ export function ProductFormPage({
         >
           <ProductForm
             categories={categories}
-            compositions={compositions}
             form={form}
             formId={formId}
+            suggestions={suggestions}
           />
         </FrameCard>
       </PageContent>

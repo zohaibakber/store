@@ -10,7 +10,7 @@ export const storeStub = (overrides: Partial<Store> = {}): Store => {
     updateCategory: unstubbed("updateCategory"),
     deleteCategory: unstubbed("deleteCategory"),
     listProducts: unstubbed("listProducts"),
-    listCompositions: unstubbed("listCompositions"),
+    listProductSuggestions: unstubbed("listProductSuggestions"),
     searchProducts: unstubbed("searchProducts"),
     getProduct: unstubbed("getProduct"),
     createProduct: unstubbed("createProduct"),

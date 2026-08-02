@@ -14,6 +14,7 @@ import type {
   InvoiceIdInput,
   Product,
   ProductIdInput,
+  ProductSuggestions,
   SearchProductsInput,
   StockMovement,
   UpdateBatchInput,
@@ -27,7 +28,7 @@ export interface OfflineStoreApi {
   readonly updateCategory: (input: UpdateCategoryInput) => Promise<Category>;
   readonly deleteCategory: (input: CategoryIdInput) => Promise<void>;
   readonly listProducts: () => Promise<ReadonlyArray<Product>>;
-  readonly listCompositions: () => Promise<ReadonlyArray<string>>;
+  readonly listProductSuggestions: () => Promise<ProductSuggestions>;
   readonly searchProducts: (input: SearchProductsInput) => Promise<ReadonlyArray<Product>>;
   readonly getProduct: (input: ProductIdInput) => Promise<Product>;
   readonly createProduct: (input: CreateProductInput) => Promise<Product>;

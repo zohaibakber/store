@@ -7,6 +7,7 @@ import type {
   ImportInventoryInput,
   ImportInventoryResult,
   Product,
+  ProductSuggestions,
   SearchProductsInput,
   StockMovement,
   UpdateBatchInput,
@@ -14,7 +15,7 @@ import type {
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -43,7 +44,7 @@ export interface ProductStore {
     id: string,
   ) => Effect.Effect<void, PersistenceError | CategoryNotFoundError>;
   readonly listProducts: Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
-  readonly listCompositions: Effect.Effect<ReadonlyArray<string>, PersistenceError>;
+  readonly listProductSuggestions: Effect.Effect<ProductSuggestions, PersistenceError>;
   readonly searchProducts: (
     input: SearchProductsInput,
   ) => Effect.Effect<ReadonlyArray<Product>, PersistenceError>;
@@ -258,26 +259,29 @@ export const makeProductStore = (
       mapPersistenceError("list products"),
     );
 
-  // Every composition already typed in this workspace, for the product form to
-  // suggest from. The catalog is local, so this is a query, not a network call.
-  const listCompositions = database
-    .selectDistinct({ composition: products.composition })
+  const distinctSorted = (values: ReadonlyArray<string | null>) =>
+    Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as Array<string>)).sort(
+      (a, b) => a.localeCompare(b),
+    );
+
+  // Everything already typed into this workspace's product form, offered back so
+  // the same name, aisle or ingredient does not end up spelled three ways. The
+  // catalog is local, so this is a query, not a network call.
+  const listProductSuggestions = database
+    .selectDistinct({
+      name: products.name,
+      aisle: products.aisle,
+      composition: products.composition,
+    })
     .from(products)
-    .where(
-      and(
-        eq(products.organizationId, workspace.organizationId),
-        isNotNull(products.composition),
-        isNull(products.deletedAt),
-      ),
-    )
+    .where(and(eq(products.organizationId, workspace.organizationId), isNull(products.deletedAt)))
     .pipe(
-      Effect.map((rows) =>
-        rows
-          .map((row) => row.composition?.trim())
-          .filter((composition): composition is string => Boolean(composition))
-          .sort((a, b) => a.localeCompare(b)),
-      ),
-      mapPersistenceError("list compositions"),
+      Effect.map((rows) => ({
+        names: distinctSorted(rows.map((row) => row.name)),
+        aisles: distinctSorted(rows.map((row) => row.aisle)),
+        compositions: distinctSorted(rows.map((row) => row.composition)),
+      })),
+      mapPersistenceError("list product suggestions"),
     );
 
   const searchProducts = Effect.fn("OfflineStore.searchProducts")((input: SearchProductsInput) => {
@@ -551,6 +555,14 @@ export const makeProductStore = (
       });
     const batchNumber = input.batchNumber?.trim() || null;
 
+    const invalidQuantity = (quantity: number | undefined) =>
+      quantity !== undefined && (!Number.isInteger(quantity) || quantity < 0);
+    if (invalidQuantity(input.packQuantity) || invalidQuantity(input.unitQuantity))
+      return yield* PersistenceError.make({
+        operation: "update batch",
+        message: "Pack and unit quantities must be non-negative whole numbers",
+      });
+
     const updated = yield* mutation
       .run("update batch", (transaction, scope) =>
         Effect.gen(function* () {
@@ -558,11 +570,18 @@ export const makeProductStore = (
             where: { organizationId: scope.organizationId, id, deletedAt: { isNull: true } },
           });
           if (!current) return undefined;
+          const packQuantity = input.packQuantity ?? current.packQuantity;
+          const unitQuantity = input.unitQuantity ?? current.unitQuantity;
+          const packDelta = packQuantity - current.packQuantity;
+          const unitDelta = unitQuantity - current.unitQuantity;
+
           const [row] = yield* transaction
             .update(batches)
             .set({
               batchNumber,
               expiresAt,
+              packQuantity,
+              unitQuantity,
               ...scope.updateVersioned(current.rowVersion + 1),
             })
             .where(and(eq(batches.organizationId, scope.organizationId), eq(batches.id, id)))
@@ -575,6 +594,37 @@ export const makeProductStore = (
             rowVersion: row.rowVersion,
             row,
           });
+
+          // A corrected count is stock moving, so it leaves the same trail a
+          // sale or a delivery does rather than silently changing the number.
+          if (packDelta !== 0 || unitDelta !== 0) {
+            const movementId = yield* scope.nextId;
+            const [movement] = yield* transaction
+              .insert(stockMovements)
+              .values({
+                ...scope.createMovement(movementId),
+                productId: current.productId,
+                batchId: current.id,
+                invoiceId: null,
+                type: "adjustment",
+                packDelta,
+                unitDelta,
+                note: "Stock corrected",
+              })
+              .returning();
+            if (!movement)
+              return yield* PersistenceError.make({
+                operation: "update batch",
+                message: "Stock movement could not be recorded",
+              });
+            yield* scope.capture({
+              entity: "stockMovement",
+              action: "upsert",
+              entityId: movement.id,
+              rowVersion: 1,
+              row: movement,
+            });
+          }
           return row;
         }),
       )
@@ -758,7 +808,7 @@ export const makeProductStore = (
     updateCategory,
     deleteCategory,
     listProducts,
-    listCompositions,
+    listProductSuggestions,
     searchProducts,
     getProduct,
     createProduct,

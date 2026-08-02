@@ -46,14 +46,26 @@ const createBatchFields = omitManaged(batchInsert.fields);
 export const CreateBatchInput = Schema.Struct(createBatchFields);
 export type CreateBatchInput = typeof CreateBatchInput.Type;
 
-// Quantities stay out: stock only moves through batch creation, sales and
-// adjustments, each of which records a stock movement.
+// Quantities are optional: leaving them out edits the batch's details alone,
+// while sending them corrects the count — which records an adjustment movement,
+// so stock still only ever moves through the movement log.
 export const UpdateBatchInput = Schema.Struct({
   id: Schema.String,
   batchNumber: Schema.NullOr(Schema.String),
   expiresAt: Schema.NullOr(Schema.Number),
+  packQuantity: Schema.optional(Schema.Number),
+  unitQuantity: Schema.optional(Schema.Number),
 });
 export type UpdateBatchInput = typeof UpdateBatchInput.Type;
+
+// What the product form offers back as you type: the names, aisles and
+// compositions this workspace already uses.
+export const ProductSuggestions = Schema.Struct({
+  names: Schema.Array(Schema.String),
+  aisles: Schema.Array(Schema.String),
+  compositions: Schema.Array(Schema.String),
+});
+export type ProductSuggestions = typeof ProductSuggestions.Type;
 
 const { deletedAt: _productDeletedAt, ...productFields } = productRow.fields;
 export const Product = Schema.Struct({

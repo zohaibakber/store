@@ -11,29 +11,35 @@ import {
 
 /**
  * Free text, with what the catalog already uses offered as you type. The
- * suggestions are whole compositions typed before, so the same active
- * ingredient does not end up spelled three ways.
+ * suggestions are whole values typed before — a product name, an aisle, a
+ * composition — so the same thing does not end up spelled three ways.
  */
-export function CompositionField({
+export function SuggestField({
+  autoFocus,
+  emptyMessage,
   id,
   invalid,
   name,
   onBlur,
   onChange,
+  placeholder,
   suggestions,
   value,
 }: {
+  autoFocus?: boolean;
+  emptyMessage: string;
   id?: string;
   invalid?: boolean;
   name?: string;
   onBlur?: () => void;
-  onChange: (composition: string) => void;
+  onChange: (value: string) => void;
+  placeholder?: string;
   suggestions: ReadonlyArray<string>;
   value: string;
 }) {
-  // A composition the user is still typing is not a suggestion worth offering.
+  // A value the user is still typing is not a suggestion worth offering.
   const items = useMemo(
-    () => suggestions.filter((composition) => composition !== value.trim()),
+    () => suggestions.filter((suggestion) => suggestion !== value.trim()),
     [suggestions, value],
   );
 
@@ -45,18 +51,19 @@ export function CompositionField({
     >
       <AutocompleteInput
         aria-invalid={invalid || undefined}
+        autoFocus={autoFocus}
         className="w-full"
         id={id}
         name={name}
         onBlur={onBlur}
-        placeholder="e.g. Paracetamol"
+        placeholder={placeholder}
       />
       <AutocompletePopup>
-        <AutocompleteEmpty>No matching composition.</AutocompleteEmpty>
+        <AutocompleteEmpty>{emptyMessage}</AutocompleteEmpty>
         <AutocompleteList>
-          {(composition: string) => (
-            <AutocompleteItem key={composition} value={composition}>
-              <span className="truncate">{composition}</span>
+          {(suggestion: string) => (
+            <AutocompleteItem key={suggestion} value={suggestion}>
+              <span className="truncate">{suggestion}</span>
             </AutocompleteItem>
           )}
         </AutocompleteList>

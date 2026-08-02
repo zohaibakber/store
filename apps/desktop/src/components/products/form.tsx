@@ -1,10 +1,10 @@
-import type { Category, Product } from "@store/contracts";
+import type { Category, Product, ProductSuggestions } from "@store/contracts";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import * as z from "zod";
 
 import { CategoryField } from "@/components/products/category-field";
-import { CompositionField } from "@/components/products/composition-field";
+import { SuggestField } from "@/components/products/suggest-field";
 import {
   ControlGroup,
   ControlGroupAddon,
@@ -14,7 +14,6 @@ import {
 } from "@/components/shared/control-group";
 import { FormField, type FormControlProps } from "@/components/shared/form-field";
 import { Fieldset } from "@/components/ui/fieldset";
-import { Input } from "@/components/ui/input";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
 import {
   Select,
@@ -221,14 +220,14 @@ function PriceInput({
 
 function ProductForm({
   categories,
-  compositions,
   form,
   formId,
+  suggestions,
 }: {
   categories: ReadonlyArray<Category>;
-  compositions: ReadonlyArray<string>;
   form: ReturnType<typeof useProductCreateForm>;
   formId: string;
+  suggestions: ProductSuggestions;
 }) {
   return (
     <form
@@ -243,13 +242,17 @@ function ProductForm({
           name="name"
           children={(field) => (
             <FormField field={field} label="Product name">
-              {(control) => (
-                <Input
-                  {...control}
+              {(control, invalid) => (
+                <SuggestField
                   autoFocus
+                  emptyMessage="No matching product."
+                  id={control.id}
+                  invalid={invalid}
+                  name={control.name}
                   onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
+                  onChange={(name) => field.handleChange(name)}
                   placeholder="e.g. Panadol 500mg"
+                  suggestions={suggestions.names}
                   value={field.state.value}
                 />
               )}
@@ -279,12 +282,16 @@ function ProductForm({
             name="aisle"
             children={(field) => (
               <FormField field={field} label="Aisle">
-                {(control) => (
-                  <Input
-                    {...control}
+                {(control, invalid) => (
+                  <SuggestField
+                    emptyMessage="No matching aisle."
+                    id={control.id}
+                    invalid={invalid}
+                    name={control.name}
                     onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
+                    onChange={(aisle) => field.handleChange(aisle)}
                     placeholder="e.g. A3"
+                    suggestions={suggestions.aisles}
                     value={field.state.value}
                   />
                 )}
@@ -299,13 +306,15 @@ function ProductForm({
             children={(field) => (
               <FormField field={field} label="Composition">
                 {(control, invalid) => (
-                  <CompositionField
+                  <SuggestField
+                    emptyMessage="No matching composition."
                     id={control.id}
                     invalid={invalid}
                     name={control.name}
                     onBlur={field.handleBlur}
                     onChange={(composition) => field.handleChange(composition)}
-                    suggestions={compositions}
+                    placeholder="e.g. Paracetamol"
+                    suggestions={suggestions.compositions}
                     value={field.state.value}
                   />
                 )}
