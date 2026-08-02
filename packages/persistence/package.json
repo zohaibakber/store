@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./product-ranking": "./src/inventory/product-ranking.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

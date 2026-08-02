@@ -70,7 +70,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip="Search"
-                  aria-keyshortcuts="/"
+                  aria-keyshortcuts="Control+K"
                   aria-haspopup="dialog"
                   onClick={openCommandMenu}
                 >
@@ -78,7 +78,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <span>Search</span>
                 </SidebarMenuButton>
                 <SidebarMenuBadge>
-                  <Kbd>/</Kbd>
+                  <Kbd>Ctrl K</Kbd>
                 </SidebarMenuBadge>
               </SidebarMenuItem>
             </SidebarMenu>
