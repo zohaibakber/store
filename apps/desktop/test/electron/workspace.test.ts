@@ -61,6 +61,19 @@ const makeStores = (events: string[], failOrganizationId?: string): WorkspaceSto
     if (label === failOrganizationId) throw new Error(`Could not open ${label}`);
     return {
       run: () => Promise.reject(new Error("Not used by this test")),
+      sync: async () => {
+        events.push(`sync:${label}`);
+        return {
+          phase: "idle",
+          configured: label !== "locked",
+          lastSyncedAt: Date.now(),
+          message: "Local and cloud data are in sync",
+          pendingOperations: 0,
+          oldestPendingAt: null,
+          lastError: null,
+          quarantined: false,
+        };
+      },
       onSyncStatusChange: () => {
         events.push(`subscribe:${label}`);
         return () => events.push(`unsubscribe:${label}`);
@@ -96,7 +109,7 @@ test("publishes an authenticated workspace only after its store is ready", async
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
-  expect(events).toEqual(["open:a", "subscribe:a", "publish:a"]);
+  expect(events).toEqual(["open:a", "subscribe:a", "sync:a", "publish:a"]);
 
   await workspace.dispose();
 });
@@ -153,6 +166,30 @@ test("falls back to the locked workspace when organization activation fails", as
     activeOrganization: null,
     workspaceError: "Could not open b",
   });
+
+  await workspace.dispose();
+});
+
+test("publishes the authenticated workspace when its initial sync fails", async () => {
+  const events: string[] = [];
+  const stores: WorkspaceStoreAdapter = {
+    open: async () => ({
+      run: () => Promise.reject(new Error("Not used by this test")),
+      sync: async () => {
+        events.push("sync");
+        throw new Error("Network unavailable");
+      },
+      onSyncStatusChange: () => () => undefined,
+      dispose: async () => undefined,
+    }),
+  };
+  const workspace = makeWorkspace(makeAuth(authenticated("a")), stores, events);
+
+  await expect(workspace.initialize()).resolves.toMatchObject({
+    status: "authenticated",
+    activeOrganization: { id: "a" },
+  });
+  expect(events).toEqual(["sync", "publish:a"]);
 
   await workspace.dispose();
 });
