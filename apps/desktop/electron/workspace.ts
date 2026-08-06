@@ -58,6 +58,7 @@ export type WorkspaceTarget =
 
 export interface WorkspaceStore {
   readonly run: <A, E>(effect: Effect.Effect<A, E, OfflineStore>) => Promise<A>;
+  readonly sync: () => Promise<SyncStatus>;
   readonly onSyncStatusChange: (listener: (status: SyncStatus) => void) => () => void;
   readonly dispose: () => Promise<void>;
 }
@@ -244,6 +245,11 @@ export class AuthenticatedWorkspace {
       this.#store = store;
       this.#activeOrganizationId = target._tag === "Authenticated" ? target.organizationId : null;
       this.#stopSyncStatus = store.onSyncStatusChange(this.#events.publishSyncStatus);
+      if (target._tag === "Authenticated" && snapshot.isOnline) {
+        // Route loaders run as soon as the authenticated snapshot is published.
+        // Finish the first pull so they cannot cache an empty pre-sync database.
+        await store.sync().catch(() => undefined);
+      }
       return this.#publish({ ...snapshot, workspaceError: null });
     } catch (cause) {
       if (target._tag === "Authenticated") await this.#recoverLocked(snapshot.isOnline);

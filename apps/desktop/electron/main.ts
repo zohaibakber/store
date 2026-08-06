@@ -278,6 +278,7 @@ const workspaceStores: WorkspaceStoreAdapter = {
     }
     return {
       run: (effect) => runtime.runPromise(effect),
+      sync: () => runtime.runPromise(withStore((store) => store.sync)),
       onSyncStatusChange: (listener) =>
         runtime.runCallback(
           withStore((store) =>
