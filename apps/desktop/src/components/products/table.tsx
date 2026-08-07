@@ -1,10 +1,13 @@
 import type { Product } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
 import {
+  columnFilteringFeature,
   columnVisibilityFeature,
   createColumnHelper,
+  createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
+  filterFn_equalsString,
   metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
@@ -14,17 +17,23 @@ import {
   useTable,
 } from "@tanstack/react-table";
 
-import { DataTableColumnHeader } from "@/components/shared/data-table";
+import {
+  DataTableClearFilters,
+  DataTableColumnHeader,
+  DataTableHeader,
+  DataTableSelectFilter,
+} from "@/components/shared/data-table";
 import { formatDate, formatPrice } from "@/lib/format";
 
-// Searching the catalog is the command menu's job (Ctrl/Cmd+K), so the table
-// sorts and paginates but does not filter.
 const features = tableFeatures({
+  columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
   rowSortingFeature,
+  filteredRowModel: createFilteredRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
   sortedRowModel: createSortedRowModel(),
+  filterFns: { equalsString: filterFn_equalsString },
   sortFns: {
     alphanumeric: sortFn_alphanumeric,
     text: sortFn_text,
@@ -53,23 +62,30 @@ const columns = columnHelper.columns([
   columnHelper.accessor((product) => product.category.name, {
     id: "category",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+    filterFn: "equalsString",
     meta: { label: "Category" },
   }),
-  columnHelper.accessor("aisle", {
+  columnHelper.accessor((product) => product.aisle ?? "", {
+    id: "aisle",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Aisle" />,
-    cell: ({ getValue }) => getValue() ?? "—",
+    cell: ({ getValue }) => getValue() || "—",
+    filterFn: "equalsString",
     meta: { label: "Aisle" },
   }),
-  columnHelper.accessor("composition", {
+  columnHelper.accessor((product) => product.composition ?? "", {
+    id: "composition",
     header: "Composition",
-    cell: ({ getValue }) => <span>{getValue() ?? "—"}</span>,
+    cell: ({ getValue }) => <span>{getValue() || "—"}</span>,
     enableSorting: false,
+    filterFn: "equalsString",
     meta: { label: "Composition" },
   }),
-  columnHelper.accessor("strength", {
+  columnHelper.accessor((product) => product.strength ?? "", {
+    id: "strength",
     header: "Strength",
-    cell: ({ getValue }) => getValue() ?? "—",
+    cell: ({ getValue }) => getValue() || "—",
     enableSorting: false,
+    filterFn: "equalsString",
     meta: { label: "Strength" },
   }),
   columnHelper.accessor("unitsPerPack", {
@@ -111,4 +127,45 @@ export function useProductsTable(products: readonly Product[]) {
       sorting: [{ id: "name", desc: false }],
     },
   });
+}
+
+const distinctValues = (
+  products: readonly Product[],
+  valueOf: (product: Product) => string | null,
+) =>
+  [
+    ...new Map(
+      products.flatMap((product) => {
+        const value = valueOf(product)?.trim();
+        return value ? [[value.toLocaleLowerCase(), value] as const] : [];
+      }),
+    ).values(),
+  ].sort((left, right) => left.localeCompare(right));
+
+export function ProductTableFilters({ products }: { products: readonly Product[] }) {
+  return (
+    <DataTableHeader className="py-0">
+      <DataTableSelectFilter
+        columnId="category"
+        label="Categories"
+        options={distinctValues(products, (product) => product.category.name)}
+      />
+      <DataTableSelectFilter
+        columnId="composition"
+        label="Compositions"
+        options={distinctValues(products, (product) => product.composition)}
+      />
+      <DataTableSelectFilter
+        columnId="aisle"
+        label="Aisles"
+        options={distinctValues(products, (product) => product.aisle)}
+      />
+      <DataTableSelectFilter
+        columnId="strength"
+        label="Strengths"
+        options={distinctValues(products, (product) => product.strength)}
+      />
+      <DataTableClearFilters />
+    </DataTableHeader>
+  );
 }

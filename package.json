@@ -8,11 +8,11 @@
       "packages/*"
     ],
     "catalog": {
-      "@effect/sql-libsql": "4.0.0-beta.101",
-      "@effect/sql-sqlite-do": "4.0.0-beta.101",
-      "@effect/vitest": "4.0.0-beta.101",
-      "alchemy": "2.0.0-beta.64",
-      "effect": "4.0.0-beta.101",
+      "@effect/sql-libsql": "4.0.0-beta.103",
+      "@effect/sql-sqlite-do": "4.0.0-beta.103",
+      "@effect/vitest": "4.0.0-beta.103",
+      "alchemy": "2.0.0-beta.67",
+      "effect": "4.0.0-beta.103",
       "typescript": "7.0.2",
       "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
       "vite-plus": "0.2.6"
@@ -31,16 +31,16 @@
     "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250805.0",
-    "@effect/platform-bun": "4.0.0-beta.101",
-    "@effect/platform-node": "4.0.0-beta.101",
-    "@types/node": "^24.13.3",
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "@effect/platform-bun": "4.0.0-beta.103",
+    "@effect/platform-node": "4.0.0-beta.103",
+    "@types/node": "^26.1.2",
     "alchemy": "catalog:",
-    "effect": "4.0.0-beta.101",
-    "turbo": "^2.10.6",
-    "vite": "catalog:",
-    "vite-plus": "catalog:",
-    "wrangler": "^4.114.0"
+    "effect": "4.0.0-beta.103",
+    "turbo": "^2.10.8",
+    "vite": "^0.2.6",
+    "vite-plus": "^0.2.7",
+    "wrangler": "^4.118.0"
   },
   "overrides": {
     "drizzle-orm": "1.0.0-rc.4",
