@@ -17,23 +17,11 @@ export interface AuthAuditEvent {
   readonly userAgent?: string | null;
 }
 
-export interface AuthRateLimitRecord {
-  readonly count: number;
-  readonly key: string;
-  readonly lastRequest: number;
-}
-
-export interface AuthRateLimitStorage {
-  readonly get: (key: string) => Promise<AuthRateLimitRecord | null | undefined>;
-  readonly set: (key: string, value: AuthRateLimitRecord, update?: boolean) => Promise<void>;
-}
-
 export interface AuthConfig {
   readonly audit?: (event: AuthAuditEvent) => void | Promise<void>;
   readonly baseURL: string;
   readonly database: D1Database;
   readonly electronProtocol: string;
-  readonly rateLimitStorage: AuthRateLimitStorage;
   readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly waitUntil?: (promise: Promise<unknown>) => void;
@@ -60,18 +48,6 @@ export const makeAuth = (config: AuthConfig) => {
     database: config.database,
     emailAndPassword: { enabled: true },
     trustedOrigins: [...security.trustedOrigins],
-    rateLimit: {
-      enabled: true,
-      customStorage: config.rateLimitStorage,
-      window: 60,
-      max: 100,
-      customRules: {
-        "/sign-in/email": { window: 60, max: 5 },
-        "/sign-up/email": { window: 60, max: 3 },
-        "/change-password": { window: 60, max: 3 },
-        "/change-email": { window: 60, max: 3 },
-      },
-    },
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,

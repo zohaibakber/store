@@ -26,7 +26,7 @@ from the infrastructure that produced it.
 
 ## Stages
 
-Two stages, fully isolated from each other — separate Worker, D1 database, KV namespace, Durable
+Two stages, fully isolated from each other — separate Worker, D1 database, Durable
 Object namespace, and state. Run these from the repository root:
 
 ```sh
@@ -68,7 +68,7 @@ bun alchemy login --profile admin
 CLOUDFLARE_ACCOUNT_ID=<account-id> bun run setup:ci
 ```
 
-`stacks/github.ts` scopes the resulting account-owned token to the Worker, D1, KV, and remote-state
+`stacks/github.ts` scopes the resulting account-owned token to the Worker, D1, and remote-state
 operations used by this stack, then writes the token and account ID directly to GitHub Actions.
 After bootstrap, add distinct `BETTER_AUTH_SECRET` values to the generated `Development` and
 `Production` GitHub environments. Do not use the admin profile for ordinary deployments.
@@ -83,7 +83,7 @@ The Worker runs locally in workerd on port 8787, which is the desktop's default 
 extra configuration is needed. Set `STORE_API_URL` for the desktop when pointing at another origin.
 `VITE_API_URL` is reserved for packaged builds.
 
-Note that `alchemy dev` runs your _code_ locally but uses **real** cloud D1, KV, and Durable
+Note that `alchemy dev` runs your _code_ locally but uses **real** cloud D1 and Durable
 Objects from the `dev` stage — there is no local emulation, so this loop needs network access.
 
 The Worker's compatibility date is capped by the workerd binary that `alchemy dev` runs locally,

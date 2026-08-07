@@ -1,7 +1,6 @@
 import { makeAuth, type AuthAuditEvent } from "@store/auth";
 
 import { normalizeElectronOrigin } from "../auth/electron-origin";
-import { kvRateLimitStorage } from "../auth/kv-rate-limit-storage";
 import { factory } from "../http/factory";
 import type { SyncActor } from "../sync/model";
 import {
@@ -43,7 +42,6 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
       baseURL: new URL(c.req.url).origin,
       database: c.env.AUTH_DB,
       electronProtocol: c.env.ELECTRON_PROTOCOL,
-      rateLimitStorage: kvRateLimitStorage(c.env.AUTH_KV),
       secret: c.env.BETTER_AUTH_SECRET,
       trustedOrigins,
       waitUntil: (promise) => c.executionCtx.waitUntil(promise),

@@ -6,9 +6,6 @@ import * as Effect from "effect/Effect";
 
 import type { OrganizationStore } from "./src/sync/organization-store";
 
-/** Better Auth's rate-limit storage. Reads dominate and staleness is fine. */
-export const AuthKv = Cloudflare.KV.Namespace("AuthKv");
-
 /**
  * Production serves from a stable hostname on the existing `zohaibakber.com`
  * zone, so packaged desktop builds have a URL that survives redeploys.
@@ -29,7 +26,6 @@ const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
 export const Api = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;
   const authDb = yield* AuthDatabase;
-  const authKv = yield* AuthKv;
 
   return yield* Cloudflare.Worker("Api", {
     main: new URL("./src/index.ts", import.meta.url).href,
@@ -51,7 +47,6 @@ export const Api = Effect.gen(function* () {
     dev: { port: 8787 },
     env: {
       AUTH_DB: authDb,
-      AUTH_KV: authKv,
       AI: Cloudflare.Workers.AI(),
       // One Durable Object per organization, each with its own SQLite database.
       // The class name must match the export from `src/index.ts`.
