@@ -63,3 +63,25 @@ export const syncChangeLog = sqliteTable(
     ),
   ],
 );
+
+export const syncDevices = sqliteTable(
+  "sync_devices",
+  {
+    organizationId: tenantId(),
+    deviceId: text().notNull(),
+    userId: text().notNull(),
+    protocolVersion: integer({ mode: "number" }).notNull(),
+    lastAppliedCursor: integer({ mode: "number" }).notNull().default(0),
+    lastSeenAt: epochMilliseconds().notNull(),
+    clientPlatform: text().notNull().default("unknown"),
+    clientVersion: text().notNull().default("unknown"),
+    requiresBootstrap: integer({ mode: "boolean" }).notNull().default(false),
+  },
+  (table) => [
+    primaryKey({
+      name: "sync_devices_organization_device_pk",
+      columns: [table.organizationId, table.deviceId],
+    }),
+    index("sync_devices_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
+  ],
+);

@@ -6,20 +6,16 @@ import {
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { categories, invoiceCounters, stockMovements, syncState } from "@store/db/local/schema";
+import { makeSyncClientRuntime } from "@store/sync-client";
 import { and, eq, sql } from "drizzle-orm";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Queue from "effect/Queue";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import type { PersistenceConfig, Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
-import { PersistenceError, mapPersistenceError } from "../errors";
-import { emptyOutboxHealth, exchangeOutcome, makeOutbox, type ExchangeOutcome } from "./outbox";
+import { PersistenceError, SyncTransportError, mapPersistenceError } from "../errors";
+import { emptyOutboxHealth, makeOutbox } from "./outbox";
 
 export { QUARANTINE_ATTEMPTS, retryDelayMillis } from "./outbox";
 
@@ -32,8 +28,6 @@ export interface SyncEngine {
 
 const invalidResponse = (message: string) =>
   PersistenceError.make({ operation: "apply sync response", message });
-
-const MAX_EXCHANGE_ROUNDS = 100;
 
 const ensureIdentity = (
   row: { readonly organizationId: string; readonly id: string },
@@ -165,19 +159,18 @@ export const makeSyncEngine = (
       .pipe(mapPersistenceError("load sync state"));
     const configured = config.syncTransport !== undefined;
     const initialHealth = configured ? yield* outbox.health : emptyOutboxHealth;
-    const status = yield* SubscriptionRef.make<SyncStatus>({
-      phase: configured ? "idle" : "local-only",
+    const initialStatus: SyncStatus = {
+      phase: configured ? "starting" : "local-only",
       configured,
       lastSyncedAt: initialState?.lastSuccessAt ?? null,
-      message: configured ? "Ready to sync" : "Cloud sync is not configured",
+      message: configured ? "Starting synchronization…" : "Cloud sync is not configured",
       ...initialHealth,
-    });
-    const lock = yield* Semaphore.make(1);
-    const signals = yield* Queue.sliding<void>(1);
+    };
 
     const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* () {
       const transport = config.syncTransport;
-      if (!transport) return { _tag: "Drained" } satisfies ExchangeOutcome;
+      if (!transport)
+        return { cursor: initialState?.cursor ?? 0, hasMore: false, moreLocalWork: false };
       const localState = yield* database.query.syncState
         .findFirst({ where: { organizationId: workspace.organizationId } })
         .pipe(mapPersistenceError("load sync state"));
@@ -201,6 +194,7 @@ export const makeSyncEngine = (
         changes: queued.payload,
       }));
       const request: SyncRequest = {
+        protocolVersion: 2,
         organizationId: workspace.organizationId,
         deviceId: workspace.deviceId,
         cursor,
@@ -219,13 +213,6 @@ export const makeSyncEngine = (
       ).pipe(mapPersistenceError("record sync attempt"));
 
       const response = yield* Effect.suspend(() => transport.exchange(request)).pipe(
-        Effect.retry({
-          schedule: Schedule.exponential(
-            Duration.millis(config.exchangeRetryBaseMillis ?? 500),
-          ).pipe(Schedule.jittered),
-          times: 3,
-          while: (error) => error.retryable,
-        }),
         Effect.tapError((error) =>
           Effect.logWarning("Sync exchange failed", error).pipe(
             Effect.annotateLogs({
@@ -249,7 +236,13 @@ export const makeSyncEngine = (
           }),
         ),
       );
-      if (response.organizationId !== workspace.organizationId || response.cursor < cursor)
+      if (
+        response.protocolVersion !== 2 ||
+        response.organizationId !== workspace.organizationId ||
+        response.cursor !== response.nextCursor ||
+        response.nextCursor < cursor ||
+        response.headCursor < response.nextCursor
+      )
         return yield* invalidResponse("The sync response has an invalid organization or cursor");
       const acknowledgementIds = new Set(response.acknowledgements.map((ack) => ack.operationId));
       if (operations.some((operation) => !acknowledgementIds.has(operation.operationId)))
@@ -262,7 +255,10 @@ export const makeSyncEngine = (
           Effect.gen(function* () {
             let previousCursor = cursor;
             for (const serverChange of response.changes) {
-              if (serverChange.cursor <= previousCursor || serverChange.cursor > response.cursor)
+              if (
+                serverChange.cursor <= previousCursor ||
+                serverChange.cursor > response.nextCursor
+              )
                 return yield* invalidResponse("Remote changes are not in strict cursor order");
               previousCursor = serverChange.cursor;
               yield* upsertRemoteChange(transaction, workspace, serverChange.change);
@@ -276,7 +272,7 @@ export const makeSyncEngine = (
             yield* transaction
               .update(syncState)
               .set({
-                cursor: response.cursor,
+                cursor: response.nextCursor,
                 lastSuccessAt: completedAt,
                 lastAttemptAt: completedAt,
                 lastError: null,
@@ -285,106 +281,83 @@ export const makeSyncEngine = (
           }),
         )
         .pipe(mapPersistenceError("apply sync response"));
-      return exchangeOutcome({ hasMore: response.hasMore, moreDue: batch.moreDue });
+      return {
+        cursor: response.nextCursor,
+        hasMore: response.hasMore,
+        moreLocalWork: batch.moreDue,
+      };
     });
 
-    const sync = (): Effect.Effect<SyncStatus, PersistenceError> => {
-      if (!config.syncTransport) return SubscriptionRef.get(status);
-      return lock
-        .withPermit(
-          Effect.gen(function* () {
-            yield* SubscriptionRef.update(status, (current) => {
-              const next: SyncStatus = {
-                ...current,
-                phase: "syncing",
-                message: "Synchronizing local and cloud changes…",
-              };
-              return next;
-            });
-            let outcome: ExchangeOutcome = { _tag: "MorePending", reason: "held-back" };
-            let rounds = 0;
-            while (outcome._tag === "MorePending" && rounds < MAX_EXCHANGE_ROUNDS) {
-              outcome = yield* exchangeOnce();
-              rounds += 1;
-            }
-            if (outcome._tag === "MorePending")
-              return yield* PersistenceError.make({
-                operation: "sync",
-                message:
-                  outcome.reason === "server-pages"
-                    ? `The sync server returned more than ${MAX_EXCHANGE_ROUNDS} consecutive pages`
-                    : `The outbox still had work after ${MAX_EXCHANGE_ROUNDS} exchanges`,
-              });
-            const state = yield* database.query.syncState
-              .findFirst({ where: { organizationId: workspace.organizationId } })
-              .pipe(mapPersistenceError("load completed sync state"));
-            const health = yield* outbox.health;
-            const next: SyncStatus = {
-              phase: "idle",
-              configured: true,
-              lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
-              message: "Local and cloud data are in sync",
-              ...health,
-            };
-            yield* SubscriptionRef.set(status, next);
-            return next;
-          }),
-        )
-        .pipe(
-          Effect.tapError((error) =>
-            Effect.gen(function* () {
-              const recorded = yield* Effect.gen(function* () {
-                yield* Effect.all(
-                  [
-                    database
-                      .update(syncState)
-                      .set({ lastAttemptAt: Date.now(), lastError: error.message })
-                      .where(eq(syncState.organizationId, workspace.organizationId)),
-                    outbox.markFailure(error.message),
-                  ],
-                  { concurrency: 1, discard: true },
-                );
-              }).pipe(mapPersistenceError("record sync failure"), Effect.result);
-              if (recorded._tag === "Failure")
-                yield* Effect.logWarning("Could not persist sync failure status", recorded.failure);
-              const health = yield* Effect.result(outbox.health);
-              yield* SubscriptionRef.update(status, (current) => {
-                const next: SyncStatus = {
-                  ...current,
-                  ...(health._tag === "Success" ? health.success : {}),
-                  phase: "error",
-                  message: error.message,
-                };
-                return next;
-              });
-            }),
-          ),
-        );
-    };
+    const completedStatus = Effect.gen(function* () {
+      if (!configured) return initialStatus;
+      const state = yield* database.query.syncState
+        .findFirst({ where: { organizationId: workspace.organizationId } })
+        .pipe(mapPersistenceError("load completed sync state"));
+      const health = yield* outbox.health;
+      return {
+        phase: health.quarantined ? "blocked" : "idle",
+        configured: true,
+        lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
+        message: health.quarantined
+          ? "Synchronization is blocked by a quarantined operation"
+          : "Local and cloud data are in sync",
+        ...health,
+      } satisfies SyncStatus;
+    });
 
-    if (configured) {
-      yield* Stream.fromQueue(signals).pipe(
-        Stream.runForEach(() =>
-          sync().pipe(
-            Effect.tapError((error) =>
-              Effect.logWarning("Background synchronization failed", error),
-            ),
-            Effect.ignore,
-          ),
-        ),
-        Effect.forkScoped,
-      );
-      const resyncInterval = config.resyncIntervalMillis ?? 300_000;
-      yield* Queue.offer(signals, undefined).pipe(
-        Effect.repeat(Schedule.spaced(resyncInterval)),
-        Effect.forkScoped,
-      );
-    }
+    const failureStatus = Effect.fn("OfflineStore.syncFailureStatus")(function* (
+      error: PersistenceError,
+    ) {
+      const recorded = yield* Effect.gen(function* () {
+        yield* Effect.all(
+          [
+            database
+              .update(syncState)
+              .set({ lastAttemptAt: Date.now(), lastError: error.message })
+              .where(eq(syncState.organizationId, workspace.organizationId)),
+            outbox.markFailure(error.message),
+          ],
+          { concurrency: 1, discard: true },
+        );
+      }).pipe(mapPersistenceError("record sync failure"), Effect.result);
+      if (recorded._tag === "Failure")
+        yield* Effect.logWarning("Could not persist sync failure status", recorded.failure);
+      const health = yield* Effect.result(outbox.health);
+      const currentHealth = health._tag === "Success" ? health.success : initialHealth;
+      return {
+        ...initialStatus,
+        ...currentHealth,
+        phase: currentHealth.quarantined ? "blocked" : "error",
+        message: error.message,
+      } satisfies SyncStatus;
+    });
+
+    const runtime = yield* makeSyncClientRuntime({
+      initialStatus,
+      adapter: {
+        exchangeOnce: exchangeOnce(),
+        completedStatus,
+        failureStatus,
+        retryable: (error) => error.cause instanceof SyncTransportError && error.cause.retryable,
+        tooManyRounds: (maximumRounds) =>
+          PersistenceError.make({
+            operation: "sync",
+            message: `Synchronization did not drain after ${maximumRounds} exchanges`,
+          }),
+      },
+      ...(config.syncTransport?.liveEvents
+        ? { live: { events: config.syncTransport.liveEvents } }
+        : {}),
+      safetyPollIntervalMillis: config.resyncIntervalMillis,
+      exchangeRetryBaseMillis: config.exchangeRetryBaseMillis,
+    });
+
+    if (configured) yield* runtime.start.pipe(Effect.forkScoped);
 
     return {
-      signal: configured ? Queue.offer(signals, undefined).pipe(Effect.asVoid) : Effect.void,
-      status: SubscriptionRef.get(status),
-      statusChanges: SubscriptionRef.changes(status),
-      sync: sync(),
+      signal: configured ? runtime.signal("local-commit") : Effect.void,
+      status: runtime.status,
+      statusChanges: runtime.statusChanges,
+      sync: configured ? runtime.requestSync("manual") : runtime.status,
     } satisfies SyncEngine;
   });

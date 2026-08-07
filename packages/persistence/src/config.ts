@@ -2,6 +2,7 @@ import type { SyncRequest, SyncResponse } from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Stream from "effect/Stream";
 
 import type { SyncTransportError } from "./errors";
 
@@ -33,6 +34,7 @@ export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspa
 
 export interface SyncTransport {
   readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
+  readonly liveEvents?: Stream.Stream<import("@store/contracts").SyncLiveEvent, SyncTransportError>;
 }
 
 export interface PersistenceConfig {

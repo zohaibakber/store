@@ -8,6 +8,7 @@
     "./canonical-json": "./src/sync/canonical-json.ts",
     "./entity-rows": "./src/sync/entity-rows.ts",
     "./managed-columns": "./src/sync/managed-columns.ts",
+    "./sync-live": "./src/sync/live.ts",
     "./offline-store.api": "./src/store/api.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
     "./server-api.schema": "./src/server/schema.ts",

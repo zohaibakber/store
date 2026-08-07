@@ -3,7 +3,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import { syncDatabaseLayer } from "./database";
-import { syncProgram, syncServiceLayer, type SyncActor } from "./service";
+import { syncHeadProgram, syncProgram, syncServiceLayer, type SyncActor } from "./service";
 
 export const makeSyncRuntime = (storage: DurableObjectStorage) => {
   const runtime = ManagedRuntime.make(
@@ -13,6 +13,7 @@ export const makeSyncRuntime = (storage: DurableObjectStorage) => {
   return {
     runSync: (actor: SyncActor, request: SyncRequest) =>
       runtime.runPromise(syncProgram(actor, request)),
+    headCursor: (organizationId: string) => runtime.runPromise(syncHeadProgram(organizationId)),
     dispose: () => runtime.dispose(),
   };
 };

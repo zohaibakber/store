@@ -5,6 +5,7 @@ export * from "./store/helpers";
 export * from "./store/schema";
 export * from "./sync/canonical-json";
 export * from "./sync/entity-semantics";
+export * from "./sync/live";
 export * from "./sync/schema";
 export * from "./updater";
 export * from "./workspace";

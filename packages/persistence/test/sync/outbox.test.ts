@@ -9,6 +9,7 @@ import {
   exchangeOutcome,
   QUARANTINE_ATTEMPTS,
   selectBatch,
+  sendableDuePrefix,
   sendableUntilQuarantined,
 } from "../../src/sync/outbox";
 
@@ -97,6 +98,23 @@ test("a quarantined operation halts the queue instead of being skipped", () => {
 test("a quarantined operation at the head stops the queue entirely", () => {
   const pending = [attempted("poison", QUARANTINE_ATTEMPTS + 3), attempted("b", 0)];
   expect(sendableUntilQuarantined(pending)).toEqual([]);
+});
+
+test("a delayed FIFO head holds back later due operations", () => {
+  const pending = [
+    { operationId: "head", attemptCount: 1, nextAttemptAt: 2_000 },
+    { operationId: "later", attemptCount: 0, nextAttemptAt: null },
+  ];
+  expect(sendableDuePrefix(pending, 1_000)).toEqual([]);
+});
+
+test("a delayed operation cuts a sendable prefix without skipping ahead", () => {
+  const pending = [
+    { operationId: "head", attemptCount: 0, nextAttemptAt: null },
+    { operationId: "delayed", attemptCount: 1, nextAttemptAt: 2_000 },
+    { operationId: "later", attemptCount: 0, nextAttemptAt: null },
+  ];
+  expect(sendableDuePrefix(pending, 1_000).map(({ operationId }) => operationId)).toEqual(["head"]);
 });
 
 test("exchangeOutcome distinguishes why an exchange stopped", () => {

@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
+import * as Stream from "effect/Stream";
 import { expect, test } from "vitest";
 
 import {
@@ -51,6 +52,7 @@ const makeAuth = (
     switchOrganization: ({ organizationId }) => switchOrganization(organizationId).then(update),
     createOrganization: ({ name }) => update(authenticated(name)),
     apiRequest: () => Promise.reject(new Error("Not used by this test")),
+    liveEvents: () => Stream.never,
   };
 };
 

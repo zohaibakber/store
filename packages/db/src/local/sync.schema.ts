@@ -1,4 +1,11 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 import { epochMilliseconds, tenantId } from "../shared/store.schema";
 import type { SyncEntityChangePayload } from "../shared/sync";
@@ -10,7 +17,6 @@ export const syncOutbox = sqliteTable(
     organizationId: tenantId(),
     deviceId: text().notNull(),
     actorUserId: text().notNull(),
-    // Never hard-delete outbox rows; sequence numbers must not be reused.
     clientSequence: integer({ mode: "number" }).notNull(),
     occurredAt: epochMilliseconds().notNull(),
     payload: text({ mode: "json" }).$type<ReadonlyArray<SyncEntityChangePayload>>().notNull(),
@@ -32,6 +38,22 @@ export const syncOutbox = sqliteTable(
       table.nextAttemptAt,
       table.clientSequence,
     ),
+  ],
+);
+
+/** Sequence allocation survives acknowledged outbox pruning. */
+export const syncDeviceState = sqliteTable(
+  "sync_device_state",
+  {
+    organizationId: tenantId(),
+    deviceId: text().notNull(),
+    nextClientSequence: integer({ mode: "number" }).notNull().default(1),
+  },
+  (table) => [
+    primaryKey({
+      name: "sync_device_state_organization_device_pk",
+      columns: [table.organizationId, table.deviceId],
+    }),
   ],
 );
 

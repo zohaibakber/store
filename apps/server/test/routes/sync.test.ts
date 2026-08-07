@@ -1,6 +1,7 @@
 import type { SyncRequest } from "@store/contracts";
 import { describe, expect, it, vi } from "vitest";
 
+import type { SyncLiveConnector } from "../../src/http/context";
 import type { SyncActor } from "../../src/sync/service";
 import { appFor, requestFor } from "../lib/app";
 
@@ -25,8 +26,11 @@ describe("sync authorization", () => {
 
   it("passes authoritative identity to the sync runner without returning credentials", async () => {
     const runner = vi.fn(async (actor: SyncActor, request: SyncRequest) => ({
+      protocolVersion: 2 as const,
       organizationId: actor.organizationId,
       cursor: request.cursor,
+      nextCursor: request.cursor,
+      headCursor: request.cursor,
       hasMore: false,
       acknowledgements: [],
       changes: [],
@@ -88,5 +92,32 @@ describe("sync authorization", () => {
         ),
       },
     });
+  });
+
+  it("authorizes live upgrades and forwards only trusted workspace identity", async () => {
+    const connect = vi.fn<SyncLiveConnector>(async () => new Response(null, { status: 204 }));
+    const response = await appFor(true, true, undefined, connect).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
+    );
+
+    expect(response.status).toBe(204);
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        userId: "user-1",
+        deviceId: "device-1",
+        authenticationExpiresAt: expect.any(Number),
+      }),
+    );
+    expect(JSON.stringify(connect.mock.calls[0]?.[0])).not.toContain("secret");
+  });
+
+  it("rejects live upgrades for a client-claimed organization", async () => {
+    const response = await appFor(true).request(
+      "/api/sync/live?organizationId=other-org&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(403);
   });
 });

@@ -24,6 +24,7 @@ export class SyncService extends Context.Service<
       actor: SyncActor,
       request: SyncRequest,
     ) => Effect.Effect<SyncResponse, SyncDatabaseError | SyncProtocolError>;
+    readonly headCursor: (organizationId: string) => Effect.Effect<number, SyncDatabaseError>;
   }
 >()("@store/server/SyncService") {}
 
@@ -113,9 +114,15 @@ export const syncServiceLayer = Layer.effect(
       }
       return yield* database.exchange(actor, request);
     });
-    return SyncService.of({ exchange });
+    const headCursor = Effect.fn("SyncService.headCursor")((organizationId: string) =>
+      database.headCursor(organizationId),
+    );
+    return SyncService.of({ exchange, headCursor });
   }),
 );
 
 export const syncProgram = (actor: SyncActor, request: SyncRequest) =>
   Effect.flatMap(SyncService, (service) => service.exchange(actor, request));
+
+export const syncHeadProgram = (organizationId: string) =>
+  Effect.flatMap(SyncService, (service) => service.headCursor(organizationId));

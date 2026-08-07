@@ -52,8 +52,11 @@ const firstOperation = (request: SyncRequest): SyncOperation => {
 };
 
 const responseFor = (request: SyncRequest): SyncResponse => ({
+  protocolVersion: 2,
   organizationId: actor.organizationId,
   cursor: request.cursor,
+  nextCursor: request.cursor,
+  headCursor: request.cursor,
   hasMore: false,
   acknowledgements: [],
   changes: [],
@@ -61,6 +64,7 @@ const responseFor = (request: SyncRequest): SyncResponse => ({
 
 const databaseLayer = Layer.succeed(SyncDatabase, {
   exchange: (_identity, request) => Effect.succeed(responseFor(request)),
+  headCursor: () => Effect.succeed(0),
 });
 const testLayer = syncServiceLayer.pipe(Layer.provide(databaseLayer));
 

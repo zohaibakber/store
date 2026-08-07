@@ -1,6 +1,0 @@
-{
-  "name": "Tabaaq",
-  "description": "Scans product/medicine labels and saves them as products with batches, matching the store-electron desktop schema.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

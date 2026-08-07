@@ -27,8 +27,11 @@ const setOutboxNextAttemptAt = (dataDir: string, nextAttemptAt: number | null) =
   );
 
 const responseFor = (request: SyncRequest): SyncResponse => ({
+  protocolVersion: 2,
   organizationId: request.organizationId,
   cursor: request.cursor,
+  nextCursor: request.cursor,
+  headCursor: request.cursor,
   hasMore: false,
   acknowledgements: request.operations.map((operation) => ({
     operationId: operation.operationId,
@@ -169,8 +172,11 @@ const transportFor = (changes: ReadonlyArray<SyncServerChange>) => ({
     );
     return Effect.succeed(
       SyncResponse.make({
+        protocolVersion: 2,
         organizationId: request.organizationId,
         cursor,
+        nextCursor: cursor,
+        headCursor: cursor,
         hasMore: false,
         acknowledgements: request.operations.map((operation) => ({
           operationId: operation.operationId,
@@ -307,8 +313,7 @@ test("a flaky transport is retried and the outbox drains", async () => {
       await runtime.dispose();
 
       const outbox = await readOutbox(dataDir);
-      expect(outbox.length).toBeGreaterThan(0);
-      expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
+      expect(outbox).toEqual([]);
     },
     { syncTransport: transport },
   );
@@ -348,7 +353,8 @@ test("a permanently failing transport still fails after retries", async () => {
       const outbox = await readOutbox(dataDir);
       expect(outbox.length).toBeGreaterThan(0);
       expect(outbox.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-      expect(outbox.every((operation) => operation.lastError === "network unavailable")).toBe(true);
+      expect(outbox[0]?.lastError).toBe("network unavailable");
+      expect(outbox.slice(1).every((operation) => operation.lastError === null)).toBe(true);
     },
     { syncTransport: transport },
   );
@@ -610,11 +616,10 @@ test("a failed exchange sets a future nextAttemptAt and increments attemptCount"
 
       const outbox = await readOutbox(dataDir);
       expect(outbox.length).toBeGreaterThan(0);
-      for (const operation of outbox) {
-        expect(operation.attemptCount).toBeGreaterThan(0);
-        expect(operation.nextAttemptAt).not.toBeNull();
-        expect(operation.nextAttemptAt as number).toBeGreaterThan(before);
-      }
+      expect(outbox[0]?.attemptCount).toBeGreaterThan(0);
+      expect(outbox[0]?.nextAttemptAt).not.toBeNull();
+      expect(outbox[0]?.nextAttemptAt as number).toBeGreaterThan(before);
+      expect(outbox.slice(1).every((operation) => operation.nextAttemptAt === null)).toBe(true);
     },
     { syncTransport: transport },
   );
@@ -742,8 +747,7 @@ test("a subsequent successful exchange clears the backoff and status", async () 
       expect(status.quarantined).toBe(false);
 
       const outbox = await readOutbox(dataDir);
-      expect(outbox.every((operation) => operation.acknowledgedAt !== null)).toBe(true);
-      expect(outbox.every((operation) => operation.nextAttemptAt === null)).toBe(true);
+      expect(outbox).toEqual([]);
     },
     { syncTransport: transport },
   );

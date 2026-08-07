@@ -1,4 +1,5 @@
 import {
+  MAX_LIVE_IDENTIFIER_LENGTH,
   MAX_SYNC_CHANGES_PER_OPERATION,
   MAX_SYNC_OPERATIONS_PER_REQUEST,
   SyncRequest,
@@ -119,4 +120,28 @@ export const syncRoute = new Hono<AppEnv>().post("/", async (c) => {
       503,
     );
   }
+});
+
+syncRoute.get("/live", async (c) => {
+  if (c.req.header("Upgrade")?.toLowerCase() !== "websocket")
+    return c.json(publicError("INVALID_UPGRADE", "A WebSocket upgrade is required."), 426);
+  const organizationId = c.req.query("organizationId");
+  const deviceId = c.req.query("deviceId");
+  const protocolVersion = c.req.query("protocolVersion");
+  if (organizationId !== c.get("organizationId"))
+    return c.json(
+      publicError("ORGANIZATION_MISMATCH", "The active organization does not match."),
+      403,
+    );
+  if (!deviceId || deviceId.length > MAX_LIVE_IDENTIFIER_LENGTH)
+    return c.json(publicError("INVALID_DEVICE", "The sync device id is invalid."), 400);
+  if (protocolVersion !== "2")
+    return c.json(publicError("UNSUPPORTED_PROTOCOL", "Protocol version 2 is required."), 400);
+
+  return c.var.connectSyncLive({
+    organizationId,
+    userId: c.get("user").id,
+    deviceId,
+    authenticationExpiresAt: c.get("session").expiresAt.getTime(),
+  });
 });
