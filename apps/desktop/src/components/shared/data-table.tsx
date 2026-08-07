@@ -145,6 +145,73 @@ interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInp
   columnId: string;
 }
 
+interface DataTableSelectFilterProps {
+  columnId: string;
+  label: string;
+  options: ReadonlyArray<string>;
+}
+
+const ALL_FILTER_VALUES = "__data-table-all-values__";
+
+function DataTableSelectFilter({ columnId, label, options }: DataTableSelectFilterProps) {
+  const { table } = useDataTable();
+  const column = table.getColumn(columnId);
+  const value = (column?.getFilterValue?.() as string | undefined) || ALL_FILTER_VALUES;
+  const allLabel = `All ${label.toLowerCase()}`;
+  const items = [
+    { label: allLabel, value: ALL_FILTER_VALUES },
+    ...options.map((option) => ({ label: option, value: option })),
+  ];
+  const selectedItem = items.find((item) => item.value === value) ?? items[0];
+
+  return (
+    <Select
+      itemToStringValue={(item) => item.value}
+      items={items}
+      onValueChange={(nextItem) =>
+        column?.setFilterValue?.(
+          nextItem?.value === ALL_FILTER_VALUES ? undefined : nextItem?.value,
+        )
+      }
+      value={selectedItem}
+    >
+      <SelectTrigger aria-label={`Filter by ${label}`} className="w-40" size="sm">
+        <SelectValue>{(item) => item?.label ?? allLabel}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function DataTableClearFilters(props: React.ComponentProps<typeof Button>) {
+  const { table } = useDataTable();
+  const filteredColumns = table
+    .getAllColumns()
+    .filter((column) => column.getFilterValue?.() !== undefined);
+
+  return (
+    <Button
+      disabled={filteredColumns.length === 0}
+      onClick={() => filteredColumns.forEach((column) => column.setFilterValue?.(undefined))}
+      size="sm"
+      type="button"
+      variant="ghost"
+      {...props}
+    >
+      <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
+      Clear filters
+    </Button>
+  );
+}
+
 function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
@@ -416,10 +483,12 @@ export {
   DataTable,
   DataTableColumnHeader,
   DataTableContent,
+  DataTableClearFilters,
   DataTableFooter,
   DataTableFilter,
   DataTableHeader,
   DataTablePagination,
+  DataTableSelectFilter,
   DataTableViewOptions,
   useDataTable,
 };

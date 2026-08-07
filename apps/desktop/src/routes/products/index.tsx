@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
 import { ProductAnalytics } from "@/components/products/analytics";
-import { useProductsTable } from "@/components/products/table";
+import { ProductTableFilters, useProductsTable } from "@/components/products/table";
 import {
   DataTable,
   DataTableContent,
@@ -56,6 +56,7 @@ function ProductsPage() {
         </PageHeader>
         <PageContent>
           <ProductAnalytics products={products} />
+          <ProductTableFilters products={products} />
           <DataTableContent>
             <DataTableFooter>
               <DataTablePagination />
