@@ -412,6 +412,49 @@ test("a remote product change creates a product that does not exist locally", as
   });
 });
 
+test("a legacy remote category defaults its missing tracksPacks value", async () => {
+  const operationId = "legacy-category-operation";
+  const legacyCategory = SyncServerChange.make({
+    cursor: 1,
+    operationId,
+    changedAt: 1_700_000_000_000,
+    change: SyncEntityChange.make({
+      entity: "category",
+      action: "upsert",
+      entityId: "legacy-category",
+      rowVersion: 1,
+      row: {
+        id: "legacy-category",
+        name: "Legacy category",
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+        deletedAt: null,
+        organizationId: "local",
+        createdByUserId: "remote-user",
+        updatedByUserId: "remote-user",
+        deviceId: "remote-device",
+        operationId,
+        rowVersion: 1,
+      },
+    }),
+  });
+  await withTestStore(
+    async ({ runtime }) => {
+      const synced = runtime.runPromise(store((store) => store.sync));
+
+      await expect(synced).resolves.toMatchObject({ phase: "idle" });
+      await expect(runtime.runPromise(store((store) => store.listCategories))).resolves.toEqual([
+        expect.objectContaining({
+          id: "legacy-category",
+          name: "Legacy category",
+          tracksPacks: true,
+        }),
+      ]);
+    },
+    { categories: [], syncTransport: transportFor([legacyCategory]) },
+  );
+});
+
 test("a stale remote product change is skipped", async () => {
   await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
     const local = await seedProduct(seedRuntime, 3);
