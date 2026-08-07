@@ -5,6 +5,7 @@ import { resolveAuthSecurity } from "../src/security";
 const secureInput = {
   baseURL: "https://api.example.com",
   electronProtocol: "com.tabaaq.desktop",
+  mobileProtocol: "com.tabaaq.mobile",
   secret: "0123456789abcdef".repeat(4),
   trustedOrigins: ["https://app.example.com"],
 } as const;
@@ -24,12 +25,15 @@ describe("resolveAuthSecurity", () => {
       baseURL: "https://api.example.com",
       electronOrigin: "com.tabaaq.desktop:/",
       electronProtocol: "com.tabaaq.desktop",
+      mobileOrigin: "com.tabaaq.mobile://",
+      mobileProtocol: "com.tabaaq.mobile",
       secureCookies: true,
       trustedOrigins: [
         "https://api.example.com",
         "https://app.example.com",
         "http://localhost:5173",
         "com.tabaaq.desktop:/",
+        "com.tabaaq.mobile://",
       ],
     });
   });
@@ -56,11 +60,23 @@ describe("resolveAuthSecurity", () => {
       baseURL: "http://localhost:8787",
     });
     expect(resolved.secureCookies).toBe(false);
+    expect(resolved.trustedOrigins).toContain("exp://*");
+  });
+
+  it("does not trust Expo Go origins in production", () => {
+    const resolved = resolveAuthSecurity(secureInput);
+    expect(resolved.trustedOrigins).not.toContain("exp://*");
   });
 
   it("rejects malformed Electron protocols", () => {
     expect(() => resolveAuthSecurity({ ...secureInput, electronProtocol: "not a scheme" })).toThrow(
       "ELECTRON_PROTOCOL",
+    );
+  });
+
+  it("rejects malformed mobile protocols", () => {
+    expect(() => resolveAuthSecurity({ ...secureInput, mobileProtocol: "not a scheme" })).toThrow(
+      "MOBILE_PROTOCOL",
     );
   });
 });

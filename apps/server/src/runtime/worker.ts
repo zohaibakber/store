@@ -42,6 +42,7 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
       baseURL: new URL(c.req.url).origin,
       database: c.env.AUTH_DB,
       electronProtocol: c.env.ELECTRON_PROTOCOL,
+      mobileProtocol: c.env.MOBILE_PROTOCOL,
       secret: c.env.BETTER_AUTH_SECRET,
       trustedOrigins,
       waitUntil: (promise) => c.executionCtx.waitUntil(promise),

@@ -1,6 +1,7 @@
 export interface AuthSecurityInput {
   readonly baseURL: string;
   readonly electronProtocol: string;
+  readonly mobileProtocol: string;
   readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
@@ -9,6 +10,8 @@ export interface AuthSecurityConfig {
   readonly baseURL: string;
   readonly electronOrigin: string;
   readonly electronProtocol: string;
+  readonly mobileOrigin: string;
+  readonly mobileProtocol: string;
   readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
@@ -44,22 +47,35 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
   )
     throw new Error("BETTER_AUTH_SECRET must contain at least 32 high-entropy characters.");
 
-  const electronProtocol = input.electronProtocol.replace(/:\/?$/, "");
-  if (!/^[a-z][a-z0-9+.-]*$/.test(electronProtocol))
-    throw new Error("ELECTRON_PROTOCOL must be a valid URI scheme.");
+  const protocol = (value: string, label: string) => {
+    const normalized = value.replace(/:\/?$/, "");
+    if (!/^[a-z][a-z0-9+.-]*$/.test(normalized))
+      throw new Error(`${label} must be a valid URI scheme.`);
+    return normalized;
+  };
+  const electronProtocol = protocol(input.electronProtocol, "ELECTRON_PROTOCOL");
+  const mobileProtocol = protocol(input.mobileProtocol, "MOBILE_PROTOCOL");
 
   const baseURL = secureWebOrigin(input.baseURL, "Better Auth base URL");
+  const secureCookies = baseURL.startsWith("https://");
   const trustedOrigins = [
     baseURL,
     ...input.trustedOrigins.map((origin) => secureWebOrigin(origin, "Trusted origin")),
     `${electronProtocol}:/`,
+    `${mobileProtocol}://`,
+    // Expo Go identifies the JavaScript bundle by its changing LAN origin.
+    // Trust that scheme only while the auth server itself is in local HTTP
+    // development; production never receives this wildcard.
+    ...(secureCookies ? [] : ["exp://*"]),
   ];
 
   return {
     baseURL,
     electronOrigin: `${electronProtocol}:/`,
     electronProtocol,
-    secureCookies: baseURL.startsWith("https://"),
+    mobileOrigin: `${mobileProtocol}://`,
+    mobileProtocol,
+    secureCookies,
     trustedOrigins: [...new Set(trustedOrigins)],
   };
 };

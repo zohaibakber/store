@@ -7,6 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { BrandMark } from "@/components/brand-mark";
 import { useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -38,14 +39,7 @@ export function AccountMenu() {
               <SidebarMenuButton className="w-fit aria-expanded:bg-muted aria-expanded:text-foreground" />
             }
           >
-            {/* vite-plugin-electron builds with base: "./" so the packaged app
-                can load index.html via file://; a root-absolute "/logo.svg"
-                would resolve to the filesystem root instead of the public dir. */}
-            <img
-              alt="Logo"
-              className="size-6 shrink-0 rounded-[5px]"
-              src={`${import.meta.env.BASE_URL}logo.svg`}
-            />
+            <BrandMark alt="Logo" className="size-6 shrink-0 rounded-[5px]" />
             <span className="min-w-0 flex-1 truncate text-left font-medium">
               {activeOrganization.name}
             </span>
