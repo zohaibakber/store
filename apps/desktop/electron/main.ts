@@ -260,7 +260,10 @@ const workspaceStores: WorkspaceStoreAdapter = {
         migrationsFolder: migrationsFolder(),
         ...(target._tag === "Authenticated"
           ? {
-              syncTransport: { exchange: target.exchange },
+              syncTransport: {
+                exchange: target.exchange,
+                liveEvents: target.liveEvents,
+              },
               workspace: {
                 organizationId: target.organizationId,
                 userId: target.userId,

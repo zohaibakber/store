@@ -25,6 +25,7 @@
         "@libsql/client": "^0.17.4",
         "electron-updater": "^6.8.9",
         "thinking-orbs": "^0.1.1",
+        "ws": "^8.18.3",
       },
       "devDependencies": {
         "@babel/core": "^8.0.1",
@@ -48,6 +49,7 @@
         "@types/babel__core": "^7.20.5",
         "@types/react": "^19.2.18",
         "@types/react-dom": "^19.2.4",
+        "@types/ws": "^8.18.1",
         "@vitejs/plugin-react": "^6.0.5",
         "babel-plugin-react-compiler": "^1.0.0",
         "class-variance-authority": "^0.7.1",
@@ -152,6 +154,7 @@
         "@libsql/client": "^0.17.4",
         "@store/contracts": "workspace:*",
         "@store/db": "workspace:*",
+        "@store/sync-client": "workspace:*",
         "double-metaphone": "^2.0.1",
         "drizzle-orm": "1.0.0-rc.4",
         "effect": "catalog:",
@@ -171,6 +174,19 @@
       },
       "devDependencies": {
         "typescript": "catalog:",
+      },
+    },
+    "packages/sync-client": {
+      "name": "@store/sync-client",
+      "version": "0.0.0",
+      "dependencies": {
+        "@store/contracts": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "^4.1.10",
       },
     },
   },
@@ -902,6 +918,8 @@
     "@store/server": ["@store/server@workspace:apps/server"],
 
     "@store/services": ["@store/services@workspace:packages/services"],
+
+    "@store/sync-client": ["@store/sync-client@workspace:packages/sync-client"],
 
     "@swc/helpers": ["@swc/helpers@0.5.15", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g=="],
 

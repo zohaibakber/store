@@ -6,8 +6,8 @@ import {
   type SyncOperation,
 } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
-import { syncOutbox } from "@store/db/local/schema";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { syncDeviceState, syncOutbox } from "@store/db/local/schema";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -113,6 +113,23 @@ export const sendableUntilQuarantined = <T extends { readonly attemptCount: numb
   return quarantinedAt === -1 ? pending : pending.slice(0, quarantinedAt);
 };
 
+/**
+ * Returns only the due prefix. A delayed FIFO head deliberately holds every
+ * later operation, even when those later rows are individually due.
+ */
+export const sendableDuePrefix = <
+  T extends { readonly attemptCount: number; readonly nextAttemptAt: number | null },
+>(
+  pending: ReadonlyArray<T>,
+  now: number,
+): ReadonlyArray<T> => {
+  const available = sendableUntilQuarantined(pending);
+  const delayedAt = available.findIndex(
+    (operation) => operation.nextAttemptAt !== null && operation.nextAttemptAt > now,
+  );
+  return delayedAt === -1 ? available : available.slice(0, delayedAt);
+};
+
 export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
   transaction: StoreTransaction,
   workspace: Workspace,
@@ -120,17 +137,34 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
   occurredAt: number,
   changes: ReadonlyArray<SyncEntityChange>,
 ): Effect.fn.Return<void, PersistenceError> {
-  const [highest] = yield* transaction
-    .select({ last: sql<number | null>`max(${syncOutbox.clientSequence})` })
-    .from(syncOutbox)
+  yield* transaction
+    .insert(syncDeviceState)
+    .values({
+      organizationId: workspace.organizationId,
+      deviceId: workspace.deviceId,
+      nextClientSequence: 1,
+    })
+    .onConflictDoNothing()
+    .pipe(mapPersistenceError("initialize outbox sequence"));
+  const [allocated] = yield* transaction
+    .update(syncDeviceState)
+    .set({ nextClientSequence: sql`${syncDeviceState.nextClientSequence} + 1` })
     .where(
       and(
-        eq(syncOutbox.organizationId, workspace.organizationId),
-        eq(syncOutbox.deviceId, workspace.deviceId),
+        eq(syncDeviceState.organizationId, workspace.organizationId),
+        eq(syncDeviceState.deviceId, workspace.deviceId),
       ),
     )
-    .pipe(mapPersistenceError("read outbox sequence"));
-  const clientSequence = (highest?.last ?? 0) + 1;
+    .returning({
+      clientSequence: sql<number>`${syncDeviceState.nextClientSequence} - 1`,
+    })
+    .pipe(mapPersistenceError("allocate outbox sequence"));
+  if (!allocated)
+    return yield* PersistenceError.make({
+      operation: "allocate outbox sequence",
+      message: "The next sync sequence could not be allocated",
+    });
+  const clientSequence = allocated.clientSequence;
 
   const [queued] = yield* transaction
     .insert(syncOutbox)
@@ -209,13 +243,12 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
         and(
           eq(syncOutbox.organizationId, workspace.organizationId),
           isNull(syncOutbox.acknowledgedAt),
-          or(isNull(syncOutbox.nextAttemptAt), lte(syncOutbox.nextAttemptAt, Date.now())),
         ),
       )
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(MAX_SYNC_OPERATIONS_PER_REQUEST + 1)
       .pipe(mapPersistenceError("load pending sync operations"));
-    return selectBatch(sendableUntilQuarantined(pending));
+    return selectBatch(sendableDuePrefix(pending, Date.now()));
   });
 
   const markAttempt = Effect.fn("Outbox.markAttempt")(function* (
@@ -238,12 +271,11 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
   const acknowledge = Effect.fn("Outbox.acknowledge")(function* (
     transaction: StoreTransaction,
     operationIds: ReadonlyArray<string>,
-    completedAt: number,
+    _completedAt: number,
   ) {
     if (operationIds.length === 0) return;
     yield* transaction
-      .update(syncOutbox)
-      .set({ acknowledgedAt: completedAt, lastError: null, nextAttemptAt: null })
+      .delete(syncOutbox)
       .where(
         and(
           eq(syncOutbox.organizationId, workspace.organizationId),
@@ -267,12 +299,21 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .pipe(mapPersistenceError("read outbox head for backoff"));
     const nextAttemptAt =
       head === undefined ? null : Date.now() + retryDelayMillis(head.attemptCount);
+    if (head === undefined) return;
     yield* database
       .update(syncOutbox)
       .set({ lastError: message, nextAttemptAt })
       .where(
         and(
           eq(syncOutbox.organizationId, workspace.organizationId),
+          eq(
+            syncOutbox.clientSequence,
+            sql`(
+            select min(${syncOutbox.clientSequence}) from ${syncOutbox}
+            where ${syncOutbox.organizationId} = ${workspace.organizationId}
+              and ${syncOutbox.acknowledgedAt} is null
+          )`,
+          ),
           isNull(syncOutbox.acknowledgedAt),
         ),
       )

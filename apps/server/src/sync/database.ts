@@ -2,8 +2,8 @@ import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
 import { SyncResponse, SyncServerChange, type SyncAck, type SyncRequest } from "@store/contracts";
 import { durableObjectMigrations } from "@store/db/do/migrations";
 import { durableObjectRelations } from "@store/db/do/relations";
-import { syncChangeLog } from "@store/db/do/schema";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { syncChangeLog, syncDevices } from "@store/db/do/schema";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as DoDrizzle from "drizzle-orm/effect-sqlite-do";
 import { migrate } from "drizzle-orm/effect-sqlite-do/migrator";
@@ -29,10 +29,12 @@ export class SyncDatabase extends Context.Service<
       actor: SyncActor,
       request: SyncRequest,
     ) => Effect.Effect<SyncResponse, SyncDatabaseError | SyncProtocolError>;
+    readonly headCursor: (organizationId: string) => Effect.Effect<number, SyncDatabaseError>;
   }
 >()("@store/server/SyncDatabase") {}
 
 const PAGE_SIZE = 500;
+const PAGE_BYTES = 512 * 1024;
 type SyncDatabaseClient = Pick<SyncDrizzle, "transaction">;
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -62,6 +64,30 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
           for (const operation of request.operations)
             acknowledgements.push(yield* applyOperation(tx, actor, operation));
 
+          yield* tx
+            .insert(syncDevices)
+            .values({
+              organizationId: actor.organizationId,
+              deviceId: request.deviceId,
+              userId: actor.userId,
+              protocolVersion: request.protocolVersion ?? 1,
+              lastAppliedCursor: request.cursor,
+              lastSeenAt: Date.now(),
+              clientPlatform: request.clientPlatform ?? "unknown",
+              clientVersion: request.clientVersion ?? "unknown",
+            })
+            .onConflictDoUpdate({
+              target: [syncDevices.organizationId, syncDevices.deviceId],
+              set: {
+                userId: actor.userId,
+                protocolVersion: request.protocolVersion ?? 1,
+                lastAppliedCursor: request.cursor,
+                lastSeenAt: Date.now(),
+                clientPlatform: request.clientPlatform ?? "unknown",
+                clientVersion: request.clientVersion ?? "unknown",
+              },
+            });
+
           const pulled = yield* tx
             .select()
             .from(syncChangeLog)
@@ -73,8 +99,15 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
             )
             .orderBy(asc(syncChangeLog.cursor))
             .limit(PAGE_SIZE + 1);
-          const hasMore = pulled.length > PAGE_SIZE;
-          const page = hasMore ? pulled.slice(0, PAGE_SIZE) : pulled;
+          const candidates = pulled.slice(0, PAGE_SIZE);
+          const page: Array<(typeof candidates)[number]> = [];
+          let responseBytes = 0;
+          for (const entry of candidates) {
+            const entryBytes = new TextEncoder().encode(JSON.stringify(entry.payload)).byteLength;
+            if (page.length > 0 && responseBytes + entryBytes > PAGE_BYTES) break;
+            page.push(entry);
+            responseBytes += entryBytes;
+          }
           const changes = page.map((entry) =>
             SyncServerChange.make({
               cursor: entry.cursor,
@@ -83,10 +116,19 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
               change: entry.payload,
             }),
           );
+          const [head] = yield* tx
+            .select({ cursor: sql<number>`coalesce(max(${syncChangeLog.cursor}), 0)` })
+            .from(syncChangeLog)
+            .where(eq(syncChangeLog.organizationId, actor.organizationId));
+          const headCursor = head?.cursor ?? 0;
+          const nextCursor = changes.at(-1)?.cursor ?? request.cursor;
           return SyncResponse.make({
+            protocolVersion: 2,
             organizationId: actor.organizationId,
-            cursor: changes.at(-1)?.cursor ?? request.cursor,
-            hasMore,
+            cursor: nextCursor,
+            nextCursor,
+            headCursor,
+            hasMore: nextCursor < headCursor,
             acknowledgements,
             changes,
           });
@@ -100,7 +142,19 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
           SyncDatabaseError.make({ message: messageOf(cause), cause })),
     ),
   );
-  return SyncDatabase.of({ exchange });
+  const headCursor = Effect.fn("SyncDatabase.headCursor")(
+    function* (organizationId: string) {
+      return yield* db.transaction((tx) =>
+        tx
+          .select({ cursor: sql<number>`coalesce(max(${syncChangeLog.cursor}), 0)` })
+          .from(syncChangeLog)
+          .where(eq(syncChangeLog.organizationId, organizationId))
+          .pipe(Effect.map((rows) => rows[0]?.cursor ?? 0)),
+      );
+    },
+    Effect.mapError((cause) => SyncDatabaseError.make({ message: messageOf(cause), cause })),
+  );
+  return SyncDatabase.of({ exchange, headCursor });
 };
 
 export const syncDatabaseLayer = (storage: DurableObjectStorage) =>

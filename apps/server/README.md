@@ -5,11 +5,13 @@ The Cloudflare Worker exposes:
 - `GET /api/health`
 - `GET|POST /api/auth/*`
 - `POST /api/sync`
+- `GET /api/sync/live` (WebSocket upgrade)
 - `POST /api/uploads`
 
 Better Auth stores global identity and organization membership in D1 through `AUTH_DB`. Each
 organization's inventory and sync log live in its own SQLite-backed Durable Object through
-`ORGANIZATION_STORE`. The desktop only communicates with these authenticated HTTP routes.
+`ORGANIZATION_STORE`. The desktop communicates only through authenticated HTTP and WebSocket
+routes.
 
 ## Infrastructure
 
@@ -108,4 +110,14 @@ validates operation identity and payload hashes before committing a request in o
 SQLite transaction.
 
 `sync_inbox` makes retries idempotent. `sync_change_log` stores accepted snapshots and tombstones,
-and responses return organization-scoped changes after the supplied cursor.
+and protocol-v2 responses return byte-limited organization pages with `nextCursor`, `headCursor`,
+and `hasMore`. `sync_devices` records authenticated device checkpoints used for diagnostics and
+future retention decisions.
+
+The live route uses the same Better Auth session and active-membership middleware as HTTP sync.
+After authorization, the Worker forwards only trusted organization, user, device, and session
+expiry metadata to the organization's Durable Object. The object accepts the socket through the
+hibernation API, serializes that metadata as a socket attachment, and immediately sends a `hello`
+cursor. A successful sync transaction that applied new operations broadcasts an `invalidate`
+cursor after commit; failed and duplicate-only transactions broadcast nothing. Clients reconnect
+with capped jittered backoff and always perform an HTTP pull after `hello`.

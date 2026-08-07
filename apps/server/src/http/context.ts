@@ -10,6 +10,12 @@ export type AuthApi = {
 };
 
 export type SyncRunner = (actor: SyncActor, request: SyncRequest) => Promise<SyncResponse>;
+export type SyncLiveConnector = (input: {
+  readonly organizationId: string;
+  readonly userId: string;
+  readonly deviceId: string;
+  readonly authenticationExpiresAt: number;
+}) => Promise<Response>;
 
 export type AppEnv = {
   Bindings: ApiEnv;
@@ -17,6 +23,7 @@ export type AppEnv = {
     authApi: AuthApi;
     authHandler: (request: Request) => Promise<Response>;
     runSync: SyncRunner;
+    connectSyncLive: SyncLiveConnector;
     trustedOrigins: ReadonlyArray<string>;
     user: AuthSession["user"];
     session: AuthSession["session"];

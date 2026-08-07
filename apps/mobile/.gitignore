@@ -1,0 +1,6 @@
+.expo/
+.turbo/
+dist/
+web-build/
+expo-env.d.ts
+node_modules/

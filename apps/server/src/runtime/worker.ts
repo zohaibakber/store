@@ -4,7 +4,10 @@ import { normalizeElectronOrigin } from "../auth/electron-origin";
 import { kvRateLimitStorage } from "../auth/kv-rate-limit-storage";
 import { factory } from "../http/factory";
 import type { SyncActor } from "../sync/model";
-import { exchangeWithOrganizationStore } from "../sync/organization-store";
+import {
+  connectWithOrganizationStore,
+  exchangeWithOrganizationStore,
+} from "../sync/organization-store";
 
 const commaSeparated = (value: string): ReadonlyArray<string> =>
   value
@@ -52,6 +55,9 @@ export const workerRuntime = factory.createMiddleware(async (c, next) => {
     );
     c.set("runSync", (actor: SyncActor, request) =>
       exchangeWithOrganizationStore(c.env.ORGANIZATION_STORE, actor, request),
+    );
+    c.set("connectSyncLive", (input) =>
+      connectWithOrganizationStore(c.env.ORGANIZATION_STORE, input),
     );
     c.set("trustedOrigins", trustedOrigins);
     await next();
