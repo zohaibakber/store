@@ -76,25 +76,36 @@ function ProductTableHarness() {
   );
 }
 
-const choose = (filter: string, option: string) => {
-  fireEvent.click(screen.getByRole("combobox", { name: `Filter by ${filter}` }));
-  const item = screen.getByRole("option", { name: option });
+const clickMenuItem = (item: HTMLElement) => {
   fireEvent.pointerDown(item, { pointerType: "mouse" });
   fireEvent.click(item, { detail: 1 });
 };
 
-test("product filters compose and clear across catalog fields", () => {
+const choose = async (filter: string, option: string) => {
+  const trigger = screen.getByRole("button", { name: "Filter products" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const submenu = await screen.findByRole("menuitem", { name: filter });
+  submenu.focus();
+  fireEvent.keyDown(submenu, { key: "ArrowRight" });
+  clickMenuItem(await screen.findByRole("menuitemradio", { name: option }));
+};
+
+test("product filters compose and clear across catalog fields", async () => {
   render(<ProductTableHarness />);
 
-  choose("Categories", "Medicine");
-  choose("Compositions", "Paracetamol");
-  choose("Aisles", "A1");
-  choose("Strengths", "500mg");
+  await choose("Category", "Medicine");
+  await choose("Composition", "Paracetamol");
+  await choose("Aisle", "A1");
+  await choose("Strength", "500mg");
   expect(screen.getByText("Panadol")).toBeTruthy();
   expect(screen.queryByText("Brufen")).toBeNull();
   expect(screen.queryByText("Soap")).toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  const trigger = screen.getByRole("button", { name: "Filter products" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  clickMenuItem(await screen.findByRole("menuitem", { name: "Clear filters" }));
   const table = screen.getByRole("table");
   expect(within(table).getByText("Panadol")).toBeTruthy();
   expect(within(table).getByText("Brufen")).toBeTruthy();

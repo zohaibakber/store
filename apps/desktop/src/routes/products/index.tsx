@@ -39,6 +39,7 @@ function ProductsPage() {
         <PageHeader>
           <PageHeading>Products</PageHeading>
           <PageAction className="flex items-center gap-2">
+            <ProductTableFilters products={products} />
             <DataTableViewOptions className="ml-0" />
             <Button
               aria-label="Import products"
@@ -56,7 +57,6 @@ function ProductsPage() {
         </PageHeader>
         <PageContent>
           <ProductAnalytics products={products} />
-          <ProductTableFilters products={products} />
           <DataTableContent>
             <DataTableFooter>
               <DataTablePagination />

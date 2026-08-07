@@ -3,6 +3,7 @@ import {
   ArrowUp01Icon,
   Cancel01Icon,
   ColumnsThreeCogIcon,
+  FilterIcon,
   Search01Icon,
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
@@ -18,8 +19,14 @@ import {
   MenuCheckboxItem,
   MenuGroup,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "@/components/ui/menu";
 import {
@@ -145,7 +152,7 @@ interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInp
   columnId: string;
 }
 
-interface DataTableSelectFilterProps {
+interface DataTableFilterOptionProps {
   columnId: string;
   label: string;
   options: ReadonlyArray<string>;
@@ -153,62 +160,81 @@ interface DataTableSelectFilterProps {
 
 const ALL_FILTER_VALUES = "__data-table-all-values__";
 
-function DataTableSelectFilter({ columnId, label, options }: DataTableSelectFilterProps) {
+function DataTableFilterOption({ columnId, label, options }: DataTableFilterOptionProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
   const value = (column?.getFilterValue?.() as string | undefined) || ALL_FILTER_VALUES;
-  const allLabel = `All ${label.toLowerCase()}`;
-  const items = [
-    { label: allLabel, value: ALL_FILTER_VALUES },
-    ...options.map((option) => ({ label: option, value: option })),
-  ];
-  const selectedItem = items.find((item) => item.value === value) ?? items[0];
 
   return (
-    <Select
-      itemToStringValue={(item) => item.value}
-      items={items}
-      onValueChange={(nextItem) =>
-        column?.setFilterValue?.(
-          nextItem?.value === ALL_FILTER_VALUES ? undefined : nextItem?.value,
-        )
-      }
-      value={selectedItem}
-    >
-      <SelectTrigger aria-label={`Filter by ${label}`} className="w-40" size="sm">
-        <SelectValue>{(item) => item?.label ?? allLabel}</SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item}>
-              {item.label}
-            </SelectItem>
+    <MenuSub>
+      <MenuSubTrigger>{label}</MenuSubTrigger>
+      <MenuSubPopup className="w-48">
+        <MenuRadioGroup
+          onValueChange={(nextValue) =>
+            column?.setFilterValue?.(nextValue === ALL_FILTER_VALUES ? undefined : nextValue)
+          }
+          value={value}
+        >
+          <MenuRadioItem value={ALL_FILTER_VALUES}>All {label.toLowerCase()}</MenuRadioItem>
+          <MenuSeparator />
+          {options.map((option) => (
+            <MenuRadioItem key={option} value={option}>
+              {option}
+            </MenuRadioItem>
           ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+        </MenuRadioGroup>
+      </MenuSubPopup>
+    </MenuSub>
   );
 }
 
-function DataTableClearFilters(props: React.ComponentProps<typeof Button>) {
+interface DataTableFilterMenuProps extends Omit<React.ComponentProps<typeof Button>, "children"> {
+  children: React.ReactNode;
+}
+
+function DataTableFilterMenu({ children, className, ...props }: DataTableFilterMenuProps) {
   const { table } = useDataTable();
-  const filteredColumns = table
-    .getAllColumns()
-    .filter((column) => column.getFilterValue?.() !== undefined);
+  const filteredColumns = table.getAllColumns().filter((column) => {
+    const value = column.getFilterValue?.();
+    return value !== undefined && value !== "";
+  });
 
   return (
-    <Button
-      disabled={filteredColumns.length === 0}
-      onClick={() => filteredColumns.forEach((column) => column.setFilterValue?.(undefined))}
-      size="sm"
-      type="button"
-      variant="ghost"
-      {...props}
-    >
-      <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
-      Clear filters
-    </Button>
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            aria-label="Filter table"
+            className={cn("relative", className)}
+            size="icon"
+            variant="outline"
+            {...props}
+          >
+            <HugeiconsIcon aria-hidden="true" icon={FilterIcon} />
+            {filteredColumns.length > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute top-1 right-1 size-2 rounded-full bg-primary ring-2 ring-background"
+              />
+            )}
+          </Button>
+        }
+      />
+      <MenuPopup align="end" className="w-44">
+        <MenuGroup>
+          <MenuGroupLabel>Filter by</MenuGroupLabel>
+          {children}
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuItem
+          disabled={filteredColumns.length === 0}
+          onClick={() => filteredColumns.forEach((column) => column.setFilterValue?.(undefined))}
+        >
+          <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
+          Clear filters
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -483,12 +509,12 @@ export {
   DataTable,
   DataTableColumnHeader,
   DataTableContent,
-  DataTableClearFilters,
+  DataTableFilterMenu,
+  DataTableFilterOption,
   DataTableFooter,
   DataTableFilter,
   DataTableHeader,
   DataTablePagination,
-  DataTableSelectFilter,
   DataTableViewOptions,
   useDataTable,
 };

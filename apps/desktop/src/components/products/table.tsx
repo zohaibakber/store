@@ -18,10 +18,9 @@ import {
 } from "@tanstack/react-table";
 
 import {
-  DataTableClearFilters,
   DataTableColumnHeader,
-  DataTableHeader,
-  DataTableSelectFilter,
+  DataTableFilterMenu,
+  DataTableFilterOption,
 } from "@/components/shared/data-table";
 import { formatDate, formatPrice } from "@/lib/format";
 
@@ -144,28 +143,27 @@ const distinctValues = (
 
 export function ProductTableFilters({ products }: { products: readonly Product[] }) {
   return (
-    <DataTableHeader className="py-0">
-      <DataTableSelectFilter
+    <DataTableFilterMenu aria-label="Filter products">
+      <DataTableFilterOption
         columnId="category"
-        label="Categories"
+        label="Category"
         options={distinctValues(products, (product) => product.category.name)}
       />
-      <DataTableSelectFilter
+      <DataTableFilterOption
         columnId="composition"
-        label="Compositions"
+        label="Composition"
         options={distinctValues(products, (product) => product.composition)}
       />
-      <DataTableSelectFilter
+      <DataTableFilterOption
         columnId="aisle"
-        label="Aisles"
+        label="Aisle"
         options={distinctValues(products, (product) => product.aisle)}
       />
-      <DataTableSelectFilter
+      <DataTableFilterOption
         columnId="strength"
-        label="Strengths"
+        label="Strength"
         options={distinctValues(products, (product) => product.strength)}
       />
-      <DataTableClearFilters />
-    </DataTableHeader>
+    </DataTableFilterMenu>
   );
 }
