@@ -1,11 +1,31 @@
 import type { SyncRequest } from "@store/contracts";
 import { describe, expect, it, vi } from "vitest";
 
+import { authHeadersForRequest } from "../../src/auth/require-organization";
 import type { SyncLiveConnector } from "../../src/http/context";
 import type { SyncActor } from "../../src/sync/service";
 import { appFor, requestFor } from "../lib/app";
 
 describe("sync authorization", () => {
+  it("normalizes Expo's trusted native origin for Better Auth", () => {
+    const requestHeaders = new Headers({
+      cookie: "better-auth.session_token=session",
+      "expo-origin": "com.tabaaq.mobile:///",
+    });
+    const authHeaders = authHeadersForRequest(requestHeaders);
+
+    expect(authHeaders.get("origin")).toBe("com.tabaaq.mobile:///");
+    expect(requestHeaders.get("origin")).toBeNull();
+  });
+
+  it("does not replace a browser-provided origin", () => {
+    const authHeaders = authHeadersForRequest(
+      new Headers({ origin: "https://tabaaq.zohaibakber.com", "expo-origin": "untrusted://" }),
+    );
+
+    expect(authHeaders.get("origin")).toBe("https://tabaaq.zohaibakber.com");
+  });
+
   it("denies unauthenticated sync requests", async () => {
     const response = await appFor(false, false).request("/api/sync", {
       method: "POST",

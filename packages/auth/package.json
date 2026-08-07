@@ -13,9 +13,10 @@
     "test": "vitest run --root ../.. packages/auth/test"
   },
   "dependencies": {
-    "@better-auth/electron": "^1.6.23",
+    "@better-auth/electron": "^1.6.26",
+    "@better-auth/expo": "^1.6.26",
     "@store/db": "workspace:*",
-    "better-auth": "^1.6.23",
+    "better-auth": "^1.6.26",
     "conf": "^15.1.0"
   },
   "devDependencies": {

@@ -63,6 +63,9 @@ export const Api = Effect.gen(function* () {
       ELECTRON_PROTOCOL: Config.string("ELECTRON_PROTOCOL").pipe(
         Config.withDefault("com.tabaaq.desktop"),
       ),
+      MOBILE_PROTOCOL: Config.string("MOBILE_PROTOCOL").pipe(
+        Config.withDefault("com.tabaaq.mobile"),
+      ),
     },
   });
 });
