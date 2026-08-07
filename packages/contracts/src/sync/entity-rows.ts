@@ -7,6 +7,7 @@ import {
   stockMovements,
 } from "@store/db/store.schema";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { omitManaged } from "./managed-columns";
@@ -20,6 +21,9 @@ const NullableNonNegativeInteger = Schema.NullOr(NonNegativeInteger);
 
 const CategoryRow = createSelectSchema(categories, {
   name: NonEmptyString,
+  // Change-log entries written before categories gained this column do not
+  // contain it. The database migration used the same default for those rows.
+  tracksPacks: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 
 const ProductRow = createSelectSchema(products, {
