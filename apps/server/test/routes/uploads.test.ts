@@ -39,7 +39,11 @@ const markdownFor = (documents: ReadonlyArray<{ name: string }>) =>
     data: "| item | qty |\n| --- | --- |\n| Paracetamol | 4 |",
   }));
 
-const workingAi = (run = vi.fn(async () => ({ response: JSON.stringify(extraction) }))) => ({
+const workingAi = (
+  run = vi.fn(async () => ({
+    choices: [{ message: { content: JSON.stringify(extraction) } }],
+  })),
+) => ({
   ai: envWith({
     toMarkdown: vi.fn(async (documents: ReadonlyArray<{ name: string }>) => markdownFor(documents)),
     run,
@@ -105,6 +109,12 @@ describe("invoice upload extraction", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject(extraction);
     expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith(
+      "@cf/google/gemma-4-26b-a4b-it",
+      expect.objectContaining({
+        response_format: expect.objectContaining({ type: "json_schema" }),
+      }),
+    );
   });
 
   it("extracts CSV attachments without calling the model at all", async () => {

@@ -3,7 +3,7 @@
     "name": "Tabaaq",
     "slug": "tabaaq",
     "scheme": "com.tabaaq.mobile",
-    "version": "0.1.0",
+    "version": "0.3.13",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -15,12 +15,23 @@
     "android": {
       "package": "com.tabaaq.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#262626"
+        "backgroundColor": "#262626",
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon.png"
       }
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Tabaaq to scan product labels, batch numbers, and expiry dates.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
+      ],
       [
         "expo-font",
         {

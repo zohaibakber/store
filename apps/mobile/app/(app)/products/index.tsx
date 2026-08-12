@@ -1,5 +1,5 @@
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { Alert as HeroAlert } from "heroui-native/alert";
 import { Button } from "heroui-native/button";
 import { Card } from "heroui-native/card";
@@ -48,11 +48,16 @@ export default function ProductsScreen() {
   const header = useMemo(
     () => (
       <View className="gap-5 pt-3 pb-3">
-        <View className="gap-1">
-          <Text className="text-base font-medium text-foreground">Inventory overview</Text>
-          <Text className="text-xs leading-5 font-normal text-muted">
-            Search products, check stock, and pull down for the latest desktop changes.
-          </Text>
+        <View className="flex-row items-start gap-4">
+          <View className="min-w-0 flex-1 gap-1">
+            <Text className="text-base font-medium text-foreground">Inventory overview</Text>
+            <Text className="text-xs leading-5 font-normal text-muted">
+              Search products, check stock, and pull down for the latest desktop changes.
+            </Text>
+          </View>
+          <Button size="sm" onPress={() => router.push("/products/scan")}>
+            Scan product
+          </Button>
         </View>
         <ProductAnalytics products={products} />
         {error ? (
@@ -92,9 +97,14 @@ export default function ProductsScreen() {
             : "Add products from the desktop app, then pull down to sync."}
         </Text>
         {!query ? (
-          <Button size="sm" variant="secondary" onPress={() => void refresh()}>
-            Refresh inventory
-          </Button>
+          <View className="w-full gap-2 pt-2">
+            <Button size="sm" onPress={() => router.push("/products/scan")}>
+              Scan first product
+            </Button>
+            <Button size="sm" variant="secondary" onPress={() => void refresh()}>
+              Refresh inventory
+            </Button>
+          </View>
         ) : null}
       </Card.Body>
     </Card>

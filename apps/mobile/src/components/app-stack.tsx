@@ -1,7 +1,8 @@
 import { Stack } from "expo-router";
 import { useThemeColor } from "heroui-native";
+import type { ReactNode } from "react";
 
-export function AppStack({ title }: { title: string }) {
+export function AppStack({ title, children }: { title: string; children?: ReactNode }) {
   const background = useThemeColor("background");
   const foreground = useThemeColor("foreground");
 
@@ -25,6 +26,7 @@ export function AppStack({ title }: { title: string }) {
           headerLargeTitleStyle: { color: foreground, fontFamily: "Inter_500Medium" },
         }}
       />
+      {children}
     </Stack>
   );
 }

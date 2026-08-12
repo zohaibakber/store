@@ -37,3 +37,45 @@ export interface InvoiceExtraction extends Schema.Schema.Type<typeof InvoiceExtr
 export const invoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(InvoiceExtraction, {
   generateDescriptions: true,
 }).schema;
+
+export const MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH = 12_000;
+
+export const ProductScanMode = Schema.Literals(["product", "batch"]);
+export type ProductScanMode = typeof ProductScanMode.Type;
+
+export const ProductScanInput = Schema.Struct({
+  recognizedText: Schema.Trim.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH),
+  ),
+  mode: ProductScanMode,
+});
+export interface ProductScanInput extends Schema.Schema.Type<typeof ProductScanInput> {}
+
+const nullableScanText = (description: string, maximumLength: number) =>
+  Schema.NullOr(
+    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(maximumLength)),
+  ).annotate({ description });
+
+const normalizedScanExpiry = Schema.NullOr(
+  Schema.String.check(Schema.isPattern(/^20\d{2}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?$/)),
+).annotate({ description: "Expiry as YYYY-MM-DD, or YYYY-MM when only a month is printed." });
+
+export const ProductScanResult = Schema.Struct({
+  name: nullableScanText("Product or brand name visible in the recognized text.", 120),
+  composition: nullableScanText("Active ingredient or composition, without strength.", 160),
+  strength: nullableScanText("Strength including its unit, such as 500mg.", 20),
+  unitsPerPack: Schema.NullOr(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(10_000)),
+  ).annotate({ description: "Units contained in one sealed pack." }),
+  batchNumber: nullableScanText("Batch or lot number.", 64),
+  expiresAt: normalizedScanExpiry,
+  confidence: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
+    description: "Overall extraction confidence from 0 to 1.",
+  }),
+});
+export interface ProductScanResult extends Schema.Schema.Type<typeof ProductScanResult> {}
+
+export const productScanResultJsonSchema = Schema.toJsonSchemaDocument(ProductScanResult, {
+  generateDescriptions: true,
+}).schema;

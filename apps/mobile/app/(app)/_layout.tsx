@@ -17,10 +17,11 @@ export default function AppLayout() {
   ]);
 
   if (session.isPending) return <LoadingScreen />;
-  if (!session.data?.user) return <Redirect href="/auth" />;
+  const user = session.data?.user;
+  if (!user) return <Redirect href="/auth" />;
 
   return (
-    <ProductsProvider>
+    <ProductsProvider userId={user.id}>
       <NativeTabs
         backBehavior="history"
         backgroundColor={background}

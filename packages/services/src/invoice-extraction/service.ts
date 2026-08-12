@@ -34,7 +34,10 @@ export interface InvoiceAiClient {
     documents: ReadonlyArray<{ readonly name: string; readonly blob: Blob }>,
   ) => Promise<ReadonlyArray<ConvertedDocument>>;
   readonly generate: (input: {
-    readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    readonly messages: ReadonlyArray<{
+      readonly role: "system" | "user";
+      readonly content: string;
+    }>;
     readonly jsonSchema: object;
   }) => Promise<unknown>;
 }
