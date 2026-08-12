@@ -18,13 +18,13 @@
     "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.do.config.ts && node scripts/bundle-do-migrations.mjs"
   },
   "dependencies": {
-    "drizzle-orm": "1.0.0-rc.4",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "nanoid": "^5.1.16"
   },
   "devDependencies": {
     "@types/node": "^24.10.13",
     "alchemy": "catalog:",
-    "drizzle-kit": "1.0.0-rc.4",
+    "drizzle-kit": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:",
     "typescript": "catalog:"
   }

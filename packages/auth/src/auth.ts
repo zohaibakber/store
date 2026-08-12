@@ -1,6 +1,6 @@
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { bearer, organization } from "better-auth/plugins";
 
 import { resolveAuthSecurity } from "./security";
@@ -29,25 +29,34 @@ export interface AuthConfig {
   readonly waitUntil?: (promise: Promise<unknown>) => void;
 }
 
-export const makeAuth = (config: AuthConfig) => {
-  const security = resolveAuthSecurity(config);
+export interface EffectAuthConfig {
+  readonly audit?: (event: AuthAuditEvent) => void | Promise<void>;
+  readonly electronProtocol: string;
+  readonly mobileProtocol: string;
+  readonly secret: string;
+  readonly secureCookies: boolean;
+  readonly trustedOrigins: ReadonlyArray<string>;
+}
+
+const makeAuthOptions = (
+  config: Pick<AuthConfig, "audit">,
+  security: ReturnType<typeof resolveAuthSecurity>,
+  waitUntil?: (promise: Promise<unknown>) => void,
+) => {
   const audit = async (event: AuthAuditEvent) => {
     if (!config.audit) return;
     const task = Promise.resolve().then(async () => {
       await config.audit?.(event);
     });
-    if (config.waitUntil) {
-      config.waitUntil(task);
+    if (waitUntil) {
+      waitUntil(task);
       return;
     }
     await task;
   };
 
-  return betterAuth({
+  return {
     appName: "Tabaaq",
-    baseURL: security.baseURL,
-    secret: config.secret,
-    database: config.database,
     emailAndPassword: { enabled: true },
     trustedOrigins: [...security.trustedOrigins],
     session: {
@@ -75,7 +84,7 @@ export const makeAuth = (config: AuthConfig) => {
         disableIpTracking: false,
         ipv6Subnet: 64,
       },
-      ...(config.waitUntil ? { backgroundTasks: { handler: config.waitUntil } } : {}),
+      ...(waitUntil ? { backgroundTasks: { handler: waitUntil } } : {}),
     },
     databaseHooks: {
       user: {
@@ -125,12 +134,44 @@ export const makeAuth = (config: AuthConfig) => {
       expo(),
       // Lets the Android client authenticate with `Authorization: Bearer <token>`
       // instead of a cookie jar. Converts the token back into a session cookie
-      // internally before requireOrganization's getSession call, and mirrors
+      // internally before the organization middleware's getSession call, and mirrors
       // the token into a `set-auth-token` response header on sign-in.
       bearer(),
     ],
+  } satisfies BetterAuthOptions;
+};
+
+export const makeEffectAuthConfig = (config: EffectAuthConfig) => {
+  const placeholderBaseURL = config.secureCookies ? "https://auth.invalid" : "http://localhost";
+  const validated = resolveAuthSecurity({ ...config, baseURL: placeholderBaseURL });
+  const trustedOrigins = validated.trustedOrigins.filter((origin) => origin !== placeholderBaseURL);
+
+  return {
+    options: {
+      ...makeAuthOptions(config, { ...validated, trustedOrigins }),
+      trustedOrigins: (request?: Request) =>
+        request
+          ? [
+              ...resolveAuthSecurity({ ...config, baseURL: new URL(request.url).origin })
+                .trustedOrigins,
+            ]
+          : [...trustedOrigins],
+    },
+    trustedOrigins,
+  };
+};
+
+export const makeAuth = (config: AuthConfig) => {
+  const security = resolveAuthSecurity(config);
+  return betterAuth({
+    ...makeAuthOptions(config, security, config.waitUntil),
+    baseURL: security.baseURL,
+    secret: config.secret,
+    database: config.database,
   });
 };
 
 export type StoreAuth = ReturnType<typeof makeAuth>;
 export type AuthSession = StoreAuth["$Infer"]["Session"];
+
+export { resolveAuthSecurity } from "./security";

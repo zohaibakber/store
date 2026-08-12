@@ -21,9 +21,9 @@ Infrastructure is declared in TypeScript with [Alchemy](https://alchemy.run), no
 database and its migrations live in `packages/db/src/auth/infra.ts`; `alchemy.run.ts` at the
 repository root composes them into one stack.
 
-`infra.ts` also exports `ApiEnv`, the Worker's binding type, derived from the declaration itself.
-It replaces the `Env` interface `wrangler types` used to generate — the type can no longer drift
-from the infrastructure that produced it.
+`infra.ts` attaches D1, Workers AI, rate limiting, and the organization Durable Object through
+Alchemy's Effect-native binding services. HTTP handlers consume a small typed runtime service, so
+route code never reaches into a raw Worker `env` object.
 
 ## Stages
 

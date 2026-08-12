@@ -1,7 +1,10 @@
 import { SyncLiveAttachment, SyncLiveEvent, SyncRequest, SyncResponse } from "@store/contracts";
-import { DurableObject } from "cloudflare:workers";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { SyncDatabaseError, SyncProtocolCode, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
@@ -29,143 +32,171 @@ const LIVE_USER_HEADER = "x-sync-user-id";
 const LIVE_DEVICE_HEADER = "x-sync-device-id";
 const LIVE_AUTH_EXPIRY_HEADER = "x-sync-authentication-expires-at";
 
-// No env type parameter on purpose. This class never reads `this.env`, and
-// `apps/server/infra.ts` types the ORGANIZATION_STORE binding from this class —
-// naming the Worker's env here would make that a circular type reference.
-export class OrganizationStore extends DurableObject {
-  readonly #runtime = makeSyncRuntime(this.ctx.storage);
+export class OrganizationStore extends Cloudflare.DurableObject<
+  OrganizationStore,
+  Cloudflare.DurableObjectShape
+>()("OrganizationStore") {}
 
-  override async fetch(request: Request): Promise<Response> {
-    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
-      return this.#acceptLive(request);
+export const OrganizationStoreLive = OrganizationStore.make<never>(
+  Effect.gen(function* () {
+    const state = yield* Cloudflare.DurableObjectState;
 
-    const payload = decodePayload(await request.json());
-    try {
-      const response = await this.#runtime.runSync(payload.actor, payload.request);
-      if (response.acknowledgements.some((acknowledgement) => acknowledgement.status === "applied"))
-        this.#broadcast(response.headCursor);
-      return Response.json(encodeResult({ _tag: "Success", response }));
-    } catch (cause) {
-      if (cause instanceof SyncProtocolError)
-        return Response.json(
-          encodeResult({ _tag: "ProtocolFailure", code: cause.code, message: cause.message }),
+    return Effect.sync(() => {
+      const runtime = makeSyncRuntime(state.raw.storage);
+
+      const broadcast = Effect.fn("OrganizationStore.broadcast")(function* (headCursor: number) {
+        const encoded = JSON.stringify(
+          encodeLiveEvent({ type: "invalidate", protocolVersion: 2, headCursor }),
         );
-      const message = cause instanceof Error ? cause.message : String(cause);
-      return Response.json(encodeResult({ _tag: "DatabaseFailure", message }));
-    }
-  }
+        for (const socket of yield* state.getWebSockets()) {
+          const attachment = decodeAttachment(socket.deserializeAttachment());
+          if (Option.isNone(attachment)) {
+            yield* socket.close(1008, "Invalid connection metadata");
+            continue;
+          }
+          if (attachment.value.authenticationExpiresAt <= Date.now()) {
+            yield* socket.close(1008, "Authentication expired");
+            continue;
+          }
+          yield* socket.send(encoded);
+        }
+      });
 
-  async #acceptLive(request: Request): Promise<Response> {
-    const organizationId = request.headers.get(LIVE_ORGANIZATION_HEADER);
-    const userId = request.headers.get(LIVE_USER_HEADER);
-    const deviceId = request.headers.get(LIVE_DEVICE_HEADER);
-    const authenticationExpiresAt = Number(request.headers.get(LIVE_AUTH_EXPIRY_HEADER));
-    if (
-      !organizationId ||
-      !userId ||
-      !deviceId ||
-      !Number.isSafeInteger(authenticationExpiresAt) ||
-      authenticationExpiresAt <= Date.now()
-    )
-      return new Response("Invalid live synchronization context", { status: 400 });
+      const acceptLive = Effect.fn("OrganizationStore.acceptLive")(function* (request: Request) {
+        const organizationId = request.headers.get(LIVE_ORGANIZATION_HEADER);
+        const userId = request.headers.get(LIVE_USER_HEADER);
+        const deviceId = request.headers.get(LIVE_DEVICE_HEADER);
+        const authenticationExpiresAt = Number(request.headers.get(LIVE_AUTH_EXPIRY_HEADER));
+        if (
+          !organizationId ||
+          !userId ||
+          !deviceId ||
+          !Number.isSafeInteger(authenticationExpiresAt) ||
+          authenticationExpiresAt <= Date.now()
+        )
+          return HttpServerResponse.text("Invalid live synchronization context", { status: 400 });
 
-    const pair = new WebSocketPair();
-    const client = pair[0];
-    const server = pair[1];
-    server.serializeAttachment(
-      SyncLiveAttachment.make({
-        organizationId,
-        userId,
-        deviceId,
-        connectionId: crypto.randomUUID(),
-        protocolVersion: 2,
-        authenticationExpiresAt,
-      }),
-    );
-    this.ctx.acceptWebSocket(server);
-    const headCursor = await this.#runtime.headCursor(organizationId);
-    server.send(JSON.stringify(encodeLiveEvent({ type: "hello", protocolVersion: 2, headCursor })));
-    console.info(
-      JSON.stringify({
-        event: "sync.live_connected",
-        organizationId,
-        deviceId,
-        headCursor,
-        connectedSockets: this.ctx.getWebSockets().length,
-      }),
-    );
-    return new Response(null, { status: 101, webSocket: client });
-  }
+        const [response, socket] = yield* Cloudflare.upgrade();
+        socket.serializeAttachment(
+          SyncLiveAttachment.make({
+            organizationId,
+            userId,
+            deviceId,
+            connectionId: crypto.randomUUID(),
+            protocolVersion: 2,
+            authenticationExpiresAt,
+          }),
+        );
+        const headCursor = yield* Effect.promise(() => runtime.headCursor(organizationId));
+        yield* socket.send(
+          JSON.stringify(encodeLiveEvent({ type: "hello", protocolVersion: 2, headCursor })),
+        );
+        const connectedSockets = (yield* state.getWebSockets()).length;
+        yield* Effect.logInfo("Live synchronization connected").pipe(
+          Effect.annotateLogs({
+            event: "sync.live_connected",
+            organizationId,
+            deviceId,
+            headCursor,
+            connectedSockets,
+          }),
+        );
+        return response;
+      });
 
-  #broadcast(headCursor: number) {
-    const encoded = JSON.stringify(
-      encodeLiveEvent({ type: "invalidate", protocolVersion: 2, headCursor }),
-    );
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = decodeAttachment(socket.deserializeAttachment());
-      if (Option.isNone(attachment)) {
-        socket.close(1008, "Invalid connection metadata");
-        continue;
-      }
-      if (attachment.value.authenticationExpiresAt <= Date.now()) {
-        socket.close(1008, "Authentication expired");
-        continue;
-      }
-      try {
-        socket.send(encoded);
-      } catch {
-        socket.close(1011, "Invalidation delivery failed");
-      }
-    }
-  }
+      return {
+        fetch: Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
+          if (webRequest.headers.get("Upgrade")?.toLowerCase() === "websocket")
+            return yield* acceptLive(webRequest);
 
-  override webSocketMessage(socket: WebSocket, _message: string | ArrayBuffer): void {
-    // This protocol is server-to-client only. Treat client payloads as abuse.
-    socket.close(1008, "Client messages are not supported");
-  }
+          const payload = decodePayload(yield* Effect.promise(() => webRequest.json()));
+          const result = yield* Effect.result(
+            Effect.tryPromise({
+              try: () => runtime.runSync(payload.actor, payload.request),
+              catch: (cause) => cause,
+            }),
+          );
+          if (result._tag === "Success") {
+            const response = result.success;
+            if (
+              response.acknowledgements.some(
+                (acknowledgement) => acknowledgement.status === "applied",
+              )
+            )
+              yield* broadcast(response.headCursor);
+            return HttpServerResponse.fromWeb(
+              Response.json(encodeResult({ _tag: "Success", response })),
+            );
+          }
+          const cause = result.failure;
+          if (cause instanceof SyncProtocolError)
+            return HttpServerResponse.fromWeb(
+              Response.json(
+                encodeResult({
+                  _tag: "ProtocolFailure",
+                  code: cause.code,
+                  message: cause.message,
+                }),
+              ),
+            );
+          const message = cause instanceof Error ? cause.message : String(cause);
+          return HttpServerResponse.fromWeb(
+            Response.json(encodeResult({ _tag: "DatabaseFailure", message })),
+          );
+        }),
+        webSocketMessage: (socket: Cloudflare.WebSocket) =>
+          // This protocol is server-to-client only. Treat client payloads as abuse.
+          socket.close(1008, "Client messages are not supported"),
+        webSocketClose: () => Effect.void,
+      };
+    });
+  }),
+);
 
-  override webSocketClose(
-    _socket: WebSocket,
-    _code: number,
-    _reason: string,
-    _wasClean: boolean,
-  ): void {}
-
-  override webSocketError(socket: WebSocket, _error: unknown): void {
-    socket.close(1011, "Live synchronization error");
-  }
-}
-
-const decodeResult = Schema.decodeUnknownSync(SyncExchangeResult);
 const encodePayload = Schema.encodeSync(SyncExchangePayload);
 
-export const exchangeWithOrganizationStore = async (
-  namespace: DurableObjectNamespace<OrganizationStore>,
+export type OrganizationStoreNamespace = Effect.Success<typeof OrganizationStore>;
+
+export const exchangeWithOrganizationStore = Effect.fn("OrganizationStore.exchange")(function* (
+  namespace: OrganizationStoreNamespace,
   actor: SyncActor,
   request: SyncRequest,
-): Promise<SyncResponse> => {
+): Effect.fn.Return<SyncResponse, SyncProtocolError | SyncDatabaseError> {
   const stub = namespace.getByName(actor.organizationId);
-  const response = await stub.fetch("https://organization-store/sync", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(encodePayload({ actor, request })),
-  });
-  const result = decodeResult(await response.json());
+  const response = yield* stub
+    .fetch(
+      HttpServerRequest.fromWeb(
+        new Request("https://organization-store/sync", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(encodePayload({ actor, request })),
+        }),
+      ),
+    )
+    .pipe(Effect.orDie);
+  const webResponse = HttpServerResponse.toWeb(response);
+  const body = yield* Effect.promise(() => webResponse.json());
+  const result = yield* Schema.decodeUnknownEffect(SyncExchangeResult)(body).pipe(Effect.orDie);
   if (result._tag === "ProtocolFailure")
-    throw SyncProtocolError.make({ code: result.code, message: result.message });
-  if (result._tag === "DatabaseFailure") throw SyncDatabaseError.make({ message: result.message });
+    return yield* Effect.fail(
+      SyncProtocolError.make({ code: result.code, message: result.message }),
+    );
+  if (result._tag === "DatabaseFailure")
+    return yield* Effect.fail(SyncDatabaseError.make({ message: result.message }));
   return result.response;
-};
+});
 
-export const connectWithOrganizationStore = (
-  namespace: DurableObjectNamespace<OrganizationStore>,
+export const connectWithOrganizationStore = Effect.fn("OrganizationStore.connectLive")(function* (
+  namespace: OrganizationStoreNamespace,
   input: {
     readonly organizationId: string;
     readonly userId: string;
     readonly deviceId: string;
     readonly authenticationExpiresAt: number;
   },
-): Promise<Response> => {
+): Effect.fn.Return<HttpServerResponse.HttpServerResponse> {
   // Authentication credentials terminate at the Worker boundary. The
   // organization object receives only identity already authorized by middleware.
   const headers = new Headers({ Upgrade: "websocket" });
@@ -173,7 +204,8 @@ export const connectWithOrganizationStore = (
   headers.set(LIVE_USER_HEADER, input.userId);
   headers.set(LIVE_DEVICE_HEADER, input.deviceId);
   headers.set(LIVE_AUTH_EXPIRY_HEADER, String(input.authenticationExpiresAt));
-  return namespace.getByName(input.organizationId).fetch("https://organization-store/live", {
-    headers,
-  });
-};
+  return yield* namespace
+    .getByName(input.organizationId)
+    .fetch(HttpServerRequest.fromWeb(new Request("https://organization-store/live", { headers })))
+    .pipe(Effect.orDie);
+});

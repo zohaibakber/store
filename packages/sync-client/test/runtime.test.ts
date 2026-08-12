@@ -10,7 +10,7 @@ import * as Stream from "effect/Stream";
 
 import { makeSyncClientRuntime } from "../src/runtime";
 
-class TestSyncError extends Schema.TaggedErrorClass<TestSyncError>()("TestSyncError", {
+class TestSyncError extends Schema.TaggedError<TestSyncError>()("TestSyncError", {
   message: Schema.String,
   retryable: Schema.Boolean,
 }) {}

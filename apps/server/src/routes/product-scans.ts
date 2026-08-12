@@ -2,65 +2,99 @@ import { ProductScanInput } from "@store/contracts";
 import { ProductScanService, productScanLayer } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
+import * as Stream from "effect/Stream";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { productScanAiClient } from "../ai/product-scan-ai";
-import type { AppEnv } from "../http/context";
-import { publicError } from "../http/errors";
+import { CurrentOrganization } from "../auth/organization";
+import { StoreApi } from "../http/api";
+import { badGateway, badRequest, payloadTooLarge, tooManyRequests } from "../http/errors";
+import { ServerRuntime } from "../http/runtime";
 
 const MAX_PRODUCT_SCAN_BODY_SIZE = 96 * 1024;
 
-export const productScansRoute = new Hono<AppEnv>().post(
-  "/",
-  bodyLimit({
-    maxSize: MAX_PRODUCT_SCAN_BODY_SIZE,
-    onError: (c) =>
-      c.json(publicError("PRODUCT_SCAN_TOO_LARGE", "The recognized text is too large."), 413),
-  }),
-  async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json(publicError("INVALID_PRODUCT_SCAN", "The scan text could not be read."), 400);
-    }
+const readBody = (request: HttpServerRequest.HttpServerRequest) =>
+  Stream.runFoldEffect(
+    request.stream,
+    () => ({ chunks: [] as ReadonlyArray<Uint8Array>, size: 0 }),
+    (state, chunk) => {
+      const size = state.size + chunk.byteLength;
+      if (size > MAX_PRODUCT_SCAN_BODY_SIZE)
+        return Effect.fail(
+          payloadTooLarge("PRODUCT_SCAN_TOO_LARGE", "The recognized text is too large."),
+        );
+      return Effect.succeed({ chunks: [...state.chunks, chunk], size });
+    },
+  ).pipe(
+    Effect.map(({ chunks, size }) => {
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return new TextDecoder().decode(bytes);
+    }),
+    Effect.catchTag("HttpServerError", () =>
+      Effect.fail(badRequest("INVALID_PRODUCT_SCAN", "The scan text could not be read.")),
+    ),
+  );
 
-    const decoded = await Effect.runPromise(
-      Schema.decodeUnknownEffect(ProductScanInput)(body).pipe(Effect.result),
-    );
-    if (decoded._tag === "Failure")
-      return c.json(
-        publicError(
+const decodeBody = (request: HttpServerRequest.HttpServerRequest) =>
+  readBody(request).pipe(
+    Effect.flatMap((text) =>
+      Effect.try({
+        try: () => JSON.parse(text) as unknown,
+        catch: () => badRequest("INVALID_PRODUCT_SCAN", "The scan text could not be read."),
+      }),
+    ),
+    Effect.flatMap(Schema.decodeUnknownEffect(ProductScanInput)),
+    Effect.catchTag("SchemaError", () =>
+      Effect.fail(
+        badRequest(
           "INVALID_PRODUCT_SCAN",
           "Send non-empty recognized text and choose product or batch mode.",
         ),
-        400,
-      );
+      ),
+    ),
+  );
 
-    const rateLimit = await c.env.PRODUCT_SCAN_RATE_LIMIT.limit({
-      key: `${c.var.organizationId}:${c.var.user.id}`,
-    });
-    if (!rateLimit.success)
-      return c.json(
-        publicError("PRODUCT_SCAN_RATE_LIMITED", "Too many scans. Please wait a moment."),
-        429,
-      );
+export const ProductScanHandlers = HttpApiBuilder.group(
+  StoreApi,
+  "productScans",
+  Effect.fn(function* (handlers) {
+    const runtime = yield* ServerRuntime;
 
-    try {
-      const result = await Effect.runPromise(
-        ProductScanService.pipe(
-          Effect.flatMap((service) => service.parse(decoded.success)),
-          Effect.provide(productScanLayer({ ai: productScanAiClient(c.env.AI, c.req.raw.signal) })),
-        ),
-      );
-      return c.json(result);
-    } catch (cause) {
-      console.error("Product scan parsing failed", cause instanceof Error ? cause.message : cause);
-      return c.json(
-        publicError("PRODUCT_SCAN_FAILED", "The recognized text could not be analysed. Try again."),
-        502,
-      );
-    }
-  },
+    return handlers.handleRaw(
+      "parse",
+      Effect.fn(function* ({ request }) {
+        const identity = yield* CurrentOrganization;
+        const input = yield* decodeBody(request);
+        const rateLimit = yield* runtime
+          .limitProductScan(`${identity.organizationId}:${identity.user.id}`)
+          .pipe(Effect.orDie);
+        if (!rateLimit.success)
+          return yield* Effect.fail(
+            tooManyRequests("PRODUCT_SCAN_RATE_LIMITED", "Too many scans. Please wait a moment."),
+          );
+
+        const ai = yield* runtime.productScanAi;
+        return yield* ProductScanService.pipe(
+          Effect.flatMap((service) => service.parse(input)),
+          Effect.provide(productScanLayer({ ai })),
+          Effect.tapError((cause) =>
+            Effect.logError("Product scan parsing failed").pipe(
+              Effect.annotateLogs({ cause: cause.message }),
+            ),
+          ),
+          Effect.mapError(() =>
+            badGateway(
+              "PRODUCT_SCAN_FAILED",
+              "The recognized text could not be analysed. Try again.",
+            ),
+          ),
+        );
+      }),
+    );
+  }),
 );

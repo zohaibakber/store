@@ -9,13 +9,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-export class ProductScanError extends Schema.TaggedErrorClass<ProductScanError>()(
-  "ProductScanError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+export class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export class ProductScanService extends Context.Service<
   ProductScanService,

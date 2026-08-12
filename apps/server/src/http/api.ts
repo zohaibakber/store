@@ -1,0 +1,98 @@
+import {
+  InvoiceExtraction,
+  ProductScanInput,
+  ProductScanResult,
+  SyncRequest,
+  SyncResponse,
+} from "@store/contracts";
+import * as Schema from "effect/Schema";
+import * as HttpApi from "effect/unstable/httpapi/HttpApi";
+import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
+
+import { OrganizationAuth } from "../auth/organization";
+import {
+  BadGateway,
+  BadRequest,
+  Conflict,
+  Forbidden,
+  InternalServerError,
+  PayloadTooLarge,
+  ServiceUnavailable,
+  TooManyRequests,
+  UnprocessableEntity,
+  UnsupportedMediaType,
+  UpgradeRequired,
+} from "./errors";
+
+export const MAX_UPLOAD_FILES = 10;
+export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+const Landing = Schema.Struct({
+  service: Schema.Literal("Store Invoice API"),
+  endpoints: Schema.Array(Schema.String),
+});
+
+const ApiStatus = Schema.Struct({
+  service: Schema.Literal("Store Invoice API"),
+  ok: Schema.Boolean,
+});
+
+const Health = Schema.Struct({ ok: Schema.Boolean });
+
+const system = HttpApiGroup.make("system")
+  .add(HttpApiEndpoint.get("landing", "/", { success: Landing }))
+  .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
+  .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
+
+const sync = HttpApiGroup.make("sync")
+  .add(
+    HttpApiEndpoint.post("exchange", "/api/sync", {
+      payload: SyncRequest,
+      success: SyncResponse,
+      error: [
+        BadRequest,
+        Forbidden,
+        Conflict,
+        UnprocessableEntity,
+        InternalServerError,
+        ServiceUnavailable,
+      ],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("live", "/api/sync/live", {
+      query: {
+        organizationId: Schema.optionalKey(Schema.String),
+        deviceId: Schema.optionalKey(Schema.String),
+        protocolVersion: Schema.optionalKey(Schema.String),
+      },
+      success: HttpApiSchema.NoContent,
+      error: [BadRequest, Forbidden, UpgradeRequired],
+    }).middleware(OrganizationAuth),
+  );
+
+const uploads = HttpApiGroup.make("uploads").add(
+  HttpApiEndpoint.post("extract", "/api/uploads", {
+    payload: Schema.Unknown.pipe(
+      HttpApiSchema.asMultipartStream({
+        maxParts: MAX_UPLOAD_FILES + 10,
+        maxFileSize: MAX_UPLOAD_BYTES,
+        maxTotalSize: MAX_UPLOAD_BYTES,
+      }),
+    ),
+    success: InvoiceExtraction,
+    error: [BadRequest, PayloadTooLarge, UnsupportedMediaType, BadGateway],
+  }).middleware(OrganizationAuth),
+);
+
+const productScans = HttpApiGroup.make("productScans").add(
+  HttpApiEndpoint.post("parse", "/api/product-scans", {
+    payload: ProductScanInput,
+    success: ProductScanResult,
+    error: [BadRequest, PayloadTooLarge, TooManyRequests, BadGateway],
+  }).middleware(OrganizationAuth),
+);
+
+export const StoreApi = HttpApi.make("StoreApi").add(system, sync, uploads, productScans);

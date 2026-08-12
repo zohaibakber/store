@@ -1,11 +1,18 @@
 import type { SyncEntityChange, SyncRequest } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
+import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
+import { RuntimeContext } from "alchemy";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { vi } from "vitest";
 
-import { createApp } from "../../src/http/app";
-import type { SyncLiveConnector } from "../../src/http/context";
-import { factory } from "../../src/http/factory";
-import type { SyncActor } from "../../src/sync/service";
+import { ServerRoutes } from "../../src/http/app";
+import { ServerRuntime, type ServerRuntimeShape, type SyncLiveInput } from "../../src/http/runtime";
+import type { SyncActor } from "../../src/sync/model";
 
 const session = {
   user: {
@@ -26,6 +33,38 @@ const session = {
     activeOrganizationId: "org-1",
   },
 };
+
+const defaultInvoiceAi: InvoiceAiClient = {
+  toMarkdown: async () => [],
+  generate: async () => ({ supplier: null, invoiceNumber: null, lines: [] }),
+};
+
+const defaultProductScanAi: ProductScanAiClient = {
+  generate: async () => ({
+    name: null,
+    composition: null,
+    strength: null,
+    unitsPerPack: null,
+    batchNumber: null,
+    expiresAt: null,
+    confidence: 0,
+  }),
+};
+
+const testRuntimeContext = Context.make(RuntimeContext, {
+  Type: "test",
+  id: "server-route-test",
+  env: {},
+  get: () => Effect.succeed(undefined),
+  set: (id) => Effect.succeed(id),
+});
+
+export type SyncLiveConnector = (input: SyncLiveInput) => Promise<Response>;
+
+export interface AppOptions {
+  readonly productScanAi?: ProductScanAiClient;
+  readonly productScanAllowed?: boolean;
+}
 
 export const requestFor = (): SyncRequest => {
   const operation = {
@@ -70,17 +109,36 @@ export const appFor = (
   })),
   connectSyncLive: SyncLiveConnector = async () =>
     new Response("WebSocket upgrades are unavailable in this test", { status: 501 }),
-) => {
-  const runtime = factory.createMiddleware(async (c, next) => {
-    c.set("authApi", {
-      getSession: async () => (authenticated ? session : null),
-      getActiveMember: async () => (member ? { id: "member-1" } : null),
-    });
-    c.set("authHandler", async () => new Response(null, { status: 404 }));
-    c.set("runSync", runSync);
-    c.set("connectSyncLive", connectSyncLive);
-    c.set("trustedOrigins", ["http://localhost:5173"]);
-    await next();
-  });
-  return createApp(runtime);
-};
+  options: AppOptions = {},
+) => ({
+  request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
+    const runtime = {
+      electronProtocol: "com.tabaaq.desktop",
+      trustedOrigins: ["http://localhost:5173"],
+      authFetch: () => Effect.succeed(HttpServerResponse.empty({ status: 404 })),
+      getSession: () => Effect.succeed(authenticated ? session : null),
+      hasActiveMember: () => Effect.succeed(member),
+      invoiceAi: Effect.succeed(invoiceAi),
+      productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
+      limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
+      runSync: (actor, request) => Effect.promise(() => runSync(actor, request)),
+      connectSyncLive: (input) =>
+        Effect.promise(() => connectSyncLive(input)).pipe(Effect.map(HttpServerResponse.fromWeb)),
+    } satisfies ServerRuntimeShape;
+    const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
+    const app = ServerRoutes.pipe(
+      Layer.provide(RuntimeLive),
+      Layer.provide(HttpServer.layerServices),
+      Layer.provide(Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext))),
+    );
+    const { dispose, handler } = HttpRouter.toWebHandler(app, { disableLogger: true });
+    try {
+      return await handler(
+        new Request(new URL(path, "http://localhost"), init),
+        Context.add(testRuntimeContext, ServerRuntime, runtime),
+      );
+    } finally {
+      await dispose();
+    }
+  },
+});

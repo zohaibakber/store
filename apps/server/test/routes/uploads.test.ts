@@ -1,6 +1,6 @@
+import type { InvoiceAiClient } from "@store/services";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ApiEnv } from "../../infra";
 import { appFor } from "../lib/app";
 
 const invoiceForm = (files: ReadonlyArray<File>) => {
@@ -27,8 +27,6 @@ const extraction = {
   ],
 };
 
-const envWith = (ai: { toMarkdown: unknown; run: unknown }) => ({ AI: ai }) as unknown as ApiEnv;
-
 const markdownFor = (documents: ReadonlyArray<{ name: string }>) =>
   documents.map((document) => ({
     id: document.name,
@@ -39,16 +37,12 @@ const markdownFor = (documents: ReadonlyArray<{ name: string }>) =>
     data: "| item | qty |\n| --- | --- |\n| Paracetamol | 4 |",
   }));
 
-const workingAi = (
-  run = vi.fn(async () => ({
-    choices: [{ message: { content: JSON.stringify(extraction) } }],
-  })),
-) => ({
-  ai: envWith({
+const workingAi = (generate = vi.fn(async () => JSON.stringify(extraction))) => ({
+  ai: {
     toMarkdown: vi.fn(async (documents: ReadonlyArray<{ name: string }>) => markdownFor(documents)),
-    run,
-  }),
-  run,
+    generate,
+  } satisfies InvoiceAiClient,
+  generate,
 });
 
 describe("invoice upload authorization", () => {
@@ -71,9 +65,9 @@ describe("invoice upload authorization", () => {
   });
 
   it("never reaches the model when the caller is unauthorized", async () => {
-    const { ai, run } = workingAi();
+    const { ai, generate } = workingAi();
     await appFor(false, false).request("/api/uploads", invoiceForm([pdf()]), ai);
-    expect(run).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
   });
 });
 
@@ -104,21 +98,21 @@ describe("invoice upload validation", () => {
 
 describe("invoice upload extraction", () => {
   it("converts attachments to markdown and returns the model's extraction", async () => {
-    const { ai, run } = workingAi();
+    const { ai, generate } = workingAi();
     const response = await appFor(true).request("/api/uploads", invoiceForm([pdf()]), ai);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject(extraction);
-    expect(run).toHaveBeenCalledOnce();
-    expect(run).toHaveBeenCalledWith(
-      "@cf/google/gemma-4-26b-a4b-it",
+    expect(generate).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
-        response_format: expect.objectContaining({ type: "json_schema" }),
+        messages: expect.any(Array),
+        jsonSchema: expect.any(Object),
       }),
     );
   });
 
   it("extracts CSV attachments without calling the model at all", async () => {
-    const { ai, run } = workingAi();
+    const { ai, generate } = workingAi();
     const csv = new File(
       ["name,packs,units per pack,pack price\nIbuprofen,3,20,9.5\n"],
       "invoice.csv",
@@ -129,17 +123,17 @@ describe("invoice upload extraction", () => {
     expect(await response.json()).toMatchObject({
       lines: [{ name: "Ibuprofen", packQuantity: 3, unitsPerPack: 20, packPrice: 950 }],
     });
-    expect(run).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
   });
 
   it("reports a failed extraction without leaking the underlying cause", async () => {
-    const run = vi.fn(async () => {
+    const generate = vi.fn(async () => {
       throw new Error("workers ai neuron budget exhausted");
     });
     const response = await appFor(true).request(
       "/api/uploads",
       invoiceForm([pdf()]),
-      workingAi(run).ai,
+      workingAi(generate).ai,
     );
     expect(response.status).toBe(502);
     const body = JSON.stringify(await response.json());
@@ -148,7 +142,7 @@ describe("invoice upload extraction", () => {
   });
 
   it("fails cleanly when no attachment can be converted to markdown", async () => {
-    const ai = envWith({
+    const ai = {
       toMarkdown: vi.fn(async (documents: ReadonlyArray<{ name: string }>) =>
         documents.map((document) => ({
           id: document.name,
@@ -158,8 +152,8 @@ describe("invoice upload extraction", () => {
           error: "corrupt document",
         })),
       ),
-      run: vi.fn(),
-    });
+      generate: vi.fn(),
+    } satisfies InvoiceAiClient;
     const response = await appFor(true).request("/api/uploads", invoiceForm([pdf()]), ai);
     expect(response.status).toBe(502);
   });
