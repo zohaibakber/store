@@ -29,7 +29,7 @@ export interface OrganizationStoreShape extends Cloudflare.DurableObjectShape {
 export class OrganizationStore extends Cloudflare.DurableObject<
   OrganizationStore,
   OrganizationStoreShape
->()("OrganizationStore") {}
+>()("ORGANIZATION_STORE") {}
 
 export const OrganizationStoreLive = OrganizationStore.make<never>(
   Effect.gen(function* () {
