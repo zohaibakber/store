@@ -35,6 +35,15 @@ export class OrganizationAuth extends HttpApiMiddleware.Service<
   { requires: import("alchemy").RuntimeContext; provides: CurrentOrganization }
 >()("@store/server/OrganizationAuth", { error: [Unauthenticated, Forbidden] }) {}
 
+const logAuthFailure = (message: string) =>
+  Effect.tapError((cause: unknown) =>
+    Effect.logError(message).pipe(
+      Effect.annotateLogs({
+        cause: cause instanceof Error ? cause.message : String(cause),
+      }),
+    ),
+  );
+
 export const OrganizationAuthLive = Layer.effect(
   OrganizationAuth,
   Effect.gen(function* () {
@@ -44,16 +53,9 @@ export const OrganizationAuthLive = Layer.effect(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         const headers = authHeadersForRequest(new Headers(request.headers));
-        const session = yield* runtime.getSession(headers).pipe(
-          Effect.tapError((cause) =>
-            Effect.logError("Better Auth session lookup failed").pipe(
-              Effect.annotateLogs({
-                cause: cause instanceof Error ? cause.message : String(cause),
-              }),
-            ),
-          ),
-          Effect.orDie,
-        );
+        const session = yield* runtime
+          .getSession(headers)
+          .pipe(logAuthFailure("Better Auth session lookup failed"), Effect.orDie);
         if (!session)
           return yield* Effect.fail(
             unauthenticated("UNAUTHENTICATED", "Authentication is required."),
@@ -65,16 +67,9 @@ export const OrganizationAuthLive = Layer.effect(
             forbidden("ORGANIZATION_REQUIRED", "Select an organization first."),
           );
 
-        const hasActiveMember = yield* runtime.hasActiveMember(headers).pipe(
-          Effect.tapError((cause) =>
-            Effect.logError("Better Auth organization lookup failed").pipe(
-              Effect.annotateLogs({
-                cause: cause instanceof Error ? cause.message : String(cause),
-              }),
-            ),
-          ),
-          Effect.orDie,
-        );
+        const hasActiveMember = yield* runtime
+          .hasActiveMember(headers)
+          .pipe(logAuthFailure("Better Auth organization lookup failed"), Effect.orDie);
         if (!hasActiveMember)
           return yield* Effect.fail(
             forbidden("ORGANIZATION_ACCESS_DENIED", "Organization access is denied."),

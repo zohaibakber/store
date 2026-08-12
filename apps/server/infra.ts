@@ -18,7 +18,6 @@ import { productScanAiClient } from "./src/ai/product-scan-ai";
 import { reportAuthEvent } from "./src/runtime/worker";
 import {
   connectWithOrganizationStore,
-  exchangeWithOrganizationStore,
   OrganizationStore,
   OrganizationStoreLive,
 } from "./src/sync/organization-store";
@@ -121,7 +120,8 @@ export const ApiLive = Api.make(
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
-      runSync: (actor, request) => exchangeWithOrganizationStore(organizationStore, actor, request),
+      runSync: (actor, request) =>
+        organizationStore.getByName(actor.organizationId).exchange(actor, request),
       connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
     });
     const routes = ServerRoutes.pipe(

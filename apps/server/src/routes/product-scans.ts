@@ -44,7 +44,7 @@ const decodeBody = (request: HttpServerRequest.HttpServerRequest) =>
   readBody(request).pipe(
     Effect.flatMap((text) =>
       Effect.try({
-        try: () => JSON.parse(text) as unknown,
+        try: (): unknown => JSON.parse(text),
         catch: () => badRequest("INVALID_PRODUCT_SCAN", "The scan text could not be read."),
       }),
     ),

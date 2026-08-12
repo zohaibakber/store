@@ -26,23 +26,18 @@ const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
 );
 
+const handleAuthRequest = Effect.fn("Server.handleAuthRequest")(function* (
+  request: HttpServerRequest.HttpServerRequest,
+) {
+  const runtime = yield* ServerRuntime;
+  const webRequest = yield* HttpServerRequest.toWeb(request);
+  const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
+  return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
+});
+
 const AuthRoutes = Layer.mergeAll(
-  HttpRouter.add("GET", "/api/auth/*", (request) =>
-    Effect.gen(function* () {
-      const runtime = yield* ServerRuntime;
-      const webRequest = yield* HttpServerRequest.toWeb(request);
-      const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
-      return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
-    }),
-  ),
-  HttpRouter.add("POST", "/api/auth/*", (request) =>
-    Effect.gen(function* () {
-      const runtime = yield* ServerRuntime;
-      const webRequest = yield* HttpServerRequest.toWeb(request);
-      const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
-      return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
-    }),
-  ),
+  HttpRouter.add("GET", "/api/auth/*", handleAuthRequest),
+  HttpRouter.add("POST", "/api/auth/*", handleAuthRequest),
 );
 
 const Cors = HttpRouter.middleware(

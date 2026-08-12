@@ -1,4 +1,5 @@
 import { SyncLiveAttachment, SyncLiveEvent, SyncRequest, SyncResponse } from "@store/contracts";
+import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -6,24 +7,10 @@ import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { SyncDatabaseError, SyncProtocolCode, SyncProtocolError } from "./errors";
+import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
 import { makeSyncRuntime } from "./runtime";
 
-// Schema classes and typed errors do not survive structured clone.
-export const SyncExchangePayload = Schema.Struct({
-  actor: Schema.Struct({ organizationId: Schema.String, userId: Schema.String }),
-  request: SyncRequest,
-});
-
-export const SyncExchangeResult = Schema.Union([
-  Schema.TaggedStruct("Success", { response: SyncResponse }),
-  Schema.TaggedStruct("ProtocolFailure", { code: SyncProtocolCode, message: Schema.String }),
-  Schema.TaggedStruct("DatabaseFailure", { message: Schema.String }),
-]);
-
-const decodePayload = Schema.decodeUnknownSync(SyncExchangePayload);
-const encodeResult = Schema.encodeSync(SyncExchangeResult);
 const decodeAttachment = Schema.decodeUnknownOption(SyncLiveAttachment);
 const encodeLiveEvent = Schema.encodeSync(SyncLiveEvent);
 
@@ -32,10 +19,19 @@ const LIVE_USER_HEADER = "x-sync-user-id";
 const LIVE_DEVICE_HEADER = "x-sync-device-id";
 const LIVE_AUTH_EXPIRY_HEADER = "x-sync-authentication-expires-at";
 
+export interface OrganizationStoreShape extends Cloudflare.DurableObjectShape {
+  readonly exchange: (
+    actor: SyncActor,
+    request: SyncRequest,
+  ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
+}
+
+// Keep the legacy logical id so Alchemy updates the existing
+// per-organization SQLite namespace instead of deleting and recreating it.
 export class OrganizationStore extends Cloudflare.DurableObject<
   OrganizationStore,
-  Cloudflare.DurableObjectShape
->()("OrganizationStore") {}
+  OrganizationStoreShape
+>()("ORGANIZATION_STORE") {}
 
 export const OrganizationStoreLive = OrganizationStore.make<never>(
   Effect.gen(function* () {
@@ -51,15 +47,46 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
         for (const socket of yield* state.getWebSockets()) {
           const attachment = decodeAttachment(socket.deserializeAttachment());
           if (Option.isNone(attachment)) {
-            yield* socket.close(1008, "Invalid connection metadata");
+            yield* socket.close(1008, "Invalid connection metadata").pipe(Effect.ignoreCause);
             continue;
           }
           if (attachment.value.authenticationExpiresAt <= Date.now()) {
-            yield* socket.close(1008, "Authentication expired");
+            yield* socket.close(1008, "Authentication expired").pipe(Effect.ignoreCause);
             continue;
           }
-          yield* socket.send(encoded);
+          yield* socket
+            .send(encoded)
+            .pipe(
+              Effect.catchCause(() =>
+                socket.close(1011, "Invalidation delivery failed").pipe(Effect.ignoreCause),
+              ),
+            );
         }
+      });
+
+      const exchange = Effect.fn("OrganizationStore.exchange")(function* (
+        actor: SyncActor,
+        request: SyncRequest,
+      ) {
+        const response = yield* Effect.tryPromise({
+          try: () => runtime.runSync(actor, request),
+          catch: (cause) =>
+            cause instanceof SyncProtocolError
+              ? cause
+              : SyncDatabaseError.make({
+                  message: cause instanceof Error ? cause.message : String(cause),
+                }),
+        });
+        if (
+          response.acknowledgements.some((acknowledgement) => acknowledgement.status === "applied")
+        )
+          yield* broadcast(response.headCursor).pipe(
+            Effect.ignoreCause({
+              log: true,
+              message: "Sync invalidation broadcast failed",
+            }),
+          );
+        return response;
       });
 
       const acceptLive = Effect.fn("OrganizationStore.acceptLive")(function* (request: Request) {
@@ -108,44 +135,11 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
         fetch: Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
           const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
-          if (webRequest.headers.get("Upgrade")?.toLowerCase() === "websocket")
-            return yield* acceptLive(webRequest);
-
-          const payload = decodePayload(yield* Effect.promise(() => webRequest.json()));
-          const result = yield* Effect.result(
-            Effect.tryPromise({
-              try: () => runtime.runSync(payload.actor, payload.request),
-              catch: (cause) => cause,
-            }),
-          );
-          if (result._tag === "Success") {
-            const response = result.success;
-            if (
-              response.acknowledgements.some(
-                (acknowledgement) => acknowledgement.status === "applied",
-              )
-            )
-              yield* broadcast(response.headCursor);
-            return HttpServerResponse.fromWeb(
-              Response.json(encodeResult({ _tag: "Success", response })),
-            );
-          }
-          const cause = result.failure;
-          if (cause instanceof SyncProtocolError)
-            return HttpServerResponse.fromWeb(
-              Response.json(
-                encodeResult({
-                  _tag: "ProtocolFailure",
-                  code: cause.code,
-                  message: cause.message,
-                }),
-              ),
-            );
-          const message = cause instanceof Error ? cause.message : String(cause);
-          return HttpServerResponse.fromWeb(
-            Response.json(encodeResult({ _tag: "DatabaseFailure", message })),
-          );
+          return webRequest.headers.get("Upgrade")?.toLowerCase() === "websocket"
+            ? yield* acceptLive(webRequest)
+            : HttpServerResponse.text("Not found", { status: 404 });
         }),
+        exchange,
         webSocketMessage: (socket: Cloudflare.WebSocket) =>
           // This protocol is server-to-client only. Treat client payloads as abuse.
           socket.close(1008, "Client messages are not supported"),
@@ -155,38 +149,7 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
   }),
 );
 
-const encodePayload = Schema.encodeSync(SyncExchangePayload);
-
 export type OrganizationStoreNamespace = Effect.Success<typeof OrganizationStore>;
-
-export const exchangeWithOrganizationStore = Effect.fn("OrganizationStore.exchange")(function* (
-  namespace: OrganizationStoreNamespace,
-  actor: SyncActor,
-  request: SyncRequest,
-): Effect.fn.Return<SyncResponse, SyncProtocolError | SyncDatabaseError> {
-  const stub = namespace.getByName(actor.organizationId);
-  const response = yield* stub
-    .fetch(
-      HttpServerRequest.fromWeb(
-        new Request("https://organization-store/sync", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(encodePayload({ actor, request })),
-        }),
-      ),
-    )
-    .pipe(Effect.orDie);
-  const webResponse = HttpServerResponse.toWeb(response);
-  const body = yield* Effect.promise(() => webResponse.json());
-  const result = yield* Schema.decodeUnknownEffect(SyncExchangeResult)(body).pipe(Effect.orDie);
-  if (result._tag === "ProtocolFailure")
-    return yield* Effect.fail(
-      SyncProtocolError.make({ code: result.code, message: result.message }),
-    );
-  if (result._tag === "DatabaseFailure")
-    return yield* Effect.fail(SyncDatabaseError.make({ message: result.message }));
-  return result.response;
-});
 
 export const connectWithOrganizationStore = Effect.fn("OrganizationStore.connectLive")(function* (
   namespace: OrganizationStoreNamespace,
