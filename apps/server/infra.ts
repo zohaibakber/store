@@ -39,7 +39,7 @@ export const Api = Effect.gen(function* () {
     // in step. No compatibility flag gates between 07-11 and the 07-13 this
     // used to be, so nothing behavioural changed. Bump it when alchemy's
     // bundled workerd moves.
-    compatibility: { date: "2026-07-11", flags: ["nodejs_compat"] },
+    compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
     placement: { mode: "smart" },
     observability: { enabled: true },
     // The desktop falls back to http://localhost:8787 in development, so pin
@@ -48,6 +48,10 @@ export const Api = Effect.gen(function* () {
     env: {
       AUTH_DB: authDb,
       AI: Cloudflare.Workers.AI(),
+      PRODUCT_SCAN_RATE_LIMIT: Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
+        namespaceId: 1001,
+        simple: { limit: 30, period: 60 },
+      }),
       // One Durable Object per organization, each with its own SQLite database.
       // The class name must match the export from `src/index.ts`.
       ORGANIZATION_STORE: Cloudflare.DurableObject<OrganizationStore>("ORGANIZATION_STORE", {

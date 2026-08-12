@@ -7,6 +7,7 @@ The Cloudflare Worker exposes:
 - `POST /api/sync`
 - `GET /api/sync/live` (WebSocket upgrade)
 - `POST /api/uploads`
+- `POST /api/product-scans`
 
 Better Auth stores global identity and organization membership in D1 through `AUTH_DB`. Each
 organization's inventory and sync log live in its own SQLite-backed Durable Object through

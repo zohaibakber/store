@@ -10,6 +10,7 @@ import { Uniwind, useUniwind } from "uniwind";
 import { Brand } from "@/components/brand";
 import { useProducts } from "@/features/products/products-provider";
 import { authClient } from "@/lib/auth-client";
+import { resetProductsSession } from "@/lib/products";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
@@ -31,7 +32,10 @@ export default function SettingsScreen() {
         text: "Sign out",
         style: "destructive",
         onPress: () => {
-          void authClient.signOut().finally(() => router.replace("/auth"));
+          void authClient.signOut().finally(() => {
+            resetProductsSession();
+            router.replace("/auth");
+          });
         },
       },
     ]);

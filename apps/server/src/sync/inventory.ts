@@ -35,11 +35,22 @@ export const reconcileBatch = Effect.fn("SyncDatabase.reconcileBatch")(function*
         eq(stockMovements.batchId, batchId),
       ),
     );
+  const packQuantity = Number(totals?.packQuantity ?? 0);
+  const unitQuantity = Number(totals?.unitQuantity ?? 0);
+  if (
+    !Number.isSafeInteger(packQuantity) ||
+    !Number.isSafeInteger(unitQuantity) ||
+    packQuantity < 0 ||
+    unitQuantity < 0
+  )
+    return yield* Effect.fail(
+      protocolError("ENTITY_CONFLICT", "A stock movement would make inventory negative."),
+    );
   const [batch] = yield* tx
     .update(batches)
     .set({
-      packQuantity: Number(totals?.packQuantity ?? 0),
-      unitQuantity: Number(totals?.unitQuantity ?? 0),
+      packQuantity,
+      unitQuantity,
       updatedAt: operation.occurredAt,
       updatedByUserId: actor.userId,
       deviceId: operation.deviceId,
