@@ -139,3 +139,5 @@ export const ApiLive = Api.make(
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),
 );
+
+export default ApiLive;
