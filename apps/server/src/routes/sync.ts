@@ -97,7 +97,7 @@ const decodeSyncRequest = (request: HttpServerRequest.HttpServerRequest) =>
   request.text.pipe(
     Effect.flatMap((text) =>
       Effect.try({
-        try: () => JSON.parse(text) as unknown,
+        try: (): unknown => JSON.parse(text),
         catch: () =>
           SyncProtocolError.make({ code: "INVALID_JSON", message: "Invalid JSON body." }),
       }),
