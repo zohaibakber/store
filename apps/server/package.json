@@ -9,14 +9,14 @@
     "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
+    "@alchemy.run/better-auth": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "@store/services": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.4",
-    "effect": "catalog:",
-    "hono": "^4.12.32"
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/sql-libsql": "catalog:",

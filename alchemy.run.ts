@@ -6,7 +6,7 @@ import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { Api } from "./apps/server/infra";
+import { Api, ApiLive } from "./apps/server/infra";
 
 /**
  * Composition root for the Cloudflare infrastructure behind `apps/server`.
@@ -56,5 +56,5 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       workerName: api.workerName,
     };
-  }),
+  }).pipe(Effect.provide(ApiLive)),
 );

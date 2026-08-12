@@ -1,10 +1,29 @@
+import { BetterAuth } from "@alchemy.run/better-auth";
+import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
+import { makeEffectAuthConfig } from "@store/auth";
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
-import type { OrganizationStore } from "./src/sync/organization-store";
+import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
+import { invoiceAiClient } from "./src/ai/invoice-ai";
+import { productScanAiClient } from "./src/ai/product-scan-ai";
+import { reportAuthEvent } from "./src/runtime/worker";
+import {
+  connectWithOrganizationStore,
+  exchangeWithOrganizationStore,
+  OrganizationStore,
+  OrganizationStoreLive,
+} from "./src/sync/organization-store";
+
+export { OrganizationStore };
 
 /**
  * Production serves from a stable hostname on the existing `zohaibakber.com`
@@ -19,65 +38,104 @@ import type { OrganizationStore } from "./src/sync/organization-store";
 const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
 
 /**
- * The API Worker. This is a plain async (non-Effect) Worker: `main` points at
- * the existing Hono application and every binding is declared on `env`, so the
- * runtime under `src/` is untouched by the move off wrangler.
+ * The API Worker, authentication, bindings, routes, and Durable Object clients
+ * all stay in one Effect runtime. No framework or Promise adapter sits between
+ * Alchemy and the HTTP API.
  */
-export const Api = Effect.gen(function* () {
-  const { stage } = yield* Alchemy.Stack;
-  const authDb = yield* AuthDatabase;
+export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
-  return yield* Cloudflare.Worker("Api", {
-    main: new URL("./src/index.ts", import.meta.url).href,
-    // `worker.url` becomes the custom domain when one is set, so the stack's
-    // `apiUrl` output is the right thing to feed a desktop release either way.
-    ...(stage === "prod" ? { domain: PRODUCTION_DOMAIN } : {}),
-    // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
-    // alchemy's dev runtime pins workerd exactly, and that build refuses any
-    // date past 2026-07-11. Raising this breaks `vp run dev` with a
-    // WorkerdUserScript ConfigError while deploys keep working, so keep the two
-    // in step. No compatibility flag gates between 07-11 and the 07-13 this
-    // used to be, so nothing behavioural changed. Bump it when alchemy's
-    // bundled workerd moves.
-    compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
-    placement: { mode: "smart" },
-    observability: { enabled: true },
-    // The desktop falls back to http://localhost:8787 in development, so pin
-    // the local dev port rather than taking alchemy's default of 1337.
-    dev: { port: 8787 },
-    env: {
-      AUTH_DB: authDb,
-      AI: Cloudflare.Workers.AI(),
-      PRODUCT_SCAN_RATE_LIMIT: Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
-        namespaceId: 1001,
-        simple: { limit: 30, period: 60 },
-      }),
-      // One Durable Object per organization, each with its own SQLite database.
-      // The class name must match the export from `src/index.ts`.
-      ORGANIZATION_STORE: Cloudflare.DurableObject<OrganizationStore>("ORGANIZATION_STORE", {
-        className: "OrganizationStore",
-      }),
-      BETTER_AUTH_SECRET: Config.redacted("BETTER_AUTH_SECRET"),
-      // Extra *browser* origins to trust for CORS and Better Auth's origin
-      // check, comma-separated. Empty is the correct production value: the
-      // Worker's own origin and the Electron protocol origin are trusted
-      // independently. For browser-based local development set this in the
-      // stage's env file.
-      AUTH_TRUSTED_ORIGINS: Config.string("AUTH_TRUSTED_ORIGINS").pipe(Config.withDefault("")),
-      ELECTRON_PROTOCOL: Config.string("ELECTRON_PROTOCOL").pipe(
-        Config.withDefault("com.tabaaq.desktop"),
-      ),
-      MOBILE_PROTOCOL: Config.string("MOBILE_PROTOCOL").pipe(
-        Config.withDefault("com.tabaaq.mobile"),
-      ),
-    },
-  });
-});
+export const ApiLive = Api.make(
+  Effect.gen(function* () {
+    const { stage } = yield* Alchemy.Stack;
 
-/**
- * The Worker's runtime bindings, derived from the declaration above. This
- * replaces the global `Env` interface that `wrangler types` used to generate
- * into `worker-configuration.d.ts` — the env can no longer drift from the
- * infrastructure that produced it.
- */
-export type ApiEnv = Cloudflare.InferEnv<typeof Api>;
+    return {
+      main: import.meta.url,
+      // `worker.url` becomes the custom domain when one is set, so the stack's
+      // `apiUrl` output is the right thing to feed a desktop release either way.
+      ...(stage === "prod" ? { domain: PRODUCTION_DOMAIN } : {}),
+      // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
+      // alchemy's dev runtime pins workerd exactly, and that build refuses any
+      // date past 2026-07-11. Raising this breaks `vp run dev` with a
+      // WorkerdUserScript ConfigError while deploys keep working, so keep the two
+      // in step. No compatibility flag gates between 07-11 and the 07-13 this
+      // used to be, so nothing behavioural changed. Bump it when alchemy's
+      // bundled workerd moves.
+      compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
+      placement: { mode: "smart" },
+      observability: { enabled: true },
+      // The desktop falls back to http://localhost:8787 in development, so pin
+      // the local dev port rather than taking alchemy's default of 1337.
+      dev: { port: 8787 },
+    };
+  }),
+  Effect.gen(function* () {
+    const organizationStore = yield* OrganizationStore;
+    const ai = yield* Cloudflare.Workers.AI();
+    const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
+      namespaceId: 1001,
+      simple: { limit: 30, period: 60 },
+    });
+    const secret = yield* Config.redacted("BETTER_AUTH_SECRET");
+    const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+      Config.withDefault(""),
+      Config.map((value) =>
+        value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
+    );
+    const electronProtocol = yield* Config.string("ELECTRON_PROTOCOL").pipe(
+      Config.withDefault("com.tabaaq.desktop"),
+    );
+    const mobileProtocol = yield* Config.string("MOBILE_PROTOCOL").pipe(
+      Config.withDefault("com.tabaaq.mobile"),
+    );
+    const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
+    const secretValue = Redacted.value(secret);
+    const authConfig = makeEffectAuthConfig({
+      audit: reportAuthEvent,
+      electronProtocol,
+      mobileProtocol,
+      secret: secretValue,
+      secureCookies: !localDevelopment,
+      trustedOrigins,
+    });
+    const auth = yield* BetterAuth({
+      ...authConfig.options,
+      // AuthDatabase already owns the checked-in Drizzle migrations. The
+      // Alchemy adapter supplies the D1 runtime binding without creating a
+      // second migration authority.
+      migrate: false,
+      secret,
+    });
+
+    const RuntimeLive = Layer.succeed(ServerRuntime, {
+      electronProtocol,
+      trustedOrigins: authConfig.trustedOrigins,
+      authFetch: (request) =>
+        auth.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request)),
+      getSession: (headers) => auth.getSession(headers),
+      hasActiveMember: (headers) =>
+        auth.api.getActiveMember({ headers }).pipe(Effect.map((member) => member !== null)),
+      invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
+      productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
+      limitProductScan: (key) => productScanRateLimit.limit({ key }),
+      runSync: (actor, request) => exchangeWithOrganizationStore(organizationStore, actor, request),
+      connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
+    });
+    const routes = ServerRoutes.pipe(
+      Layer.provide(RuntimeLive),
+      Layer.provide(HttpServer.layerServices),
+    );
+
+    return {
+      fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
+    };
+  }).pipe(
+    Effect.provide(CloudflareD1(AuthDatabase)),
+    Effect.provide(OrganizationStoreLive),
+    Effect.provide(Cloudflare.Workers.AIBinding),
+    Effect.provide(Cloudflare.Workers.RateLimitBinding),
+  ),
+);

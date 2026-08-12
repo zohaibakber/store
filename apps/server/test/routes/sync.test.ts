@@ -1,10 +1,9 @@
 import type { SyncRequest } from "@store/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-import { authHeadersForRequest } from "../../src/auth/require-organization";
-import type { SyncLiveConnector } from "../../src/http/context";
+import { authHeadersForRequest } from "../../src/auth/organization";
 import type { SyncActor } from "../../src/sync/service";
-import { appFor, requestFor } from "../lib/app";
+import { appFor, requestFor, type SyncLiveConnector } from "../lib/app";
 
 describe("sync authorization", () => {
   it("normalizes Expo's trusted native origin for Better Auth", () => {

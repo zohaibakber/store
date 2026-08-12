@@ -1,53 +1,109 @@
 import { InvoiceExtractionService, invoiceExtractionLayer } from "@store/services";
 import * as Effect from "effect/Effect";
-import { Hono } from "hono";
+import * as Stream from "effect/Stream";
+import * as Multipart from "effect/unstable/http/Multipart";
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { invoiceAiClient } from "../ai/invoice-ai";
-import type { AppEnv } from "../http/context";
-import { publicError } from "../http/errors";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, StoreApi } from "../http/api";
+import {
+  type BadRequest,
+  type PayloadTooLarge,
+  badGateway,
+  badRequest,
+  payloadTooLarge,
+  unsupportedMediaType,
+} from "../http/errors";
+import { ServerRuntime } from "../http/runtime";
 
 const isInvoice = (name: string) => /\.(csv|pdf)$/i.test(name);
 
-const MAX_FILES = 10;
-const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
-
-export const uploadsRoute = new Hono<AppEnv>().post("/", async (c) => {
-  let form: FormData;
-  try {
-    form = await c.req.formData();
-  } catch {
-    return c.json(publicError("INVALID_UPLOAD", "The upload body could not be read."), 400);
+const multipartFailure = (
+  error: Multipart.MultipartError,
+): Effect.Effect<never, BadRequest | PayloadTooLarge> => {
+  switch (error.reason._tag) {
+    case "FileTooLarge":
+    case "FieldTooLarge":
+    case "BodyTooLarge":
+      return Effect.fail(
+        payloadTooLarge("ATTACHMENTS_TOO_LARGE", "The attachments are too large."),
+      );
+    case "TooManyParts":
+      return Effect.fail(
+        payloadTooLarge(
+          "TOO_MANY_ATTACHMENTS",
+          `Attach at most ${MAX_UPLOAD_FILES} invoice files.`,
+        ),
+      );
+    case "Parse":
+      return Effect.fail(badRequest("INVALID_UPLOAD", "The upload body could not be read."));
+    case "InternalError":
+      return Effect.die(error);
   }
+};
 
-  const files = form.getAll("files").filter((entry): entry is File => entry instanceof File);
-  if (!files.length)
-    return c.json(publicError("NO_ATTACHMENTS", "Attach at least one invoice file."), 400);
-  if (files.length > MAX_FILES)
-    return c.json(
-      publicError("TOO_MANY_ATTACHMENTS", `Attach at most ${MAX_FILES} invoice files.`),
-      413,
-    );
-  if (files.some((file) => !isInvoice(file.name)))
-    return c.json(
-      publicError("UNSUPPORTED_ATTACHMENT", "Only PDF and CSV invoices can be analysed."),
-      415,
-    );
-  if (files.reduce((total, file) => total + file.size, 0) > MAX_TOTAL_BYTES)
-    return c.json(publicError("ATTACHMENTS_TOO_LARGE", "The attachments are too large."), 413);
+const collectFiles = (parts: Stream.Stream<Multipart.Part, Multipart.MultipartError>) =>
+  Stream.runFoldEffect(
+    parts,
+    () => [] as ReadonlyArray<File>,
+    (files, part) => {
+      if (!Multipart.isFile(part) || part.key !== "files") return Effect.succeed(files);
+      return part.contentEffect.pipe(
+        Effect.map((content) => {
+          const copy = new Uint8Array(content.byteLength);
+          copy.set(content);
+          return [...files, new File([copy.buffer], part.name, { type: part.contentType })];
+        }),
+      );
+    },
+  ).pipe(Effect.catchTag("MultipartError", multipartFailure));
 
-  try {
-    const extraction = await Effect.runPromise(
-      InvoiceExtractionService.pipe(
-        Effect.flatMap((service) => service.extract(files)),
-        Effect.provide(invoiceExtractionLayer({ ai: invoiceAiClient(c.env.AI) })),
-      ),
+export const UploadHandlers = HttpApiBuilder.group(
+  StoreApi,
+  "uploads",
+  Effect.fn(function* (handlers) {
+    const runtime = yield* ServerRuntime;
+
+    return handlers.handle(
+      "extract",
+      Effect.fn(function* ({ payload }) {
+        const files = yield* collectFiles(payload);
+        if (files.length === 0)
+          return yield* Effect.fail(
+            badRequest("NO_ATTACHMENTS", "Attach at least one invoice file."),
+          );
+        if (files.length > MAX_UPLOAD_FILES)
+          return yield* Effect.fail(
+            payloadTooLarge(
+              "TOO_MANY_ATTACHMENTS",
+              `Attach at most ${MAX_UPLOAD_FILES} invoice files.`,
+            ),
+          );
+        if (files.some((file) => !isInvoice(file.name)))
+          return yield* Effect.fail(
+            unsupportedMediaType(
+              "UNSUPPORTED_ATTACHMENT",
+              "Only PDF and CSV invoices can be analysed.",
+            ),
+          );
+        if (files.reduce((total, file) => total + file.size, 0) > MAX_UPLOAD_BYTES)
+          return yield* Effect.fail(
+            payloadTooLarge("ATTACHMENTS_TOO_LARGE", "The attachments are too large."),
+          );
+
+        const ai = yield* runtime.invoiceAi;
+        return yield* InvoiceExtractionService.pipe(
+          Effect.flatMap((service) => service.extract(files)),
+          Effect.provide(invoiceExtractionLayer({ ai })),
+          Effect.tapError((cause) =>
+            Effect.logError("Invoice extraction failed").pipe(
+              Effect.annotateLogs({ cause: cause.message }),
+            ),
+          ),
+          Effect.mapError(() =>
+            badGateway("EXTRACTION_FAILED", "The invoices could not be analysed. Try again."),
+          ),
+        );
+      }),
     );
-    return c.json(extraction);
-  } catch (cause) {
-    console.error("Invoice extraction failed", cause instanceof Error ? cause.message : cause);
-    return c.json(
-      publicError("EXTRACTION_FAILED", "The invoices could not be analysed. Try again."),
-      502,
-    );
-  }
-});
+  }),
+);

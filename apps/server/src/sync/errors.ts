@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export class SyncDatabaseError extends Schema.TaggedErrorClass<SyncDatabaseError>()(
+export class SyncDatabaseError extends Schema.TaggedError<SyncDatabaseError>()(
   "SyncDatabaseError",
   { message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
@@ -49,7 +49,7 @@ export const SyncProtocolCode = Schema.Literals([
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
-export class SyncProtocolError extends Schema.TaggedErrorClass<SyncProtocolError>()(
+export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()(
   "SyncProtocolError",
   { code: SyncProtocolCode, message: Schema.String },
 ) {}

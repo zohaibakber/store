@@ -18,7 +18,7 @@ export {
   type StoreError,
 };
 
-export class SyncTransportError extends Schema.TaggedErrorClass<SyncTransportError>()(
+export class SyncTransportError extends Schema.TaggedError<SyncTransportError>()(
   "SyncTransportError",
   {
     message: Schema.String,

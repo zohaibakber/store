@@ -1,54 +1,86 @@
-import type { MiddlewareHandler } from "hono";
-import { cors } from "hono/cors";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { requireOrganization } from "../auth/require-organization";
-import { productScansRoute } from "../routes/product-scans";
-import { syncRoute } from "../routes/sync";
-import { uploadsRoute } from "../routes/uploads";
-import type { AppEnv } from "./context";
-import { factory } from "./factory";
+import { normalizeElectronOrigin } from "../auth/electron-origin";
+import { OrganizationAuthLive } from "../auth/organization";
+import { ProductScanHandlers } from "../routes/product-scans";
+import { SyncHandlers } from "../routes/sync";
+import { UploadHandlers } from "../routes/uploads";
+import { reportError } from "../runtime/worker";
+import { StoreApi } from "./api";
+import { publicError } from "./errors";
+import { ServerRuntime } from "./runtime";
+import { SystemHandlers } from "./system";
 
-export const createApp = (runtime: MiddlewareHandler<AppEnv>) => {
-  const app = factory.createApp();
-  const api = factory.createApp();
+const ProtectedHandlers = Layer.mergeAll(SyncHandlers, UploadHandlers, ProductScanHandlers).pipe(
+  Layer.provide(OrganizationAuthLive),
+);
 
-  app.use("*", runtime);
-  api.use(
-    "*",
-    cors({
-      origin: (origin, c) => (c.var.trustedOrigins.includes(origin) ? origin : ""),
-      allowHeaders: ["Content-Type", "Authorization"],
-      allowMethods: ["GET", "POST", "OPTIONS"],
-      exposeHeaders: ["Content-Length"],
+const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
+  Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
+);
+
+const AuthRoutes = Layer.mergeAll(
+  HttpRouter.add("GET", "/api/auth/*", (request) =>
+    Effect.gen(function* () {
+      const runtime = yield* ServerRuntime;
+      const webRequest = yield* HttpServerRequest.toWeb(request);
+      const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
+      return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
+    }),
+  ),
+  HttpRouter.add("POST", "/api/auth/*", (request) =>
+    Effect.gen(function* () {
+      const runtime = yield* ServerRuntime;
+      const webRequest = yield* HttpServerRequest.toWeb(request);
+      const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
+      return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
+    }),
+  ),
+);
+
+const Cors = HttpRouter.middleware(
+  Effect.gen(function* () {
+    const runtime = yield* ServerRuntime;
+    const cors = HttpMiddleware.cors({
+      allowedOrigins: (origin) =>
+        runtime.trustedOrigins.includes(origin) ||
+        (runtime.trustedOrigins.includes("exp://*") && origin.startsWith("exp://")),
+      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedMethods: ["GET", "POST", "OPTIONS"],
+      exposedHeaders: ["Content-Length"],
       maxAge: 600,
       credentials: true,
+    });
+    return (httpEffect) =>
+      Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+        new URL(request.originalUrl).pathname.startsWith("/api") ? cors(httpEffect) : httpEffect,
+      );
+  }),
+  { global: true },
+);
+
+export const ServerRoutes = Layer.mergeAll(ApiRoutes, AuthRoutes, Cors);
+
+export const recoverUnexpected = <E, R>(
+  effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+) =>
+  effect.pipe(
+    Effect.catchCause((cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+      return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
+        Effect.as(
+          HttpServerResponse.jsonUnsafe(
+            publicError("INTERNAL_SERVER_ERROR", "The request could not be handled."),
+            { status: 500 },
+          ),
+        ),
+      );
     }),
   );
-
-  app.get("/", (c) =>
-    c.json({
-      service: "Store Invoice API",
-      endpoints: [
-        "/api/health",
-        "/api/auth/*",
-        "/api/sync/*",
-        "/api/uploads",
-        "/api/product-scans",
-      ],
-    }),
-  );
-  api.get("/", (c) => c.json({ service: "Store Invoice API", ok: true }));
-  api.get("/health", (c) => c.json({ ok: true }));
-  api.on(["GET", "POST"], "/auth/*", (c) => c.var.authHandler(c.req.raw));
-
-  api.use("/sync", requireOrganization);
-  api.use("/sync/*", requireOrganization);
-  api.use("/uploads", requireOrganization);
-  api.use("/product-scans", requireOrganization);
-  api.route("/sync", syncRoute);
-  api.route("/uploads", uploadsRoute);
-  api.route("/product-scans", productScansRoute);
-  app.route("/api", api);
-
-  return app;
-};

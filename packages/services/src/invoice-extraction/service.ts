@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-export class InvoiceExtractionError extends Schema.TaggedErrorClass<InvoiceExtractionError>()(
+export class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
   "InvoiceExtractionError",
   {
     message: Schema.String,
