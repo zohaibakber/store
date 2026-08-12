@@ -26,12 +26,10 @@ export interface OrganizationStoreShape extends Cloudflare.DurableObjectShape {
   ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
 }
 
-// Keep the legacy logical id so Alchemy updates the existing
-// per-organization SQLite namespace instead of deleting and recreating it.
 export class OrganizationStore extends Cloudflare.DurableObject<
   OrganizationStore,
   OrganizationStoreShape
->()("ORGANIZATION_STORE") {}
+>()("OrganizationStore") {}
 
 export const OrganizationStoreLive = OrganizationStore.make<never>(
   Effect.gen(function* () {
