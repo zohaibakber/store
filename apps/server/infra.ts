@@ -50,8 +50,10 @@ export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") 
 export const ApiLive = Api.make(
   Effect.succeed({
     main: import.meta.url,
-    // The public hostname lives on the Website Worker (SPA + `/api` proxy).
-    // This API Worker stays on its generated `workers.dev` URL.
+    // Omitting `domain` leaves live attachments in place (Alchemy #942). The
+    // hostname used to live here; `null` detaches it so the Website Worker can
+    // take `tabaaq.zohaibakber.com`. This API Worker stays on workers.dev.
+    domain: null,
     // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
     // alchemy's dev runtime pins workerd exactly, and that build refuses any
     // date past 2026-07-11. Raising this breaks `vp run dev` with a
