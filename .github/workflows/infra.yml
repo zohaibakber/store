@@ -46,8 +46,14 @@ jobs:
                  "Set it on the GitHub Environment before deploying."
             exit 1
           fi
+          echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
+          echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
+          echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
         env:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
         run: bun alchemy "${{ inputs.action }}" --stage "${{ inputs.stage }}" --yes
@@ -58,3 +64,4 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
