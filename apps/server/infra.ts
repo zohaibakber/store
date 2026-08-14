@@ -1,6 +1,12 @@
 import { BetterAuth } from "@alchemy.run/better-auth";
 import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import { makeEffectAuthConfig } from "@store/auth";
+import {
+  DEFAULT_ELECTRON_PROTOCOL,
+  DEFAULT_MOBILE_PROTOCOL,
+  fallbackIfBlank,
+  parseTrustedOrigins,
+} from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -70,21 +76,21 @@ export const ApiLive = Api.make(
       namespaceId: 1001,
       simple: { limit: 30, period: 60 },
     });
+    // Alchemy binds every Config read during Worker Init onto Cloudflare.
+    // GitHub Actions turns unset Environment vars into "", which would
+    // otherwise beat Config.withDefault and ship a blank protocol/origin.
     const secret = yield* Config.redacted("BETTER_AUTH_SECRET");
     const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
-      Config.map((value) =>
-        value
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-      ),
+      Config.map(parseTrustedOrigins),
     );
     const electronProtocol = yield* Config.string("ELECTRON_PROTOCOL").pipe(
-      Config.withDefault("com.tabaaq.desktop"),
+      Config.withDefault(""),
+      Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
     );
     const mobileProtocol = yield* Config.string("MOBILE_PROTOCOL").pipe(
-      Config.withDefault("com.tabaaq.mobile"),
+      Config.withDefault(""),
+      Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const secretValue = Redacted.value(secret);

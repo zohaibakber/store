@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAuthSecurity } from "../src/security";
+import {
+  DEFAULT_ELECTRON_PROTOCOL,
+  DEFAULT_MOBILE_PROTOCOL,
+  fallbackIfBlank,
+  parseTrustedOrigins,
+  resolveAuthSecurity,
+} from "../src/security";
 
 const secureInput = {
   baseURL: "https://api.example.com",
@@ -9,6 +15,26 @@ const secureInput = {
   secret: "0123456789abcdef".repeat(4),
   trustedOrigins: ["https://app.example.com"],
 } as const;
+
+describe("GitHub env fallbacks", () => {
+  it("treats blank Actions interpolations as missing", () => {
+    expect(fallbackIfBlank(undefined, DEFAULT_ELECTRON_PROTOCOL)).toBe(DEFAULT_ELECTRON_PROTOCOL);
+    expect(fallbackIfBlank("", DEFAULT_ELECTRON_PROTOCOL)).toBe(DEFAULT_ELECTRON_PROTOCOL);
+    expect(fallbackIfBlank("  ", DEFAULT_MOBILE_PROTOCOL)).toBe(DEFAULT_MOBILE_PROTOCOL);
+    expect(fallbackIfBlank("com.custom.desktop", DEFAULT_ELECTRON_PROTOCOL)).toBe(
+      "com.custom.desktop",
+    );
+  });
+
+  it("parses comma-separated trusted origins and drops blanks", () => {
+    expect(parseTrustedOrigins(undefined)).toEqual([]);
+    expect(parseTrustedOrigins("")).toEqual([]);
+    expect(parseTrustedOrigins(" https://app.example.com, ,https://admin.example.com ")).toEqual([
+      "https://app.example.com",
+      "https://admin.example.com",
+    ]);
+  });
+});
 
 describe("resolveAuthSecurity", () => {
   it("normalizes and deduplicates exact trusted origins", () => {

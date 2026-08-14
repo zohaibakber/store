@@ -60,9 +60,24 @@ CLOUDFLARE_ACCOUNT_ID=<account-id> bun run setup:ci
 ```
 
 The bootstrap stack creates the `Development` and `Production` GitHub environments and stores
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repository secrets. Add a different
-`BETTER_AUTH_SECRET` to each environment before enabling deployments. The admin profile can mint
-API tokens and should only be used for this bootstrap stack.
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repository secrets. Alchemy only binds
+Worker `Config` keys that are present in the deploy job's environment, so GitHub must pass
+every auth setting the Worker reads.
+
+Each GitHub Environment must define:
+
+- **Secret:** `BETTER_AUTH_SECRET` (≥32 high-entropy characters). Use a different value per
+  environment so a dev-issued session is never valid against production.
+- **Variables (optional, have code defaults):** `ELECTRON_PROTOCOL` (`com.tabaaq.desktop`),
+  `MOBILE_PROTOCOL` (`com.tabaaq.mobile`), `AUTH_TRUSTED_ORIGINS` (comma-separated `https://`
+  origins). Blank values are treated as unset.
+
+The `Production` environment must also define these **variables** for desktop releases:
+
+- `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the Worker)
+
+The admin profile can mint API tokens and should only be used for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
 `vp run build`.

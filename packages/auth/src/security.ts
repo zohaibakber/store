@@ -1,3 +1,21 @@
+export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
+export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
+
+/**
+ * GitHub Actions interpolates unset `vars.*` / `secrets.*` as `""`. Treat
+ * blank values as missing so they cannot override a real default.
+ */
+export const fallbackIfBlank = (value: string | undefined, fallback: string) => {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || fallback;
+};
+
+export const parseTrustedOrigins = (value: string | undefined) =>
+  (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
 export interface AuthSecurityInput {
   readonly baseURL: string;
   readonly electronProtocol: string;

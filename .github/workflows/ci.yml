@@ -65,6 +65,23 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check required configuration
+        run: |
+          if [ -z "${BETTER_AUTH_SECRET}" ]; then
+            echo "::error::BETTER_AUTH_SECRET is empty." \
+                 "Set it on the GitHub Environment used by this job" \
+                 "(Production for main, Development for pull requests)."
+            exit 1
+          fi
+          echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
+          echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
+          echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
+        env:
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+
       - name: Deploy ${{ env.STAGE }}
         run: bun alchemy deploy --stage "${STAGE}" --yes
         env:
@@ -72,6 +89,9 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
