@@ -51,6 +51,8 @@ describe("API Worker bundle", () => {
     expect(source).not.toContain("@alchemy.run/better-auth");
     expect(source).toContain("makeAuth(");
     expect(source).toContain("auth.handler(");
+    expect(source).toContain("AUTH_DB:");
+    expect(source).toContain("d1FromEnv(");
   });
 
   it("never derives a URL from import.meta.url", async () => {
