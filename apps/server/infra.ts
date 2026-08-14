@@ -11,6 +11,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
@@ -20,6 +21,8 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
+import { d1FromEnv, isD1Database } from "./src/auth/d1";
+import { normalizeElectronOrigin } from "./src/auth/electron-origin";
 import { absoluteAuthRequest } from "./src/auth/request-url";
 import { reportAuthEvent, reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
@@ -48,25 +51,35 @@ const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as 
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
 export const ApiLive = Api.make(
-  Effect.succeed({
-    main: import.meta.url,
-    // Omitting `domain` leaves live attachments in place (Alchemy #942). The
-    // hostname used to live here; `null` detaches it so the Website Worker can
-    // take `tabaaq.zohaibakber.com`. This API Worker stays on workers.dev.
-    domain: null,
-    // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
-    // alchemy's dev runtime pins workerd exactly, and that build refuses any
-    // date past 2026-07-11. Raising this breaks `vp run dev` with a
-    // WorkerdUserScript ConfigError while deploys keep working, so keep the two
-    // in step. No compatibility flag gates between 07-11 and the 07-13 this
-    // used to be, so nothing behavioural changed. Bump it when alchemy's
-    // bundled workerd moves.
-    compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
-    placement: { mode: "smart" as const },
-    observability: { enabled: true },
-    // The desktop falls back to http://localhost:8787 in development, so pin
-    // the local dev port rather than taking alchemy's default of 1337.
-    dev: { port: 8787 },
+  Effect.gen(function* () {
+    const authDatabase = yield* AuthDatabase;
+    return {
+      main: import.meta.url,
+      // Omitting `domain` leaves live attachments in place (Alchemy #942). The
+      // hostname used to live here; `null` detaches it so the Website Worker can
+      // take `tabaaq.zohaibakber.com`. This API Worker stays on workers.dev.
+      domain: null,
+      // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
+      // alchemy's dev runtime pins workerd exactly, and that build refuses any
+      // date past 2026-07-11. Raising this breaks `vp run dev` with a
+      // WorkerdUserScript ConfigError while deploys keep working, so keep the two
+      // in step. No compatibility flag gates between 07-11 and the 07-13 this
+      // used to be, so nothing behavioural changed. Bump it when alchemy's
+      // bundled workerd moves.
+      compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
+      placement: { mode: "smart" as const },
+      observability: { enabled: true },
+      // The desktop falls back to http://localhost:8787 in development, so pin
+      // the local dev port rather than taking alchemy's default of 1337.
+      dev: { port: 8787 },
+      // Hono bound D1 as `AUTH_DB` on the fetch env (`c.env.AUTH_DB`). Effect
+      // HTTP switched to QueryDatabase, whose LogicalId is `AuthDatabase`.
+      // Keep both names so Better Auth can find the binding either way.
+      env: {
+        AUTH_DB: authDatabase,
+        AuthDatabase: authDatabase,
+      },
+    };
   }),
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
@@ -113,12 +126,29 @@ export const ApiLive = Api.make(
     });
     reportRejectedAuthSettings(authConfig.rejectedSettings);
 
-    // Construct Better Auth the way this Worker did before the Alchemy
-    // wrapper: D1 binding + `makeAuth` + `auth.handler`. That wrapper rebuilt
-    // the instance per event through its own fetch/toWeb path, and every
-    // `/api/auth/*` request started returning 500 after the switch.
+    // Hono constructed Better Auth per request from `c.env.AUTH_DB` and
+    // passed `c.req.raw`. Effect HTTP must do the same: read D1 from the
+    // live Worker env (not a closed-over QueryDatabase snapshot) and hand
+    // Better Auth an absolute Web Request.
     const runtimeAuth = Effect.gen(function* () {
-      const database = yield* authD1.raw;
+      const workerEnv = yield* Effect.serviceOption(Cloudflare.Workers.WorkerEnvironment);
+      // Static `import { env } from "cloudflare:workers"` crashes Node during
+      // `alchemy deploy`. Load it only inside a request, where workerd has it.
+      const moduleEnv = yield* Effect.promise(() =>
+        import("cloudflare:workers")
+          .then((mod) => mod.env as unknown as Record<string, unknown>)
+          .catch(() => undefined),
+      );
+      const fromQuery = yield* authD1.raw;
+      const database =
+        d1FromEnv(Option.getOrUndefined(workerEnv)) ??
+        d1FromEnv(moduleEnv) ??
+        (isD1Database(fromQuery) ? fromQuery : undefined);
+      if (!database) {
+        return yield* Effect.die(
+          new Error("Auth D1 binding is missing (tried AuthDatabase and AUTH_DB)."),
+        );
+      }
       return makeAuth({
         audit: reportAuthEvent,
         baseURL: authBaseURL,
@@ -130,16 +160,24 @@ export const ApiLive = Api.make(
       });
     });
 
+    const incomingAuthRequest = (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.serviceOption(Cloudflare.Workers.Request);
+        const webRequest = Option.getOrUndefined(raw) ?? (yield* HttpServerRequest.toWeb(request));
+        return absoluteAuthRequest(
+          normalizeElectronOrigin(webRequest, electronProtocol),
+          authBaseURL,
+        );
+      }).pipe(Effect.orDie);
+
     const RuntimeLive = Layer.succeed(ServerRuntime, {
       electronProtocol,
       trustedOrigins: authConfig.trustedOrigins,
       authFetch: (request) =>
         Effect.gen(function* () {
           const auth = yield* runtimeAuth;
-          const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
-          const response = yield* Effect.promise(() =>
-            auth.handler(absoluteAuthRequest(webRequest, authBaseURL)),
-          );
+          const webRequest = yield* incomingAuthRequest(request);
+          const response = yield* Effect.promise(() => auth.handler(webRequest));
           return HttpServerResponse.fromWeb(response);
         }),
       getSession: (headers) =>
