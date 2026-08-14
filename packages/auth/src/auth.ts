@@ -3,7 +3,7 @@ import { expo } from "@better-auth/expo";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { bearer, organization } from "better-auth/plugins";
 
-import { resolveAuthSecurity } from "./security";
+import { resolveAuthSecurity, resolveTrustedOrigins } from "./security";
 
 export interface AuthAuditEvent {
   readonly event:
@@ -161,13 +161,23 @@ export const makeEffectAuthConfig = (config: EffectAuthConfig) => {
       // empty or placeholder value throws TypeError: Invalid URL string on
       // Cloudflare Workers and takes down every /api/auth/* request.
       baseURL: validated.baseURL,
+      // Better Auth awaits this for every request while it builds the request
+      // context, so anything it throws is a 500 on every auth route. Resolve
+      // the extra origin through the same classifier and add nothing when the
+      // request has none to offer.
       trustedOrigins: (request?: Request) => {
         const origin = request ? requestOrigin(request) : undefined;
-        return origin
-          ? [...resolveAuthSecurity({ ...config, baseURL: origin }).trustedOrigins]
-          : [...trustedOrigins];
+        if (origin === undefined) return [...trustedOrigins];
+        // Preview stages serve from a generated workers.dev URL the deployment
+        // cannot know at build time, so the request's own origin is trusted
+        // when it clears the same bar as a configured one.
+        const { accepted } = resolveTrustedOrigins([origin], {
+          allowInsecure: !validated.secureCookies,
+        });
+        return [...new Set([...trustedOrigins, ...accepted])];
       },
     },
+    rejectedSettings: validated.rejectedSettings,
     trustedOrigins,
   };
 };

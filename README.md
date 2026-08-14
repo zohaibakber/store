@@ -84,7 +84,8 @@ Each GitHub Environment must define:
   environment so a dev-issued session is never valid against production.
 - **Variables (optional, have code defaults):** `ELECTRON_PROTOCOL` (`com.tabaaq.desktop`),
   `MOBILE_PROTOCOL` (`com.tabaaq.mobile`), `AUTH_TRUSTED_ORIGINS` (comma-separated `https://`
-  origins). Blank values are treated as unset.
+  origins, bare hosts, or Better Auth wildcard patterns). Blank values are treated as unset, and
+  a value none of those forms fit is ignored and logged rather than breaking sign-in.
 
 The `Production` environment must also define these **variables** for desktop releases:
 
