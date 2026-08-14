@@ -7,7 +7,6 @@ import {
 import { type OfflineStore, SyncTransportError } from "@store/persistence";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as Stream from "effect/Stream";
 
 type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
 
@@ -45,10 +44,6 @@ export interface WorkspaceAuthAdapter {
   }) => Promise<WorkspaceSnapshot>;
   readonly createOrganization: (input: { readonly name: string }) => Promise<WorkspaceSnapshot>;
   readonly apiRequest: <A>(pathname: string, init?: JsonRequestInit) => Promise<A>;
-  readonly liveEvents: (input: {
-    readonly organizationId: string;
-    readonly deviceId: string;
-  }) => Stream.Stream<import("@store/contracts").SyncLiveEvent, SyncTransportError>;
 }
 
 export type WorkspaceTarget =
@@ -59,10 +54,6 @@ export type WorkspaceTarget =
       readonly userId: string;
       readonly deviceId: string;
       readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
-      readonly liveEvents: Stream.Stream<
-        import("@store/contracts").SyncLiveEvent,
-        SyncTransportError
-      >;
     };
 
 export interface WorkspaceStore {
@@ -245,10 +236,6 @@ export class AuthenticatedWorkspace {
                   }),
                 ),
               );
-            }),
-            liveEvents: auth.liveEvents({
-              organizationId: organization.id,
-              deviceId: this.#deviceId,
             }),
           }
         : { _tag: "Locked" };

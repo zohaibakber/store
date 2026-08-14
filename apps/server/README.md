@@ -5,14 +5,13 @@ The Cloudflare Worker exposes:
 - `GET /api/health`
 - `GET|POST /api/auth/*`
 - `POST /api/sync`
-- `GET /api/sync/live` (WebSocket upgrade)
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
 Better Auth stores global identity and organization membership in D1 through `AUTH_DB`. Each
 organization's inventory and sync log live in its own SQLite-backed Durable Object through
-`ORGANIZATION_STORE`. The desktop communicates only through authenticated HTTP and WebSocket
-routes.
+`ORGANIZATION_STORE`. The desktop communicates through authenticated HTTP. Foreground clients
+poll `/api/sync` on a short interval; HTTP remains the data and correctness path.
 
 ## Infrastructure
 

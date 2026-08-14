@@ -19,8 +19,7 @@
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@libsql/client": "^0.17.4",
     "electron-updater": "^6.8.9",
-    "thinking-orbs": "^0.1.1",
-    "ws": "^8.18.3"
+    "thinking-orbs": "^0.1.1"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
@@ -44,7 +43,6 @@
     "@types/babel__core": "^7.20.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.5",
     "babel-plugin-react-compiler": "^1.0.0",
     "class-variance-authority": "^0.7.1",

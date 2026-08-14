@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { authHeadersForRequest } from "../../src/auth/organization";
 import type { SyncActor } from "../../src/sync/service";
-import { appFor, requestFor, type SyncLiveConnector } from "../lib/app";
+import { appFor, requestFor } from "../lib/app";
 
 describe("sync authorization", () => {
   it("normalizes Expo's trusted native origin for Better Auth", () => {
@@ -23,6 +23,28 @@ describe("sync authorization", () => {
     );
 
     expect(authHeaders.get("origin")).toBe("https://tabaaq.zohaibakber.com");
+  });
+
+  it("forwards a verified Electron origin when Origin is missing", () => {
+    const authHeaders = authHeadersForRequest(
+      new Headers({
+        cookie: "better-auth.session_token=session",
+        "electron-origin": "com.tabaaq.desktop:/",
+      }),
+    );
+
+    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop:/");
+  });
+
+  it("replaces Electron's opaque null Origin with electron-origin", () => {
+    const authHeaders = authHeadersForRequest(
+      new Headers({
+        origin: "null",
+        "electron-origin": "com.tabaaq.desktop:/",
+      }),
+    );
+
+    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop:/");
   });
 
   it("denies unauthenticated sync requests", async () => {
@@ -111,32 +133,5 @@ describe("sync authorization", () => {
         ),
       },
     });
-  });
-
-  it("authorizes live upgrades and forwards only trusted workspace identity", async () => {
-    const connect = vi.fn<SyncLiveConnector>(async () => new Response(null, { status: 204 }));
-    const response = await appFor(true, true, undefined, connect).request(
-      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
-      { headers: { Upgrade: "websocket" } },
-    );
-
-    expect(response.status).toBe(204);
-    expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId: "org-1",
-        userId: "user-1",
-        deviceId: "device-1",
-        authenticationExpiresAt: expect.any(Number),
-      }),
-    );
-    expect(JSON.stringify(connect.mock.calls[0]?.[0])).not.toContain("secret");
-  });
-
-  it("rejects live upgrades for a client-claimed organization", async () => {
-    const response = await appFor(true).request(
-      "/api/sync/live?organizationId=other-org&deviceId=device-1&protocolVersion=2",
-      { headers: { Upgrade: "websocket" } },
-    );
-    expect(response.status).toBe(403);
   });
 });

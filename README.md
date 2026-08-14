@@ -10,7 +10,7 @@ Effect, Drizzle ORM, libSQL, and Cloudflare Workers.
 - `packages/contracts` owns shared store, server, and sync contracts.
 - `packages/db` owns local, Durable Object, and authentication database schemas.
 - `packages/persistence` owns local libSQL access, inventory stores, analytics, and sync.
-- `packages/sync-client` owns the framework-neutral Effect coordinator, retries, live invalidation,
+- `packages/sync-client` owns the framework-neutral Effect coordinator, retries,
   page draining, and sync status state machine used by local replica adapters.
 - `packages/auth` owns Better Auth configuration while its tables remain in `packages/db`.
 - `packages/services` owns shared application services such as invoice extraction.
@@ -24,10 +24,8 @@ registry-managed primitive layer.
 
 Local business transactions commit an outbox operation alongside their data. A shared single-flight
 sync runtime pushes those operations through the authenticated Worker and transactionally pulls the
-organization's ordered change feed. Foreground clients also hold an authenticated WebSocket to the
-organization Durable Object. The socket carries cursor-only invalidations; HTTP remains the data
-and correctness path, so disconnects and dropped notifications converge through reconnect pulls and
-a low-frequency safety poll. Network failures leave local writes pending in strict FIFO order.
+organization's ordered change feed. Foreground clients poll HTTP on a short interval. Network
+failures leave local writes pending in strict FIFO order.
 
 ## Run locally
 
