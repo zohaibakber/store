@@ -21,7 +21,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
-import { reportAuthEvent } from "./src/runtime/worker";
+import { reportAuthEvent, reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
 export { OrganizationStore };
@@ -105,6 +105,7 @@ export const ApiLive = Api.make(
       secret: secretValue,
       trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
     });
+    reportRejectedAuthSettings(authConfig.rejectedSettings);
     const auth = yield* BetterAuth({
       ...authConfig.options,
       // AuthDatabase already owns the checked-in Drizzle migrations. The

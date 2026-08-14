@@ -4,6 +4,7 @@ import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
+  isTrustedOrigin,
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "../src/security";
@@ -30,6 +31,18 @@ describe("GitHub env fallbacks", () => {
     expect(parseTrustedOrigins(undefined)).toEqual([]);
     expect(parseTrustedOrigins("")).toEqual([]);
     expect(parseTrustedOrigins(" https://app.example.com, ,https://admin.example.com ")).toEqual([
+      "https://app.example.com",
+      "https://admin.example.com",
+    ]);
+  });
+
+  it("parses lists written with spaces or wrapping quotes", () => {
+    expect(parseTrustedOrigins("https://app.example.com https://admin.example.com")).toEqual([
+      "https://app.example.com",
+      "https://admin.example.com",
+    ]);
+    expect(parseTrustedOrigins('"https://app.example.com"')).toEqual(["https://app.example.com"]);
+    expect(parseTrustedOrigins("'https://app.example.com','https://admin.example.com'")).toEqual([
       "https://app.example.com",
       "https://admin.example.com",
     ]);
@@ -61,7 +74,70 @@ describe("resolveAuthSecurity", () => {
         "com.tabaaq.desktop:/",
         "com.tabaaq.mobile://",
       ],
+      rejectedSettings: [],
     });
+  });
+
+  it.each([
+    ["app.example.com", "https://app.example.com"],
+    ["https://app.example.com/", "https://app.example.com"],
+    ["https://*.example.com", "https://*.example.com"],
+    ["*.example.com", "https://*.example.com"],
+    ["preview-*.example.com", "https://preview-*.example.com"],
+    ["myapp://", "myapp://"],
+    ["exp://192.168.*.*:*", "exp://192.168.*.*:*"],
+  ])("accepts the value forms Better Auth documents: %s", (configured, expected) => {
+    const resolved = resolveAuthSecurity({ ...secureInput, trustedOrigins: [configured] });
+
+    expect(resolved.rejectedSettings).toEqual([]);
+    expect(resolved.trustedOrigins).toContain(expected);
+  });
+
+  it.each([
+    "http://api.example.com",
+    "https://user:password@app.example.com",
+    "https://app.example.com/path",
+    "file:///tmp/auth",
+    "*",
+    "https://*",
+    "*.com",
+    "not a url",
+  ])("drops an unusable or over-broad origin instead of failing: %s", (origin) => {
+    const resolved = resolveAuthSecurity({ ...secureInput, trustedOrigins: [origin] });
+
+    expect(resolved.rejectedSettings.map((rejected) => rejected.value)).toEqual([origin]);
+    expect(resolved.trustedOrigins).not.toContain(origin);
+    expect(resolved.trustedOrigins).toContain("https://api.example.com");
+  });
+
+  it("keeps the usable origins when one entry in the list is unusable", () => {
+    const resolved = resolveAuthSecurity({
+      ...secureInput,
+      trustedOrigins: ["tabaaq.example.com", "http://insecure.example.com"],
+    });
+
+    expect(resolved.trustedOrigins).toContain("https://tabaaq.example.com");
+    expect(resolved.rejectedSettings).toEqual([
+      {
+        setting: "AUTH_TRUSTED_ORIGINS",
+        value: "http://insecure.example.com",
+        reason: "must use HTTPS outside local development",
+      },
+    ]);
+  });
+
+  it("expands a bare loopback host to HTTP only in local development", () => {
+    const local = resolveAuthSecurity({
+      ...secureInput,
+      baseURL: "http://localhost:8787",
+      trustedOrigins: ["localhost:5173"],
+    });
+    expect(local.trustedOrigins).toContain("http://localhost:5173");
+    expect(local.trustedOrigins).toContain("https://localhost:5173");
+
+    const production = resolveAuthSecurity({ ...secureInput, trustedOrigins: ["localhost:5173"] });
+    expect(production.trustedOrigins).toContain("https://localhost:5173");
+    expect(production.trustedOrigins).not.toContain("http://localhost:5173");
   });
 
   it.each(["short", "a".repeat(64), ` ${"0123456789abcdef".repeat(4)}`])(
@@ -70,15 +146,6 @@ describe("resolveAuthSecurity", () => {
       expect(() => resolveAuthSecurity({ ...secureInput, secret })).toThrow("BETTER_AUTH_SECRET");
     },
   );
-
-  it.each([
-    "http://api.example.com",
-    "https://user:password@app.example.com",
-    "https://app.example.com/path",
-    "file:///tmp/auth",
-  ])("rejects unsafe or non-origin URLs", (origin) => {
-    expect(() => resolveAuthSecurity({ ...secureInput, trustedOrigins: [origin] })).toThrow();
-  });
 
   it("allows HTTP only for local development origins", () => {
     const resolved = resolveAuthSecurity({
@@ -94,15 +161,42 @@ describe("resolveAuthSecurity", () => {
     expect(resolved.trustedOrigins).not.toContain("exp://*");
   });
 
-  it("rejects malformed Electron protocols", () => {
-    expect(() => resolveAuthSecurity({ ...secureInput, electronProtocol: "not a scheme" })).toThrow(
-      "ELECTRON_PROTOCOL",
-    );
+  it.each([
+    ["electronProtocol", "ELECTRON_PROTOCOL", DEFAULT_ELECTRON_PROTOCOL],
+    ["mobileProtocol", "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL],
+  ])("falls back to the default when %s is malformed", (key, setting, fallback) => {
+    const resolved = resolveAuthSecurity({ ...secureInput, [key]: "not a scheme" });
+
+    expect(resolved[key as "electronProtocol" | "mobileProtocol"]).toBe(fallback);
+    expect(resolved.rejectedSettings).toEqual([
+      { setting, value: "not a scheme", reason: "is not a valid URI scheme" },
+    ]);
+  });
+});
+
+/** The table in Better Auth's `trustedOrigins` reference. */
+describe("matchesTrustedOrigin", () => {
+  it.each([
+    ["http://api.example.com", "http://*.example.com", true],
+    ["http://api.app.example.com", "http://*.example.com", true],
+    ["https://api.example.com", "http://*.example.com", false],
+    ["http://example.com", "http://*.example.com", false],
+    ["https://api.app.example.com", "https://**.example.com", true],
+    ["http://api.example.com", "https://**.example.com", false],
+    ["https://example.com", "https://example.com", true],
+    ["https://api.example.com", "https://example.com", false],
+    ["http://example.com", "https://example.com", false],
+    ["exp://192.168.1.100:8081", "exp://192.168.*.*:*", true],
+    ["exp://10.0.0.29:8081", "exp://192.168.*.*:*", false],
+    ["com.tabaaq.desktop:/", "com.tabaaq.desktop:/", true],
+    ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
+    ["https://evil.example.net", "com.tabaaq.mobile://", false],
+  ])("matches %s against %s", (origin, pattern, expected) => {
+    expect(isTrustedOrigin(origin, [pattern])).toBe(expected);
   });
 
-  it("rejects malformed mobile protocols", () => {
-    expect(() => resolveAuthSecurity({ ...secureInput, mobileProtocol: "not a scheme" })).toThrow(
-      "MOBILE_PROTOCOL",
-    );
+  it("matches a bare host pattern against the origin host", () => {
+    expect(isTrustedOrigin("https://api.example.com", ["*.example.com"])).toBe(true);
+    expect(isTrustedOrigin("https://api.example.com", ["*.other.com"])).toBe(false);
   });
 });
