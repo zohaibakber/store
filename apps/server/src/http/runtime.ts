@@ -1,37 +1,26 @@
-import type { BetterAuthApiError } from "@alchemy.run/better-auth";
 import type { AuthSession } from "@store/auth";
-import type { SyncRequest, SyncResponse } from "@store/contracts";
+import type { SyncRequest, SyncResponse, WorkspaceSnapshot } from "@store/contracts";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import type { RuntimeContext } from "alchemy";
 import type { RateLimitError } from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
-import type * as Scope from "effect/Scope";
-import type { HttpBodyError } from "effect/unstable/http/HttpBody";
-import type { HttpServerError } from "effect/unstable/http/HttpServerError";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import type { AuthError } from "../auth/session";
 import type { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
 import type { SyncActor } from "../sync/model";
 
-/** Explicit boundary between HTTP handlers and the Cloudflare/Better Auth runtime. */
+/** Explicit boundary between HTTP handlers and the Cloudflare/Clerk runtime. */
 export interface ServerRuntimeShape {
   readonly electronProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;
-  readonly authFetch: (
-    request: HttpServerRequest.HttpServerRequest,
-  ) => Effect.Effect<
-    HttpServerResponse.HttpServerResponse,
-    HttpServerError | HttpBodyError,
-    RuntimeContext | Scope.Scope
-  >;
   readonly getSession: (
     headers: Headers,
-  ) => Effect.Effect<AuthSession | null, BetterAuthApiError, RuntimeContext>;
-  readonly hasActiveMember: (
+  ) => Effect.Effect<AuthSession | null, AuthError, RuntimeContext>;
+  readonly hasActiveMember: (headers: Headers) => Effect.Effect<boolean, AuthError, RuntimeContext>;
+  readonly loadWorkspace: (
     headers: Headers,
-  ) => Effect.Effect<boolean, BetterAuthApiError, RuntimeContext>;
+  ) => Effect.Effect<WorkspaceSnapshot, AuthError, RuntimeContext>;
   readonly invoiceAi: Effect.Effect<InvoiceAiClient, never, RuntimeContext>;
   readonly productScanAi: Effect.Effect<ProductScanAiClient, never, RuntimeContext>;
   readonly limitProductScan: (

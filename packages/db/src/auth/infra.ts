@@ -3,9 +3,9 @@ import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 
 /**
- * Better Auth's global identity store: users, sessions, organizations, and
- * memberships. Only what needs a global lookup lives here — each organization's
- * inventory and sync log live in its own Durable Object's SQLite instead.
+ * Global identity store: legacy Better Auth users/orgs (kept so existing
+ * Durable Object names can be recovered by email) plus `clerk_org_binding`.
+ * Inventory and sync logs still live in each organization's Durable Object.
  *
  * `Drizzle.Schema` regenerates pending migration SQL from `schema.ts` on every
  * deploy and `migrationsDir` applies it, so the database can never lag the

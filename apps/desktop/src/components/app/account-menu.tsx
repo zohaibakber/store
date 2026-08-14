@@ -1,3 +1,4 @@
+import { useClerk } from "@clerk/electron/react";
 import {
   ArrowDown01Icon,
   ComputerIcon,
@@ -26,6 +27,7 @@ import { initials } from "@/lib/format";
 
 export function AccountMenu() {
   const { snapshot } = useAuth();
+  const { signOut: clerkSignOut } = useClerk();
   const { preference, setTheme } = useTheme();
   if (!snapshot?.activeOrganization || !snapshot.user) return null;
   const { activeOrganization, user } = snapshot;
@@ -102,7 +104,12 @@ export function AccountMenu() {
             </MenuGroup>
             <MenuSeparator />
             <MenuGroup>
-              <MenuItem onClick={() => void signOut()} variant="destructive">
+              <MenuItem
+                onClick={() => {
+                  void clerkSignOut().finally(() => void signOut());
+                }}
+                variant="destructive"
+              >
                 <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />
                 Log out
               </MenuItem>

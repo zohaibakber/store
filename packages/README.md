@@ -1,6 +1,6 @@
 # Shared packages
 
-- `auth`: Better Auth server and Electron client setup.
+- `auth`: Clerk session verification and the store-organization binding used by Durable Objects.
 - `contracts`: public data contracts grouped into `server`, `store`, and `sync`.
 - `db`: Drizzle schemas and migrations for authentication, local storage, and Durable Objects.
 - `persistence`: local database, inventory, analytics, and synchronization services.

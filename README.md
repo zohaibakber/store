@@ -1,6 +1,6 @@
 # Store Electron
 
-This Bun-workspace monorepo contains an offline-first Electron app built with Better Auth,
+This Bun-workspace monorepo contains an offline-first Electron app built with Clerk,
 Effect, Drizzle ORM, libSQL, and Cloudflare Workers.
 
 ## Workspace boundaries
@@ -12,7 +12,7 @@ Effect, Drizzle ORM, libSQL, and Cloudflare Workers.
 - `packages/persistence` owns local libSQL access, inventory stores, analytics, and sync.
 - `packages/sync-client` owns the framework-neutral Effect coordinator, retries,
   page draining, and sync status state machine used by local replica adapters.
-- `packages/auth` owns Better Auth configuration while its tables remain in `packages/db`.
+- `packages/auth` owns Clerk token verification and the Durable Object org-id binding.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains. Reusable test
@@ -45,9 +45,15 @@ bun run deploy:prod
 ```
 
 Copy `.env.example` to `.env.dev` and `.env.prod` (both gitignored) and give each stage its own
-`BETTER_AUTH_SECRET`. The Worker setup and stage details are documented in `apps/server/README.md`.
+`CLERK_SECRET_KEY`. The Worker setup and stage details are documented in `apps/server/README.md`.
 An authenticated user can continue using a previously opened organization offline; a first sign-in
 and organization creation require the API.
+
+Existing Durable Object inventory is preserved across the Clerk migration: the Worker binds each
+Clerk organization to the Better Auth organization id that already names `ORGANIZATION_STORE`.
+The first Clerk organization that authenticates for an email inherits that store; later Clerk
+orgs get new empty Durable Objects. Do not rename the Durable Object class or pass Clerk org
+ids into `getByName`.
 
 GitHub Actions verifies every change, deploys each same-repository pull request to an isolated
 `pr-<number>` stage, comments its API URL on the pull request, removes that stage when the pull
@@ -66,16 +72,20 @@ every auth setting the Worker reads.
 
 Each GitHub Environment must define:
 
-- **Secret:** `BETTER_AUTH_SECRET` (≥32 high-entropy characters). Use a different value per
-  environment so a dev-issued session is never valid against production.
+- **Secret:** `CLERK_SECRET_KEY` from the Clerk Dashboard. Use a different Clerk instance (or
+  at least a different secret) per environment.
 - **Variables (optional, have code defaults):** `ELECTRON_PROTOCOL` (`com.tabaaq.desktop`),
   `MOBILE_PROTOCOL` (`com.tabaaq.mobile`), `AUTH_TRUSTED_ORIGINS` (comma-separated `https://`
-  origins). Blank values are treated as unset.
+  origins), `CLERK_JWT_AUDIENCE` if you mint a custom JWT template. Blank values are treated as
+  unset.
+- **Optional secret:** `CLERK_JWT_KEY` (PEM) for networkless JWT verify.
 
 The `Production` environment must also define these **variables** for desktop releases:
 
 - `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- `VITE_CLERK_PUBLISHABLE_KEY` = the Clerk publishable key
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the Worker)
+- `VITE_CLERK_JWT_TEMPLATE` if you created a JWT template (optional)
 
 The admin profile can mint API tokens and should only be used for this bootstrap stack.
 

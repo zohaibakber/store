@@ -79,7 +79,7 @@ export const inferProductText = async (
       signal: controller.signal,
       headers: {
         "content-type": "application/json",
-        ...nativeAuthHeaders(),
+        ...(await nativeAuthHeaders()),
       },
       body: JSON.stringify({ recognizedText: scanText, mode }),
     });

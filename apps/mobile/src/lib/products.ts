@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
-import { apiOrigin, authClient, nativeAuthHeaders } from "@/lib/auth-client";
+import { apiOrigin, fetchWorkspaceSession, nativeAuthHeaders } from "@/lib/auth-client";
 import {
   applyProductSyncChanges,
   assertSyncProgress,
@@ -232,21 +232,16 @@ const persistInventoryContext = (userId: string, organizationId: string) =>
 
 const activeOrganizationId = async () => {
   organizationIdPromise ??= (async () => {
-    const session = await authClient.getSession();
-    if (session.error) throw session.error;
-    const userId = session.data?.user.id;
+    const session = await fetchWorkspaceSession();
+    const userId = session.user?.id;
     if (!userId) return null;
     activeUserId = userId;
 
     const localContext = await readInventoryContext(userId);
     if (localContext) return localContext.organizationId;
 
-    const listed = await authClient.organization.list();
-    if (listed.error) throw listed.error;
-    const organization = listed.data?.[0];
+    const organization = session.activeOrganization ?? session.organizations[0];
     if (!organization) return null;
-    const selected = await authClient.organization.setActive({ organizationId: organization.id });
-    if (selected.error) throw selected.error;
     await persistInventoryContext(userId, organization.id);
     return organization.id;
   })().catch((cause) => {
@@ -258,9 +253,8 @@ const activeOrganizationId = async () => {
 
 const authenticatedUserId = async () => {
   if (activeUserId) return activeUserId;
-  const session = await authClient.getSession();
-  if (session.error) throw session.error;
-  const id = session.data?.user.id;
+  const session = await fetchWorkspaceSession();
+  const id = session.user?.id;
   if (!id) throw new Error("Sign in before changing inventory.");
   activeUserId = id;
   return id;
@@ -353,7 +347,7 @@ const requestPage = async (
       signal: controller.signal,
       headers: {
         "content-type": "application/json",
-        ...nativeAuthHeaders(),
+        ...(await nativeAuthHeaders()),
       },
       body: JSON.stringify({
         protocolVersion: 2,

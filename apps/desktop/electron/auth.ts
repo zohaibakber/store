@@ -1,8 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
-import { type WorkspaceSnapshot, type WorkspaceUser } from "@store/contracts";
+import { type WorkspaceSnapshot } from "@store/contracts";
 import { app, net, safeStorage } from "electron";
 
 interface PersistedAuth {
@@ -21,9 +20,6 @@ export class RequestError extends Error {
   }
 }
 
-const requestError = (error: { readonly message?: string; readonly status: number }) =>
-  new RequestError(error.message ?? "Authentication request failed.", error.status);
-
 const unauthenticated = (isOnline: boolean): WorkspaceSnapshot => ({
   status: "unauthenticated",
   user: null,
@@ -32,36 +28,18 @@ const unauthenticated = (isOnline: boolean): WorkspaceSnapshot => ({
   isOnline,
 });
 
-const slugOf = (name: string) =>
-  name
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40) || `organization-${crypto.randomUUID().slice(0, 8)}`;
-
 export class AuthBroker {
   readonly #baseUrl: string;
-  readonly #client: ElectronAuthClient;
-  readonly #electronOrigin: string;
   readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
+  #token: string | null = null;
 
-  constructor(baseUrl: string, electronProtocol = "com.tabaaq.desktop") {
+  constructor(baseUrl: string) {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
-    this.#electronOrigin = `${electronProtocol.replace(/:\/?$/, "")}:/`;
-    this.#client = makeElectronAuthClient({
-      baseURL: this.#baseUrl,
-      protocol: electronProtocol.replace(/:\/?$/, ""),
-    });
   }
 
   get snapshot() {
     return this.#snapshot;
-  }
-
-  setupMain() {
-    this.#client.setupMain({ bridges: false, csp: false, scheme: false });
   }
 
   onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
@@ -74,18 +52,32 @@ export class AuthBroker {
     if (persisted) {
       this.#snapshot = { ...persisted.snapshot, isOnline: false };
     }
+    return this.#snapshot;
+  }
+
+  async adoptSession(token: string | null) {
+    this.#token = token;
+    if (!token) {
+      await this.#clear();
+      return this.#publish(unauthenticated(true));
+    }
     return this.refresh();
   }
 
   async refresh() {
+    if (!this.#token) {
+      return this.#publish({
+        ...this.#snapshot,
+        isOnline: this.#snapshot.status === "authenticated",
+      });
+    }
     try {
-      const { data, error } = await this.#client.getSession();
-      if (error) throw requestError(error);
-      if (!data?.user) {
+      const snapshot = await this.#request<WorkspaceSnapshot>("/api/auth/session");
+      if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user) {
         await this.#clear();
         return this.#publish(unauthenticated(true));
       }
-      return this.#loadOrganizations(data.user);
+      return this.#persistAndPublish({ ...snapshot, isOnline: true });
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
         await this.#clear();
@@ -95,119 +87,19 @@ export class AuthBroker {
     }
   }
 
-  async signIn(input: { email: string; password: string }) {
-    const { data, error } = await this.#client.signIn.email(input);
-    if (error) throw requestError(error);
-    if (!data?.user) throw new Error("The server did not return an authenticated user.");
-    return this.#loadOrganizations(data.user);
-  }
-
-  async signUp(input: { name: string; email: string; password: string }) {
-    const { data, error } = await this.#client.signUp.email(input);
-    if (error) throw requestError(error);
-    if (!data?.user) throw new Error("The server did not return an authenticated user.");
-    return this.#loadOrganizations(data.user);
-  }
-
   async signOut() {
-    try {
-      const { error } = await this.#client.signOut();
-      if (error) throw requestError(error);
-    } finally {
-      await this.#clear();
-      this.#publish(unauthenticated(navigatorOnline()));
-    }
-  }
-
-  async switchOrganization(input: { organizationId: string }) {
-    const selectedResult = await this.#client.organization.setActive(input);
-    if (selectedResult.error) throw requestError(selectedResult.error);
-    const selected = this.#snapshot.organizations.find((org) => org.id === input.organizationId);
-    const memberResult = await this.#client.organization.getActiveMember();
-    if (memberResult.error) throw requestError(memberResult.error);
-    const member = memberResult.data;
-    const active = selected ? { ...selected, role: member.role ?? selected.role } : undefined;
-    if (!active) throw new Error("That organization is not available to this account.");
-    return this.#persistAndPublish({
-      ...this.#snapshot,
-      activeOrganization: active,
-      isOnline: true,
-    });
-  }
-
-  async createOrganization(input: { name: string }) {
-    const createdResult = await this.#client.organization.create({
-      name: input.name.trim(),
-      slug: slugOf(input.name),
-    });
-    if (createdResult.error) throw requestError(createdResult.error);
-    const created = createdResult.data;
-    if (!created) throw new Error("The server did not return the created organization.");
-    const selectedResult = await this.#client.organization.setActive({
-      organizationId: created.id,
-    });
-    if (selectedResult.error) throw requestError(selectedResult.error);
-    const organization = { ...created, role: "owner" };
-    return this.#persistAndPublish({
-      ...this.#snapshot,
-      activeOrganization: organization,
-      organizations: [...this.#snapshot.organizations, organization],
-      isOnline: true,
-    });
+    this.#token = null;
+    await this.#clear();
+    this.#publish(unauthenticated(true));
   }
 
   async apiRequest<T>(pathname: string, init?: JsonRequestInit) {
     return this.#request<T>(pathname, init);
   }
 
-  async #loadOrganizations(user: WorkspaceUser) {
-    const listResult = await this.#client.organization.list();
-    if (listResult.error) throw requestError(listResult.error);
-    const rows = listResult.data ?? [];
-    let organizations = rows.map((organization) => ({ ...organization, role: "member" }));
-    const previousId = this.#snapshot.activeOrganization?.id;
-    const activeOrganization =
-      organizations.find((organization) => organization.id === previousId) ??
-      organizations[0] ??
-      null;
-    if (activeOrganization && activeOrganization.id !== previousId) {
-      const selectedResult = await this.#client.organization.setActive({
-        organizationId: activeOrganization.id,
-      });
-      if (selectedResult.error) throw requestError(selectedResult.error);
-    }
-    if (activeOrganization) {
-      const memberResult = await this.#client.organization.getActiveMember();
-      if (memberResult.error) throw requestError(memberResult.error);
-      const member = memberResult.data;
-      if (member.role) {
-        organizations = organizations.map((organization) =>
-          organization.id === activeOrganization.id
-            ? { ...organization, role: member.role! }
-            : organization,
-        );
-      }
-    }
-    const resolvedActive =
-      organizations.find((organization) => organization.id === activeOrganization?.id) ?? null;
-    return this.#persistAndPublish({
-      status: "authenticated",
-      user,
-      activeOrganization: resolvedActive,
-      organizations,
-      isOnline: true,
-    });
-  }
-
   async #request<T = unknown>(pathname: string, init?: JsonRequestInit) {
-    return (await this.#requestWithResponse<T>(pathname, init)).data;
-  }
-
-  async #requestWithResponse<T>(pathname: string, init?: JsonRequestInit) {
     const headers = new Headers(init?.headers);
-    headers.set("electron-origin", this.#electronOrigin);
-    const cookie = this.#client.getCookie();
-    if (cookie) headers.set("cookie", cookie);
+    if (this.#token) headers.set("authorization", `Bearer ${this.#token}`);
     let body = init?.body as BodyInit | null | undefined;
     if (body && !(body instanceof FormData) && typeof body !== "string") {
       headers.set("content-type", "application/json");
@@ -234,7 +126,7 @@ export class AuthBroker {
         typeof nested === "object" ? nested.code : undefined,
       );
     }
-    return { data: payload as T, response };
+    return payload as T;
   }
 
   #publish(snapshot: WorkspaceSnapshot) {
@@ -250,7 +142,8 @@ export class AuthBroker {
   }
 
   async #clear() {
-    this.#snapshot = unauthenticated(navigatorOnline());
+    this.#token = null;
+    this.#snapshot = unauthenticated(true);
     await rm(this.#storagePath(), { force: true });
   }
 
@@ -282,5 +175,3 @@ export class AuthBroker {
     });
   }
 }
-
-const navigatorOnline = () => true;

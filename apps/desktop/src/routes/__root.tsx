@@ -11,6 +11,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
+import { clerkPublishableKey } from "@/lib/clerk-workspace";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
@@ -39,6 +40,15 @@ export function RootLayout() {
 function AuthenticatedLayout() {
   const { snapshot, loading, error } = useAuth();
   if (loading) return null;
+  if (!clerkPublishableKey) {
+    return (
+      <div className="flex min-h-svh items-center justify-center p-6">
+        <p className="text-sm text-muted-foreground">
+          This desktop build is missing VITE_CLERK_PUBLISHABLE_KEY.
+        </p>
+      </div>
+    );
+  }
   if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (

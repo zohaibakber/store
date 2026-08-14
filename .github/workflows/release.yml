@@ -37,11 +37,19 @@ jobs:
                  "or the packaged desktop app will talk to localhost."
             exit 1
           fi
+          if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
+            echo "::error::VITE_CLERK_PUBLISHABLE_KEY is empty." \
+                 "Set it on the Production GitHub Environment or packaged sign-in cannot load Clerk."
+            exit 1
+          fi
           echo "VITE_API_URL=${VITE_API_URL}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
+          echo "VITE_CLERK_JWT_TEMPLATE=${VITE_CLERK_JWT_TEMPLATE:-<unset>}"
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
 
       - name: Set desktop app version from tag
         shell: bash
@@ -68,6 +76,8 @@ jobs:
           # masked as ***.
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
 
   publish:
     needs: release

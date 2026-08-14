@@ -11,22 +11,8 @@ interface Window {
   offlineStore: import("@store/contracts").OfflineStoreApi;
   auth: {
     getSession: () => Promise<import("@store/contracts").WorkspaceSnapshot>;
-    signIn: (input: {
-      email: string;
-      password: string;
-    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
-    signUp: (input: {
-      name: string;
-      email: string;
-      password: string;
-    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
+    adoptSession: (token: string | null) => Promise<import("@store/contracts").WorkspaceSnapshot>;
     signOut: () => Promise<void>;
-    switchOrganization: (input: {
-      organizationId: string;
-    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
-    createOrganization: (input: {
-      name: string;
-    }) => Promise<import("@store/contracts").WorkspaceSnapshot>;
     onSessionChange: (
       callback: (snapshot: import("@store/contracts").WorkspaceSnapshot) => void,
     ) => () => void;

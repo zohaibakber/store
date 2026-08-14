@@ -1,3 +1,4 @@
+import { useSignIn, useSignUp } from "@clerk/react/legacy";
 import * as React from "react";
 
 import { WindowControls } from "@/components/app/window-controls";
@@ -20,10 +21,14 @@ function formValue(form: FormData, key: string) {
 type AuthFormErrors = Record<string, string | string[]>;
 
 export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
+  const { isLoaded: signInLoaded, signIn, setActive: setActiveSignIn } = useSignIn();
+  const { isLoaded: signUpLoaded, signUp, setActive: setActiveSignUp } = useSignUp();
   const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
   const [pending, setPending] = React.useState(false);
   const [errors, setErrors] = React.useState<AuthFormErrors>({});
   const [password, setPassword] = React.useState("");
+  const [verificationCode, setVerificationCode] = React.useState("");
+  const [needsVerification, setNeedsVerification] = React.useState(false);
 
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -31,16 +36,42 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
     setPending(true);
     setErrors({});
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable in this build.");
+      if (!signInLoaded || !signUpLoaded || !signIn || !signUp) {
+        throw new Error("Authentication is still loading.");
+      }
       const email = formValue(form, "email");
       const password = formValue(form, "password");
-      if (mode === "sign-in") await window.auth.signIn({ email, password });
-      else
-        await window.auth.signUp({
-          name: formValue(form, "name"),
-          email,
-          password,
+      if (mode === "sign-in") {
+        const result = await signIn.create({ identifier: email, password });
+        if (result.status !== "complete" || !result.createdSessionId) {
+          throw new Error("Additional verification is required to finish signing in.");
+        }
+        await setActiveSignIn({ session: result.createdSessionId });
+        return;
+      }
+
+      if (needsVerification) {
+        const verified = await signUp.attemptEmailAddressVerification({
+          code: formValue(form, "code"),
         });
+        if (verified.status !== "complete" || !verified.createdSessionId) {
+          throw new Error("That verification code could not be used.");
+        }
+        await setActiveSignUp({ session: verified.createdSessionId });
+        return;
+      }
+
+      const created = await signUp.create({
+        emailAddress: email,
+        password,
+        firstName: formValue(form, "name"),
+      });
+      if (created.status === "complete" && created.createdSessionId) {
+        await setActiveSignUp({ session: created.createdSessionId });
+        return;
+      }
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setNeedsVerification(true);
     } catch (cause) {
       setErrors({ password: storeErrorMessage(cause) });
     } finally {
@@ -52,6 +83,8 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
     setMode(mode === "sign-in" ? "sign-up" : "sign-in");
     setErrors({});
     setPassword("");
+    setVerificationCode("");
+    setNeedsVerification(false);
   }
 
   return (
@@ -67,44 +100,71 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
               <Fieldset className="flex w-full flex-col gap-6">
                 <div className="flex flex-col items-center gap-1 text-center">
                   <h1 className="text-2xl font-medium">
-                    {mode === "sign-in" ? "Welcome back" : "Set up your store"}
+                    {needsVerification
+                      ? "Check your email"
+                      : mode === "sign-in"
+                        ? "Welcome back"
+                        : "Set up your store"}
                   </h1>
                 </div>
-                {mode === "sign-up" && (
+                {mode === "sign-up" && !needsVerification && (
                   <Field name="name">
                     <FieldLabel htmlFor="name">Your name</FieldLabel>
                     <Input id="name" name="name" autoComplete="name" required />
                     <FieldError />
                   </Field>
                 )}
-                <Field name="email">
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    autoComplete="email"
-                    required
-                  />
-                  <FieldError />
-                </Field>
-                <Field name="password">
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <PasswordInput
-                    id="password"
-                    name="password"
-                    autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-                    minLength={8}
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                  <FieldError />
-                </Field>
+                {!needsVerification && (
+                  <>
+                    <Field name="email">
+                      <FieldLabel htmlFor="email">Email</FieldLabel>
+                      <Input
+                        id="email"
+                        name="email"
+                        type="email"
+                        placeholder="m@example.com"
+                        autoComplete="email"
+                        required
+                      />
+                      <FieldError />
+                    </Field>
+                    <Field name="password">
+                      <FieldLabel htmlFor="password">Password</FieldLabel>
+                      <PasswordInput
+                        id="password"
+                        name="password"
+                        autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+                        minLength={8}
+                        required
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                      <FieldError />
+                    </Field>
+                  </>
+                )}
+                {needsVerification && (
+                  <Field name="code">
+                    <FieldLabel htmlFor="code">Verification code</FieldLabel>
+                    <Input
+                      id="code"
+                      name="code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      required
+                      value={verificationCode}
+                      onChange={(event) => setVerificationCode(event.target.value)}
+                    />
+                    <FieldError />
+                  </Field>
+                )}
                 <Field>
                   <Button type="submit" disabled={pending} loading={pending} className="w-full">
-                    {mode === "sign-in" ? "Sign in" : "Create account"}
+                    {needsVerification
+                      ? "Verify email"
+                      : mode === "sign-in"
+                        ? "Sign in"
+                        : "Create account"}
                   </Button>
                   <FieldDescription className="mx-auto mt-2 text-center">
                     <AuthModeToggle mode={mode} onToggle={toggleMode} />

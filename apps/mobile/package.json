@@ -11,12 +11,11 @@
     "test": "vitest run --root ../.. apps/mobile/test"
   },
   "dependencies": {
-    "@better-auth/expo": "^1.6.26",
+    "@clerk/expo": "^4.2.0",
     "@expo-google-fonts/geist-mono": "^0.4.3",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/metro-runtime": "~57.0.2",
     "@shopify/flash-list": "^2.3.2",
-    "better-auth": "^1.6.26",
     "expo": "~57.0.11",
     "expo-build-properties": "~57.0.9",
     "expo-camera": "~57.0.3",

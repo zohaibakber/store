@@ -6,9 +6,9 @@ import type { SyncActor } from "../../src/sync/service";
 import { appFor, requestFor } from "../lib/app";
 
 describe("sync authorization", () => {
-  it("normalizes Expo's trusted native origin for Better Auth", () => {
+  it("normalizes Expo's trusted native origin for CORS", () => {
     const requestHeaders = new Headers({
-      cookie: "better-auth.session_token=session",
+      authorization: "Bearer test-token",
       "expo-origin": "com.tabaaq.mobile:///",
     });
     const authHeaders = authHeadersForRequest(requestHeaders);
@@ -28,23 +28,23 @@ describe("sync authorization", () => {
   it("forwards a verified Electron origin when Origin is missing", () => {
     const authHeaders = authHeadersForRequest(
       new Headers({
-        cookie: "better-auth.session_token=session",
-        "electron-origin": "com.tabaaq.desktop:/",
+        authorization: "Bearer test-token",
+        "electron-origin": "com.tabaaq.desktop://app",
       }),
     );
 
-    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop:/");
+    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop://app");
   });
 
   it("replaces Electron's opaque null Origin with electron-origin", () => {
     const authHeaders = authHeadersForRequest(
       new Headers({
         origin: "null",
-        "electron-origin": "com.tabaaq.desktop:/",
+        "electron-origin": "com.tabaaq.desktop://app",
       }),
     );
 
-    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop:/");
+    expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop://app");
   });
 
   it("denies unauthenticated sync requests", async () => {

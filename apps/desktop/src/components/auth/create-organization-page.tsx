@@ -1,3 +1,4 @@
+import { useOrganizationList } from "@clerk/electron/react";
 import * as React from "react";
 
 import { WindowControls } from "@/components/app/window-controls";
@@ -12,6 +13,7 @@ import { storeErrorMessage } from "@/lib/errors";
 type CreateOrganizationErrors = Record<string, string | string[]>;
 
 export function CreateOrganizationPage() {
+  const { isLoaded, createOrganization, setActive } = useOrganizationList();
   const [pending, setPending] = React.useState(false);
   const [errors, setErrors] = React.useState<CreateOrganizationErrors>({});
 
@@ -21,10 +23,13 @@ export function CreateOrganizationPage() {
     setPending(true);
     setErrors({});
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-      await window.auth.createOrganization({
-        name: typeof name === "string" ? name : "",
+      if (!isLoaded || !createOrganization || !setActive) {
+        throw new Error("Authentication is still loading.");
+      }
+      const created = await createOrganization({
+        name: typeof name === "string" ? name.trim() : "",
       });
+      await setActive({ organization: created.id });
     } catch (cause) {
       setErrors({ organizationName: storeErrorMessage(cause) });
     } finally {

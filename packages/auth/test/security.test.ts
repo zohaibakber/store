@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
+  clerkFrontendApiHostnameFromPublishableKey,
+  clerkTokenOptions,
   fallbackIfBlank,
   parseTrustedOrigins,
   resolveAuthSecurity,
@@ -12,7 +14,6 @@ const secureInput = {
   baseURL: "https://api.example.com",
   electronProtocol: "com.tabaaq.desktop",
   mobileProtocol: "com.tabaaq.mobile",
-  secret: "0123456789abcdef".repeat(4),
   trustedOrigins: ["https://app.example.com"],
 } as const;
 
@@ -49,27 +50,19 @@ describe("resolveAuthSecurity", () => {
 
     expect(resolved).toEqual({
       baseURL: "https://api.example.com",
-      electronOrigin: "com.tabaaq.desktop:/",
+      electronOrigin: "com.tabaaq.desktop://app",
       electronProtocol: "com.tabaaq.desktop",
       mobileOrigin: "com.tabaaq.mobile://",
       mobileProtocol: "com.tabaaq.mobile",
-      secureCookies: true,
       trustedOrigins: [
         "https://api.example.com",
         "https://app.example.com",
         "http://localhost:5173",
-        "com.tabaaq.desktop:/",
+        "com.tabaaq.desktop://app",
         "com.tabaaq.mobile://",
       ],
     });
   });
-
-  it.each(["short", "a".repeat(64), ` ${"0123456789abcdef".repeat(4)}`])(
-    "rejects a weak or malformed secret",
-    (secret) => {
-      expect(() => resolveAuthSecurity({ ...secureInput, secret })).toThrow("BETTER_AUTH_SECRET");
-    },
-  );
 
   it.each([
     "http://api.example.com",
@@ -85,7 +78,6 @@ describe("resolveAuthSecurity", () => {
       ...secureInput,
       baseURL: "http://localhost:8787",
     });
-    expect(resolved.secureCookies).toBe(false);
     expect(resolved.trustedOrigins).toContain("exp://*");
   });
 
@@ -104,5 +96,19 @@ describe("resolveAuthSecurity", () => {
     expect(() => resolveAuthSecurity({ ...secureInput, mobileProtocol: "not a scheme" })).toThrow(
       "MOBILE_PROTOCOL",
     );
+  });
+});
+
+describe("Clerk publishable key helpers", () => {
+  it("decodes the Frontend API host from a publishable key", () => {
+    const hostname = "foo-bar-12.clerk.accounts.dev";
+    const key = `pk_test_${Buffer.from(`${hostname}$`).toString("base64")}`;
+    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe(hostname);
+  });
+
+  it("omits a JWT template when none is configured", () => {
+    expect(clerkTokenOptions(undefined)).toEqual({ skipCache: true });
+    expect(clerkTokenOptions("  ")).toEqual({ skipCache: true });
+    expect(clerkTokenOptions("tabaaq-api")).toEqual({ template: "tabaaq-api", skipCache: true });
   });
 });

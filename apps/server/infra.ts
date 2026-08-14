@@ -1,11 +1,9 @@
-import { BetterAuth } from "@alchemy.run/better-auth";
-import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
-import { makeEffectAuthConfig } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   parseTrustedOrigins,
+  resolveAuthSecurity,
 } from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
@@ -16,12 +14,11 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
-import { reportAuthEvent } from "./src/runtime/worker";
+import { authenticateHeaders, loadWorkspaceSnapshot } from "./src/auth/session";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
 export { OrganizationStore };
@@ -42,6 +39,11 @@ const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
  * The API Worker, authentication, bindings, routes, and Durable Object clients
  * all stay in one Effect runtime. No framework or Promise adapter sits between
  * Alchemy and the HTTP API.
+ *
+ * `ORGANIZATION_STORE` Durable Object names are the store organization ids
+ * (legacy Better Auth org ids when a Clerk org has been bound). Do not rename
+ * the class or switch `getByName` to Clerk org ids — that would orphan existing
+ * sqlite.
  */
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
@@ -76,10 +78,16 @@ export const ApiLive = Api.make(
       namespaceId: 1001,
       simple: { limit: 30, period: 60 },
     });
+    const authDatabase = yield* AuthDatabase;
+    const authD1 = yield* Cloudflare.D1.QueryDatabase(authDatabase);
     // Alchemy binds every Config read during Worker Init onto Cloudflare.
     // GitHub Actions turns unset Environment vars into "", which would
     // otherwise beat Config.withDefault and ship a blank protocol/origin.
-    const secret = yield* Config.redacted("BETTER_AUTH_SECRET");
+    const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
+    const clerkJwtKey = yield* Config.string("CLERK_JWT_KEY").pipe(Config.withDefault(""));
+    const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE").pipe(
+      Config.withDefault(""),
+    );
     const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
       Config.map(parseTrustedOrigins),
@@ -93,36 +101,40 @@ export const ApiLive = Api.make(
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const secretValue = Redacted.value(secret);
-    const authConfig = makeEffectAuthConfig({
-      audit: reportAuthEvent,
-      // Better Auth requires a real absolute URL at construction. Production
-      // always serves from the stable custom domain; local alchemy dev is
-      // pinned to 8787. Preview stages still infer extra origins from the
-      // incoming request via trustedOrigins.
+    const security = resolveAuthSecurity({
       baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
       electronProtocol,
       mobileProtocol,
-      secret: secretValue,
       trustedOrigins,
     });
-    const auth = yield* BetterAuth({
-      ...authConfig.options,
-      // AuthDatabase already owns the checked-in Drizzle migrations. The
-      // Alchemy adapter supplies the D1 runtime binding without creating a
-      // second migration authority.
-      migrate: false,
-      secret,
-    });
+    const clerkConfig = {
+      secretKey: Redacted.value(clerkSecretKey),
+      ...(fallbackIfBlank(clerkJwtKey, "") ? { jwtKey: clerkJwtKey.trim() } : {}),
+      ...(fallbackIfBlank(clerkJwtAudience, "") ? { jwtAudience: clerkJwtAudience.trim() } : {}),
+    };
 
     const RuntimeLive = Layer.succeed(ServerRuntime, {
-      electronProtocol,
-      trustedOrigins: authConfig.trustedOrigins,
-      authFetch: (request) =>
-        auth.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request)),
-      getSession: (headers) => auth.getSession(headers),
+      electronProtocol: security.electronProtocol,
+      trustedOrigins: security.trustedOrigins,
+      getSession: (headers) =>
+        authD1.raw.pipe(
+          Effect.flatMap((database) =>
+            authenticateHeaders(headers, { config: clerkConfig, database }),
+          ),
+        ),
       hasActiveMember: (headers) =>
-        auth.api.getActiveMember({ headers }).pipe(Effect.map((member) => member !== null)),
+        authD1.raw.pipe(
+          Effect.flatMap((database) =>
+            authenticateHeaders(headers, { config: clerkConfig, database }),
+          ),
+          Effect.map((session) => session?.session.activeOrganizationId != null),
+        ),
+      loadWorkspace: (headers) =>
+        authD1.raw.pipe(
+          Effect.flatMap((database) =>
+            loadWorkspaceSnapshot(headers, { config: clerkConfig, database }),
+          ),
+        ),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
@@ -138,7 +150,7 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
     };
   }).pipe(
-    Effect.provide(CloudflareD1(AuthDatabase)),
+    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(OrganizationStoreLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),

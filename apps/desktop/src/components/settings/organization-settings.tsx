@@ -1,3 +1,4 @@
+import { useOrganizationList } from "@clerk/electron/react";
 import * as React from "react";
 
 import { FrameCard } from "@/components/shared/frame-card";
@@ -13,21 +14,25 @@ import { storeErrorMessage } from "@/lib/errors";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
+  const { isLoaded, createOrganization, setActive } = useOrganizationList();
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const organization = snapshot?.activeOrganization;
 
-  async function createOrganization(event: React.FormEvent<HTMLFormElement>) {
+  async function createOrganizationSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const value = new FormData(form).get("organizationName");
     setPending(true);
     setError(null);
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable.");
-      await window.auth.createOrganization({
-        name: typeof value === "string" ? value : "",
+      if (!isLoaded || !createOrganization || !setActive) {
+        throw new Error("Authentication is still loading.");
+      }
+      const created = await createOrganization({
+        name: typeof value === "string" ? value.trim() : "",
       });
+      await setActive({ organization: created.id });
       form.reset();
       toastManager.add({ title: "Organization created", type: "success" });
     } catch (cause) {
@@ -54,7 +59,7 @@ export function OrganizationSettings() {
         description="Starts a separate workspace with its own catalog and invoices."
         title="New organization"
       >
-        <form id="create-organization-form" onSubmit={createOrganization}>
+        <form id="create-organization-form" onSubmit={createOrganizationSubmit}>
           <Fieldset className="flex w-full flex-col gap-6">
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="new-organization-name">Name</FieldLabel>

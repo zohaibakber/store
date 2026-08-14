@@ -67,8 +67,8 @@ jobs:
 
       - name: Check required configuration
         run: |
-          if [ -z "${BETTER_AUTH_SECRET}" ]; then
-            echo "::error::BETTER_AUTH_SECRET is empty." \
+          if [ -z "${CLERK_SECRET_KEY}" ]; then
+            echo "::error::CLERK_SECRET_KEY is empty." \
                  "Set it on the GitHub Environment used by this job" \
                  "(Production for main, Development for pull requests)."
             exit 1
@@ -76,8 +76,11 @@ jobs:
           echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
+          echo "CLERK_JWT_AUDIENCE=${CLERK_JWT_AUDIENCE:-<unset>}"
         env:
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
+          CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
@@ -86,7 +89,9 @@ jobs:
         run: bun alchemy deploy --stage "${STAGE}" --yes
         env:
           CI: "1"
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
+          CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
@@ -127,7 +132,7 @@ jobs:
         run: bun alchemy destroy --stage "${STAGE}" --yes
         env:
           CI: "1"
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PULL_REQUEST: ${{ github.event.number }}

@@ -8,7 +8,6 @@
       "packages/*"
     ],
     "catalog": {
-      "@alchemy.run/better-auth": "2.0.0-beta.72",
       "@effect/sql-libsql": "4.0.0-beta.105",
       "@effect/sql-sqlite-do": "4.0.0-beta.105",
       "@effect/vitest": "4.0.0-beta.105",
@@ -32,7 +31,6 @@
     "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin"
   },
   "devDependencies": {
-    "@alchemy.run/better-auth": "catalog:",
     "@cloudflare/workers-types": "^5.20260804.1",
     "@effect/platform-bun": "4.0.0-beta.105",
     "@effect/platform-node": "4.0.0-beta.105",

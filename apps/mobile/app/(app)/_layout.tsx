@@ -1,13 +1,14 @@
+import { useAuth, useUser } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { useThemeColor } from "heroui-native";
 
 import { LoadingScreen } from "@/components/loading-screen";
 import { ProductsProvider } from "@/features/products/products-provider";
-import { authClient } from "@/lib/auth-client";
 
 export default function AppLayout() {
-  const session = authClient.useSession();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   const [background, foreground, muted, indicator, separator] = useThemeColor([
     "background",
     "foreground",
@@ -16,9 +17,8 @@ export default function AppLayout() {
     "separator",
   ]);
 
-  if (session.isPending) return <LoadingScreen />;
-  const user = session.data?.user;
-  if (!user) return <Redirect href="/auth" />;
+  if (!isLoaded) return <LoadingScreen />;
+  if (!isSignedIn || !user) return <Redirect href="/auth" />;
 
   return (
     <ProductsProvider userId={user.id}>

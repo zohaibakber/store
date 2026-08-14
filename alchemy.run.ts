@@ -50,7 +50,7 @@ export default Alchemy.Stack(
       });
     }
 
-    // Non-secret outputs only — never surface BETTER_AUTH_SECRET here.
+    // Non-secret outputs only — never surface CLERK_SECRET_KEY here.
     return {
       stage,
       apiUrl: api.url,

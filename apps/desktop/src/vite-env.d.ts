@@ -2,17 +2,24 @@
 
 import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
 
+interface ImportMetaEnv {
+  readonly VITE_API_URL?: string;
+  readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
+  readonly VITE_CLERK_JWT_TEMPLATE?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 declare global {
   const __APP_VERSION__: string;
 
   interface Window {
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;
-      signIn(input: { email: string; password: string }): Promise<WorkspaceSnapshot>;
-      signUp(input: { name: string; email: string; password: string }): Promise<WorkspaceSnapshot>;
+      adoptSession(token: string | null): Promise<WorkspaceSnapshot>;
       signOut(): Promise<void>;
-      switchOrganization(input: { organizationId: string }): Promise<WorkspaceSnapshot>;
-      createOrganization(input: { name: string }): Promise<WorkspaceSnapshot>;
       onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;
     };
     serverApi?: {

@@ -1,3 +1,4 @@
+import { useClerk } from "@clerk/electron/react";
 import { LogoutIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -9,6 +10,7 @@ import { initials } from "@/lib/format";
 
 export function AccountSettings() {
   const { snapshot } = useAuth();
+  const { signOut: clerkSignOut } = useClerk();
   const user = snapshot?.user;
 
   return (
@@ -35,7 +37,9 @@ export function AccountSettings() {
           <Button
             className="shrink-0"
             disabled={!user}
-            onClick={() => void signOut()}
+            onClick={() => {
+              void clerkSignOut().finally(() => void signOut());
+            }}
             variant="destructive-outline"
           >
             <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />
