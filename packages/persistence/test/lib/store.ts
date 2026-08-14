@@ -11,7 +11,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import { databaseFile } from "../../src/database/node-client";
 import type { PersistenceConfig } from "../../src/index";
-import { layer, OfflineStore } from "../../src/service";
+import { layer, OfflineStore } from "../../src/index";
 
 type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
 

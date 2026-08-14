@@ -3,7 +3,8 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { SyncTransportError } from "./errors";
+import type { StoreDatabase } from "./database/client";
+import type { PersistenceError, SyncTransportError } from "./errors";
 
 /**
  * The signed-in user's selected organization together with the device its
@@ -53,4 +54,9 @@ export interface PersistenceConfig {
    * exchange. Default: 500ms. Tests set this low to avoid real waits.
    */
   readonly exchangeRetryBaseMillis?: number;
+  /**
+   * Node-only schema installer. The browser replica uses `bundledMigrations`
+   * instead so this module never imports `node:fs`.
+   */
+  readonly applySchema?: (database: StoreDatabase) => Effect.Effect<unknown, PersistenceError>;
 }
