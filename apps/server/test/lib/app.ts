@@ -11,7 +11,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { vi } from "vitest";
 
 import { ServerRoutes } from "../../src/http/app";
-import { ServerRuntime, type ServerRuntimeShape, type SyncLiveInput } from "../../src/http/runtime";
+import { ServerRuntime, type ServerRuntimeShape } from "../../src/http/runtime";
 import type { SyncActor } from "../../src/sync/model";
 
 const session = {
@@ -59,8 +59,6 @@ const testRuntimeContext = Context.make(RuntimeContext, {
   set: (id) => Effect.succeed(id),
 });
 
-export type SyncLiveConnector = (input: SyncLiveInput) => Promise<Response>;
-
 export interface AppOptions {
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
@@ -107,8 +105,6 @@ export const appFor = (
     acknowledgements: [],
     changes: [],
   })),
-  connectSyncLive: SyncLiveConnector = async () =>
-    new Response("WebSocket upgrades are unavailable in this test", { status: 501 }),
   options: AppOptions = {},
 ) => ({
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
@@ -122,8 +118,6 @@ export const appFor = (
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
       runSync: (actor, request) => Effect.promise(() => runSync(actor, request)),
-      connectSyncLive: (input) =>
-        Effect.promise(() => connectSyncLive(input)).pipe(Effect.map(HttpServerResponse.fromWeb)),
     } satisfies ServerRuntimeShape;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

@@ -2,7 +2,6 @@ import type { SyncRequest, SyncResponse } from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type * as Stream from "effect/Stream";
 
 import type { SyncTransportError } from "./errors";
 
@@ -34,7 +33,6 @@ export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspa
 
 export interface SyncTransport {
   readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
-  readonly liveEvents?: Stream.Stream<import("@store/contracts").SyncLiveEvent, SyncTransportError>;
 }
 
 export interface PersistenceConfig {
@@ -42,7 +40,7 @@ export interface PersistenceConfig {
   readonly migrationsFolder: string;
   readonly workspace?: Workspace;
   readonly syncTransport?: SyncTransport;
-  /** How often the engine re-signals a background sync. Default: 5 minutes. */
+  /** How often the engine re-signals a background HTTP sync. Default: 3 seconds. */
   readonly resyncIntervalMillis?: number;
   /**
    * Base delay of the exponential backoff used when retrying a failed sync

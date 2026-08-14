@@ -345,10 +345,7 @@ export const makeSyncEngine = (
             message: `Synchronization did not drain after ${maximumRounds} exchanges`,
           }),
       },
-      ...(config.syncTransport?.liveEvents
-        ? { live: { events: config.syncTransport.liveEvents } }
-        : {}),
-      safetyPollIntervalMillis: config.resyncIntervalMillis,
+      safetyPollIntervalMillis: config.resyncIntervalMillis ?? 3_000,
       exchangeRetryBaseMillis: config.exchangeRetryBaseMillis,
     });
 

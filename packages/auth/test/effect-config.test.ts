@@ -1,3 +1,4 @@
+import { betterAuth } from "better-auth";
 import { describe, expect, it } from "vitest";
 
 import { makeEffectAuthConfig } from "../src/auth";
@@ -52,5 +53,30 @@ describe("makeEffectAuthConfig", () => {
     const resolved = options.trustedOrigins as (request?: Request) => string[];
 
     expect(resolved({ url: "/api/auth/get-session" } as Request)).toEqual(trustedOrigins);
+  });
+
+  it("handles Electron email sign-in without an uncaught error", async () => {
+    const { options } = makeEffectAuthConfig(config);
+    const auth = betterAuth({
+      ...options,
+      secret,
+    });
+    const response = await auth.handler(
+      new Request("https://tabaaq.zohaibakber.com/api/auth/sign-in/email", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "com.tabaaq.desktop:/",
+          "electron-origin": "com.tabaaq.desktop:/",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "no-cors",
+          "sec-fetch-site": "none",
+        },
+        body: JSON.stringify({ email: "owner@example.com", password: "password12" }),
+      }),
+    );
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
   });
 });

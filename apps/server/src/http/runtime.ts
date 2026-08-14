@@ -15,13 +15,6 @@ import type * as HttpServerResponse from "effect/unstable/http/HttpServerRespons
 import type { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
 import type { SyncActor } from "../sync/model";
 
-export interface SyncLiveInput {
-  readonly organizationId: string;
-  readonly userId: string;
-  readonly deviceId: string;
-  readonly authenticationExpiresAt: number;
-}
-
 /** Explicit boundary between HTTP handlers and the Cloudflare/Better Auth runtime. */
 export interface ServerRuntimeShape {
   readonly electronProtocol: string;
@@ -48,9 +41,6 @@ export interface ServerRuntimeShape {
     actor: SyncActor,
     request: SyncRequest,
   ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
-  readonly connectSyncLive: (
-    input: SyncLiveInput,
-  ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
 export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeShape>()(
