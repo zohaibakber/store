@@ -9,7 +9,7 @@ import { makeAnalyticsStore } from "./analytics/store";
 import type { PersistenceConfig } from "./config";
 import { AuthenticatedWorkspace } from "./config";
 import { initializeDatabase } from "./database/bootstrap";
-import { clientLayer, makeDatabase } from "./database/client";
+import { makeDatabase } from "./database/client";
 import { PersistenceError } from "./errors";
 import type { InvoiceStore } from "./inventory/invoice-store";
 import { makeInvoiceStore } from "./inventory/invoice-store";
@@ -32,7 +32,7 @@ export class OfflineStore extends Context.Service<
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
     const workspace = yield* AuthenticatedWorkspace;
-    const database = yield* makeDatabase(config.migrationsFolder);
+    const database = yield* makeDatabase(config);
     yield* initializeDatabase(database, workspace);
     const syncEngine = yield* makeSyncEngine(database, config, workspace);
     const mutation = yield* makeInventoryMutation(database, workspace, syncEngine.signal);
@@ -50,9 +50,8 @@ const make = (config: PersistenceConfig) =>
     });
   });
 
-export const layer = (config: PersistenceConfig) =>
+export const storeLayer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(
     Layer.provide(MutationIds.live),
-    Layer.provide(clientLayer(config)),
     Layer.provide(AuthenticatedWorkspace.layer(config.workspace ?? AuthenticatedWorkspace.locked)),
   );

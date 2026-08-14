@@ -3,7 +3,8 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { SyncTransportError } from "./errors";
+import type { StoreDatabase } from "./database/client";
+import type { PersistenceError, SyncTransportError } from "./errors";
 
 /**
  * The signed-in user's selected organization together with the device its
@@ -37,9 +38,15 @@ export interface SyncTransport {
 
 export interface PersistenceConfig {
   readonly dataDir: string;
-  readonly migrationsFolder: string;
+  /** Filesystem drizzle folder used by the Node/Electron replica. */
+  readonly migrationsFolder?: string;
+  /** Inlined drizzle SQL used by the browser replica (no filesystem). */
+  readonly bundledMigrations?: Record<string, string>;
   readonly workspace?: Workspace;
   readonly syncTransport?: SyncTransport;
+  /** Recorded on each sync exchange so the Durable Object can tell devices apart. */
+  readonly clientPlatform?: string;
+  readonly clientVersion?: string;
   /** How often the engine re-signals a background HTTP sync. Default: 3 seconds. */
   readonly resyncIntervalMillis?: number;
   /**
@@ -47,4 +54,9 @@ export interface PersistenceConfig {
    * exchange. Default: 500ms. Tests set this low to avoid real waits.
    */
   readonly exchangeRetryBaseMillis?: number;
+  /**
+   * Node-only schema installer. The browser replica uses `bundledMigrations`
+   * instead so this module never imports `node:fs`.
+   */
+  readonly applySchema?: (database: StoreDatabase) => Effect.Effect<unknown, PersistenceError>;
 }

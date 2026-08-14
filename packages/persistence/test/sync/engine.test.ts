@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { expect, test } from "vitest";
 
-import { databaseFile } from "../../src/database/client";
+import { databaseFile } from "../../src/database/node-client";
 import { SyncTransportError } from "../../src/index";
 import { QUARANTINE_ATTEMPTS, remoteChangeWins, retryDelayMillis } from "../../src/sync/engine";
 import { readOutbox, store, type TestStoreRuntime, withTestStore } from "../lib/store";

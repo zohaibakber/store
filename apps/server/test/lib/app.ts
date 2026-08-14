@@ -110,7 +110,7 @@ export const appFor = (
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
     const runtime = {
       electronProtocol: "com.tabaaq.desktop",
-      trustedOrigins: ["http://localhost:5173"],
+      trustedOrigins: ["http://localhost:5173", "http://localhost:5174"],
       authFetch: () => Effect.succeed(HttpServerResponse.empty({ status: 404 })),
       getSession: () => Effect.succeed(authenticated ? session : null),
       hasActiveMember: () => Effect.succeed(member),

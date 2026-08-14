@@ -1,0 +1,44 @@
+import { InvoiceExtraction } from "@store/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+const apiUrl = (pathname: string) => {
+  const base = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+  return `${base}${pathname}`;
+};
+
+export const analyseInvoices = async (
+  files: ReadonlyArray<{
+    readonly name: string;
+    readonly type: string;
+    readonly bytes: ArrayBuffer;
+  }>,
+) => {
+  if (window.serverApi) return window.serverApi.analyseInvoices({ files: [...files] });
+
+  const body = new FormData();
+  for (const file of files) {
+    const inferredType = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/csv";
+    body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
+  }
+  const response = await fetch(apiUrl("/api/uploads"), {
+    method: "POST",
+    body,
+    credentials: "include",
+  });
+  const raw: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      typeof raw === "object" && raw !== null && "message" in raw && typeof raw.message === "string"
+        ? raw.message
+        : `Invoice analysis failed (${response.status}).`;
+    throw new Error(message);
+  }
+  return Effect.runPromise(
+    Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
+      Effect.mapError(
+        () => new Error("The invoice analysis response was not in the expected format."),
+      ),
+    ),
+  );
+};

@@ -27,16 +27,18 @@ import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organizatio
 export { OrganizationStore };
 
 /**
- * Production serves from a stable hostname on the existing `zohaibakber.com`
- * zone, so packaged desktop builds have a URL that survives redeploys.
- * Cloudflare provisions the DNS record and certificate; the zone is inferred
- * from the hostname and must already exist in the account.
+ * Production's public hostname lives on the Website Worker (`apps/web/infra.ts`)
+ * so packaged desktop builds and the browser SPA share one origin that survives
+ * redeploys. Cloudflare provisions the DNS record and certificate; the zone is
+ * inferred from the hostname and must already exist in the account.
  *
  * Other stages stay on their generated `workers.dev` URL — a custom domain per
- * stage would need one hostname each, and nothing depends on dev's URL being
- * stable.
+ * stage would need one hostname each, and nothing depends on a preview URL
+ * being stable. The API Worker itself is always `workers.dev`; `/api/*` is
+ * proxied from the Website origin over a service binding.
  */
-const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
+export const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
+const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
 /**
  * The API Worker, authentication, bindings, routes, and Durable Object clients
@@ -46,28 +48,23 @@ const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
 export const ApiLive = Api.make(
-  Effect.gen(function* () {
-    const { stage } = yield* Alchemy.Stack;
-
-    return {
-      main: import.meta.url,
-      // `worker.url` becomes the custom domain when one is set, so the stack's
-      // `apiUrl` output is the right thing to feed a desktop release either way.
-      ...(stage === "prod" ? { domain: PRODUCTION_DOMAIN } : {}),
-      // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
-      // alchemy's dev runtime pins workerd exactly, and that build refuses any
-      // date past 2026-07-11. Raising this breaks `vp run dev` with a
-      // WorkerdUserScript ConfigError while deploys keep working, so keep the two
-      // in step. No compatibility flag gates between 07-11 and the 07-13 this
-      // used to be, so nothing behavioural changed. Bump it when alchemy's
-      // bundled workerd moves.
-      compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
-      placement: { mode: "smart" },
-      observability: { enabled: true },
-      // The desktop falls back to http://localhost:8787 in development, so pin
-      // the local dev port rather than taking alchemy's default of 1337.
-      dev: { port: 8787 },
-    };
+  Effect.succeed({
+    main: import.meta.url,
+    // The public hostname lives on the Website Worker (SPA + `/api` proxy).
+    // This API Worker stays on its generated `workers.dev` URL.
+    // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
+    // alchemy's dev runtime pins workerd exactly, and that build refuses any
+    // date past 2026-07-11. Raising this breaks `vp run dev` with a
+    // WorkerdUserScript ConfigError while deploys keep working, so keep the two
+    // in step. No compatibility flag gates between 07-11 and the 07-13 this
+    // used to be, so nothing behavioural changed. Bump it when alchemy's
+    // bundled workerd moves.
+    compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
+    placement: { mode: "smart" as const },
+    observability: { enabled: true },
+    // The desktop falls back to http://localhost:8787 in development, so pin
+    // the local dev port rather than taking alchemy's default of 1337.
+    dev: { port: 8787 },
   }),
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
@@ -97,14 +94,14 @@ export const ApiLive = Api.make(
     const authConfig = makeEffectAuthConfig({
       audit: reportAuthEvent,
       // Better Auth requires a real absolute URL at construction. Production
-      // always serves from the stable custom domain; local alchemy dev is
-      // pinned to 8787. Preview stages still infer extra origins from the
-      // incoming request via trustedOrigins.
+      // always serves from the Website custom domain (SPA + `/api` proxy);
+      // local alchemy dev is pinned to 8787. Preview stages still infer extra
+      // origins from the incoming request via trustedOrigins.
       baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
       electronProtocol,
       mobileProtocol,
       secret: secretValue,
-      trustedOrigins,
+      trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
     });
     const auth = yield* BetterAuth({
       ...authConfig.options,

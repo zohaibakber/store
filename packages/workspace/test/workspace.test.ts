@@ -6,7 +6,7 @@ import {
   WorkspaceActivationError,
   type WorkspaceAuthAdapter,
   type WorkspaceStoreAdapter,
-} from "../../electron/workspace";
+} from "../src/workspace";
 
 const authenticated = (organizationId: string): WorkspaceSnapshot => ({
   status: "authenticated",
