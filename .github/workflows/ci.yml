@@ -99,6 +99,21 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Attach production website domain
+        if: env.STAGE == 'prod'
+        run: bun alchemy deploy --stage prod --yes
+        env:
+          CI: "1"
+          CLAIM_PRODUCTION_DOMAIN: "1"
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
+          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   cleanup:
     if: >-
       github.event_name == 'pull_request'

@@ -13,6 +13,12 @@ const rootDir = import.meta.dirname;
  * is served by `worker.ts` and proxied to the API Worker so auth
  * cookies stay same-origin.
  *
+ * Production hostname attach is a second `alchemy deploy` with
+ * `CLAIM_PRODUCTION_DOMAIN=1`. Alchemy applies the API Worker update and this
+ * create in parallel, so claiming the hostname in the same pass races the API
+ * Worker's detach (`domain: null`). Omitting `domain` leaves a live attachment
+ * alone, so later deploys without the flag do not drop the hostname.
+ *
  * @see https://alchemy.run/cloudflare/frontend/vite-spa/
  * @see https://alchemy.run/cloudflare/frontend/vite/
  */
@@ -31,7 +37,9 @@ export const Website = Cloudflare.Website.Vite(
         notFoundHandling: "single-page-application" as const,
         runWorkerFirst: ["/api", "/api/*"],
       },
-      ...(stage === "prod" ? { domain: PRODUCTION_DOMAIN } : {}),
+      ...(stage === "prod" && process.env.CLAIM_PRODUCTION_DOMAIN === "1"
+        ? { domain: PRODUCTION_DOMAIN }
+        : {}),
       // Capped by the workerd that `alchemy dev` runs locally — keep in step
       // with the API Worker. See apps/server/infra.ts.
       compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
