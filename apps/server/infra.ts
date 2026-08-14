@@ -119,8 +119,6 @@ export const ApiLive = Api.make(
     // `/api/auth/*` request started returning 500 after the switch.
     const runtimeAuth = Effect.gen(function* () {
       const database = yield* authD1.raw;
-      const pending: Promise<unknown>[] = [];
-      yield* Effect.addFinalizer(() => Effect.promise(() => Promise.allSettled(pending)));
       return makeAuth({
         audit: reportAuthEvent,
         baseURL: authBaseURL,
@@ -129,9 +127,6 @@ export const ApiLive = Api.make(
         mobileProtocol,
         secret: secretValue,
         trustedOrigins: authTrustedOrigins,
-        waitUntil: (promise) => {
-          pending.push(promise);
-        },
       });
     });
 

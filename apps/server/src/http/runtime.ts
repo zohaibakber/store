@@ -27,10 +27,8 @@ export interface ServerRuntimeShape {
   >;
   readonly getSession: (
     headers: Headers,
-  ) => Effect.Effect<AuthSession | null, never, RuntimeContext | Scope.Scope>;
-  readonly hasActiveMember: (
-    headers: Headers,
-  ) => Effect.Effect<boolean, never, RuntimeContext | Scope.Scope>;
+  ) => Effect.Effect<AuthSession | null, never, RuntimeContext>;
+  readonly hasActiveMember: (headers: Headers) => Effect.Effect<boolean, never, RuntimeContext>;
   readonly invoiceAi: Effect.Effect<InvoiceAiClient, never, RuntimeContext>;
   readonly productScanAi: Effect.Effect<ProductScanAiClient, never, RuntimeContext>;
   readonly limitProductScan: (
