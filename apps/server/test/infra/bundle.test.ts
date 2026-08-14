@@ -53,6 +53,8 @@ describe("API Worker bundle", () => {
     expect(source).toContain("auth.handler(");
     expect(source).toContain("AUTH_DB:");
     expect(source).toContain("d1FromEnv(");
+    expect(source).toContain("webRequestForAuth(");
+    expect(source).toContain("describeEnv(");
   });
 
   it("never derives a URL from import.meta.url", async () => {

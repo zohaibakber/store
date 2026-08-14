@@ -14,7 +14,6 @@ import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
 import { reportError } from "../runtime/worker";
 import { StoreApi } from "./api";
-import { publicError } from "./errors";
 import { ServerRuntime } from "./runtime";
 import { SystemHandlers } from "./system";
 
@@ -68,16 +67,28 @@ const Cors = HttpRouter.middleware(
 
 export const ServerRoutes = Layer.mergeAll(ApiRoutes, AuthRoutes, Cors);
 
+const publicCause = (cause: Cause.Cause<unknown>) => {
+  const pretty = Cause.pretty(cause).replace(/\s+/g, " ").trim();
+  return pretty.length > 400 ? `${pretty.slice(0, 400)}…` : pretty;
+};
+
 export const recoverUnexpected = <E, R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
 ) =>
   effect.pipe(
     Effect.catchCause((cause) => {
       if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
-      return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
+      const detail = publicCause(cause);
+      return Effect.sync(() => reportError("worker.request_failed", detail)).pipe(
         Effect.as(
           HttpServerResponse.jsonUnsafe(
-            publicError("INTERNAL_SERVER_ERROR", "The request could not be handled."),
+            {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "The request could not be handled.",
+                detail,
+              },
+            },
             { status: 500 },
           ),
         ),

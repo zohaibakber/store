@@ -15,15 +15,15 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
-import { d1FromEnv, isD1Database } from "./src/auth/d1";
+import { d1FromEnv, describeEnv, isD1Database, mergeEnvSnapshots } from "./src/auth/d1";
 import { normalizeElectronOrigin } from "./src/auth/electron-origin";
-import { absoluteAuthRequest } from "./src/auth/request-url";
+import { webRequestForAuth } from "./src/auth/request-url";
 import { reportAuthEvent, reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
@@ -136,37 +136,46 @@ export const ApiLive = Api.make(
       // `alchemy deploy`. Load it only inside a request, where workerd has it.
       const moduleEnv = yield* Effect.promise(() =>
         import("cloudflare:workers")
-          .then((mod) => mod.env as unknown as Record<string, unknown>)
+          .then((mod) => mod.env as unknown)
           .catch(() => undefined),
       );
       const fromQuery = yield* authD1.raw;
-      const database =
-        d1FromEnv(Option.getOrUndefined(workerEnv)) ??
-        d1FromEnv(moduleEnv) ??
-        (isD1Database(fromQuery) ? fromQuery : undefined);
+      const env = mergeEnvSnapshots(Option.getOrUndefined(workerEnv), moduleEnv, {
+        AuthDatabaseQuery: fromQuery,
+      });
+      const database = d1FromEnv(env) ?? (isD1Database(fromQuery) ? fromQuery : undefined);
       if (!database) {
+        const found = describeEnv(env);
         return yield* Effect.die(
-          new Error("Auth D1 binding is missing (tried AuthDatabase and AUTH_DB)."),
+          new Error(
+            `Auth D1 binding is missing. keys=[${found.keys.join(", ")}] AuthDatabase=${found.AuthDatabase} AUTH_DB=${found.AUTH_DB}`,
+          ),
         );
       }
-      return makeAuth({
-        audit: reportAuthEvent,
-        baseURL: authBaseURL,
-        database,
-        electronProtocol,
-        mobileProtocol,
-        secret: secretValue,
-        trustedOrigins: authTrustedOrigins,
+      return yield* Effect.try({
+        try: () =>
+          makeAuth({
+            audit: reportAuthEvent,
+            baseURL: authBaseURL,
+            database,
+            electronProtocol,
+            mobileProtocol,
+            secret: secretValue,
+            trustedOrigins: authTrustedOrigins,
+          }),
+        catch: (error) =>
+          new Error(
+            `makeAuth failed: ${error instanceof Error ? error.message : String(error)}. keys=[${describeEnv(env).keys.join(", ")}]`,
+          ),
       });
     });
 
     const incomingAuthRequest = (request: HttpServerRequest.HttpServerRequest) =>
       Effect.gen(function* () {
         const raw = yield* Effect.serviceOption(Cloudflare.Workers.Request);
-        const webRequest = Option.getOrUndefined(raw) ?? (yield* HttpServerRequest.toWeb(request));
-        return absoluteAuthRequest(
-          normalizeElectronOrigin(webRequest, electronProtocol),
-          authBaseURL,
+        return normalizeElectronOrigin(
+          webRequestForAuth(request, Option.getOrUndefined(raw), authBaseURL),
+          electronProtocol,
         );
       }).pipe(Effect.orDie);
 
