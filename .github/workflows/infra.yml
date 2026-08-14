@@ -55,9 +55,6 @@ jobs:
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
 
-      - name: Build web app
-        run: bun run --filter @store/web build
-
       - name: ${{ inputs.action }} ${{ inputs.stage }}
         run: bun alchemy "${{ inputs.action }}" --stage "${{ inputs.stage }}" --yes
         env:

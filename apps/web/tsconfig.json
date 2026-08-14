@@ -19,6 +19,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "test", "../desktop/src"],
+  "include": ["src", "test", "worker.ts", "../desktop/src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

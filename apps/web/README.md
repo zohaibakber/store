@@ -1,23 +1,29 @@
 # Web app
 
-TanStack Router SPA for Tabaaq. It uses the same renderer as the desktop app, a
-browser replica of `@store/persistence`, and the same `/api/sync` protocol, so
-inventory created here shows up on desktop and mobile after sync.
+React SPA for Tabaaq, deployed with [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
+It uses the same renderer as the desktop app, a browser replica of
+`@store/persistence`, and the same `/api/sync` protocol, so inventory created
+here shows up on desktop and mobile after sync.
 
 ## Local development
 
-The API Worker must be running on `:8787` (`vp run dev` from the repo root, or
-`apps/server`). Then:
+`vp run dev` from the repo root starts `alchemy dev`, which boots this SPA's
+Vite server on `:5174` (HMR) and the API Worker on `:8787`. `/api/*` is handled
+by `worker.ts` and forwarded to the API Worker over a service binding, so auth
+cookies stay same-origin.
+
+To run the SPA against an already-running API without Alchemy's Vite plugin:
 
 ```sh
 cd apps/web && vp dev
 ```
 
-Vite listens on `:5174` and proxies `/api` to the Worker so auth cookies stay
-same-origin.
+That still listens on `:5174` and uses Vite's `/api` proxy to `:8787`.
 
 ## Production
 
-`alchemy deploy` attaches `apps/web/dist` to the API Worker. The app is served
-from the Worker origin (`https://tabaaq.zohaibakber.com` in production); `/api/*`
-still hits the Effect HTTP API.
+`bun alchemy deploy` builds this Vite project and deploys it as a Cloudflare
+Worker with static assets — there is no separate CI `vite build` step. Deep
+links fall back to `index.html` (`notFoundHandling: "single-page-application"`).
+The production hostname is `https://tabaaq.zohaibakber.com`; `/api/*` is
+proxied to the API Worker so browser sessions stay same-origin.

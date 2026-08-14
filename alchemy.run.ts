@@ -7,11 +7,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { Api, ApiLive } from "./apps/server/infra";
+import { Website } from "./apps/web/infra";
 
 /**
- * Composition root for the Cloudflare infrastructure behind `apps/server`.
- * Resources live next to the code that owns them — the Worker in
- * `apps/server/infra.ts`, the auth database in `packages/db/src/auth/infra.ts`.
+ * Composition root for the Cloudflare stack. Resources live next to the code
+ * that owns them — the API Worker in `apps/server/infra.ts`, the Vite SPA in
+ * `apps/web/infra.ts`, the auth database in `packages/db/src/auth/infra.ts`.
  *
  * Every deploy targets an explicit stage:
  *
@@ -31,6 +32,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
     const api = yield* Api;
+    const website = yield* Website;
 
     if (process.env.PULL_REQUEST) {
       yield* GitHub.Comment("PreviewComment", {
@@ -40,11 +42,12 @@ export default Alchemy.Stack(
         body: Output.interpolate`
           ## Preview deployed
 
-          **App:** ${api.url}
+          **App:** ${website.url}
           **API:** same origin — \`/api/*\` (health at \`/api/health\`)
 
-          The TanStack web app is served from the Worker origin so browser
-          sessions and desktop/mobile replicas share one sync API.
+          The React SPA is deployed with \`Cloudflare.Website.Vite\`. Deep links
+          fall back to \`index.html\`; \`/api/*\` is proxied to the API Worker so
+          browser sessions and desktop/mobile replicas share one sync API.
           Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
 
           ---
@@ -56,6 +59,7 @@ export default Alchemy.Stack(
     // Non-secret outputs only — never surface BETTER_AUTH_SECRET here.
     return {
       stage,
+      websiteUrl: website.url,
       apiUrl: api.url,
       workerName: api.workerName,
     };
