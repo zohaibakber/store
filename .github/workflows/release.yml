@@ -16,6 +16,9 @@ jobs:
         # Windows packaging is paused until its CI runtime is worth restoring.
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    # Same GitHub Environment as the production Worker deploy, so desktop
+    # builds read the same public API URL and protocol the Worker trusts.
+    environment: Production
     steps:
       - uses: actions/checkout@v7
 
@@ -25,6 +28,20 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Check required configuration
+        run: |
+          if [ -z "${VITE_API_URL}" ]; then
+            echo "::error::VITE_API_URL is empty." \
+                 "Set it on the Production GitHub Environment to https://tabaaq.zohaibakber.com" \
+                 "or the packaged desktop app will talk to localhost."
+            exit 1
+          fi
+          echo "VITE_API_URL=${VITE_API_URL}"
+          echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
       - name: Set desktop app version from tag
         shell: bash
@@ -45,7 +62,7 @@ jobs:
           # Publishes to this repo directly now that it's public; the default
           # GITHUB_TOKEN has contents:write (see workflow permissions above).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Repository variables, not secrets: an API hostname and a URL scheme
+          # Environment variables, not secrets: an API hostname and a URL scheme
           # are not confidential, and keeping them visible means a build that
           # points somewhere unexpected is obvious in the logs rather than
           # masked as ***.

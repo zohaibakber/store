@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import {
   CategoryIdInput,
   CreateBatchInput,
@@ -75,14 +76,16 @@ function appIconPath() {
 // Packaged apps ship no .env, so the API URL is baked in at build time via
 // `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
 // process.env reads stay as runtime overrides for local development.
-const API_BASE_URL =
-  process.env["STORE_API_URL"] ??
-  (VITE_DEV_SERVER_URL
-    ? "http://localhost:8787"
-    : (process.env["VITE_API_URL"] ?? import.meta.env.VITE_API_URL ?? "http://localhost:8787"));
+const API_BASE_URL = fallbackIfBlank(
+  process.env["STORE_API_URL"] ||
+    (VITE_DEV_SERVER_URL
+      ? "http://localhost:8787"
+      : (process.env["VITE_API_URL"] ?? import.meta.env.VITE_API_URL)),
+  "http://localhost:8787",
+);
 const authBroker = new AuthBroker(
   API_BASE_URL,
-  process.env["ELECTRON_PROTOCOL"] ?? "com.tabaaq.desktop",
+  fallbackIfBlank(process.env["ELECTRON_PROTOCOL"], DEFAULT_ELECTRON_PROTOCOL),
 );
 authBroker.setupMain();
 

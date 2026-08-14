@@ -70,8 +70,27 @@ CLOUDFLARE_ACCOUNT_ID=<account-id> bun run setup:ci
 
 `stacks/github.ts` scopes the resulting account-owned token to the Worker, D1, and remote-state
 operations used by this stack, then writes the token and account ID directly to GitHub Actions.
-After bootstrap, add distinct `BETTER_AUTH_SECRET` values to the generated `Development` and
-`Production` GitHub environments. Do not use the admin profile for ordinary deployments.
+Do not use the admin profile for ordinary deployments.
+
+Alchemy binds every `Config` read during Worker Init from the deploy job's process env. CI
+must pass those keys from the GitHub Environment. After bootstrap, set:
+
+**Both `Development` and `Production` environments**
+
+- Secret `BETTER_AUTH_SECRET` — required, ≥32 high-entropy characters, unique per stage
+- Variable `ELECTRON_PROTOCOL` — optional, default `com.tabaaq.desktop`
+- Variable `MOBILE_PROTOCOL` — optional, default `com.tabaaq.mobile`
+- Variable `AUTH_TRUSTED_ORIGINS` — optional comma-separated HTTPS origins. Custom schemes
+  belong in the protocol vars, not here.
+
+**`Production` environment only (desktop releases)**
+
+- Variable `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- Variable `ELECTRON_PROTOCOL` = `com.tabaaq.desktop`
+
+Unset GitHub variables interpolate as empty strings. The Worker treats blank protocol and
+origin values as missing so they cannot override the defaults. A missing
+`BETTER_AUTH_SECRET` fails the deploy job before Alchemy runs.
 
 ## Local development
 
