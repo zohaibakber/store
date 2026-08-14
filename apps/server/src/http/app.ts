@@ -1,3 +1,4 @@
+import { isTrustedOrigin } from "@store/auth/security";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -44,9 +45,10 @@ const Cors = HttpRouter.middleware(
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
     const cors = HttpMiddleware.cors({
-      allowedOrigins: (origin) =>
-        runtime.trustedOrigins.includes(origin) ||
-        (runtime.trustedOrigins.includes("exp://*") && origin.startsWith("exp://")),
+      // Matched the way Better Auth matches its own trusted origins, so a
+      // wildcard or native-scheme entry is not allowed by the auth origin check
+      // and then refused by CORS.
+      allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
       allowedHeaders: ["Content-Type", "Authorization"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       exposedHeaders: ["Content-Length"],
