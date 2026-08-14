@@ -12,8 +12,7 @@
     "build": "tsc && vp build && electron-builder --config electron-builder.json5",
     "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always",
     "check": "vp check",
-    "test": "vitest run --root ../.. apps/desktop/test",
-    "prepare": "vp config"
+    "test": "vitest run --root ../.. apps/desktop/test"
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.3.0",

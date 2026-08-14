@@ -22,6 +22,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # See ci.yml — skip Vite+ git hook install during `bun install`.
+  VITE_GIT_HOOKS: "0"
+
 jobs:
   run:
     runs-on: ubuntu-latest
