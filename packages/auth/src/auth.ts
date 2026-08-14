@@ -183,12 +183,15 @@ export const makeEffectAuthConfig = (config: EffectAuthConfig) => {
 };
 
 export const makeAuth = (config: AuthConfig) => {
-  const security = resolveAuthSecurity(config);
+  const { options } = makeEffectAuthConfig(config);
   return betterAuth({
-    ...makeAuthOptions(config, security, config.waitUntil),
-    baseURL: security.baseURL,
+    ...options,
     secret: config.secret,
     database: config.database,
+    advanced: {
+      ...options.advanced,
+      ...(config.waitUntil ? { backgroundTasks: { handler: config.waitUntil } } : {}),
+    },
   });
 };
 
