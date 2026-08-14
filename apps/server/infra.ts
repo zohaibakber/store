@@ -16,11 +16,7 @@ import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
 import { reportAuthEvent } from "./src/runtime/worker";
-import {
-  connectWithOrganizationStore,
-  OrganizationStore,
-  OrganizationStoreLive,
-} from "./src/sync/organization-store";
+import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
 export { OrganizationStore };
 
@@ -126,7 +122,6 @@ export const ApiLive = Api.make(
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
       runSync: (actor, request) =>
         organizationStore.getByName(actor.organizationId).exchange(actor, request),
-      connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),

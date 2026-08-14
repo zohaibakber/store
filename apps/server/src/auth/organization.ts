@@ -20,13 +20,14 @@ export class CurrentOrganization extends Context.Service<
 >()("@store/server/CurrentOrganization") {}
 
 export const authHeadersForRequest = (requestHeaders: Headers) => {
-  if (requestHeaders.has("origin")) return requestHeaders;
+  const origin = requestHeaders.get("origin");
+  if (origin && origin !== "null") return requestHeaders;
 
-  const expoOrigin = requestHeaders.get("expo-origin");
-  if (!expoOrigin) return requestHeaders;
+  const nativeOrigin = requestHeaders.get("expo-origin") ?? requestHeaders.get("electron-origin");
+  if (!nativeOrigin) return requestHeaders;
 
   const authHeaders = new Headers(requestHeaders);
-  authHeaders.set("origin", expoOrigin);
+  authHeaders.set("origin", nativeOrigin);
   return authHeaders;
 };
 

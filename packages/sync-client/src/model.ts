@@ -19,7 +19,7 @@ export interface SyncAdapter<E> {
 }
 
 export interface LiveTransport<E> {
-  /** A fresh subscription creates a fresh authenticated WebSocket. */
+  /** Optional invalidation stream used by tests. Production uses HTTP polling. */
   readonly events: Stream.Stream<SyncLiveEvent, E>;
 }
 

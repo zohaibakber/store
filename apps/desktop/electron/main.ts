@@ -262,7 +262,6 @@ const workspaceStores: WorkspaceStoreAdapter = {
           ? {
               syncTransport: {
                 exchange: target.exchange,
-                liveEvents: target.liveEvents,
               },
               workspace: {
                 organizationId: target.organizationId,

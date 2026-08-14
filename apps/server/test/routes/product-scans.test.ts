@@ -28,7 +28,7 @@ const productAi = (generate = vi.fn(async () => JSON.stringify(result))) => ({
 describe("product scan authorization and validation", () => {
   it("does not reach the model when the caller is unauthorized", async () => {
     const { client, generate } = productAi();
-    const response = await appFor(false, false, undefined, undefined, {
+    const response = await appFor(false, false, undefined, {
       productScanAi: client,
     }).request("/api/product-scans", scan());
 
@@ -51,7 +51,7 @@ describe("product scan authorization and validation", () => {
   });
 
   it("returns a typed rate-limit response", async () => {
-    const response = await appFor(true, true, undefined, undefined, {
+    const response = await appFor(true, true, undefined, {
       productScanAllowed: false,
     }).request("/api/product-scans", scan());
 
@@ -63,7 +63,7 @@ describe("product scan authorization and validation", () => {
 describe("product scan extraction", () => {
   it("returns the normalized model result", async () => {
     const { client, generate } = productAi();
-    const response = await appFor(true, true, undefined, undefined, {
+    const response = await appFor(true, true, undefined, {
       productScanAi: client,
     }).request("/api/product-scans", scan());
 
@@ -78,7 +78,7 @@ describe("product scan extraction", () => {
         throw new Error("workers ai private neuron failure");
       }),
     );
-    const response = await appFor(true, true, undefined, undefined, {
+    const response = await appFor(true, true, undefined, {
       productScanAi: client,
     }).request("/api/product-scans", scan());
     const body = JSON.stringify(await response.json());
