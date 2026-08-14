@@ -8,8 +8,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "check": "vp check",
-    "test": "vitest run --root ../.. apps/web/test",
-    "prepare": "vp config"
+    "test": "vitest run --root ../.. apps/web/test"
   },
   "dependencies": {
     "@libsql/client-wasm": "^0.17.4"
