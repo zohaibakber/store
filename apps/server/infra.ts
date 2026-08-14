@@ -94,10 +94,14 @@ export const ApiLive = Api.make(
     const secretValue = Redacted.value(secret);
     const authConfig = makeEffectAuthConfig({
       audit: reportAuthEvent,
+      // Better Auth requires a real absolute URL at construction. Production
+      // always serves from the stable custom domain; local alchemy dev is
+      // pinned to 8787. Preview stages still infer extra origins from the
+      // incoming request via trustedOrigins.
+      baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
       electronProtocol,
       mobileProtocol,
       secret: secretValue,
-      secureCookies: !localDevelopment,
       trustedOrigins,
     });
     const auth = yield* BetterAuth({
