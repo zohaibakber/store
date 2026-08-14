@@ -46,6 +46,13 @@ describe("API Worker bundle", () => {
     expect(source).toContain('out: "packages/db/migrations/auth"');
   });
 
+  it("does not import the Alchemy Better Auth wrapper", () => {
+    const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
+    expect(source).not.toContain("@alchemy.run/better-auth");
+    expect(source).toContain("makeAuth(");
+    expect(source).toContain("auth.handler(");
+  });
+
   it("never derives a URL from import.meta.url", async () => {
     // workerd leaves `import.meta.url` undefined, so `new URL(relative,
     // import.meta.url)` throws `TypeError: Invalid URL string.` there. The

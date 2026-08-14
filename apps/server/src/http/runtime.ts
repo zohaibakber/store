@@ -1,4 +1,3 @@
-import type { BetterAuthApiError } from "@alchemy.run/better-auth";
 import type { AuthSession } from "@store/auth";
 import type { SyncRequest, SyncResponse } from "@store/contracts";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
@@ -28,10 +27,10 @@ export interface ServerRuntimeShape {
   >;
   readonly getSession: (
     headers: Headers,
-  ) => Effect.Effect<AuthSession | null, BetterAuthApiError, RuntimeContext>;
+  ) => Effect.Effect<AuthSession | null, never, RuntimeContext | Scope.Scope>;
   readonly hasActiveMember: (
     headers: Headers,
-  ) => Effect.Effect<boolean, BetterAuthApiError, RuntimeContext>;
+  ) => Effect.Effect<boolean, never, RuntimeContext | Scope.Scope>;
   readonly invoiceAi: Effect.Effect<InvoiceAiClient, never, RuntimeContext>;
   readonly productScanAi: Effect.Effect<ProductScanAiClient, never, RuntimeContext>;
   readonly limitProductScan: (
