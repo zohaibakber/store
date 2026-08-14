@@ -9,13 +9,14 @@
     "./do/migrations": "./src/do/migrations.ts",
     "./do/relations": "./src/do/relations.ts",
     "./do/schema": "./src/do/schema.ts",
+    "./local/migrations": "./src/local/migrations.ts",
     "./local/relations": "./src/local/relations.ts",
     "./local/schema": "./src/local/schema.ts",
     "./store.schema": "./src/shared/store.schema.ts"
   },
   "scripts": {
     "check": "tsc --noEmit && node scripts/drizzle-kit.cjs check --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.do.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts",
-    "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.do.config.ts && node scripts/bundle-do-migrations.mjs"
+    "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.local.config.ts && node scripts/drizzle-kit.cjs generate --config drizzle.do.config.ts && node scripts/bundle-migrations.mjs"
   },
   "dependencies": {
     "drizzle-orm": "1.0.0-rc.5-ab785fc",

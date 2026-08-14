@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { BetterAuth } from "@alchemy.run/better-auth";
 import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import { makeEffectAuthConfig } from "@store/auth";
@@ -37,6 +40,8 @@ export { OrganizationStore };
  * stable.
  */
 const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
+const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
+const webDist = fileURLToPath(new URL("../web/dist", import.meta.url));
 
 /**
  * The API Worker, authentication, bindings, routes, and Durable Object clients
@@ -54,6 +59,15 @@ export const ApiLive = Api.make(
       // `worker.url` becomes the custom domain when one is set, so the stack's
       // `apiUrl` output is the right thing to feed a desktop release either way.
       ...(stage === "prod" ? { domain: PRODUCTION_DOMAIN } : {}),
+      ...(existsSync(webDist)
+        ? {
+            assets: {
+              directory: webDist,
+              notFoundHandling: "single-page-application" as const,
+              runWorkerFirst: ["/api", "/api/*"],
+            },
+          }
+        : {}),
       // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
       // alchemy's dev runtime pins workerd exactly, and that build refuses any
       // date past 2026-07-11. Raising this breaks `vp run dev` with a
@@ -104,7 +118,7 @@ export const ApiLive = Api.make(
       electronProtocol,
       mobileProtocol,
       secret: secretValue,
-      trustedOrigins,
+      trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
     });
     const auth = yield* BetterAuth({
       ...authConfig.options,

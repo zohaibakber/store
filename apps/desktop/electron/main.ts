@@ -4,23 +4,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
-import {
-  CategoryIdInput,
-  CreateBatchInput,
-  CreateCategoryInput,
-  CreateInvoiceInput,
-  CreateProductInput,
-  encodeStoreError,
-  InvoiceExtraction,
-  ImportInventoryInput,
-  InvoiceIdInput,
-  ProductIdInput,
-  SearchProductsInput,
-  UpdateBatchInput,
-  UpdateCategoryInput,
-  UpdateProductInput,
-} from "@store/contracts";
+import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
+import {
+  AuthenticatedWorkspace,
+  storeHandlers,
+  withStoreEffect,
+  type StoreMethod,
+  type WorkspaceStoreAdapter,
+  type WorkspaceTarget,
+} from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
@@ -28,13 +21,8 @@ import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 
 import { AuthBroker } from "./auth";
-import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL, type StoreMethod } from "./store-channels";
+import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 import { setupUpdater } from "./updater";
-import {
-  AuthenticatedWorkspace,
-  type WorkspaceStoreAdapter,
-  type WorkspaceTarget,
-} from "./workspace";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -158,63 +146,9 @@ const runStore = async <A, E>(
 };
 
 type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
-const withStore = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =>
-  Effect.flatMap(OfflineStore, f);
-
-const decoding =
-  <S extends Schema.Top, A, E, R>(schema: S, run: (input: S["Type"]) => Effect.Effect<A, E, R>) =>
-  (input: unknown) =>
-    Schema.decodeUnknownEffect(schema)(input).pipe(Effect.flatMap(run));
-
-const storeHandlers: {
-  [K in StoreMethod]: (input: unknown) => Effect.Effect<unknown, unknown, OfflineStore>;
-} = {
-  listCategories: () => withStore((store) => store.listCategories),
-  createCategory: decoding(CreateCategoryInput, (input) =>
-    withStore((store) => store.createCategory(input)),
-  ),
-  updateCategory: decoding(UpdateCategoryInput, (input) =>
-    withStore((store) => store.updateCategory(input)),
-  ),
-  deleteCategory: decoding(CategoryIdInput, ({ id }) =>
-    withStore((store) => store.deleteCategory(id)),
-  ),
-  listProducts: () => withStore((store) => store.listProducts),
-  listProductSuggestions: () => withStore((store) => store.listProductSuggestions),
-  searchProducts: decoding(SearchProductsInput, (input) =>
-    withStore((store) => store.searchProducts(input)),
-  ),
-  getProduct: decoding(ProductIdInput, ({ id }) => withStore((store) => store.getProduct(id))),
-  createProduct: decoding(CreateProductInput, (input) =>
-    withStore((store) => store.createProduct(input)),
-  ),
-  updateProduct: decoding(UpdateProductInput, (input) =>
-    withStore((store) => store.updateProduct(input)),
-  ),
-  deleteProduct: decoding(ProductIdInput, ({ id }) =>
-    withStore((store) => store.deleteProduct(id)),
-  ),
-  createBatch: decoding(CreateBatchInput, (input) =>
-    withStore((store) => store.createBatch(input)),
-  ),
-  updateBatch: decoding(UpdateBatchInput, (input) =>
-    withStore((store) => store.updateBatch(input)),
-  ),
-  importInventory: decoding(ImportInventoryInput, (input) =>
-    withStore((store) => store.importInventory(input)),
-  ),
-  listStockMovements: decoding(ProductIdInput, ({ id }) =>
-    withStore((store) => store.listStockMovements(id)),
-  ),
-  listInvoices: () => withStore((store) => store.listInvoices),
-  getInvoice: decoding(InvoiceIdInput, ({ id }) => withStore((store) => store.getInvoice(id))),
-  createInvoice: decoding(CreateInvoiceInput, (input) =>
-    withStore((store) => store.createInvoice(input)),
-  ),
-  getDashboardAnalytics: () => withStore((store) => store.getDashboardAnalytics),
-  getSyncStatus: () => withStore((store) => store.getSyncStatus),
-  sync: () => withStore((store) => store.sync),
-};
+const withStore = withStoreEffect as <A, E>(
+  f: (store: OfflineStoreShape) => Effect.Effect<A, E>,
+) => Effect.Effect<A, E, OfflineStore>;
 
 function registerStoreIpc() {
   for (const [method, channel] of Object.entries(STORE_CHANNELS))
@@ -261,6 +195,8 @@ const workspaceStores: WorkspaceStoreAdapter = {
       persistenceLayer({
         dataDir,
         migrationsFolder: migrationsFolder(),
+        clientPlatform: "desktop",
+        clientVersion: app.getVersion(),
         ...(target._tag === "Authenticated"
           ? {
               syncTransport: {

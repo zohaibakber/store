@@ -12,15 +12,17 @@ import { Button } from "@/components/ui/button";
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const controls = typeof window === "undefined" ? undefined : window.windowControls;
 
   useEffect(() => {
-    void window.windowControls.isMaximized().then(setIsMaximized);
-    void window.windowControls.isFullScreen().then(setIsFullScreen);
+    if (!controls) return;
+    void controls.isMaximized().then(setIsMaximized);
+    void controls.isFullScreen().then(setIsFullScreen);
 
-    return window.windowControls.onFullScreenChange(setIsFullScreen);
-  }, []);
+    return controls.onFullScreenChange(setIsFullScreen);
+  }, [controls]);
 
-  if (isFullScreen) return null;
+  if (!controls || isFullScreen) return null;
 
   return (
     <div className="window-controls ml-auto flex items-center gap-1" aria-label="Window controls">
@@ -29,7 +31,7 @@ export function WindowControls() {
         variant="ghost"
         size="icon-xs"
         aria-label="Minimize window"
-        onClick={() => window.windowControls.minimize()}
+        onClick={() => controls.minimize()}
       >
         <HugeiconsIcon icon={MinusSignIcon} />
       </Button>
@@ -39,7 +41,7 @@ export function WindowControls() {
         size="icon-xs"
         aria-label={isMaximized ? "Restore window" : "Maximize window"}
         onClick={() => {
-          void window.windowControls.toggleMaximize().then(setIsMaximized);
+          void controls.toggleMaximize().then(setIsMaximized);
         }}
       >
         {isMaximized ? (
@@ -53,7 +55,7 @@ export function WindowControls() {
         variant="ghost"
         size="icon-xs"
         aria-label="Close window"
-        onClick={() => window.windowControls.close()}
+        onClick={() => controls.close()}
       >
         <HugeiconsIcon icon={Cancel01Icon} />
       </Button>

@@ -1,0 +1,58 @@
+{
+  "name": "@store/web",
+  "version": "0.2.21",
+  "private": true,
+  "description": "Tabaaq inventory web app",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "check": "vp check",
+    "test": "vitest run --root ../.. apps/web/test",
+    "prepare": "vp config"
+  },
+  "dependencies": {
+    "@libsql/client-wasm": "^0.17.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@base-ui/react": "^1.7.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@store/auth": "workspace:*",
+    "@store/contracts": "workspace:*",
+    "@store/db": "workspace:*",
+    "@store/persistence": "workspace:*",
+    "@store/workspace": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-form": "^1.33.3",
+    "@tanstack/react-router": "^1.170.18",
+    "@tanstack/react-table": "^9.0.0",
+    "@types/babel__core": "^7.20.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "effect": "catalog:",
+    "react": "^19.2.8",
+    "react-day-picker": "^10.0.1",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6"
+  }
+}

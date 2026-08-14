@@ -37,9 +37,15 @@ export interface SyncTransport {
 
 export interface PersistenceConfig {
   readonly dataDir: string;
-  readonly migrationsFolder: string;
+  /** Filesystem drizzle folder used by the Node/Electron replica. */
+  readonly migrationsFolder?: string;
+  /** Inlined drizzle SQL used by the browser replica (no filesystem). */
+  readonly bundledMigrations?: Record<string, string>;
   readonly workspace?: Workspace;
   readonly syncTransport?: SyncTransport;
+  /** Recorded on each sync exchange so the Durable Object can tell devices apart. */
+  readonly clientPlatform?: string;
+  readonly clientVersion?: string;
   /** How often the engine re-signals a background HTTP sync. Default: 3 seconds. */
   readonly resyncIntervalMillis?: number;
   /**

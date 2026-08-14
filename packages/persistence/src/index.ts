@@ -6,4 +6,4 @@ export {
   ProductNotFoundError,
   SyncTransportError,
 } from "./errors";
-export { OfflineStore, layer } from "./service";
+export { OfflineStore, layer, storeLayer } from "./service";
