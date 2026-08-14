@@ -26,4 +26,6 @@ That still listens on `:5174` and uses Vite's `/api` proxy to `:8787`.
 Worker with static assets — there is no separate CI `vite build` step. Deep
 links fall back to `index.html` (`notFoundHandling: "single-page-application"`).
 The production hostname is `https://tabaaq.zohaibakber.com`; `/api/*` is
-proxied to the API Worker so browser sessions stay same-origin.
+proxied to the API Worker so browser sessions stay same-origin. `bun run
+deploy:prod` (and CI on `main`) runs Alchemy twice so the hostname is detached
+from the API Worker before the Website Worker claims it.
