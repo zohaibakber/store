@@ -135,9 +135,7 @@ export const ApiLive = Api.make(
       // Static `import { env } from "cloudflare:workers"` crashes Node during
       // `alchemy deploy`. Load it only inside a request, where workerd has it.
       const moduleEnv = yield* Effect.promise(() =>
-        import("cloudflare:workers")
-          .then((mod) => mod.env as unknown)
-          .catch(() => undefined),
+        import("cloudflare:workers").then((mod) => mod.env as unknown).catch(() => undefined),
       );
       const fromQuery = yield* authD1.raw;
       const env = mergeEnvSnapshots(Option.getOrUndefined(workerEnv), moduleEnv, {
@@ -152,22 +150,23 @@ export const ApiLive = Api.make(
           ),
         );
       }
-      return yield* Effect.try({
-        try: () =>
-          makeAuth({
-            audit: reportAuthEvent,
-            baseURL: authBaseURL,
-            database,
-            electronProtocol,
-            mobileProtocol,
-            secret: secretValue,
-            trustedOrigins: authTrustedOrigins,
-          }),
-        catch: (error) =>
+      try {
+        return makeAuth({
+          audit: reportAuthEvent,
+          baseURL: authBaseURL,
+          database,
+          electronProtocol,
+          mobileProtocol,
+          secret: secretValue,
+          trustedOrigins: authTrustedOrigins,
+        });
+      } catch (error) {
+        return yield* Effect.die(
           new Error(
             `makeAuth failed: ${error instanceof Error ? error.message : String(error)}. keys=[${describeEnv(env).keys.join(", ")}]`,
           ),
-      });
+        );
+      }
     });
 
     const incomingAuthRequest = (request: HttpServerRequest.HttpServerRequest) =>

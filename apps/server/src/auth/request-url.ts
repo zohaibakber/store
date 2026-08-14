@@ -44,6 +44,7 @@ export const webRequestForAuth = (
 ): Request => {
   if (isWebRequest(raw)) return absoluteAuthRequest(raw, baseURL);
   if (isWebRequest(request.source)) return absoluteAuthRequest(request.source, baseURL);
-  const relative = request.originalUrl && request.originalUrl.length > 0 ? request.originalUrl : request.url;
+  const relative =
+    request.originalUrl && request.originalUrl.length > 0 ? request.originalUrl : request.url;
   return new Request(new URL(relative, baseURL));
 };

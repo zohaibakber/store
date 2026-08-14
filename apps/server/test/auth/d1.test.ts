@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { d1FromEnv, describeEnv, envSnapshot, isD1Database, mergeEnvSnapshots } from "../../src/auth/d1";
+import {
+  d1FromEnv,
+  describeEnv,
+  envSnapshot,
+  isD1Database,
+  mergeEnvSnapshots,
+} from "../../src/auth/d1";
 
 const d1 = {
   prepare: () => ({}),

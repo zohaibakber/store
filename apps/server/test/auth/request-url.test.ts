@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { absoluteAuthRequest, isAbsoluteHttpUrl, isWebRequest, webRequestForAuth } from "../../src/auth/request-url";
+import {
+  absoluteAuthRequest,
+  isAbsoluteHttpUrl,
+  isWebRequest,
+  webRequestForAuth,
+} from "../../src/auth/request-url";
 
 describe("absoluteAuthRequest", () => {
   it("leaves an absolute http(s) request unchanged", () => {

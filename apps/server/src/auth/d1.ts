@@ -28,7 +28,11 @@ const readBinding = (env: object, key: string): unknown => {
 /** Shallow copy of a Worker env, including known D1 names even if absent. */
 export const envSnapshot = (env: unknown): Record<string, unknown> => {
   if (typeof env !== "object" || env === null) return {};
-  const keys = new Set<string>([...Object.keys(env), ...Object.getOwnPropertyNames(env), ...D1_BINDING_NAMES]);
+  const keys = new Set<string>([
+    ...Object.keys(env),
+    ...Object.getOwnPropertyNames(env),
+    ...D1_BINDING_NAMES,
+  ]);
   const snapshot: Record<string, unknown> = {};
   for (const key of keys) {
     if (key === "__proto__" || key === "prototype" || key === "constructor") continue;
