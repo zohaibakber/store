@@ -8,7 +8,6 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { normalizeElectronOrigin } from "../auth/electron-origin";
 import { OrganizationAuthLive } from "../auth/organization";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
@@ -31,9 +30,10 @@ const handleAuthRequest = Effect.fn("Server.handleAuthRequest")(function* (
   request: HttpServerRequest.HttpServerRequest,
 ) {
   const runtime = yield* ServerRuntime;
-  const webRequest = yield* HttpServerRequest.toWeb(request);
-  const normalized = normalizeElectronOrigin(webRequest, runtime.electronProtocol);
-  return yield* runtime.authFetch(HttpServerRequest.fromWeb(normalized)).pipe(Effect.orDie);
+  // The Worker runtime rebuilds an absolute Request the way Hono's
+  // `c.req.raw` did. Passing Effect's path-only URL through toWeb/fromWeb
+  // here used to reach Better Auth as `/api/auth/...` and 500.
+  return yield* runtime.authFetch(request).pipe(Effect.orDie);
 });
 
 const AuthRoutes = Layer.mergeAll(
