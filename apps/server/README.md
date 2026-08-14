@@ -47,6 +47,9 @@ stages stay on their generated `workers.dev` URL. Desktop releases use that same
 `bun alchemy deploy` builds `apps/web` itself (no separate `vite build` in CI). Deep links fall
 back to `index.html`; `/api/*` is `runWorkerFirst` and forwarded over a service binding.
 Same-origin browser sessions share the Durable Object sync log with desktop and mobile.
+Production apply is two passes: the first detaches the hostname from this API Worker, the
+second (`CLAIM_PRODUCTION_DOMAIN=1`) attaches it to the Website Worker. Alchemy would
+otherwise race those two updates and leave the hostname on the API Worker.
 
 Secrets come from `.env.dev` and `.env.prod` at the repository root (both gitignored — copy
 `.env.example`). Use a **different** `BETTER_AUTH_SECRET` per stage: sharing one would make a
