@@ -5,7 +5,6 @@
     "": {
       "name": "store-electron",
       "devDependencies": {
-        "@alchemy.run/better-auth": "catalog:",
         "@cloudflare/workers-types": "^5.20260804.1",
         "@effect/platform-bun": "4.0.0-beta.105",
         "@effect/platform-node": "4.0.0-beta.105",
@@ -131,7 +130,6 @@
       "name": "@store/server",
       "version": "0.0.0",
       "dependencies": {
-        "@alchemy.run/better-auth": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@store/auth": "workspace:*",
         "@store/contracts": "workspace:*",
@@ -313,7 +311,6 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
   },
   "catalog": {
-    "@alchemy.run/better-auth": "2.0.0-beta.72",
     "@effect/sql-libsql": "4.0.0-beta.105",
     "@effect/sql-sqlite-do": "4.0.0-beta.105",
     "@effect/vitest": "4.0.0-beta.105",
@@ -329,8 +326,6 @@
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
 
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.2.5", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-3NX/MpTdroi0aKz134A6RC2Gb2iXVECN4QaAXnvCIxxIm3C3AVB1mkUe8NaaiyvOpDfsrqWhYtj+Q6a62RrTsw=="],
-
-    "@alchemy.run/better-auth": ["@alchemy.run/better-auth@2.0.0-beta.72", "", { "peerDependencies": { "@cloudflare/workers-types": "^4.20250805.0", "@distilled.cloud/aws": "workspace:*", "@neondatabase/serverless": "^1.0.1", "alchemy": "2.0.0-beta.72", "better-auth": "^1.6.2", "drizzle-orm": "1.0.0-rc.5-ab785fc", "effect": ">=4.0.0-beta.105 || >=4.0.0", "kysely": "^0.29.4", "mysql2": "^3.23.2", "pg": "^8.22.0" }, "optionalPeers": ["@cloudflare/workers-types", "@distilled.cloud/aws", "@neondatabase/serverless", "drizzle-orm", "kysely", "mysql2", "pg"] }, "sha512-IuHMTpa86x7pG8nJle81sr/UOFYUWEaIiTrSqHtfkjI1akwlyzHSykazLyxdzQ9ZUUMmlH06c8gmsBKqn6BGuA=="],
 
     "@alchemy.run/cloudflare-runtime": ["@alchemy.run/cloudflare-runtime@2.0.0-beta.72", "", { "dependencies": { "@alchemy.run/node-utils": "0.0.5", "@cloudflare/unenv-preset": "^2.16.0", "@puppeteer/browsers": "^2.10.6", "capnp-es": "^0.0.14", "magic-string": "^0.30.21", "sharp": "^0.34.5", "unenv": "^2.0.0-rc.24", "workerd": "1.20260704.1" }, "peerDependencies": { "@distilled.cloud/cloudflare": "1.0.0-rc.4", "@effect/platform-bun": ">=4.0.0-beta.105 || >=4.0.0", "@effect/platform-node": ">=4.0.0-beta.105 || >=4.0.0", "effect": ">=4.0.0-beta.105 || >=4.0.0", "rolldown": "1.1.5", "vite": "^7.0.0 || ^8.0.0" }, "optionalPeers": ["@effect/platform-bun", "@effect/platform-node", "rolldown", "vite"] }, "sha512-pIkyRfUvBDfI8Rx0+iUB/pcGngDlpEu7dHwljs4eJUXpUEsaAtWwDlqzcx4O0qLw+jLJDPJVgP1q3hlNGz7YHw=="],
 
