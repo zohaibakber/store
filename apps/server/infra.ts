@@ -1,6 +1,4 @@
-import { BetterAuth } from "@alchemy.run/better-auth";
-import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
-import { makeEffectAuthConfig } from "@store/auth";
+import { makeAuth, makeEffectAuthConfig } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
@@ -17,10 +15,12 @@ import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
+import { absoluteAuthRequest } from "./src/auth/request-url";
 import { reportAuthEvent, reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
@@ -75,6 +75,8 @@ export const ApiLive = Api.make(
       namespaceId: 1001,
       simple: { limit: 30, period: 60 },
     });
+    const authDatabase = yield* AuthDatabase;
+    const authD1 = yield* Cloudflare.D1.QueryDatabase(authDatabase);
     // Alchemy binds every Config read during Worker Init onto Cloudflare.
     // GitHub Actions turns unset Environment vars into "", which would
     // otherwise beat Config.withDefault and ship a blank protocol/origin.
@@ -93,36 +95,64 @@ export const ApiLive = Api.make(
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const secretValue = Redacted.value(secret);
+    const authBaseURL = localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`;
+    const authTrustedOrigins = localDevelopment
+      ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS]
+      : trustedOrigins;
     const authConfig = makeEffectAuthConfig({
       audit: reportAuthEvent,
       // Better Auth requires a real absolute URL at construction. Production
       // always serves from the Website custom domain (SPA + `/api` proxy);
       // local alchemy dev is pinned to 8787. Preview stages still infer extra
       // origins from the incoming request via trustedOrigins.
-      baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
+      baseURL: authBaseURL,
       electronProtocol,
       mobileProtocol,
       secret: secretValue,
-      trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
+      trustedOrigins: authTrustedOrigins,
     });
     reportRejectedAuthSettings(authConfig.rejectedSettings);
-    const auth = yield* BetterAuth({
-      ...authConfig.options,
-      // AuthDatabase already owns the checked-in Drizzle migrations. The
-      // Alchemy adapter supplies the D1 runtime binding without creating a
-      // second migration authority.
-      migrate: false,
-      secret,
+
+    // Construct Better Auth the way this Worker did before the Alchemy
+    // wrapper: D1 binding + `makeAuth` + `auth.handler`. That wrapper rebuilt
+    // the instance per event through its own fetch/toWeb path, and every
+    // `/api/auth/*` request started returning 500 after the switch.
+    const runtimeAuth = Effect.gen(function* () {
+      const database = yield* authD1.raw;
+      return makeAuth({
+        audit: reportAuthEvent,
+        baseURL: authBaseURL,
+        database,
+        electronProtocol,
+        mobileProtocol,
+        secret: secretValue,
+        trustedOrigins: authTrustedOrigins,
+      });
     });
 
     const RuntimeLive = Layer.succeed(ServerRuntime, {
       electronProtocol,
       trustedOrigins: authConfig.trustedOrigins,
       authFetch: (request) =>
-        auth.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request)),
-      getSession: (headers) => auth.getSession(headers),
+        Effect.gen(function* () {
+          const auth = yield* runtimeAuth;
+          const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
+          const response = yield* Effect.promise(() =>
+            auth.handler(absoluteAuthRequest(webRequest, authBaseURL)),
+          );
+          return HttpServerResponse.fromWeb(response);
+        }),
+      getSession: (headers) =>
+        Effect.gen(function* () {
+          const auth = yield* runtimeAuth;
+          return yield* Effect.promise(() => auth.api.getSession({ headers }));
+        }),
       hasActiveMember: (headers) =>
-        auth.api.getActiveMember({ headers }).pipe(Effect.map((member) => member !== null)),
+        Effect.gen(function* () {
+          const auth = yield* runtimeAuth;
+          const member = yield* Effect.promise(() => auth.api.getActiveMember({ headers }));
+          return member !== null;
+        }),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
@@ -138,7 +168,7 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
     };
   }).pipe(
-    Effect.provide(CloudflareD1(AuthDatabase)),
+    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(OrganizationStoreLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),

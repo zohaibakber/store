@@ -9,7 +9,6 @@
     "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
-    "@alchemy.run/better-auth": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",

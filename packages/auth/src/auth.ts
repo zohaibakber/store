@@ -26,7 +26,6 @@ export interface AuthConfig {
   readonly mobileProtocol: string;
   readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
-  readonly waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export interface EffectAuthConfig {
@@ -41,18 +40,10 @@ export interface EffectAuthConfig {
 const makeAuthOptions = (
   config: Pick<AuthConfig, "audit">,
   security: ReturnType<typeof resolveAuthSecurity>,
-  waitUntil?: (promise: Promise<unknown>) => void,
 ) => {
   const audit = async (event: AuthAuditEvent) => {
     if (!config.audit) return;
-    const task = Promise.resolve().then(async () => {
-      await config.audit?.(event);
-    });
-    if (waitUntil) {
-      waitUntil(task);
-      return;
-    }
-    await task;
+    await config.audit(event);
   };
 
   return {
@@ -84,7 +75,6 @@ const makeAuthOptions = (
         disableIpTracking: false,
         ipv6Subnet: 64,
       },
-      ...(waitUntil ? { backgroundTasks: { handler: waitUntil } } : {}),
     },
     databaseHooks: {
       user: {
@@ -183,10 +173,9 @@ export const makeEffectAuthConfig = (config: EffectAuthConfig) => {
 };
 
 export const makeAuth = (config: AuthConfig) => {
-  const security = resolveAuthSecurity(config);
+  const { options } = makeEffectAuthConfig(config);
   return betterAuth({
-    ...makeAuthOptions(config, security, config.waitUntil),
-    baseURL: security.baseURL,
+    ...options,
     secret: config.secret,
     database: config.database,
   });
