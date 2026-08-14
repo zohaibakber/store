@@ -39,14 +39,14 @@ bun run deploy:prod
 **Always pass a stage.** A bare `alchemy deploy` silently creates a personal `dev_$USER` stage,
 which is why every script above pins one explicitly.
 
-`prod` serves from `https://tabaaq.zohaibakber.com` on the existing `zohaibakber.com` zone;
-Cloudflare provisions the DNS record and certificate. Other stages stay on their generated
-`workers.dev` URL. Because a custom domain takes precedence in `worker.url`, the stack's `apiUrl`
-output is the right value to feed a desktop release regardless of stage.
+`prod` serves the SPA from `https://tabaaq.zohaibakber.com` on the existing `zohaibakber.com`
+zone via `Cloudflare.Website.Vite`; Cloudflare provisions the DNS record and certificate. Other
+stages stay on their generated `workers.dev` URL. Desktop releases use that same public origin
+(`VITE_API_URL`) — `/api/*` is proxied from the Website Worker to this API Worker.
 
-Deploys build `apps/web` first and attach `apps/web/dist` as Worker assets. The SPA is served
-from the Worker origin; `/api/*` still hits the Effect HTTP API (`runWorkerFirst`). Same-origin
-browser sessions share the Durable Object sync log with desktop and mobile.
+`bun alchemy deploy` builds `apps/web` itself (no separate `vite build` in CI). Deep links fall
+back to `index.html`; `/api/*` is `runWorkerFirst` and forwarded over a service binding.
+Same-origin browser sessions share the Durable Object sync log with desktop and mobile.
 
 Secrets come from `.env.dev` and `.env.prod` at the repository root (both gitignored — copy
 `.env.example`). Use a **different** `BETTER_AUTH_SECRET` per stage: sharing one would make a
@@ -104,9 +104,9 @@ vp run dev
 
 The Worker runs locally in workerd on port 8787, which is the desktop's default API URL, so no
 extra configuration is needed. Set `STORE_API_URL` for the desktop when pointing at another origin.
-`VITE_API_URL` is reserved for packaged desktop builds. The web app on `:5174` leaves
-`VITE_API_URL` empty and talks to `/api` through the Vite proxy so auth cookies stay
-same-origin.
+`VITE_API_URL` is reserved for packaged desktop builds. The web SPA on `:5174` leaves
+`VITE_API_URL` empty and talks to `/api` through the Website Worker (or Vite's proxy in
+standalone `vp dev`) so auth cookies stay same-origin.
 
 Note that `alchemy dev` runs your _code_ locally but uses **real** cloud D1 and Durable
 Objects from the `dev` stage — there is no local emulation, so this loop needs network access.

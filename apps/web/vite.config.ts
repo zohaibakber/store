@@ -38,7 +38,7 @@ export default defineConfig({
   },
   lint: {
     env: { browser: true, es2020: true },
-    ignorePatterns: ["dist/**"],
+    ignorePatterns: ["dist/**", "infra.ts"],
     plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {

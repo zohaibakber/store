@@ -6,8 +6,10 @@ or on mobile syncs through the same authenticated `/api/sync` protocol.
 
 ## Workspace boundaries
 
-- `apps/web` is the TanStack SPA. Production serves it from the API Worker origin so cookies and
-  `/api/*` stay same-origin. Locally Vite listens on `:5174` and proxies `/api` to `:8787`.
+- `apps/web` is the React SPA. Alchemy deploys it with `Cloudflare.Website.Vite`
+  so the production hostname serves the app and `/api/*` on the same origin.
+  Locally `alchemy dev` listens on `:5174`; standalone `vp dev` proxies `/api`
+  to `:8787`.
 - `apps/desktop/src` contains the React renderer shared with the web app; `electron` contains the
   main process and preload. Desktop keeps hash routing and native libSQL.
 - `apps/server/src` contains the Worker API and per-organization Durable Object sync service.
@@ -42,7 +44,8 @@ vp run dev
 ```
 
 That starts the Worker (`:8787`), the desktop Vite/Electron renderer (`:5173`), and the web
-app (`:5174`). Sign in on either client; writes sync through `/api/sync`.
+SPA (`:5174`, via `Cloudflare.Website.Vite` in `alchemy dev`). Sign in on either client;
+writes sync through `/api/sync`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts` and
 the `infra.ts` modules beside the code that owns each resource. There are two isolated cloud
@@ -60,8 +63,9 @@ An authenticated user can continue using a previously opened organization offlin
 and organization creation require the API.
 
 GitHub Actions verifies every change, deploys each same-repository pull request to an isolated
-`pr-<number>` stage, comments its API URL on the pull request, removes that stage when the pull
-request closes, and deploys `main` to `prod`. Bootstrap its least-privilege Cloudflare credentials
+`pr-<number>` stage, comments its Website URL on the pull request, removes that stage when the pull
+request closes, and deploys `main` to `prod`. `alchemy deploy` builds the SPA — CI does not run a
+separate Vite build. Bootstrap its least-privilege Cloudflare credentials
 once:
 
 ```sh
@@ -90,8 +94,8 @@ The `Production` environment must also define these **variables** for desktop re
 The admin profile can mint API tokens and should only be used for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
-`vp run build`. Production deploys also build the web app and serve it from
-`https://tabaaq.zohaibakber.com`.
+`vp run build`. Production deploys run `bun alchemy deploy`, which builds the SPA and serves it
+from `https://tabaaq.zohaibakber.com`.
 
 ## Install
 
