@@ -87,8 +87,12 @@ must pass those keys from the GitHub Environment. After bootstrap, set:
 - Secret `BETTER_AUTH_SECRET` — required, ≥32 high-entropy characters, unique per stage
 - Variable `ELECTRON_PROTOCOL` — optional, default `com.tabaaq.desktop`
 - Variable `MOBILE_PROTOCOL` — optional, default `com.tabaaq.mobile`
-- Variable `AUTH_TRUSTED_ORIGINS` — optional comma-separated HTTPS origins. Custom schemes
-  belong in the protocol vars, not here.
+- Variable `AUTH_TRUSTED_ORIGINS` — optional comma-separated HTTPS origins. A bare host
+  (`app.example.com`) is read as `https://app.example.com`, and Better Auth's wildcard patterns
+  (`*.example.com`, `https://*.example.com`) work too. Custom schemes belong in the protocol
+  vars. A value that cannot be used — plain HTTP outside local development, a path, a pattern
+  broad enough to match origins this deployment does not own — is ignored rather than trusted,
+  and logged as `auth.setting_rejected`. Sign-in keeps working from the origins that remain.
 
 **`Production` environment only (desktop releases)**
 

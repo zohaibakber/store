@@ -29,4 +29,22 @@ describe("HTTP auth and CORS", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5174");
   });
+
+  it("allows a CORS origin that a wildcard trusted origin covers", async () => {
+    const app = appFor(true, true, undefined, {
+      trustedOrigins: ["https://*.tabaaq.example.com"],
+    });
+
+    const covered = await app.request("/api/health", {
+      headers: { origin: "https://preview-42.tabaaq.example.com" },
+    });
+    expect(covered.headers.get("access-control-allow-origin")).toBe(
+      "https://preview-42.tabaaq.example.com",
+    );
+
+    const other = await app.request("/api/health", {
+      headers: { origin: "https://tabaaq.example.net" },
+    });
+    expect(other.headers.get("access-control-allow-origin")).toBeNull();
+  });
 });
