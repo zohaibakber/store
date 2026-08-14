@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  VITE_GIT_HOOKS: "0"
+
 jobs:
   release:
     strategy:

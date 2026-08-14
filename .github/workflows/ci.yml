@@ -21,6 +21,9 @@ env:
     ${{ github.event_name == 'pull_request'
       && format('pr-{0}', github.event.number)
       || 'prod' }}
+  # `vp config` (prepare) writes `core.hooksPath`. Skip that in CI so install
+  # cannot race two git-config locks — hooks are not used in Actions.
+  VITE_GIT_HOOKS: "0"
 
 jobs:
   verify:
