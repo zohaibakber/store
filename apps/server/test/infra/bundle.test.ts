@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+
 import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
+const authDatabaseSource = `${repoRoot}packages/db/src/auth/infra.ts`;
 
 /**
  * Bundles the API Worker the way a deploy does: `__ALCHEMY_RUNTIME__` folded to
@@ -32,13 +35,22 @@ const bundleWorker = async () => {
 };
 
 describe("API Worker bundle", () => {
+  it("gives Drizzle.Schema cwd-relative paths, not import.meta.url", () => {
+    // Alchemy's D1 + Drizzle guide passes `schema: "./src/schema.ts"` strings
+    // resolved from process.cwd(). `new URL(..., import.meta.url)` is a Worker
+    // crash on workerd even when tucked behind a runtime guard.
+    const source = readFileSync(authDatabaseSource, "utf8");
+    expect(source).not.toMatch(/new URL\s*\([^)]*import\.meta\.url/);
+    expect(source).not.toContain("import.meta.url");
+    expect(source).toContain('schema: "packages/db/src/auth/schema.ts"');
+    expect(source).toContain('out: "packages/db/migrations/auth"');
+  });
+
   it("never derives a URL from import.meta.url", async () => {
     // workerd leaves `import.meta.url` undefined, so `new URL(relative,
-    // import.meta.url)` throws `TypeError: Invalid URL string.` there. Sitting
-    // in code the Worker reaches — resolving a binding, building the auth
-    // config — that fails the Worker before it serves anything and every
-    // request 500s. Deploy-time paths belong behind
-    // `if (!globalThis.__ALCHEMY_RUNTIME__)`, which the bundler folds away.
+    // import.meta.url)` throws `TypeError: Invalid URL string.` there. The
+    // Worker yields AuthDatabase on every request; those paths must be plain
+    // cwd-relative strings, the way Alchemy's D1 + Drizzle guide writes them.
     const chunks = await bundleWorker();
     const derived = chunks.flatMap((chunk) =>
       chunk.code
