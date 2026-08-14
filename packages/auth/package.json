@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/auth.ts",
     "./electron-client": "./src/electron-client.ts",
+    "./web-client": "./src/web-client.ts",
     "./security": "./src/security.ts"
   },
   "scripts": {

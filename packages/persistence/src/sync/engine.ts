@@ -197,6 +197,8 @@ export const makeSyncEngine = (
         protocolVersion: 2,
         organizationId: workspace.organizationId,
         deviceId: workspace.deviceId,
+        ...(config.clientPlatform ? { clientPlatform: config.clientPlatform } : {}),
+        ...(config.clientVersion ? { clientVersion: config.clientVersion } : {}),
         cursor,
         operations,
       };

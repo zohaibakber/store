@@ -9,9 +9,9 @@ import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
-import { databaseFile } from "../../src/database/client";
+import { databaseFile } from "../../src/database/node-client";
 import type { PersistenceConfig } from "../../src/index";
-import { layer, OfflineStore } from "../../src/service";
+import { layer, OfflineStore } from "../../src/index";
 
 type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
 
@@ -28,7 +28,7 @@ export const authMigrationsFolder = path.resolve(
   "../../../db/migrations/auth",
 );
 
-type TestStoreConfig = Partial<Omit<PersistenceConfig, "dataDir" | "migrationsFolder">>;
+type TestStoreConfig = Partial<Omit<PersistenceConfig, "dataDir">>;
 
 /**
  * A workspace starts with no categories — they are the shop's own, nothing is

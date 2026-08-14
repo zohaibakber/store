@@ -12,6 +12,8 @@ export default defineConfig({
       "**/release/**",
       "**/src/routeTree.gen.ts",
       "**/worker-configuration.d.ts",
+      "packages/db/src/do/migrations.ts",
+      "packages/db/src/local/migrations.ts",
     ],
     sortImports: true,
     sortTailwindcss: {
@@ -34,10 +36,12 @@ export default defineConfig({
       "**/release/**",
       "**/src/routeTree.gen.ts",
       "**/worker-configuration.d.ts",
+      "packages/db/src/do/migrations.ts",
+      "packages/db/src/local/migrations.ts",
     ],
     overrides: [
       {
-        files: ["apps/desktop/src/**/*.{ts,tsx}"],
+        files: ["apps/desktop/src/**/*.{ts,tsx}", "apps/web/src/**/*.{ts,tsx}"],
         plugins: ["react"],
         rules: {
           "react/no-children-prop": "off",

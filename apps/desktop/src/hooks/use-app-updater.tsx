@@ -22,14 +22,16 @@ const showDownloadProgress = (value: number, description: string) => {
 };
 
 const startDownload = (version: string) => {
+  const updater = window.updater;
+  if (!updater) return;
   showDownloadProgress(0, `Downloading version ${version}.`);
-  void window.updater
+  void updater
     .download()
     .then(() => {
       toastManager.add({
         actionProps: {
           children: "Restart now",
-          onClick: () => window.updater.install(),
+          onClick: () => updater.install(),
         },
         data: {},
         description: `Restart to install version ${version}.`,
@@ -54,9 +56,10 @@ const startDownload = (version: string) => {
 
 export function useAppUpdater() {
   useEffect(() => {
-    if (!window.updater) return;
+    const updater = window.updater;
+    if (!updater) return;
 
-    const unsubscribe = window.updater.onEvent((event) => {
+    const unsubscribe = updater.onEvent((event) => {
       switch (event.type) {
         case "available":
           toastManager.add({
@@ -89,7 +92,7 @@ export function useAppUpdater() {
       }
     });
 
-    const requestCheck = () => void window.updater.check();
+    const requestCheck = () => void updater.check();
     const checkWhenVisible = () => {
       if (document.visibilityState === "visible") requestCheck();
     };

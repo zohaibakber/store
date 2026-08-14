@@ -4,6 +4,25 @@ import * as React from "react";
 
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
+export interface AuthSessionBridge {
+  readonly getSession: () => Promise<WorkspaceSnapshot>;
+  readonly signIn: (input: {
+    readonly email: string;
+    readonly password: string;
+  }) => Promise<WorkspaceSnapshot>;
+  readonly signUp: (input: {
+    readonly name: string;
+    readonly email: string;
+    readonly password: string;
+  }) => Promise<WorkspaceSnapshot>;
+  readonly signOut: () => Promise<void>;
+  readonly switchOrganization: (input: {
+    readonly organizationId: string;
+  }) => Promise<WorkspaceSnapshot>;
+  readonly createOrganization: (input: { readonly name: string }) => Promise<WorkspaceSnapshot>;
+  readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
+}
+
 type AuthContextValue = {
   snapshot: WorkspaceSnapshot | null;
   loading: boolean;
@@ -16,9 +35,16 @@ const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
     ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
     : null;
 
-const authSession = () => {
-  if (!window.auth) throw new Error("Authentication is unavailable in this build.");
-  return window.auth;
+let sessionBridge: AuthSessionBridge | undefined;
+
+export const setAuthSessionBridge = (bridge: AuthSessionBridge) => {
+  sessionBridge = bridge;
+};
+
+export const authSession = (): AuthSessionBridge => {
+  const bridge = sessionBridge ?? (typeof window === "undefined" ? undefined : window.auth);
+  if (!bridge) throw new Error("Authentication is unavailable in this build.");
+  return bridge;
 };
 
 /** The session read once at startup, handed to {@link AuthProvider} as props. */
@@ -27,10 +53,10 @@ export interface InitialAuth {
   readonly error: string | null;
 }
 
-/** Ends the session; the main process broadcasts the resulting snapshot. */
+/** Ends the session; the host broadcasts the resulting snapshot. */
 export async function signOut() {
   try {
-    await window.auth?.signOut();
+    await authSession().signOut();
   } catch (error) {
     toastStoreError(error);
   }
@@ -104,8 +130,10 @@ export function AuthProvider({
   }, [apply]);
 
   React.useEffect(() => {
-    const dispose = window.auth?.onSessionChange((next) => void apply(next));
-    return () => dispose?.();
+    const bridge = sessionBridge ?? window.auth;
+    if (!bridge) return;
+    const dispose = bridge.onSessionChange((next) => void apply(next));
+    return () => dispose();
   }, [apply]);
 
   return (

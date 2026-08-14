@@ -5,6 +5,7 @@ import { createContext, use, useState, type ReactNode } from "react";
 import { toastManager } from "@/components/ui/toast";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
+import { analyseInvoices } from "@/lib/server-api";
 import { useStore } from "@/lib/store";
 
 type ExtractedLine = InvoiceExtractionLine;
@@ -101,16 +102,15 @@ function UploadProvider({
     }
     setPhase("processing");
     try {
-      if (!window.serverApi) throw new Error("The authenticated server bridge is unavailable.");
-      const payload = await window.serverApi.analyseInvoices({
-        files: await Promise.all(
+      const payload = await analyseInvoices(
+        await Promise.all(
           files.map(async (file) => ({
             name: file.name,
             type: file.type,
             bytes: await file.arrayBuffer(),
           })),
         ),
-      });
+      );
       setChanges(
         payload.lines.map((line) => {
           const product = products.find((candidate) => sameProduct(line, candidate));

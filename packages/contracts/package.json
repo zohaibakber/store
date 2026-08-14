@@ -23,6 +23,7 @@
     "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
+    "@noble/hashes": "1.8.0",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:"

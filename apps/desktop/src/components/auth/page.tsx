@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { authSession } from "@/lib/auth";
 import { storeErrorMessage } from "@/lib/errors";
 
 function formValue(form: FormData, key: string) {
@@ -31,12 +32,11 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
     setPending(true);
     setErrors({});
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable in this build.");
       const email = formValue(form, "email");
       const password = formValue(form, "password");
-      if (mode === "sign-in") await window.auth.signIn({ email, password });
+      if (mode === "sign-in") await authSession().signIn({ email, password });
       else
-        await window.auth.signUp({
+        await authSession().signUp({
           name: formValue(form, "name"),
           email,
           password,
