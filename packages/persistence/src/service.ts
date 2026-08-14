@@ -10,7 +10,6 @@ import type { PersistenceConfig } from "./config";
 import { AuthenticatedWorkspace } from "./config";
 import { initializeDatabase } from "./database/bootstrap";
 import { makeDatabase } from "./database/client";
-import { nodeClientLayer } from "./database/node-client";
 import { PersistenceError } from "./errors";
 import type { InvoiceStore } from "./inventory/invoice-store";
 import { makeInvoiceStore } from "./inventory/invoice-store";
@@ -56,6 +55,3 @@ export const storeLayer = (config: PersistenceConfig) =>
     Layer.provide(MutationIds.live),
     Layer.provide(AuthenticatedWorkspace.layer(config.workspace ?? AuthenticatedWorkspace.locked)),
   );
-
-export const layer = (config: PersistenceConfig) =>
-  storeLayer(config).pipe(Layer.provide(nodeClientLayer(config)));

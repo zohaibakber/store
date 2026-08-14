@@ -1,7 +1,6 @@
 import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
 import { localRelations } from "@store/db/local/relations";
 import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
-import { migrate } from "drizzle-orm/effect-libsql/migrator";
 import * as Effect from "effect/Effect";
 
 import type { PersistenceConfig } from "../config";
@@ -25,11 +24,7 @@ export const makeDatabase = (config: PersistenceConfig) =>
       yield* applyBundledMigrations(config.bundledMigrations).pipe(
         mapPersistenceError("migrate database"),
       );
-    else if (config.migrationsFolder)
-      yield* migrate(database, {
-        migrationsFolder: config.migrationsFolder,
-        migrationsTable: MIGRATIONS_TABLE,
-      }).pipe(mapPersistenceError("migrate database"));
+    else if (config.applySchema) yield* config.applySchema(database);
     else return yield* PersistenceConfigError();
     return database;
   });
