@@ -6,6 +6,10 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.dev/guide/.
 
+## Built-in Commands vs Scripts
+
+`vp <name>` runs a built-in command. `vp run <name>` runs a `package.json` script or a `vite.config.ts` task. Scripts cannot overwrite built-ins, so `vp dev` and `vp run dev` may do different things. Check `package.json` and `vite.config.ts` first, and run `vp run <name>` when the project defines a script or task with that name.
+
 ## Review Checklist
 
 - [ ] Run `vp install` after pulling remote changes and before getting started.
@@ -66,8 +70,8 @@ Turborepo fans them out per package).
   stores state remotely and binds real dev-stage D1 + Durable Objects — there is
   **no local emulation**. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and also needs a `.env.dev` containing
-  `BETTER_AUTH_SECRET` (copy `.env.example`; generate with
-  `openssl rand -base64 32`).
+  `CLERK_SECRET_KEY` (copy `.env.example`; use a different Clerk
+  instance or secret per stage).
 - **Auth gating:** the desktop renderer is fully gated behind sign-in/sign-up,
   which call the backend API. So exercising the authenticated UI end-to-end
   (sign up → create organization → sync) requires the backend running with the

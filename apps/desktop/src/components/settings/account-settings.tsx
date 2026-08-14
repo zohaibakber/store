@@ -4,11 +4,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { signOut, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { useClerkSignOut } from "@/lib/clerk-workspace";
 import { initials } from "@/lib/format";
 
 export function AccountSettings() {
   const { snapshot } = useAuth();
+  const clerkSignOut = useClerkSignOut();
   const user = snapshot?.user;
 
   return (
@@ -35,7 +37,7 @@ export function AccountSettings() {
           <Button
             className="shrink-0"
             disabled={!user}
-            onClick={() => void signOut()}
+            onClick={() => void clerkSignOut()}
             variant="destructive-outline"
           >
             <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />

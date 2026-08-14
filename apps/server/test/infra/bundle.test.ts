@@ -46,11 +46,12 @@ describe("API Worker bundle", () => {
     expect(source).toContain('out: "packages/db/migrations/auth"');
   });
 
-  it("does not import the Alchemy Better Auth wrapper", () => {
+  it("does not import Better Auth", () => {
     const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
     expect(source).not.toContain("@alchemy.run/better-auth");
-    expect(source).toContain("makeAuth(");
-    expect(source).toContain("auth.handler(");
+    expect(source).not.toContain("makeAuth(");
+    expect(source).not.toContain("better-auth");
+    expect(source).toContain("CLERK_SECRET_KEY");
     expect(source).toContain("AUTH_DB:");
     expect(source).toContain("d1FromEnv(");
   });

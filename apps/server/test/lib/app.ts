@@ -7,7 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { vi } from "vitest";
 
 import { ServerRoutes } from "../../src/http/app";
@@ -19,19 +18,31 @@ const session = {
     id: "user-1",
     name: "Member",
     email: "member@example.com",
-    emailVerified: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    image: null,
   },
   session: {
     id: "session-1",
-    token: "secret",
     userId: "user-1",
-    expiresAt: new Date(Date.now() + 60_000),
-    createdAt: new Date(),
-    updatedAt: new Date(),
     activeOrganizationId: "org-1",
+    clerkOrganizationId: "org_clerk_1",
   },
+  organizations: [
+    {
+      id: "org-1",
+      clerkOrganizationId: "org_clerk_1",
+      name: "Tabaaq",
+      slug: "tabaaq",
+      role: "owner",
+    },
+  ],
+};
+
+const unauthenticatedWorkspace = {
+  status: "unauthenticated" as const,
+  user: null,
+  activeOrganization: null,
+  organizations: [],
+  isOnline: true,
 };
 
 const defaultInvoiceAi: InvoiceAiClient = {
@@ -112,9 +123,34 @@ export const appFor = (
     const runtime = {
       electronProtocol: "com.tabaaq.desktop",
       trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
-      authFetch: () => Effect.succeed(HttpServerResponse.empty({ status: 404 })),
       getSession: () => Effect.succeed(authenticated ? session : null),
       hasActiveMember: () => Effect.succeed(member),
+      loadWorkspace: () =>
+        Effect.succeed(
+          authenticated
+            ? {
+                status: "authenticated" as const,
+                user: session.user,
+                activeOrganization: {
+                  id: "org-1",
+                  name: "Tabaaq",
+                  slug: "tabaaq",
+                  role: "owner",
+                  clerkOrganizationId: "org_clerk_1",
+                },
+                organizations: [
+                  {
+                    id: "org-1",
+                    name: "Tabaaq",
+                    slug: "tabaaq",
+                    role: "owner",
+                    clerkOrganizationId: "org_clerk_1",
+                  },
+                ],
+                isOnline: true,
+              }
+            : unauthenticatedWorkspace,
+        ),
       invoiceAi: Effect.succeed(invoiceAi),
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),

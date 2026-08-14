@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clerkFrontendApiHostnameFromPublishableKey,
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
@@ -13,7 +14,6 @@ const secureInput = {
   baseURL: "https://api.example.com",
   electronProtocol: "com.tabaaq.desktop",
   mobileProtocol: "com.tabaaq.mobile",
-  secret: "0123456789abcdef".repeat(4),
   trustedOrigins: ["https://app.example.com"],
 } as const;
 
@@ -62,7 +62,7 @@ describe("resolveAuthSecurity", () => {
 
     expect(resolved).toEqual({
       baseURL: "https://api.example.com",
-      electronOrigin: "com.tabaaq.desktop:/",
+      electronOrigin: "com.tabaaq.desktop://app",
       electronProtocol: "com.tabaaq.desktop",
       mobileOrigin: "com.tabaaq.mobile://",
       mobileProtocol: "com.tabaaq.mobile",
@@ -71,7 +71,7 @@ describe("resolveAuthSecurity", () => {
         "https://api.example.com",
         "https://app.example.com",
         "http://localhost:5173",
-        "com.tabaaq.desktop:/",
+        "com.tabaaq.desktop://app",
         "com.tabaaq.mobile://",
       ],
       rejectedSettings: [],
@@ -86,7 +86,7 @@ describe("resolveAuthSecurity", () => {
     ["preview-*.example.com", "https://preview-*.example.com"],
     ["myapp://", "myapp://"],
     ["exp://192.168.*.*:*", "exp://192.168.*.*:*"],
-  ])("accepts the value forms Better Auth documents: %s", (configured, expected) => {
+  ])("accepts documented origin forms: %s", (configured, expected) => {
     const resolved = resolveAuthSecurity({ ...secureInput, trustedOrigins: [configured] });
 
     expect(resolved.rejectedSettings).toEqual([]);
@@ -140,12 +140,10 @@ describe("resolveAuthSecurity", () => {
     expect(production.trustedOrigins).not.toContain("http://localhost:5173");
   });
 
-  it.each(["short", "a".repeat(64), ` ${"0123456789abcdef".repeat(4)}`])(
-    "rejects a weak or malformed secret",
-    (secret) => {
-      expect(() => resolveAuthSecurity({ ...secureInput, secret })).toThrow("BETTER_AUTH_SECRET");
-    },
-  );
+  it("parses the Frontend API host from a Clerk publishable key", () => {
+    const key = `pk_test_${Buffer.from("clerk.example.com$").toString("base64")}`;
+    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("clerk.example.com");
+  });
 
   it("allows HTTP only for local development origins", () => {
     const resolved = resolveAuthSecurity({
@@ -174,7 +172,20 @@ describe("resolveAuthSecurity", () => {
   });
 });
 
-/** The table in Better Auth's `trustedOrigins` reference. */
+describe("clerkFrontendApiHostnameFromPublishableKey", () => {
+  it("decodes the Frontend API host after the second underscore", () => {
+    const frontendApi = "foo.clerk.accounts.dev$";
+    const key = `pk_test_${Buffer.from(frontendApi).toString("base64")}`;
+    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("foo.clerk.accounts.dev");
+  });
+
+  it("rejects a key that does not encode a host", () => {
+    expect(() => clerkFrontendApiHostnameFromPublishableKey("pk_test_not-valid")).toThrow(
+      /Frontend API host/,
+    );
+  });
+});
+
 describe("matchesTrustedOrigin", () => {
   it.each([
     ["http://api.example.com", "http://*.example.com", true],
@@ -188,7 +199,7 @@ describe("matchesTrustedOrigin", () => {
     ["http://example.com", "https://example.com", false],
     ["exp://192.168.1.100:8081", "exp://192.168.*.*:*", true],
     ["exp://10.0.0.29:8081", "exp://192.168.*.*:*", false],
-    ["com.tabaaq.desktop:/", "com.tabaaq.desktop:/", true],
+    ["com.tabaaq.desktop://app", "com.tabaaq.desktop://app", true],
     ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
     ["https://evil.example.net", "com.tabaaq.mobile://", false],
   ])("matches %s against %s", (origin, pattern, expected) => {

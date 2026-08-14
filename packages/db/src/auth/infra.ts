@@ -3,9 +3,10 @@ import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 
 /**
- * Better Auth's global identity store: users, sessions, organizations, and
- * memberships. Only what needs a global lookup lives here — each organization's
- * inventory and sync log live in its own Durable Object's SQLite instead.
+ * Identity and Clerk-to-store organization bindings. Users, sessions, and
+ * memberships from the previous Better Auth install stay so existing Durable
+ * Object names can be recovered by email. Inventory and the sync log live in
+ * each organization's Durable Object SQLite instead.
  *
  * Wired the way Alchemy documents for D1 + Drizzle (`alchemy.run/cloudflare/data/d1-drizzle`):
  * `Drizzle.Schema` regenerates pending SQL from `schema.ts` on every deploy, and
@@ -16,7 +17,7 @@ import * as Effect from "effect/Effect";
  * `alchemy.run.ts` lives). The Worker yields this effect on every request to
  * find its D1 binding; constructing those paths with the `URL` constructor
  * against the module URL throws `TypeError: Invalid URL string.` on workerd
- * and takes every `/api/auth/*` request down.
+ * and takes every `/api/auth/session` request down.
  */
 export const AuthDatabase = Effect.gen(function* () {
   const schema = yield* Drizzle.Schema("AuthSchema", {

@@ -1,3 +1,4 @@
+import { useUser } from "@clerk/expo";
 import { router } from "expo-router";
 import { useThemeColor } from "heroui-native";
 import { Alert as HeroAlert } from "heroui-native/alert";
@@ -10,7 +11,6 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { Brand } from "@/components/brand";
 import { ProductAnalytics } from "@/components/product-analytics";
 import { useProducts } from "@/features/products/products-provider";
-import { authClient } from "@/lib/auth-client";
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -21,10 +21,10 @@ const greetingFor = (hour: number) => {
 };
 
 export default function HomeScreen() {
-  const session = authClient.useSession();
+  const { user } = useUser();
   const { products, loading, refreshing, error, refresh } = useProducts();
   const [accent, background] = useThemeColor(["accent", "background"]);
-  const firstName = session.data?.user.name?.trim().split(/\s+/)[0];
+  const firstName = user?.firstName?.trim() || user?.fullName?.trim().split(/\s+/)[0];
   const attention = products
     .filter((product) => product.stock <= LOW_STOCK_THRESHOLD)
     .sort((left, right) => left.stock - right.stock)

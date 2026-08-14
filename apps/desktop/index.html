@@ -4,11 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Header CSP pins the API origin where response headers are available; this is the fallback floor for file loads. -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: user-image:; font-src 'self' data:; connect-src 'self' https: ws: http://localhost:*; object-src 'none'; base-uri 'self'"
-    />
+    <!-- CSP is applied by the main-process protocol handler and session headers
+         so it can include this instance's Clerk Frontend API host. A meta tag
+         here would intersect that policy and block Clerk's UI script. -->
     <title>Tabaaq</title>
     <script src="/theme-init.js"></script>
     <style>

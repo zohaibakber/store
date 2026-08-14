@@ -11,38 +11,14 @@ import * as Schema from "effect/Schema";
 export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
 
 export type WorkspaceCommand =
-  | {
-      readonly _tag: "SignIn";
-      readonly email: string;
-      readonly password: string;
-    }
-  | {
-      readonly _tag: "SignUp";
-      readonly name: string;
-      readonly email: string;
-      readonly password: string;
-    }
-  | { readonly _tag: "SignOut" }
-  | { readonly _tag: "SwitchOrganization"; readonly organizationId: string }
-  | { readonly _tag: "CreateOrganization"; readonly name: string };
+  | { readonly _tag: "AdoptSession"; readonly token: string | null }
+  | { readonly _tag: "SignOut" };
 
 export interface WorkspaceAuthAdapter {
   readonly snapshot: WorkspaceSnapshot;
   readonly initialize: () => Promise<WorkspaceSnapshot>;
-  readonly signIn: (input: {
-    readonly email: string;
-    readonly password: string;
-  }) => Promise<WorkspaceSnapshot>;
-  readonly signUp: (input: {
-    readonly name: string;
-    readonly email: string;
-    readonly password: string;
-  }) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
-  readonly switchOrganization: (input: {
-    readonly organizationId: string;
-  }) => Promise<WorkspaceSnapshot>;
-  readonly createOrganization: (input: { readonly name: string }) => Promise<WorkspaceSnapshot>;
   readonly apiRequest: <A>(pathname: string, init?: JsonRequestInit) => Promise<A>;
 }
 
@@ -167,21 +143,11 @@ export class AuthenticatedWorkspace {
 
   async #runCommand(command: WorkspaceCommand): Promise<WorkspaceSnapshot> {
     switch (command._tag) {
-      case "SignIn":
-        return this.#auth.signIn({ email: command.email, password: command.password });
-      case "SignUp":
-        return this.#auth.signUp({
-          name: command.name,
-          email: command.email,
-          password: command.password,
-        });
+      case "AdoptSession":
+        return this.#auth.adoptSession(command.token);
       case "SignOut":
         await this.#auth.signOut();
         return this.#auth.snapshot;
-      case "SwitchOrganization":
-        return this.#auth.switchOrganization({ organizationId: command.organizationId });
-      case "CreateOrganization":
-        return this.#auth.createOrganization({ name: command.name });
     }
   }
 

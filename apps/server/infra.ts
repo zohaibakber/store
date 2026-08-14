@@ -1,9 +1,9 @@
-import { makeAuth, makeEffectAuthConfig } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   parseTrustedOrigins,
+  resolveAuthSecurity,
 } from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
@@ -15,16 +15,13 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
 import { d1FromEnv, isD1Database } from "./src/auth/d1";
-import { normalizeElectronOrigin } from "./src/auth/electron-origin";
-import { absoluteAuthRequest } from "./src/auth/request-url";
-import { reportAuthEvent, reportRejectedAuthSettings } from "./src/runtime/worker";
+import { authenticateHeaders, loadWorkspaceSnapshot } from "./src/auth/session";
+import { reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
 export { OrganizationStore };
@@ -47,6 +44,11 @@ const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as 
  * The API Worker, authentication, bindings, routes, and Durable Object clients
  * all stay in one Effect runtime. No framework or Promise adapter sits between
  * Alchemy and the HTTP API.
+ *
+ * `ORGANIZATION_STORE` Durable Object names are the store organization ids
+ * (legacy Better Auth org ids when a Clerk org has been bound). Do not rename
+ * the class or switch `getByName` to Clerk org ids — that would orphan existing
+ * sqlite.
  */
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
@@ -72,9 +74,8 @@ export const ApiLive = Api.make(
       // The desktop falls back to http://localhost:8787 in development, so pin
       // the local dev port rather than taking alchemy's default of 1337.
       dev: { port: 8787 },
-      // Hono bound D1 as `AUTH_DB` on the fetch env (`c.env.AUTH_DB`). Effect
-      // HTTP switched to QueryDatabase, whose LogicalId is `AuthDatabase`.
-      // Keep both names so Better Auth can find the binding either way.
+      // Binding D1 as both `AUTH_DB` (Hono-era fetch env) and `AuthDatabase`
+      // (QueryDatabase LogicalId) so clerk_org_binding lookups find it either way.
       env: {
         AUTH_DB: authDatabase,
         AuthDatabase: authDatabase,
@@ -93,7 +94,11 @@ export const ApiLive = Api.make(
     // Alchemy binds every Config read during Worker Init onto Cloudflare.
     // GitHub Actions turns unset Environment vars into "", which would
     // otherwise beat Config.withDefault and ship a blank protocol/origin.
-    const secret = yield* Config.redacted("BETTER_AUTH_SECRET");
+    const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
+    const clerkJwtKey = yield* Config.string("CLERK_JWT_KEY").pipe(Config.withDefault(""));
+    const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE").pipe(
+      Config.withDefault(""),
+    );
     const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
       Config.map(parseTrustedOrigins),
@@ -107,30 +112,21 @@ export const ApiLive = Api.make(
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const secretValue = Redacted.value(secret);
-    const authBaseURL = localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`;
-    const authTrustedOrigins = localDevelopment
-      ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS]
-      : trustedOrigins;
-    const authConfig = makeEffectAuthConfig({
-      audit: reportAuthEvent,
-      // Better Auth requires a real absolute URL at construction. Production
-      // always serves from the Website custom domain (SPA + `/api` proxy);
-      // local alchemy dev is pinned to 8787. Preview stages still infer extra
-      // origins from the incoming request via trustedOrigins.
-      baseURL: authBaseURL,
+    const security = resolveAuthSecurity({
+      baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
       electronProtocol,
       mobileProtocol,
-      secret: secretValue,
-      trustedOrigins: authTrustedOrigins,
+      trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
     });
-    reportRejectedAuthSettings(authConfig.rejectedSettings);
+    reportRejectedAuthSettings(security.rejectedSettings);
+    const clerkConfig = {
+      secretKey: Redacted.value(clerkSecretKey),
+      ...(fallbackIfBlank(clerkJwtKey, "") ? { jwtKey: clerkJwtKey.trim() } : {}),
+      ...(fallbackIfBlank(clerkJwtAudience, "") ? { jwtAudience: clerkJwtAudience.trim() } : {}),
+      authorizedParties: [...security.trustedOrigins],
+    };
 
-    // Hono constructed Better Auth per request from `c.env.AUTH_DB` and
-    // passed `c.req.raw`. Effect HTTP must do the same: read D1 from the
-    // live Worker env (not a closed-over QueryDatabase snapshot) and hand
-    // Better Auth an absolute Web Request.
-    const runtimeAuth = Effect.gen(function* () {
+    const liveAuthDatabase = Effect.gen(function* () {
       const workerEnv = yield* Effect.serviceOption(Cloudflare.Workers.WorkerEnvironment);
       // Static `import { env } from "cloudflare:workers"` crashes Node during
       // `alchemy deploy`. Load it only inside a request, where workerd has it.
@@ -149,48 +145,31 @@ export const ApiLive = Api.make(
           new Error("Auth D1 binding is missing (tried AuthDatabase and AUTH_DB)."),
         );
       }
-      return makeAuth({
-        audit: reportAuthEvent,
-        baseURL: authBaseURL,
-        database,
-        electronProtocol,
-        mobileProtocol,
-        secret: secretValue,
-        trustedOrigins: authTrustedOrigins,
-      });
+      return database;
     });
 
-    const incomingAuthRequest = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.serviceOption(Cloudflare.Workers.Request);
-        const webRequest = Option.getOrUndefined(raw) ?? (yield* HttpServerRequest.toWeb(request));
-        return absoluteAuthRequest(
-          normalizeElectronOrigin(webRequest, electronProtocol),
-          authBaseURL,
-        );
-      }).pipe(Effect.orDie);
-
     const RuntimeLive = Layer.succeed(ServerRuntime, {
-      electronProtocol,
-      trustedOrigins: authConfig.trustedOrigins,
-      authFetch: (request) =>
-        Effect.gen(function* () {
-          const auth = yield* runtimeAuth;
-          const webRequest = yield* incomingAuthRequest(request);
-          const response = yield* Effect.promise(() => auth.handler(webRequest));
-          return HttpServerResponse.fromWeb(response);
-        }),
+      electronProtocol: security.electronProtocol,
+      trustedOrigins: security.trustedOrigins,
       getSession: (headers) =>
-        Effect.gen(function* () {
-          const auth = yield* runtimeAuth;
-          return yield* Effect.promise(() => auth.api.getSession({ headers }));
-        }),
+        liveAuthDatabase.pipe(
+          Effect.flatMap((database) =>
+            authenticateHeaders(headers, { config: clerkConfig, database }),
+          ),
+        ),
       hasActiveMember: (headers) =>
-        Effect.gen(function* () {
-          const auth = yield* runtimeAuth;
-          const member = yield* Effect.promise(() => auth.api.getActiveMember({ headers }));
-          return member !== null;
-        }),
+        liveAuthDatabase.pipe(
+          Effect.flatMap((database) =>
+            authenticateHeaders(headers, { config: clerkConfig, database }),
+          ),
+          Effect.map((session) => session?.session.activeOrganizationId != null),
+        ),
+      loadWorkspace: (headers) =>
+        liveAuthDatabase.pipe(
+          Effect.flatMap((database) =>
+            loadWorkspaceSnapshot(headers, { config: clerkConfig, database }),
+          ),
+        ),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),

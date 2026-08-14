@@ -1,9 +1,15 @@
+import { ClerkProvider } from "@clerk/clerk-react";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
 import { bootstrapAuth, setAuthSessionBridge, type InitialAuth } from "@/lib/auth";
+import {
+  ClerkActiveOrganization,
+  ClerkWorkspaceSync,
+  clerkPublishableKey,
+} from "@/lib/clerk-workspace";
 import { StoreProvider, type Store } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
@@ -33,13 +39,24 @@ async function start() {
   const { bridge, store } = await startWebWorkspace(apiBaseUrl);
   setAuthSessionBridge(bridge);
   const router = createAppRouter(store, await bootstrapAuth());
+  const app = (
+    <ThemeProvider>
+      <StoreProvider store={store}>
+        <RouterProvider router={router} />
+      </StoreProvider>
+    </ThemeProvider>
+  );
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <ThemeProvider>
-        <StoreProvider store={store}>
-          <RouterProvider router={router} />
-        </StoreProvider>
-      </ThemeProvider>
+      {clerkPublishableKey ? (
+        <ClerkProvider publishableKey={clerkPublishableKey}>
+          <ClerkActiveOrganization />
+          <ClerkWorkspaceSync />
+          {app}
+        </ClerkProvider>
+      ) : (
+        app
+      )}
     </React.StrictMode>,
   );
   const loader = document.getElementById("app-loading");
