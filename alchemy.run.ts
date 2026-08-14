@@ -40,8 +40,11 @@ export default Alchemy.Stack(
         body: Output.interpolate`
           ## Preview deployed
 
-          **API:** ${api.url}
+          **App:** ${api.url}
+          **API:** same origin — \`/api/*\` (health at \`/api/health\`)
 
+          The TanStack web app is served from the Worker origin so browser
+          sessions and desktop/mobile replicas share one sync API.
           Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
 
           ---

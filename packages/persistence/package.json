@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./core": "./src/core.ts",
+    "./browser": "./src/browser.ts",
     "./product-ranking": "./src/inventory/product-ranking.ts"
   },
   "scripts": {

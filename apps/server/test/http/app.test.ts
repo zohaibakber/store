@@ -21,4 +21,12 @@ describe("HTTP auth and CORS", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
   });
+
+  it("adds CORS headers for the local web Vite origin", async () => {
+    const response = await appFor(true).request("/api/health", {
+      headers: { origin: "http://localhost:5174" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5174");
+  });
 });

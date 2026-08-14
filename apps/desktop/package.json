@@ -34,6 +34,7 @@
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/persistence": "workspace:*",
+    "@store/workspace": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-form": "^1.33.3",
     "@tanstack/react-router": "^1.170.18",

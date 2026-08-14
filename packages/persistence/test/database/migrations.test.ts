@@ -59,6 +59,33 @@ test("each database's migrations contain only its own tables", async () => {
   }
 });
 
+test("bundled local migrations open a store and survive reopen", async () => {
+  const { localMigrations } = await import("@store/db/local/migrations");
+  await withTestStore(
+    async ({ runtime, makeRuntime }) => {
+      const created = await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Paracetamol",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await runtime.dispose();
+
+      const secondRuntime = makeRuntime();
+      expect(await secondRuntime.runPromise(store((store) => store.listProducts))).toEqual([
+        created,
+      ]);
+    },
+    { bundledMigrations: localMigrations },
+  );
+});
+
 test("migrations are idempotent and preserve existing products", async () => {
   await withTestStore(async ({ runtime, makeRuntime }) => {
     const created = await runtime.runPromise(

@@ -8,7 +8,7 @@ import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { toastManager } from "@/components/ui/toast";
-import { useAuth } from "@/lib/auth";
+import { authSession, useAuth } from "@/lib/auth";
 import { storeErrorMessage } from "@/lib/errors";
 
 export function OrganizationSettings() {
@@ -24,8 +24,7 @@ export function OrganizationSettings() {
     setPending(true);
     setError(null);
     try {
-      if (!window.auth) throw new Error("Authentication is unavailable.");
-      await window.auth.createOrganization({
+      await authSession().createOrganization({
         name: typeof value === "string" ? value : "",
       });
       form.reset();

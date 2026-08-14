@@ -1,15 +1,22 @@
-# Store Electron
+# Store
 
-This Bun-workspace monorepo contains an offline-first Electron app built with Better Auth,
-Effect, Drizzle ORM, libSQL, and Cloudflare Workers.
+This Bun-workspace monorepo contains an offline-first inventory stack: a TanStack web app, an
+Electron desktop app, and a Cloudflare Worker API. Inventory written in the browser, on desktop,
+or on mobile syncs through the same authenticated `/api/sync` protocol.
 
 ## Workspace boundaries
 
-- `apps/desktop/src` contains the React renderer; `electron` contains the main process and preload.
+- `apps/web` is the TanStack SPA. Production serves it from the API Worker origin so cookies and
+  `/api/*` stay same-origin. Locally Vite listens on `:5174` and proxies `/api` to `:8787`.
+- `apps/desktop/src` contains the React renderer shared with the web app; `electron` contains the
+  main process and preload. Desktop keeps hash routing and native libSQL.
 - `apps/server/src` contains the Worker API and per-organization Durable Object sync service.
 - `packages/contracts` owns shared store, server, and sync contracts.
 - `packages/db` owns local, Durable Object, and authentication database schemas.
-- `packages/persistence` owns local libSQL access, inventory stores, analytics, and sync.
+- `packages/persistence` owns local libSQL access, inventory stores, analytics, and sync. The
+  browser replica lives at `@store/persistence/browser` (WASM/OPFS); Node/Electron uses the
+  package root.
+- `packages/workspace` owns the authenticated workspace runtime shared by desktop and web.
 - `packages/sync-client` owns the framework-neutral Effect coordinator, retries,
   page draining, and sync status state machine used by local replica adapters.
 - `packages/auth` owns Better Auth configuration while its tables remain in `packages/db`.
@@ -33,6 +40,9 @@ failures leave local writes pending in strict FIFO order.
 vp install
 vp run dev
 ```
+
+That starts the Worker (`:8787`), the desktop Vite/Electron renderer (`:5173`), and the web
+app (`:5174`). Sign in on either client; writes sync through `/api/sync`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts` and
 the `infra.ts` modules beside the code that owns each resource. There are two isolated cloud
@@ -80,7 +90,8 @@ The `Production` environment must also define these **variables** for desktop re
 The admin profile can mint API tokens and should only be used for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
-`vp run build`.
+`vp run build`. Production deploys also build the web app and serve it from
+`https://tabaaq.zohaibakber.com`.
 
 ## Install
 

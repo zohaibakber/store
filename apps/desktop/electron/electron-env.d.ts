@@ -8,8 +8,8 @@ declare namespace NodeJS {
 }
 
 interface Window {
-  offlineStore: import("@store/contracts").OfflineStoreApi;
-  auth: {
+  offlineStore?: import("@store/contracts").OfflineStoreApi;
+  auth?: {
     getSession: () => Promise<import("@store/contracts").WorkspaceSnapshot>;
     signIn: (input: {
       email: string;
@@ -31,12 +31,12 @@ interface Window {
       callback: (snapshot: import("@store/contracts").WorkspaceSnapshot) => void,
     ) => () => void;
   };
-  serverApi: {
+  serverApi?: {
     analyseInvoices: (input: {
       files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
     }) => Promise<import("@store/contracts").InvoiceExtraction>;
   };
-  updater: {
+  updater?: {
     check: () => Promise<void>;
     download: () => Promise<void>;
     install: () => void;
@@ -44,7 +44,7 @@ interface Window {
       callback: (event: import("@store/contracts/updater").UpdaterEvent) => void,
     ) => () => void;
   };
-  windowControls: {
+  windowControls?: {
     minimize: () => void;
     toggleMaximize: () => Promise<boolean>;
     isMaximized: () => Promise<boolean>;

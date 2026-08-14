@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
-import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
+import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
+import type { UpdaterEvent } from "@store/contracts/updater";
 
 declare global {
   const __APP_VERSION__: string;
@@ -19,6 +20,21 @@ declare global {
       analyseInvoices(input: {
         files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
       }): Promise<InvoiceExtraction>;
+    };
+    offlineStore?: OfflineStoreApi;
+    updater?: {
+      check: () => Promise<void>;
+      download: () => Promise<void>;
+      install: () => void;
+      onEvent: (callback: (event: UpdaterEvent) => void) => () => void;
+    };
+    windowControls?: {
+      minimize: () => void;
+      toggleMaximize: () => Promise<boolean>;
+      isMaximized: () => Promise<boolean>;
+      isFullScreen: () => Promise<boolean>;
+      onFullScreenChange: (callback: (isFullScreen: boolean) => void) => () => void;
+      close: () => void;
     };
   }
 }
