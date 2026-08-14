@@ -2,16 +2,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { makeElectronAuthClient, type ElectronAuthClient } from "@store/auth/electron-client";
-import { SyncLiveEvent, type WorkspaceSnapshot, type WorkspaceUser } from "@store/contracts";
-import { SyncTransportError } from "@store/persistence";
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
-import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
+import { type WorkspaceSnapshot, type WorkspaceUser } from "@store/contracts";
 import { app, net, safeStorage } from "electron";
-import { WebSocket as NodeWebSocket } from "ws";
 
 interface PersistedAuth {
   readonly snapshot: WorkspaceSnapshot;
@@ -166,107 +158,6 @@ export class AuthBroker {
 
   async apiRequest<T>(pathname: string, init?: JsonRequestInit) {
     return this.#request<T>(pathname, init);
-  }
-
-  liveEvents(input: { readonly organizationId: string; readonly deviceId: string }) {
-    const url = new URL(`${this.#baseUrl}/api/sync/live`);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.searchParams.set("organizationId", input.organizationId);
-    url.searchParams.set("deviceId", input.deviceId);
-    url.searchParams.set("protocolVersion", "2");
-    const decodeEvent = Schema.decodeUnknownOption(SyncLiveEvent);
-
-    return Stream.callback<SyncLiveEvent, SyncTransportError>((queue) =>
-      Effect.acquireRelease(
-        Effect.try({
-          try: () => {
-            const cookie = this.#client.getCookie();
-            const socket = new NodeWebSocket(url, {
-              headers: {
-                "electron-origin": this.#electronOrigin,
-                ...(cookie ? { cookie } : {}),
-              },
-            });
-            socket.on("message", (data) => {
-              let input: unknown;
-              try {
-                const payload = Array.isArray(data)
-                  ? Buffer.concat(data).toString("utf8")
-                  : Buffer.isBuffer(data)
-                    ? data.toString("utf8")
-                    : Buffer.from(data).toString("utf8");
-                input = JSON.parse(payload);
-              } catch (cause) {
-                Queue.failCauseUnsafe(
-                  queue,
-                  Cause.fail(
-                    SyncTransportError.make({
-                      message: "The live sync server sent malformed JSON.",
-                      retryable: true,
-                      code: "INVALID_LIVE_EVENT",
-                      cause,
-                    }),
-                  ),
-                );
-                socket.close(1002, "Malformed live event");
-                return;
-              }
-              const event = decodeEvent(input);
-              if (Option.isNone(event)) {
-                Queue.failCauseUnsafe(
-                  queue,
-                  Cause.fail(
-                    SyncTransportError.make({
-                      message: "The live sync server sent an invalid event.",
-                      retryable: true,
-                      code: "INVALID_LIVE_EVENT",
-                    }),
-                  ),
-                );
-                socket.close(1002, "Invalid live event");
-                return;
-              }
-              Queue.offerUnsafe(queue, event.value);
-            });
-            socket.on("close", (code, reason) =>
-              Queue.failCauseUnsafe(
-                queue,
-                Cause.fail(
-                  SyncTransportError.make({
-                    message: `Live synchronization closed (${code}${reason.length > 0 ? `: ${reason.toString()}` : ""}).`,
-                    retryable: true,
-                  }),
-                ),
-              ),
-            );
-            socket.on("error", (cause) =>
-              Queue.failCauseUnsafe(
-                queue,
-                Cause.fail(
-                  SyncTransportError.make({
-                    message: cause.message,
-                    retryable: true,
-                    cause,
-                  }),
-                ),
-              ),
-            );
-            return socket;
-          },
-          catch: (cause) =>
-            SyncTransportError.make({
-              message: cause instanceof Error ? cause.message : String(cause),
-              retryable: true,
-              cause,
-            }),
-        }),
-        (socket) =>
-          Effect.sync(() => {
-            socket.removeAllListeners();
-            socket.close(1000, "Workspace disposed");
-          }),
-      ),
-    );
   }
 
   async #loadOrganizations(user: WorkspaceUser) {

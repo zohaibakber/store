@@ -33,9 +33,6 @@ export type UnsupportedMediaType = typeof UnsupportedMediaType.Type;
 export const UnprocessableEntity = publicErrorSchema("UnprocessableEntity", 422);
 export type UnprocessableEntity = typeof UnprocessableEntity.Type;
 
-export const UpgradeRequired = publicErrorSchema("UpgradeRequired", 426);
-export type UpgradeRequired = typeof UpgradeRequired.Type;
-
 export const TooManyRequests = publicErrorSchema("TooManyRequests", 429);
 export type TooManyRequests = typeof TooManyRequests.Type;
 
@@ -61,8 +58,6 @@ export const unsupportedMediaType = (code: string, message: string) =>
   UnsupportedMediaType.make(body(code, message));
 export const unprocessableEntity = (code: string, message: string) =>
   UnprocessableEntity.make(body(code, message));
-export const upgradeRequired = (code: string, message: string) =>
-  UpgradeRequired.make(body(code, message));
 export const tooManyRequests = (code: string, message: string) =>
   TooManyRequests.make(body(code, message));
 export const internalServerError = (code: string, message: string) =>
