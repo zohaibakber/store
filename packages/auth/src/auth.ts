@@ -31,10 +31,10 @@ export interface AuthConfig {
 
 export interface EffectAuthConfig {
   readonly audit?: (event: AuthAuditEvent) => void | Promise<void>;
+  readonly baseURL: string;
   readonly electronProtocol: string;
   readonly mobileProtocol: string;
   readonly secret: string;
-  readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
@@ -141,21 +141,32 @@ const makeAuthOptions = (
   } satisfies BetterAuthOptions;
 };
 
+const requestOrigin = (request: Request) => {
+  try {
+    const origin = new URL(request.url).origin;
+    return origin === "null" ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+};
+
 export const makeEffectAuthConfig = (config: EffectAuthConfig) => {
-  const placeholderBaseURL = config.secureCookies ? "https://auth.invalid" : "http://localhost";
-  const validated = resolveAuthSecurity({ ...config, baseURL: placeholderBaseURL });
-  const trustedOrigins = validated.trustedOrigins.filter((origin) => origin !== placeholderBaseURL);
+  const validated = resolveAuthSecurity(config);
+  const trustedOrigins = validated.trustedOrigins;
 
   return {
     options: {
-      ...makeAuthOptions(config, { ...validated, trustedOrigins }),
-      trustedOrigins: (request?: Request) =>
-        request
-          ? [
-              ...resolveAuthSecurity({ ...config, baseURL: new URL(request.url).origin })
-                .trustedOrigins,
-            ]
-          : [...trustedOrigins],
+      ...makeAuthOptions(config, validated),
+      // Better Auth's router does `new URL(ctx.baseURL)` at construction. An
+      // empty or placeholder value throws TypeError: Invalid URL string on
+      // Cloudflare Workers and takes down every /api/auth/* request.
+      baseURL: validated.baseURL,
+      trustedOrigins: (request?: Request) => {
+        const origin = request ? requestOrigin(request) : undefined;
+        return origin
+          ? [...resolveAuthSecurity({ ...config, baseURL: origin }).trustedOrigins]
+          : [...trustedOrigins];
+      },
     },
     trustedOrigins,
   };

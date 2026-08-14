@@ -55,7 +55,10 @@ const Cors = HttpRouter.middleware(
     });
     return (httpEffect) =>
       Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
-        new URL(request.originalUrl).pathname.startsWith("/api") ? cors(httpEffect) : httpEffect,
+        // Effect stores `url` without scheme/host. `new URL(originalUrl)`
+        // throws TypeError: Invalid URL string on Cloudflare when that value
+        // is a path rather than an absolute URL.
+        request.url.startsWith("/api") ? cors(httpEffect) : httpEffect,
       );
   }),
   { global: true },
