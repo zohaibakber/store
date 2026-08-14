@@ -13,7 +13,7 @@ const memoryStore = () => {
   let legacy: { storeOrganizationId: string; name: string; slug: string; role: string } | null =
     null;
 
-  let putBinding: OrganizationBindingStore["putBinding"] = async (input) => {
+  const commitBinding: OrganizationBindingStore["putBinding"] = async (input) => {
     const binding = {
       clerkOrganizationId: input.clerkOrganizationId,
       storeOrganizationId: input.storeOrganizationId,
@@ -21,6 +21,7 @@ const memoryStore = () => {
     byClerk.set(input.clerkOrganizationId, binding);
     byStore.set(input.storeOrganizationId, binding);
   };
+  let putBinding = commitBinding;
 
   const store: OrganizationBindingStore = {
     getByClerkOrganizationId: async (id) => byClerk.get(id) ?? null,
@@ -31,6 +32,7 @@ const memoryStore = () => {
 
   return {
     store,
+    commitBinding,
     setLegacy: (value: typeof legacy) => {
       legacy = value;
     },
@@ -128,19 +130,18 @@ describe("resolveStoreOrganizationId", () => {
   });
 
   it("falls back to the Clerk org id if the legacy store id is claimed during insert", async () => {
-    const { store, setLegacy, setPutBinding } = memoryStore();
+    const { store, setLegacy, setPutBinding, commitBinding } = memoryStore();
     setLegacy({
       storeOrganizationId: "org_better_auth",
       name: "Tabaaq",
       slug: "tabaaq",
       role: "owner",
     });
-    const originalPut = store.putBinding;
     setPutBinding(async (input) => {
       if (input.storeOrganizationId === "org_better_auth") {
         throw new Error("UNIQUE constraint failed: clerk_org_binding.storeOrganizationId");
       }
-      return originalPut(input);
+      return commitBinding(input);
     });
 
     await expect(
