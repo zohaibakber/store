@@ -3,15 +3,18 @@
 The Cloudflare Worker exposes:
 
 - `GET /api/health`
-- `GET|POST /api/auth/*`
+- `GET /api/auth/session` (and `GET /api/auth/get-session`)
 - `POST /api/sync`
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
-Better Auth stores global identity and organization membership in D1 through `AUTH_DB`. Each
-organization's inventory and sync log live in its own SQLite-backed Durable Object through
-`ORGANIZATION_STORE`. The desktop communicates through authenticated HTTP. Foreground clients
-poll `/api/sync` on a short interval; HTTP remains the data and correctness path.
+Clerk verifies session JWTs (`Authorization: Bearer`). D1 `AUTH_DB` keeps a
+`clerk_org_binding` table plus the previous Better Auth identity tables so the first
+Clerk org for an email can keep the existing Durable Object name. Each organization's
+inventory and sync log live in its own SQLite-backed Durable Object through
+`ORGANIZATION_STORE` — named by the **store** organization id, never the Clerk org id.
+The desktop communicates through authenticated HTTP. Foreground clients poll `/api/sync`
+on a short interval; HTTP remains the data and correctness path.
 
 ## Infrastructure
 
@@ -52,8 +55,7 @@ second (`CLAIM_PRODUCTION_DOMAIN=1`) attaches it to the Website Worker. Alchemy 
 otherwise race those two updates and leave the hostname on the API Worker.
 
 Secrets come from `.env.dev` and `.env.prod` at the repository root (both gitignored — copy
-`.env.example`). Use a **different** `BETTER_AUTH_SECRET` per stage: sharing one would make a
-dev-issued session valid against production.
+`.env.example`). Use a **different** `CLERK_SECRET_KEY` per stage.
 
 First-time setup on a new machine:
 
@@ -84,11 +86,13 @@ must pass those keys from the GitHub Environment. After bootstrap, set:
 
 **Both `Development` and `Production` environments**
 
-- Secret `BETTER_AUTH_SECRET` — required, ≥32 high-entropy characters, unique per stage
+- Secret `CLERK_SECRET_KEY` — required, unique per Clerk instance/stage
+- Secret `CLERK_JWT_KEY` — optional PEM for networkless JWT verify
+- Variable `CLERK_JWT_AUDIENCE` — optional; must match a Clerk JWT template audience
 - Variable `ELECTRON_PROTOCOL` — optional, default `com.tabaaq.desktop`
 - Variable `MOBILE_PROTOCOL` — optional, default `com.tabaaq.mobile`
 - Variable `AUTH_TRUSTED_ORIGINS` — optional comma-separated HTTPS origins. A bare host
-  (`app.example.com`) is read as `https://app.example.com`, and Better Auth's wildcard patterns
+  (`app.example.com`) is read as `https://app.example.com`, and wildcard patterns
   (`*.example.com`, `https://*.example.com`) work too. Custom schemes belong in the protocol
   vars. A value that cannot be used — plain HTTP outside local development, a path, a pattern
   broad enough to match origins this deployment does not own — is ignored rather than trusted,
@@ -97,11 +101,13 @@ must pass those keys from the GitHub Environment. After bootstrap, set:
 **`Production` environment only (desktop releases)**
 
 - Variable `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- Variable `VITE_CLERK_PUBLISHABLE_KEY`
+- Variable `VITE_CLERK_JWT_TEMPLATE` — optional
 - Variable `ELECTRON_PROTOCOL` = `com.tabaaq.desktop`
 
 Unset GitHub variables interpolate as empty strings. The Worker treats blank protocol and
 origin values as missing so they cannot override the defaults. A missing
-`BETTER_AUTH_SECRET` fails the deploy job before Alchemy runs.
+`CLERK_SECRET_KEY` fails the deploy job before Alchemy runs.
 
 ## Local development
 
@@ -146,7 +152,7 @@ and protocol-v2 responses return byte-limited organization pages with `nextCurso
 and `hasMore`. `sync_devices` records authenticated device checkpoints used for diagnostics and
 future retention decisions.
 
-The live route uses the same Better Auth session and active-membership middleware as HTTP sync.
+The live route uses the same Clerk session and active-membership middleware as HTTP sync.
 After authorization, the Worker forwards only trusted organization, user, device, and session
 expiry metadata to the organization's Durable Object. The object accepts the socket through the
 hibernation API, serializes that metadata as a socket attachment, and immediately sends a `hello`

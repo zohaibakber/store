@@ -1,4 +1,6 @@
-import { router } from "expo-router";
+import { useOrganizationList, useUser } from "@clerk/expo";
+import { useSignIn, useSignUp } from "@clerk/expo/legacy";
+import { Redirect, router } from "expo-router";
 import { Alert as HeroAlert } from "heroui-native/alert";
 import { Button } from "heroui-native/button";
 import { Input } from "heroui-native/input";
@@ -9,70 +11,77 @@ import { useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 
 import { Brand } from "@/components/brand";
-import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-client";
 
 type AuthMode = "sign-in" | "sign-up";
 
-const slugOf = (name: string) =>
-  name
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40) || `store-${Date.now()}`;
-
 export default function AuthScreen() {
-  const session = authClient.useSession();
+  const { user } = useUser();
+  const { isLoaded: signInLoaded, signIn, setActive: setActiveSignIn } = useSignIn();
+  const { isLoaded: signUpLoaded, signUp, setActive: setActiveSignUp } = useSignUp();
+  const { createOrganization, setActive: setActiveOrganization } = useOrganizationList();
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const form = useRef({ name: "", email: "", password: "" });
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const form = useRef({ name: "", email: "", password: "", code: "" });
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+
+  const ensureOrganization = async () => {
+    if (!createOrganization || !setActiveOrganization) return;
+    const created = await createOrganization({
+      name: `${form.current.name.trim() || "My"}'s Store`,
+    });
+    await setActiveOrganization({ organization: created.id });
+  };
 
   const submit = async () => {
     if (pending) return;
     setPending(true);
     setError(null);
     try {
-      const { name, email, password } = form.current;
+      if (!signInLoaded || !signUpLoaded || !signIn || !signUp) {
+        throw new Error("Authentication is still loading.");
+      }
+      const { name, email, password, code } = form.current;
+      if (needsVerification) {
+        const verified = await signUp.attemptEmailAddressVerification({ code });
+        if (verified.status !== "complete" || !verified.createdSessionId) {
+          throw new Error("That verification code could not be used.");
+        }
+        await setActiveSignUp({ session: verified.createdSessionId });
+        await ensureOrganization();
+        router.replace("/home");
+        return;
+      }
+
       if (!email.trim() || password.length < 8 || (mode === "sign-up" && !name.trim())) {
         throw new Error("Enter your details and use a password with at least 8 characters.");
       }
 
       if (mode === "sign-in") {
-        const result = await authClient.signIn.email(
-          { email: email.trim(), password },
-          { disableSignal: true },
-        );
-        if (result.error) throw result.error;
+        const result = await signIn.create({ identifier: email.trim(), password });
+        if (result.status !== "complete" || !result.createdSessionId) {
+          throw new Error("Additional verification is required to finish signing in.");
+        }
+        await setActiveSignIn({ session: result.createdSessionId });
       } else {
-        const result = await authClient.signUp.email(
-          {
-            name: name.trim(),
-            email: email.trim(),
-            password,
-          },
-          { disableSignal: true },
-        );
-        if (result.error) throw result.error;
-        const organization = await authClient.organization.create({
-          name: `${name.trim()}'s Store`,
-          slug: slugOf(name),
+        const created = await signUp.create({
+          emailAddress: email.trim(),
+          password,
+          firstName: name.trim(),
         });
-        if (organization.error) throw organization.error;
-        if (organization.data) {
-          const selected = await authClient.organization.setActive({
-            organizationId: organization.data.id,
-          });
-          if (selected.error) throw selected.error;
+        if (created.status === "complete" && created.createdSessionId) {
+          await setActiveSignUp({ session: created.createdSessionId });
+          await ensureOrganization();
+        } else {
+          await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+          setNeedsVerification(true);
+          return;
         }
       }
 
-      await session.refetch();
-      if (!authClient.$store.atoms.session.get().data?.user) {
-        throw new Error("Your account was signed in, but the session could not be restored.");
-      }
       router.replace("/home");
     } catch (cause) {
       setError(authErrorMessage(cause));
@@ -84,8 +93,11 @@ export default function AuthScreen() {
   const toggleMode = () => {
     setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
     setError(null);
-    form.current = { name: "", email: "", password: "" };
+    setNeedsVerification(false);
+    form.current = { name: "", email: "", password: "", code: "" };
   };
+
+  if (user) return <Redirect href="/home" />;
 
   return (
     <KeyboardAvoidingView
@@ -103,17 +115,23 @@ export default function AuthScreen() {
           <Brand />
           <View className="gap-1.5">
             <Text className="text-2xl leading-8 font-medium text-foreground">
-              {mode === "sign-in" ? "Welcome back" : "Set up your store"}
+              {needsVerification
+                ? "Check your email"
+                : mode === "sign-in"
+                  ? "Welcome back"
+                  : "Set up your store"}
             </Text>
             <Text className="text-sm leading-5 font-normal text-muted">
-              {mode === "sign-in"
-                ? "Sign in to manage your inventory on the go."
-                : "Create your account and start your inventory."}
+              {needsVerification
+                ? "Enter the verification code we sent you."
+                : mode === "sign-in"
+                  ? "Sign in to manage your inventory on the go."
+                  : "Create your account and start your inventory."}
             </Text>
           </View>
 
           <View key={mode} className="gap-4">
-            {mode === "sign-up" ? (
+            {mode === "sign-up" && !needsVerification ? (
               <TextField isRequired>
                 <Label>Your name</Label>
                 <Input
@@ -125,31 +143,47 @@ export default function AuthScreen() {
                 />
               </TextField>
             ) : null}
-            <TextField isRequired>
-              <Label>Email</Label>
-              <Input
-                ref={emailRef}
-                autoCapitalize="none"
-                autoComplete="email"
-                keyboardType="email-address"
-                onChangeText={(email) => (form.current.email = email)}
-                onSubmitEditing={() => passwordRef.current?.focus()}
-                placeholder="m@example.com"
-                returnKeyType="next"
-              />
-            </TextField>
-            <TextField isRequired>
-              <Label>Password</Label>
-              <Input
-                ref={passwordRef}
-                autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-                onChangeText={(password) => (form.current.password = password)}
-                onSubmitEditing={() => void submit()}
-                placeholder="At least 8 characters"
-                returnKeyType="done"
-                secureTextEntry
-              />
-            </TextField>
+            {!needsVerification ? (
+              <>
+                <TextField isRequired>
+                  <Label>Email</Label>
+                  <Input
+                    ref={emailRef}
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    keyboardType="email-address"
+                    onChangeText={(email) => (form.current.email = email)}
+                    onSubmitEditing={() => passwordRef.current?.focus()}
+                    placeholder="m@example.com"
+                    returnKeyType="next"
+                  />
+                </TextField>
+                <TextField isRequired>
+                  <Label>Password</Label>
+                  <Input
+                    ref={passwordRef}
+                    autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+                    onChangeText={(password) => (form.current.password = password)}
+                    onSubmitEditing={() => void submit()}
+                    placeholder="At least 8 characters"
+                    returnKeyType="done"
+                    secureTextEntry
+                  />
+                </TextField>
+              </>
+            ) : (
+              <TextField isRequired>
+                <Label>Verification code</Label>
+                <Input
+                  autoComplete="one-time-code"
+                  keyboardType="number-pad"
+                  onChangeText={(code) => (form.current.code = code)}
+                  onSubmitEditing={() => void submit()}
+                  placeholder="6-digit code"
+                  returnKeyType="done"
+                />
+              </TextField>
+            )}
           </View>
 
           {error ? (
@@ -164,7 +198,13 @@ export default function AuthScreen() {
 
           <View className="items-center gap-4">
             <Button className="w-full" isDisabled={pending} onPress={() => void submit()}>
-              {pending ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}
+              {pending
+                ? "Please wait…"
+                : needsVerification
+                  ? "Verify email"
+                  : mode === "sign-in"
+                    ? "Sign in"
+                    : "Create account"}
             </Button>
             <LinkButton isDisabled={pending} onPress={toggleMode}>
               <LinkButton.Label className="text-link">

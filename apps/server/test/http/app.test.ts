@@ -9,9 +9,10 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  it("forwards Better Auth session lookups instead of crashing", async () => {
-    const response = await appFor(true).request("/api/auth/get-session");
-    expect(response.status).toBe(404);
+  it("returns an unauthenticated workspace snapshot for Clerk session lookups", async () => {
+    const response = await appFor(true, false).request("/api/auth/session");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "unauthenticated" });
   });
 
   it("adds CORS headers on API routes for a trusted origin", async () => {

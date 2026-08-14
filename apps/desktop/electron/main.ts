@@ -3,6 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createClerkBridge } from "@clerk/electron";
+import { storage } from "@clerk/electron/storage";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
@@ -21,6 +23,14 @@ import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 
 import { AuthBroker } from "./auth";
+import {
+  clerkFrontendApiHostname,
+  desktopRendererOrigin,
+  desktopRendererUrl,
+  makeDesktopContentSecurityPolicy,
+  registerDesktopProtocolHandler,
+  registerDesktopSchemePrivileges,
+} from "./protocol";
 import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 import { setupUpdater } from "./updater";
 
@@ -71,26 +81,31 @@ const API_BASE_URL = fallbackIfBlank(
       : (process.env["VITE_API_URL"] ?? import.meta.env.VITE_API_URL)),
   "http://localhost:8787",
 );
-const authBroker = new AuthBroker(
-  API_BASE_URL,
-  fallbackIfBlank(process.env["ELECTRON_PROTOCOL"], DEFAULT_ELECTRON_PROTOCOL),
+const ELECTRON_PROTOCOL = fallbackIfBlank(
+  process.env["ELECTRON_PROTOCOL"],
+  DEFAULT_ELECTRON_PROTOCOL,
 );
-authBroker.setupMain();
+const CLERK_PUBLISHABLE_KEY = fallbackIfBlank(
+  process.env["VITE_CLERK_PUBLISHABLE_KEY"] ?? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+  "",
+);
 
-const rendererCsp = [
-  "default-src 'self'",
-  // Vite injects the React Refresh preamble as an inline script in development.
-  `script-src 'self'${VITE_DEV_SERVER_URL ? " 'unsafe-inline'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: user-image:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${new URL(API_BASE_URL).origin}${
-    VITE_DEV_SERVER_URL ? " ws: http://localhost:*" : ""
-  }`,
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
+registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
+const clerkBridge = createClerkBridge({
+  storage: storage(),
+  passkeys: true,
+  renderer: { scheme: ELECTRON_PROTOCOL, host: "app" },
+  userAgent: `Tabaaq/${app.getVersion()}`,
+});
+
+const authBroker = new AuthBroker(API_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
+
+const rendererCsp = makeDesktopContentSecurityPolicy({
+  scheme: ELECTRON_PROTOCOL,
+  apiOrigin: new URL(API_BASE_URL).origin,
+  clerkFrontendApiHostname: clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
+  development: Boolean(VITE_DEV_SERVER_URL),
+});
 
 function registerRendererCsp() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -270,34 +285,13 @@ const inputString = (input: unknown, key: string, maximum = 160) => {
 
 function registerAuthIpc() {
   ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
-  ipcMain.handle("auth:sign-in", async (_event, input: unknown) =>
+  ipcMain.handle("auth:adopt-session", async (_event, token: unknown) =>
     currentWorkspace().execute({
-      _tag: "SignIn",
-      email: inputString(input, "email"),
-      password: inputString(input, "password", 256),
-    }),
-  );
-  ipcMain.handle("auth:sign-up", async (_event, input: unknown) =>
-    currentWorkspace().execute({
-      _tag: "SignUp",
-      name: inputString(input, "name"),
-      email: inputString(input, "email"),
-      password: inputString(input, "password", 256),
+      _tag: "AdoptSession",
+      token: token === null || token === undefined ? null : inputString({ token }, "token", 16_384),
     }),
   );
   ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
-  ipcMain.handle("auth:organization:switch", async (_event, input: unknown) =>
-    currentWorkspace().execute({
-      _tag: "SwitchOrganization",
-      organizationId: inputString(input, "organizationId"),
-    }),
-  );
-  ipcMain.handle("auth:organization:create", async (_event, input: unknown) =>
-    currentWorkspace().execute({
-      _tag: "CreateOrganization",
-      name: inputString(input, "name"),
-    }),
-  );
 }
 
 function registerServerIpc() {
@@ -357,8 +351,10 @@ function createWindow() {
 
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
-    const expected = VITE_DEV_SERVER_URL ?? `file://${RENDERER_DIST}`;
-    if (!url.startsWith(expected)) event.preventDefault();
+    const allowed = [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
+      (value): value is string => Boolean(value),
+    );
+    if (!allowed.some((origin) => url.startsWith(origin))) event.preventDefault();
   });
 
   win.on("enter-full-screen", () => {
@@ -369,11 +365,7 @@ function createWindow() {
     win?.webContents.send("window-controls:full-screen-changed", false);
   });
 
-  if (VITE_DEV_SERVER_URL) {
-    void win.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    void win.loadFile(path.join(RENDERER_DIST, "index.html"));
-  }
+  void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));
 }
 
 ipcMain.on("window-controls:minimize", (event) => {
@@ -419,11 +411,22 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  clerkBridge.cleanup();
   void disposeWorkspace();
   void disposeUpdater?.();
 });
 
 void app.whenReady().then(async () => {
+  if (!clerkBridge.isPrimaryInstance) {
+    app.quit();
+    return;
+  }
+  registerDesktopProtocolHandler({
+    scheme: ELECTRON_PROTOCOL,
+    rendererRoot: RENDERER_DIST,
+    developmentServerUrl: VITE_DEV_SERVER_URL,
+    contentSecurityPolicy: rendererCsp,
+  });
   registerRendererCsp();
   const deviceId = await loadDeviceId();
   await initializeWorkspace(deviceId);

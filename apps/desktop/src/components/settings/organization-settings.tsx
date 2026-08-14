@@ -1,45 +1,16 @@
-import * as React from "react";
-
 import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
-import { Fieldset } from "@/components/ui/fieldset";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { toastManager } from "@/components/ui/toast";
-import { authSession, useAuth } from "@/lib/auth";
-import { storeErrorMessage } from "@/lib/errors";
+import { useAuth } from "@/lib/auth";
+import { clerkAppearance, CreateOrganization } from "@/lib/clerk-runtime";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
-  const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
   const organization = snapshot?.activeOrganization;
-
-  async function createOrganization(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const value = new FormData(form).get("organizationName");
-    setPending(true);
-    setError(null);
-    try {
-      await authSession().createOrganization({
-        name: typeof value === "string" ? value : "",
-      });
-      form.reset();
-      toastManager.add({ title: "Organization created", type: "success" });
-    } catch (cause) {
-      setError(storeErrorMessage(cause));
-    } finally {
-      setPending(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-4">
       <FrameCard
-        action={organization && <Badge variant="secondary">{organization.role}</Badge>}
+        action={organization ? <Badge variant="secondary">{organization.role}</Badge> : null}
         description="Store data syncs to this organization."
         title="Organization"
       >
@@ -53,30 +24,7 @@ export function OrganizationSettings() {
         description="Starts a separate workspace with its own catalog and invoices."
         title="New organization"
       >
-        <form id="create-organization-form" onSubmit={createOrganization}>
-          <Fieldset className="flex w-full flex-col gap-6">
-            <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="new-organization-name">Name</FieldLabel>
-              <Input
-                aria-invalid={error ? true : undefined}
-                id="new-organization-name"
-                name="organizationName"
-                placeholder="Store name"
-                required
-              />
-              <FieldDescription>
-                You will be switched to it once it has been created.
-              </FieldDescription>
-              {error && <FieldError match>{error}</FieldError>}
-            </Field>
-            <div>
-              <Button disabled={pending} form="create-organization-form" type="submit">
-                {pending && <Spinner data-icon="inline-start" />}
-                Create organization
-              </Button>
-            </div>
-          </Fieldset>
-        </form>
+        <CreateOrganization appearance={clerkAppearance} />
       </FrameCard>
     </div>
   );

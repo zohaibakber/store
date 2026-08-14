@@ -103,13 +103,10 @@ export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> 
   return {
     bridge: {
       getSession: async () => workspace.snapshot,
-      signIn: (input) => workspace.execute({ _tag: "SignIn", ...input }),
-      signUp: (input) => workspace.execute({ _tag: "SignUp", ...input }),
+      adoptSession: (token) => workspace.execute({ _tag: "AdoptSession", token }),
       signOut: async () => {
         await workspace.execute({ _tag: "SignOut" });
       },
-      switchOrganization: (input) => workspace.execute({ _tag: "SwitchOrganization", ...input }),
-      createOrganization: (input) => workspace.execute({ _tag: "CreateOrganization", ...input }),
       onSessionChange: (listener) => {
         snapshotListeners.add(listener);
         return () => snapshotListeners.delete(listener);

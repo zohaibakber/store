@@ -21,7 +21,9 @@ or on mobile syncs through the same authenticated `/api/sync` protocol.
 - `packages/workspace` owns the authenticated workspace runtime shared by desktop and web.
 - `packages/sync-client` owns the framework-neutral Effect coordinator, retries,
   page draining, and sync status state machine used by local replica adapters.
-- `packages/auth` owns Better Auth configuration while its tables remain in `packages/db`.
+- `packages/auth` owns Clerk JWT verification and the Clerk-to-store organization
+  binding. Better Auth identity tables remain in `packages/db` so existing Durable
+  Object names can be recovered by email.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains. Reusable test
@@ -58,7 +60,7 @@ bun run deploy:prod
 ```
 
 Copy `.env.example` to `.env.dev` and `.env.prod` (both gitignored) and give each stage its own
-`BETTER_AUTH_SECRET`. The Worker setup and stage details are documented in `apps/server/README.md`.
+`CLERK_SECRET_KEY`. The Worker setup and stage details are documented in `apps/server/README.md`.
 An authenticated user can continue using a previously opened organization offline; a first sign-in
 and organization creation require the API.
 
@@ -80,17 +82,26 @@ every auth setting the Worker reads.
 
 Each GitHub Environment must define:
 
-- **Secret:** `BETTER_AUTH_SECRET` (≥32 high-entropy characters). Use a different value per
-  environment so a dev-issued session is never valid against production.
+- **Secret:** `CLERK_SECRET_KEY`. Use a different Clerk instance (or at least a
+  different secret) per environment so a preview JWT is never valid against production.
+- **Secret (optional):** `CLERK_JWT_KEY` — PEM JWKS for networkless JWT verify on the Worker.
 - **Variables (optional, have code defaults):** `ELECTRON_PROTOCOL` (`com.tabaaq.desktop`),
   `MOBILE_PROTOCOL` (`com.tabaaq.mobile`), `AUTH_TRUSTED_ORIGINS` (comma-separated `https://`
-  origins, bare hosts, or Better Auth wildcard patterns). Blank values are treated as unset, and
-  a value none of those forms fit is ignored and logged rather than breaking sign-in.
+  origins, bare hosts, or wildcard patterns), `CLERK_JWT_AUDIENCE`. Blank values are treated as
+  unset, and a value none of those forms fit is ignored and logged rather than breaking sign-in.
 
 The `Production` environment must also define these **variables** for desktop releases:
 
 - `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- `VITE_CLERK_PUBLISHABLE_KEY` — Clerk Frontend API publishable key
+- `VITE_CLERK_JWT_TEMPLATE` — optional Clerk JWT template name (must include `org_id`)
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the Worker)
+
+In the Clerk Dashboard, enable Organizations and allow these origins (Authorized
+Parties / allowed origins): `https://tabaaq.zohaibakber.com`,
+`com.tabaaq.desktop://app`, plus local `http://localhost:5173` and
+`http://localhost:5174` for development. The Electron renderer origin is the
+privileged custom scheme host `app`, matching T3 Code's `@clerk/electron` bridge.
 
 The admin profile can mint API tokens and should only be used for this bootstrap stack.
 
