@@ -14,9 +14,8 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 
   if (!isLoaded || (isSignedIn && !bridgeError)) {
     return (
-      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-        <Spinner aria-label="Finishing sign-in" className="size-4" />
-        <span>Finishing sign-in…</span>
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <Spinner aria-label="Finishing sign-in" className="size-6" />
       </div>
     );
   }
@@ -58,6 +57,16 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 }
 
 export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
+  const { isLoaded, isSignedIn } = useClerkAuth();
+
+  if (clerkPublishableKey && (!isLoaded || (isSignedIn && !bridgeError))) {
+    return (
+      <main className="flex min-h-svh items-center justify-center text-muted-foreground">
+        <Spinner aria-label="Finishing sign-in" className="size-6" />
+      </main>
+    );
+  }
+
   return (
     <div className="relative flex min-h-svh flex-col">
       <header className="absolute inset-x-0 top-0 z-10 h-12 [-webkit-app-region:drag]" />
