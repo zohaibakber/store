@@ -1,4 +1,4 @@
-import { clerkTokenOptions } from "@store/auth/security";
+import { clerkTokenOptions, clerkTokenRefreshDelay } from "@store/auth/security";
 import * as React from "react";
 
 import { authSession } from "@/lib/auth";
@@ -40,12 +40,44 @@ export function ClerkWorkspaceSync() {
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const token = await getToken(tokenOptions);
-      if (!cancelled && token) await authSession().adoptSession(token);
-    })();
+    let refreshing = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = (delay: number) => {
+      if (cancelled) return;
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => void refresh(), delay);
+    };
+    const refresh = async () => {
+      if (cancelled || refreshing) return;
+      refreshing = true;
+      clearTimeout(refreshTimer);
+      let nextRefresh = 5_000;
+      try {
+        const token = await getToken(tokenOptions);
+        if (!cancelled && token) {
+          await authSession().adoptSession(token);
+          nextRefresh = clerkTokenRefreshDelay(token);
+        }
+      } catch {
+        nextRefresh = 5_000;
+      } finally {
+        refreshing = false;
+        schedule(nextRefresh);
+      }
+    };
+    const refreshWhenActive = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    window.addEventListener("online", refreshWhenActive);
+    void refresh();
     return () => {
       cancelled = true;
+      clearTimeout(refreshTimer);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+      window.removeEventListener("online", refreshWhenActive);
     };
   }, [getToken, isLoaded, isSignedIn, organizationId]);
 

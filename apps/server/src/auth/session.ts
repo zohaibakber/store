@@ -80,7 +80,14 @@ export const authenticateHeaders = (
       try: () => verifyClerkBearerToken(token, services.config),
       catch: (cause) =>
         authFailure(cause instanceof Error ? cause.message : "Clerk session token is invalid."),
-    }).pipe(Effect.orElseSucceed(() => null));
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("Clerk token verification failed").pipe(
+          Effect.annotateLogs({ cause: error.message }),
+        ),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
     if (!claims) return null;
 
     const profile = yield* Effect.tryPromise({

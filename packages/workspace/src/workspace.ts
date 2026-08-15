@@ -184,6 +184,7 @@ export class AuthenticatedWorkspace {
                     message: messageOf(cause),
                     retryable:
                       details.status === undefined ||
+                      details.status === 401 ||
                       details.status === 408 ||
                       details.status === 429 ||
                       details.status >= 500,

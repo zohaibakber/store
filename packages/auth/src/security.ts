@@ -304,3 +304,27 @@ export const clerkTokenOptions = (template: string | undefined) =>
   template?.trim()
     ? ({ template: template.trim(), skipCache: true } as const)
     : ({ skipCache: true } as const);
+
+const CLERK_TOKEN_REFRESH_FALLBACK_MS = 30_000;
+const CLERK_TOKEN_REFRESH_LEAD_MS = 15_000;
+const CLERK_TOKEN_REFRESH_MIN_MS = 5_000;
+const CLERK_TOKEN_REFRESH_MAX_MS = 45_000;
+
+/** Schedules rotation shortly before the JWT expiry without trusting a fixed token lifetime. */
+export const clerkTokenRefreshDelay = (token: string, now = Date.now()) => {
+  try {
+    const payloadSegment = token.split(".")[1];
+    if (!payloadSegment) return CLERK_TOKEN_REFRESH_FALLBACK_MS;
+    const base64 = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const payload = JSON.parse(globalThis.atob(padded)) as { readonly exp?: unknown };
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp))
+      return CLERK_TOKEN_REFRESH_FALLBACK_MS;
+    return Math.min(
+      CLERK_TOKEN_REFRESH_MAX_MS,
+      Math.max(CLERK_TOKEN_REFRESH_MIN_MS, payload.exp * 1_000 - now - CLERK_TOKEN_REFRESH_LEAD_MS),
+    );
+  } catch {
+    return CLERK_TOKEN_REFRESH_FALLBACK_MS;
+  }
+};
