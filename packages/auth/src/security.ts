@@ -1,5 +1,7 @@
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
+/** Host used with the privileged custom scheme so the renderer origin is `scheme://app`. */
+export const ELECTRON_RENDERER_HOST = "app";
 
 /**
  * GitHub Actions interpolates unset `vars.*` / `secrets.*` as `""`. Treat
@@ -35,7 +37,6 @@ export interface AuthSecurityInput {
   readonly baseURL: string;
   readonly electronProtocol: string;
   readonly mobileProtocol: string;
-  readonly secret: string;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
@@ -76,15 +77,6 @@ const isLoopbackHost = (host: string) => {
   );
 };
 
-const secretEntropy = (secret: string) => {
-  const counts = new Map<string, number>();
-  for (const character of secret) counts.set(character, (counts.get(character) ?? 0) + 1);
-  return [...counts.values()].reduce((entropy, count) => {
-    const probability = count / secret.length;
-    return entropy - probability * Math.log2(probability) * secret.length;
-  }, 0);
-};
-
 const secureWebOrigin = (value: string, label: string) => {
   const url = new URL(value);
   if (url.protocol !== "http:" && url.protocol !== "https:")
@@ -108,13 +100,12 @@ const unusableSchemes = new Set(["about", "blob", "data", "file", "javascript", 
 type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly reason: string };
 
 /**
- * Better Auth never parses a configured trusted origin as a URL — it pattern
- * matches it. Its documented values therefore include forms `new URL` rejects
- * outright: bare hosts (`app.example.com`), host wildcards (`*.example.com`),
- * and native scheme patterns (`exp://192.168.*.*:*`). Classify an entry rather
- * than parsing it, and drop what cannot be used, so one unusable value can
- * never throw out of Worker start-up and take every `/api/auth/*` request with
- * it.
+ * CORS and native clients never parse a configured trusted origin as a URL —
+ * they pattern match it. Documented values therefore include forms `new URL`
+ * rejects outright: bare hosts (`app.example.com`), host wildcards
+ * (`*.example.com`), and native scheme patterns (`exp://192.168.*.*:*`).
+ * Classify an entry rather than parsing it, and drop what cannot be used, so
+ * one unusable value can never throw out of Worker start-up.
  */
 const classifyTrustedOrigin = (
   raw: string,
@@ -151,10 +142,9 @@ const classifyTrustedOrigin = (
     return { origins: [isWeb ? `${protocol}://${host}` : `https://${host}`] };
   }
 
-  // A bare host — the entry Better Auth's issue tracker fills up with. Resolve
-  // it the way Better Auth resolves `baseURL.allowedHosts`: HTTPS, plus HTTP for
-  // a loopback host, and only while this deployment is itself local, so a
-  // production list never gains an insecure origin nobody wrote.
+  // A bare host is resolved as HTTPS, plus HTTP for a loopback host, and only
+  // while this deployment is itself local, so a production list never gains an
+  // insecure origin nobody wrote.
   try {
     const secure = secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin");
     if (!options.allowInsecure || !isLoopbackHost(host)) return { origins: [secure] };
@@ -174,8 +164,8 @@ export interface ResolvedTrustedOrigins {
 }
 
 /**
- * Classifies configured origins into the ones Better Auth can match and the
- * ones it cannot, so a caller can log the rejects instead of failing.
+ * Classifies configured origins into the ones CORS can match and the ones it
+ * cannot, so a caller can log the rejects instead of failing.
  */
 export const resolveTrustedOrigins = (
   origins: ReadonlyArray<string>,
@@ -192,14 +182,6 @@ export const resolveTrustedOrigins = (
 };
 
 export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig => {
-  const secret = input.secret.trim();
-  if (
-    secret !== input.secret ||
-    new TextEncoder().encode(secret).byteLength < 32 ||
-    secretEntropy(secret) < 120
-  )
-    throw new Error("BETTER_AUTH_SECRET must contain at least 32 high-entropy characters.");
-
   const rejectedSettings: Array<RejectedAuthSetting> = [];
 
   // A deployment variable nobody can validate before it ships falls back to the
@@ -220,7 +202,7 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
 
   // The base URL is the deployment's own identity rather than operator input —
   // `apps/server/infra.ts` states it literally — so it stays fatal.
-  const baseURL = secureWebOrigin(input.baseURL, "Better Auth base URL");
+  const baseURL = secureWebOrigin(input.baseURL, "API base URL");
   const secureCookies = baseURL.startsWith("https://");
 
   const configured = resolveTrustedOrigins(input.trustedOrigins, {
@@ -229,10 +211,11 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
   for (const origin of configured.rejected)
     rejectedSettings.push({ setting: "AUTH_TRUSTED_ORIGINS", ...origin });
 
+  const electronOrigin = `${electronProtocol}://${ELECTRON_RENDERER_HOST}`;
   const trustedOrigins = [
     baseURL,
     ...configured.accepted,
-    `${electronProtocol}:/`,
+    electronOrigin,
     `${mobileProtocol}://`,
     // Expo Go identifies the JavaScript bundle by its changing LAN origin.
     // Trust that scheme only while the auth server itself is in local HTTP
@@ -242,7 +225,7 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
 
   return {
     baseURL,
-    electronOrigin: `${electronProtocol}:/`,
+    electronOrigin,
     electronProtocol,
     mobileOrigin: `${mobileProtocol}://`,
     mobileProtocol,
@@ -277,10 +260,9 @@ const webOriginOf = (url: string) => {
 };
 
 /**
- * Mirrors Better Auth's own trusted-origin matching so the CORS allowlist and
- * the auth origin check agree about wildcard and native-scheme entries. Web
- * patterns match the origin; native schemes match by glob, or by prefix when
- * the pattern holds no wildcard.
+ * Matches wildcard and native-scheme entries the same way the CORS allowlist
+ * and Clerk authorized parties do. Web patterns match the origin; native
+ * schemes match by glob, or by prefix when the pattern holds no wildcard.
  */
 export const matchesTrustedOrigin = (origin: string | undefined, pattern: string) => {
   // Effect's CORS middleware types the origin as a string but hands over
@@ -298,3 +280,27 @@ export const matchesTrustedOrigin = (origin: string | undefined, pattern: string
 
 export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyArray<string>) =>
   patterns.some((pattern) => matchesTrustedOrigin(origin, pattern));
+
+/**
+ * Clerk publishable keys encode the Frontend API host after the second `_`.
+ * That host (for example `clerk.example.com` or `foo.clerk.accounts.dev`) is
+ * what Electron CSP must allow — not the Account Portal host.
+ */
+export const clerkFrontendApiHostnameFromPublishableKey = (publishableKey: string): string => {
+  try {
+    const encodedFrontendApi = publishableKey.split("_").slice(2).join("_");
+    const frontendApi = globalThis.atob(encodedFrontendApi).replace(/\$$/u, "");
+    if (!frontendApi || frontendApi.includes("/")) {
+      throw new Error("Clerk publishable key does not contain a Frontend API host.");
+    }
+    return new URL(`https://${frontendApi}`).hostname;
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.includes("Frontend API host")) throw cause;
+    throw new Error("Clerk publishable key does not contain a Frontend API host.");
+  }
+};
+
+export const clerkTokenOptions = (template: string | undefined) =>
+  template?.trim()
+    ? ({ template: template.trim(), skipCache: true } as const)
+    : ({ skipCache: true } as const);

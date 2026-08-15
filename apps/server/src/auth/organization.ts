@@ -56,7 +56,7 @@ export const OrganizationAuthLive = Layer.effect(
         const headers = authHeadersForRequest(new Headers(request.headers));
         const session = yield* runtime
           .getSession(headers)
-          .pipe(logAuthFailure("Better Auth session lookup failed"), Effect.orDie);
+          .pipe(logAuthFailure("Clerk session lookup failed"), Effect.orDie);
         if (!session)
           return yield* Effect.fail(
             unauthenticated("UNAUTHENTICATED", "Authentication is required."),
@@ -70,7 +70,7 @@ export const OrganizationAuthLive = Layer.effect(
 
         const hasActiveMember = yield* runtime
           .hasActiveMember(headers)
-          .pipe(logAuthFailure("Better Auth organization lookup failed"), Effect.orDie);
+          .pipe(logAuthFailure("Clerk organization lookup failed"), Effect.orDie);
         if (!hasActiveMember)
           return yield* Effect.fail(
             forbidden("ORGANIZATION_ACCESS_DENIED", "Organization access is denied."),

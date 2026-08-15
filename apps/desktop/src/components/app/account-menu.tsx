@@ -21,12 +21,14 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import { signOut, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { useClerkSignOut } from "@/lib/clerk-workspace";
 import { initials } from "@/lib/format";
 
 export function AccountMenu() {
   const { snapshot } = useAuth();
   const { preference, setTheme } = useTheme();
+  const clerkSignOut = useClerkSignOut();
   if (!snapshot?.activeOrganization || !snapshot.user) return null;
   const { activeOrganization, user } = snapshot;
 
@@ -102,7 +104,7 @@ export function AccountMenu() {
             </MenuGroup>
             <MenuSeparator />
             <MenuGroup>
-              <MenuItem onClick={() => void signOut()} variant="destructive">
+              <MenuItem onClick={() => void clerkSignOut()} variant="destructive">
                 <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />
                 Log out
               </MenuItem>

@@ -11,6 +11,7 @@
     "test": "vitest run --root ../.. apps/web/test"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.3",
     "@libsql/client-wasm": "^0.17.4"
   },
   "devDependencies": {
