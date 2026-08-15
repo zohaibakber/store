@@ -7,7 +7,7 @@ import {
 } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import { syncDeviceState, syncOutbox } from "@store/db/local/schema";
-import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, ne, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -202,6 +202,52 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
 });
 
 export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
+  const migratePendingActor = Effect.gen(function* () {
+    const pending = yield* database
+      .select()
+      .from(syncOutbox)
+      .where(
+        and(
+          eq(syncOutbox.organizationId, workspace.organizationId),
+          isNull(syncOutbox.acknowledgedAt),
+          ne(syncOutbox.actorUserId, workspace.userId),
+        ),
+      )
+      .pipe(mapPersistenceError("load pending operations with a stale actor"));
+
+    yield* Effect.forEach(
+      pending,
+      (queued) => {
+        const payloadHash = operationPayloadHash({
+          operationId: queued.operationId,
+          organizationId: queued.organizationId,
+          deviceId: queued.deviceId,
+          actorUserId: workspace.userId,
+          clientSequence: queued.clientSequence,
+          occurredAt: queued.occurredAt,
+          changes: queued.payload,
+        });
+        return database
+          .update(syncOutbox)
+          .set({
+            actorUserId: workspace.userId,
+            payloadHash,
+            attemptCount: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          })
+          .where(
+            and(
+              eq(syncOutbox.operationId, queued.operationId),
+              eq(syncOutbox.organizationId, workspace.organizationId),
+              isNull(syncOutbox.acknowledgedAt),
+            ),
+          );
+      },
+      { discard: true },
+    ).pipe(mapPersistenceError("migrate pending sync operation actor"));
+  });
+
   const recoverAuthenticationFailures = database
     .update(syncOutbox)
     .set({ attemptCount: 0, nextAttemptAt: null, lastError: null })
@@ -338,6 +384,7 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
     markAttempt,
     acknowledge,
     markFailure,
+    migratePendingActor,
     recoverAuthenticationFailures,
   };
 };
