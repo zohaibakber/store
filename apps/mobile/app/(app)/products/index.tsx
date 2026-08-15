@@ -1,17 +1,33 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import { useDeferredValue, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { Alert, Button, Chip, Spinner, useThemeColor } from "@/components/mobile-ui";
+import { AddInventoryActions } from "@/components/add-inventory-actions";
+import { Alert, Button, ChoiceChip, Input, Spinner, useThemeColor } from "@/components/mobile-ui";
 import { ProductRow } from "@/components/product-row";
-import { useProducts } from "@/features/products/products-provider";
+import {
+  useProductActions,
+  useProductData,
+  useProductStatus,
+} from "@/features/products/products-provider";
 import type { MobileProduct } from "@/lib/products";
 
 type StockFilter = "all" | "low" | "out" | "hidden";
 
 const keyExtractor = (item: MobileProduct) => item.id;
-const listContentStyle = { paddingBottom: 124, paddingHorizontal: 16 } as const;
+const renderProduct: ListRenderItem<MobileProduct> = ({ item }) => (
+  <ProductRow
+    aisle={item.aisle}
+    category={item.category}
+    details={item.details}
+    name={item.name}
+    stock={item.stock}
+    stockLabel={item.stockLabel}
+    unitPrice={item.unitPrice}
+    visible={item.visible}
+  />
+);
 const filters: ReadonlyArray<{ value: StockFilter; label: string }> = [
   { value: "all", label: "All" },
   { value: "low", label: "Low stock" },
@@ -20,15 +36,17 @@ const filters: ReadonlyArray<{ value: StockFilter; label: string }> = [
 ];
 
 export default function ProductsScreen() {
-  const { products, loading, refreshing, error, refresh } = useProducts();
+  const { products } = useProductData();
+  const { loading, refreshing, error } = useProductStatus();
+  const { refresh } = useProductActions();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StockFilter>("all");
   const deferredQuery = useDeferredValue(query);
-  const [foreground, muted, surface, accent] = useThemeColor([
+  const [foreground, muted, background, subtle] = useThemeColor([
     "foreground",
     "muted",
-    "surface",
-    "accent",
+    "background",
+    "surface-secondary",
   ]);
 
   const filtered = useMemo(() => {
@@ -57,61 +75,45 @@ export default function ProductsScreen() {
       });
   }, [deferredQuery, filter, products]);
 
-  const renderItem: ListRenderItem<MobileProduct> = ({ item }) => (
-    <ProductRow
-      aisle={item.aisle}
-      category={item.category}
-      details={item.details}
-      name={item.name}
-      stock={item.stock}
-      stockLabel={item.stockLabel}
-      unitPrice={item.unitPrice}
-      visible={item.visible}
-    />
-  );
-
   const header = (
-    <View className="gap-4 pt-3 pb-4">
-      <View
-        className="bg-surface h-14 flex-row items-center gap-3 rounded-2xl border border-accent/15 px-4"
-        style={{ backgroundColor: surface, elevation: 2 }}
-      >
-        <MaterialIcons color={accent} name="search" size={22} />
-        <TextInput
-          accessibilityLabel="Search inventory"
-          className="min-w-0 flex-1 text-sm text-foreground"
-          onChangeText={setQuery}
-          placeholder="Name, category, aisle or batch"
-          placeholderTextColor={muted}
-          returnKeyType="search"
-          value={query}
-        />
+    <View style={styles.header}>
+      <View style={styles.searchRow}>
+        <View style={styles.searchField}>
+          <Input
+            accessibilityLabel="Search inventory"
+            onChangeText={setQuery}
+            placeholder="Name, category, aisle or batch"
+            returnKeyType="search"
+            value={query}
+          />
+        </View>
         {query ? (
           <Pressable
             accessibilityLabel="Clear search"
             accessibilityRole="button"
             hitSlop={10}
             onPress={() => setQuery("")}
+            style={({ pressed }) => [styles.clear, { opacity: pressed ? 0.56 : 1 }]}
           >
-            <MaterialIcons color={foreground} name="cancel" size={20} />
+            <MaterialIcons color={foreground} name="close" size={20} />
           </Pressable>
         ) : null}
       </View>
 
       <ScrollView
-        contentContainerClassName="gap-2"
+        contentContainerStyle={styles.filters}
         horizontal
         keyboardShouldPersistTaps="handled"
         showsHorizontalScrollIndicator={false}
       >
         {filters.map((option) => (
-          <Chip
+          <ChoiceChip
             key={option.value}
-            color={filter === option.value ? "accent" : "default"}
             onPress={() => setFilter(option.value)}
+            selected={filter === option.value}
           >
             {option.label}
-          </Chip>
+          </ChoiceChip>
         ))}
       </ScrollView>
 
@@ -128,27 +130,30 @@ export default function ProductsScreen() {
         </Alert>
       ) : null}
 
-      <View className="flex-row items-center justify-between px-1">
-        <Text className="text-xs font-medium tracking-wide text-muted uppercase">
+      <View style={styles.summary}>
+        <Text style={[styles.summaryText, { color: muted }]}>
           {filtered.length} {filtered.length === 1 ? "product" : "products"}
         </Text>
-        {refreshing ? <Spinner size="sm" /> : null}
+        <View style={styles.summaryActions}>
+          {refreshing ? <Spinner size="sm" /> : null}
+          <AddInventoryActions />
+        </View>
       </View>
     </View>
   );
 
   const empty = loading ? (
-    <View className="items-center gap-3 py-16">
+    <View style={styles.loading}>
       <Spinner />
-      <Text className="text-sm text-muted">Syncing products…</Text>
+      <Text style={[styles.body, { color: muted }]}>Syncing products…</Text>
     </View>
   ) : (
-    <View className="bg-surface-secondary items-center gap-2 rounded-3xl px-8 py-12">
+    <View style={[styles.empty, { backgroundColor: subtle }]}>
       <MaterialIcons color={muted} name={query ? "search-off" : "inventory-2"} size={30} />
-      <Text className="text-sm font-medium text-foreground">
+      <Text style={[styles.bodyMedium, { color: foreground }]}>
         {query || filter !== "all" ? "No matching products" : "No products yet"}
       </Text>
-      <Text className="text-center text-xs leading-5 text-muted">
+      <Text style={[styles.emptyText, { color: muted }]}>
         {query || filter !== "all"
           ? "Try a broader search or another stock filter."
           : "Use the add button below to create or scan your first product."}
@@ -170,8 +175,7 @@ export default function ProductsScreen() {
 
   return (
     <FlashList
-      className="bg-background"
-      contentContainerStyle={listContentStyle}
+      contentContainerStyle={styles.listContent}
       contentInsetAdjustmentBehavior="automatic"
       data={filtered}
       keyExtractor={keyExtractor}
@@ -181,7 +185,53 @@ export default function ProductsScreen() {
       ListHeaderComponent={header}
       onRefresh={refresh}
       refreshing={refreshing}
-      renderItem={renderItem}
+      renderItem={renderProduct}
+      style={{ backgroundColor: background }}
     />
   );
 }
+
+const styles = StyleSheet.create({
+  body: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
+  bodyMedium: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  clear: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 40,
+  },
+  empty: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 12,
+    gap: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 48,
+  },
+  emptyText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  filters: { gap: 8 },
+  header: { gap: 16, paddingBottom: 16, paddingTop: 12 },
+  listContent: { paddingBottom: 104, paddingHorizontal: 16 },
+  loading: { alignItems: "center", gap: 12, paddingVertical: 64 },
+  searchField: { flex: 1, minWidth: 0 },
+  searchRow: { alignItems: "center", flexDirection: "row", gap: 4 },
+  summary: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  summaryActions: { alignItems: "center", flexDirection: "row", gap: 12 },
+  summaryText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    letterSpacing: 0.5,
+    lineHeight: 16,
+    textTransform: "uppercase",
+  },
+});

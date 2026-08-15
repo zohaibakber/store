@@ -1,38 +1,39 @@
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, ScrollView, Text, View } from "react-native";
+import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   Alert as HeroAlert,
+  Badge,
   Button,
   Card,
-  Chip,
+  ChoiceChip,
   Input,
   Label,
   TextField,
+  useThemeColor,
 } from "@/components/mobile-ui";
 import { InlineTextCamera } from "@/features/product-scanner/inline-text-camera";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
 import { findProductMatch } from "@/features/product-scanner/product-match";
-import { QuantitySheet } from "@/features/product-scanner/quantity-sheet";
+import { PackQuantitySheet, UnitQuantitySheet } from "@/features/product-scanner/quantity-sheet";
 import { inferProductText } from "@/features/product-scanner/scan-api";
 import type { ProductScanInference, ProductScanMode } from "@/features/product-scanner/types";
-import { useProducts } from "@/features/products/products-provider";
+import {
+  useProductActions,
+  useProductData,
+  useProductStatus,
+} from "@/features/products/products-provider";
 import { authErrorMessage } from "@/lib/auth-client";
 import { createInventoryEntityId } from "@/lib/products";
 
 const normalizeKey = (value: string | null) => value?.trim().toLocaleLowerCase() ?? "";
 
 export default function ProductScanScreen() {
-  const {
-    products,
-    categories,
-    loading,
-    saveScannedProduct,
-    saveBatchDetails,
-    updateBatchQuantity,
-  } = useProducts();
+  const { products, categories } = useProductData();
+  const { loading } = useProductStatus();
+  const { saveScannedProduct, saveBatchDetails, updateBatchQuantity } = useProductActions();
   const scroll = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ProductScanMode>("product");
   const [cameraResetKey, setCameraResetKey] = useState(0);
@@ -60,6 +61,12 @@ export default function ProductScanScreen() {
   const [expiresAt, setExpiresAt] = useState("");
   const [newProductId, setNewProductId] = useState(createInventoryEntityId);
   const [newBatchId, setNewBatchId] = useState(createInventoryEntityId);
+  const [background, foreground, muted, subtle] = useThemeColor([
+    "background",
+    "foreground",
+    "muted",
+    "surface-secondary",
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -83,6 +90,13 @@ export default function ProductScanScreen() {
   const selectedCategory = categories.find((category) => category.id === categoryId) ?? null;
   const cameraBusy = cameraReading || analyzing;
   const cameraActive = screenFocused && appActive && !quantityOpen;
+  const cameraStatus = !cameraActive
+    ? "paused"
+    : loading
+      ? "syncing"
+      : analyzing
+        ? "analyzing"
+        : "ready";
   const confidence = productInference
     ? `${Math.round(productInference.confidence * 100)}% confidence`
     : null;
@@ -298,17 +312,17 @@ export default function ProductScanScreen() {
     <>
       <ScrollView
         ref={scroll}
-        className="bg-background"
-        contentContainerClassName="gap-5 px-4 pb-12 pt-3"
+        contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
+        style={{ backgroundColor: background }}
       >
-        <View className="gap-1">
-          <Text className="text-base font-medium text-foreground">
+        <View style={styles.intro}>
+          <Text style={[styles.sectionTitle, { color: foreground }]}>
             {mode === "product" ? "Scan the front label" : "Scan batch & expiry"}
           </Text>
-          <Text className="text-xs leading-5 font-normal text-muted">
+          <Text style={[styles.caption, { color: muted }]}>
             {mode === "product"
               ? "Text is read privately on this phone, then structured into editable product fields."
               : "Turn the pack to the printed lot and expiry panel, then read it again."}
@@ -316,14 +330,12 @@ export default function ProductScanScreen() {
         </View>
 
         <InlineTextCamera
-          active={cameraActive}
-          analyzing={analyzing}
-          disabled={loading}
           mode={mode}
           onCaptureStateChange={onCaptureStateChange}
           onError={setError}
           onTextDetected={onTextDetected}
           resetKey={cameraResetKey}
+          status={cameraStatus}
         />
 
         {error ? (
@@ -348,29 +360,25 @@ export default function ProductScanScreen() {
 
         {productInference ? (
           <Card variant="default">
-            <Card.Header className="flex-row items-start justify-between gap-3 px-4 pt-4">
-              <View className="min-w-0 flex-1 gap-1">
+            <Card.Header style={styles.reviewHeader}>
+              <View style={styles.headerCopy}>
                 <Card.Title>Review product</Card.Title>
                 <Card.Description>Everything stays editable before it is saved.</Card.Description>
               </View>
-              <View className="items-end gap-1.5">
-                <Chip
-                  color={productInference.source === "cloud" ? "accent" : "warning"}
-                  size="sm"
-                  variant="soft"
-                >
+              <View style={styles.source}>
+                <Badge tone={productInference.source === "cloud" ? "default" : "warning"}>
                   {sourceLabel}
-                </Chip>
-                <Text className="text-xs font-normal text-muted">{confidence}</Text>
+                </Badge>
+                <Text style={[styles.caption, { color: muted }]}>{confidence}</Text>
               </View>
             </Card.Header>
-            <Card.Body className="gap-4 px-4 py-4">
-              <View className="bg-surface-secondary flex-row items-center justify-between gap-3 rounded-2xl px-3 py-2.5">
-                <View className="min-w-0 flex-1 gap-0.5">
-                  <Text className="text-xs font-medium text-foreground">
+            <Card.Body style={styles.cardBody}>
+              <View style={[styles.match, { backgroundColor: subtle }]}>
+                <View style={styles.matchCopy}>
+                  <Text style={[styles.captionMedium, { color: foreground }]}>
                     {matchedProduct ? "Existing product matched" : "New product"}
                   </Text>
-                  <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+                  <Text style={[styles.caption, { color: muted }]} numberOfLines={1}>
                     {matchedProduct
                       ? [matchedProduct.name, matchedProduct.details || matchedProduct.category]
                           .filter(Boolean)
@@ -426,33 +434,30 @@ export default function ProductScanScreen() {
               </TextField>
 
               {!matchedProduct ? (
-                <View className="gap-2">
-                  <Text className="text-xs font-medium text-foreground">Category</Text>
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.captionMedium, { color: foreground }]}>Category</Text>
                   {categories.length > 0 ? (
-                    <View className="flex-row flex-wrap gap-2">
+                    <View style={styles.chips}>
                       {categories.map((category) => (
-                        <Chip
+                        <ChoiceChip
                           key={category.id}
-                          color={categoryId === category.id ? "accent" : "default"}
                           onPress={() => setCategoryId(category.id)}
-                          size="sm"
-                          variant="soft"
+                          selected={categoryId === category.id}
                         >
                           {category.name}
-                        </Chip>
+                        </ChoiceChip>
                       ))}
                     </View>
                   ) : (
-                    <Text className="text-xs leading-5 font-normal text-muted">
+                    <Text style={[styles.caption, { color: muted }]}>
                       A General category will be created with this first product.
                     </Text>
                   )}
                 </View>
               ) : null}
             </Card.Body>
-            <Card.Footer className="px-4 pb-4">
+            <Card.Footer>
               <Button
-                className="w-full"
                 isDisabled={cameraBusy || savingProduct}
                 onPress={() => void confirmProduct()}
               >
@@ -466,9 +471,11 @@ export default function ProductScanScreen() {
           </Card>
         ) : (
           <Card variant="secondary">
-            <Card.Body className="gap-1 px-4 py-4">
-              <Text className="text-sm font-medium text-foreground">One clear photo is enough</Text>
-              <Text className="text-xs leading-5 font-normal text-muted">
+            <Card.Body style={styles.guidance}>
+              <Text style={[styles.bodyMedium, { color: foreground }]}>
+                One clear photo is enough
+              </Text>
+              <Text style={[styles.caption, { color: muted }]}>
                 Avoid glare, keep the printed name sharp, and include the ingredient or composition
                 line when possible.
               </Text>
@@ -478,41 +485,37 @@ export default function ProductScanScreen() {
 
         {activeProduct && savedProductId ? (
           <Card variant="secondary">
-            <Card.Header className="px-4 pt-4">
+            <Card.Header>
               <Card.Title>Inventory details</Card.Title>
               <Card.Description>
                 Batch details and quantity are deliberately separate actions.
               </Card.Description>
             </Card.Header>
-            <Card.Body className="gap-4 px-4 py-4">
+            <Card.Body style={styles.cardBody}>
               {activeProduct.batches.length > 0 ? (
-                <View className="gap-2">
-                  <Text className="text-xs font-medium text-foreground">Target batch</Text>
-                  <View className="flex-row flex-wrap gap-2">
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.captionMedium, { color: foreground }]}>Target batch</Text>
+                  <View style={styles.chips}>
                     {activeProduct.batches.map((batch, index) => (
-                      <Chip
+                      <ChoiceChip
                         key={batch.id}
-                        color={selectedBatchId === batch.id ? "accent" : "default"}
                         onPress={() => selectBatch(batch.id)}
-                        size="sm"
-                        variant="soft"
+                        selected={selectedBatchId === batch.id}
                       >
                         {batch.batchNumber || `Batch ${index + 1}`}
-                      </Chip>
+                      </ChoiceChip>
                     ))}
-                    <Chip
-                      color={selectedBatchId === null ? "accent" : "default"}
+                    <ChoiceChip
                       onPress={() => selectBatch(null)}
-                      size="sm"
-                      variant="soft"
+                      selected={selectedBatchId === null}
                     >
                       New batch
-                    </Chip>
+                    </ChoiceChip>
                   </View>
                 </View>
               ) : null}
 
-              <View className="gap-3">
+              <View style={styles.actions}>
                 <Button
                   isDisabled={cameraBusy}
                   variant="secondary"
@@ -538,20 +541,16 @@ export default function ProductScanScreen() {
 
         {mode === "batch" && activeProduct && batchInference ? (
           <Card variant="default">
-            <Card.Header className="flex-row items-start justify-between gap-3 px-4 pt-4">
-              <View className="min-w-0 flex-1 gap-1">
+            <Card.Header style={styles.reviewHeader}>
+              <View style={styles.headerCopy}>
                 <Card.Title>Review batch details</Card.Title>
                 <Card.Description>{activeProduct.name}</Card.Description>
               </View>
-              <Chip
-                color={batchInference.source === "cloud" ? "accent" : "warning"}
-                size="sm"
-                variant="soft"
-              >
+              <Badge tone={batchInference.source === "cloud" ? "default" : "warning"}>
                 {batchInference.source === "cloud" ? "AI structured" : "On-device result"}
-              </Chip>
+              </Badge>
             </Card.Header>
-            <Card.Body className="gap-4 px-4 py-4">
+            <Card.Body style={styles.cardBody}>
               <TextField>
                 <Label>Batch / lot number</Label>
                 <Input
@@ -571,16 +570,16 @@ export default function ProductScanScreen() {
                 />
               </TextField>
             </Card.Body>
-            <Card.Footer className="gap-3 px-4 pb-4">
+            <Card.Footer style={styles.footerActions}>
               <Button
-                className="flex-1"
+                style={styles.flex}
                 isDisabled={cameraBusy || savingBatch}
                 onPress={() => void confirmBatchDetails()}
               >
                 {savingBatch ? "Saving…" : "Save details"}
               </Button>
               <Button
-                className="flex-1"
+                style={styles.flex}
                 isDisabled={cameraBusy || savingBatch}
                 variant="ghost"
                 onPress={() => resetCamera("batch")}
@@ -598,8 +597,8 @@ export default function ProductScanScreen() {
         ) : null}
       </ScrollView>
 
-      {activeProduct ? (
-        <QuantitySheet
+      {activeProduct?.tracksPacks ? (
+        <PackQuantitySheet
           initialPackQuantity={selectedBatch?.packQuantity ?? 0}
           initialUnitQuantity={selectedBatch?.unitQuantity ?? 0}
           isNewBatch={selectedBatchId === null}
@@ -608,10 +607,56 @@ export default function ProductScanScreen() {
           productName={activeProduct.name}
           saveError={error}
           saving={savingQuantity}
-          tracksPacks={activeProduct.tracksPacks}
+          visible={quantityOpen}
+        />
+      ) : activeProduct ? (
+        <UnitQuantitySheet
+          initialPackQuantity={selectedBatch?.packQuantity ?? 0}
+          initialUnitQuantity={selectedBatch?.unitQuantity ?? 0}
+          isNewBatch={selectedBatchId === null}
+          onClose={() => setQuantityOpen(false)}
+          onSave={confirmQuantity}
+          productName={activeProduct.name}
+          saveError={error}
+          saving={savingQuantity}
           visible={quantityOpen}
         />
       ) : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  actions: { gap: 12 },
+  bodyMedium: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  caption: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
+  captionMedium: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 18 },
+  cardBody: { gap: 16 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  content: { gap: 20, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 12 },
+  fieldGroup: { gap: 8 },
+  flex: { flex: 1 },
+  footerActions: { gap: 12 },
+  guidance: { gap: 4 },
+  headerCopy: { flex: 1, gap: 4, minWidth: 0 },
+  intro: { gap: 4 },
+  match: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 10,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  matchCopy: { flex: 1, gap: 2, minWidth: 0 },
+  reviewHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  sectionTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
+  source: { alignItems: "flex-end", gap: 6 },
+});

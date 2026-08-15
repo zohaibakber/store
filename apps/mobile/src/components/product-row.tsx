@@ -1,7 +1,7 @@
 import { memo } from "react";
-import { Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
-import { Chip } from "@/components/mobile-ui";
+import { Badge, useThemeColor } from "@/components/mobile-ui";
 import { formatPrice } from "@/lib/products";
 
 type ProductRowProps = {
@@ -27,45 +27,74 @@ export const ProductRow = memo(function ProductRow({
 }: ProductRowProps) {
   const stockColor = stock === 0 ? "danger" : stock <= 10 ? "warning" : "success";
   const secondary = [details, aisle ? `Aisle ${aisle}` : null].filter(Boolean).join(" · ");
+  const [surface, subtle, border, foreground, muted] = useThemeColor([
+    "surface",
+    "surface-tertiary",
+    "separator",
+    "foreground",
+    "muted",
+  ]);
 
   return (
     <View
       accessibilityLabel={`${name}, ${stockLabel}, ${formatPrice(unitPrice)}`}
-      className="bg-surface mb-2.5 flex-row items-center gap-3 rounded-3xl border border-border px-3 py-3"
+      style={[styles.root, { backgroundColor: surface, borderColor: border }]}
     >
-      <View className="bg-blue-soft size-11 items-center justify-center rounded-2xl">
-        <Text className="text-blue text-base font-medium">
+      <View style={[styles.avatar, { backgroundColor: subtle }]}>
+        <Text style={[styles.avatarText, { color: foreground }]}>
           {name.slice(0, 1).toLocaleUpperCase()}
         </Text>
       </View>
-      <View className="min-w-0 flex-1 gap-1">
-        <View className="flex-row items-center gap-2">
-          <Text className="shrink text-sm font-medium text-foreground" numberOfLines={1}>
+      <View style={styles.content}>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, { color: foreground }]} numberOfLines={1}>
             {name}
           </Text>
-          {!visible ? (
-            <Chip color="default" size="sm" variant="soft">
-              Hidden
-            </Chip>
-          ) : null}
+          {!visible ? <Badge>Hidden</Badge> : null}
         </View>
-        <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+        <Text style={[styles.secondary, { color: muted }]} numberOfLines={1}>
           {category}
         </Text>
         {secondary ? (
-          <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+          <Text style={[styles.secondary, { color: muted }]} numberOfLines={1}>
             {secondary}
           </Text>
         ) : null}
       </View>
-      <View className="max-w-[38%] items-end gap-2">
-        <Text className="font-mono text-sm text-foreground" numberOfLines={1}>
+      <View style={styles.trailing}>
+        <Text style={[styles.price, { color: foreground }]} numberOfLines={1}>
           {formatPrice(unitPrice)}
         </Text>
-        <Chip color={stockColor} size="sm" variant="soft">
-          {stockLabel}
-        </Chip>
+        <Badge tone={stockColor}>{stockLabel}</Badge>
       </View>
     </View>
   );
+});
+
+const styles = StyleSheet.create({
+  avatar: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 10,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  avatarText: { fontFamily: "Inter_500Medium", fontSize: 16 },
+  content: { flex: 1, gap: 4, minWidth: 0 },
+  name: { flexShrink: 1, fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  nameRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+  price: { fontFamily: "GeistMono_400Regular", fontSize: 14, lineHeight: 20 },
+  root: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 8,
+    padding: 12,
+  },
+  secondary: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
+  trailing: { alignItems: "flex-end", gap: 8, maxWidth: "38%" },
 });

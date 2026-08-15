@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { Alert as HeroAlert, Button, Input, Label, TextField } from "@/components/mobile-ui";
+import {
+  Alert as HeroAlert,
+  Button,
+  Input,
+  Label,
+  TextField,
+  useThemeColor,
+} from "@/components/mobile-ui";
 
 type QuantitySheetProps = {
   visible: boolean;
   productName: string;
-  tracksPacks: boolean;
   initialPackQuantity: number;
   initialUnitQuantity: number;
   isNewBatch: boolean;
@@ -16,6 +30,8 @@ type QuantitySheetProps = {
   onSave: (quantities: { packQuantity: number; unitQuantity: number }) => Promise<void>;
 };
 
+type QuantityMode = "packs" | "units";
+
 const wholeNumber = (value: string): number | null => {
   const trimmed = value.trim();
   if (!/^\d+$/.test(trimmed)) return null;
@@ -23,10 +39,10 @@ const wholeNumber = (value: string): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
-export function QuantitySheet({
+function QuantitySheet({
+  mode,
   visible,
   productName,
-  tracksPacks,
   initialPackQuantity,
   initialUnitQuantity,
   isNewBatch,
@@ -34,7 +50,7 @@ export function QuantitySheet({
   saveError,
   onClose,
   onSave,
-}: QuantitySheetProps) {
+}: QuantitySheetProps & { mode: QuantityMode }) {
   const [packs, setPacks] = useState(String(initialPackQuantity));
   const [units, setUnits] = useState(String(initialUnitQuantity));
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +63,7 @@ export function QuantitySheet({
   }, [initialPackQuantity, initialUnitQuantity, visible]);
 
   const submit = async () => {
-    const packQuantity = tracksPacks ? wholeNumber(packs) : initialPackQuantity;
+    const packQuantity = mode === "packs" ? wholeNumber(packs) : initialPackQuantity;
     const unitQuantity = wholeNumber(units);
     if (packQuantity === null || unitQuantity === null) {
       setError("Enter non-negative whole numbers for the stock count.");
@@ -60,6 +76,7 @@ export function QuantitySheet({
     setError(null);
     await onSave({ packQuantity, unitQuantity });
   };
+  const [background, foreground, muted] = useThemeColor(["background", "foreground", "muted"]);
 
   return (
     <Modal
@@ -70,23 +87,22 @@ export function QuantitySheet({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 bg-background"
+        style={[styles.root, { backgroundColor: background }]}
       >
         <ScrollView
-          className="bg-background"
-          contentContainerClassName="flex-grow gap-6 px-5 py-6"
+          contentContainerStyle={styles.content}
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
         >
-          <View className="gap-1.5">
-            <Text className="text-lg font-medium text-foreground">Update quantity</Text>
-            <Text className="text-sm leading-5 font-normal text-muted">
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: foreground }]}>Update quantity</Text>
+            <Text style={[styles.description, { color: muted }]}>
               Correct the physical count for {productName}. This is recorded as a stock adjustment.
             </Text>
           </View>
 
-          <View className="gap-4">
-            {tracksPacks ? (
+          <View style={styles.fields}>
+            {mode === "packs" ? (
               <TextField isRequired>
                 <Label>Sealed packs</Label>
                 <Input
@@ -100,7 +116,7 @@ export function QuantitySheet({
               </TextField>
             ) : null}
             <TextField isRequired>
-              <Label>{tracksPacks ? "Loose units" : "Quantity"}</Label>
+              <Label>{mode === "packs" ? "Loose units" : "Quantity"}</Label>
               <Input
                 keyboardType="number-pad"
                 onChangeText={setUnits}
@@ -122,7 +138,7 @@ export function QuantitySheet({
             </HeroAlert>
           ) : null}
 
-          <View className="mt-auto gap-3 pt-3">
+          <View style={styles.actions}>
             <Button isDisabled={saving} onPress={() => void submit()}>
               {saving ? "Updating…" : "Update quantity"}
             </Button>
@@ -135,3 +151,21 @@ export function QuantitySheet({
     </Modal>
   );
 }
+
+export function PackQuantitySheet(props: QuantitySheetProps) {
+  return <QuantitySheet mode="packs" {...props} />;
+}
+
+export function UnitQuantitySheet(props: QuantitySheetProps) {
+  return <QuantitySheet mode="units" {...props} />;
+}
+
+const styles = StyleSheet.create({
+  actions: { gap: 12, marginTop: "auto", paddingTop: 12 },
+  content: { flexGrow: 1, gap: 24, padding: 24 },
+  description: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
+  fields: { gap: 16 },
+  header: { gap: 6 },
+  root: { flex: 1 },
+  title: { fontFamily: "Inter_500Medium", fontSize: 18, lineHeight: 24 },
+});

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Card } from "@/components/mobile-ui";
+import { Card, useThemeColor } from "@/components/mobile-ui";
 import { formatPrice, type MobileProduct } from "@/lib/products";
 
 const LOW_STOCK_THRESHOLD = 10;
@@ -13,6 +13,7 @@ export function ProductAnalytics({ products }: ProductAnalyticsProps) {
   let outOfStock = 0;
   let lowStock = 0;
   let stockValue = 0;
+  const [foreground, muted] = useThemeColor(["foreground", "muted"]);
 
   for (const product of products) {
     if (product.stock === 0) outOfStock += 1;
@@ -21,28 +22,28 @@ export function ProductAnalytics({ products }: ProductAnalyticsProps) {
   }
 
   return (
-    <View className="gap-3">
-      <View className="flex-row gap-2.5">
-        <Metric label="Products" tone="blue" value={String(products.length)} />
+    <View style={styles.root}>
+      <View style={styles.metrics}>
+        <Metric label="Products" tone="default" value={String(products.length)} />
         <Metric label="Low stock" tone="warning" value={String(lowStock)} />
         <Metric label="Out" tone="danger" value={String(outOfStock)} />
       </View>
       <Card variant="default">
-        <Card.Body className="px-4 py-3.5">
+        <Card.Body style={styles.valueBody}>
           <Pressable
             accessibilityLabel={showValue ? "Hide stock value" : "Show stock value"}
             accessibilityRole="button"
             accessibilityState={{ expanded: showValue }}
-            className="flex-row items-center justify-between gap-4"
             onPress={() => setShowValue((current) => !current)}
+            style={({ pressed }) => [styles.valueRow, { opacity: pressed ? 0.64 : 1 }]}
           >
-            <View className="gap-0.5">
-              <Text className="text-sm font-medium text-foreground">Stock value</Text>
-              <Text className="text-xs text-muted">
+            <View style={styles.valueCopy}>
+              <Text style={[styles.label, { color: foreground }]}>Stock value</Text>
+              <Text style={[styles.caption, { color: muted }]}>
                 {showValue ? "Tap to hide" : "Tap to reveal"}
               </Text>
             </View>
-            <Text className="font-mono text-base text-accent" numberOfLines={1}>
+            <Text style={[styles.stockValue, { color: foreground }]} numberOfLines={1}>
               {showValue ? formatPrice(stockValue) : "••••••"}
             </Text>
           </Pressable>
@@ -59,23 +60,51 @@ function Metric({
 }: {
   label: string;
   value: string;
-  tone: "blue" | "danger" | "warning";
+  tone: "default" | "danger" | "warning";
 }) {
-  const valueClass =
-    tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-blue";
-  const backgroundClass =
-    tone === "danger"
-      ? "border-danger/15 bg-danger-soft"
-      : tone === "warning"
-        ? "border-warning/15 bg-warning-soft"
-        : "border-blue/15 bg-blue-soft";
+  const [surface, border, foreground, muted, danger, warning] = useThemeColor([
+    "surface-secondary",
+    "separator",
+    "foreground",
+    "muted",
+    "danger",
+    "warning",
+  ]);
+  const valueColor = tone === "danger" ? danger : tone === "warning" ? warning : foreground;
 
   return (
-    <View className={`flex-1 gap-2 rounded-3xl border px-3 py-4 ${backgroundClass}`}>
-      <Text className={`font-mono text-2xl ${valueClass}`}>{value}</Text>
-      <Text className="text-foreground-secondary text-xs font-medium" numberOfLines={1}>
+    <View style={[styles.metric, { backgroundColor: surface, borderColor: border }]}>
+      <Text style={[styles.metricValue, { color: valueColor }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: muted }]} numberOfLines={1}>
         {label}
       </Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  caption: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
+  label: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  metric: {
+    borderCurve: "continuous",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 16,
+  },
+  metricLabel: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 16 },
+  metrics: { flexDirection: "row", gap: 8 },
+  metricValue: { fontFamily: "GeistMono_400Regular", fontSize: 24, lineHeight: 28 },
+  root: { gap: 12 },
+  stockValue: { fontFamily: "GeistMono_400Regular", fontSize: 16, lineHeight: 22 },
+  valueBody: { paddingHorizontal: 16, paddingVertical: 14 },
+  valueCopy: { gap: 2 },
+  valueRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 16,
+    justifyContent: "space-between",
+  },
+});

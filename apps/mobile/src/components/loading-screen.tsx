@@ -1,11 +1,16 @@
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
-import { Spinner } from "@/components/mobile-ui";
+import { Spinner, useThemeColor } from "@/components/mobile-ui";
 
 export function LoadingScreen() {
+  const background = useThemeColor("background");
   return (
-    <View className="flex-1 items-center justify-center bg-background">
+    <View style={[styles.root, { backgroundColor: background }]}>
       <Spinner color="default" />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { alignItems: "center", flex: 1, justifyContent: "center" },
+});

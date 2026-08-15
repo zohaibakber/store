@@ -2,19 +2,19 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   Alert,
   Button,
   Card,
-  Chip,
+  ChoiceChip,
   Input,
   Label,
   TextField,
   useThemeColor,
 } from "@/components/mobile-ui";
-import { useProducts } from "@/features/products/products-provider";
+import { useProductActions, useProductData } from "@/features/products/products-provider";
 import { authErrorMessage } from "@/lib/auth-client";
 import { createInventoryEntityId } from "@/lib/products";
 
@@ -26,7 +26,8 @@ const priceInPaisa = (value: string): number | null => {
 };
 
 export default function NewProductScreen() {
-  const { categories, saveScannedProduct } = useProducts();
+  const { categories } = useProductData();
+  const { saveScannedProduct } = useProductActions();
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [composition, setComposition] = useState("");
@@ -37,7 +38,13 @@ export default function NewProductScreen() {
   const [unitPrice, setUnitPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const blue = useThemeColor("blue");
+  const [background, foreground, muted, subtle, border] = useThemeColor([
+    "background",
+    "foreground",
+    "muted",
+    "surface-secondary",
+    "separator",
+  ]);
 
   const selectedCategory = categories.find((category) => category.id === categoryId);
   const tracksPacks = selectedCategory?.tracksPacks ?? true;
@@ -87,22 +94,21 @@ export default function NewProductScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-background"
+      style={[styles.root, { backgroundColor: background }]}
     >
       <ScrollView
-        className="bg-background"
-        contentContainerClassName="gap-6 px-5 pt-4 pb-12"
+        contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
       >
-        <View className="border-blue/15 bg-blue-soft flex-row items-center gap-3 rounded-3xl border px-4 py-4">
-          <View className="bg-blue/12 size-11 items-center justify-center rounded-2xl">
-            <MaterialIcons color={blue} name="inventory-2" size={22} />
+        <View style={[styles.intro, { backgroundColor: subtle, borderColor: border }]}>
+          <View style={styles.introIcon}>
+            <MaterialIcons color={foreground} name="inventory-2" size={22} />
           </View>
-          <View className="min-w-0 flex-1 gap-0.5">
-            <Text className="text-base font-medium text-foreground">Create product</Text>
-            <Text className="text-foreground-secondary text-xs leading-5">
+          <View style={styles.introCopy}>
+            <Text style={[styles.title, { color: foreground }]}>Create product</Text>
+            <Text style={[styles.caption, { color: muted }]}>
               Add details now; batch and quantity can be updated afterward.
             </Text>
           </View>
@@ -123,28 +129,28 @@ export default function NewProductScreen() {
             <Card.Title>Product details</Card.Title>
             <Card.Description>Name, category, composition, and shelf location</Card.Description>
           </Card.Header>
-          <Card.Body className="gap-5">
+          <Card.Body style={styles.cardBody}>
             <TextField isRequired>
               <Label>Product name</Label>
               <Input autoFocus onChangeText={setName} placeholder="e.g. Panadol" value={name} />
             </TextField>
 
-            <View className="gap-2">
+            <View style={styles.fieldGroup}>
               <Label>Category</Label>
               {categories.length > 0 ? (
-                <View className="flex-row flex-wrap gap-2">
+                <View style={styles.chips}>
                   {categories.map((category) => (
-                    <Chip
+                    <ChoiceChip
                       key={category.id}
-                      color={categoryId === category.id ? "accent" : "default"}
                       onPress={() => setCategoryId(category.id)}
+                      selected={categoryId === category.id}
                     >
                       {category.name}
-                    </Chip>
+                    </ChoiceChip>
                   ))}
                 </View>
               ) : (
-                <Text className="text-xs leading-5 text-muted">
+                <Text style={[styles.caption, { color: muted }]}>
                   The General category will be created automatically.
                 </Text>
               )}
@@ -158,12 +164,12 @@ export default function NewProductScreen() {
                 value={composition}
               />
             </TextField>
-            <View className="flex-row gap-3">
-              <TextField className="flex-1">
+            <View style={styles.row}>
+              <TextField style={styles.flex}>
                 <Label>Strength</Label>
                 <Input onChangeText={setStrength} placeholder="500mg" value={strength} />
               </TextField>
-              <TextField className="flex-1">
+              <TextField style={styles.flex}>
                 <Label>Aisle</Label>
                 <Input onChangeText={setAisle} placeholder="A-12" value={aisle} />
               </TextField>
@@ -171,12 +177,12 @@ export default function NewProductScreen() {
           </Card.Body>
         </Card>
 
-        <Card variant="accent">
+        <Card variant="secondary">
           <Card.Header>
             <Card.Title>Pack & pricing</Card.Title>
             <Card.Description>Prices are entered in PKR</Card.Description>
           </Card.Header>
-          <Card.Body className="gap-5">
+          <Card.Body style={styles.cardBody}>
             {tracksPacks ? (
               <TextField isRequired>
                 <Label>Units per pack</Label>
@@ -188,14 +194,14 @@ export default function NewProductScreen() {
                 />
               </TextField>
             ) : null}
-            <View className="flex-row gap-3">
+            <View style={styles.row}>
               {tracksPacks ? (
-                <TextField className="flex-1">
+                <TextField style={styles.flex}>
                   <Label>Pack price</Label>
                   <Input keyboardType="decimal-pad" onChangeText={setPackPrice} value={packPrice} />
                 </TextField>
               ) : null}
-              <TextField className="flex-1">
+              <TextField style={styles.flex}>
                 <Label>Unit price</Label>
                 <Input keyboardType="decimal-pad" onChangeText={setUnitPrice} value={unitPrice} />
               </TextField>
@@ -210,3 +216,31 @@ export default function NewProductScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  caption: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
+  cardBody: { gap: 20 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  content: { gap: 24, paddingBottom: 48, paddingHorizontal: 20, paddingTop: 16 },
+  fieldGroup: { gap: 8 },
+  flex: { flex: 1 },
+  intro: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+  },
+  introCopy: { flex: 1, gap: 2, minWidth: 0 },
+  introIcon: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  root: { flex: 1 },
+  row: { flexDirection: "row", gap: 12 },
+  title: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
+});

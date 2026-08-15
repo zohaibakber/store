@@ -1,9 +1,11 @@
 import {
   createContext,
+  type Context,
   type PropsWithChildren,
   use,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -24,20 +26,28 @@ import {
   type UpdateBatchQuantityInput,
 } from "@/lib/products";
 
-type ProductsContextValue = {
+type ProductsData = {
   products: ReadonlyArray<MobileProduct>;
   categories: ReadonlyArray<MobileCategory>;
+};
+
+type ProductsStatus = {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
   lastUpdatedAt: Date | null;
+};
+
+type ProductsActions = {
   refresh: () => Promise<void>;
   saveScannedProduct: (input: SaveScannedProductInput) => Promise<MobileProduct>;
   saveBatchDetails: (input: SaveBatchDetailsInput) => Promise<MobileBatch>;
   updateBatchQuantity: (input: UpdateBatchQuantityInput) => Promise<MobileBatch>;
 };
 
-const ProductsContext = createContext<ProductsContextValue | null>(null);
+const ProductsDataContext = createContext<ProductsData | null>(null);
+const ProductsStatusContext = createContext<ProductsStatus | null>(null);
+const ProductsActionsContext = createContext<ProductsActions | null>(null);
 
 export function ProductsProvider({ children, userId }: PropsWithChildren<{ userId: string }>) {
   const [products, setProducts] = useState<ReadonlyArray<MobileProduct>>([]);
@@ -143,28 +153,39 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
     return () => subscription.remove();
   }, [refresh]);
 
+  const data = useMemo(() => ({ products, categories }), [categories, products]);
+  const status = useMemo(
+    () => ({ loading, refreshing, error, lastUpdatedAt }),
+    [error, lastUpdatedAt, loading, refreshing],
+  );
+  const actions = useMemo(
+    () => ({ refresh, saveScannedProduct, saveBatchDetails, updateBatchQuantity }),
+    [refresh, saveBatchDetails, saveScannedProduct, updateBatchQuantity],
+  );
+
   return (
-    <ProductsContext
-      value={{
-        products,
-        categories,
-        loading,
-        refreshing,
-        error,
-        lastUpdatedAt,
-        refresh,
-        saveScannedProduct,
-        saveBatchDetails,
-        updateBatchQuantity,
-      }}
-    >
-      {children}
-    </ProductsContext>
+    <ProductsActionsContext value={actions}>
+      <ProductsDataContext value={data}>
+        <ProductsStatusContext value={status}>{children}</ProductsStatusContext>
+      </ProductsDataContext>
+    </ProductsActionsContext>
   );
 }
 
-export function useProducts() {
-  const context = use(ProductsContext);
-  if (!context) throw new Error("useProducts must be used within ProductsProvider.");
-  return context;
+const useRequiredContext = <T,>(context: Context<T | null>, name: string) => {
+  const value = use(context);
+  if (!value) throw new Error(`${name} must be used within ProductsProvider.`);
+  return value;
+};
+
+export function useProductData() {
+  return useRequiredContext(ProductsDataContext, "useProductData");
+}
+
+export function useProductStatus() {
+  return useRequiredContext(ProductsStatusContext, "useProductStatus");
+}
+
+export function useProductActions() {
+  return useRequiredContext(ProductsActionsContext, "useProductActions");
 }
