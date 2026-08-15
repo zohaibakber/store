@@ -1,14 +1,17 @@
 import { useUser } from "@clerk/expo";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
-import { useThemeColor } from "heroui-native";
-import { Alert as HeroAlert } from "heroui-native/alert";
-import { Button } from "heroui-native/button";
-import { Card } from "heroui-native/card";
-import { Separator } from "heroui-native/separator";
-import { Spinner } from "heroui-native/spinner";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { Brand } from "@/components/brand";
+import {
+  Alert as HeroAlert,
+  Button,
+  Card,
+  Separator,
+  Spinner,
+  useThemeColor,
+} from "@/components/mobile-ui";
 import { ProductAnalytics } from "@/components/product-analytics";
 import { useProducts } from "@/features/products/products-provider";
 
@@ -23,7 +26,12 @@ const greetingFor = (hour: number) => {
 export default function HomeScreen() {
   const { user } = useUser();
   const { products, loading, refreshing, error, refresh } = useProducts();
-  const [accent, background] = useThemeColor(["accent", "background"]);
+  const [accent, background, warning, danger] = useThemeColor([
+    "accent",
+    "background",
+    "warning",
+    "danger",
+  ]);
   const firstName = user?.firstName?.trim() || user?.fullName?.trim().split(/\s+/)[0];
   const attention = products
     .filter((product) => product.stock <= LOW_STOCK_THRESHOLD)
@@ -33,7 +41,7 @@ export default function HomeScreen() {
   return (
     <ScrollView
       className="bg-background"
-      contentContainerClassName="gap-6 px-4 pb-10 pt-3"
+      contentContainerClassName="gap-6 px-4 pb-32 pt-3"
       contentInsetAdjustmentBehavior="automatic"
       refreshControl={
         <RefreshControl
@@ -45,16 +53,24 @@ export default function HomeScreen() {
         />
       }
     >
-      <View className="gap-4">
-        <Brand />
-        <View className="gap-1">
-          <Text className="text-2xl leading-8 font-medium text-foreground">
-            {greetingFor(new Date().getHours())}
-            {firstName ? `, ${firstName}` : ""}
-          </Text>
-          <Text className="text-sm leading-5 font-normal text-muted">
-            Here’s what needs your attention today.
-          </Text>
+      <Brand />
+
+      <View className="relative overflow-hidden rounded-[28px] bg-accent px-5 py-5">
+        <View className="bg-blue/25 absolute -top-12 -right-8 size-32 rounded-full" />
+        <View className="bg-purple/20 absolute -bottom-16 -left-8 size-32 rounded-full" />
+        <View className="relative gap-4">
+          <View className="size-11 items-center justify-center rounded-2xl bg-accent-foreground/15">
+            <MaterialIcons color="#ffffff" name="insights" size={24} />
+          </View>
+          <View className="gap-1">
+            <Text className="text-2xl leading-8 font-medium text-accent-foreground">
+              {greetingFor(new Date().getHours())}
+              {firstName ? `, ${firstName}` : ""}
+            </Text>
+            <Text className="text-sm leading-5 text-accent-foreground/75">
+              Your inventory overview is ready.
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -72,10 +88,10 @@ export default function HomeScreen() {
       ) : null}
 
       {loading ? (
-        <Card variant="secondary">
+        <Card variant="accent">
           <Card.Body className="min-h-36 items-center justify-center gap-3">
             <Spinner color="default" />
-            <Text className="text-sm font-normal text-muted">Syncing your inventory…</Text>
+            <Text className="text-accent-soft-foreground text-sm">Syncing your inventory…</Text>
           </Card.Body>
         </Card>
       ) : (
@@ -103,8 +119,14 @@ export default function HomeScreen() {
                   {index > 0 ? <Separator /> : null}
                   <View className="flex-row items-center gap-3 px-4 py-3.5">
                     <View
-                      className={`size-2 rounded-full ${product.stock === 0 ? "bg-danger" : "bg-warning"}`}
-                    />
+                      className={`size-10 items-center justify-center rounded-2xl ${product.stock === 0 ? "bg-danger-soft" : "bg-warning-soft"}`}
+                    >
+                      <MaterialIcons
+                        color={product.stock === 0 ? danger : warning}
+                        name={product.stock === 0 ? "error-outline" : "inventory-2"}
+                        size={19}
+                      />
+                    </View>
                     <View className="min-w-0 flex-1 gap-0.5">
                       <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
                         {product.name}
@@ -128,7 +150,7 @@ export default function HomeScreen() {
                 </Text>
                 <Text className="text-center text-xs leading-5 font-normal text-muted">
                   {products.length === 0
-                    ? "Add products from the desktop app and pull down to sync them here."
+                    ? "Tap the add button to create a product with a form or scan its label."
                     : "Nothing is currently low or out of stock."}
                 </Text>
               </View>
@@ -137,7 +159,7 @@ export default function HomeScreen() {
         </Card>
       </View>
 
-      <Button className="w-full" onPress={() => router.push("/products")}>
+      <Button className="w-full" variant="secondary" onPress={() => router.push("/products")}>
         Browse inventory
       </Button>
     </ScrollView>

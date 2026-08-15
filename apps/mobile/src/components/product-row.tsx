@@ -1,8 +1,7 @@
-import { Card } from "heroui-native/card";
-import { Chip } from "heroui-native/chip";
 import { memo } from "react";
 import { Text, View } from "react-native";
 
+import { Chip } from "@/components/mobile-ui";
 import { formatPrice } from "@/lib/products";
 
 type ProductRowProps = {
@@ -30,46 +29,43 @@ export const ProductRow = memo(function ProductRow({
   const secondary = [details, aisle ? `Aisle ${aisle}` : null].filter(Boolean).join(" · ");
 
   return (
-    <Card
+    <View
       accessibilityLabel={`${name}, ${stockLabel}, ${formatPrice(unitPrice)}`}
-      className="mb-3"
-      variant="default"
+      className="bg-surface mb-2.5 flex-row items-center gap-3 rounded-3xl border border-border px-3 py-3"
     >
-      <Card.Body className="flex-row items-center gap-3 p-3">
-        <View className="bg-surface-secondary size-11 items-center justify-center rounded-xl">
-          <Text className="text-base font-medium text-muted">
-            {name.slice(0, 1).toLocaleUpperCase()}
+      <View className="bg-blue-soft size-11 items-center justify-center rounded-2xl">
+        <Text className="text-blue text-base font-medium">
+          {name.slice(0, 1).toLocaleUpperCase()}
+        </Text>
+      </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <View className="flex-row items-center gap-2">
+          <Text className="shrink text-sm font-medium text-foreground" numberOfLines={1}>
+            {name}
           </Text>
-        </View>
-        <View className="min-w-0 flex-1 gap-1">
-          <View className="flex-row items-center gap-2">
-            <Text className="shrink text-sm font-medium text-foreground" numberOfLines={1}>
-              {name}
-            </Text>
-            {!visible ? (
-              <Chip color="default" size="sm" variant="soft">
-                Hidden
-              </Chip>
-            ) : null}
-          </View>
-          <Text className="text-xs font-normal text-muted" numberOfLines={1}>
-            {category}
-          </Text>
-          {secondary ? (
-            <Text className="text-xs font-normal text-muted" numberOfLines={1}>
-              {secondary}
-            </Text>
+          {!visible ? (
+            <Chip color="default" size="sm" variant="soft">
+              Hidden
+            </Chip>
           ) : null}
         </View>
-        <View className="max-w-[38%] items-end gap-2">
-          <Text className="font-mono text-sm text-foreground" numberOfLines={1}>
-            {formatPrice(unitPrice)}
+        <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+          {category}
+        </Text>
+        {secondary ? (
+          <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+            {secondary}
           </Text>
-          <Chip color={stockColor} size="sm" variant="soft">
-            {stockLabel}
-          </Chip>
-        </View>
-      </Card.Body>
-    </Card>
+        ) : null}
+      </View>
+      <View className="max-w-[38%] items-end gap-2">
+        <Text className="font-mono text-sm text-foreground" numberOfLines={1}>
+          {formatPrice(unitPrice)}
+        </Text>
+        <Chip color={stockColor} size="sm" variant="soft">
+          {stockLabel}
+        </Chip>
+      </View>
+    </View>
   );
 });

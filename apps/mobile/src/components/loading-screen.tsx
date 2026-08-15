@@ -1,5 +1,6 @@
-import { Spinner } from "heroui-native/spinner";
 import { View } from "react-native";
+
+import { Spinner } from "@/components/mobile-ui";
 
 export function LoadingScreen() {
   return (

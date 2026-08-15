@@ -1,8 +1,10 @@
+import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
 import { apiOrigin, fetchWorkspaceSession, nativeAuthHeaders } from "@/lib/auth-client";
+import { type MobileSyncOperation, reattributePendingOperations } from "@/lib/mobile-sync-queue";
 import {
   applyProductSyncChanges,
   assertSyncProgress,
@@ -25,16 +27,7 @@ type SyncEntityChange = {
   row: Record<string, unknown>;
 };
 
-type SyncOperation = {
-  operationId: string;
-  organizationId: string;
-  deviceId: string;
-  actorUserId: string;
-  clientSequence: number;
-  occurredAt: number;
-  payloadHash: string;
-  changes: ReadonlyArray<SyncEntityChange>;
-};
+type SyncOperation = MobileSyncOperation<SyncEntityChange>;
 
 type SyncAcknowledgement = {
   operationId: string;
@@ -354,7 +347,7 @@ const requestPage = async (
         organizationId,
         deviceId: id,
         clientPlatform: "mobile",
-        clientVersion: "0.1.0",
+        clientVersion: Constants.expoConfig?.version ?? "0.3.14",
         cursor,
         operations,
       }),
@@ -421,6 +414,7 @@ const loadInventoryState = async (organizationId: string): Promise<InventoryStat
 
 const exchangeInventory = async (organizationId: string): Promise<InventoryState> => {
   const stableDeviceId = await persistentDeviceId();
+  const userId = await authenticatedUserId();
   let hasMore = true;
   let pageCount = 0;
   let conflictMessage: string | null = null;
@@ -429,18 +423,23 @@ const exchangeInventory = async (organizationId: string): Promise<InventoryState
     if (pageCount >= MAX_SYNC_PAGES) throw new Error("Inventory sync returned too many pages.");
     const prepared = await withInventoryLock(async () => {
       const state = await loadInventoryState(organizationId);
+      if (state.mutationState) {
+        const migrated = await reattributePendingOperations(
+          state.mutationState.pendingOperations,
+          userId,
+          payloadHash,
+        );
+        if (migrated.changed) {
+          state.mutationState.pendingOperations = migrated.operations;
+          await persistMutationState(state.mutationState);
+        }
+      }
       const outgoing = selectPendingOperations(state.mutationState?.pendingOperations ?? []);
       const deviceId =
         outgoing.length > 0 ? (state.mutationState?.deviceId ?? stableDeviceId) : stableDeviceId;
       return { cursor: state.cursor, deviceId, outgoing };
     });
     const { cursor, deviceId, outgoing } = prepared;
-    if (outgoing.length > 0) {
-      const userId = await authenticatedUserId();
-      if (outgoing.some((operation) => operation.actorUserId !== userId))
-        throw new Error("Pending inventory changes belong to a different signed-in user.");
-    }
-
     let page: SyncResponse;
     try {
       page = await requestPage(organizationId, deviceId, cursor, outgoing);
@@ -638,8 +637,12 @@ const enqueueOperation = async (
           pendingOperations: [],
         } satisfies StoredMutationState)
       : existingMutationState;
-  if (mutationState.pendingOperations.some((operation) => operation.actorUserId !== actorUserId))
-    throw new Error("Pending inventory changes belong to a different signed-in user.");
+  const migrated = await reattributePendingOperations(
+    mutationState.pendingOperations,
+    actorUserId,
+    payloadHash,
+  );
+  mutationState.pendingOperations = migrated.operations;
 
   const unhashed = {
     operationId: Crypto.randomUUID(),

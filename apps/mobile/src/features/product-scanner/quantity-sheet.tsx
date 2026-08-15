@@ -1,10 +1,7 @@
-import { Alert as HeroAlert } from "heroui-native/alert";
-import { Button } from "heroui-native/button";
-import { Input } from "heroui-native/input";
-import { Label } from "heroui-native/label";
-import { TextField } from "heroui-native/text-field";
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+
+import { Alert as HeroAlert, Button, Input, Label, TextField } from "@/components/mobile-ui";
 
 type QuantitySheetProps = {
   visible: boolean;

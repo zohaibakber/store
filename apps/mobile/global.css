@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "uniwind";
-@import "heroui-native/styles";
 
 @theme {
   --font-normal: "Inter_400Regular";
@@ -9,86 +8,115 @@
   --font-mono: "GeistMono_400Regular";
 }
 
+/*
+ * Tabaaq mobile design tokens. The layered surfaces and restrained chrome
+ * follow the native patterns used by T3 Code Mobile, while the teal, blue,
+ * amber, and violet roles make inventory state immediately scannable.
+ */
 @layer theme {
   @variant light {
-    --background: hsl(0 0% 100%);
-    --foreground: hsl(0 0% 15%);
+    --background: #f2f6fa;
+    --foreground: #10233d;
+    --foreground-secondary: #40536b;
 
-    --surface: hsl(0 0% 100%);
+    --surface: #ffffff;
     --surface-foreground: var(--foreground);
-    --surface-secondary: hsl(0 0% 96%);
+    --surface-secondary: #eaf0f6;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: hsl(0 0% 92%);
+    --surface-tertiary: #dfe7f0;
     --surface-tertiary-foreground: var(--foreground);
 
-    --overlay: hsl(0 0% 100%);
+    --overlay: #ffffff;
     --overlay-foreground: var(--foreground);
-    --backdrop: hsl(0 0% 0% / 32%);
-    --muted: hsl(0 0% 41%);
-    --default: hsl(0 0% 96%);
+    --backdrop: rgb(7 24 42 / 36%);
+    --muted: #65758b;
+    --default: #eaf0f6;
     --default-foreground: var(--foreground);
 
-    --accent: hsl(0 0% 15%);
-    --accent-foreground: hsl(0 0% 98%);
+    --accent: #0f766e;
+    --accent-foreground: #ffffff;
+    --accent-soft: #ccfbf1;
+    --accent-soft-foreground: #0f5f59;
+    --accent-border: #99f6e4;
 
-    --field-background: hsl(0 0% 100%);
+    --blue: #2563eb;
+    --blue-soft: #dbeafe;
+    --purple: #7c3aed;
+    --purple-soft: #ede9fe;
+
+    --field-background: #ffffff;
     --field-foreground: var(--foreground);
-    --field-placeholder: var(--muted);
-    --field-border: hsl(0 0% 90%);
+    --field-placeholder: #8190a3;
+    --field-border: #cfdae6;
 
-    --success: hsl(160 84% 39%);
-    --success-foreground: hsl(0 0% 100%);
-    --warning: hsl(38 92% 50%);
-    --warning-foreground: hsl(0 0% 15%);
-    --danger: hsl(0 84% 60%);
-    --danger-foreground: hsl(0 0% 100%);
+    --success: #15803d;
+    --success-soft: #dcfce7;
+    --success-foreground: #ffffff;
+    --warning: #c45b05;
+    --warning-soft: #ffedd5;
+    --warning-foreground: #ffffff;
+    --danger: #dc2626;
+    --danger-soft: #fee2e2;
+    --danger-foreground: #ffffff;
 
-    --segment: hsl(0 0% 100%);
+    --segment: #ffffff;
     --segment-foreground: var(--foreground);
-    --border: hsl(0 0% 92%);
-    --separator: hsl(0 0% 92%);
+    --border: rgb(16 35 61 / 9%);
+    --separator: rgb(16 35 61 / 8%);
     --focus: var(--accent);
-    --link: var(--foreground);
+    --link: #0f766e;
   }
 
   @variant dark {
-    --background: hsl(0 0% 9%);
-    --foreground: hsl(0 0% 96%);
+    --background: #07121f;
+    --foreground: #edf6ff;
+    --foreground-secondary: #b4c2d2;
 
-    --surface: hsl(0 0% 11%);
+    --surface: #0e1d2c;
     --surface-foreground: var(--foreground);
-    --surface-secondary: hsl(0 0% 13%);
+    --surface-secondary: #142638;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: hsl(0 0% 16%);
+    --surface-tertiary: #1b3045;
     --surface-tertiary-foreground: var(--foreground);
 
-    --overlay: hsl(0 0% 11%);
+    --overlay: #0e1d2c;
     --overlay-foreground: var(--foreground);
-    --backdrop: hsl(0 0% 0% / 48%);
-    --muted: hsl(0 0% 51%);
-    --default: hsl(0 0% 13%);
+    --backdrop: rgb(0 0 0 / 56%);
+    --muted: #8fa3b8;
+    --default: #142638;
     --default-foreground: var(--foreground);
 
-    --accent: hsl(0 0% 96%);
-    --accent-foreground: hsl(0 0% 15%);
+    --accent: #2dd4bf;
+    --accent-foreground: #052e2b;
+    --accent-soft: #123c3b;
+    --accent-soft-foreground: #7ce9dc;
+    --accent-border: #1e625f;
 
-    --field-background: hsl(0 0% 11%);
+    --blue: #60a5fa;
+    --blue-soft: #172f52;
+    --purple: #c4b5fd;
+    --purple-soft: #302451;
+
+    --field-background: #0e1d2c;
     --field-foreground: var(--foreground);
-    --field-placeholder: var(--muted);
-    --field-border: hsl(0 0% 16%);
+    --field-placeholder: #71869b;
+    --field-border: #23384c;
 
-    --success: hsl(160 84% 39%);
-    --success-foreground: hsl(0 0% 10%);
-    --warning: hsl(38 92% 50%);
-    --warning-foreground: hsl(0 0% 10%);
-    --danger: hsl(0 84% 64%);
-    --danger-foreground: hsl(0 0% 100%);
+    --success: #4ade80;
+    --success-soft: #143723;
+    --success-foreground: #052e16;
+    --warning: #fbbf24;
+    --warning-soft: #422e13;
+    --warning-foreground: #2e1b02;
+    --danger: #fb7185;
+    --danger-soft: #421c27;
+    --danger-foreground: #ffffff;
 
-    --segment: hsl(0 0% 13%);
+    --segment: #0e1d2c;
     --segment-foreground: var(--foreground);
-    --border: hsl(0 0% 15%);
-    --separator: hsl(0 0% 15%);
+    --border: rgb(225 239 255 / 8%);
+    --separator: rgb(225 239 255 / 7%);
     --focus: var(--accent);
-    --link: var(--foreground);
+    --link: #5eead4;
   }
 }

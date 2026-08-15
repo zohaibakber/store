@@ -1,15 +1,17 @@
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
-import { Alert as HeroAlert } from "heroui-native/alert";
-import { Button } from "heroui-native/button";
-import { Card } from "heroui-native/card";
-import { Chip } from "heroui-native/chip";
-import { Input } from "heroui-native/input";
-import { Label } from "heroui-native/label";
-import { TextField } from "heroui-native/text-field";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, ScrollView, Text, View } from "react-native";
 
+import {
+  Alert as HeroAlert,
+  Button,
+  Card,
+  Chip,
+  Input,
+  Label,
+  TextField,
+} from "@/components/mobile-ui";
 import { InlineTextCamera } from "@/features/product-scanner/inline-text-camera";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
 import { findProductMatch } from "@/features/product-scanner/product-match";

@@ -5,11 +5,10 @@ import {
   extractTextFromImage,
   isSupported as isTextRecognitionSupported,
 } from "expo-text-extractor";
-import { Button } from "heroui-native/button";
-import { Spinner } from "heroui-native/spinner";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { Button, Spinner } from "@/components/mobile-ui";
 import type { ProductScanMode } from "@/features/product-scanner/types";
 
 type InlineTextCameraProps = {
