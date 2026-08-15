@@ -53,6 +53,7 @@
     "effect": "catalog:",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
+    "electron-store": "^8.2.0",
     "happy-dom": "^20.11.1",
     "react": "^19.2.8",
     "react-day-picker": "^10.0.1",

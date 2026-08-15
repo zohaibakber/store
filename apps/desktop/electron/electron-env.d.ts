@@ -9,6 +9,9 @@ declare namespace NodeJS {
 
 interface Window {
   offlineStore?: import("@store/contracts").OfflineStoreApi;
+  electronTheme?: {
+    setSource: (source: "dark" | "light" | "system") => void;
+  };
   auth?: {
     getSession: () => Promise<import("@store/contracts").WorkspaceSnapshot>;
     adoptSession: (token: string | null) => Promise<import("@store/contracts").WorkspaceSnapshot>;
@@ -29,13 +32,5 @@ interface Window {
     onEvent: (
       callback: (event: import("@store/contracts/updater").UpdaterEvent) => void,
     ) => () => void;
-  };
-  windowControls?: {
-    minimize: () => void;
-    toggleMaximize: () => Promise<boolean>;
-    isMaximized: () => Promise<boolean>;
-    isFullScreen: () => Promise<boolean>;
-    onFullScreenChange: (callback: (isFullScreen: boolean) => void) => () => void;
-    close: () => void;
   };
 }

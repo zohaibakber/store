@@ -26,29 +26,9 @@ contextBridge.exposeInMainWorld("serverApi", {
   }): Promise<InvoiceExtraction> => ipcRenderer.invoke("server:uploads", input),
 });
 
-contextBridge.exposeInMainWorld("windowControls", {
-  minimize() {
-    ipcRenderer.send("window-controls:minimize");
-  },
-  toggleMaximize() {
-    return ipcRenderer.invoke("window-controls:toggle-maximize") as Promise<boolean>;
-  },
-  isMaximized() {
-    return ipcRenderer.invoke("window-controls:is-maximized") as Promise<boolean>;
-  },
-  isFullScreen() {
-    return ipcRenderer.invoke("window-controls:is-full-screen") as Promise<boolean>;
-  },
-  onFullScreenChange(callback: (isFullScreen: boolean) => void) {
-    const listener = (_event: Electron.IpcRendererEvent, isFullScreen: boolean) => {
-      callback(isFullScreen);
-    };
-    ipcRenderer.on("window-controls:full-screen-changed", listener);
-
-    return () => ipcRenderer.off("window-controls:full-screen-changed", listener);
-  },
-  close() {
-    ipcRenderer.send("window-controls:close");
+contextBridge.exposeInMainWorld("electronTheme", {
+  setSource(source: "dark" | "light" | "system") {
+    ipcRenderer.send("theme:set-source", source);
   },
 });
 

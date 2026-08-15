@@ -1,6 +1,5 @@
 import * as React from "react";
 
-import { WindowControls } from "@/components/app/window-controls";
 import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -61,9 +60,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   return (
     <div className="relative flex min-h-svh flex-col">
-      <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center px-2 [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag]">
-        <WindowControls />
-      </header>
+      <header className="absolute inset-x-0 top-0 z-10 h-12 [-webkit-app-region:drag]" />
       <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 md:p-10">
         <AuthBrand />
         <div className="flex w-full justify-center">

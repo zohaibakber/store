@@ -56,6 +56,10 @@ export function ThemeProvider({
     root.style.colorScheme = theme;
   }, [theme]);
 
+  React.useEffect(() => {
+    window.electronTheme?.setSource(preference);
+  }, [preference]);
+
   const setTheme = React.useCallback(
     (next: ThemePreference) => {
       localStorage.setItem(storageKey, next);
