@@ -1,0 +1,108 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "a3934fb1-4fc0-45f0-9fd1-2bff5dad02b7",
+  "prevIds": ["dddd9ef5-084b-468c-97cd-bd6c03de7bdd"],
+  "ddl": [
+    {
+      "name": "clerk_org_binding",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "clerkOrganizationId",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storeOrganizationId",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "clerkUserId",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "email",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "table": "clerk_org_binding"
+    },
+    {
+      "columns": ["clerkOrganizationId"],
+      "nameExplicit": false,
+      "name": "clerk_org_binding_pk",
+      "table": "clerk_org_binding",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "storeOrganizationId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "clerk_org_binding_store_organization_id_idx",
+      "entityType": "indexes",
+      "table": "clerk_org_binding"
+    },
+    {
+      "columns": [
+        {
+          "value": "email",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "clerk_org_binding_email_idx",
+      "entityType": "indexes",
+      "table": "clerk_org_binding"
+    }
+  ],
+  "renames": []
+}

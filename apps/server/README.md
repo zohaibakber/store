@@ -8,9 +8,9 @@ The Cloudflare Worker exposes:
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
-Clerk verifies session JWTs (`Authorization: Bearer`). D1 `AUTH_DB` keeps a
-`clerk_org_binding` table plus the previous Better Auth identity tables so the first
-Clerk org for an email can keep the existing Durable Object name. Each organization's
+Clerk verifies session JWTs (`Authorization: Bearer`). D1 `AUTH_DB` keeps only a
+`clerk_org_binding` table so migrated Clerk organizations retain their existing Durable Object
+names. Each organization's
 inventory and sync log live in its own SQLite-backed Durable Object through
 `ORGANIZATION_STORE` — named by the **store** organization id, never the Clerk org id.
 The desktop communicates through authenticated HTTP. Foreground clients poll `/api/sync`

@@ -46,7 +46,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 
   return (
     <>
-      <SignIn appearance={clerkAppearance} routing="virtual" />
+      <SignIn appearance={clerkAppearance} routing="hash" />
       {bridgeError ? (
         <Alert className="mt-6" variant="error">
           <AlertTitle>Sign-in is not ready</AlertTitle>

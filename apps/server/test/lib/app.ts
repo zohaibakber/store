@@ -166,7 +166,7 @@ export const appFor = (
     try {
       return await handler(
         new Request(new URL(path, "http://localhost"), init),
-        Context.add(testRuntimeContext, ServerRuntime, runtime),
+        testRuntimeContext,
       );
     } finally {
       await dispose();

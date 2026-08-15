@@ -1,5 +1,12 @@
-export { CreateOrganization, SignIn, SignUp } from "@clerk/clerk-react";
-export { useAuth, useClerk, useOrganization, useOrganizationList } from "@clerk/electron/react";
+export {
+  CreateOrganization,
+  SignIn,
+  SignUp,
+  useAuth,
+  useClerk,
+  useOrganization,
+  useOrganizationList,
+} from "@clerk/electron/react";
 
 export const clerkAppearance = {
   variables: {
