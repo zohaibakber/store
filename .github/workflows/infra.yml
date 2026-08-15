@@ -50,6 +50,11 @@ jobs:
                  "Set it on the GitHub Environment before deploying."
             exit 1
           fi
+          if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
+            echo "::error::VITE_CLERK_PUBLISHABLE_KEY is empty for stage '${{ inputs.stage }}'." \
+                 "Set it on the GitHub Environment or web sign-in cannot load Clerk."
+            exit 1
+          fi
           echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
@@ -61,6 +66,7 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
         run: bun alchemy "${{ inputs.action }}" --stage "${{ inputs.stage }}" --yes
@@ -74,6 +80,9 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
 
       - name: Attach production website domain
         if: inputs.stage == 'prod' && inputs.action == 'deploy'
@@ -89,3 +98,6 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}

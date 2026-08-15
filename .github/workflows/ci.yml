@@ -76,6 +76,11 @@ jobs:
                  "(Production for main, Development for pull requests)."
             exit 1
           fi
+          if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
+            echo "::error::VITE_CLERK_PUBLISHABLE_KEY is empty." \
+                 "Set it on the GitHub Environment used by this job or web sign-in cannot load Clerk."
+            exit 1
+          fi
           echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
@@ -87,6 +92,7 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
       - name: Deploy ${{ env.STAGE }}
         run: bun alchemy deploy --stage "${STAGE}" --yes
@@ -100,6 +106,9 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -118,6 +127,9 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
