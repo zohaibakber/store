@@ -1,8 +1,7 @@
-import { Card } from "heroui-native/card";
-import { Separator } from "heroui-native/separator";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { Card } from "@/components/mobile-ui";
 import { formatPrice, type MobileProduct } from "@/lib/products";
 
 const LOW_STOCK_THRESHOLD = 10;
@@ -22,43 +21,34 @@ export function ProductAnalytics({ products }: ProductAnalyticsProps) {
   }
 
   return (
-    <Card variant="secondary">
-      <Card.Body className="gap-4 p-4">
-        <View className="flex-row items-stretch">
-          <Metric label="Products" value={String(products.length)} />
-          <Separator orientation="vertical" />
-          <Metric
-            label="Low stock"
-            tone={lowStock > 0 ? "warning" : undefined}
-            value={String(lowStock)}
-          />
-          <Separator orientation="vertical" />
-          <Metric
-            label="Out"
-            tone={outOfStock > 0 ? "danger" : undefined}
-            value={String(outOfStock)}
-          />
-        </View>
-        <Separator />
-        <Pressable
-          accessibilityLabel={showValue ? "Hide stock value" : "Show stock value"}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: showValue }}
-          className="flex-row items-center justify-between gap-4"
-          onPress={() => setShowValue((current) => !current)}
-        >
-          <View className="gap-0.5">
-            <Text className="text-xs font-normal text-muted">Stock value</Text>
-            <Text className="text-xs font-normal text-muted">
-              {showValue ? "Tap to hide" : "Tap to reveal"}
+    <View className="gap-3">
+      <View className="flex-row gap-2.5">
+        <Metric label="Products" tone="blue" value={String(products.length)} />
+        <Metric label="Low stock" tone="warning" value={String(lowStock)} />
+        <Metric label="Out" tone="danger" value={String(outOfStock)} />
+      </View>
+      <Card variant="default">
+        <Card.Body className="px-4 py-3.5">
+          <Pressable
+            accessibilityLabel={showValue ? "Hide stock value" : "Show stock value"}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showValue }}
+            className="flex-row items-center justify-between gap-4"
+            onPress={() => setShowValue((current) => !current)}
+          >
+            <View className="gap-0.5">
+              <Text className="text-sm font-medium text-foreground">Stock value</Text>
+              <Text className="text-xs text-muted">
+                {showValue ? "Tap to hide" : "Tap to reveal"}
+              </Text>
+            </View>
+            <Text className="font-mono text-base text-accent" numberOfLines={1}>
+              {showValue ? formatPrice(stockValue) : "••••••"}
             </Text>
-          </View>
-          <Text className="font-mono text-base text-foreground" numberOfLines={1}>
-            {showValue ? formatPrice(stockValue) : "••••••"}
-          </Text>
-        </Pressable>
-      </Card.Body>
-    </Card>
+          </Pressable>
+        </Card.Body>
+      </Card>
+    </View>
   );
 }
 
@@ -69,15 +59,21 @@ function Metric({
 }: {
   label: string;
   value: string;
-  tone?: "danger" | "warning";
+  tone: "blue" | "danger" | "warning";
 }) {
   const valueClass =
-    tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-foreground";
+    tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-blue";
+  const backgroundClass =
+    tone === "danger"
+      ? "border-danger/15 bg-danger-soft"
+      : tone === "warning"
+        ? "border-warning/15 bg-warning-soft"
+        : "border-blue/15 bg-blue-soft";
 
   return (
-    <View className="flex-1 items-center gap-1 px-2">
-      <Text className={`font-mono text-lg ${valueClass}`}>{value}</Text>
-      <Text className="text-xs font-normal text-muted" numberOfLines={1}>
+    <View className={`flex-1 gap-2 rounded-3xl border px-3 py-4 ${backgroundClass}`}>
+      <Text className={`font-mono text-2xl ${valueClass}`}>{value}</Text>
+      <Text className="text-foreground-secondary text-xs font-medium" numberOfLines={1}>
         {label}
       </Text>
     </View>

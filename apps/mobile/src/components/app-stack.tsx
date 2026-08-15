@@ -1,10 +1,13 @@
 import { Stack } from "expo-router";
-import { useThemeColor } from "heroui-native";
 import type { ReactNode } from "react";
+
+import { useThemeColor } from "@/components/mobile-ui";
 
 export function AppStack({ title, children }: { title: string; children?: ReactNode }) {
   const background = useThemeColor("background");
   const foreground = useThemeColor("foreground");
+  const surface = useThemeColor("surface");
+  const accent = useThemeColor("accent");
 
   return (
     <Stack
@@ -12,8 +15,8 @@ export function AppStack({ title, children }: { title: string; children?: ReactN
         contentStyle: { backgroundColor: background },
         headerBackTitle: "Back",
         headerShadowVisible: false,
-        headerStyle: { backgroundColor: background },
-        headerTintColor: foreground,
+        headerStyle: { backgroundColor: surface },
+        headerTintColor: accent,
         headerTitleStyle: { color: foreground, fontFamily: "Inter_500Medium" },
       }}
     >

@@ -5,8 +5,8 @@ import { useUniwind } from "uniwind";
 export function Brand() {
   const { theme } = useUniwind();
   const isDark = theme === "dark";
-  const mark = isDark ? "#F5F5F5" : "#262626";
-  const glyph = isDark ? "#262626" : "#FAFAFA";
+  const mark = isDark ? "#2DD4BF" : "#0F766E";
+  const glyph = isDark ? "#052E2B" : "#FFFFFF";
 
   return (
     <View className="flex-row items-center gap-2">
@@ -18,7 +18,10 @@ export function Brand() {
         <Path d="M580 382v68M546 416h68" stroke={mark} strokeLinecap="round" strokeWidth={22} />
         <Circle cx={615} cy={217} fill={mark} r={25} />
       </Svg>
-      <Text className="text-lg leading-6 font-medium text-foreground">Tabaaq</Text>
+      <View>
+        <Text className="text-lg leading-5 font-medium text-foreground">Tabaaq</Text>
+        <Text className="text-xs text-muted">Inventory, in sync</Text>
+      </View>
     </View>
   );
 }

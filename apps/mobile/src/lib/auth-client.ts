@@ -5,6 +5,7 @@ const developmentOrigin = Platform.select({
   default: "http://localhost:8787",
 });
 const productionOrigin = "https://tabaaq.zohaibakber.com";
+export const mobileNativeOrigin = "com.tabaaq.mobile://app";
 
 type WorkspaceSnapshot = {
   readonly status: "authenticated" | "unauthenticated";
@@ -35,7 +36,10 @@ export const setAccessTokenProvider = (provider: AccessTokenProvider) => {
 
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {
   const token = await accessTokenProvider();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {
+    "expo-origin": mobileNativeOrigin,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 };
 
 export const fetchWorkspaceSession = async (): Promise<WorkspaceSnapshot> => {

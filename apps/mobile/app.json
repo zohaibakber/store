@@ -3,11 +3,10 @@
     "name": "Tabaaq",
     "slug": "tabaaq",
     "scheme": "com.tabaaq.mobile",
-    "version": "0.3.13",
+    "version": "0.3.14",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tabaaq.mobile"
@@ -23,6 +22,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      ["@clerk/expo", { "theme": "./clerk-theme.json" }],
       [
         "expo-camera",
         {
