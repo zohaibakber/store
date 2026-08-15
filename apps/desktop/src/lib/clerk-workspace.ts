@@ -37,11 +37,20 @@ export const createAndActivateOrganization = async (input: {
   readonly adoptSession: (token: string) => Promise<unknown>;
 }) => {
   const created = await input.createOrganization({ name: input.name });
-  await input.setActive(created.id);
-  const token = await input.getToken();
-  if (!token) throw new Error("The new organization session could not be activated.");
-  await input.adoptSession(token);
+  await activateOrganizationSession({ ...input, organizationId: created.id });
   return created;
+};
+
+export const activateOrganizationSession = async (input: {
+  readonly organizationId: string;
+  readonly setActive: (organizationId: string) => Promise<unknown>;
+  readonly getToken: () => Promise<string | null>;
+  readonly adoptSession: (token: string) => Promise<unknown>;
+}) => {
+  await input.setActive(input.organizationId);
+  const token = await input.getToken();
+  if (!token) throw new Error("The organization session could not be activated.");
+  await input.adoptSession(token);
 };
 
 /** Pushes the Clerk session JWT to the host so sync uses store org ids. */
