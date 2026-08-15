@@ -28,20 +28,15 @@ declare global {
         files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
       }): Promise<InvoiceExtraction>;
     };
+    electronTheme?: {
+      setSource: (source: "dark" | "light" | "system") => void;
+    };
     offlineStore?: OfflineStoreApi;
     updater?: {
       check: () => Promise<void>;
       download: () => Promise<void>;
       install: () => void;
       onEvent: (callback: (event: UpdaterEvent) => void) => () => void;
-    };
-    windowControls?: {
-      minimize: () => void;
-      toggleMaximize: () => Promise<boolean>;
-      isMaximized: () => Promise<boolean>;
-      isFullScreen: () => Promise<boolean>;
-      onFullScreenChange: (callback: (isFullScreen: boolean) => void) => () => void;
-      close: () => void;
     };
   }
 }

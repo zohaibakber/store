@@ -94,6 +94,10 @@ const CLERK_PUBLISHABLE_KEY = fallbackIfBlank(
 // only a fallback for remote changes, so running it every few seconds wastes a
 // network round-trip and SQLite work while the app is idle.
 const DESKTOP_SYNC_POLL_INTERVAL_MS = 60_000;
+const TITLE_BAR_HEIGHT = 40;
+const TITLE_BAR_COLOR = "#01000000";
+const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
+const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 const clerkBridge = createClerkBridge({
@@ -342,9 +346,24 @@ function registerServerIpc() {
 function createWindow() {
   win = new BrowserWindow({
     icon: appIconPath(),
-    frame: false,
     show: false,
+    autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4",
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: 18 },
+        }
+      : {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: {
+            color: TITLE_BAR_COLOR,
+            height: TITLE_BAR_HEIGHT,
+            symbolColor: nativeTheme.shouldUseDarkColors
+              ? TITLE_BAR_DARK_SYMBOL_COLOR
+              : TITLE_BAR_LIGHT_SYMBOL_COLOR,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       backgroundThrottling: true,
@@ -367,14 +386,6 @@ function createWindow() {
     if (!allowed.some((origin) => url.startsWith(origin))) event.preventDefault();
   });
 
-  win.on("enter-full-screen", () => {
-    win?.webContents.send("window-controls:full-screen-changed", true);
-  });
-
-  win.on("leave-full-screen", () => {
-    win?.webContents.send("window-controls:full-screen-changed", false);
-  });
-
   win.on("closed", () => {
     win = null;
   });
@@ -382,33 +393,25 @@ function createWindow() {
   void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));
 }
 
-ipcMain.on("window-controls:minimize", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.minimize();
-});
+nativeTheme.on("updated", () => {
+  if (!win || win.isDestroyed()) return;
 
-ipcMain.handle("window-controls:toggle-maximize", (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
-
-  if (window.isMaximized()) {
-    window.unmaximize();
-  } else {
-    window.maximize();
+  win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4");
+  if (process.platform !== "darwin") {
+    win.setTitleBarOverlay({
+      color: TITLE_BAR_COLOR,
+      height: TITLE_BAR_HEIGHT,
+      symbolColor: nativeTheme.shouldUseDarkColors
+        ? TITLE_BAR_DARK_SYMBOL_COLOR
+        : TITLE_BAR_LIGHT_SYMBOL_COLOR,
+    });
   }
-
-  return window.isMaximized();
 });
 
-ipcMain.handle("window-controls:is-maximized", (event) => {
-  return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
-});
-
-ipcMain.handle("window-controls:is-full-screen", (event) => {
-  return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
-});
-
-ipcMain.on("window-controls:close", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.close();
+ipcMain.on("theme:set-source", (_event, source: unknown) => {
+  if (source === "dark" || source === "light" || source === "system") {
+    nativeTheme.themeSource = source;
+  }
 });
 
 app.on("window-all-closed", () => {
