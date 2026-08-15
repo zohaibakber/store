@@ -14,17 +14,30 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const RETRY_CHECK_DELAY_MS = 30_000;
 const INITIAL_CHECK_DELAY_MS = 5_000;
+const PROGRESS_EVENT_INTERVAL_MS = 250;
 
 const providerError = (cause: unknown) =>
   cause instanceof Error ? cause : new Error(String(cause));
 
 const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
+  let lastProgressAt = 0;
+  let lastProgress = -1;
   const checking = () => listener({ type: "checking" });
   const available = (info: { version: string }) =>
     listener({ type: "available", version: info.version });
   const notAvailable = () => listener({ type: "not-available" });
-  const progress = (info: { percent: number }) =>
-    listener({ type: "progress", percent: info.percent });
+  const progress = (info: { percent: number }) => {
+    const percent = Math.min(100, Math.max(0, Math.round(info.percent)));
+    const now = Date.now();
+    if (
+      percent === lastProgress ||
+      (percent < 100 && now - lastProgressAt < PROGRESS_EVENT_INTERVAL_MS)
+    )
+      return;
+    lastProgress = percent;
+    lastProgressAt = now;
+    listener({ type: "progress", percent });
+  };
   const downloaded = (info: { version: string }) =>
     listener({ type: "downloaded", version: info.version });
   const error = (cause: Error) => listener({ type: "error", error: cause });

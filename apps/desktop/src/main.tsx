@@ -26,7 +26,13 @@ const createAppRouter = (initialAuth: InitialAuth) =>
     routeTree,
     context: { store, initialAuth },
     history: createHashHistory(),
-    defaultPreload: "intent",
+    // Route data comes from local SQLite. Speculatively loading it on hover can
+    // materialize an entire product catalog that the user never opens.
+    defaultPreload: false,
+    // Loader results can contain full product graphs. Keep inactive route data
+    // briefly for back navigation, then make it eligible for collection.
+    defaultGcTime: 60_000,
+    defaultPreloadGcTime: 15_000,
     scrollRestoration: true,
   });
 

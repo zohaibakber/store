@@ -2,7 +2,7 @@ import { ArrowDown01Icon, ArrowUp01Icon, CornerDownLeftIcon } from "@hugeicons/c
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
-import { prepare, rank } from "@store/persistence/product-ranking";
+import { normalize, prepare, rank } from "@store/persistence/product-ranking";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -46,6 +46,14 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
   const store = useStore();
 
   const open = useCallback(() => setIsOpen(true), []);
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setQuery("");
+    setProducts([]);
+    setError(null);
+  }, []);
+  const normalizedQuery = query.trim();
+  const fuzzySearchEnabled = normalizedQuery.length >= 2;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -82,23 +90,36 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
     };
   }, [isOpen, store]);
 
-  const prepared = useMemo(() => products.map(prepare), [products]);
+  // Trigram sets are the largest part of the search index. Build them only
+  // once the user enters a meaningful query, and release them when it closes.
+  const prepared = useMemo(
+    () => (fuzzySearchEnabled ? products.map(prepare) : []),
+    [fuzzySearchEnabled, products],
+  );
 
   const results = useMemo(() => {
-    const term = query.trim();
-    if (term.length === 0) return products.slice(0, RESULT_LIMIT);
-    return rank(prepared, term, RESULT_LIMIT).map((entry) => entry.product);
-  }, [prepared, products, query]);
+    if (normalizedQuery.length === 0) return products.slice(0, RESULT_LIMIT);
+    if (!fuzzySearchEnabled) {
+      const term = normalize(normalizedQuery);
+      return products
+        .filter(
+          (product) =>
+            normalize(product.name).includes(term) ||
+            normalize(product.composition ?? "").includes(term),
+        )
+        .slice(0, RESULT_LIMIT);
+    }
+    return rank(prepared, normalizedQuery, RESULT_LIMIT).map((entry) => entry.product);
+  }, [fuzzySearchEnabled, normalizedQuery, prepared, products]);
 
   const handleOpenProduct = (product: Product) => {
-    setIsOpen(false);
-    setQuery("");
+    close();
     void navigate({ to: "/products/$productId", params: { productId: product.id } });
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    setIsOpen(nextOpen);
-    if (!nextOpen) setQuery("");
+    if (nextOpen) setIsOpen(true);
+    else close();
   };
 
   return (

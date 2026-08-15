@@ -89,4 +89,7 @@ test("choosing a product opens its page", async () => {
       params: { productId: "product-1" },
     }),
   );
+
+  openMenu();
+  await waitFor(() => expect(listProducts).toHaveBeenCalledTimes(2));
 });

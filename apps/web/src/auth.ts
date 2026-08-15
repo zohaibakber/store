@@ -11,12 +11,16 @@ export class RequestError extends Error {
   }
 }
 
-const unauthenticated = (isOnline: boolean): WorkspaceSnapshot => ({
+const unauthenticated = (
+  isOnline: boolean,
+  workspaceError: string | null = null,
+): WorkspaceSnapshot => ({
   status: "unauthenticated",
   user: null,
   activeOrganization: null,
   organizations: [],
   isOnline,
+  workspaceError,
 });
 
 const navigatorOnline = () => (typeof navigator === "undefined" ? true : navigator.onLine);
@@ -60,12 +64,22 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     try {
       const snapshot = await this.apiRequest<WorkspaceSnapshot>("/api/auth/session");
       if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user)
-        return this.#publish(unauthenticated(true));
+        return this.#publish(
+          unauthenticated(
+            true,
+            "Your sign-in completed, but the server could not validate the session.",
+          ),
+        );
       return this.#publish({ ...snapshot, isOnline: true });
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403))
-        return this.#publish(unauthenticated(true));
-      return this.#publish({ ...this.#snapshot, isOnline: false });
+        return this.#publish(unauthenticated(true, error.message));
+      return this.#publish({
+        ...this.#snapshot,
+        isOnline: false,
+        workspaceError:
+          error instanceof Error ? error.message : "The session server could not be reached.",
+      });
     }
   }
 
