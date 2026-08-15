@@ -1,4 +1,4 @@
-import { InvoiceExtraction } from "@store/contracts";
+import { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
