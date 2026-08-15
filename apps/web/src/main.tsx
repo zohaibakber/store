@@ -5,7 +5,11 @@ import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
 import { bootstrapAuth, setAuthSessionBridge, type InitialAuth } from "@/lib/auth";
-import { ClerkWorkspaceSync, clerkPublishableKey } from "@/lib/clerk-workspace";
+import {
+  ClerkActiveOrganization,
+  ClerkWorkspaceSync,
+  clerkPublishableKey,
+} from "@/lib/clerk-workspace";
 import { StoreProvider, type Store } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
@@ -46,6 +50,7 @@ async function start() {
     <React.StrictMode>
       {clerkPublishableKey ? (
         <ClerkProvider publishableKey={clerkPublishableKey}>
+          <ClerkActiveOrganization />
           <ClerkWorkspaceSync />
           {app}
         </ClerkProvider>
