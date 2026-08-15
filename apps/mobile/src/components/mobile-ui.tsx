@@ -1,51 +1,72 @@
-import { createContext, forwardRef, type ComponentProps, type ReactNode, use } from "react";
+import {
+  Button as ExpoButton,
+  Host,
+  Switch as ExpoSwitch,
+  TextInput as ExpoTextInput,
+  type TextInputRef,
+  useNativeState,
+} from "@expo/ui";
+import {
+  createContext,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+  use,
+  useEffect,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
-  Switch as NativeSwitch,
+  StyleSheet,
   Text,
-  TextInput,
   View,
+  type KeyboardTypeOptions,
+  type ReturnKeyTypeOptions,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { useUniwind } from "uniwind";
 
-const join = (...values: ReadonlyArray<string | undefined | false>) =>
-  values.filter(Boolean).join(" ");
-
 const palette = {
   light: {
-    background: "#f2f6fa",
-    foreground: "#10233d",
-    muted: "#65758b",
+    background: "#ffffff",
+    foreground: "#262626",
+    muted: "#737373",
     surface: "#ffffff",
-    "surface-secondary": "#eaf0f6",
-    "surface-tertiary": "#dfe7f0",
-    separator: "rgba(16, 35, 61, 0.08)",
-    accent: "#0f766e",
-    "accent-foreground": "#ffffff",
-    "accent-soft": "#ccfbf1",
-    blue: "#2563eb",
-    purple: "#7c3aed",
+    "surface-secondary": "#fafafa",
+    "surface-tertiary": "#f5f5f5",
+    separator: "rgba(0, 0, 0, 0.08)",
+    accent: "#262626",
+    "accent-foreground": "#fafafa",
+    "accent-soft": "#f5f5f5",
+    blue: "#525252",
+    purple: "#525252",
     warning: "#c45b05",
+    "warning-soft": "#ffedd5",
     danger: "#dc2626",
+    "danger-soft": "#fee2e2",
     success: "#15803d",
+    "success-soft": "#dcfce7",
   },
   dark: {
-    background: "#07121f",
-    foreground: "#edf6ff",
-    muted: "#8fa3b8",
-    surface: "#0e1d2c",
-    "surface-secondary": "#142638",
-    "surface-tertiary": "#1b3045",
-    separator: "rgba(225, 239, 255, 0.07)",
-    accent: "#2dd4bf",
-    "accent-foreground": "#052e2b",
-    "accent-soft": "#123c3b",
-    blue: "#60a5fa",
-    purple: "#c4b5fd",
+    background: "#111111",
+    foreground: "#f5f5f5",
+    muted: "#a3a3a3",
+    surface: "#141414",
+    "surface-secondary": "#171717",
+    "surface-tertiary": "#1f1f1f",
+    separator: "rgba(255, 255, 255, 0.06)",
+    accent: "#f5f5f5",
+    "accent-foreground": "#262626",
+    "accent-soft": "#1f1f1f",
+    blue: "#d4d4d4",
+    purple: "#d4d4d4",
     warning: "#fbbf24",
+    "warning-soft": "#422e13",
     danger: "#fb7185",
+    "danger-soft": "#421c27",
     success: "#4ade80",
+    "success-soft": "#143723",
   },
 } as const;
 
@@ -63,57 +84,55 @@ export function useThemeColor(
   return typeof input === "string" ? colors[input] : input.map((key) => colors[key]);
 }
 
-type ButtonProps = ComponentProps<typeof Pressable> & {
+type ButtonProps = {
   children: ReactNode;
-  className?: string;
   isDisabled?: boolean;
+  onPress?: () => void;
   size?: "sm" | "md";
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
   variant?: "primary" | "secondary" | "outline" | "ghost" | "danger-soft";
 };
 
-const buttonClasses = {
-  primary: "bg-accent",
-  secondary: "bg-surface-tertiary",
-  outline: "border border-border bg-transparent",
-  ghost: "bg-transparent",
-  "danger-soft": "bg-danger/12",
-};
-
-const buttonTextClasses = {
-  primary: "text-accent-foreground",
-  secondary: "text-foreground",
-  outline: "text-foreground",
-  ghost: "text-foreground",
-  "danger-soft": "text-danger",
-};
+const nativeButtonVariant = {
+  primary: "filled",
+  secondary: "outlined",
+  outline: "outlined",
+  ghost: "text",
+  "danger-soft": "outlined",
+} as const;
 
 export function Button({
   children,
-  className,
   isDisabled,
+  onPress,
   size = "md",
+  style,
+  testID,
   variant = "primary",
-  ...props
 }: ButtonProps) {
+  const { theme } = useUniwind();
+  const label =
+    typeof children === "string" || typeof children === "number" ? String(children) : undefined;
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      className={join(
-        "items-center justify-center rounded-2xl active:opacity-70",
-        size === "sm" ? "min-h-10 px-3" : "min-h-12 px-4",
-        buttonClasses[variant],
-        isDisabled && "opacity-45",
-        className,
-      )}
-      disabled={isDisabled}
-      {...props}
+    <Host
+      colorScheme={theme === "dark" ? "dark" : "light"}
+      matchContents={{ vertical: true }}
+      seedColor={variant === "danger-soft" ? "#dc2626" : "#525252"}
+      style={style}
     >
-      {typeof children === "string" ? (
-        <Text className={join("text-sm font-medium", buttonTextClasses[variant])}>{children}</Text>
-      ) : (
-        children
-      )}
-    </Pressable>
+      <ExpoButton
+        disabled={isDisabled}
+        label={label}
+        onPress={onPress}
+        style={size === "sm" ? styles.nativeButtonSmall : styles.nativeButton}
+        testID={testID}
+        variant={nativeButtonVariant[variant]}
+      >
+        {label ? undefined : children}
+      </ExpoButton>
+    </Host>
   );
 }
 
@@ -121,41 +140,42 @@ type CardProps = ComponentProps<typeof View> & {
   children: ReactNode;
   variant?: "default" | "secondary" | "accent" | "blue" | "purple";
 };
-const CardRoot = ({ children, className, variant = "default", ...props }: CardProps) => (
-  <View
-    className={join(
-      "overflow-hidden rounded-3xl border border-border",
-      variant === "secondary"
-        ? "bg-surface-secondary"
-        : variant === "accent"
-          ? "border-accent-border bg-accent-soft"
-          : variant === "blue"
-            ? "border-blue/15 bg-blue-soft"
-            : variant === "purple"
-              ? "border-purple/15 bg-purple-soft"
-              : "bg-surface",
-      className,
-    )}
-    {...props}
-  >
-    {children}
-  </View>
+const CardRoot = ({ children, style, variant = "default", ...props }: CardProps) => {
+  const [surface, secondary, separator] = useThemeColor([
+    "surface",
+    "surface-secondary",
+    "separator",
+  ]);
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: variant === "default" ? surface : secondary, borderColor: separator },
+        style,
+      ]}
+      {...props}
+    >
+      {children}
+    </View>
+  );
+};
+const CardBody = ({ style, ...props }: ComponentProps<typeof View>) => (
+  <View style={[styles.cardBody, style]} {...props} />
 );
-const CardBody = ({ className, ...props }: ComponentProps<typeof View>) => (
-  <View className={join("p-4", className)} {...props} />
+const CardHeader = ({ style, ...props }: ComponentProps<typeof View>) => (
+  <View style={[styles.cardHeader, style]} {...props} />
 );
-const CardHeader = ({ className, ...props }: ComponentProps<typeof View>) => (
-  <View className={join("gap-1 px-4 pt-4", className)} {...props} />
+const CardFooter = ({ style, ...props }: ComponentProps<typeof View>) => (
+  <View style={[styles.cardFooter, style]} {...props} />
 );
-const CardFooter = ({ className, ...props }: ComponentProps<typeof View>) => (
-  <View className={join("flex-row px-4 pb-4", className)} {...props} />
-);
-const CardTitle = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("text-base font-medium text-foreground", className)} {...props} />
-);
-const CardDescription = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("text-xs leading-5 text-muted", className)} {...props} />
-);
+const CardTitle = ({ style, ...props }: ComponentProps<typeof Text>) => {
+  const foreground = useThemeColor("foreground");
+  return <Text style={[styles.cardTitle, { color: foreground }, style]} {...props} />;
+};
+const CardDescription = ({ style, ...props }: ComponentProps<typeof Text>) => {
+  const muted = useThemeColor("muted");
+  return <Text style={[styles.cardDescription, { color: muted }, style]} {...props} />;
+};
 export const Card = Object.assign(CardRoot, {
   Body: CardBody,
   Description: CardDescription,
@@ -164,104 +184,221 @@ export const Card = Object.assign(CardRoot, {
   Title: CardTitle,
 });
 
-type ChipProps = ComponentProps<typeof Pressable> & {
+type ChoiceChipProps = Omit<ComponentProps<typeof Pressable>, "children"> & {
   children: ReactNode;
-  color?: "default" | "accent" | "danger" | "warning" | "success";
-  size?: "sm";
-  variant?: "soft";
+  selected: boolean;
 };
-export function Chip({ children, className, color = "default", ...props }: ChipProps) {
-  const colors = {
-    accent: "bg-accent text-accent-foreground",
-    danger: "bg-danger-soft text-danger",
-    default: "bg-surface-tertiary text-foreground",
-    success: "bg-success-soft text-success",
-    warning: "bg-warning-soft text-warning",
-  };
-  const [backgroundClass, textClass] = colors[color].split(" ");
+export function ChoiceChip({ children, selected, ...props }: ChoiceChipProps) {
+  const [accent, accentForeground, surface, foreground] = useThemeColor([
+    "accent",
+    "accent-foreground",
+    "surface-tertiary",
+    "foreground",
+  ]);
   return (
     <Pressable
-      className={join(
-        "min-h-8 justify-center rounded-full px-3 active:opacity-70",
-        backgroundClass,
-        className,
-      )}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          backgroundColor: selected ? accent : surface,
+          opacity: pressed ? 0.72 : 1,
+        },
+      ]}
       {...props}
     >
-      <Text className={join("text-xs font-medium", textClass)}>{children}</Text>
+      <Text style={[styles.chipText, { color: selected ? accentForeground : foreground }]}>
+        {children}
+      </Text>
     </Pressable>
   );
 }
 
+export function Badge({
+  children,
+  tone = "default",
+}: {
+  children: ReactNode;
+  tone?: "default" | "danger" | "warning" | "success";
+}) {
+  const [surface, foreground, danger, dangerSoft, warning, warningSoft, success, successSoft] =
+    useThemeColor([
+      "surface-tertiary",
+      "foreground",
+      "danger",
+      "danger-soft",
+      "warning",
+      "warning-soft",
+      "success",
+      "success-soft",
+    ]);
+  const colors = {
+    default: [surface, foreground],
+    danger: [dangerSoft, danger],
+    success: [successSoft, success],
+    warning: [warningSoft, warning],
+  } as const;
+  const [backgroundColor, color] = colors[tone];
+  return (
+    <View style={[styles.chip, { backgroundColor }]}>
+      <Text style={[styles.chipText, { color }]}>{children}</Text>
+    </View>
+  );
+}
+
 export const TextField = ({
-  className,
   isRequired: _isRequired,
+  style,
   ...props
 }: ComponentProps<typeof View> & { isRequired?: boolean }) => (
-  <View className={join("gap-2", className)} {...props} />
+  <View style={[styles.field, style]} {...props} />
 );
-export const Label = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("px-0.5 text-xs font-medium text-foreground", className)} {...props} />
-);
-export const Input = forwardRef<TextInput, ComponentProps<typeof TextInput>>(function Input(
-  { className, multiline, ...props },
+export const Label = ({ style, ...props }: ComponentProps<typeof Text>) => {
+  const foreground = useThemeColor("foreground");
+  return <Text style={[styles.label, { color: foreground }, style]} {...props} />;
+};
+type InputProps = {
+  accessibilityLabel?: string;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoFocus?: boolean;
+  editable?: boolean;
+  keyboardType?: KeyboardTypeOptions;
+  maxLength?: number;
+  multiline?: boolean;
+  numberOfLines?: number;
+  onChangeText?: (text: string) => void;
+  placeholder?: string;
+  ref?: Ref<TextInputRef>;
+  returnKeyType?: ReturnKeyTypeOptions;
+  secureTextEntry?: boolean;
+  selectTextOnFocus?: boolean;
+  testID?: string;
+  value?: string;
+};
+
+export function Input({
+  accessibilityLabel,
+  autoCapitalize,
+  autoFocus,
+  editable,
+  keyboardType,
+  maxLength,
+  multiline,
+  numberOfLines,
+  onChangeText,
+  placeholder,
   ref,
-) {
+  returnKeyType,
+  secureTextEntry,
+  selectTextOnFocus,
+  testID,
+  value = "",
+}: InputProps) {
+  const { theme } = useUniwind();
+  const nativeValue = useNativeState(value);
+  const colors = palette[theme === "dark" ? "dark" : "light"];
+
+  useEffect(() => {
+    if (nativeValue.value !== value) nativeValue.value = value;
+  }, [nativeValue, value]);
+
   return (
-    <TextInput
-      ref={ref}
-      className={join(
-        "min-h-13 rounded-2xl border border-field-border bg-field-background px-4 text-sm text-field-foreground focus:border-accent",
-        multiline && "min-h-24 py-3 text-top",
-        className,
-      )}
-      multiline={multiline}
-      placeholderTextColor="#737373"
-      {...props}
-    />
+    <Host
+      accessibilityLabel={accessibilityLabel}
+      accessible={Boolean(accessibilityLabel)}
+      colorScheme={theme === "dark" ? "dark" : "light"}
+      matchContents={{ vertical: true }}
+      seedColor="#525252"
+      style={multiline ? styles.inputHostMultiline : styles.inputHost}
+    >
+      <ExpoTextInput
+        autoCapitalize={autoCapitalize}
+        autoFocus={autoFocus}
+        editable={editable}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        ref={ref}
+        returnKeyType={returnKeyType}
+        secureTextEntry={secureTextEntry}
+        selectTextOnFocus={selectTextOnFocus}
+        selectionColor={colors.accent}
+        style={{
+          backgroundColor: colors.surface,
+          borderColor: colors.separator,
+          borderRadius: 10,
+          borderWidth: 1,
+          height: multiline ? 96 : 52,
+          paddingHorizontal: 14,
+          paddingVertical: multiline ? 12 : 0,
+        }}
+        testID={testID}
+        textStyle={{
+          color: colors.foreground,
+          fontFamily: "Inter_400Regular",
+          fontSize: 14,
+          lineHeight: 20,
+        }}
+        value={nativeValue}
+      />
+    </Host>
   );
-});
+}
 
 type AlertTone = "danger" | "success";
 const AlertToneContext = createContext<AlertTone>("danger");
 const AlertRoot = ({
   children,
-  className,
+  style,
   status = "danger",
   ...props
 }: ComponentProps<typeof View> & { status?: AlertTone }) => (
   <AlertToneContext value={status}>
+    <AlertSurface status={status} style={style} {...props}>
+      {children}
+    </AlertSurface>
+  </AlertToneContext>
+);
+const AlertSurface = ({
+  children,
+  status,
+  style,
+  ...props
+}: ComponentProps<typeof View> & { status: AlertTone }) => {
+  const [background, border] = useThemeColor([
+    status === "danger" ? "danger-soft" : "success-soft",
+    status === "danger" ? "danger" : "success",
+  ]);
+  return (
     <View
-      className={join(
-        "flex-row items-start gap-3 rounded-2xl px-4 py-3",
-        status === "danger"
-          ? "border border-danger/15 bg-danger-soft"
-          : "border border-success/15 bg-success-soft",
-        className,
-      )}
+      style={[styles.alert, { backgroundColor: background, borderColor: border }, style]}
       {...props}
     >
       {children}
     </View>
-  </AlertToneContext>
-);
-const AlertIndicator = () => {
-  const tone = use(AlertToneContext);
-  return (
-    <View
-      className={`mt-1 size-2 rounded-full ${tone === "danger" ? "bg-danger" : "bg-success"}`}
-    />
   );
 };
-const AlertContent = ({ className, ...props }: ComponentProps<typeof View>) => (
-  <View className={join("min-w-0 flex-1 gap-0.5", className)} {...props} />
+const AlertIndicator = () => {
+  const tone = use(AlertToneContext);
+  const color = useThemeColor(tone === "danger" ? "danger" : "success");
+  return <View style={[styles.alertIndicator, { backgroundColor: color }]} />;
+};
+const AlertContent = ({ style, ...props }: ComponentProps<typeof View>) => (
+  <View style={[styles.alertContent, style]} {...props} />
 );
-const AlertTitle = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("text-sm font-medium text-foreground", className)} {...props} />
-);
-const AlertDescription = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("text-xs leading-5 text-muted", className)} {...props} />
-);
+const AlertTitle = ({ style, ...props }: ComponentProps<typeof Text>) => {
+  const foreground = useThemeColor("foreground");
+  return <Text style={[styles.alertTitle, { color: foreground }, style]} {...props} />;
+};
+const AlertDescription = ({ style, ...props }: ComponentProps<typeof Text>) => {
+  const muted = useThemeColor("muted");
+  return <Text style={[styles.alertDescription, { color: muted }, style]} {...props} />;
+};
 export const Alert = Object.assign(AlertRoot, {
   Content: AlertContent,
   Description: AlertDescription,
@@ -289,22 +426,94 @@ export const Separator = ({
   orientation = "horizontal",
 }: {
   orientation?: "horizontal" | "vertical";
-}) => (
-  <View className={orientation === "vertical" ? "bg-separator mx-2 w-px" : "bg-separator h-px"} />
-);
+}) => {
+  const separator = useThemeColor("separator");
+  return (
+    <View
+      style={[
+        orientation === "vertical" ? styles.separatorVertical : styles.separator,
+        { backgroundColor: separator },
+      ]}
+    />
+  );
+};
 
 export function Switch({
   isSelected,
   onSelectedChange,
-  ...props
-}: Omit<ComponentProps<typeof NativeSwitch>, "value" | "onValueChange"> & {
+  testID,
+}: {
   isSelected: boolean;
   onSelectedChange: (selected: boolean) => void;
+  testID?: string;
+  accessibilityLabel?: string;
 }) {
-  return <NativeSwitch onValueChange={onSelectedChange} value={isSelected} {...props} />;
+  const { theme } = useUniwind();
+  return (
+    <Host colorScheme={theme === "dark" ? "dark" : "light"} matchContents seedColor="#525252">
+      <ExpoSwitch onValueChange={onSelectedChange} testID={testID} value={isSelected} />
+    </Host>
+  );
 }
 
-const LinkButtonLabel = ({ className, ...props }: ComponentProps<typeof Text>) => (
-  <Text className={join("text-sm font-medium text-foreground", className)} {...props} />
-);
-export const LinkButton = Object.assign(Button, { Label: LinkButtonLabel });
+const styles = StyleSheet.create({
+  alert: {
+    alignItems: "flex-start",
+    borderCurve: "continuous",
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  alertContent: { flex: 1, gap: 2, minWidth: 0 },
+  alertDescription: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
+  alertIndicator: { borderRadius: 4, height: 8, marginTop: 4, width: 8 },
+  alertTitle: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  card: {
+    borderCurve: "continuous",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+  },
+  cardBody: { padding: 16 },
+  cardDescription: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
+  cardFooter: { flexDirection: "row", paddingBottom: 16, paddingHorizontal: 16 },
+  cardHeader: { gap: 4, paddingHorizontal: 16, paddingTop: 16 },
+  cardTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
+  chip: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 32,
+    paddingHorizontal: 12,
+  },
+  chipText: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 16 },
+  field: { gap: 8 },
+  inputHost: {
+    alignSelf: "stretch",
+    height: 52,
+  },
+  inputHostMultiline: {
+    alignSelf: "stretch",
+    height: 96,
+  },
+  nativeButton: {
+    borderRadius: 10,
+    height: 48,
+  },
+  nativeButtonSmall: {
+    borderRadius: 10,
+    height: 40,
+  },
+  label: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    lineHeight: 16,
+    paddingHorizontal: 2,
+  },
+  separator: { height: StyleSheet.hairlineWidth },
+  separatorVertical: { marginHorizontal: 8, width: StyleSheet.hairlineWidth },
+});

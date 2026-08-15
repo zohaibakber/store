@@ -9,45 +9,44 @@
 }
 
 /*
- * Tabaaq mobile design tokens. The layered surfaces and restrained chrome
- * follow the native patterns used by T3 Code Mobile, while the teal, blue,
- * amber, and violet roles make inventory state immediately scannable.
+ * Tabaaq mobile mirrors the desktop neutral palette. Color is reserved for
+ * semantic inventory state; hierarchy comes from tone, spacing, and weight.
  */
 @layer theme {
   @variant light {
-    --background: #f2f6fa;
-    --foreground: #10233d;
-    --foreground-secondary: #40536b;
+    --background: #ffffff;
+    --foreground: #262626;
+    --foreground-secondary: #525252;
 
     --surface: #ffffff;
     --surface-foreground: var(--foreground);
-    --surface-secondary: #eaf0f6;
+    --surface-secondary: #fafafa;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: #dfe7f0;
+    --surface-tertiary: #f5f5f5;
     --surface-tertiary-foreground: var(--foreground);
 
     --overlay: #ffffff;
     --overlay-foreground: var(--foreground);
-    --backdrop: rgb(7 24 42 / 36%);
-    --muted: #65758b;
-    --default: #eaf0f6;
+    --backdrop: rgb(0 0 0 / 36%);
+    --muted: #737373;
+    --default: #f5f5f5;
     --default-foreground: var(--foreground);
 
-    --accent: #0f766e;
-    --accent-foreground: #ffffff;
-    --accent-soft: #ccfbf1;
-    --accent-soft-foreground: #0f5f59;
-    --accent-border: #99f6e4;
+    --accent: #262626;
+    --accent-foreground: #fafafa;
+    --accent-soft: #f5f5f5;
+    --accent-soft-foreground: #262626;
+    --accent-border: #e5e5e5;
 
-    --blue: #2563eb;
-    --blue-soft: #dbeafe;
-    --purple: #7c3aed;
-    --purple-soft: #ede9fe;
+    --blue: #525252;
+    --blue-soft: #f5f5f5;
+    --purple: #525252;
+    --purple-soft: #f5f5f5;
 
     --field-background: #ffffff;
     --field-foreground: var(--foreground);
     --field-placeholder: #8190a3;
-    --field-border: #cfdae6;
+    --field-border: #e5e5e5;
 
     --success: #15803d;
     --success-soft: #dcfce7;
@@ -61,46 +60,46 @@
 
     --segment: #ffffff;
     --segment-foreground: var(--foreground);
-    --border: rgb(16 35 61 / 9%);
-    --separator: rgb(16 35 61 / 8%);
+    --border: rgb(0 0 0 / 8%);
+    --separator: rgb(0 0 0 / 8%);
     --focus: var(--accent);
-    --link: #0f766e;
+    --link: #262626;
   }
 
   @variant dark {
-    --background: #07121f;
-    --foreground: #edf6ff;
-    --foreground-secondary: #b4c2d2;
+    --background: #111111;
+    --foreground: #f5f5f5;
+    --foreground-secondary: #d4d4d4;
 
-    --surface: #0e1d2c;
+    --surface: #141414;
     --surface-foreground: var(--foreground);
-    --surface-secondary: #142638;
+    --surface-secondary: #171717;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: #1b3045;
+    --surface-tertiary: #1f1f1f;
     --surface-tertiary-foreground: var(--foreground);
 
-    --overlay: #0e1d2c;
+    --overlay: #171717;
     --overlay-foreground: var(--foreground);
     --backdrop: rgb(0 0 0 / 56%);
-    --muted: #8fa3b8;
-    --default: #142638;
+    --muted: #a3a3a3;
+    --default: #1f1f1f;
     --default-foreground: var(--foreground);
 
-    --accent: #2dd4bf;
-    --accent-foreground: #052e2b;
-    --accent-soft: #123c3b;
-    --accent-soft-foreground: #7ce9dc;
-    --accent-border: #1e625f;
+    --accent: #f5f5f5;
+    --accent-foreground: #262626;
+    --accent-soft: #1f1f1f;
+    --accent-soft-foreground: #f5f5f5;
+    --accent-border: #2b2b2b;
 
-    --blue: #60a5fa;
-    --blue-soft: #172f52;
-    --purple: #c4b5fd;
-    --purple-soft: #302451;
+    --blue: #d4d4d4;
+    --blue-soft: #1f1f1f;
+    --purple: #d4d4d4;
+    --purple-soft: #1f1f1f;
 
-    --field-background: #0e1d2c;
+    --field-background: #141414;
     --field-foreground: var(--foreground);
-    --field-placeholder: #71869b;
-    --field-border: #23384c;
+    --field-placeholder: #737373;
+    --field-border: #2b2b2b;
 
     --success: #4ade80;
     --success-soft: #143723;
@@ -112,11 +111,11 @@
     --danger-soft: #421c27;
     --danger-foreground: #ffffff;
 
-    --segment: #0e1d2c;
+    --segment: #141414;
     --segment-foreground: var(--foreground);
-    --border: rgb(225 239 255 / 8%);
-    --separator: rgb(225 239 255 / 7%);
+    --border: rgb(255 255 255 / 6%);
+    --separator: rgb(255 255 255 / 6%);
     --focus: var(--accent);
-    --link: #5eead4;
+    --link: #f5f5f5;
   }
 }

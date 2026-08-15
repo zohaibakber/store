@@ -1,13 +1,16 @@
 import { useClerk, useUser } from "@clerk/expo";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { Button, FieldGroup, Host, ListItem, Switch, Text } from "@expo/ui";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import { Alert, ScrollView, Text, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import { Uniwind, useUniwind } from "uniwind";
 
-import { Brand } from "@/components/brand";
-import { Button, Card, Separator, Switch, useThemeColor } from "@/components/mobile-ui";
-import { useProducts } from "@/features/products/products-provider";
+import { useThemeColor } from "@/components/mobile-ui";
+import {
+  useProductActions,
+  useProductData,
+  useProductStatus,
+} from "@/features/products/products-provider";
 import { resetProductsSession } from "@/lib/products";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -19,12 +22,16 @@ export default function SettingsScreen() {
   const { user } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const { theme } = useUniwind();
-  const [accent, blue, purple] = useThemeColor(["accent", "blue", "purple"]);
-  const { products, refreshing, error, lastUpdatedAt, refresh } = useProducts();
+  const [background, foreground, muted] = useThemeColor(["background", "foreground", "muted"]);
+  const { products } = useProductData();
+  const { refreshing, error, lastUpdatedAt } = useProductStatus();
+  const { refresh } = useProductActions();
   const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";
   const userEmail = user?.primaryEmailAddress?.emailAddress;
-  const initial = (userName || "T").trim().slice(0, 1).toLocaleUpperCase();
   const version = Constants.expoConfig?.version ?? "0.1.0";
+  const syncDetail = lastUpdatedAt
+    ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
+    : "Inventory has not synced yet.";
 
   const signOut = () => {
     Alert.alert("Sign out?", "You can sign back in at any time.", [
@@ -43,119 +50,64 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView
-      className="bg-background"
-      contentContainerClassName="gap-6 px-4 pb-32 pt-3"
-      contentInsetAdjustmentBehavior="automatic"
-    >
-      <Brand />
+    <View style={[styles.root, { backgroundColor: background }]}>
+      <Host
+        colorScheme={theme === "dark" ? "dark" : "light"}
+        seedColor="#525252"
+        style={styles.host}
+        useViewportSizeMeasurement
+      >
+        <FieldGroup style={{ backgroundColor: background }}>
+          <FieldGroup.Section title="Account">
+            <ListItem supportingText={userEmail}>{userName}</ListItem>
+          </FieldGroup.Section>
 
-      <View className="gap-3">
-        <SectionLabel>Account</SectionLabel>
-        <Card variant="default">
-          <Card.Body className="flex-row items-center gap-3 p-4">
-            <View className="size-12 items-center justify-center rounded-2xl bg-accent">
-              <Text className="text-base font-medium text-accent-foreground">{initial}</Text>
-            </View>
-            <View className="min-w-0 flex-1 gap-0.5">
-              <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                {userName}
-              </Text>
-              <Text className="text-xs font-normal text-muted" numberOfLines={1}>
-                {userEmail}
-              </Text>
-            </View>
-          </Card.Body>
-        </Card>
-      </View>
+          <FieldGroup.Section title="Preferences">
+            <ListItem
+              supportingText="Follow a dark neutral appearance"
+              trailing={
+                <Switch
+                  onValueChange={(selected) => Uniwind.setTheme(selected ? "dark" : "light")}
+                  value={theme === "dark"}
+                />
+              }
+            >
+              Dark appearance
+            </ListItem>
+          </FieldGroup.Section>
 
-      <View className="gap-3">
-        <SectionLabel>Preferences</SectionLabel>
-        <Card variant="default">
-          <Card.Body className="p-0">
-            <View className="flex-row items-center gap-4 px-4 py-3.5">
-              <View className="bg-purple-soft size-10 items-center justify-center rounded-2xl">
-                <MaterialIcons color={purple} name="dark-mode" size={20} />
-              </View>
-              <View className="min-w-0 flex-1 gap-0.5">
-                <Text className="text-sm font-medium text-foreground">Dark appearance</Text>
-                <Text className="text-xs font-normal text-muted">
-                  Use a dark neutral appearance
-                </Text>
-              </View>
-              <Switch
-                accessibilityLabel="Dark appearance"
-                isSelected={theme === "dark"}
-                onSelectedChange={(selected) => Uniwind.setTheme(selected ? "dark" : "light")}
-              />
-            </View>
-          </Card.Body>
-        </Card>
-      </View>
+          <FieldGroup.Section title="Inventory sync">
+            <ListItem
+              supportingText={`${error ? "Needs attention" : "Up to date"} · ${syncDetail}`}
+            >
+              Sync status
+            </ListItem>
+            <ListItem onPress={() => void refresh()} supportingText="Refresh local inventory now">
+              {refreshing ? "Syncing…" : "Sync now"}
+            </ListItem>
+          </FieldGroup.Section>
 
-      <View className="gap-3">
-        <SectionLabel>Inventory sync</SectionLabel>
-        <Card variant="default">
-          <Card.Body className="p-0">
-            <View className="gap-1 px-4 py-3.5">
-              <View className="flex-row items-center justify-between gap-4">
-                <View className="flex-row items-center gap-3">
-                  <View className="bg-blue-soft size-10 items-center justify-center rounded-2xl">
-                    <MaterialIcons color={blue} name="sync" size={20} />
-                  </View>
-                  <Text className="text-sm font-medium text-foreground">Sync status</Text>
-                </View>
-                <Text className={`text-xs font-medium ${error ? "text-danger" : "text-success"}`}>
-                  {error ? "Needs attention" : "Up to date"}
-                </Text>
-              </View>
-              <Text className="text-xs leading-5 font-normal text-muted">
-                {lastUpdatedAt
-                  ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
-                  : "Inventory has not synced yet."}
-              </Text>
-            </View>
-            <Separator />
-            <View className="px-4 py-3.5">
-              <Button
-                className="w-full"
-                isDisabled={refreshing}
-                variant="secondary"
-                onPress={() => void refresh()}
-              >
-                {refreshing ? "Syncing…" : "Sync now"}
-              </Button>
-            </View>
-          </Card.Body>
-        </Card>
-      </View>
+          <FieldGroup.Section title="About">
+            <ListItem trailing={<Text textStyle={{ color: muted }}>{version}</Text>}>
+              App version
+            </ListItem>
+          </FieldGroup.Section>
 
-      <View className="gap-3">
-        <SectionLabel>About</SectionLabel>
-        <Card variant="default">
-          <Card.Body className="p-0">
-            <View className="flex-row items-center justify-between gap-4 px-4 py-3.5">
-              <View className="flex-row items-center gap-3">
-                <View className="bg-accent-soft size-10 items-center justify-center rounded-2xl">
-                  <MaterialIcons color={accent} name="info-outline" size={20} />
-                </View>
-                <Text className="text-sm font-medium text-foreground">App version</Text>
-              </View>
-              <Text className="font-mono text-xs text-muted">{version}</Text>
-            </View>
-          </Card.Body>
-        </Card>
-      </View>
-
-      <Button className="w-full" variant="danger-soft" onPress={signOut}>
-        Sign out
-      </Button>
-    </ScrollView>
+          <FieldGroup.Section>
+            <Button label="Sign out" onPress={signOut} variant="outlined" />
+            <Text
+              textStyle={{ color: foreground, fontSize: 12, lineHeight: 18, textAlign: "center" }}
+            >
+              Tabaaq keeps your inventory available offline and syncs changes when connected.
+            </Text>
+          </FieldGroup.Section>
+        </FieldGroup>
+      </Host>
+    </View>
   );
 }
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <Text className="px-1 text-xs font-medium tracking-wide text-muted uppercase">{children}</Text>
-  );
-}
+const styles = StyleSheet.create({
+  host: { flex: 1 },
+  root: { flex: 1 },
+});

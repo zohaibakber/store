@@ -4,7 +4,7 @@ import { AuthView } from "@clerk/expo/native";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { Modal, useColorScheme, View } from "react-native";
+import { Modal, StyleSheet, useColorScheme, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { MobileClerkProvider } from "@/lib/clerk-provider";
@@ -17,22 +17,22 @@ export default function RootLayout() {
           ...DarkTheme,
           colors: {
             ...DarkTheme.colors,
-            background: "#07121F",
-            border: "#23384C",
-            card: "#0E1D2C",
-            primary: "#2DD4BF",
-            text: "#EDF6FF",
+            background: "#111111",
+            border: "#2B2B2B",
+            card: "#141414",
+            primary: "#F5F5F5",
+            text: "#F5F5F5",
           },
         }
       : {
           ...DefaultTheme,
           colors: {
             ...DefaultTheme.colors,
-            background: "#F2F6FA",
-            border: "#CFDAE6",
+            background: "#FFFFFF",
+            border: "#E5E5E5",
             card: "#FFFFFF",
-            primary: "#0F766E",
-            text: "#10233D",
+            primary: "#262626",
+            text: "#262626",
           },
         };
 
@@ -67,10 +67,14 @@ function MobileAppShell({ theme }: { theme: typeof DefaultTheme }) {
         presentationStyle="fullScreen"
         visible={authOpen}
       >
-        <View collapsable={false} className="flex-1 overflow-hidden bg-background">
+        <View collapsable={false} style={styles.authContainer}>
           <AuthView isDismissible={false} mode="signInOrUp" onDismiss={() => setAuthOpen(false)} />
         </View>
       </Modal>
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  authContainer: { flex: 1, overflow: "hidden" },
+});

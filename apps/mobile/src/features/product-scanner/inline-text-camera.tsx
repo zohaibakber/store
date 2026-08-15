@@ -1,21 +1,19 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
-import {
-  extractTextFromImage,
-  isSupported as isTextRecognitionSupported,
-} from "expo-text-extractor";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Button, Spinner } from "@/components/mobile-ui";
+import { Button, Spinner, useThemeColor } from "@/components/mobile-ui";
+import {
+  extractTextFromImage,
+  isTextRecognitionSupported,
+} from "@/features/product-scanner/text-extractor";
 import type { ProductScanMode } from "@/features/product-scanner/types";
 
 type InlineTextCameraProps = {
   mode: ProductScanMode;
-  active: boolean;
-  disabled: boolean;
-  analyzing: boolean;
+  status: "ready" | "paused" | "syncing" | "analyzing";
   resetKey: number;
   onError: (message: string) => void;
   onCaptureStateChange: (capturing: boolean) => void;
@@ -31,9 +29,7 @@ const promptFor = (mode: ProductScanMode) =>
 
 export function InlineTextCamera({
   mode,
-  active,
-  disabled,
-  analyzing,
+  status,
   resetKey,
   onError,
   onCaptureStateChange,
@@ -45,6 +41,7 @@ export function InlineTextCamera({
   const [captureState, setCaptureState] = useState<CaptureState>("ready");
   const [lineCount, setLineCount] = useState(0);
   const camera = useRef<CameraView>(null);
+  const [surface, foreground, muted] = useThemeColor(["surface-secondary", "foreground", "muted"]);
 
   useEffect(() => {
     setCaptureState("ready");
@@ -52,13 +49,13 @@ export function InlineTextCamera({
   }, [mode, resetKey]);
 
   useEffect(() => {
-    if (active) return;
+    if (status !== "paused") return;
     setReady(false);
     setTorch(false);
-  }, [active]);
+  }, [status]);
 
   const capture = async () => {
-    if (!ready || disabled || analyzing || captureState === "reading" || !camera.current) return;
+    if (!ready || status !== "ready" || captureState === "reading" || !camera.current) return;
     if (!isTextRecognitionSupported) {
       onError("Text recognition is not available on this device.");
       return;
@@ -114,11 +111,11 @@ export function InlineTextCamera({
     }
   };
 
-  if (!active) {
+  if (status === "paused") {
     return (
-      <View className="bg-surface-secondary h-90 items-center justify-center gap-2 rounded-3xl px-8">
-        <Text className="text-center text-sm font-medium text-foreground">Camera paused</Text>
-        <Text className="text-center text-xs leading-5 font-normal text-muted">
+      <View style={[styles.fallback, { backgroundColor: surface }]}>
+        <Text style={[styles.fallbackTitle, { color: foreground }]}>Camera paused</Text>
+        <Text style={[styles.fallbackText, { color: muted }]}>
           Return to this screen to continue scanning.
         </Text>
       </View>
@@ -127,7 +124,7 @@ export function InlineTextCamera({
 
   if (!permission) {
     return (
-      <View className="bg-surface-secondary h-80 items-center justify-center rounded-3xl">
+      <View style={[styles.fallback, { backgroundColor: surface }]}>
         <Spinner color="default" />
       </View>
     );
@@ -135,12 +132,12 @@ export function InlineTextCamera({
 
   if (!permission.granted) {
     return (
-      <View className="bg-surface-secondary min-h-80 items-center justify-center gap-4 rounded-3xl px-8">
-        <View className="gap-1.5">
-          <Text className="text-center text-base font-medium text-foreground">
+      <View style={[styles.permission, { backgroundColor: surface }]}>
+        <View style={styles.permissionCopy}>
+          <Text style={[styles.permissionTitle, { color: foreground }]}>
             Camera access is needed
           </Text>
-          <Text className="text-center text-sm leading-5 font-normal text-muted">
+          <Text style={[styles.permissionText, { color: muted }]}>
             Tabaaq uses the camera only while you scan product-label text.
           </Text>
         </View>
@@ -153,24 +150,26 @@ export function InlineTextCamera({
     );
   }
 
-  const busy = captureState === "reading" || analyzing;
+  const busy = captureState === "reading" || status === "analyzing";
   const found = captureState === "found";
-  const feedbackTitle = disabled
-    ? "Syncing inventory…"
-    : analyzing
-      ? "Structuring product details…"
-      : captureState === "reading"
-        ? "Reading label on-device…"
-        : found
-          ? "Text detected"
-          : mode === "product"
-            ? "Ready for product label"
-            : "Ready for batch details";
-  const feedbackDetail = disabled
-    ? "Scanning unlocks when current products are ready"
-    : found
-      ? `${lineCount} ${lineCount === 1 ? "line" : "lines"} found`
-      : promptFor(mode);
+  const feedbackTitle =
+    status === "syncing"
+      ? "Syncing inventory…"
+      : status === "analyzing"
+        ? "Structuring product details…"
+        : captureState === "reading"
+          ? "Reading label on-device…"
+          : found
+            ? "Text detected"
+            : mode === "product"
+              ? "Ready for product label"
+              : "Ready for batch details";
+  const feedbackDetail =
+    status === "syncing"
+      ? "Scanning unlocks when current products are ready"
+      : found
+        ? `${lineCount} ${lineCount === 1 ? "line" : "lines"} found`
+        : promptFor(mode);
 
   return (
     <View style={styles.shell}>
@@ -207,7 +206,7 @@ export function InlineTextCamera({
         <Pressable
           accessibilityLabel={torch ? "Turn torch off" : "Turn torch on"}
           accessibilityRole="button"
-          disabled={disabled || busy}
+          disabled={status !== "ready" || busy}
           hitSlop={10}
           onPress={() => setTorch((current) => !current)}
           style={[styles.torch, torch ? styles.torchActive : null]}
@@ -223,11 +222,11 @@ export function InlineTextCamera({
           accessibilityHint={`Reads ${mode === "product" ? "product" : "batch and expiry"} text from the camera`}
           accessibilityLabel={busy ? "Reading label" : "Read label"}
           accessibilityRole="button"
-          disabled={!ready || disabled || busy}
+          disabled={!ready || status !== "ready" || busy}
           onPress={() => void capture()}
           style={({ pressed }) => [
             styles.shutterOuter,
-            !ready || disabled || busy ? styles.shutterDisabled : null,
+            !ready || status !== "ready" || busy ? styles.shutterDisabled : null,
             pressed ? styles.shutterPressed : null,
           ]}
         >
@@ -239,6 +238,49 @@ export function InlineTextCamera({
 }
 
 const styles = StyleSheet.create({
+  fallback: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 16,
+    gap: 8,
+    height: 360,
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  fallbackText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  fallbackTitle: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  permission: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: 16,
+    gap: 16,
+    minHeight: 320,
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  permissionCopy: { gap: 6 },
+  permissionText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  permissionTitle: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: "center",
+  },
   shell: {
     height: 360,
     overflow: "hidden",
