@@ -21,6 +21,7 @@
       "name": "@store/desktop",
       "version": "0.2.21",
       "dependencies": {
+        "@clerk/electron-passkeys": "0.0.3",
         "@fontsource-variable/geist-mono": "^5.3.0",
         "@libsql/client": "^0.17.4",
         "electron-updater": "^6.8.9",
@@ -29,7 +30,6 @@
       "devDependencies": {
         "@babel/core": "^8.0.1",
         "@base-ui/react": "^1.7.0",
-        "@clerk/clerk-react": "^5.61.3",
         "@clerk/electron": "^0.0.31",
         "@effect/vitest": "catalog:",
         "@electron/asar": "^4.2.1",
@@ -539,6 +539,16 @@
     "@clerk/clerk-react": ["@clerk/clerk-react@5.61.3", "", { "dependencies": { "@clerk/shared": "^3.47.2", "tslib": "2.8.1" }, "peerDependencies": { "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0", "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0" } }, "sha512-W21aNEeHtqh3xJLuW5g2ydben/1D5pSnxsl/kCnv0IY1zma7lO+aIJ7Br2bR4FKKkiu695mPnjtY+fvkQmCXBg=="],
 
     "@clerk/electron": ["@clerk/electron@0.0.31", "", { "dependencies": { "@clerk/clerk-js": "^6.29.0", "@clerk/react": "^6.14.2", "@clerk/shared": "^4.29.0", "tslib": "2.8.1" }, "peerDependencies": { "@clerk/electron-passkeys": "*", "electron": ">=28", "electron-store": "^8.2.0", "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0", "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0" }, "optionalPeers": ["@clerk/electron-passkeys", "electron-store", "react-dom"] }, "sha512-MavPGvVWFGZZiKNeJBK0IDtPZ1TOe4Q0BZiggkXhS60t/Fn1m2uK23I9JKbo0pp3xpKmrpJ8+rB6ru//yHL27g=="],
+
+    "@clerk/electron-passkeys": ["@clerk/electron-passkeys@0.0.3", "", { "optionalDependencies": { "@clerk/electron-passkeys-darwin-arm64": "0.0.3", "@clerk/electron-passkeys-darwin-x64": "0.0.3", "@clerk/electron-passkeys-win32-arm64-msvc": "0.0.3", "@clerk/electron-passkeys-win32-x64-msvc": "0.0.3" } }, "sha512-OHhIe88qDL+FxyBalXdXNHAS5eEramr6Rerp+6iNkfkjqT8rx4hHNmfpmjg5/T1/am8QfknbOBZkqoXZlCrjPg=="],
+
+    "@clerk/electron-passkeys-darwin-arm64": ["@clerk/electron-passkeys-darwin-arm64@0.0.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-oAlrd+GLqP0oREP3hNRc6yNZhXGaQgJss9iCWRQqXjpw1yZD1ZU+L+E2Gfg84vMj/NSUhxbU0Djy0RXhmeUwgg=="],
+
+    "@clerk/electron-passkeys-darwin-x64": ["@clerk/electron-passkeys-darwin-x64@0.0.3", "", { "os": "darwin", "cpu": "x64" }, "sha512-0UPAWQEni7o8gjWwd2sP97fPshJmT2w5b8eV/jOPVSP8NqIcFCm5yIFSEx1SfB53LGfzB01A4iEGi2pxiCHqyQ=="],
+
+    "@clerk/electron-passkeys-win32-arm64-msvc": ["@clerk/electron-passkeys-win32-arm64-msvc@0.0.3", "", { "os": "win32", "cpu": "arm64" }, "sha512-bbRvifm9A/gfPkwC1UyMyF9sYGEs0aen7J2kCcaOIW3K0PXcAbHtsR/gnx4dT0bjFdd21vSa2zlIdERvHc1BiA=="],
+
+    "@clerk/electron-passkeys-win32-x64-msvc": ["@clerk/electron-passkeys-win32-x64-msvc@0.0.3", "", { "os": "win32", "cpu": "x64" }, "sha512-gFaVqKlOKTF2SJ3lMwkZ0oonycQn93p1qSrp5kzzeZBeQ+tGB3gQnjXecrhQy21AzDUyWqVJJ8KrP2HRAwifWg=="],
 
     "@clerk/expo": ["@clerk/expo@4.2.8", "", { "dependencies": { "@clerk/clerk-js": "^6.29.0", "@clerk/react": "^6.14.2", "@clerk/shared": "^4.29.0", "base-64": "^1.0.0", "react-native-url-polyfill": "4.0.0", "tslib": "2.8.1" }, "peerDependencies": { "@clerk/expo-google-signin": ">=0.1.0", "@clerk/expo-passkeys": ">=0.0.6", "expo": ">=54 <58", "expo-apple-authentication": ">=7.0.0", "expo-auth-session": ">=5", "expo-constants": ">=12", "expo-crypto": ">=12", "expo-local-authentication": ">=13.5.0", "expo-secure-store": ">=12.4.0", "expo-web-browser": ">=12.5.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0", "react-native": ">=0.75" }, "optionalPeers": ["@clerk/expo-google-signin", "@clerk/expo-passkeys", "expo-apple-authentication", "expo-auth-session", "expo-constants", "expo-crypto", "expo-local-authentication", "expo-secure-store", "expo-web-browser", "react-dom"] }, "sha512-s8NuuOttswCePmWusSQARl408xph/NlBgFuqcR6Hbv/3KSeVWD7iZ02Z+g+qMJi8gd2TboifxBc1rIAmXskolw=="],
 

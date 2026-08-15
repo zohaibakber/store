@@ -9,33 +9,23 @@ import {
 
 const memoryStore = () => {
   const byClerk = new Map<string, OrganizationBinding>();
-  const byStore = new Map<string, OrganizationBinding>();
-  let legacy: { storeOrganizationId: string; name: string; slug: string; role: string } | null =
-    null;
 
   const commitBinding: OrganizationBindingStore["putBinding"] = async (input) => {
-    const binding = {
+    byClerk.set(input.clerkOrganizationId, {
       clerkOrganizationId: input.clerkOrganizationId,
       storeOrganizationId: input.storeOrganizationId,
-    };
-    byClerk.set(input.clerkOrganizationId, binding);
-    byStore.set(input.storeOrganizationId, binding);
+    });
   };
   let putBinding = commitBinding;
 
   const store: OrganizationBindingStore = {
     getByClerkOrganizationId: async (id) => byClerk.get(id) ?? null,
-    getByStoreOrganizationId: async (id) => byStore.get(id) ?? null,
-    findLegacyStoreOrganizationByEmail: async () => legacy,
     putBinding: (input) => putBinding(input),
   };
 
   return {
     store,
     commitBinding,
-    setLegacy: (value: typeof legacy) => {
-      legacy = value;
-    },
     setPutBinding: (next: OrganizationBindingStore["putBinding"]) => {
       putBinding = next;
     },
@@ -65,62 +55,14 @@ describe("resolveStoreOrganizationId", () => {
     });
   });
 
-  it("binds the first Clerk org for an email to the Better Auth organization id", async () => {
-    const { store, setLegacy } = memoryStore();
-    setLegacy({
-      storeOrganizationId: "org_better_auth",
-      name: "Tabaaq",
-      slug: "tabaaq",
-      role: "owner",
-    });
-
-    await expect(
-      resolveStoreOrganizationId(store, {
-        clerkOrganizationId: "org_clerk_1",
-        clerkUserId: "user_1",
-        email: "Owner@example.com",
-      }),
-    ).resolves.toEqual({
-      clerkOrganizationId: "org_clerk_1",
-      storeOrganizationId: "org_better_auth",
-      source: "legacy",
-    });
-  });
-
-  it("does not attach a second Clerk org to a store id that is already bound", async () => {
-    const { store, setLegacy } = memoryStore();
-    setLegacy({
-      storeOrganizationId: "org_better_auth",
-      name: "Tabaaq",
-      slug: "tabaaq",
-      role: "owner",
-    });
-    await resolveStoreOrganizationId(store, {
-      clerkOrganizationId: "org_clerk_1",
-      clerkUserId: "user_1",
-      email: "owner@example.com",
-    });
-
-    await expect(
-      resolveStoreOrganizationId(store, {
-        clerkOrganizationId: "org_clerk_2",
-        clerkUserId: "user_1",
-        email: "owner@example.com",
-      }),
-    ).resolves.toEqual({
-      clerkOrganizationId: "org_clerk_2",
-      storeOrganizationId: "org_clerk_2",
-      source: "new",
-    });
-  });
-
-  it("uses the Clerk organization id when there is no legacy inventory", async () => {
+  it("uses the Clerk organization id for a new organization", async () => {
     const { store } = memoryStore();
+
     await expect(
       resolveStoreOrganizationId(store, {
         clerkOrganizationId: "org_new",
         clerkUserId: "user_2",
-        email: "new@example.com",
+        email: " New@example.com ",
       }),
     ).resolves.toEqual({
       clerkOrganizationId: "org_new",
@@ -129,19 +71,11 @@ describe("resolveStoreOrganizationId", () => {
     });
   });
 
-  it("falls back to the Clerk org id if the legacy store id is claimed during insert", async () => {
-    const { store, setLegacy, setPutBinding, commitBinding } = memoryStore();
-    setLegacy({
-      storeOrganizationId: "org_better_auth",
-      name: "Tabaaq",
-      slug: "tabaaq",
-      role: "owner",
-    });
+  it("returns a binding created by a concurrent request", async () => {
+    const { store, setPutBinding, commitBinding } = memoryStore();
     setPutBinding(async (input) => {
-      if (input.storeOrganizationId === "org_better_auth") {
-        throw new Error("UNIQUE constraint failed: clerk_org_binding.storeOrganizationId");
-      }
-      return commitBinding(input);
+      await commitBinding({ ...input, storeOrganizationId: "org_existing" });
+      throw new Error("UNIQUE constraint failed: clerk_org_binding.clerkOrganizationId");
     });
 
     await expect(
@@ -152,9 +86,25 @@ describe("resolveStoreOrganizationId", () => {
       }),
     ).resolves.toEqual({
       clerkOrganizationId: "org_clerk_race",
-      storeOrganizationId: "org_clerk_race",
-      source: "new",
+      storeOrganizationId: "org_existing",
+      source: "existing",
     });
+  });
+
+  it("does not hide an insert failure when no binding was created", async () => {
+    const { store, setPutBinding } = memoryStore();
+    const failure = new Error("D1 unavailable");
+    setPutBinding(async () => {
+      throw failure;
+    });
+
+    await expect(
+      resolveStoreOrganizationId(store, {
+        clerkOrganizationId: "org_new",
+        clerkUserId: "user_1",
+        email: "owner@example.com",
+      }),
+    ).rejects.toBe(failure);
   });
 });
 

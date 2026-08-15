@@ -7,7 +7,6 @@ export {
   verifyClerkBearerToken,
 } from "./clerk";
 export type {
-  LegacyStoreOrganization,
   OrganizationBinding,
   OrganizationBindingStore,
   ResolvedStoreOrganization,

@@ -23,6 +23,7 @@ import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 
 import { AuthBroker } from "./auth";
+import { nativeClerkRequestHeaders, nativeClerkResponseHeaders } from "./clerk-headers";
 import {
   clerkFrontendApiHostname,
   desktopRendererOrigin,
@@ -117,10 +118,25 @@ const rendererCsp = makeDesktopContentSecurityPolicy({
 });
 
 function registerRendererCsp() {
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    callback({
+      requestHeaders: nativeClerkRequestHeaders(
+        details.url,
+        details.requestHeaders,
+        clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
+      ),
+    });
+  });
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = nativeClerkResponseHeaders(
+      details.url,
+      details.responseHeaders ?? {},
+      clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
+      desktopRendererOrigin(ELECTRON_PROTOCOL),
+    );
     callback({
       responseHeaders: {
-        ...details.responseHeaders,
+        ...responseHeaders,
         "Content-Security-Policy": [rendererCsp],
       },
     });

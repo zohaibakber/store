@@ -2,30 +2,17 @@
  * Durable Object instances are named with `getByName(storeOrganizationId)`.
  * That id used to be the Better Auth organization id. Clerk organization ids
  * are different, so a binding table keeps existing sqlite (cloud and local)
- * attached to the same name.
+ * attached to the same name without retaining the legacy auth database.
  */
 export interface OrganizationBinding {
   readonly clerkOrganizationId: string;
   readonly storeOrganizationId: string;
 }
 
-export interface LegacyStoreOrganization {
-  readonly storeOrganizationId: string;
-  readonly name: string;
-  readonly slug: string;
-  readonly role: string;
-}
-
 export interface OrganizationBindingStore {
   readonly getByClerkOrganizationId: (
     clerkOrganizationId: string,
   ) => Promise<OrganizationBinding | null>;
-  readonly getByStoreOrganizationId: (
-    storeOrganizationId: string,
-  ) => Promise<OrganizationBinding | null>;
-  readonly findLegacyStoreOrganizationByEmail: (
-    email: string,
-  ) => Promise<LegacyStoreOrganization | null>;
   readonly putBinding: (input: {
     readonly clerkOrganizationId: string;
     readonly storeOrganizationId: string;
@@ -34,7 +21,7 @@ export interface OrganizationBindingStore {
   }) => Promise<void>;
 }
 
-export type StoreOrganizationBindingSource = "existing" | "legacy" | "new";
+export type StoreOrganizationBindingSource = "existing" | "new";
 
 export interface ResolvedStoreOrganization {
   readonly clerkOrganizationId: string;
@@ -62,8 +49,6 @@ export const resolveStoreOrganizationId = async (
   }
 
   const email = normalizeEmail(input.email);
-  const legacy = email ? await store.findLegacyStoreOrganizationByEmail(email) : null;
-  const claimed = legacy ? await store.getByStoreOrganizationId(legacy.storeOrganizationId) : null;
   const bind = async (storeOrganizationId: string, source: StoreOrganizationBindingSource) => {
     await store.putBinding({
       clerkOrganizationId: input.clerkOrganizationId,
@@ -78,22 +63,17 @@ export const resolveStoreOrganizationId = async (
     } satisfies ResolvedStoreOrganization;
   };
 
-  if (legacy && !claimed) {
-    try {
-      return await bind(legacy.storeOrganizationId, "legacy");
-    } catch {
-      const raced = await store.getByClerkOrganizationId(input.clerkOrganizationId);
-      if (raced) {
-        return {
-          clerkOrganizationId: raced.clerkOrganizationId,
-          storeOrganizationId: raced.storeOrganizationId,
-          source: "existing",
-        };
-      }
-    }
+  try {
+    return await bind(input.clerkOrganizationId, "new");
+  } catch (cause) {
+    const raced = await store.getByClerkOrganizationId(input.clerkOrganizationId);
+    if (!raced) throw cause;
+    return {
+      clerkOrganizationId: raced.clerkOrganizationId,
+      storeOrganizationId: raced.storeOrganizationId,
+      source: "existing",
+    };
   }
-
-  return bind(input.clerkOrganizationId, "new");
 };
 
 export const mapClerkOrganizationRole = (role: string | undefined) => {

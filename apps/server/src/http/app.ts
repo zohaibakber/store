@@ -26,16 +26,22 @@ const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
 );
 
-const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
-  const runtime = yield* ServerRuntime;
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const snapshot = yield* runtime.loadWorkspace(new Headers(request.headers)).pipe(Effect.orDie);
-  return HttpServerResponse.jsonUnsafe(snapshot);
-});
+const AuthRoutes = HttpRouter.use((router) =>
+  Effect.gen(function* () {
+    // Route handlers run after this registration layer has finished. Capture
+    // the runtime now instead of requiring it from the later request context.
+    const runtime = yield* ServerRuntime;
+    const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const snapshot = yield* runtime
+        .loadWorkspace(new Headers(request.headers))
+        .pipe(Effect.orDie);
+      return HttpServerResponse.jsonUnsafe(snapshot);
+    });
 
-const AuthRoutes = Layer.mergeAll(
-  HttpRouter.add("GET", "/api/auth/session", handleSessionRequest),
-  HttpRouter.add("GET", "/api/auth/get-session", handleSessionRequest),
+    yield* router.add("GET", "/api/auth/session", handleSessionRequest);
+    yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
+  }),
 );
 
 const Cors = HttpRouter.middleware(

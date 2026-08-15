@@ -46,11 +46,18 @@ export default defineConfig({
     electron({
       main: {
         entry: "electron/main.ts",
-        // Native libSQL packages must remain external and unpacked from asar.
+        // Native libSQL and Clerk passkey packages must remain external and
+        // unpacked from asar. Bundling the passkey loader also breaks its
+        // __dirname-based platform binary lookup.
         vite: {
           build: {
             rolldownOptions: {
-              external: [/^@libsql(\/|$)/, "libsql", "electron-updater"],
+              external: [
+                /^@clerk\/electron-passkeys(\/|$|-)/,
+                /^@libsql(\/|$)/,
+                "libsql",
+                "electron-updater",
+              ],
             },
           },
         },

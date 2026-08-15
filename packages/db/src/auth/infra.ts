@@ -3,10 +3,8 @@ import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 
 /**
- * Identity and Clerk-to-store organization bindings. Users, sessions, and
- * memberships from the previous Better Auth install stay so existing Durable
- * Object names can be recovered by email. Inventory and the sync log live in
- * each organization's Durable Object SQLite instead.
+ * Clerk-to-store organization bindings. Clerk owns identity, sessions, and
+ * memberships; D1 only preserves stable Durable Object names for inventory.
  *
  * Wired the way Alchemy documents for D1 + Drizzle (`alchemy.run/cloudflare/data/d1-drizzle`):
  * `Drizzle.Schema` regenerates pending SQL from `schema.ts` on every deploy, and

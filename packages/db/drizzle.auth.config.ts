@@ -1,7 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 
-// Identity tables, stored in D1 (SQLite). Better Auth tables are retained so
-// Clerk orgs can bind to existing Durable Object names.
+// Clerk-to-store organization bindings, stored in D1 (SQLite).
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/auth/schema.ts",
