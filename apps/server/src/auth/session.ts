@@ -10,6 +10,7 @@ import {
   type AuthSession,
   type ClerkVerifyConfig,
 } from "@store/auth";
+import { matchesTrustedOrigin } from "@store/auth/security";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,27 @@ export interface ClerkAuthServices {
 }
 
 const authFailure = (message: string) => new AuthError({ message });
+
+/**
+ * Clerk's browser session JWTs carry an `azp` claim, while Electron and other
+ * native session JWTs do not. The native renderer proves its expected app
+ * origin through the privileged header added by the main process, so only
+ * disable Clerk's `azp` check for a configured native origin.
+ */
+export const clerkVerifyConfigForHeaders = (
+  headers: Headers,
+  config: ClerkVerifyConfig,
+): ClerkVerifyConfig => {
+  const origin = headers.get("origin");
+  if (origin && origin !== "null") return config;
+  const nativeOrigin = headers.get("electron-origin") ?? headers.get("expo-origin");
+  if (
+    !nativeOrigin ||
+    !config.authorizedParties?.some((party) => matchesTrustedOrigin(nativeOrigin, party))
+  )
+    return config;
+  return { ...config, authorizedParties: undefined };
+};
 
 const profileFromClaims = async (
   config: ClerkVerifyConfig,
@@ -77,7 +99,8 @@ export const authenticateHeaders = (
     if (!token) return null;
 
     const claims = yield* Effect.tryPromise({
-      try: () => verifyClerkBearerToken(token, services.config),
+      try: () =>
+        verifyClerkBearerToken(token, clerkVerifyConfigForHeaders(headers, services.config)),
       catch: (cause) =>
         authFailure(cause instanceof Error ? cause.message : "Clerk session token is invalid."),
     }).pipe(

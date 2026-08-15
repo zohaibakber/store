@@ -26,6 +26,19 @@ const setOutboxNextAttemptAt = (dataDir: string, nextAttemptAt: number | null) =
     Effect.runPromise,
   );
 
+const quarantineOutboxWithAuthenticationFailure = (dataDir: string) =>
+  Effect.gen(function* () {
+    const database = yield* LibsqlDrizzle.makeWithDefaults();
+    yield* database.update(syncOutbox).set({
+      attemptCount: QUARANTINE_ATTEMPTS,
+      nextAttemptAt: Date.now() + 60_000,
+      lastError: "Authentication is required. (HTTP 401)",
+    });
+  }).pipe(
+    Effect.provide(LibsqlClient.layer({ url: `file:${databaseFile(dataDir)}`, intMode: "number" })),
+    Effect.runPromise,
+  );
+
 const responseFor = (request: SyncRequest): SyncResponse => ({
   protocolVersion: 2,
   organizationId: request.organizationId,
@@ -751,6 +764,40 @@ test("a subsequent successful exchange clears the backoff and status", async () 
     },
     { syncTransport: transport },
   );
+});
+
+test("opening an authenticated store recovers operations quarantined by an expired token", async () => {
+  await withTestStore(async ({ dataDir, runtime, makeRuntime }) => {
+    await runtime.runPromise(
+      store((store) =>
+        store.createProduct({
+          name: "Recovered after authentication",
+          aisle: null,
+          composition: null,
+          strength: null,
+          packPrice: null,
+          unitPrice: null,
+        }),
+      ),
+    );
+    await runtime.dispose();
+    await quarantineOutboxWithAuthenticationFailure(dataDir);
+
+    const requests: Array<SyncRequest> = [];
+    const recovered = makeRuntime({
+      syncTransport: {
+        exchange: (request) => {
+          requests.push(request);
+          return Effect.succeed(responseFor(request));
+        },
+      },
+    });
+    const status = await recovered.runPromise(store((store) => store.sync));
+
+    expect(requests.some((request) => request.operations.length > 0)).toBe(true);
+    expect(status).toMatchObject({ phase: "idle", pendingOperations: 0, quarantined: false });
+    expect(await readOutbox(dataDir)).toEqual([]);
+  });
 });
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {

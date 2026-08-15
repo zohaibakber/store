@@ -7,7 +7,7 @@ import {
 } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import { syncDeviceState, syncOutbox } from "@store/db/local/schema";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -202,6 +202,18 @@ export const enqueueOperation = Effect.fn("Outbox.enqueue")(function* (
 });
 
 export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
+  const recoverAuthenticationFailures = database
+    .update(syncOutbox)
+    .set({ attemptCount: 0, nextAttemptAt: null, lastError: null })
+    .where(
+      and(
+        eq(syncOutbox.organizationId, workspace.organizationId),
+        isNull(syncOutbox.acknowledgedAt),
+        like(syncOutbox.lastError, "%(HTTP 401)%"),
+      ),
+    )
+    .pipe(mapPersistenceError("recover authenticated sync queue"));
+
   const health = Effect.fn("Outbox.health")(function* () {
     const [row] = yield* database
       .select({
@@ -320,5 +332,12 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .pipe(mapPersistenceError("record outbox failure"));
   });
 
-  return { health: health(), nextBatch: nextBatch(), markAttempt, acknowledge, markFailure };
+  return {
+    health: health(),
+    nextBatch: nextBatch(),
+    markAttempt,
+    acknowledge,
+    markFailure,
+    recoverAuthenticationFailures,
+  };
 };

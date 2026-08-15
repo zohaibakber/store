@@ -158,6 +158,7 @@ export const makeSyncEngine = (
       .findFirst({ where: { organizationId: workspace.organizationId } })
       .pipe(mapPersistenceError("load sync state"));
     const configured = config.syncTransport !== undefined;
+    if (configured) yield* outbox.recoverAuthenticationFailures;
     const initialHealth = configured ? yield* outbox.health : emptyOutboxHealth;
     const initialStatus: SyncStatus = {
       phase: configured ? "starting" : "local-only",
