@@ -90,6 +90,11 @@ const CLERK_PUBLISHABLE_KEY = fallbackIfBlank(
   "",
 );
 
+// Local commits signal the sync engine immediately. This slower safety poll is
+// only a fallback for remote changes, so running it every few seconds wastes a
+// network round-trip and SQLite work while the app is idle.
+const DESKTOP_SYNC_POLL_INTERVAL_MS = 60_000;
+
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 const clerkBridge = createClerkBridge({
   storage: storage(),
@@ -212,6 +217,7 @@ const workspaceStores: WorkspaceStoreAdapter = {
         migrationsFolder: migrationsFolder(),
         clientPlatform: "desktop",
         clientVersion: app.getVersion(),
+        resyncIntervalMillis: DESKTOP_SYNC_POLL_INTERVAL_MS,
         ...(target._tag === "Authenticated"
           ? {
               syncTransport: {
@@ -341,9 +347,13 @@ function createWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
+      backgroundThrottling: true,
       contextIsolation: true,
+      devTools: !app.isPackaged,
+      enableWebSQL: false,
       nodeIntegration: false,
       sandbox: true,
+      spellcheck: false,
     },
   });
 
@@ -363,6 +373,10 @@ function createWindow() {
 
   win.on("leave-full-screen", () => {
     win?.webContents.send("window-controls:full-screen-changed", false);
+  });
+
+  win.on("closed", () => {
+    win = null;
   });
 
   void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));

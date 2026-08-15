@@ -63,6 +63,7 @@ export function RevenueChart({ data }: { data: DashboardAnalytics["revenueByDay"
             dataKey="revenue"
             fill="var(--color-revenue)"
             fillOpacity={0.1}
+            isAnimationActive={false}
             stroke="var(--color-revenue)"
             strokeWidth={2}
             type="monotone"

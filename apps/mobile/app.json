@@ -49,6 +49,7 @@
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-dontwarn kotlin.MustUseReturnValues",
             "buildArchs": ["arm64-v8a"]
           }
         }
