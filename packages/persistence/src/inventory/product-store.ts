@@ -15,7 +15,7 @@ import type {
   UpdateProductInput,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -28,7 +28,15 @@ import {
   mapPersistenceError,
   persistenceError,
 } from "../errors";
-import { toBatch, toCategory, toProduct, toStockMovement } from "./models";
+import {
+  byEarliestExpiry,
+  toBatch,
+  toCategory,
+  toProduct,
+  toStockMovement,
+  type ProductRow,
+  type ProductWithRelations,
+} from "./models";
 import type { InventoryMutation } from "./mutation";
 import { prepare as prepareProduct, rank as rankProducts } from "./product-ranking";
 
@@ -72,27 +80,85 @@ export interface ProductStore {
   ) => Effect.Effect<ReadonlyArray<StockMovement>, PersistenceError>;
 }
 
-const queryConfig = <const Config>(config: Config) => config;
-
 const IMPORT_SYNC_CHANGES_PER_OPERATION = 200;
-
-const productRelations = queryConfig({
-  category: true,
-  batches: {
-    where: { deletedAt: { isNull: true } },
-    orderBy: { expiresAt: "asc", createdAt: "asc" },
-  },
-});
 
 export const makeProductStore = (
   database: StoreDatabase,
   workspace: Workspace,
   mutation: InventoryMutation,
 ): ProductStore => {
+  // Drizzle's relational query emits one large correlated JSON query. The
+  // browser libSQL worker fails that query for the real Tabaaq catalog, while
+  // the same data works with ordinary selects. Hydrate the two small relations
+  // explicitly so desktop and web execute the same portable SQLite queries.
+  const hydrateProducts = (
+    productRows: ReadonlyArray<ProductRow>,
+  ): Effect.Effect<ReadonlyArray<ProductWithRelations>, PersistenceError> => {
+    if (productRows.length === 0) return Effect.succeed([]);
+
+    return Effect.gen(function* () {
+      const productIds = productRows.map((product) => product.id);
+      const categoryIds = Array.from(new Set(productRows.map((product) => product.categoryId)));
+      const categoryRows = yield* database
+        .select()
+        .from(categories)
+        .where(
+          and(
+            eq(categories.organizationId, workspace.organizationId),
+            inArray(categories.id, categoryIds),
+          ),
+        );
+      const batchRows = yield* database
+        .select()
+        .from(batches)
+        .where(
+          and(
+            eq(batches.organizationId, workspace.organizationId),
+            inArray(batches.productId, productIds),
+            isNull(batches.deletedAt),
+          ),
+        );
+
+      const categoryById = new Map(categoryRows.map((category) => [category.id, category]));
+      const batchesByProductId = new Map<string, typeof batchRows>();
+      for (const batch of batchRows) {
+        const grouped = batchesByProductId.get(batch.productId) ?? [];
+        grouped.push(batch);
+        batchesByProductId.set(batch.productId, grouped);
+      }
+
+      return yield* Effect.forEach(productRows, (product) => {
+        const category = categoryById.get(product.categoryId);
+        if (!category)
+          return PersistenceError.make({
+            operation: "load product relations",
+            message: `Product ${product.id} refers to missing category ${product.categoryId}`,
+          });
+        return Effect.succeed({
+          ...product,
+          category,
+          batches: (batchesByProductId.get(product.id) ?? []).sort(byEarliestExpiry),
+        });
+      });
+    }).pipe(mapPersistenceError("load product relations"));
+  };
+
   const findProduct = (organizationId: string, id: string) =>
-    database.query.products.findFirst({
-      where: { organizationId, id, deletedAt: { isNull: true } },
-      with: productRelations,
+    Effect.gen(function* () {
+      const [row] = yield* database
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.organizationId, organizationId),
+            eq(products.id, id),
+            isNull(products.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!row) return undefined;
+      const [hydrated] = yield* hydrateProducts([row]);
+      return hydrated;
     });
 
   const listCategories = database.query.categories
@@ -248,13 +314,13 @@ export const makeProductStore = (
     if (!deleted) return yield* CategoryNotFoundError.make({ id });
   });
 
-  const listProducts = database.query.products
-    .findMany({
-      orderBy: { name: "asc" },
-      where: { organizationId: workspace.organizationId, deletedAt: { isNull: true } },
-      with: productRelations,
-    })
+  const listProducts = database
+    .select()
+    .from(products)
+    .where(and(eq(products.organizationId, workspace.organizationId), isNull(products.deletedAt)))
+    .orderBy(asc(products.name))
     .pipe(
+      Effect.flatMap(hydrateProducts),
       Effect.map((rows) => rows.map(toProduct)),
       mapPersistenceError("list products"),
     );
@@ -309,17 +375,19 @@ export const makeProductStore = (
             (entry) => entry.product.id,
           );
           if (ids.length === 0) return Effect.succeed<ReadonlyArray<Product>>([]);
-          return database.query.products
-            .findMany({
-              where: {
-                organizationId: workspace.organizationId,
-                id: { in: ids },
-                visible: true,
-                deletedAt: { isNull: true },
-              },
-              with: productRelations,
-            })
+          return database
+            .select()
+            .from(products)
+            .where(
+              and(
+                eq(products.organizationId, workspace.organizationId),
+                inArray(products.id, ids),
+                eq(products.visible, true),
+                isNull(products.deletedAt),
+              ),
+            )
             .pipe(
+              Effect.flatMap(hydrateProducts),
               Effect.map((rows) => {
                 const rank = new Map(ids.map((id, index) => [id, index] as const));
                 return rows
