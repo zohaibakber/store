@@ -2,6 +2,7 @@ import type { WorkspaceSnapshot } from "@store/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
+  activateOrganizationSession,
   createAndActivateOrganization,
   preferredClerkOrganizationId,
 } from "../../src/lib/clerk-workspace";
@@ -93,5 +94,27 @@ describe("createAndActivateOrganization", () => {
       }),
     ).rejects.toThrow("could not be activated");
     expect(adopted).toBe(false);
+  });
+});
+
+describe("activateOrganizationSession", () => {
+  it("refreshes the workspace with a token issued after activation", async () => {
+    const events: Array<string> = [];
+
+    await activateOrganizationSession({
+      organizationId: "org_tabaaq",
+      setActive: async (organizationId) => {
+        events.push(`activate:${organizationId}`);
+      },
+      getToken: async () => {
+        events.push("token");
+        return "tabaaq-token";
+      },
+      adoptSession: async (token) => {
+        events.push(`adopt:${token}`);
+      },
+    });
+
+    expect(events).toEqual(["activate:org_tabaaq", "token", "adopt:tabaaq-token"]);
   });
 });
