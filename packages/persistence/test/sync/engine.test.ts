@@ -5,6 +5,7 @@ import {
   SyncServerChange,
   type SyncRequest,
 } from "@store/contracts";
+import { operationPayloadHash } from "@store/contracts/operation-hash";
 import { invoices, products, syncOutbox } from "@store/db/local/schema";
 import * as LibsqlDrizzle from "drizzle-orm/effect-libsql";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
@@ -798,6 +799,59 @@ test("opening an authenticated store recovers operations quarantined by an expir
     expect(status).toMatchObject({ phase: "idle", pendingOperations: 0, quarantined: false });
     expect(await readOutbox(dataDir)).toEqual([]);
   });
+});
+
+test("opening a store after an auth migration reattributes and rehashes pending operations", async () => {
+  const legacyWorkspace = {
+    organizationId: "organization-1",
+    userId: "legacy-user",
+    deviceId: "device-1",
+  };
+  const clerkWorkspace = { ...legacyWorkspace, userId: "clerk-user" };
+
+  await withTestStore(
+    async ({ dataDir, runtime, makeRuntime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Created before Clerk migration",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await runtime.dispose();
+
+      const requests: Array<SyncRequest> = [];
+      const migrated = makeRuntime({
+        workspace: clerkWorkspace,
+        syncTransport: {
+          exchange: (request) => {
+            requests.push(request);
+            return Effect.succeed(responseFor(request));
+          },
+        },
+      });
+      const status = await migrated.runPromise(store((store) => store.sync));
+      const migratedOperations = requests.flatMap((request) => request.operations);
+
+      expect(migratedOperations.length).toBeGreaterThan(0);
+      expect(migratedOperations.every((operation) => operation.actorUserId === "clerk-user")).toBe(
+        true,
+      );
+      expect(
+        migratedOperations.every(
+          (operation) => operation.payloadHash === operationPayloadHash(operation),
+        ),
+      ).toBe(true);
+      expect(status).toMatchObject({ phase: "idle", pendingOperations: 0, quarantined: false });
+      expect(await readOutbox(dataDir)).toEqual([]);
+    },
+    { workspace: legacyWorkspace },
+  );
 });
 
 test("out-of-order remote cursors reject and roll back every pulled row", async () => {
