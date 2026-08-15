@@ -26,30 +26,26 @@ const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
 );
 
-const handleAuthRequest = Effect.fn("Server.handleAuthRequest")(function* (
-  request: HttpServerRequest.HttpServerRequest,
-) {
+const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
   const runtime = yield* ServerRuntime;
-  // The Worker runtime rebuilds an absolute Request the way Hono's
-  // `c.req.raw` did. Passing Effect's path-only URL through toWeb/fromWeb
-  // here used to reach Better Auth as `/api/auth/...` and 500.
-  return yield* runtime.authFetch(request).pipe(Effect.orDie);
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const snapshot = yield* runtime.loadWorkspace(new Headers(request.headers)).pipe(Effect.orDie);
+  return HttpServerResponse.jsonUnsafe(snapshot);
 });
 
 const AuthRoutes = Layer.mergeAll(
-  HttpRouter.add("GET", "/api/auth/*", handleAuthRequest),
-  HttpRouter.add("POST", "/api/auth/*", handleAuthRequest),
+  HttpRouter.add("GET", "/api/auth/session", handleSessionRequest),
+  HttpRouter.add("GET", "/api/auth/get-session", handleSessionRequest),
 );
 
 const Cors = HttpRouter.middleware(
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
     const cors = HttpMiddleware.cors({
-      // Matched the way Better Auth matches its own trusted origins, so a
-      // wildcard or native-scheme entry is not allowed by the auth origin check
-      // and then refused by CORS.
+      // Matched the way trusted origins are classified, so a wildcard or
+      // native-scheme entry is not allowed by CORS and then refused elsewhere.
       allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization", "Electron-Origin", "Expo-Origin"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       exposedHeaders: ["Content-Length"],
       maxAge: 600,

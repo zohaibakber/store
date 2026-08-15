@@ -6,20 +6,8 @@ import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
 export interface AuthSessionBridge {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly signIn: (input: {
-    readonly email: string;
-    readonly password: string;
-  }) => Promise<WorkspaceSnapshot>;
-  readonly signUp: (input: {
-    readonly name: string;
-    readonly email: string;
-    readonly password: string;
-  }) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
-  readonly switchOrganization: (input: {
-    readonly organizationId: string;
-  }) => Promise<WorkspaceSnapshot>;
-  readonly createOrganization: (input: { readonly name: string }) => Promise<WorkspaceSnapshot>;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }
 

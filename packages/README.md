@@ -1,6 +1,7 @@
 # Shared packages
 
-- `auth`: Better Auth server, Electron client, and cookie-based web client setup.
+- `auth`: Clerk JWT verification, trusted-origin policy, and Clerk-to-store
+  organization bindings.
 - `contracts`: public data contracts grouped into `server`, `store`, and `sync`.
 - `db`: Drizzle schemas and migrations for authentication, local storage, and Durable Objects.
 - `persistence`: local database, inventory, analytics, and synchronization services. Import

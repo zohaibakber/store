@@ -1,3 +1,4 @@
+import { useClerk, useUser } from "@clerk/expo";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import { Button } from "heroui-native/button";
@@ -9,7 +10,6 @@ import { Uniwind, useUniwind } from "uniwind";
 
 import { Brand } from "@/components/brand";
 import { useProducts } from "@/features/products/products-provider";
-import { authClient } from "@/lib/auth-client";
 import { resetProductsSession } from "@/lib/products";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -18,11 +18,13 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 export default function SettingsScreen() {
-  const session = authClient.useSession();
+  const { user } = useUser();
+  const { signOut: clerkSignOut } = useClerk();
   const { theme } = useUniwind();
   const { products, refreshing, error, lastUpdatedAt, refresh } = useProducts();
-  const user = session.data?.user;
-  const initial = (user?.name || user?.email || "T").trim().slice(0, 1).toLocaleUpperCase();
+  const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";
+  const userEmail = user?.primaryEmailAddress?.emailAddress;
+  const initial = (userName || "T").trim().slice(0, 1).toLocaleUpperCase();
   const version = Constants.expoConfig?.version ?? "0.1.0";
 
   const signOut = () => {
@@ -32,7 +34,7 @@ export default function SettingsScreen() {
         text: "Sign out",
         style: "destructive",
         onPress: () => {
-          void authClient.signOut().finally(() => {
+          void clerkSignOut().finally(() => {
             resetProductsSession();
             router.replace("/auth");
           });
@@ -58,10 +60,10 @@ export default function SettingsScreen() {
             </View>
             <View className="min-w-0 flex-1 gap-0.5">
               <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                {user?.name || "Tabaaq user"}
+                {userName}
               </Text>
               <Text className="text-xs font-normal text-muted" numberOfLines={1}>
-                {user?.email}
+                {userEmail}
               </Text>
             </View>
           </Card.Body>

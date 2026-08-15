@@ -30,8 +30,8 @@ const unauthenticated: WorkspaceSnapshot = {
 
 const makeAuth = (
   initial: WorkspaceSnapshot,
-  switchOrganization: (organizationId: string) => Promise<WorkspaceSnapshot> = async (id) =>
-    authenticated(id),
+  adoptSession: (token: string | null) => Promise<WorkspaceSnapshot> = async (token) =>
+    token ? authenticated(token) : unauthenticated,
 ): WorkspaceAuthAdapter => {
   let snapshot = initial;
   const update = async (next: WorkspaceSnapshot) => {
@@ -43,13 +43,10 @@ const makeAuth = (
       return snapshot;
     },
     initialize: () => Promise.resolve(snapshot),
-    signIn: () => update(authenticated("a")),
-    signUp: () => update(authenticated("a")),
+    adoptSession: (token) => adoptSession(token).then(update),
     signOut: async () => {
       snapshot = unauthenticated;
     },
-    switchOrganization: ({ organizationId }) => switchOrganization(organizationId).then(update),
-    createOrganization: ({ name }) => update(authenticated(name)),
     apiRequest: () => Promise.reject(new Error("Not used by this test")),
   };
 };
@@ -114,24 +111,24 @@ test("publishes an authenticated workspace only after its store is ready", async
   await workspace.dispose();
 });
 
-test("serializes competing organization transitions", async () => {
+test("serializes competing session adoptions", async () => {
   const events: string[] = [];
   let releaseFirst: (() => void) | undefined;
   const firstGate = new Promise<void>((resolve) => {
     releaseFirst = resolve;
   });
-  const auth = makeAuth(authenticated("initial"), async (organizationId) => {
-    events.push(`auth:${organizationId}:start`);
-    if (organizationId === "a") await firstGate;
-    events.push(`auth:${organizationId}:finish`);
-    return authenticated(organizationId);
+  const auth = makeAuth(authenticated("initial"), async (token) => {
+    events.push(`auth:${token}:start`);
+    if (token === "a") await firstGate;
+    events.push(`auth:${token}:finish`);
+    return token ? authenticated(token) : unauthenticated;
   });
   const workspace = makeWorkspace(auth, makeStores(events), events);
   await workspace.initialize();
   events.length = 0;
 
-  const first = workspace.execute({ _tag: "SwitchOrganization", organizationId: "a" });
-  const second = workspace.execute({ _tag: "SwitchOrganization", organizationId: "b" });
+  const first = workspace.execute({ _tag: "AdoptSession", token: "a" });
+  const second = workspace.execute({ _tag: "AdoptSession", token: "b" });
   await Promise.resolve();
   expect(events).toEqual(["auth:a:start"]);
 
@@ -149,9 +146,9 @@ test("falls back to the locked workspace when organization activation fails", as
   await workspace.initialize();
   events.length = 0;
 
-  await expect(
-    workspace.execute({ _tag: "SwitchOrganization", organizationId: "b" }),
-  ).rejects.toBeInstanceOf(WorkspaceActivationError);
+  await expect(workspace.execute({ _tag: "AdoptSession", token: "b" })).rejects.toBeInstanceOf(
+    WorkspaceActivationError,
+  );
 
   expect(events).toEqual([
     "unsubscribe:a",

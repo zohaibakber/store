@@ -17,6 +17,7 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
     alias: {
+      "@/lib/clerk-runtime": path.resolve(__dirname, "src/clerk-runtime.ts"),
       "@": desktopSrc,
       "@libsql/client": "@libsql/client-wasm",
     },
