@@ -8,7 +8,7 @@ import {
 } from "@store/contracts/store-helpers";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
 
@@ -46,6 +46,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
+import { isNumber, isString } from "@/lib/predicates";
 import { useStore } from "@/lib/store";
 
 const parseISODate = (value: string): Date | undefined => {
@@ -475,8 +476,11 @@ type DayTotal = { date: string; net: number };
 
 const dayKey = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
-const formatDayTick = (value: unknown) =>
-  new Date(String(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const formatDayTick = (value: ReactNode) =>
+  new Date(isString(value) || isNumber(value) ? String(value) : "").toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 
 function stockMovementsByDay(
   movements: readonly StockMovement[],

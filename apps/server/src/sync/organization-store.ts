@@ -7,7 +7,7 @@ import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
 import { makeSyncRuntime } from "./runtime";
 
-export interface OrganizationStoreShape extends Cloudflare.DurableObjectShape {
+export interface OrganizationStoreContract {
   readonly exchange: (
     actor: SyncActor,
     request: SyncRequest,
@@ -16,7 +16,7 @@ export interface OrganizationStoreShape extends Cloudflare.DurableObjectShape {
 
 export class OrganizationStore extends Cloudflare.DurableObject<
   OrganizationStore,
-  OrganizationStoreShape
+  OrganizationStoreContract
 >()("ORGANIZATION_STORE") {}
 
 export const OrganizationStoreLive = OrganizationStore.make<never>(

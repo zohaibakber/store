@@ -48,11 +48,7 @@ export const applyBundledMigrations = (migrations: Record<string, string>) =>
       created_at numeric
     )`);
     const applied = yield* sql.unsafe<{ hash: string }>(`SELECT hash FROM "${MIGRATIONS_TABLE}"`);
-    const hashes = new Set(
-      (Array.isArray(applied) ? applied : []).map((row) =>
-        typeof row === "object" && row !== null && "hash" in row ? String(row.hash) : "",
-      ),
-    );
+    const hashes = new Set((Array.isArray(applied) ? applied : []).map((row) => row.hash));
     for (const [name, body] of Object.entries(migrations).sort(([left], [right]) =>
       left.localeCompare(right),
     )) {

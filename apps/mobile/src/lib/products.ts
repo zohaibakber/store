@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
@@ -19,12 +20,17 @@ import {
 
 type SyncEntity = "category" | "product" | "batch" | "stockMovement";
 
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+interface JsonObject {
+  [key: string]: JsonValue;
+}
+
 type SyncEntityChange = {
   entity: SyncEntity;
   action: "upsert";
   entityId: string;
   rowVersion: number;
-  row: Record<string, unknown>;
+  row: object;
 };
 
 type SyncOperation = MobileSyncOperation<SyncEntityChange>;
@@ -202,15 +208,17 @@ const readInventoryContext = async (userId: string): Promise<StoredInventoryCont
   const serialized = await Storage.getItem(INVENTORY_CONTEXT_KEY);
   if (!serialized) return null;
   try {
+    // SAFETY: Every required field is checked before this value is returned.
     const value = JSON.parse(serialized) as Partial<StoredInventoryContext>;
     if (
       value.version !== 1 ||
       value.userId !== userId ||
-      typeof value.organizationId !== "string" ||
+      !Schema.is(Schema.String)(value.organizationId) ||
       !value.organizationId
     ) {
       return null;
     }
+    // SAFETY: Version, user, and non-empty organization fields were validated above.
     return value as StoredInventoryContext;
   } catch {
     return null;
@@ -253,11 +261,22 @@ const authenticatedUserId = async () => {
   return id;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+interface SyncOperationCandidate {
+  readonly operationId?: unknown;
+  readonly organizationId?: unknown;
+  readonly deviceId?: unknown;
+  readonly actorUserId?: unknown;
+  readonly clientSequence?: unknown;
+  readonly occurredAt?: unknown;
+  readonly payloadHash?: unknown;
+  readonly changes?: unknown;
+}
+
+const hasSyncOperationFields = <Value>(value: Value): value is Value & SyncOperationCandidate =>
   typeof value === "object" && value !== null;
 
-const isSyncOperation = (value: unknown): value is SyncOperation => {
-  if (!isRecord(value)) return false;
+const isSyncOperation = <Value>(value: Value): value is Value & SyncOperation => {
+  if (!hasSyncOperationFields(value)) return false;
   return (
     typeof value.operationId === "string" &&
     typeof value.organizationId === "string" &&
@@ -280,17 +299,16 @@ const restoreMutationState = (
   organizationId: string,
 ): StoredMutationState | null => {
   if (!serialized) return null;
-  let value: unknown;
+  let value: Partial<StoredMutationState>;
   try {
     value = JSON.parse(serialized);
   } catch {
     throw new Error("The local inventory mutation queue is damaged.");
   }
   if (
-    !isRecord(value) ||
     value.version !== 1 ||
     value.organizationId !== organizationId ||
-    typeof value.deviceId !== "string" ||
+    !Schema.is(Schema.String)(value.deviceId) ||
     !value.deviceId ||
     !Number.isSafeInteger(value.nextClientSequence) ||
     Number(value.nextClientSequence) < 1 ||
@@ -303,15 +321,19 @@ const restoreMutationState = (
   ) {
     throw new Error("The local inventory mutation queue is damaged.");
   }
+  // SAFETY: All stored mutation fields and every queued operation were validated above.
   return value as StoredMutationState;
 };
 
 const persistMutationState = (state: StoredMutationState) =>
   Storage.setItem(mutationKey(state.organizationId), JSON.stringify(state));
 
-const canonicalizeJson = (value: unknown): unknown => {
+const isJsonObject = (value: JsonValue): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const canonicalizeJson = (value: JsonValue): JsonValue => {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
-  if (!isRecord(value)) return value;
+  if (!isJsonObject(value)) return value;
   return Object.fromEntries(
     Object.entries(value)
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
@@ -319,11 +341,13 @@ const canonicalizeJson = (value: unknown): unknown => {
   );
 };
 
-const payloadHash = (operation: Omit<SyncOperation, "payloadHash">) =>
-  Crypto.digestStringAsync(
+const payloadHash = (operation: Omit<SyncOperation, "payloadHash">) => {
+  const jsonValue: JsonValue = JSON.parse(JSON.stringify(operation));
+  return Crypto.digestStringAsync(
     Crypto.CryptoDigestAlgorithm.SHA256,
-    JSON.stringify(canonicalizeJson(operation)),
+    JSON.stringify(canonicalizeJson(jsonValue)),
   );
+};
 
 const requestPage = async (
   organizationId: string,
@@ -352,6 +376,7 @@ const requestPage = async (
         operations,
       }),
     });
+    // SAFETY: The response is consumed only through the declared sync-envelope fields below.
     const payload = (await response.json().catch(() => null)) as
       | (SyncResponse & { error?: { code?: string; message?: string } })
       | null;
@@ -393,7 +418,7 @@ const isMobileStockCorrection = (operation: SyncOperation) =>
   operation.changes.some(
     (change) =>
       change.entity === "stockMovement" &&
-      isRecord(change.row) &&
+      "note" in change.row &&
       change.row.note === "Stock corrected from mobile scanner",
   );
 
@@ -691,10 +716,13 @@ const requiredEntityId = (value: string | undefined, label: string) => {
   return normalized;
 };
 
+type ProductMutationResolution = { id: string; current: ProductRow | null };
+type BatchMutationResolution = { id: string; current: BatchRow | null };
+
 const resolveProductMutationTarget = (
   maps: ProductSyncMaps,
   input: ProductMutationTarget,
-): { id: string; current: ProductRow | null } => {
+): ProductMutationResolution => {
   if (input.productId) {
     if (input.newProductId) throw new Error("Choose either an existing or a new product.");
     return { id: input.productId, current: requireProduct(maps, input.productId) };
@@ -708,7 +736,7 @@ const resolveBatchMutationTarget = (
   maps: ProductSyncMaps,
   productId: string,
   input: BatchMutationTarget,
-): { id: string; current: BatchRow | null } => {
+): BatchMutationResolution => {
   if (input.batchId) {
     if (input.newBatchId) throw new Error("Choose either an existing or a new batch.");
     return { id: input.batchId, current: requireBatch(maps, productId, input.batchId) };

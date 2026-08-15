@@ -1,7 +1,7 @@
 import { SyncEntityChange, type SyncEntity, type SyncOperation } from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
+import { syncEntityPushRows, syncEntityRows } from "@store/contracts/entity-rows";
 import { omitManaged } from "@store/contracts/managed-columns";
-import { categories, invoiceCounters, invoices, stockMovements } from "@store/db/do/schema";
+import { categories, invoiceCounters, stockMovements } from "@store/db/do/schema";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
@@ -22,6 +22,9 @@ const entityLabels = {
 const writeFailed = (entity: SyncEntity) =>
   Effect.fail(protocolError("ENTITY_WRITE_FAILED", `${entityLabels[entity]} could not be saved.`));
 
+type VersionedEntity = Exclude<SyncEntity, "stockMovement">;
+type VersionedPushRow = (typeof syncEntityPushRows)[VersionedEntity]["Type"];
+
 /**
  * Upsert for the version-tracked entities, which all share one shape: read the
  * current row, overlay the server-owned columns, then write keyed on
@@ -33,16 +36,20 @@ const upsertVersionedEntity = Effect.fn("SyncDatabase.upsertVersionedEntity")(fu
   actor: SyncActor,
   operation: SyncOperation,
   change: SyncEntityChange,
-  row: Record<string, unknown>,
+  row: VersionedPushRow,
 ) {
   // `local/schema` and `do/schema` both re-export `shared/store.schema`, so the
   // registry's table is this table; drizzle just cannot narrow the union.
-  const table = syncEntityRows[change.entity].table as unknown as typeof categories;
+  // SAFETY: Every versioned registry table has the managed category column shape;
+  // entity-specific insert fields flow through Drizzle's values object below.
+  const table = syncEntityRows[change.entity].table as typeof categories;
   const [current] = yield* tx
     .select()
     .from(table)
     .where(and(eq(table.organizationId, actor.organizationId), eq(table.id, change.entityId)))
     .limit(1);
+  // SAFETY: Decoding selected the schema paired with this registry table, and the
+  // server-owned columns complete its insert contract.
   const values = {
     ...omitManaged(row),
     ...serverOwnedColumns(actor, operation, change, row, current),
@@ -55,7 +62,7 @@ const upsertVersionedEntity = Effect.fn("SyncDatabase.upsertVersionedEntity")(fu
   return saved;
 });
 
-const canonicalChange = (change: SyncEntityChange, rowVersion: number, row: unknown) =>
+const canonicalChange = <Row>(change: SyncEntityChange, rowVersion: number, row: Row) =>
   SyncEntityChange.make({
     entity: change.entity,
     action: change.action,
@@ -91,23 +98,19 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
     }
     case "invoice": {
       const row = yield* decodeEntityRow("invoice", change);
-      // The shared helper is typed against the registry's erased row shape;
-      // the counter below needs this entity's own columns.
-      const saved = (yield* upsertVersionedEntity(tx, actor, operation, change, row)) as unknown as
-        | typeof invoices.$inferSelect
-        | undefined;
+      const saved = yield* upsertVersionedEntity(tx, actor, operation, change, row);
       if (!saved) return yield* writeFailed(change.entity);
       yield* tx
         .insert(invoiceCounters)
         .values({
           organizationId: actor.organizationId,
-          lastInvoiceNumber: saved.invoiceNumber,
+          lastInvoiceNumber: row.invoiceNumber,
         })
         .onConflictDoUpdate({
           target: invoiceCounters.organizationId,
           set: {
             // SQLite has no `greatest`; two-argument `max` is its scalar equivalent.
-            lastInvoiceNumber: sql`max(${invoiceCounters.lastInvoiceNumber}, ${saved.invoiceNumber})`,
+            lastInvoiceNumber: sql`max(${invoiceCounters.lastInvoiceNumber}, ${row.invoiceNumber})`,
           },
         });
       return canonicalChange(change, saved.rowVersion, saved);
@@ -146,12 +149,20 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
               )
               .limit(1);
       if (!saved) return yield* writeFailed(change.entity);
-      // Compared over the written columns rather than a hand-listed set, so a
-      // new column cannot quietly escape the immutability check.
-      const storedRow = saved as Record<string, unknown>;
-      const rewritten = Object.entries(values).some(
-        ([column, value]) => storedRow[column] !== value,
-      );
+      const rewritten =
+        saved.id !== values.id ||
+        saved.productId !== values.productId ||
+        saved.batchId !== values.batchId ||
+        saved.invoiceId !== values.invoiceId ||
+        saved.type !== values.type ||
+        saved.packDelta !== values.packDelta ||
+        saved.unitDelta !== values.unitDelta ||
+        saved.note !== values.note ||
+        saved.organizationId !== values.organizationId ||
+        saved.actorUserId !== values.actorUserId ||
+        saved.deviceId !== values.deviceId ||
+        saved.operationId !== values.operationId ||
+        saved.createdAt !== values.createdAt;
       if (inserted.length === 0 && rewritten)
         return yield* Effect.fail(
           protocolError(

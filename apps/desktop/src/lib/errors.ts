@@ -8,27 +8,27 @@ import { toastManager } from "@/components/ui/toast";
 // Electron wraps main-process failures before they reach the renderer.
 const ipcPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
-export const decodeStoreError = (error: unknown): StoreError | null => {
+export const decodeStoreError = (cause: unknown): StoreError | null => {
   try {
-    return decodeStoreErrorContract(error);
+    return decodeStoreErrorContract(cause);
   } catch {
     return null;
   }
 };
 
 export const storeErrorMessage = (
-  error: unknown,
+  cause: unknown,
   fallback = "Something went wrong. Please try again.",
 ): string => {
-  const decoded = decodeStoreError(error);
+  const decoded = decodeStoreError(cause);
   if (decoded?._tag === "PersistenceError") return decoded.message;
   if (decoded?._tag === "ProductNotFoundError") return `Product ${decoded.id} could not be found.`;
   if (decoded?._tag === "BatchNotFoundError") return "That batch could not be found.";
   if (decoded?._tag === "CategoryNotFoundError") return "That category could not be found.";
   if (decoded?._tag === "InvoiceNotFoundError") return `Invoice ${decoded.id} could not be found.`;
-  return error instanceof Error ? error.message.replace(ipcPrefix, "") : fallback;
+  return cause instanceof Error ? cause.message.replace(ipcPrefix, "") : fallback;
 };
 
-export const toastStoreError = (error: unknown, fallback?: string) => {
-  toastManager.add({ title: storeErrorMessage(error, fallback), type: "error" });
+export const toastStoreError = (cause: unknown, fallback?: string) => {
+  toastManager.add({ title: storeErrorMessage(cause, fallback), type: "error" });
 };

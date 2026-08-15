@@ -8,11 +8,6 @@ import { CommandMenuProvider } from "@/components/app/command-menu";
 import { renderWithStore } from "../../lib/render";
 import { storeStub } from "../../lib/store-stub";
 
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => navigate,
-}));
-
 if (!("getAnimations" in Element.prototype))
   Object.defineProperty(Element.prototype, "getAnimations", { value: () => [] });
 
@@ -69,7 +64,7 @@ test("a misspelled query still ranks the product it meant", async () => {
   renderWithStore(<CommandMenuProvider>app</CommandMenuProvider>, storeStub({ listProducts }));
 
   openMenu();
-  const input = (await screen.findByPlaceholderText("Search products…")) as HTMLInputElement;
+  const input = await screen.findByPlaceholderText<HTMLInputElement>("Search products…");
   fireEvent.change(input, { target: { value: "panadl" } });
 
   await waitFor(() => expect(screen.queryByText("Brufen")).toBeNull());
@@ -78,17 +73,15 @@ test("a misspelled query still ranks the product it meant", async () => {
 
 test("choosing a product opens its page", async () => {
   const listProducts = vi.fn(() => Promise.resolve(products));
-  renderWithStore(<CommandMenuProvider>app</CommandMenuProvider>, storeStub({ listProducts }));
+  const { router } = renderWithStore(
+    <CommandMenuProvider>app</CommandMenuProvider>,
+    storeStub({ listProducts }),
+  );
 
   openMenu();
   fireEvent.click(await screen.findByText("Panadol"));
 
-  await waitFor(() =>
-    expect(navigate).toHaveBeenCalledWith({
-      to: "/products/$productId",
-      params: { productId: "product-1" },
-    }),
-  );
+  await waitFor(() => expect(router.state.location.pathname).toBe("/products/product-1"));
 
   openMenu();
   await waitFor(() => expect(listProducts).toHaveBeenCalledTimes(2));

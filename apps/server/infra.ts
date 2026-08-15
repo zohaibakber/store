@@ -119,21 +119,23 @@ export const ApiLive = Api.make(
       trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
     });
     reportRejectedAuthSettings(security.rejectedSettings);
-    const clerkConfig = {
+    const baseClerkConfig = {
       secretKey: Redacted.value(clerkSecretKey),
-      ...(fallbackIfBlank(clerkJwtKey, "") ? { jwtKey: clerkJwtKey.trim() } : {}),
-      ...(fallbackIfBlank(clerkJwtAudience, "") ? { jwtAudience: clerkJwtAudience.trim() } : {}),
       authorizedParties: [...security.trustedOrigins],
     };
+    const keyClerkConfig = fallbackIfBlank(clerkJwtKey, "")
+      ? { ...baseClerkConfig, jwtKey: clerkJwtKey.trim() }
+      : baseClerkConfig;
+    const clerkConfig = fallbackIfBlank(clerkJwtAudience, "")
+      ? { ...keyClerkConfig, jwtAudience: clerkJwtAudience.trim() }
+      : keyClerkConfig;
 
     const liveAuthDatabase = Effect.gen(function* () {
       const workerEnv = yield* Effect.serviceOption(Cloudflare.Workers.WorkerEnvironment);
       // Static `import { env } from "cloudflare:workers"` crashes Node during
       // `alchemy deploy`. Load it only inside a request, where workerd has it.
       const moduleEnv = yield* Effect.promise(() =>
-        import("cloudflare:workers")
-          .then((mod) => mod.env as unknown as Record<string, unknown>)
-          .catch(() => undefined),
+        import("cloudflare:workers").then((mod) => mod.env).catch(() => undefined),
       );
       const fromQuery = yield* authD1.raw;
       const database =

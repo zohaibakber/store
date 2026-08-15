@@ -21,6 +21,22 @@ export class ProductScanService extends Context.Service<
   }
 >()("@store/services/ProductScanService") {}
 
+type ModelScalar = string | number | boolean | null;
+
+export interface ProductScanModelObject {
+  readonly response?: string;
+  readonly name?: ModelScalar;
+  readonly productName?: ModelScalar;
+  readonly composition?: ModelScalar;
+  readonly strength?: ModelScalar;
+  readonly unitsPerPack?: ModelScalar;
+  readonly batchNumber?: ModelScalar;
+  readonly expiresAt?: ModelScalar;
+  readonly confidence?: ModelScalar;
+}
+
+export type ProductScanModelOutput = string | ProductScanModelObject;
+
 export interface ProductScanAiClient {
   readonly generate: (input: {
     readonly messages: ReadonlyArray<{
@@ -29,7 +45,7 @@ export interface ProductScanAiClient {
     }>;
     readonly jsonSchema: object;
     readonly signal: AbortSignal;
-  }) => Promise<unknown>;
+  }) => Promise<ProductScanModelOutput>;
 }
 
 export interface ProductScanConfig {
@@ -52,31 +68,27 @@ const instructions = [
   "Respond with JSON matching the provided schema and nothing else.",
 ].join("\n");
 
-const field = (value: unknown, key: string): unknown =>
-  typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
+const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
 
-const parseModelOutput = (raw: unknown): unknown => {
-  const response = field(raw, "response") ?? raw;
-  if (typeof response !== "string") return response;
+const parseModelOutput = (raw: ProductScanModelOutput): ProductScanModelObject => {
+  const response = isString(raw) ? raw : (raw.response ?? raw);
+  if (!isString(response)) return response;
   const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = (fenced?.[1] ?? response).trim();
   try {
-    return JSON.parse(candidate);
+    const parsed: ProductScanModelObject = JSON.parse(candidate);
+    return parsed;
   } catch {
     const start = candidate.indexOf("{");
     const end = candidate.lastIndexOf("}");
     if (start === -1 || end <= start) throw new Error("The model did not return JSON.");
-    return JSON.parse(candidate.slice(start, end + 1));
+    const parsed: ProductScanModelObject = JSON.parse(candidate.slice(start, end + 1));
+    return parsed;
   }
 };
 
-const nullableText = (value: unknown, maximumLength: number): string | null => {
-  const text =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
-        ? String(value)
-        : "";
+const nullableText = (value: ModelScalar | undefined, maximumLength: number): string | null => {
+  const text = isString(value) ? value : value === undefined || value === null ? "" : String(value);
   const normalized = text.trim().replace(/\s+/g, " ");
   if (!normalized || /^(?:n\/?a|none|null|not found|unknown)$/i.test(normalized)) return null;
   return normalized.slice(0, maximumLength);
@@ -102,7 +114,7 @@ const isoDate = (year: number, month: number, day?: number) => {
 
 const fourDigitYear = (value: number) => (value < 100 ? 2000 + value : value);
 
-const normalizeExpiry = (value: unknown): string | null => {
+const normalizeExpiry = (value: ModelScalar | undefined): string | null => {
   const text = nullableText(value, 40);
   if (!text) return null;
 
@@ -135,23 +147,25 @@ const normalizeExpiry = (value: unknown): string | null => {
   return null;
 };
 
-const finiteNumber = (value: unknown): number | null => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "string") return null;
+const isNumber = <Value>(value: Value): value is Value & number => typeof value === "number";
+
+const finiteNumber = (value: ModelScalar | undefined): number | null => {
+  if (isNumber(value)) return Number.isFinite(value) ? value : null;
+  if (!isString(value)) return null;
   const parsed = Number(value.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const confidence = (value: unknown): number => {
+const confidence = (value: ModelScalar | undefined): number => {
   const parsed = finiteNumber(value) ?? 0;
   const ratio = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
   return Math.min(1, Math.max(0, ratio));
 };
 
-const unitsPerPack = (value: unknown): number | null => {
-  if (typeof value === "number")
+const unitsPerPack = (value: ModelScalar | undefined): number | null => {
+  if (isNumber(value))
     return Number.isSafeInteger(value) && value >= 1 && value <= 10_000 ? value : null;
-  if (typeof value !== "string") return null;
+  if (!isString(value)) return null;
   const normalized = value.trim();
   if (!/^\d+(?:\s*[x×]\s*\d+)*$/i.test(normalized)) return null;
   const factors = normalized.split(/\s*[x×]\s*/i).map(Number);
@@ -159,14 +173,14 @@ const unitsPerPack = (value: unknown): number | null => {
   return Number.isSafeInteger(product) && product >= 1 && product <= 10_000 ? product : null;
 };
 
-const normalizeResult = (value: unknown) => ({
-  name: nullableText(field(value, "name") ?? field(value, "productName"), 120),
-  composition: nullableText(field(value, "composition"), 160),
-  strength: nullableText(field(value, "strength"), 20),
-  unitsPerPack: unitsPerPack(field(value, "unitsPerPack")),
-  batchNumber: nullableText(field(value, "batchNumber"), 64),
-  expiresAt: normalizeExpiry(field(value, "expiresAt")),
-  confidence: confidence(field(value, "confidence")),
+const normalizeResult = (value: ProductScanModelObject) => ({
+  name: nullableText(value.name ?? value.productName, 120),
+  composition: nullableText(value.composition, 160),
+  strength: nullableText(value.strength, 20),
+  unitsPerPack: unitsPerPack(value.unitsPerPack),
+  batchNumber: nullableText(value.batchNumber, 64),
+  expiresAt: normalizeExpiry(value.expiresAt),
+  confidence: confidence(value.confidence),
 });
 
 const requestContent = (mode: ProductScanMode, recognizedText: string) =>

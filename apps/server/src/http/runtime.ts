@@ -12,7 +12,7 @@ import type { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
 import type { SyncActor } from "../sync/model";
 
 /** Explicit boundary between HTTP handlers and the Cloudflare/Clerk runtime. */
-export interface ServerRuntimeShape {
+export interface ServerRuntimeContract {
   readonly electronProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
@@ -35,6 +35,6 @@ export interface ServerRuntimeShape {
   ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
 }
 
-export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeShape>()(
+export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeContract>()(
   "@store/server/ServerRuntime",
 ) {}

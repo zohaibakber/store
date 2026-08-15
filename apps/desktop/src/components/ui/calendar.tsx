@@ -69,13 +69,17 @@ export function Calendar({
   };
   const mergedClassNames: typeof defaultClassNames = Object.keys(defaultClassNames).reduce(
     (acc, key) => {
+      // SAFETY: Object.keys was called on the default class-name owner immediately above.
       const userClass = classNames?.[key as keyof typeof classNames];
+      // SAFETY: The same key originates from defaultClassNames.
       const baseClass = defaultClassNames[key as keyof typeof defaultClassNames];
 
+      // SAFETY: The accumulator is initialized from the complete default class-name map.
       acc[key as keyof typeof defaultClassNames] = userClass ? cn(baseClass, userClass) : baseClass;
 
       return acc;
     },
+    // SAFETY: The shallow copy preserves every key and value from defaultClassNames.
     { ...defaultClassNames } as typeof defaultClassNames,
   );
 
@@ -122,6 +126,7 @@ export function Calendar({
     classNames: mergedClassNames,
     components: mergedComponents,
     "data-slot": "calendar",
+    // SAFETY: This formatter is a supported subset of DayPicker's formatter contract.
     formatters: {
       formatMonthDropdown: (date: Date) => date.toLocaleString("default", { month: "short" }),
     } as React.ComponentProps<typeof DayPicker>["formatters"],
@@ -130,5 +135,6 @@ export function Calendar({
     ...props,
   };
 
+  // SAFETY: dayPickerProps is assembled from DayPicker props plus compatible defaults above.
   return <DayPicker {...(dayPickerProps as React.ComponentProps<typeof DayPicker>)} />;
 }

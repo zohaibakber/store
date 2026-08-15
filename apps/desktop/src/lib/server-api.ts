@@ -1,6 +1,9 @@
 import { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+
+const ApiFailure = Schema.Struct({ message: Schema.String });
 
 const apiUrl = (pathname: string) => {
   const base = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -28,10 +31,8 @@ export const analyseInvoices = async (
   });
   const raw: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      typeof raw === "object" && raw !== null && "message" in raw && typeof raw.message === "string"
-        ? raw.message
-        : `Invoice analysis failed (${response.status}).`;
+    const failure = Schema.decodeUnknownOption(ApiFailure)(raw).pipe(Option.getOrNull);
+    const message = failure?.message ?? `Invoice analysis failed (${response.status}).`;
     throw new Error(message);
   }
   return Effect.runPromise(

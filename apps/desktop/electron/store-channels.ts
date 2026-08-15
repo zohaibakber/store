@@ -26,4 +26,8 @@ export const STORE_CHANNELS = {
   sync: "store:sync:run",
 } as const satisfies Record<StoreMethod, string>;
 
+export const STORE_CHANNEL_ENTRIES =
+  // SAFETY: STORE_CHANNELS is checked above to contain every StoreMethod key and string channel.
+  Object.entries(STORE_CHANNELS) as ReadonlyArray<readonly [StoreMethod, string]>;
+
 export const STORE_SYNC_STATUS_CHANNEL = "store:sync:status-changed";

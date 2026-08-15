@@ -30,7 +30,7 @@ export const setAuthSessionBridge = (bridge: AuthSessionBridge) => {
 };
 
 export const authSession = (): AuthSessionBridge => {
-  const bridge = sessionBridge ?? (typeof window === "undefined" ? undefined : window.auth);
+  const bridge = sessionBridge ?? globalThis.window?.auth;
   if (!bridge) throw new Error("Authentication is unavailable in this build.");
   return bridge;
 };

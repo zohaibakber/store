@@ -13,10 +13,15 @@ import { ServerRuntime } from "../http/runtime";
 
 const MAX_PRODUCT_SCAN_BODY_SIZE = 96 * 1024;
 
+interface ProductScanBodyState {
+  readonly chunks: ReadonlyArray<Uint8Array>;
+  readonly size: number;
+}
+
 const readBody = (request: HttpServerRequest.HttpServerRequest) =>
   Stream.runFoldEffect(
     request.stream,
-    () => ({ chunks: [] as ReadonlyArray<Uint8Array>, size: 0 }),
+    (): ProductScanBodyState => ({ chunks: [], size: 0 }),
     (state, chunk) => {
       const size = state.size + chunk.byteLength;
       if (size > MAX_PRODUCT_SCAN_BODY_SIZE)
@@ -44,7 +49,7 @@ const decodeBody = (request: HttpServerRequest.HttpServerRequest) =>
   readBody(request).pipe(
     Effect.flatMap((text) =>
       Effect.try({
-        try: (): unknown => JSON.parse(text),
+        try: () => JSON.parse(text),
         catch: () => badRequest("INVALID_PRODUCT_SCAN", "The scan text could not be read."),
       }),
     ),

@@ -10,6 +10,7 @@ export {
   type WorkspaceTarget,
 } from "./workspace";
 export {
+  invokeStoreHandler,
   makeOfflineStoreApi,
   storeHandlers,
   subscribeSyncStatus,
