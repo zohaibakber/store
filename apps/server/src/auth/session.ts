@@ -39,10 +39,10 @@ export const clerkVerifyConfigForHeaders = (
   config: ClerkVerifyConfig,
 ): ClerkVerifyConfig => {
   const origin = headers.get("origin");
-  if (origin && origin !== "null") return config;
   const nativeOrigin = headers.get("electron-origin") ?? headers.get("expo-origin");
   if (
     !nativeOrigin ||
+    (origin !== null && origin !== "null" && origin !== nativeOrigin) ||
     !config.authorizedParties?.some((party) => matchesTrustedOrigin(nativeOrigin, party))
   )
     return config;
