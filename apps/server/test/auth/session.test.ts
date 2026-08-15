@@ -31,6 +31,18 @@ describe("clerkVerifyConfigForHeaders", () => {
     ).toBeUndefined();
   });
 
+  it("allows the trusted Electron origin after request normalization", () => {
+    expect(
+      clerkVerifyConfigForHeaders(
+        new Headers({
+          origin: "com.tabaaq.desktop://app",
+          "electron-origin": "com.tabaaq.desktop://app",
+        }),
+        config,
+      ).authorizedParties,
+    ).toBeUndefined();
+  });
+
   it("keeps authorized-party verification for an untrusted native origin", () => {
     expect(
       clerkVerifyConfigForHeaders(
