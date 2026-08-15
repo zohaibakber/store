@@ -7,11 +7,7 @@ import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
 import { bootstrapAuth, type InitialAuth } from "@/lib/auth";
-import {
-  ClerkActiveOrganization,
-  ClerkWorkspaceSync,
-  clerkPublishableKey,
-} from "@/lib/clerk-workspace";
+import { ClerkWorkspaceSync, clerkPublishableKey } from "@/lib/clerk-workspace";
 import { electronStore, StoreProvider } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
@@ -59,7 +55,6 @@ async function start() {
           passkeys={passkeys}
           publishableKey={clerkPublishableKey}
         >
-          <ClerkActiveOrganization />
           <ClerkWorkspaceSync />
           {app}
         </ElectronClerkProvider>
