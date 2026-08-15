@@ -27,6 +27,17 @@ export interface ClerkOrganizationMembership {
 
 const textClaim = (value: unknown) => (typeof value === "string" && value.trim() ? value : null);
 
+const recordClaim = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const organizationRoleClaim = (value: unknown) => {
+  const role = textClaim(value);
+  if (!role) return null;
+  return role.includes(":") ? role : `org:${role}`;
+};
+
 const nameFromClaims = (payload: Record<string, unknown>) => {
   const full = textClaim(payload.name);
   if (full) return full;
@@ -44,6 +55,26 @@ export const bearerTokenFromHeaders = (headers: Headers) => {
   return token.trim() || null;
 };
 
+/** Supports both Clerk JWT v2 organization claims and legacy v1 flat claims. */
+export const clerkClaimsFromPayload = (payload: Record<string, unknown>): ClerkVerifiedClaims => {
+  const userId = textClaim(payload.sub);
+  if (!userId) throw new Error("Clerk session token is missing a subject.");
+
+  const organization = recordClaim(payload.o);
+
+  return {
+    userId,
+    sessionId: textClaim(payload.sid) ?? userId,
+    clerkOrganizationId: textClaim(organization?.id) ?? textClaim(payload.org_id),
+    organizationRole:
+      organizationRoleClaim(organization?.rol) ?? organizationRoleClaim(payload.org_role),
+    organizationSlug: textClaim(organization?.slg) ?? textClaim(payload.org_slug),
+    email: textClaim(payload.email) ?? textClaim(payload.email_address),
+    name: nameFromClaims(payload),
+    image: textClaim(payload.image) ?? textClaim(payload.picture),
+  };
+};
+
 export const verifyClerkBearerToken = async (
   token: string,
   config: ClerkVerifyConfig,
@@ -57,19 +88,7 @@ export const verifyClerkBearerToken = async (
       : {}),
   })) as Record<string, unknown>;
 
-  const userId = textClaim(payload.sub);
-  if (!userId) throw new Error("Clerk session token is missing a subject.");
-
-  return {
-    userId,
-    sessionId: textClaim(payload.sid) ?? userId,
-    clerkOrganizationId: textClaim(payload.org_id),
-    organizationRole: textClaim(payload.org_role),
-    organizationSlug: textClaim(payload.org_slug),
-    email: textClaim(payload.email) ?? textClaim(payload.email_address),
-    name: nameFromClaims(payload),
-    image: textClaim(payload.image) ?? textClaim(payload.picture),
-  };
+  return clerkClaimsFromPayload(payload);
 };
 
 export const makeClerkBackend = (config: Pick<ClerkVerifyConfig, "secretKey">) =>
