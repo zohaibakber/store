@@ -7,6 +7,8 @@ import type { SyncOperation } from "./schema";
 export const operationPayloadHash = (
   operation: SyncOperation | Omit<SyncOperation, "payloadHash">,
 ) => {
-  const { payloadHash: _payloadHash, ...payload } = operation as SyncOperation;
-  return bytesToHex(sha256(utf8ToBytes(canonicalJson(payload))));
+  const payload = Object.fromEntries(
+    Object.entries(operation).filter(([key]) => key !== "payloadHash"),
+  );
+  return bytesToHex(sha256(utf8ToBytes(canonicalJson(payload) ?? "null")));
 };

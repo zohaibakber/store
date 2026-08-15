@@ -1,3 +1,5 @@
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 
 const developmentOrigin = Platform.select({
@@ -14,6 +16,21 @@ type WorkspaceSnapshot = {
   readonly organizations: ReadonlyArray<{ readonly id: string; readonly name: string }>;
   readonly isOnline: boolean;
 };
+
+const WorkspaceSnapshotSchema = Schema.Struct({
+  status: Schema.Literals(["authenticated", "unauthenticated"]),
+  user: Schema.NullOr(
+    Schema.Struct({ id: Schema.String, name: Schema.String, email: Schema.String }),
+  ),
+  activeOrganization: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  organizations: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  isOnline: Schema.Boolean,
+});
+
+const AuthFailure = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  errors: Schema.optional(Schema.Array(Schema.Struct({ message: Schema.optional(Schema.String) }))),
+});
 
 export const apiOrigin = (
   process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? developmentOrigin : productionOrigin)
@@ -36,10 +53,10 @@ export const setAccessTokenProvider = (provider: AccessTokenProvider) => {
 
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {
   const token = await accessTokenProvider();
-  return {
+  const nativeHeaders = {
     "expo-origin": mobileNativeOrigin,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  return token ? { ...nativeHeaders, Authorization: `Bearer ${token}` } : nativeHeaders;
 };
 
 export const fetchWorkspaceSession = async (): Promise<WorkspaceSnapshot> => {
@@ -47,7 +64,11 @@ export const fetchWorkspaceSession = async (): Promise<WorkspaceSnapshot> => {
     credentials: "omit",
     headers: await nativeAuthHeaders(),
   });
-  const payload = (await response.json().catch(() => null)) as WorkspaceSnapshot | null;
+  const payload = await response
+    .json()
+    .then(Schema.decodeUnknownOption(WorkspaceSnapshotSchema))
+    .then(Option.getOrNull)
+    .catch(() => null);
   if (!response.ok || !payload) {
     return {
       status: "unauthenticated",
@@ -60,15 +81,10 @@ export const fetchWorkspaceSession = async (): Promise<WorkspaceSnapshot> => {
   return payload;
 };
 
-export const authErrorMessage = (error: unknown) => {
-  if (typeof error === "object" && error !== null) {
-    const message = Reflect.get(error, "message");
-    if (typeof message === "string" && message.length > 0) return message;
-    const errors = Reflect.get(error, "errors");
-    if (Array.isArray(errors) && errors[0] && typeof errors[0] === "object") {
-      const nested = Reflect.get(errors[0], "message");
-      if (typeof nested === "string" && nested.length > 0) return nested;
-    }
-  }
+export const authErrorMessage = (cause: unknown) => {
+  const failure = Schema.decodeUnknownOption(AuthFailure)(cause).pipe(Option.getOrNull);
+  if (failure?.message) return failure.message;
+  const nested = failure?.errors?.[0]?.message;
+  if (nested) return nested;
   return "Something went wrong. Please try again.";
 };

@@ -26,6 +26,7 @@ export const decodeEntityRow = <E extends SyncEntity>(
           `${change.entity} row id does not match its change id.`,
         ),
       );
+    // SAFETY: The row was decoded with the schema selected by the same entity key E.
     return row as (typeof syncEntityPushRows)[E]["Type"];
   });
 

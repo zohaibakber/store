@@ -8,10 +8,6 @@ import { ProductBatchesCard } from "@/components/products/batches";
 import { renderWithStore } from "../../lib/render";
 import { storeStub } from "../../lib/store-stub";
 
-vi.mock("@tanstack/react-router", () => ({
-  useRouter: () => ({ invalidate: () => Promise.resolve() }),
-}));
-
 // happy-dom has no Web Animations API, and the sheet's scroll area asks for it
 // on a timer — after the test has finished, so it surfaces as an unhandled error.
 if (!("getAnimations" in Element.prototype))
@@ -64,7 +60,7 @@ const product: Product = {
 
 const openEditSheet = async () => {
   fireEvent.click(screen.getByRole("button", { name: "Edit batch" }));
-  return (await screen.findByLabelText("Batch number")) as HTMLInputElement;
+  return screen.findByLabelText<HTMLInputElement>("Batch number");
 };
 
 const save = () => fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -113,7 +109,7 @@ test("a miscounted batch can be corrected from the edit sheet", async () => {
   renderWithStore(<ProductBatchesCard product={product} />, storeStub({ updateBatch }));
 
   await openEditSheet();
-  const packs = screen.getByLabelText("Sealed packs") as HTMLInputElement;
+  const packs = screen.getByLabelText<HTMLInputElement>("Sealed packs");
   expect(packs.value).toBe("2");
 
   fireEvent.change(packs, { target: { value: "5" } });

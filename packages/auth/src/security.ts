@@ -317,12 +317,12 @@ export const clerkTokenRefreshDelay = (token: string, now = Date.now()) => {
     if (!payloadSegment) return CLERK_TOKEN_REFRESH_FALLBACK_MS;
     const base64 = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-    const payload = JSON.parse(globalThis.atob(padded)) as { readonly exp?: unknown };
-    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp))
-      return CLERK_TOKEN_REFRESH_FALLBACK_MS;
+    const payload: { readonly exp?: number } = JSON.parse(globalThis.atob(padded));
+    const expiration = payload.exp ?? Number.NaN;
+    if (!Number.isFinite(expiration)) return CLERK_TOKEN_REFRESH_FALLBACK_MS;
     return Math.min(
       CLERK_TOKEN_REFRESH_MAX_MS,
-      Math.max(CLERK_TOKEN_REFRESH_MIN_MS, payload.exp * 1_000 - now - CLERK_TOKEN_REFRESH_LEAD_MS),
+      Math.max(CLERK_TOKEN_REFRESH_MIN_MS, expiration * 1_000 - now - CLERK_TOKEN_REFRESH_LEAD_MS),
     );
   } catch {
     return CLERK_TOKEN_REFRESH_FALLBACK_MS;

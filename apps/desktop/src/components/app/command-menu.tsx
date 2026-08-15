@@ -128,10 +128,14 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
       <CommandDialog open={isOpen} onOpenChange={handleOpenChange}>
         <CommandDialogPopup aria-label="Search products">
           <Command
+            autoHighlight="always"
             filter={null}
-            items={results as Array<Product>}
-            itemToStringValue={(item: unknown) => (item as Product).name}
+            inline
+            items={[...results]}
+            itemToStringValue={(item) => item.name}
+            keepHighlight
             onValueChange={setQuery}
+            open
             value={query}
           >
             <CommandInput placeholder="Search products…" />

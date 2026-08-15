@@ -2,8 +2,15 @@ import type { ProductScanAiClient } from "@store/services";
 
 const PRODUCT_SCAN_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 
+type JsonSchemaValue = string | number | boolean | null | JsonSchemaObject | JsonSchemaValue[];
+interface JsonSchemaObject {
+  readonly [key: string]: JsonSchemaValue;
+}
+
 export const productScanAiClient = (ai: Ai, requestSignal?: AbortSignal): ProductScanAiClient => ({
   generate: async ({ messages, jsonSchema, signal }) => {
+    // SAFETY: The schema is produced by Effect's JSON Schema encoder and therefore contains JSON values only.
+    const workerJsonSchema = jsonSchema as JsonSchemaObject;
     const output = await ai.run(
       PRODUCT_SCAN_MODEL,
       {
@@ -12,7 +19,7 @@ export const productScanAiClient = (ai: Ai, requestSignal?: AbortSignal): Produc
           type: "json_schema",
           json_schema: {
             name: "product_scan",
-            schema: jsonSchema as Record<string, unknown>,
+            schema: workerJsonSchema,
             strict: true,
           },
         },

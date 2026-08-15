@@ -6,6 +6,7 @@ import {
   type TextInputRef,
   useNativeState,
 } from "@expo/ui";
+import * as Schema from "effect/Schema";
 import {
   createContext,
   type ComponentProps,
@@ -71,6 +72,9 @@ const palette = {
 } as const;
 
 type ThemeColor = keyof (typeof palette)["light"];
+const isThemeColorList = (
+  input: ThemeColor | ReadonlyArray<ThemeColor>,
+): input is ReadonlyArray<ThemeColor> => Array.isArray(input);
 
 export function useThemeColor(color: ThemeColor): string;
 export function useThemeColor<const T extends ReadonlyArray<ThemeColor>>(
@@ -81,7 +85,7 @@ export function useThemeColor(
 ): string | ReadonlyArray<string> {
   const { theme } = useUniwind();
   const colors = palette[theme === "dark" ? "dark" : "light"];
-  return typeof input === "string" ? colors[input] : input.map((key) => colors[key]);
+  return isThemeColorList(input) ? input.map((key) => colors[key]) : colors[input];
 }
 
 type ButtonProps = {
@@ -113,7 +117,9 @@ export function Button({
 }: ButtonProps) {
   const { theme } = useUniwind();
   const label =
-    typeof children === "string" || typeof children === "number" ? String(children) : undefined;
+    Schema.is(Schema.String)(children) || Schema.is(Schema.Number)(children)
+      ? String(children)
+      : undefined;
 
   return (
     <Host

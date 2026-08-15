@@ -38,7 +38,7 @@ const ensureIdentity = (
     ? Effect.void
     : Effect.fail(invalidResponse(`Remote ${change.entity} change has invalid identity`));
 
-const decodeRow = <S extends Schema.Top>(schema: S, row: unknown, entity: string) =>
+const decodeRow = <S extends Schema.Top, Row>(schema: S, row: Row, entity: string) =>
   Schema.decodeUnknownEffect(schema)(row).pipe(
     Effect.mapError(() => invalidResponse(`Remote ${entity} change has an invalid row`)),
   );
@@ -79,8 +79,12 @@ const upsertVersionedRow = (
 ) => {
   // The registry maps each entity to its table; drizzle cannot narrow the
   // resulting union, so the column handles are read through a shared shape.
-  const table = syncEntityRows[change.entity].table as unknown as typeof categories;
+  // SAFETY: Every versioned registry table exposes the managed identity/version
+  // columns used here; its entity-specific row was decoded before this call.
+  const table = syncEntityRows[change.entity].table as typeof categories;
   const { id: _id, organizationId: _organizationId, ...set } = row;
+  // SAFETY: The decoded registry row corresponds to the selected registry table.
+  const insertRow = row as typeof categories.$inferInsert;
   return applyIfRemoteWins(
     change,
     transaction
@@ -91,7 +95,7 @@ const upsertVersionedRow = (
       .pipe(Effect.map((rows) => rows[0])),
     transaction
       .insert(table)
-      .values(row as typeof categories.$inferInsert)
+      .values(insertRow)
       .onConflictDoUpdate({ target: [table.organizationId, table.id], set }),
   );
 };
@@ -197,15 +201,19 @@ export const makeSyncEngine = (
         payloadHash: queued.payloadHash,
         changes: queued.payload,
       }));
-      const request: SyncRequest = {
+      const baseRequest = {
         protocolVersion: 2,
         organizationId: workspace.organizationId,
         deviceId: workspace.deviceId,
-        ...(config.clientPlatform ? { clientPlatform: config.clientPlatform } : {}),
-        ...(config.clientVersion ? { clientVersion: config.clientVersion } : {}),
         cursor,
         operations,
-      };
+      } satisfies SyncRequest;
+      const platformRequest = config.clientPlatform
+        ? { ...baseRequest, clientPlatform: config.clientPlatform }
+        : baseRequest;
+      const request: SyncRequest = config.clientVersion
+        ? { ...platformRequest, clientVersion: config.clientVersion }
+        : platformRequest;
       const attemptedAt = Date.now();
       yield* Effect.all(
         [

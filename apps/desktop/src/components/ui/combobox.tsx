@@ -8,6 +8,7 @@ import * as React from "react";
 
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { isNumber, isString } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
 
 function ChevronsUpDownIcon(
@@ -52,6 +53,7 @@ export function ComboboxChipsInput({
   size?: "sm" | "default" | "lg" | number;
   ref?: React.Ref<HTMLInputElement>;
 }): React.ReactElement {
+  // SAFETY: The public prop already restricts size to this exact input-size union.
   const sizeValue = (size ?? "default") as "sm" | "default" | "lg" | number;
 
   return (
@@ -61,9 +63,9 @@ export function ComboboxChipsInput({
         sizeValue === "sm" ? "ps-1.5" : "ps-2",
         className,
       )}
-      data-size={typeof sizeValue === "string" ? sizeValue : undefined}
+      data-size={isString(sizeValue) ? sizeValue : undefined}
       data-slot="combobox-chips-input"
-      size={typeof sizeValue === "number" ? sizeValue : undefined}
+      size={isNumber(sizeValue) ? sizeValue : undefined}
       {...props}
     />
   );
@@ -87,6 +89,7 @@ export function ComboboxInput({
   triggerProps?: ComboboxPrimitive.Trigger.Props;
   clearProps?: ComboboxPrimitive.Clear.Props;
 }): React.ReactElement {
+  // SAFETY: The public prop already restricts size to this exact input-size union.
   const sizeValue = (size ?? "default") as "sm" | "default" | "lg" | number;
 
   return (
@@ -360,6 +363,8 @@ export function ComboboxChips({
   startAddon?: React.ReactNode;
 }): React.ReactElement {
   const { chipsRef } = React.useContext(ComboboxContext);
+  // SAFETY: This context ref is attached only to the Combobox Chips div primitive.
+  const chipsElementRef = chipsRef as React.Ref<HTMLDivElement> | null;
 
   return (
     <ComboboxPrimitive.Chips
@@ -368,7 +373,7 @@ export function ComboboxChips({
         className,
       )}
       data-slot="combobox-chips"
-      ref={chipsRef as React.Ref<HTMLDivElement> | null}
+      ref={chipsElementRef}
       {...props}
     >
       {startAddon && (

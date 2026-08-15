@@ -4,6 +4,7 @@ export const storeStub = (overrides: Partial<Store> = {}): Store => {
   const unstubbed = (method: string) => () =>
     Promise.reject(new Error(`storeStub: ${method} was called but not stubbed`));
 
+  // SAFETY: Every Store method is present below; overrides preserve Store signatures.
   return {
     listCategories: unstubbed("listCategories"),
     createCategory: unstubbed("createCategory"),

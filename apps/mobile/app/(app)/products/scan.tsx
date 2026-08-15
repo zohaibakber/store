@@ -202,14 +202,22 @@ export default function ProductScanScreen() {
     setError(null);
     setNotice(null);
     try {
-      const product = await saveScannedProduct({
-        ...(matchedProduct ? { productId: matchedProduct.id } : { productId: null, newProductId }),
+      const productDetails = {
         name,
         categoryId: matchedProduct?.categoryId ?? categoryId,
         composition: composition.trim() || null,
         strength: strength.trim() || null,
-        ...(!matchedProduct ? { unitsPerPack: parsedUnitsPerPack } : {}),
-      });
+      };
+      const product = await saveScannedProduct(
+        matchedProduct
+          ? { ...productDetails, productId: matchedProduct.id }
+          : {
+              ...productDetails,
+              productId: null,
+              newProductId,
+              unitsPerPack: parsedUnitsPerPack,
+            },
+      );
       setSavedProductId(product.id);
       setMatchedProductId(product.id);
       setNewBatchId(createInventoryEntityId());
@@ -286,17 +294,23 @@ export default function ProductScanScreen() {
     setError(null);
     setNotice(null);
     try {
-      const batch = await updateBatchQuantity({
+      const batchTarget = selectedBatchId
+        ? { batchId: selectedBatchId }
+        : { batchId: null, newBatchId };
+      const quantityDetails = {
         productId: activeProduct.id,
-        ...(selectedBatchId ? { batchId: selectedBatchId } : { batchId: null, newBatchId }),
+        ...batchTarget,
         ...quantities,
-        ...(isNewBatch
+      };
+      const batch = await updateBatchQuantity(
+        isNewBatch
           ? {
+              ...quantityDetails,
               batchNumber: batchNumber.trim() || null,
               expiresAt: expiry,
             }
-          : {}),
-      });
+          : quantityDetails,
+      );
       setSelectedBatchId(batch.id);
       setQuantityOpen(false);
       setNotice("Quantity updated and recorded as a stock adjustment.");

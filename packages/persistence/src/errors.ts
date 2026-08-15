@@ -7,6 +7,7 @@ import {
   type StoreError,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 export {
@@ -33,10 +34,12 @@ export class SyncTransportError extends Schema.TaggedError<SyncTransportError>()
 // any thrown non-Error — is not good enough.
 const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) return cause.message;
-  if (typeof cause === "string") return cause;
-  if (typeof cause === "object" && cause !== null) {
-    const { message } = cause as { message?: unknown };
-    if (typeof message === "string" && message.length > 0) return message;
+  if (Schema.is(Schema.String)(cause)) return cause;
+  const details = Schema.decodeUnknownOption(
+    Schema.Struct({ message: Schema.optional(Schema.String) }),
+  )(cause).pipe(Option.getOrNull);
+  if (details) {
+    if (details.message) return details.message;
     try {
       const serialized = JSON.stringify(cause);
       if (serialized !== undefined && serialized !== "{}") return serialized;

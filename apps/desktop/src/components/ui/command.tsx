@@ -1,3 +1,4 @@
+import { Autocomplete as AutocompletePrimitive } from "@base-ui/react/autocomplete";
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
 import { Search01Icon as HugeSearch01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -11,7 +12,6 @@ function SearchIcon(
   return <HugeiconsIcon icon={HugeSearch01Icon} {...props} />;
 }
 import {
-  Autocomplete,
   AutocompleteCollection,
   AutocompleteEmpty,
   AutocompleteGroup,
@@ -95,21 +95,7 @@ export function CommandDialogPopup({
   );
 }
 
-export function Command({
-  autoHighlight = "always",
-  keepHighlight = true,
-  ...props
-}: React.ComponentProps<typeof Autocomplete>): React.ReactElement {
-  return (
-    <Autocomplete
-      autoHighlight={autoHighlight}
-      inline
-      keepHighlight={keepHighlight}
-      open
-      {...props}
-    />
-  );
-}
+export const Command: typeof AutocompletePrimitive.Root = AutocompletePrimitive.Root;
 
 export function CommandInput({
   className,

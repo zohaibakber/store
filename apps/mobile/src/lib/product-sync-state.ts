@@ -1,3 +1,7 @@
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
 export type SyncChange = {
   cursor: number;
   change: {
@@ -58,49 +62,78 @@ type StoredProductSyncState = {
   batches: Array<[string, BatchRow]>;
 };
 
+type RestoredProductSyncState = { cursor: number; maps: ProductSyncMaps };
+
+const nonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const VersionedRowFields = {
+  rowVersion: nonNegativeInteger.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+  createdAt: nonNegativeInteger.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+  updatedAt: nonNegativeInteger.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+};
+const CategoryRowSchema = Schema.Struct({
+  ...VersionedRowFields,
+  id: Schema.String,
+  name: Schema.String,
+  tracksPacks: Schema.Boolean,
+});
+const ProductRowSchema = Schema.Struct({
+  ...VersionedRowFields,
+  id: Schema.String,
+  name: Schema.String,
+  categoryId: Schema.String,
+  composition: Schema.NullOr(Schema.String),
+  strength: Schema.NullOr(Schema.String),
+  aisle: Schema.NullOr(Schema.String),
+  unitsPerPack: nonNegativeInteger,
+  packPrice: Schema.NullOr(nonNegativeInteger),
+  unitPrice: Schema.NullOr(nonNegativeInteger),
+  visible: Schema.Boolean,
+});
+const BatchRowSchema = Schema.Struct({
+  ...VersionedRowFields,
+  id: Schema.String,
+  productId: Schema.String,
+  batchNumber: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(nonNegativeInteger),
+  packQuantity: nonNegativeInteger,
+  unitQuantity: nonNegativeInteger,
+});
+const StoredProductSyncStateSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  organizationId: Schema.String,
+  cursor: nonNegativeInteger,
+  categories: Schema.Array(Schema.Tuple([Schema.String, CategoryRowSchema])),
+  products: Schema.Array(Schema.Tuple([Schema.String, ProductRowSchema])),
+  batches: Schema.Array(Schema.Tuple([Schema.String, BatchRowSchema])),
+});
+
 const emptyMaps = (): ProductSyncMaps => ({
   categories: new Map(),
   products: new Map(),
   batches: new Map(),
 });
 
-const isEntryList = (value: unknown): value is Array<[string, object]> =>
-  Array.isArray(value) &&
-  value.every(
-    (entry) =>
-      Array.isArray(entry) &&
-      entry.length === 2 &&
-      typeof entry[0] === "string" &&
-      typeof entry[1] === "object" &&
-      entry[1] !== null,
-  );
-
 export const restoreProductSyncState = (
   serialized: string | null,
   organizationId: string,
-): { cursor: number; maps: ProductSyncMaps } => {
+): RestoredProductSyncState => {
   if (!serialized) return { cursor: 0, maps: emptyMaps() };
 
   try {
-    const stored = JSON.parse(serialized) as Partial<StoredProductSyncState>;
-    if (
-      stored.version !== 1 ||
-      stored.organizationId !== organizationId ||
-      !Number.isSafeInteger(stored.cursor) ||
-      (stored.cursor ?? -1) < 0 ||
-      !isEntryList(stored.categories) ||
-      !isEntryList(stored.products) ||
-      !isEntryList(stored.batches)
-    ) {
+    const decoded = Schema.decodeUnknownOption(StoredProductSyncStateSchema)(
+      JSON.parse(serialized),
+    );
+    if (Option.isNone(decoded) || decoded.value.organizationId !== organizationId) {
       return { cursor: 0, maps: emptyMaps() };
     }
+    const stored = decoded.value;
 
     return {
-      cursor: stored.cursor as number,
+      cursor: stored.cursor,
       maps: {
-        categories: new Map(stored.categories as Array<[string, CategoryRow]>),
-        products: new Map(stored.products as Array<[string, ProductRow]>),
-        batches: new Map(stored.batches as Array<[string, BatchRow]>),
+        categories: new Map(stored.categories),
+        products: new Map(stored.products),
+        batches: new Map(stored.batches),
       },
     };
   } catch {
@@ -122,9 +155,6 @@ export const serializeProductSyncState = (
     batches: [...maps.batches],
   } satisfies StoredProductSyncState);
 
-const asRow = <T>(value: unknown): T | null =>
-  typeof value === "object" && value !== null ? (value as T) : null;
-
 export const applyProductSyncChanges = (
   maps: ProductSyncMaps,
   changes: ReadonlyArray<SyncChange>,
@@ -133,20 +163,20 @@ export const applyProductSyncChanges = (
     if (change.entity === "category") {
       if (change.action === "delete") maps.categories.delete(change.entityId);
       else {
-        const row = asRow<CategoryRow>(change.row);
-        if (row) maps.categories.set(change.entityId, row);
+        const row = Schema.decodeUnknownOption(CategoryRowSchema)(change.row);
+        if (Option.isSome(row)) maps.categories.set(change.entityId, row.value);
       }
     } else if (change.entity === "product") {
       if (change.action === "delete") maps.products.delete(change.entityId);
       else {
-        const row = asRow<ProductRow>(change.row);
-        if (row) maps.products.set(change.entityId, row);
+        const row = Schema.decodeUnknownOption(ProductRowSchema)(change.row);
+        if (Option.isSome(row)) maps.products.set(change.entityId, row.value);
       }
     } else if (change.entity === "batch") {
       if (change.action === "delete") maps.batches.delete(change.entityId);
       else {
-        const row = asRow<BatchRow>(change.row);
-        if (row) maps.batches.set(change.entityId, row);
+        const row = Schema.decodeUnknownOption(BatchRowSchema)(change.row);
+        if (Option.isSome(row)) maps.batches.set(change.entityId, row.value);
       }
     }
   }

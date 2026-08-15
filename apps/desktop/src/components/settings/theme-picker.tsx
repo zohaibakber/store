@@ -9,7 +9,7 @@ const options: ReadonlyArray<{ label: string; value: ThemePreference }> = [
   { label: "Dark", value: "dark" },
 ];
 
-const previews: Record<ThemePreference, React.ReactNode> = {
+const previews = {
   dark: (
     <svg aria-hidden="true" className="size-full" fill="none" viewBox="0 0 88 70">
       <path className="fill-neutral-900" d="M0 0h88v70H0z" />
@@ -38,7 +38,7 @@ const previews: Record<ThemePreference, React.ReactNode> = {
       <circle className="fill-neutral-600" cx="60" cy="26" r="8" />
     </svg>
   ),
-};
+} satisfies Record<ThemePreference, React.ReactNode>;
 
 export function ThemePicker() {
   const { preference, setTheme } = useTheme();
@@ -48,6 +48,7 @@ export function ThemePicker() {
       <FieldsetLegend className="text-sm font-medium">Theme</FieldsetLegend>
       <RadioGroup
         className="flex-row gap-4"
+        // SAFETY: Radio values come exclusively from the ThemePreference option list below.
         onValueChange={(value) => value && setTheme(value as ThemePreference)}
         value={preference}
       >

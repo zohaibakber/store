@@ -7,7 +7,7 @@ export const WorkspaceUser = Schema.Struct({
   image: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
-export interface WorkspaceUser extends Schema.Schema.Type<typeof WorkspaceUser> {}
+export type WorkspaceUser = Schema.Schema.Type<typeof WorkspaceUser>;
 
 export const WorkspaceOrganization = Schema.Struct({
   id: Schema.String,
@@ -17,7 +17,7 @@ export const WorkspaceOrganization = Schema.Struct({
   clerkOrganizationId: Schema.optionalKey(Schema.String),
 });
 
-export interface WorkspaceOrganization extends Schema.Schema.Type<typeof WorkspaceOrganization> {}
+export type WorkspaceOrganization = Schema.Schema.Type<typeof WorkspaceOrganization>;
 
 export const WorkspaceSnapshot = Schema.Struct({
   status: Schema.Literals(["authenticated", "unauthenticated"]),
@@ -28,4 +28,4 @@ export const WorkspaceSnapshot = Schema.Struct({
   workspaceError: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
-export interface WorkspaceSnapshot extends Schema.Schema.Type<typeof WorkspaceSnapshot> {}
+export type WorkspaceSnapshot = Schema.Schema.Type<typeof WorkspaceSnapshot>;

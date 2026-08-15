@@ -15,7 +15,8 @@ export const Route = createFileRoute("/products/$productId_/edit")({
   component: EditProductPage,
   staticData: {
     breadcrumb: (loaderData) => {
-      const productName = (loaderData as { product?: { name: string } } | undefined)?.product?.name;
+      const productName =
+        loaderData && "product" in loaderData ? loaderData.product?.name : undefined;
       return productName ? `Edit ${productName}` : "Edit product";
     },
   },
