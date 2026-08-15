@@ -7,13 +7,13 @@ import {
   invoices,
   stockMovements,
 } from "@store/db/local/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { InvoiceNotFoundError, PersistenceError, mapPersistenceError } from "../errors";
-import { byEarliestExpiry, toInvoice } from "./models";
+import { byEarliestExpiry, toInvoice, type InvoiceRow, type InvoiceWithItems } from "./models";
 import type { InventoryMutation } from "./mutation";
 
 export interface InvoiceStore {
@@ -76,26 +76,69 @@ export const makeInvoiceStore = (
   workspace: Workspace,
   mutation: InventoryMutation,
 ): InvoiceStore => {
-  const listInvoices = database.query.invoices
-    .findMany({
-      orderBy: { createdAt: "desc" },
-      where: { organizationId: workspace.organizationId, deletedAt: { isNull: true } },
-      with: { items: true },
-    })
+  const hydrateInvoices = (
+    invoiceRows: ReadonlyArray<InvoiceRow>,
+  ): Effect.Effect<ReadonlyArray<InvoiceWithItems>, PersistenceError> => {
+    if (invoiceRows.length === 0) return Effect.succeed([]);
+
+    return database
+      .select()
+      .from(invoiceItems)
+      .where(
+        and(
+          eq(invoiceItems.organizationId, workspace.organizationId),
+          inArray(
+            invoiceItems.invoiceId,
+            invoiceRows.map((invoice) => invoice.id),
+          ),
+        ),
+      )
+      .orderBy(asc(invoiceItems.createdAt))
+      .pipe(
+        Effect.map((itemRows) => {
+          const itemsByInvoiceId = new Map<string, typeof itemRows>();
+          for (const item of itemRows) {
+            const grouped = itemsByInvoiceId.get(item.invoiceId) ?? [];
+            grouped.push(item);
+            itemsByInvoiceId.set(item.invoiceId, grouped);
+          }
+          return invoiceRows.map((invoice) => ({
+            ...invoice,
+            items: itemsByInvoiceId.get(invoice.id) ?? [],
+          }));
+        }),
+        mapPersistenceError("load invoice items"),
+      );
+  };
+
+  const listInvoices = database
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, workspace.organizationId), isNull(invoices.deletedAt)))
+    .orderBy(desc(invoices.createdAt))
     .pipe(
+      Effect.flatMap(hydrateInvoices),
       Effect.map((rows) => rows.map(toInvoice)),
       mapPersistenceError("list invoices"),
     );
 
   const getInvoice = Effect.fn("OfflineStore.getInvoice")(function* (id: string) {
-    const row = yield* database.query.invoices
-      .findFirst({
-        where: { organizationId: workspace.organizationId, id, deletedAt: { isNull: true } },
-        with: { items: true },
-      })
+    const [invoice] = yield* database
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, workspace.organizationId),
+          eq(invoices.id, id),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1)
       .pipe(mapPersistenceError("find invoice"));
-    if (!row) return yield* InvoiceNotFoundError.make({ id });
-    return toInvoice(row);
+    if (!invoice) return yield* InvoiceNotFoundError.make({ id });
+    const [hydrated] = yield* hydrateInvoices([invoice]);
+    if (!hydrated) return yield* InvoiceNotFoundError.make({ id });
+    return toInvoice(hydrated);
   });
 
   const createInvoice = Effect.fn("OfflineStore.createInvoice")(function* (
@@ -304,17 +347,13 @@ export const makeInvoiceStore = (
             });
           }
           yield* scope.capture(changes);
-          const invoiceWithItems = yield* transaction.query.invoices.findFirst({
-            where: { organizationId: scope.organizationId, id },
-            with: { items: true },
-          });
-          if (!invoiceWithItems)
-            return yield* invalidInvoice("Created invoice could not be loaded");
-          return invoiceWithItems;
+          return invoice;
         }),
       )
       .pipe(mapPersistenceError("create invoice"));
-    return toInvoice(created);
+    const [hydrated] = yield* hydrateInvoices([created]);
+    if (!hydrated) return yield* invalidInvoice("Created invoice could not be loaded");
+    return toInvoice(hydrated);
   });
 
   return { listInvoices, getInvoice, createInvoice };
