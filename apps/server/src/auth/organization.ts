@@ -8,7 +8,7 @@ import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 import { Forbidden, Unauthenticated, forbidden, unauthenticated } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 
-export interface CurrentOrganizationShape {
+export interface CurrentOrganizationContext {
   readonly user: AuthSession["user"];
   readonly session: AuthSession["session"];
   readonly organizationId: string;
@@ -16,7 +16,7 @@ export interface CurrentOrganizationShape {
 
 export class CurrentOrganization extends Context.Service<
   CurrentOrganization,
-  CurrentOrganizationShape
+  CurrentOrganizationContext
 >()("@store/server/CurrentOrganization") {}
 
 export const authHeadersForRequest = (requestHeaders: Headers) => {

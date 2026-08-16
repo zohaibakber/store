@@ -1,5 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 
+import { isNumber, isString } from "@/lib/predicates";
+
 const BREAKPOINTS = {
   "2xl": 1536,
   "3xl": 1600,
@@ -14,18 +16,20 @@ type Breakpoint = keyof typeof BREAKPOINTS;
 
 type BreakpointQuery = Breakpoint | `max-${Breakpoint}` | `${Breakpoint}:max-${Breakpoint}`;
 
+const isBreakpoint = (value: string): value is Breakpoint => value in BREAKPOINTS;
+
 function resolveMin(value: Breakpoint | number): string {
-  const px = typeof value === "number" ? value : BREAKPOINTS[value];
+  const px = isNumber(value) ? value : BREAKPOINTS[value];
   return `(min-width: ${px}px)`;
 }
 
 function resolveMax(value: Breakpoint | number): string {
-  const px = typeof value === "number" ? value : BREAKPOINTS[value];
+  const px = isNumber(value) ? value : BREAKPOINTS[value];
   return `(max-width: ${px - 1}px)`;
 }
 
 function parseQuery(query: BreakpointQuery | MediaQueryInput | (string & {})): string {
-  if (typeof query !== "string") {
+  if (!isString(query)) {
     const parts: string[] = [];
     if (query.min != null) parts.push(resolveMin(query.min));
     if (query.max != null) parts.push(resolveMax(query.max));
@@ -41,9 +45,9 @@ function parseQuery(query: BreakpointQuery | MediaQueryInput | (string & {})): s
   for (const segment of query.split(":")) {
     if (segment.startsWith("max-")) {
       const bp = segment.slice(4);
-      if (bp in BREAKPOINTS) parts.push(resolveMax(bp as Breakpoint));
-    } else if (segment in BREAKPOINTS) {
-      parts.push(resolveMin(segment as Breakpoint));
+      if (isBreakpoint(bp)) parts.push(resolveMax(bp));
+    } else if (isBreakpoint(segment)) {
+      parts.push(resolveMin(segment));
     }
   }
 
@@ -66,8 +70,8 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
 
   const subscribe = useCallback(
     (callback: () => void) => {
-      if (typeof window === "undefined") return () => {};
-      const mql = window.matchMedia(mediaQuery);
+      const mql = globalThis.window?.matchMedia(mediaQuery);
+      if (!mql) return () => {};
       mql.addEventListener("change", callback);
       return () => mql.removeEventListener("change", callback);
     },
@@ -75,8 +79,7 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
   );
 
   const getSnapshot = useCallback(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia(mediaQuery).matches;
+    return globalThis.window?.matchMedia(mediaQuery).matches ?? false;
   }, [mediaQuery]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

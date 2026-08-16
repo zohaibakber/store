@@ -7,11 +7,16 @@ import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 
 exposeClerkBridge({ passkeys: true });
 
+const invoke = <Result, Arguments extends ReadonlyArray<string | null> = []>(
+  channel: string,
+  ...args: Arguments
+): Promise<Result> => ipcRenderer.invoke(channel, ...args);
+
 contextBridge.exposeInMainWorld("auth", {
-  getSession: () => ipcRenderer.invoke("auth:get-session") as Promise<WorkspaceSnapshot>,
+  getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
   adoptSession: (token: string | null) =>
-    ipcRenderer.invoke("auth:adopt-session", token) as Promise<WorkspaceSnapshot>,
-  signOut: () => ipcRenderer.invoke("auth:sign-out") as Promise<void>,
+    invoke<WorkspaceSnapshot, [string | null]>("auth:adopt-session", token),
+  signOut: () => invoke<void>("auth:sign-out"),
   onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: WorkspaceSnapshot) =>
       callback(snapshot);
@@ -33,8 +38,8 @@ contextBridge.exposeInMainWorld("electronTheme", {
 });
 
 contextBridge.exposeInMainWorld("updater", {
-  check: () => ipcRenderer.invoke("updater:check") as Promise<void>,
-  download: () => ipcRenderer.invoke("updater:download") as Promise<void>,
+  check: () => invoke<void>("updater:check"),
+  download: () => invoke<void>("updater:download"),
   install() {
     ipcRenderer.send("updater:install");
   },
@@ -53,7 +58,7 @@ type StoreIpcResult<A> =
       readonly error: unknown;
     };
 
-const invokeStore = async <A>(channel: string, input?: unknown): Promise<A> => {
+const invokeStore = async <A, Input>(channel: string, input?: Input): Promise<A> => {
   const result: StoreIpcResult<A> = await ipcRenderer.invoke(channel, input);
   if (result.ok) return result.value;
   throw result.error;
@@ -62,12 +67,14 @@ const invokeStore = async <A>(channel: string, input?: unknown): Promise<A> => {
 const requestMethods = Object.fromEntries(
   Object.entries(STORE_CHANNELS).map(([method, channel]) => [
     method,
-    (input?: unknown) => invokeStore(channel, input),
+    <Input>(input?: Input) => invokeStore(channel, input),
   ]),
-) as Omit<OfflineStoreApi, "onSyncStatusChange">;
+);
+// SAFETY: STORE_CHANNELS is exhaustive for every request method in OfflineStoreApi.
+const typedRequestMethods = requestMethods as Omit<OfflineStoreApi, "onSyncStatusChange">;
 
 const offlineStore: OfflineStoreApi = {
-  ...requestMethods,
+  ...typedRequestMethods,
   onSyncStatusChange(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
       callback(status);

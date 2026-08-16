@@ -43,8 +43,15 @@ export type StoreManagedColumn =
 export const storeManagedColumnNames: ReadonlyArray<StoreManagedColumn> = [
   "id",
   "actorUserId",
-  ...(Object.keys(timestamps) as ReadonlyArray<keyof typeof timestamps>),
-  ...(Object.keys(mutableSyncMetadata) as ReadonlyArray<keyof typeof mutableSyncMetadata>),
+  "createdAt",
+  "updatedAt",
+  "deletedAt",
+  "organizationId",
+  "createdByUserId",
+  "updatedByUserId",
+  "deviceId",
+  "operationId",
+  "rowVersion",
 ];
 
 export const categories = sqliteTable(

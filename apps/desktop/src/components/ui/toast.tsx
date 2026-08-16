@@ -115,7 +115,9 @@ function Toasts({
         data-slot="toast-viewport"
       >
         {toasts.map((toast) => {
+          // SAFETY: Base UI emits only the toast types represented by this icon map.
           const Icon = toast.type ? TOAST_ICONS[toast.type as keyof typeof TOAST_ICONS] : null;
+          // SAFETY: This manager is the sole producer and writes ToastData into data.
           const toastData = toast.data as ToastData | undefined;
 
           return (
@@ -221,7 +223,9 @@ function AnchoredToasts({
     <Toast.Portal data-slot="toast-portal-anchored" {...portalProps}>
       <Toast.Viewport className="outline-none" data-slot="toast-viewport-anchored">
         {toasts.map((toast) => {
+          // SAFETY: Base UI emits only the toast types represented by this icon map.
           const Icon = toast.type ? TOAST_ICONS[toast.type as keyof typeof TOAST_ICONS] : null;
+          // SAFETY: This manager is the sole producer and writes ToastData into data.
           const toastData = toast.data as ToastData | undefined;
           const tooltipStyle = toastData?.tooltipStyle ?? false;
           const positionerProps = toast.positionerProps;

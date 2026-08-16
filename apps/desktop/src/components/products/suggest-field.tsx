@@ -44,11 +44,7 @@ export function SuggestField({
   );
 
   return (
-    <Autocomplete
-      items={items as string[]}
-      onValueChange={(next: string) => onChange(next)}
-      value={value}
-    >
+    <Autocomplete items={[...items]} onValueChange={(next: string) => onChange(next)} value={value}>
       <AutocompleteInput
         aria-invalid={invalid || undefined}
         autoFocus={autoFocus}

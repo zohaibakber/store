@@ -48,7 +48,7 @@ export const Route = createFileRoute("/products/$productId")({
   errorComponent: ProductDetailError,
   staticData: {
     breadcrumb: (loaderData) =>
-      (loaderData as { product?: { name: string } } | undefined)?.product?.name ?? "Product",
+      (loaderData && "product" in loaderData ? loaderData.product?.name : undefined) ?? "Product",
   },
 });
 

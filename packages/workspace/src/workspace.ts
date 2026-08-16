@@ -6,9 +6,14 @@ import {
 } from "@store/contracts";
 import { type OfflineStore, SyncTransportError } from "@store/persistence/core";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
+export type JsonApiResponse = string | number | boolean | null | JsonApiObject | JsonApiResponse[];
+export interface JsonApiObject {
+  readonly [key: string]: JsonApiResponse;
+}
 
 export type WorkspaceCommand =
   | { readonly _tag: "AdoptSession"; readonly token: string | null }
@@ -19,7 +24,7 @@ export interface WorkspaceAuthAdapter {
   readonly initialize: () => Promise<WorkspaceSnapshot>;
   readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
-  readonly apiRequest: <A>(pathname: string, init?: JsonRequestInit) => Promise<A>;
+  readonly apiRequest: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
 }
 
 export type WorkspaceTarget =
@@ -63,15 +68,15 @@ const unauthenticated = (
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The local workspace could not be opened.";
 
-const requestDetails = (cause: unknown) => {
-  if (typeof cause !== "object" || cause === null) return {};
-  const status = Reflect.get(cause, "status");
-  const code = Reflect.get(cause, "code");
-  return {
-    ...(typeof status === "number" ? { status } : {}),
-    ...(typeof code === "string" ? { code } : {}),
-  };
-};
+const RequestFailureDetails = Schema.Struct({
+  status: Schema.optional(Schema.Number),
+  code: Schema.optional(Schema.String),
+});
+
+const requestDetails = (cause: unknown) =>
+  Schema.decodeUnknownOption(RequestFailureDetails)(cause).pipe(
+    Option.getOrElse(() => ({ status: undefined, code: undefined })),
+  );
 
 export class WorkspaceActivationError extends Error {
   override readonly name = "WorkspaceActivationError";
@@ -133,8 +138,8 @@ export class AuthenticatedWorkspace {
     return this.#store.run(effect);
   }
 
-  request<A>(pathname: string, init?: JsonRequestInit): Promise<A> {
-    return this.#auth.apiRequest<A>(pathname, init);
+  request(pathname: string, init?: JsonRequestInit): Promise<JsonApiResponse> {
+    return this.#auth.apiRequest(pathname, init);
   }
 
   dispose(): Promise<void> {
@@ -173,7 +178,7 @@ export class AuthenticatedWorkspace {
             exchange: Effect.fn("AuthenticatedWorkspace.exchange")(function* (request) {
               const response = yield* Effect.tryPromise({
                 try: (signal) =>
-                  auth.apiRequest<unknown>("/api/sync", {
+                  auth.apiRequest("/api/sync", {
                     method: "POST",
                     body: request,
                     signal,

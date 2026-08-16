@@ -632,6 +632,7 @@ test("a failed exchange sets a future nextAttemptAt and increments attemptCount"
       expect(outbox.length).toBeGreaterThan(0);
       expect(outbox[0]?.attemptCount).toBeGreaterThan(0);
       expect(outbox[0]?.nextAttemptAt).not.toBeNull();
+      // SAFETY: The preceding assertion establishes that nextAttemptAt is non-null.
       expect(outbox[0]?.nextAttemptAt as number).toBeGreaterThan(before);
       expect(outbox.slice(1).every((operation) => operation.nextAttemptAt === null)).toBe(true);
     },

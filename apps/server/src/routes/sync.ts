@@ -4,6 +4,7 @@ import {
   SyncRequest,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -23,27 +24,29 @@ import { type SyncProtocolCode, SyncProtocolError } from "../sync/errors";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
-const requestSizeFailure = (input: unknown) => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const operations = Reflect.get(input, "operations");
-  if (!Array.isArray(operations)) return undefined;
+const SyncRequestSizeProbe = Schema.Struct({
+  operations: Schema.Array(Schema.Struct({ changes: Schema.Array(Schema.Unknown) })),
+});
+
+const requestSizeFailure = <Input>(input: Input) => {
+  const decoded = Schema.decodeUnknownOption(SyncRequestSizeProbe)(input);
+  if (Option.isNone(decoded)) return undefined;
+  const { operations } = decoded.value;
   if (operations.length > MAX_SYNC_OPERATIONS_PER_REQUEST)
     return `operations contains ${operations.length} items; at most ${MAX_SYNC_OPERATIONS_PER_REQUEST} are allowed`;
   for (const [index, operation] of operations.entries()) {
-    if (typeof operation !== "object" || operation === null) continue;
-    const changes = Reflect.get(operation, "changes");
-    if (Array.isArray(changes) && changes.length > MAX_SYNC_CHANGES_PER_OPERATION)
-      return `operations[${index}].changes contains ${changes.length} items; at most ${MAX_SYNC_CHANGES_PER_OPERATION} are allowed`;
+    if (operation.changes.length > MAX_SYNC_CHANGES_PER_OPERATION)
+      return `operations[${index}].changes contains ${operation.changes.length} items; at most ${MAX_SYNC_CHANGES_PER_OPERATION} are allowed`;
   }
   return undefined;
 };
 
-const validationMessage = (cause: unknown, input: unknown) => {
+const validationMessage = <Input>(cause: unknown, input: Input) => {
   const reason = requestSizeFailure(input) ?? messageOf(cause).split(", got ")[0];
   return `Sync request validation failed: ${reason}`.slice(0, 1_000);
 };
 
-const protocolStatus: Record<SyncProtocolCode, 400 | 403 | 409 | 422 | 500> = {
+const protocolStatus = {
   INVALID_JSON: 400,
   INVALID_SYNC_REQUEST: 400,
   INVALID_DEVICE: 400,
@@ -74,7 +77,7 @@ const protocolStatus: Record<SyncProtocolCode, 400 | 403 | 409 | 422 | 500> = {
   PAYLOAD_HASH_MISMATCH: 422,
   ENTITY_WRITE_FAILED: 500,
   CHANGE_LOG_FAILED: 500,
-};
+} satisfies Record<SyncProtocolCode, 400 | 403 | 409 | 422 | 500>;
 
 const protocolFailure = (error: SyncProtocolError) => {
   switch (protocolStatus[error.code]) {
@@ -95,7 +98,7 @@ const decodeSyncRequest = (request: HttpServerRequest.HttpServerRequest) =>
   request.text.pipe(
     Effect.flatMap((text) =>
       Effect.try({
-        try: (): unknown => JSON.parse(text),
+        try: () => JSON.parse(text),
         catch: () =>
           SyncProtocolError.make({ code: "INVALID_JSON", message: "Invalid JSON body." }),
       }),

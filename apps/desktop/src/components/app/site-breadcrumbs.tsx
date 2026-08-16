@@ -1,3 +1,4 @@
+import type { Invoice } from "@store/contracts";
 import { Link, useMatches } from "@tanstack/react-router";
 import { Fragment } from "react";
 
@@ -10,7 +11,12 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-type BreadcrumbLabel = string | ((loaderData: unknown) => string);
+type BreadcrumbLoaderData = Invoice | { readonly product?: { readonly name: string } } | undefined;
+type BreadcrumbLabel = string | ((loaderData: BreadcrumbLoaderData) => string);
+
+const isBreadcrumbLoader = <Value,>(
+  value: Value,
+): value is Value & ((loaderData: BreadcrumbLoaderData) => string) => typeof value === "function";
 
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
@@ -29,8 +35,14 @@ export function SiteBreadcrumbs() {
           const breadcrumb = match.staticData.breadcrumb;
           if (!breadcrumb) return null;
 
-          const label =
-            typeof breadcrumb === "function" ? breadcrumb(match.loaderData) : breadcrumb;
+          let label: string;
+          if (isBreadcrumbLoader(breadcrumb)) {
+            // SAFETY: TanStack supplies each match's own loader result to its static-data label.
+            const loaderData = match.loaderData as BreadcrumbLoaderData;
+            label = breadcrumb(loaderData);
+          } else {
+            label = breadcrumb;
+          }
           const isCurrent = index === breadcrumbMatches.length - 1;
           const to =
             match.fullPath === "/products/"

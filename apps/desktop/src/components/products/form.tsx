@@ -70,8 +70,11 @@ const computeUnitPrice = (unitsPerPack: string, packPrice: string) => {
 
 const parseStrength = (value: string | null) => {
   const match = value?.match(/^([\d.]+)\s*(mg|mcg|g|ml|l)$/i);
-  if (!match)
+  if (!match) {
+    // SAFETY: The fallback literal is a member of the closed strengthUnits tuple.
     return { strength: value ?? "", strengthUnit: "mg" as (typeof strengthUnits)[number] };
+  }
+  // SAFETY: The regex capture is restricted to the same closed unit alternatives.
   return {
     strength: match[1],
     strengthUnit: match[2].toLowerCase() as (typeof strengthUnits)[number],
@@ -85,6 +88,7 @@ const productFormOpts = formOptions({
     aisle: "",
     composition: "",
     strength: "",
+    // SAFETY: The default literal is a member of the closed strengthUnits tuple.
     strengthUnit: "mg" as (typeof strengthUnits)[number],
     unitsPerPack: "",
     packPrice: "",

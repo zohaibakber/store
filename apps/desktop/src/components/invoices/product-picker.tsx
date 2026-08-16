@@ -15,8 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatPrice } from "@/lib/format";
 
-const matches = (itemValue: unknown, query: string) => {
-  const product = itemValue as Product;
+const matches = (product: Product, query: string) => {
   const term = query.trim().toLowerCase();
   if (term.length === 0) return true;
   return (
@@ -35,8 +34,8 @@ function InvoiceProductPicker() {
   return (
     <Autocomplete
       filter={matches}
-      items={products as Product[]}
-      itemToStringValue={(item: unknown) => (item as Product).name}
+      items={[...products]}
+      itemToStringValue={(item) => item.name}
       key={pickerKey}
     >
       <AutocompleteInput

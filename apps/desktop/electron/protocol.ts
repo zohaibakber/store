@@ -127,6 +127,8 @@ export const registerDesktopProtocolHandler = (input: {
       };
       if (request.method !== "GET" && request.method !== "HEAD") {
         init.body = request.body;
+        // SAFETY: Electron's net.fetch follows Node's streaming-request contract,
+        // whose required duplex extension is absent from the DOM RequestInit type.
         (init as RequestInit & { duplex: "half" }).duplex = "half";
       }
       const response = await net.fetch(target.toString(), init);

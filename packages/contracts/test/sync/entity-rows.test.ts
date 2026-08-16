@@ -26,9 +26,9 @@ const productRow = {
   rowVersion: 1,
 };
 
-const decodeApply = (row: unknown) =>
+const decodeApply = <Row>(row: Row) =>
   Schema.decodeUnknownResult(syncEntityRows.product.schema)(row);
-const decodePush = (row: unknown) => Schema.decodeUnknownResult(syncEntityPushRows.product)(row);
+const decodePush = <Row>(row: Row) => Schema.decodeUnknownResult(syncEntityPushRows.product)(row);
 
 test("a well-formed product row decodes in both directions", () => {
   expect(Result.isSuccess(decodeApply(productRow))).toBe(true);

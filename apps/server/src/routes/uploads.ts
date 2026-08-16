@@ -44,6 +44,7 @@ const multipartFailure = (
 const collectFiles = (parts: Stream.Stream<Multipart.Part, Multipart.MultipartError>) =>
   Stream.runFoldEffect(
     parts,
+    // SAFETY: The immutable accumulator begins as an empty File collection.
     () => [] as ReadonlyArray<File>,
     (files, part) => {
       if (!Multipart.isFile(part) || part.key !== "files") return Effect.succeed(files);

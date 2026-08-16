@@ -10,9 +10,8 @@ import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
 import {
   AuthenticatedWorkspace,
-  storeHandlers,
+  invokeStoreHandler,
   withStoreEffect,
-  type StoreMethod,
   type WorkspaceStoreAdapter,
   type WorkspaceTarget,
 } from "@store/workspace";
@@ -32,7 +31,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
-import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
+import { STORE_CHANNEL_ENTRIES, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -150,10 +149,11 @@ type StoreIpcResult<A> =
       readonly error: unknown;
     };
 
-const errorMessage = (cause: unknown) =>
-  typeof cause === "object" && cause !== null && "message" in cause
-    ? String(cause.message)
-    : String(cause);
+const ErrorDetails = Schema.Struct({ message: Schema.String });
+const errorMessage = (cause: unknown) => {
+  const details = Schema.decodeUnknownOption(ErrorDetails)(cause);
+  return details._tag === "Some" ? details.value.message : String(cause);
+};
 
 const encodeStoreErrorSafely = (cause: unknown) => {
   try {
@@ -185,16 +185,11 @@ const runStore = async <A, E>(
   }
 };
 
-type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
-const withStore = withStoreEffect as <A, E>(
-  f: (store: OfflineStoreShape) => Effect.Effect<A, E>,
-) => Effect.Effect<A, E, OfflineStore>;
+const withStore = withStoreEffect;
 
 function registerStoreIpc() {
-  for (const [method, channel] of Object.entries(STORE_CHANNELS))
-    ipcMain.handle(channel, (_event, input: unknown) =>
-      runStore(storeHandlers[method as StoreMethod](input)),
-    );
+  for (const [method, channel] of STORE_CHANNEL_ENTRIES)
+    ipcMain.handle(channel, (_event, input) => runStore(invokeStoreHandler(method, input)));
 }
 
 const organizationKey = (organizationId: string) =>
@@ -230,28 +225,27 @@ const dataDirectory = (target: WorkspaceTarget) =>
 const workspaceStores: WorkspaceStoreAdapter = {
   open: async (target) => {
     const dataDir = dataDirectory(target);
+    const baseConfig = {
+      dataDir,
+      migrationsFolder: migrationsFolder(),
+      clientPlatform: "desktop" as const,
+      clientVersion: app.getVersion(),
+      resyncIntervalMillis: DESKTOP_SYNC_POLL_INTERVAL_MS,
+    };
+    const persistenceConfig =
+      target._tag === "Authenticated"
+        ? {
+            ...baseConfig,
+            syncTransport: { exchange: target.exchange },
+            workspace: {
+              organizationId: target.organizationId,
+              userId: target.userId,
+              deviceId: target.deviceId,
+            },
+          }
+        : baseConfig;
     await mkdir(path.dirname(dataDir), { recursive: true });
-    const runtime = ManagedRuntime.make(
-      persistenceLayer({
-        dataDir,
-        migrationsFolder: migrationsFolder(),
-        clientPlatform: "desktop",
-        clientVersion: app.getVersion(),
-        resyncIntervalMillis: DESKTOP_SYNC_POLL_INTERVAL_MS,
-        ...(target._tag === "Authenticated"
-          ? {
-              syncTransport: {
-                exchange: target.exchange,
-              },
-              workspace: {
-                organizationId: target.organizationId,
-                userId: target.userId,
-                deviceId: target.deviceId,
-              },
-            }
-          : {}),
-      }),
-    );
+    const runtime = ManagedRuntime.make(persistenceLayer(persistenceConfig));
     try {
       await runtime.runPromise(OfflineStore.pipe(Effect.asVoid));
     } catch (cause) {
@@ -301,62 +295,48 @@ async function disposeWorkspace() {
   if (current) await current.dispose();
 }
 
-const inputString = (input: unknown, key: string, maximum = 160) => {
-  if (!input || typeof input !== "object") throw new Error("Invalid authentication request.");
-  const value = Reflect.get(input, key);
-  if (typeof value !== "string" || !value.trim() || value.length > maximum)
-    throw new Error(`Invalid ${key}.`);
-  return value.trim();
-};
+const AuthToken = Schema.NullOr(
+  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16_384)),
+);
+const InvoiceUpload = Schema.Struct({
+  files: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      type: Schema.String,
+      bytes: Schema.instanceOf(ArrayBuffer),
+    }),
+  ),
+});
+const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
   ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
-  ipcMain.handle("auth:adopt-session", async (_event, token: unknown) =>
-    currentWorkspace().execute({
-      _tag: "AdoptSession",
-      token: token === null || token === undefined ? null : inputString({ token }, "token", 16_384),
-    }),
-  );
+  ipcMain.handle("auth:adopt-session", async (_event, input) => {
+    const token = input === undefined ? null : Schema.decodeUnknownSync(AuthToken)(input);
+    return currentWorkspace().execute({ _tag: "AdoptSession", token: token?.trim() ?? null });
+  });
   ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
 }
 
 function registerServerIpc() {
-  ipcMain.handle(
-    "server:uploads",
-    async (
-      _event,
-      input: {
-        files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
-      },
-    ) => {
-      if (!input || !Array.isArray(input.files)) throw new Error("Invalid invoice upload request.");
-      const body = new FormData();
-      for (const file of input.files) {
-        if (
-          !file ||
-          typeof file.name !== "string" ||
-          typeof file.type !== "string" ||
-          !(file.bytes instanceof ArrayBuffer)
-        )
-          throw new Error("Invalid invoice attachment.");
-        const inferredType = file.name.toLowerCase().endsWith(".pdf")
-          ? "application/pdf"
-          : "text/csv";
-        body.append(
-          "files",
-          new File([file.bytes], file.name, { type: file.type || inferredType }),
-        );
-      }
-      const raw = await currentWorkspace().request("/api/uploads", { method: "POST", body });
-      return await Effect.runPromise(
-        Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
-          Effect.mapError(
-            () => new Error("The invoice analysis response was not in the expected format."),
-          ),
+  ipcMain.handle("server:uploads", async (_event, input) => {
+    const upload = Schema.decodeUnknownSync(InvoiceUpload)(input);
+    const body = new FormData();
+    for (const file of upload.files) {
+      const inferredType = file.name.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : "text/csv";
+      body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
+    }
+    const raw = await currentWorkspace().request("/api/uploads", { method: "POST", body });
+    return await Effect.runPromise(
+      Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
+        Effect.mapError(
+          () => new Error("The invoice analysis response was not in the expected format."),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
 }
 
 function createWindow() {
@@ -424,10 +404,9 @@ nativeTheme.on("updated", () => {
   }
 });
 
-ipcMain.on("theme:set-source", (_event, source: unknown) => {
-  if (source === "dark" || source === "light" || source === "system") {
-    nativeTheme.themeSource = source;
-  }
+ipcMain.on("theme:set-source", (_event, input) => {
+  const source = Schema.decodeUnknownOption(ThemeSource)(input);
+  if (source._tag === "Some") nativeTheme.themeSource = source.value;
 });
 
 app.on("window-all-closed", () => {
