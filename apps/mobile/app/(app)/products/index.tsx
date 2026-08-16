@@ -1,11 +1,12 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import { useDeferredValue, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AddInventoryActions } from "@/components/add-inventory-actions";
-import { Alert, Button, ChoiceChip, Input, Spinner, useThemeColor } from "@/components/mobile-ui";
+import { Alert, Button, ChoiceChip, Spinner, useThemeColor } from "@/components/mobile-ui";
 import { ProductRow } from "@/components/product-row";
+import { ProductSearchField } from "@/components/product-search-field";
 import {
   useProductActions,
   useProductData,
@@ -40,6 +41,7 @@ export default function ProductsScreen() {
   const { loading, refreshing, error } = useProductStatus();
   const { refresh } = useProductActions();
   const [query, setQuery] = useState("");
+  const [searchResetKey, setSearchResetKey] = useState(0);
   const [filter, setFilter] = useState<StockFilter>("all");
   const deferredQuery = useDeferredValue(query);
   const [foreground, muted, background, subtle] = useThemeColor([
@@ -77,28 +79,7 @@ export default function ProductsScreen() {
 
   const header = (
     <View style={styles.header}>
-      <View style={styles.searchRow}>
-        <View style={styles.searchField}>
-          <Input
-            accessibilityLabel="Search inventory"
-            onChangeText={setQuery}
-            placeholder="Name, category, aisle or batch"
-            returnKeyType="search"
-            value={query}
-          />
-        </View>
-        {query ? (
-          <Pressable
-            accessibilityLabel="Clear search"
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={() => setQuery("")}
-            style={({ pressed }) => [styles.clear, { opacity: pressed ? 0.56 : 1 }]}
-          >
-            <MaterialIcons color={foreground} name="close" size={20} />
-          </Pressable>
-        ) : null}
-      </View>
+      <ProductSearchField onChangeText={setQuery} query={query} resetKey={searchResetKey} />
 
       <ScrollView
         contentContainerStyle={styles.filters}
@@ -134,10 +115,7 @@ export default function ProductsScreen() {
         <Text style={[styles.summaryText, { color: muted }]}>
           {filtered.length} {filtered.length === 1 ? "product" : "products"}
         </Text>
-        <View style={styles.summaryActions}>
-          {refreshing ? <Spinner size="sm" /> : null}
-          <AddInventoryActions />
-        </View>
+        {refreshing ? <Spinner size="sm" /> : null}
       </View>
     </View>
   );
@@ -165,6 +143,7 @@ export default function ProductsScreen() {
           onPress={() => {
             setQuery("");
             setFilter("all");
+            setSearchResetKey((value) => value + 1);
           }}
         >
           Clear filters
@@ -174,32 +153,28 @@ export default function ProductsScreen() {
   );
 
   return (
-    <FlashList
-      contentContainerStyle={styles.listContent}
-      contentInsetAdjustmentBehavior="automatic"
-      data={filtered}
-      keyExtractor={keyExtractor}
-      keyboardDismissMode="on-drag"
-      keyboardShouldPersistTaps="handled"
-      ListEmptyComponent={empty}
-      ListHeaderComponent={header}
-      onRefresh={refresh}
-      refreshing={refreshing}
-      renderItem={renderProduct}
-      style={{ backgroundColor: background }}
-    />
+    <View style={[styles.root, { backgroundColor: background }]}>
+      <FlashList
+        contentContainerStyle={styles.listContent}
+        contentInsetAdjustmentBehavior="automatic"
+        data={filtered}
+        keyExtractor={keyExtractor}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={empty}
+        ListHeaderComponent={header}
+        onRefresh={refresh}
+        refreshing={refreshing}
+        renderItem={renderProduct}
+      />
+      <AddInventoryActions onRefresh={() => void refresh()} refreshing={refreshing} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   body: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
   bodyMedium: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  clear: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 40,
-  },
   empty: {
     alignItems: "center",
     borderCurve: "continuous",
@@ -216,17 +191,15 @@ const styles = StyleSheet.create({
   },
   filters: { gap: 8 },
   header: { gap: 16, paddingBottom: 16, paddingTop: 12 },
-  listContent: { paddingBottom: 104, paddingHorizontal: 16 },
+  listContent: { paddingBottom: 136, paddingHorizontal: 16 },
   loading: { alignItems: "center", gap: 12, paddingVertical: 64 },
-  searchField: { flex: 1, minWidth: 0 },
-  searchRow: { alignItems: "center", flexDirection: "row", gap: 4 },
+  root: { flex: 1 },
   summary: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 4,
   },
-  summaryActions: { alignItems: "center", flexDirection: "row", gap: 12 },
   summaryText: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,
