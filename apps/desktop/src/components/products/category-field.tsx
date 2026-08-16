@@ -90,17 +90,17 @@ export function CategoryField({
       autoHighlight
       disabled={pending}
       filter={null}
-      items={options as CategoryOption[]}
-      itemToStringLabel={(item: unknown) => (item as CategoryOption).name}
-      itemToStringValue={(item: unknown) => (item as CategoryOption).name}
+      items={[...options]}
+      itemToStringLabel={(item) => item.name}
+      itemToStringValue={(item) => item.name}
       name={name}
       onInputValueChange={(next: string, details: { reason?: string }) => {
         if (details.reason === "item-press") return;
         setQuery(next);
       }}
-      onValueChange={(option: unknown) => {
+      onValueChange={(option) => {
         setQuery("");
-        void select(option as CategoryOption | null);
+        void select(option);
       }}
       value={selected}
     >

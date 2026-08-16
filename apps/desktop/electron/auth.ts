@@ -1,13 +1,27 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { type WorkspaceSnapshot } from "@store/contracts";
+import { WorkspaceSnapshot } from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { app, net, safeStorage } from "electron";
 
-interface PersistedAuth {
-  readonly snapshot: WorkspaceSnapshot;
-}
+const PersistedAuth = Schema.Struct({ snapshot: WorkspaceSnapshot });
+type PersistedAuth = typeof PersistedAuth.Type;
+
+const RequestFailure = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  error: Schema.optional(
+    Schema.Union([
+      Schema.String,
+      Schema.Struct({
+        code: Schema.optional(Schema.String),
+        message: Schema.optional(Schema.String),
+      }),
+    ]),
+  ),
+});
 
 export class RequestError extends Error {
   constructor(
@@ -73,7 +87,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       });
     }
     try {
-      const snapshot = await this.#request<WorkspaceSnapshot>("/api/auth/session");
+      const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
+        await this.#request("/api/auth/session"),
+      );
       if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user) {
         await this.#clear();
         return this.#publish(unauthenticated(true));
@@ -94,18 +110,23 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     this.#publish(unauthenticated(true));
   }
 
-  async apiRequest<T>(pathname: string, init?: JsonRequestInit) {
-    return this.#request<T>(pathname, init);
+  async apiRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(pathname, init);
   }
 
-  async #request<T = unknown>(pathname: string, init?: JsonRequestInit) {
+  async #request(pathname: string, init?: JsonRequestInit) {
     const headers = new Headers(init?.headers);
     if (this.#token) headers.set("authorization", `Bearer ${this.#token}`);
     headers.set("electron-origin", this.#electronOrigin);
-    let body = init?.body as BodyInit | null | undefined;
-    if (body && !(body instanceof FormData) && typeof body !== "string") {
+    const requestBody = init?.body;
+    const body =
+      requestBody === undefined || requestBody === null || requestBody instanceof FormData
+        ? requestBody
+        : Schema.is(Schema.String)(requestBody)
+          ? requestBody
+          : JSON.stringify(requestBody);
+    if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
-      body = JSON.stringify(body);
     }
     const response = await net.fetch(`${this.#baseUrl}${pathname}`, {
       ...init,
@@ -113,22 +134,21 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       credentials: "omit",
       headers,
     });
-    const payload = (await response.json().catch(() => null)) as
-      | (T & { message?: string; error?: string | { code?: string; message?: string } })
-      | null;
+    const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      const nested = payload?.error;
+      const failure = Schema.decodeUnknownOption(RequestFailure)(payload).pipe(Option.getOrNull);
+      const nested = failure?.error;
       const message =
-        payload?.message ??
-        (typeof nested === "string" ? nested : nested?.message) ??
+        failure?.message ??
+        (Schema.is(Schema.String)(nested) ? nested : nested?.message) ??
         `Request failed (${response.status})`;
       throw new RequestError(
         message,
         response.status,
-        typeof nested === "object" ? nested.code : undefined,
+        nested !== undefined && !Schema.is(Schema.String)(nested) ? nested.code : undefined,
       );
     }
-    return payload as T;
+    return payload;
   }
 
   #publish(snapshot: WorkspaceSnapshot) {
@@ -157,7 +177,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     try {
       const encrypted = await readFile(this.#storagePath());
       if (!safeStorage.isEncryptionAvailable()) return null;
-      return JSON.parse(safeStorage.decryptString(encrypted)) as PersistedAuth;
+      return Schema.decodeUnknownOption(PersistedAuth)(
+        JSON.parse(safeStorage.decryptString(encrypted)),
+      ).pipe(Option.getOrNull);
     } catch {
       return null;
     }

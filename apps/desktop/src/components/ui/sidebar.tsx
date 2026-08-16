@@ -22,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { isString } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
 
 function PanelLeftIcon(
@@ -119,9 +120,12 @@ export function SidebarProvider({
 
   const [_open, _setOpen] = React.useState(() => readSidebarState(defaultOpen));
   const open = openProp ?? _open;
+  const isOpenUpdater = (
+    value: boolean | ((current: boolean) => boolean),
+  ): value is (current: boolean) => boolean => typeof value === "function";
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
-      const openState = typeof value === "function" ? value(open) : value;
+      const openState = isOpenUpdater(value) ? value(open) : value;
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
@@ -173,6 +177,7 @@ export function SidebarProvider({
         )}
         data-slot="sidebar-wrapper"
         style={
+          // SAFETY: React's CSSProperties omits the sidebar custom properties used by the stylesheet.
           {
             "--sidebar-width": SIDEBAR_WIDTH,
             "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
@@ -226,6 +231,7 @@ export function Sidebar({
           data-slot="sidebar"
           side={side}
           style={
+            // SAFETY: React's CSSProperties omits the sidebar custom property used by the stylesheet.
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
             } as React.CSSProperties
@@ -570,7 +576,7 @@ export function SidebarMenuButton({
     return buttonElement;
   }
 
-  if (typeof tooltip === "string") {
+  if (isString(tooltip)) {
     tooltip = {
       children: tooltip,
     };
@@ -578,7 +584,7 @@ export function SidebarMenuButton({
 
   return (
     <Tooltip>
-      <TooltipTrigger render={buttonElement as React.ReactElement<Record<string, unknown>>} />
+      <TooltipTrigger render={buttonElement} />
       <TooltipPopup
         align="center"
         hidden={state !== "collapsed" || isMobile}
@@ -661,6 +667,7 @@ export function SidebarMenuSkeleton({
         className="h-4 max-w-(--skeleton-width) flex-1"
         data-sidebar="menu-skeleton-text"
         style={
+          // SAFETY: React's CSSProperties omits the skeleton custom property used by the stylesheet.
           {
             "--skeleton-width": "70%",
           } as React.CSSProperties

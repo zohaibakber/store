@@ -172,6 +172,7 @@ describe("resolveAuthSecurity", () => {
   ])("falls back to the default when %s is malformed", (key, setting, fallback) => {
     const resolved = resolveAuthSecurity({ ...secureInput, [key]: "not a scheme" });
 
+    // SAFETY: The parameterized keys are exactly the two protocol properties listed above.
     expect(resolved[key as "electronProtocol" | "mobileProtocol"]).toBe(fallback);
     expect(resolved.rejectedSettings).toEqual([
       { setting, value: "not a scheme", reason: "is not a valid URI scheme" },

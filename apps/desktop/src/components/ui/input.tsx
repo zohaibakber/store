@@ -1,6 +1,7 @@
 import { Input as InputPrimitive } from "@base-ui/react/input";
 import type * as React from "react";
 
+import { isNumber } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
 
 export type InputProps = Omit<
@@ -11,6 +12,11 @@ export type InputProps = Omit<
   unstyled?: boolean;
   nativeInput?: boolean;
 };
+
+type InputStyle = InputProps["style"];
+const isStyleFunction = (
+  style: InputStyle,
+): style is Exclude<InputStyle, React.CSSProperties | undefined> => typeof style === "function";
 
 export function Input({
   className,
@@ -46,15 +52,15 @@ export function Input({
         <input
           className={inputClassName}
           data-slot="input"
-          size={typeof size === "number" ? size : undefined}
-          style={typeof style === "function" ? undefined : style}
+          size={isNumber(size) ? size : undefined}
+          style={isStyleFunction(style) ? undefined : style}
           {...props}
         />
       ) : (
         <InputPrimitive
           className={inputClassName}
           data-slot="input"
-          size={typeof size === "number" ? size : undefined}
+          size={isNumber(size) ? size : undefined}
           style={style}
           {...props}
         />

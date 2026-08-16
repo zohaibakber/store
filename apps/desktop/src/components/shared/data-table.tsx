@@ -8,8 +8,9 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
+import type { Column, ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
 import { createContext, use, useEffect, useRef, useState } from "react";
+import type React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Frame, FrameFooter } from "@/components/ui/frame";
@@ -45,23 +46,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { isString } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
+
+type DataTableFilterValue = string | undefined;
 
 // Method (not arrow) syntax keeps parameters bivariant so concrete instances
 // stay assignable.
-interface DataTableColumn {
+interface DataTableSortableColumn {
   readonly id: string;
   readonly columnDef: { meta?: { label?: string } };
   getCanSort(): boolean;
   getIsSorted(): false | "asc" | "desc";
-  getToggleSortingHandler(): undefined | ((event: unknown) => void);
+  getToggleSortingHandler(): undefined | ((event: React.SyntheticEvent) => void);
   getCanHide(): boolean;
   getIsVisible(): boolean;
   toggleVisibility(value?: boolean): void;
-  // Optional: a table built without the column filtering feature — the products
-  // table, whose search lives in the command menu — has no filter methods.
-  getFilterValue?(): unknown;
-  setFilterValue?(value: unknown): void;
+}
+
+interface DataTableColumn extends DataTableSortableColumn {
+  // Optional because tables whose search lives elsewhere omit column filtering.
+  getFilterValue?(): DataTableFilterValue;
+  setFilterValue?(value: DataTableFilterValue): void;
 }
 
 interface DataTableCell {
@@ -92,10 +98,22 @@ interface DataTableInstance {
   setPageSize(size: number): void;
   getCanPreviousPage(): boolean;
   getCanNextPage(): boolean;
-  firstPage(): unknown;
-  previousPage(): unknown;
-  nextPage(): unknown;
-  lastPage(): unknown;
+  firstPage(): void;
+  previousPage(): void;
+  nextPage(): void;
+  lastPage(): void;
+}
+
+interface DataTablePaginationAccess {
+  getPageCount(): number;
+  getRowCount(): number;
+  setPageSize(size: number): void;
+  getCanPreviousPage(): boolean;
+  getCanNextPage(): boolean;
+  firstPage(): void;
+  previousPage(): void;
+  nextPage(): void;
+  lastPage(): void;
 }
 
 interface DataTableContextValue {
@@ -115,7 +133,7 @@ interface DataTableProps<
   TFeatures extends TableFeatures,
   TData extends RowData,
 > extends React.ComponentProps<"div"> {
-  table: ReactTable<TFeatures, TData> & DataTableInstance;
+  table: ReactTable<TFeatures, TData>;
   onRowClick?: (row: Row<TFeatures, TData>) => void;
 }
 
@@ -125,9 +143,61 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   className,
   ...props
 }: DataTableProps<TFeatures, TData>) {
+  // SAFETY: All app tables install the pagination feature; the generic feature map
+  // does not expose those methods until its concrete instantiation reaches callers.
+  const configuredTable = table as ReactTable<TFeatures, TData> & DataTablePaginationAccess;
+  const adaptColumn = (column: Column<TFeatures, TData, unknown> | undefined) => {
+    if (!column) return undefined;
+    // SAFETY: The app table factory installs sorting, visibility, and filtering;
+    // column identity and definitions remain those of the original TanStack column.
+    const featureColumn = column as typeof column & DataTableColumn;
+    return {
+      id: featureColumn.id,
+      columnDef: featureColumn.columnDef,
+      getCanSort: () => featureColumn.getCanSort(),
+      getIsSorted: () => featureColumn.getIsSorted(),
+      getToggleSortingHandler: () => featureColumn.getToggleSortingHandler(),
+      getCanHide: () => featureColumn.getCanHide(),
+      getIsVisible: () => featureColumn.getIsVisible(),
+      toggleVisibility: (value?: boolean) => featureColumn.toggleVisibility(value),
+      getFilterValue: () => {
+        const value = featureColumn.getFilterValue?.();
+        return isString(value) ? value : undefined;
+      },
+      setFilterValue: (value?: string) => featureColumn.setFilterValue?.(value),
+    } satisfies DataTableColumn;
+  };
+
+  const contextTable: DataTableInstance = {
+    state: table.state,
+    FlexRender: table.FlexRender,
+    getColumn: (id) => adaptColumn(table.getColumn(id)),
+    getAllColumns: () => table.getAllColumns().flatMap((column) => adaptColumn(column) ?? []),
+    getAllLeafColumns: () =>
+      table.getAllLeafColumns().flatMap((column) => adaptColumn(column) ?? []),
+    getHeaderGroups: () => table.getHeaderGroups(),
+    getRowModel: () => ({
+      rows: table.getRowModel().rows.map((row) => {
+        // SAFETY: Visible-cell access is installed by the same app table factory.
+        const featureRow = row as typeof row & DataTableRow;
+        return featureRow;
+      }),
+    }),
+    getPageCount: () => configuredTable.getPageCount(),
+    getRowCount: () => configuredTable.getRowCount(),
+    setPageSize: (size) => configuredTable.setPageSize(size),
+    getCanPreviousPage: () => configuredTable.getCanPreviousPage(),
+    getCanNextPage: () => configuredTable.getCanNextPage(),
+    firstPage: () => configuredTable.firstPage(),
+    previousPage: () => configuredTable.previousPage(),
+    nextPage: () => configuredTable.nextPage(),
+    lastPage: () => configuredTable.lastPage(),
+  };
+
   return (
     <DataTableContext
-      value={{ table, onRowClick: onRowClick as DataTableContextValue["onRowClick"] }}
+      // SAFETY: TanStack rows are consumed only through the structural DataTableRow API.
+      value={{ table: contextTable, onRowClick: onRowClick as DataTableContextValue["onRowClick"] }}
     >
       <div className={cn("flex w-full flex-col", className)} data-slot="data-table" {...props} />
     </DataTableContext>
@@ -163,7 +233,7 @@ const ALL_FILTER_VALUES = "__data-table-all-values__";
 function DataTableFilterOption({ columnId, label, options }: DataTableFilterOptionProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const value = (column?.getFilterValue?.() as string | undefined) || ALL_FILTER_VALUES;
+  const value = column?.getFilterValue?.() || ALL_FILTER_VALUES;
 
   return (
     <MenuSub>
@@ -241,12 +311,11 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
 function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const value = (column?.getFilterValue?.() as string | undefined) ?? "";
+  const value = column?.getFilterValue?.() ?? "";
   const [expanded, setExpanded] = useState(value.length > 0);
   const inputRef = useRef<HTMLInputElement>(null);
   const accessibleLabel =
-    props["aria-label"] ??
-    (typeof props.placeholder === "string" ? props.placeholder : "Search table");
+    props["aria-label"] ?? (isString(props.placeholder) ? props.placeholder : "Search table");
 
   useEffect(() => {
     if (expanded) inputRef.current?.focus();
@@ -347,7 +416,7 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
 }
 
 interface DataTableColumnHeaderProps extends React.ComponentProps<"div"> {
-  column: DataTableColumn;
+  column: DataTableSortableColumn;
   title: string;
 }
 

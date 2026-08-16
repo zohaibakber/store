@@ -25,6 +25,27 @@ export class InvoiceExtractionService extends Context.Service<
   }
 >()("@store/services/InvoiceExtractionService") {}
 
+type ModelScalar = string | number | boolean | null;
+
+interface InvoiceLineModel {
+  readonly name?: ModelScalar;
+  readonly batchNumber?: ModelScalar;
+  readonly expiresAt?: ModelScalar;
+  readonly packQuantity?: ModelScalar;
+  readonly unitQuantity?: ModelScalar;
+  readonly unitsPerPack?: ModelScalar;
+  readonly packPrice?: ModelScalar;
+}
+
+export interface InvoiceModelObject {
+  readonly response?: string;
+  readonly supplier?: ModelScalar;
+  readonly invoiceNumber?: ModelScalar;
+  readonly lines?: ReadonlyArray<InvoiceLineModel> | ModelScalar;
+}
+
+export type InvoiceModelOutput = string | InvoiceModelObject;
+
 export type ConvertedDocument =
   | { readonly name: string; readonly data: string }
   | { readonly name: string; readonly error: string };
@@ -39,7 +60,7 @@ export interface InvoiceAiClient {
       readonly content: string;
     }>;
     readonly jsonSchema: object;
-  }) => Promise<unknown>;
+  }) => Promise<InvoiceModelOutput>;
 }
 
 export interface InvoiceAiConfig {
@@ -60,44 +81,41 @@ const instructions = [
   "Respond with JSON matching the provided schema and nothing else.",
 ].join("\n");
 
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "string") return null;
+const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
+const isNumber = <Value>(value: Value): value is Value & number => typeof value === "number";
+
+const toFiniteNumber = (value: ModelScalar | undefined): number | null => {
+  if (isNumber(value)) return Number.isFinite(value) ? value : null;
+  if (!isString(value)) return null;
   const parsed = Number(value.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const field = (value: unknown, key: string): unknown =>
-  typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
-
-const nullableString = (value: unknown): string | null => {
-  if (typeof value === "string") return value.trim() || null;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
-    return String(value);
+const nullableString = (value: ModelScalar | undefined): string | null => {
+  if (isString(value)) return value.trim() || null;
+  if (value !== undefined && value !== null) return String(value);
   return null;
 };
 
-const count = (value: unknown, fallback: number, minimum: number): number =>
+const count = (value: ModelScalar | undefined, fallback: number, minimum: number): number =>
   Math.max(minimum, Math.round(toFiniteNumber(value) ?? fallback));
 
-const normalizeLine = (value: unknown): InvoiceExtractionLine => ({
-  name: nullableString(field(value, "name")) ?? "Unspecified item",
-  batchNumber: nullableString(field(value, "batchNumber")),
-  expiresAt: nullableString(field(value, "expiresAt")),
-  packQuantity: count(field(value, "packQuantity"), 0, 0),
-  unitQuantity: count(field(value, "unitQuantity"), 0, 0),
-  unitsPerPack: count(field(value, "unitsPerPack"), 1, 1),
+const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => ({
+  name: nullableString(value.name) ?? "Unspecified item",
+  batchNumber: nullableString(value.batchNumber),
+  expiresAt: nullableString(value.expiresAt),
+  packQuantity: count(value.packQuantity, 0, 0),
+  unitQuantity: count(value.unitQuantity, 0, 0),
+  unitsPerPack: count(value.unitsPerPack, 1, 1),
   packPrice:
-    field(value, "packPrice") == null
-      ? null
-      : Math.max(0, Math.round(toFiniteNumber(field(value, "packPrice")) ?? 0)),
+    value.packPrice == null ? null : Math.max(0, Math.round(toFiniteNumber(value.packPrice) ?? 0)),
 });
 
-const normalizeExtraction = (value: unknown): unknown => {
-  const lines = field(value, "lines");
+const normalizeExtraction = (value: InvoiceModelObject) => {
+  const lines = value.lines;
   return {
-    supplier: nullableString(field(value, "supplier")),
-    invoiceNumber: nullableString(field(value, "invoiceNumber")),
+    supplier: nullableString(value.supplier),
+    invoiceNumber: nullableString(value.invoiceNumber),
     lines: Array.isArray(lines) ? lines.map(normalizeLine) : lines,
   };
 };
@@ -151,18 +169,20 @@ const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<Fil
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 };
 
-const parseModelOutput = (raw: unknown): unknown => {
-  const response = field(raw, "response") ?? raw;
-  if (typeof response !== "string") return response;
+const parseModelOutput = (raw: InvoiceModelOutput): InvoiceModelObject => {
+  const response = isString(raw) ? raw : (raw.response ?? raw);
+  if (!isString(response)) return response;
   const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = (fenced?.[1] ?? response).trim();
   try {
-    return JSON.parse(candidate);
+    const parsed: InvoiceModelObject = JSON.parse(candidate);
+    return parsed;
   } catch {
     const start = candidate.indexOf("{");
     const end = candidate.lastIndexOf("}");
     if (start === -1 || end <= start) throw new Error("The model did not return JSON.");
-    return JSON.parse(candidate.slice(start, end + 1));
+    const parsed: InvoiceModelObject = JSON.parse(candidate.slice(start, end + 1));
+    return parsed;
   }
 };
 

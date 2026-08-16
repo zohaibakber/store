@@ -13,9 +13,9 @@ import { databaseFile } from "../../src/database/node-client";
 import type { PersistenceConfig } from "../../src/index";
 import { layer, OfflineStore } from "../../src/index";
 
-type OfflineStoreShape = Effect.Success<typeof OfflineStore>;
+type OfflineStoreService = Effect.Success<typeof OfflineStore>;
 
-export const store = <A, E>(f: (store: OfflineStoreShape) => Effect.Effect<A, E>) =>
+export const store = <A, E>(f: (store: OfflineStoreService) => Effect.Effect<A, E>) =>
   Effect.flatMap(OfflineStore, f);
 
 export const migrationsFolder = path.resolve(import.meta.dirname, "../../../db/migrations/local");

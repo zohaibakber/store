@@ -36,24 +36,25 @@ const withStore = withStoreEffect;
 
 const workspaceStores: WorkspaceStoreAdapter = {
   open: async (target) => {
-    const runtime = ManagedRuntime.make(
-      browserLayer({
-        dataDir: dataDirectory(target),
-        bundledMigrations: localMigrations,
-        clientPlatform: "web",
-        clientVersion: __APP_VERSION__,
-        ...(target._tag === "Authenticated"
-          ? {
-              syncTransport: { exchange: target.exchange },
-              workspace: {
-                organizationId: target.organizationId,
-                userId: target.userId,
-                deviceId: target.deviceId,
-              },
-            }
-          : {}),
-      }),
-    );
+    const baseConfig = {
+      dataDir: dataDirectory(target),
+      bundledMigrations: localMigrations,
+      clientPlatform: "web" as const,
+      clientVersion: __APP_VERSION__,
+    };
+    const persistenceConfig =
+      target._tag === "Authenticated"
+        ? {
+            ...baseConfig,
+            syncTransport: { exchange: target.exchange },
+            workspace: {
+              organizationId: target.organizationId,
+              userId: target.userId,
+              deviceId: target.deviceId,
+            },
+          }
+        : baseConfig;
+    const runtime = ManagedRuntime.make(browserLayer(persistenceConfig));
     try {
       await runtime.runPromise(OfflineStore.pipe(Effect.asVoid));
     } catch (cause) {

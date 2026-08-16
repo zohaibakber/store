@@ -46,11 +46,7 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
         </Empty>
       ) : (
         <ChartContainer className="aspect-auto h-56 w-full" config={topProductsConfig}>
-          <BarChart
-            data={products as Array<DashboardAnalytics["topProducts"][number]>}
-            layout="vertical"
-            margin={{ right: 72 }}
-          >
+          <BarChart data={[...products]} layout="vertical" margin={{ right: 72 }}>
             <XAxis dataKey="revenue" hide type="number" />
             <YAxis
               axisLine={false}
@@ -64,7 +60,7 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
               content={
                 <ChartTooltipContent
                   formatter={(value, _name, item) => {
-                    const units = (item?.payload as { unitsSold?: number } | undefined)?.unitsSold;
+                    const units: number | undefined = item?.payload?.unitsSold;
                     return `${formatPrice(Number(value))} · ${units ?? 0} units`;
                   }}
                 />

@@ -326,6 +326,7 @@ export const makeProductStore = (
     );
 
   const distinctSorted = (values: ReadonlyArray<string | null>) =>
+    // SAFETY: filter(Boolean) removes the only non-string member produced by the map.
     Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as Array<string>)).sort(
       (a, b) => a.localeCompare(b),
     );

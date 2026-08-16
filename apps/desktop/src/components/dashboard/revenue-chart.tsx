@@ -1,4 +1,5 @@
 import type { DashboardAnalytics } from "@store/contracts";
+import type { ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { FrameCard } from "@/components/shared/frame-card";
@@ -9,6 +10,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { formatPrice } from "@/lib/format";
+import { isNumber, isString } from "@/lib/predicates";
 
 const revenueChartConfig = {
   revenue: { label: "Revenue", color: "var(--chart-1)" },
@@ -16,8 +18,10 @@ const revenueChartConfig = {
 
 // Dates are UTC day keys (YYYY-MM-DD) from the analytics query; parse them as
 // UTC so the tick label never slips a day in negative-offset timezones.
-const dayLabel = (value: unknown) =>
-  new Date(`${String(value)}T00:00:00Z`).toLocaleDateString(undefined, {
+const dayLabel = (value: ReactNode) =>
+  new Date(
+    `${isString(value) || isNumber(value) ? String(value) : ""}T00:00:00Z`,
+  ).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -27,7 +31,7 @@ export function RevenueChart({ data }: { data: DashboardAnalytics["revenueByDay"
   return (
     <FrameCard description="Daily sales over the last 30 days." title="Revenue">
       <ChartContainer className="aspect-auto h-56 w-full" config={revenueChartConfig}>
-        <AreaChart data={data as Array<DashboardAnalytics["revenueByDay"][number]>}>
+        <AreaChart data={[...data]}>
           <CartesianGrid vertical={false} />
           <XAxis
             axisLine={false}
@@ -49,7 +53,7 @@ export function RevenueChart({ data }: { data: DashboardAnalytics["revenueByDay"
             content={
               <ChartTooltipContent
                 formatter={(value, _name, item) => {
-                  const invoices = (item?.payload as { invoices?: number } | undefined)?.invoices;
+                  const invoices: number | undefined = item?.payload?.invoices;
                   return `${formatPrice(Number(value))} · ${invoices ?? 0} ${
                     invoices === 1 ? "invoice" : "invoices"
                   }`;

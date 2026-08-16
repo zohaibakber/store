@@ -1,14 +1,12 @@
 // @vitest-environment happy-dom
 import type { Category, Product } from "@store/contracts";
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { fireEvent, screen, within } from "@testing-library/react";
+import { expect, test } from "vitest";
 
 import { ProductTableFilters, useProductsTable } from "@/components/products/table";
 import { DataTable, DataTableContent } from "@/components/shared/data-table";
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a href="#product">{children}</a>,
-}));
+import { renderWithRouter } from "../../lib/render";
 
 const metadata = {
   organizationId: "org-1",
@@ -92,7 +90,7 @@ const choose = async (filter: string, option: string) => {
 };
 
 test("product filters compose and clear across catalog fields", async () => {
-  render(<ProductTableHarness />);
+  renderWithRouter(<ProductTableHarness />);
 
   await choose("Category", "Medicine");
   await choose("Composition", "Paracetamol");

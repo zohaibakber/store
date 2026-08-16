@@ -25,20 +25,53 @@ export interface ClerkOrganizationMembership {
   readonly role: string;
 }
 
-const textClaim = (value: unknown) => (typeof value === "string" && value.trim() ? value : null);
+interface ClerkClaimsPayload {
+  readonly v?: unknown;
+  readonly sub?: unknown;
+  readonly sid?: unknown;
+  readonly o?: unknown;
+  readonly org_id?: unknown;
+  readonly org_role?: unknown;
+  readonly org_slug?: unknown;
+  readonly email?: unknown;
+  readonly email_address?: unknown;
+  readonly name?: unknown;
+  readonly first_name?: unknown;
+  readonly firstName?: unknown;
+  readonly last_name?: unknown;
+  readonly lastName?: unknown;
+  readonly image?: unknown;
+  readonly picture?: unknown;
+}
 
-const recordClaim = (value: unknown): Record<string, unknown> | null =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+interface ClerkOrganizationClaim {
+  readonly id?: unknown;
+  readonly rol?: unknown;
+  readonly slg?: unknown;
+}
 
-const organizationRoleClaim = (value: unknown) => {
+const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
+const isObject = <Value>(value: Value): value is Value & object =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const textClaim = <Value>(value: Value) => (isString(value) && value.trim() ? value : null);
+
+const organizationClaim = <Value>(value: Value): ClerkOrganizationClaim | null => {
+  if (!isObject(value)) return null;
+  return {
+    id: "id" in value ? value.id : undefined,
+    rol: "rol" in value ? value.rol : undefined,
+    slg: "slg" in value ? value.slg : undefined,
+  };
+};
+
+const organizationRoleClaim = <Value>(value: Value) => {
   const role = textClaim(value);
   if (!role) return null;
   return role.includes(":") ? role : `org:${role}`;
 };
 
-const nameFromClaims = (payload: Record<string, unknown>) => {
+const nameFromClaims = (payload: ClerkClaimsPayload) => {
   const full = textClaim(payload.name);
   if (full) return full;
   const first = textClaim(payload.first_name) ?? textClaim(payload.firstName);
@@ -56,11 +89,11 @@ export const bearerTokenFromHeaders = (headers: Headers) => {
 };
 
 /** Supports both Clerk JWT v2 organization claims and legacy v1 flat claims. */
-export const clerkClaimsFromPayload = (payload: Record<string, unknown>): ClerkVerifiedClaims => {
+export const clerkClaimsFromPayload = (payload: ClerkClaimsPayload): ClerkVerifiedClaims => {
   const userId = textClaim(payload.sub);
   if (!userId) throw new Error("Clerk session token is missing a subject.");
 
-  const organization = recordClaim(payload.o);
+  const organization = organizationClaim(payload.o);
 
   return {
     userId,
@@ -79,14 +112,17 @@ export const verifyClerkBearerToken = async (
   token: string,
   config: ClerkVerifyConfig,
 ): Promise<ClerkVerifiedClaims> => {
-  const payload = (await verifyToken(token, {
-    secretKey: config.secretKey,
-    ...(config.jwtKey ? { jwtKey: config.jwtKey } : {}),
-    ...(config.jwtAudience ? { audience: config.jwtAudience } : {}),
-    ...(config.authorizedParties && config.authorizedParties.length > 0
-      ? { authorizedParties: [...config.authorizedParties] }
-      : {}),
-  })) as Record<string, unknown>;
+  const keyOptions = config.jwtKey
+    ? { secretKey: config.secretKey, jwtKey: config.jwtKey }
+    : { secretKey: config.secretKey };
+  const audienceOptions = config.jwtAudience
+    ? { ...keyOptions, audience: config.jwtAudience }
+    : keyOptions;
+  const verificationOptions =
+    config.authorizedParties && config.authorizedParties.length > 0
+      ? { ...audienceOptions, authorizedParties: [...config.authorizedParties] }
+      : audienceOptions;
+  const payload = await verifyToken(token, verificationOptions);
 
   return clerkClaimsFromPayload(payload);
 };

@@ -1,5 +1,20 @@
-import { type WorkspaceSnapshot } from "@store/contracts";
+import { WorkspaceSnapshot } from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+const RequestFailure = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  error: Schema.optional(
+    Schema.Union([
+      Schema.String,
+      Schema.Struct({
+        code: Schema.optional(Schema.String),
+        message: Schema.optional(Schema.String),
+      }),
+    ]),
+  ),
+});
 
 export class RequestError extends Error {
   constructor(
@@ -23,7 +38,7 @@ const unauthenticated = (
   workspaceError,
 });
 
-const navigatorOnline = () => (typeof navigator === "undefined" ? true : navigator.onLine);
+const navigatorOnline = () => globalThis.navigator?.onLine ?? true;
 
 export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #baseUrl: string;
@@ -62,7 +77,9 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       });
     }
     try {
-      const snapshot = await this.apiRequest<WorkspaceSnapshot>("/api/auth/session");
+      const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
+        await this.apiRequest("/api/auth/session"),
+      );
       if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user)
         return this.#publish(
           unauthenticated(
@@ -88,13 +105,18 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     this.#publish(unauthenticated(navigatorOnline()));
   }
 
-  async apiRequest<T>(pathname: string, init?: JsonRequestInit) {
+  async apiRequest(pathname: string, init?: JsonRequestInit) {
     const headers = new Headers(init?.headers);
     if (this.#token) headers.set("authorization", `Bearer ${this.#token}`);
-    let body = init?.body as BodyInit | null | undefined;
-    if (body && !(body instanceof FormData) && typeof body !== "string") {
+    const requestBody = init?.body;
+    const body =
+      requestBody === undefined || requestBody === null || requestBody instanceof FormData
+        ? requestBody
+        : Schema.is(Schema.String)(requestBody)
+          ? requestBody
+          : JSON.stringify(requestBody);
+    if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
-      body = JSON.stringify(body);
     }
     const response = await fetch(`${this.#baseUrl}${pathname}`, {
       ...init,
@@ -102,22 +124,21 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       credentials: "omit",
       headers,
     });
-    const payload = (await response.json().catch(() => null)) as
-      | (T & { message?: string; error?: string | { code?: string; message?: string } })
-      | null;
+    const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      const nested = payload?.error;
+      const failure = Schema.decodeUnknownOption(RequestFailure)(payload).pipe(Option.getOrNull);
+      const nested = failure?.error;
       const message =
-        payload?.message ??
-        (typeof nested === "string" ? nested : nested?.message) ??
+        failure?.message ??
+        (Schema.is(Schema.String)(nested) ? nested : nested?.message) ??
         `Request failed (${response.status})`;
       throw new RequestError(
         message,
         response.status,
-        typeof nested === "object" ? nested.code : undefined,
+        nested !== undefined && !Schema.is(Schema.String)(nested) ? nested.code : undefined,
       );
     }
-    return payload as T;
+    return payload;
   }
 
   #publish(snapshot: WorkspaceSnapshot) {

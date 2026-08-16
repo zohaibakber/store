@@ -42,6 +42,7 @@ export function AutocompleteInput({
   triggerProps?: AutocompletePrimitive.Trigger.Props;
   clearProps?: AutocompletePrimitive.Clear.Props;
 }): React.ReactElement {
+  // SAFETY: The public prop already restricts size to this exact input-size union.
   const sizeValue = (size ?? "default") as "sm" | "default" | "lg" | number;
 
   return (

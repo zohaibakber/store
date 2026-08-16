@@ -27,7 +27,7 @@ export const Website = Cloudflare.Website.Vite(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
 
-    return {
+    const websiteConfig = {
       rootDir,
       main: "worker.ts",
       env: {
@@ -37,9 +37,6 @@ export const Website = Cloudflare.Website.Vite(
         notFoundHandling: "single-page-application" as const,
         runWorkerFirst: ["/api", "/api/*"],
       },
-      ...(stage === "prod" && process.env.CLAIM_PRODUCTION_DOMAIN === "1"
-        ? { domain: PRODUCTION_DOMAIN }
-        : {}),
       // Capped by the workerd that `alchemy dev` runs locally — keep in step
       // with the API Worker. See apps/server/infra.ts.
       compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
@@ -54,6 +51,9 @@ export const Website = Cloudflare.Website.Vite(
         lockfile: true,
       },
     };
+    return stage === "prod" && process.env.CLAIM_PRODUCTION_DOMAIN === "1"
+      ? { ...websiteConfig, domain: PRODUCTION_DOMAIN }
+      : websiteConfig;
   }),
 );
 

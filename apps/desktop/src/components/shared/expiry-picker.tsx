@@ -39,6 +39,7 @@ function CalendarDropdown({ options, value, onChange, "aria-label": ariaLabel }:
       items={items}
       onValueChange={(newValue) => {
         if (!newValue) return;
+        // SAFETY: This adapter supplies the select value fields consumed by the shared handler.
         onChange?.({
           target: { value: newValue.value },
         } as React.ChangeEvent<HTMLSelectElement>);

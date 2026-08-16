@@ -10,7 +10,7 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 import { vi } from "vitest";
 
 import { ServerRoutes } from "../../src/http/app";
-import { ServerRuntime, type ServerRuntimeShape } from "../../src/http/runtime";
+import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import type { SyncActor } from "../../src/sync/model";
 
 const session = {
@@ -155,7 +155,7 @@ export const appFor = (
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
       runSync: (actor, request) => Effect.promise(() => runSync(actor, request)),
-    } satisfies ServerRuntimeShape;
+    } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
