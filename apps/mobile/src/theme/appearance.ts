@@ -8,12 +8,7 @@ export type AppColorScheme = "light" | "dark";
 export const useAppColorScheme = (): AppColorScheme =>
   useColorScheme() === "dark" ? "dark" : "light";
 
-export const restoreAppColorScheme = async () => {
-  const stored = await Storage.getItem(COLOR_SCHEME_KEY);
-  if (stored === "light" || stored === "dark") Appearance.setColorScheme(stored);
-};
-
-export const setAppColorScheme = (scheme: AppColorScheme) => {
-  Appearance.setColorScheme(scheme);
-  void Storage.setItem(COLOR_SCHEME_KEY, scheme);
+export const followDeviceColorScheme = () => {
+  Appearance.setColorScheme("unspecified");
+  void Storage.removeItem(COLOR_SCHEME_KEY);
 };

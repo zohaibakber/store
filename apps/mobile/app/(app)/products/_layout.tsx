@@ -8,7 +8,9 @@ export default function ProductsLayout() {
       <Stack.Screen
         name="new"
         options={{
+          animation: "default",
           headerLargeTitle: false,
+          headerShown: true,
           presentation: "modal",
           title: "New product",
         }}
@@ -16,7 +18,9 @@ export default function ProductsLayout() {
       <Stack.Screen
         name="scan"
         options={{
+          animation: "default",
           headerLargeTitle: false,
+          headerShown: true,
           title: "Scan product",
         }}
       />

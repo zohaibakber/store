@@ -26,48 +26,53 @@ export const ProductRow = memo(function ProductRow({
   unitPrice,
   visible,
 }: ProductRowProps) {
-  const stockColor = stock === 0 ? "danger" : stock <= 10 ? "warning" : "success";
-  const secondary = [details, aisle ? `Aisle ${aisle}` : null].filter(Boolean).join(" · ");
-  const [surface, subtle, border, foreground, muted] = useThemeColor([
-    "surface",
-    "surface-tertiary",
+  const secondary = [category, details, aisle ? `Aisle ${aisle}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  const [separator, foreground, muted, danger, warning, success] = useThemeColor([
     "separator",
     "foreground",
     "muted",
+    "danger",
+    "warning",
+    "success",
   ]);
+  const trailingColor = stock === 0 ? danger : stock <= 10 ? warning : success;
 
   return (
     <View
       accessibilityLabel={`${name}, ${stockLabel}, ${formatPrice(unitPrice)}`}
-      style={[styles.root, { backgroundColor: surface, borderColor: border }]}
+      style={styles.root}
     >
-      <View style={[styles.avatar, { backgroundColor: subtle }]}>
-        <Text style={[styles.avatarText, { color: foreground }]}>
-          {name.slice(0, 1).toLocaleUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.content}>
-        <View style={styles.nameRow}>
-          <Text style={[styles.name, { color: foreground }]} numberOfLines={1}>
-            {name}
+      <View style={styles.row}>
+        <View style={[styles.avatar, { backgroundColor: separator }]}>
+          <Text style={[styles.avatarText, { color: foreground }]}>
+            {name.slice(0, 1).toLocaleUpperCase()}
           </Text>
-          {!visible ? <Badge>Hidden</Badge> : null}
         </View>
-        <Text style={[styles.secondary, { color: muted }]} numberOfLines={1}>
-          {category}
-        </Text>
-        {secondary ? (
-          <Text style={[styles.secondary, { color: muted }]} numberOfLines={1}>
-            {secondary}
+        <View style={styles.content}>
+          <View style={styles.nameRow}>
+            <Text style={[styles.name, { color: foreground }]} numberOfLines={1}>
+              {name}
+            </Text>
+            {!visible ? <Badge>Hidden</Badge> : null}
+          </View>
+          {secondary ? (
+            <Text style={[styles.secondary, { color: muted }]} numberOfLines={2}>
+              {secondary}
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.trailing}>
+          <Text selectable style={[styles.price, { color: foreground }]} numberOfLines={1}>
+            {formatPrice(unitPrice)}
           </Text>
-        ) : null}
+          <Text selectable style={[styles.stock, { color: trailingColor }]} numberOfLines={1}>
+            {stockLabel}
+          </Text>
+        </View>
       </View>
-      <View style={styles.trailing}>
-        <Text selectable style={[styles.price, { color: foreground }]} numberOfLines={1}>
-          {formatPrice(unitPrice)}
-        </Text>
-        <Badge tone={stockColor}>{stockLabel}</Badge>
-      </View>
+      <View style={[styles.divider, { backgroundColor: separator }]} />
     </View>
   );
 });
@@ -75,15 +80,15 @@ export const ProductRow = memo(function ProductRow({
 const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: 10,
-    height: 44,
+    borderRadius: 20,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   avatarText: { fontFamily: "Inter_500Medium", fontSize: 16 },
-  content: { flex: 1, gap: 4, minWidth: 0 },
-  name: { flexShrink: 1, fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  content: { flex: 1, gap: 2, minWidth: 0 },
+  divider: { height: StyleSheet.hairlineWidth, marginStart: 72 },
+  name: { flexShrink: 1, fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 24 },
   nameRow: { alignItems: "center", flexDirection: "row", gap: 8 },
   price: {
     fontFamily: "GeistMono_400Regular",
@@ -91,16 +96,22 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     lineHeight: 20,
   },
-  root: {
+  root: { minHeight: 72 },
+  row: {
     alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 8,
-    padding: 12,
+    gap: 16,
+    minHeight: 72,
+    paddingEnd: 16,
+    paddingStart: 16,
+    paddingVertical: 8,
   },
-  secondary: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
-  trailing: { alignItems: "flex-end", gap: 8, maxWidth: "38%" },
+  secondary: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
+  stock: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 16,
+  },
+  trailing: { alignItems: "flex-end", gap: 4, maxWidth: "38%" },
 });

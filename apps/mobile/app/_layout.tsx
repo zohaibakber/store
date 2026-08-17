@@ -7,14 +7,12 @@ import { Modal, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { MobileClerkProvider } from "@/lib/clerk-provider";
-import { restoreAppColorScheme, useAppColorScheme } from "@/theme/appearance";
+import { followDeviceColorScheme, useAppColorScheme } from "@/theme/appearance";
+
+followDeviceColorScheme();
 
 export default function RootLayout() {
   const scheme = useAppColorScheme();
-
-  useEffect(() => {
-    void restoreAppColorScheme();
-  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -36,7 +34,7 @@ function MobileAppShell({ theme }: { theme: typeof DefaultTheme }) {
 
   return (
     <ThemeProvider value={theme}>
-      <StatusBar style="auto" />
+      <StatusBar style={theme.dark ? "light" : "dark"} />
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
