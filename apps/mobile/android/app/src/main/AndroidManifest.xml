@@ -26,13 +26,13 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="com.tabaaq.mobile"/>
+        <data android:scheme="${appAuthScheme}"/>
       </intent-filter>
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="clerk" android:host="com.tabaaq.mobile.hosted-callback"/>
+        <data android:scheme="clerk" android:host="${clerkCallbackHost}"/>
       </intent-filter>
     </activity>
   </application>

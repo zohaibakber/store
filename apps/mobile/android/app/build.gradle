@@ -93,13 +93,19 @@ android {
 
     namespace 'com.tabaaq.mobile'
     defaultConfig {
-        applicationId 'com.tabaaq.mobile'
+        // Debug/dev-client id so a local build can sit next to the store app.
+        // Release is reset to com.tabaaq.mobile in androidComponents below.
+        applicationId 'com.tabaaq.mobile.debug'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.4.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+        manifestPlaceholders = [
+            appAuthScheme: 'com.tabaaq.mobile.debug',
+            clerkCallbackHost: 'com.tabaaq.mobile.debug.hosted-callback'
+        ]
     }
     signingConfigs {
         debug {
@@ -112,11 +118,16 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            versionNameSuffix '-debug'
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [
+                appAuthScheme: 'com.tabaaq.mobile',
+                clerkCallbackHost: 'com.tabaaq.mobile.hosted-callback'
+            ]
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
@@ -137,6 +148,12 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.applicationId.set("com.tabaaq.mobile")
     }
 }
 

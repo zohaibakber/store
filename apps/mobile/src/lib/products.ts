@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
 import { apiOrigin, fetchWorkspaceSession, nativeAuthHeaders } from "@/lib/auth-client";
+import { forgetLastUserId } from "@/lib/local-session";
 import { type MobileSyncOperation, reattributePendingOperations } from "@/lib/mobile-sync-queue";
 import {
   applyProductSyncChanges,
@@ -231,20 +232,38 @@ const persistInventoryContext = (userId: string, organizationId: string) =>
     JSON.stringify({ version: 1, userId, organizationId } satisfies StoredInventoryContext),
   );
 
+const organizationIdFromLocalContext = async (userId: string) => {
+  const localContext = await readInventoryContext(userId);
+  return localContext?.organizationId ?? null;
+};
+
 const activeOrganizationId = async () => {
   organizationIdPromise ??= (async () => {
-    const session = await fetchWorkspaceSession();
-    const userId = session.user?.id;
-    if (!userId) return null;
-    activeUserId = userId;
+    if (activeUserId) {
+      const localOrganizationId = await organizationIdFromLocalContext(activeUserId);
+      if (localOrganizationId) return localOrganizationId;
+    }
 
-    const localContext = await readInventoryContext(userId);
-    if (localContext) return localContext.organizationId;
+    try {
+      const session = await fetchWorkspaceSession();
+      const userId = session.user?.id;
+      if (!userId) return null;
+      activeUserId = userId;
 
-    const organization = session.activeOrganization ?? session.organizations[0];
-    if (!organization) return null;
-    await persistInventoryContext(userId, organization.id);
-    return organization.id;
+      const localOrganizationId = await organizationIdFromLocalContext(userId);
+      if (localOrganizationId) return localOrganizationId;
+
+      const organization = session.activeOrganization ?? session.organizations[0];
+      if (!organization) return null;
+      await persistInventoryContext(userId, organization.id);
+      return organization.id;
+    } catch (cause) {
+      if (activeUserId) {
+        const localOrganizationId = await organizationIdFromLocalContext(activeUserId);
+        if (localOrganizationId) return localOrganizationId;
+      }
+      throw cause;
+    }
   })().catch((cause) => {
     organizationIdPromise = null;
     throw cause;
@@ -254,11 +273,16 @@ const activeOrganizationId = async () => {
 
 const authenticatedUserId = async () => {
   if (activeUserId) return activeUserId;
-  const session = await fetchWorkspaceSession();
-  const id = session.user?.id;
-  if (!id) throw new Error("Sign in before changing inventory.");
-  activeUserId = id;
-  return id;
+  try {
+    const session = await fetchWorkspaceSession();
+    const id = session.user?.id;
+    if (!id) throw new Error("Sign in before changing inventory.");
+    activeUserId = id;
+    return id;
+  } catch (cause) {
+    if (activeUserId) return activeUserId;
+    throw cause;
+  }
 };
 
 interface SyncOperationCandidate {
@@ -990,6 +1014,7 @@ export const updateBatchQuantity = (input: UpdateBatchQuantityInput): Promise<Mo
 export const resetProductsSession = () => {
   organizationIdPromise = null;
   activeUserId = null;
+  void forgetLastUserId();
 };
 
 export const formatPrice = (paisa: number | null) => {

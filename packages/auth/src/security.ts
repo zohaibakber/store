@@ -1,5 +1,6 @@
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
+export const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
 /** Host used with the privileged custom scheme so the renderer origin is `scheme://app`. */
 export const ELECTRON_RENDERER_HOST = "app";
 
@@ -217,6 +218,7 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     ...configured.accepted,
     electronOrigin,
     `${mobileProtocol}://`,
+    `${DEFAULT_MOBILE_DEBUG_PROTOCOL}://`,
     // Expo Go identifies the JavaScript bundle by its changing LAN origin.
     // Trust that scheme only while the auth server itself is in local HTTP
     // development; production never receives this wildcard.

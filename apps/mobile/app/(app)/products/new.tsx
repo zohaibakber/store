@@ -1,15 +1,17 @@
-import { Button, FieldGroup, Host, Picker, Text, TextInput, useNativeState } from "@expo/ui";
 import { router } from "expo-router";
 import { useState } from "react";
-import { KeyboardAvoidingView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from "react-native";
 
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useProductActions, useProductData } from "@/features/products/products-provider";
+import { useThemeColor } from "@/hooks/use-theme-color";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId } from "@/lib/products";
-import { useAppColorScheme } from "@/theme/appearance";
-import { colors, cssColor } from "@/theme/colors";
 
 const priceInPaisa = (value: string): number | null => {
   const trimmed = value.trim();
@@ -21,14 +23,14 @@ const priceInPaisa = (value: string): number | null => {
 export default function NewProductScreen() {
   const { categories } = useProductData();
   const { saveScannedProduct } = useProductActions();
-  const colorScheme = useAppColorScheme();
-  const name = useNativeState("");
-  const composition = useNativeState("");
-  const strength = useNativeState("");
-  const aisle = useNativeState("");
-  const unitsPerPack = useNativeState("1");
-  const packPrice = useNativeState("");
-  const unitPrice = useNativeState("");
+  const background = useThemeColor("background");
+  const [name, setName] = useState("");
+  const [composition, setComposition] = useState("");
+  const [strength, setStrength] = useState("");
+  const [aisle, setAisle] = useState("");
+  const [unitsPerPack, setUnitsPerPack] = useState("1");
+  const [packPrice, setPackPrice] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +38,8 @@ export default function NewProductScreen() {
   const tracksPacks = selectedCategory?.tracksPacks ?? true;
 
   const save = async () => {
-    const parsedUnits = Number(unitsPerPack.value.trim());
-    if (!name.value.trim()) {
+    const parsedUnits = Number(unitsPerPack.trim());
+    if (!name.trim()) {
       setError("Enter a product name.");
       return;
     }
@@ -46,8 +48,8 @@ export default function NewProductScreen() {
       return;
     }
     if (
-      (packPrice.value.trim() && priceInPaisa(packPrice.value) === null) ||
-      (unitPrice.value.trim() && priceInPaisa(unitPrice.value) === null)
+      (packPrice.trim() && priceInPaisa(packPrice) === null) ||
+      (unitPrice.trim() && priceInPaisa(unitPrice) === null)
     ) {
       setError("Prices must be valid non-negative amounts.");
       return;
@@ -59,14 +61,14 @@ export default function NewProductScreen() {
       await saveScannedProduct({
         newProductId: createInventoryEntityId(),
         productId: null,
-        name: name.value,
+        name,
         categoryId: categoryId || undefined,
-        aisle: aisle.value.trim() || null,
-        composition: composition.value.trim() || null,
-        strength: strength.value.trim() || null,
+        aisle: aisle.trim() || null,
+        composition: composition.trim() || null,
+        strength: strength.trim() || null,
         unitsPerPack: tracksPacks ? parsedUnits : 1,
-        packPrice: tracksPacks ? priceInPaisa(packPrice.value) : null,
-        unitPrice: priceInPaisa(unitPrice.value),
+        packPrice: tracksPacks ? priceInPaisa(packPrice) : null,
+        unitPrice: priceInPaisa(unitPrice),
       });
       hapticSuccess();
       router.back();
@@ -80,10 +82,10 @@ export default function NewProductScreen() {
   return (
     <KeyboardAvoidingView
       behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
-      style={[styles.root, { backgroundColor: colors.systemGroupedBackground }]}
+      style={[styles.root, { backgroundColor: background }]}
     >
-      {error ? (
-        <View style={styles.error}>
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        {error ? (
           <Alert status="danger">
             <Alert.Indicator />
             <Alert.Content>
@@ -91,65 +93,69 @@ export default function NewProductScreen() {
               <Alert.Description>{error}</Alert.Description>
             </Alert.Content>
           </Alert>
+        ) : null}
+
+        <View style={styles.section}>
+          <Label>Product details</Label>
+          <Input autoFocus onChangeText={setName} placeholder="Product name" value={name} />
+          {categories.length > 0 ? (
+            <View style={styles.chips}>
+              {categories.map((category) => (
+                <ChoiceChip
+                  key={category.id}
+                  onPress={() => setCategoryId(category.id)}
+                  selected={category.id === categoryId}
+                >
+                  {category.name}
+                </ChoiceChip>
+              ))}
+            </View>
+          ) : (
+            <Label>The General category will be created automatically.</Label>
+          )}
+          <Input onChangeText={setComposition} placeholder="Composition" value={composition} />
+          <Input onChangeText={setStrength} placeholder="Strength" value={strength} />
+          <Input onChangeText={setAisle} placeholder="Aisle" value={aisle} />
         </View>
-      ) : null}
-      <Host
-        colorScheme={colorScheme}
-        seedColor={colors.systemBlue}
-        style={styles.host}
-        useViewportSizeMeasurement
-      >
-        <FieldGroup style={{ backgroundColor: colors.systemGroupedBackground }}>
-          <FieldGroup.Section title="Product details">
-            <TextInput autoFocus placeholder="Product name" value={name} />
-            {categories.length > 0 ? (
-              <Picker onValueChange={setCategoryId} selectedValue={categoryId}>
-                {categories.map((category) => (
-                  <Picker.Item key={category.id} label={category.name} value={category.id} />
-                ))}
-              </Picker>
-            ) : (
-              <Text textStyle={{ color: cssColor(colors.secondaryLabel), fontSize: 12 }}>
-                The General category will be created automatically.
-              </Text>
-            )}
-            <TextInput placeholder="Composition" value={composition} />
-            <TextInput placeholder="Strength" value={strength} />
-            <TextInput placeholder="Aisle" value={aisle} />
-          </FieldGroup.Section>
 
-          <FieldGroup.Section title="Pack & pricing">
-            {tracksPacks ? (
-              <TextInput
-                keyboardType="number-pad"
-                placeholder="Units per pack"
-                value={unitsPerPack}
-              />
-            ) : null}
-            {tracksPacks ? (
-              <TextInput keyboardType="decimal-pad" placeholder="Pack price" value={packPrice} />
-            ) : null}
-            <TextInput keyboardType="decimal-pad" placeholder="Unit price" value={unitPrice} />
-            <FieldGroup.SectionFooter>
-              Prices are entered in PKR. Batch and quantity can be updated afterward.
-            </FieldGroup.SectionFooter>
-          </FieldGroup.Section>
-
-          <FieldGroup.Section>
-            <Button
-              disabled={saving}
-              label={saving ? "Creating…" : "Create product"}
-              onPress={() => void save()}
+        <View style={styles.section}>
+          <Label>Pack & pricing</Label>
+          {tracksPacks ? (
+            <Input
+              keyboardType="number-pad"
+              onChangeText={setUnitsPerPack}
+              placeholder="Units per pack"
+              value={unitsPerPack}
             />
-          </FieldGroup.Section>
-        </FieldGroup>
-      </Host>
+          ) : null}
+          {tracksPacks ? (
+            <Input
+              keyboardType="decimal-pad"
+              onChangeText={setPackPrice}
+              placeholder="Pack price"
+              value={packPrice}
+            />
+          ) : null}
+          <Input
+            keyboardType="decimal-pad"
+            onChangeText={setUnitPrice}
+            placeholder="Unit price"
+            value={unitPrice}
+          />
+          <Label>Prices are entered in PKR. Batch and quantity can be updated afterward.</Label>
+        </View>
+
+        <Button isDisabled={saving} onPress={() => void save()}>
+          {saving ? "Creating…" : "Create product"}
+        </Button>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  error: { paddingHorizontal: 16, paddingTop: 12 },
-  host: { flex: 1 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  content: { gap: 24, paddingBottom: 40, paddingHorizontal: 16, paddingTop: 12 },
   root: { flex: 1 },
+  section: { gap: 12 },
 });
