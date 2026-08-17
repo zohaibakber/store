@@ -1,10 +1,9 @@
-import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 type ButtonProps = {
-  children: ReactNode;
+  children: string;
   isDisabled?: boolean;
   onPress?: () => void;
   size?: "sm" | "md";
@@ -39,9 +38,9 @@ export function Button({
         : variant === "ghost"
           ? "transparent"
           : surface;
-  const borderColor = variant === "outline" || variant === "secondary" ? separator : backgroundColor;
+  const borderColor =
+    variant === "outline" || variant === "secondary" ? separator : backgroundColor;
   const color = variant === "primary" ? onAccent : variant === "danger-soft" ? danger : foreground;
-  const label = typeof children === "string" || typeof children === "number" ? String(children) : null;
 
   return (
     <Pressable
@@ -59,11 +58,7 @@ export function Button({
       ]}
       testID={testID}
     >
-      {label ? (
-        <Text style={[styles.label, { color }]}>{label}</Text>
-      ) : (
-        children
-      )}
+      <Text style={[styles.label, { color }]}>{children}</Text>
     </Pressable>
   );
 }

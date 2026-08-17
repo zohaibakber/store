@@ -18,6 +18,7 @@ export function IconSymbol({ name, size = 20, tintColor, style }: SymbolProps) {
       <Image
         contentFit="contain"
         source={`sf:${name}`}
+        // SAFETY: This branch only mounts Image, which consumes the ImageStyle fields of the shared style bag.
         style={[{ height: size, width: size }, style as StyleProp<ImageStyle>]}
         tintColor={color}
       />
@@ -36,6 +37,7 @@ export function IconSymbol({ name, size = 20, tintColor, style }: SymbolProps) {
           opacity: 0.72,
           width: size,
         },
+        // SAFETY: This branch only mounts View, which consumes the ViewStyle fields of the shared style bag.
         style as StyleProp<ViewStyle>,
       ]}
     />

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import { useThemeColor } from "@/hooks/use-theme-color";
 
+const hideChrome = process.env.EXPO_OS === "android";
+
 export function AppStack({ title, children }: { title: string; children?: ReactNode }) {
   const background = useThemeColor("background");
   const foreground = useThemeColor("foreground");
@@ -12,8 +14,10 @@ export function AppStack({ title, children }: { title: string; children?: ReactN
   return (
     <Stack
       screenOptions={{
+        animation: hideChrome ? "none" : "default",
         contentStyle: { backgroundColor: background },
         headerBackTitle: "Back",
+        headerShown: !hideChrome,
         headerShadowVisible: false,
         headerStyle: { backgroundColor: surface },
         headerTintColor: accent,
@@ -24,9 +28,10 @@ export function AppStack({ title, children }: { title: string; children?: ReactN
         name="index"
         options={{
           title,
-          headerLargeTitle: true,
+          headerLargeTitle: !hideChrome,
           headerLargeTitleShadowVisible: false,
           headerLargeTitleStyle: { color: foreground, fontFamily: "Inter_500Medium" },
+          headerShown: !hideChrome,
         }}
       />
       {children}

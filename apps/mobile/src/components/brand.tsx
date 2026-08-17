@@ -1,11 +1,26 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, type ColorValue } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { cssColor } from "@/theme/colors";
 
-export function Brand() {
-  const [foreground, muted, inverse] = useThemeColor(["foreground", "muted", "accent-foreground"]);
+export function Brand({
+  foreground: foregroundOverride,
+  muted: mutedOverride,
+  inverse: inverseOverride,
+}: {
+  foreground?: ColorValue;
+  muted?: ColorValue;
+  inverse?: ColorValue;
+} = {}) {
+  const [themeForeground, themeMuted, themeInverse] = useThemeColor([
+    "foreground",
+    "muted",
+    "accent-foreground",
+  ]);
+  const foreground = foregroundOverride ?? themeForeground;
+  const muted = mutedOverride ?? themeMuted;
+  const inverse = inverseOverride ?? themeInverse;
   const mark = cssColor(foreground);
   const cutout = cssColor(inverse);
 
@@ -21,12 +36,7 @@ export function Brand() {
         <Rect fill={cutout} height={132} rx={44} width={500} x={166} y={182} />
         <Rect fill={cutout} height={364} rx={44} width={132} x={350} y={286} />
         <Rect fill={cutout} height={132} rx={42} width={132} x={514} y={350} />
-        <Path
-          d="M580 382v68M546 416h68"
-          stroke={mark}
-          strokeLinecap="round"
-          strokeWidth={22}
-        />
+        <Path d="M580 382v68M546 416h68" stroke={mark} strokeLinecap="round" strokeWidth={22} />
         <Circle cx={615} cy={217} fill={mark} r={25} />
       </Svg>
       <View>

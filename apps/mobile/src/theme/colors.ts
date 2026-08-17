@@ -100,11 +100,12 @@ export const colors = {
 } as const satisfies Record<string, ColorValue>;
 
 export const cssColor = (value: ColorValue): string => {
-  if (typeof value === "string" && value.startsWith("#")) return value;
-  const argb = processColor(value);
-  if (typeof argb !== "number") return "#000000";
-  const r = (argb >> 16) & 0xff;
-  const g = (argb >> 8) & 0xff;
-  const b = argb & 0xff;
+  const hexCandidate = String(value);
+  if (hexCandidate.startsWith("#")) return hexCandidate;
+  const packed = Number(processColor(value));
+  if (!Number.isFinite(packed)) return "#000000";
+  const r = (packed >> 16) & 0xff;
+  const g = (packed >> 8) & 0xff;
+  const b = packed & 0xff;
   return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 };
