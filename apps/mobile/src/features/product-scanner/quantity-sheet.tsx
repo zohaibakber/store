@@ -1,22 +1,12 @@
 import { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import {
-  Alert as HeroAlert,
-  Button,
-  Input,
-  Label,
-  TextField,
-  useThemeColor,
-} from "@/components/mobile-ui";
+import { Alert as HeroAlert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { TextField } from "@/components/ui/text-field";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 type QuantitySheetProps = {
   visible: boolean;
@@ -82,11 +72,11 @@ function QuantitySheet({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle={Platform.OS === "ios" ? "formSheet" : "pageSheet"}
+      presentationStyle={process.env.EXPO_OS === "ios" ? "formSheet" : "pageSheet"}
       visible={visible}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
         style={[styles.root, { backgroundColor: background }]}
       >
         <ScrollView
@@ -96,7 +86,7 @@ function QuantitySheet({
         >
           <View style={styles.header}>
             <Text style={[styles.title, { color: foreground }]}>Update quantity</Text>
-            <Text style={[styles.description, { color: muted }]}>
+            <Text selectable style={[styles.description, { color: muted }]}>
               Correct the physical count for {productName}. This is recorded as a stock adjustment.
             </Text>
           </View>

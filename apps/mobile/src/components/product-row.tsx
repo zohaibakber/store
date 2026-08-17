@@ -1,7 +1,8 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { Badge, useThemeColor } from "@/components/mobile-ui";
+import { Badge } from "@/components/ui/badge";
+import { useThemeColor } from "@/hooks/use-theme-color";
 import { formatPrice } from "@/lib/products";
 
 type ProductRowProps = {
@@ -62,7 +63,7 @@ export const ProductRow = memo(function ProductRow({
         ) : null}
       </View>
       <View style={styles.trailing}>
-        <Text style={[styles.price, { color: foreground }]} numberOfLines={1}>
+        <Text selectable style={[styles.price, { color: foreground }]} numberOfLines={1}>
           {formatPrice(unitPrice)}
         </Text>
         <Badge tone={stockColor}>{stockLabel}</Badge>
@@ -84,7 +85,12 @@ const styles = StyleSheet.create({
   content: { flex: 1, gap: 4, minWidth: 0 },
   name: { flexShrink: 1, fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
   nameRow: { alignItems: "center", flexDirection: "row", gap: 8 },
-  price: { fontFamily: "GeistMono_400Regular", fontSize: 14, lineHeight: 20 },
+  price: {
+    fontFamily: "GeistMono_400Regular",
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 20,
+  },
   root: {
     alignItems: "center",
     borderCurve: "continuous",

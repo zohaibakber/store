@@ -2,16 +2,16 @@ import { useClerk, useUser } from "@clerk/expo";
 import { Button, FieldGroup, Host, ListItem, Switch, Text } from "@expo/ui";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import { Alert, StyleSheet, View } from "react-native";
-import { Uniwind, useUniwind } from "uniwind";
+import { Alert, StyleSheet, Text as RNText, View } from "react-native";
 
-import { useThemeColor } from "@/components/mobile-ui";
 import {
   useProductActions,
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
 import { resetProductsSession } from "@/lib/products";
+import { useAppColorScheme, setAppColorScheme } from "@/theme/appearance";
+import { colors, cssColor } from "@/theme/colors";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
@@ -21,8 +21,7 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 export default function SettingsScreen() {
   const { user } = useUser();
   const { signOut: clerkSignOut } = useClerk();
-  const { theme } = useUniwind();
-  const [background, foreground, muted] = useThemeColor(["background", "foreground", "muted"]);
+  const colorScheme = useAppColorScheme();
   const { products } = useProductData();
   const { refreshing, error, lastUpdatedAt } = useProductStatus();
   const { refresh } = useProductActions();
@@ -50,25 +49,25 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
+    <View style={[styles.root, { backgroundColor: colors.systemGroupedBackground }]}>
       <Host
-        colorScheme={theme === "dark" ? "dark" : "light"}
-        seedColor="#525252"
+        colorScheme={colorScheme}
+        seedColor={colors.systemBlue}
         style={styles.host}
         useViewportSizeMeasurement
       >
-        <FieldGroup style={{ backgroundColor: background }}>
+        <FieldGroup style={{ backgroundColor: colors.systemGroupedBackground }}>
           <FieldGroup.Section title="Account">
             <ListItem supportingText={userEmail}>{userName}</ListItem>
           </FieldGroup.Section>
 
           <FieldGroup.Section title="Preferences">
             <ListItem
-              supportingText="Follow a dark neutral appearance"
+              supportingText="Follow a dark appearance"
               trailing={
                 <Switch
-                  onValueChange={(selected) => Uniwind.setTheme(selected ? "dark" : "light")}
-                  value={theme === "dark"}
+                  onValueChange={(selected) => setAppColorScheme(selected ? "dark" : "light")}
+                  value={colorScheme === "dark"}
                 />
               }
             >
@@ -88,7 +87,13 @@ export default function SettingsScreen() {
           </FieldGroup.Section>
 
           <FieldGroup.Section title="About">
-            <ListItem trailing={<Text textStyle={{ color: muted }}>{version}</Text>}>
+            <ListItem
+              trailing={
+                <RNText selectable style={{ color: colors.secondaryLabel }}>
+                  {version}
+                </RNText>
+              }
+            >
               App version
             </ListItem>
           </FieldGroup.Section>
@@ -96,7 +101,12 @@ export default function SettingsScreen() {
           <FieldGroup.Section>
             <Button label="Sign out" onPress={signOut} variant="outlined" />
             <Text
-              textStyle={{ color: foreground, fontSize: 12, lineHeight: 18, textAlign: "center" }}
+              textStyle={{
+                color: cssColor(colors.label),
+                fontSize: 12,
+                lineHeight: 18,
+                textAlign: "center",
+              }}
             >
               Tabaaq keeps your inventory available offline and syncs changes when connected.
             </Text>

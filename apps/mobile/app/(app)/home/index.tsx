@@ -1,23 +1,21 @@
 import { useUser } from "@clerk/expo";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Brand } from "@/components/brand";
-import {
-  Alert as HeroAlert,
-  Button,
-  Card,
-  Separator,
-  Spinner,
-  useThemeColor,
-} from "@/components/mobile-ui";
 import { ProductAnalytics } from "@/components/product-analytics";
+import { Symbol } from "@/components/symbol";
+import { Alert as HeroAlert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import {
   useProductActions,
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -32,13 +30,12 @@ export default function HomeScreen() {
   const { products } = useProductData();
   const { loading, refreshing, error } = useProductStatus();
   const { refresh } = useProductActions();
-  const [foreground, background, warning, danger, muted, inverse, subtle] = useThemeColor([
+  const [foreground, background, warning, danger, muted, subtle] = useThemeColor([
     "foreground",
     "background",
     "warning",
     "danger",
     "muted",
-    "accent-foreground",
     "surface-tertiary",
   ]);
   const firstName = user?.firstName?.trim() || user?.fullName?.trim().split(/\s+/)[0];
@@ -64,17 +61,17 @@ export default function HomeScreen() {
     >
       <Brand />
 
-      <View style={[styles.hero, { backgroundColor: foreground }]}>
+      <View style={[styles.hero, { backgroundColor: subtle }]}>
         <View style={styles.heroContent}>
-          <View style={[styles.heroIcon, { backgroundColor: `${inverse}18` }]}>
-            <MaterialIcons color={inverse} name="insights" size={22} />
+          <View style={[styles.heroIcon, { backgroundColor: background }]}>
+            <Symbol name="chart.line.uptrend.xyaxis" size={22} tintColor={foreground} />
           </View>
           <View style={styles.heroCopy}>
-            <Text style={[styles.heroTitle, { color: inverse }]}>
+            <Text style={[styles.heroTitle, { color: foreground }]}>
               {greetingFor(new Date().getHours())}
               {firstName ? `, ${firstName}` : ""}
             </Text>
-            <Text style={[styles.heroSubtitle, { color: `${inverse}B8` }]}>
+            <Text style={[styles.heroSubtitle, { color: muted }]}>
               Your inventory overview is ready.
             </Text>
           </View>
@@ -126,10 +123,10 @@ export default function HomeScreen() {
                   {index > 0 ? <Separator /> : null}
                   <View style={styles.attentionRow}>
                     <View style={[styles.attentionIcon, { backgroundColor: subtle }]}>
-                      <MaterialIcons
-                        color={product.stock === 0 ? danger : warning}
-                        name={product.stock === 0 ? "error-outline" : "inventory-2"}
+                      <Symbol
+                        name={product.stock === 0 ? "exclamationmark.triangle" : "shippingbox"}
                         size={19}
+                        tintColor={product.stock === 0 ? danger : warning}
                       />
                     </View>
                     <View style={styles.attentionCopy}>
@@ -140,7 +137,10 @@ export default function HomeScreen() {
                         {product.category}
                       </Text>
                     </View>
-                    <Text style={[styles.stock, { color: product.stock === 0 ? danger : warning }]}>
+                    <Text
+                      selectable
+                      style={[styles.stock, { color: product.stock === 0 ? danger : warning }]}
+                    >
                       {product.stock === 0 ? "Out" : product.stock}
                     </Text>
                   </View>
@@ -220,5 +220,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   sectionTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
-  stock: { fontFamily: "GeistMono_400Regular", fontSize: 14, lineHeight: 20 },
+  stock: {
+    fontFamily: "GeistMono_400Regular",
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 20,
+  },
 });

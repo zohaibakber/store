@@ -1,11 +1,8 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Platform } from "react-native";
 
-const developmentOrigin = Platform.select({
-  android: "http://10.0.2.2:8787",
-  default: "http://localhost:8787",
-});
+const developmentOrigin =
+  process.env.EXPO_OS === "android" ? "http://10.0.2.2:8787" : "http://localhost:8787";
 const productionOrigin = "https://tabaaq.zohaibakber.com";
 export const mobileNativeOrigin = "com.tabaaq.mobile://app";
 

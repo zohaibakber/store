@@ -1,7 +1,10 @@
-import { DockedSearchBar, Host, Icon, Text } from "@expo/ui/jetpack-compose";
+import { Host } from "@expo/ui";
+import { DockedSearchBar, Icon, Text } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { StyleSheet } from "react-native";
-import { useUniwind } from "uniwind";
+
+import { useAppColorScheme } from "@/theme/appearance";
+import { colors } from "@/theme/colors";
 
 type ProductSearchFieldProps = {
   onChangeText: (query: string) => void;
@@ -10,14 +13,14 @@ type ProductSearchFieldProps = {
 };
 
 export function ProductSearchField({ onChangeText, resetKey }: ProductSearchFieldProps) {
-  const { theme } = useUniwind();
+  const colorScheme = useAppColorScheme();
 
   return (
     <Host
       key={resetKey}
-      colorScheme={theme === "dark" ? "dark" : "light"}
+      colorScheme={colorScheme}
       matchContents={{ vertical: true }}
-      seedColor="#525252"
+      seedColor={colors.systemBlue}
       style={styles.host}
     >
       <DockedSearchBar modifiers={[fillMaxWidth()]} onQueryChange={onChangeText}>

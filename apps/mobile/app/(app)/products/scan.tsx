@@ -1,19 +1,15 @@
-import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import {
-  Alert as HeroAlert,
-  Badge,
-  Button,
-  Card,
-  ChoiceChip,
-  Input,
-  Label,
-  TextField,
-  useThemeColor,
-} from "@/components/mobile-ui";
+import { Alert as HeroAlert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { TextField } from "@/components/ui/text-field";
 import { InlineTextCamera } from "@/features/product-scanner/inline-text-camera";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
 import { findProductMatch } from "@/features/product-scanner/product-match";
@@ -25,7 +21,9 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
+import { useThemeColor } from "@/hooks/use-theme-color";
 import { authErrorMessage } from "@/lib/auth-client";
+import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId } from "@/lib/products";
 
 const normalizeKey = (value: string | null) => value?.trim().toLocaleLowerCase() ?? "";
@@ -234,7 +232,7 @@ export default function ProductScanScreen() {
         setExpiresAt(expiryInputValue(nextBatch.expiresAt));
       }
       setNotice(`${product.name} is ready. Update quantity or scan batch details next.`);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticSuccess();
     } catch (cause) {
       setError(authErrorMessage(cause));
     } finally {
@@ -274,7 +272,7 @@ export default function ProductScanScreen() {
       setMode("product");
       setCameraResetKey((current) => current + 1);
       setNotice("Batch number and expiry updated.");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticSuccess();
     } catch (cause) {
       setError(authErrorMessage(cause));
     } finally {
@@ -314,7 +312,7 @@ export default function ProductScanScreen() {
       setSelectedBatchId(batch.id);
       setQuantityOpen(false);
       setNotice("Quantity updated and recorded as a stock adjustment.");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticSuccess();
     } catch (cause) {
       setError(authErrorMessage(cause));
     } finally {

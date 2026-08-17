@@ -1,9 +1,9 @@
 import { Button, Host, Row } from "@expo/ui";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
-import { useUniwind } from "uniwind";
 
-import { useThemeColor } from "@/components/mobile-ui";
+import { useAppColorScheme } from "@/theme/appearance";
+import { colors } from "@/theme/colors";
 
 type AddInventoryActionsProps = {
   onRefresh: () => void;
@@ -11,12 +11,11 @@ type AddInventoryActionsProps = {
 };
 
 export function AddInventoryActions({ onRefresh, refreshing }: AddInventoryActionsProps) {
-  const { theme } = useUniwind();
-  const surface = useThemeColor("surface-tertiary");
+  const colorScheme = useAppColorScheme();
 
   return (
-    <View style={[styles.surface, { backgroundColor: surface }]}>
-      <Host colorScheme={theme === "dark" ? "dark" : "light"} matchContents seedColor="#525252">
+    <View style={[styles.surface, { backgroundColor: colors.systemFill }]}>
+      <Host colorScheme={colorScheme} matchContents seedColor={colors.systemBlue}>
         <Row spacing={8}>
           <Button
             disabled={refreshing}

@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import type { ReactNode } from "react";
 
-import { useThemeColor } from "@/components/mobile-ui";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export function AppStack({ title, children }: { title: string; children?: ReactNode }) {
   const background = useThemeColor("background");

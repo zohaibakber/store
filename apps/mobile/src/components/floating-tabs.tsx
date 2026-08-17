@@ -1,6 +1,6 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
-import { useThemeColor } from "@/components/mobile-ui";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export function FloatingTabs() {
   const [background, foreground, muted, indicator] = useThemeColor([

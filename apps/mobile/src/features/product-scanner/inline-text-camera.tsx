@@ -1,15 +1,17 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Haptics from "expo-haptics";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Button, Spinner, useThemeColor } from "@/components/mobile-ui";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   extractTextFromImage,
   isTextRecognitionSupported,
 } from "@/features/product-scanner/text-extractor";
 import type { ProductScanMode } from "@/features/product-scanner/types";
+import { useThemeColor } from "@/hooks/use-theme-color";
+import { hapticError, hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
 
 type InlineTextCameraProps = {
   mode: ProductScanMode;
@@ -64,7 +66,7 @@ export function InlineTextCamera({
     onCaptureStateChange(true);
     setCaptureState("reading");
     setLineCount(0);
-    void Haptics.selectionAsync();
+     hapticSelection();
     try {
       const picture = await camera.current.takePictureAsync({
         quality: 0.84,
@@ -93,18 +95,18 @@ export function InlineTextCamera({
 
       if (recognizedText.length < 3) {
         setCaptureState("ready");
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        hapticWarning();
         onError("No readable text yet. Move closer, reduce glare, and try again.");
         return;
       }
 
       setLineCount(lines.length);
       setCaptureState("found");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticSuccess();
       await onTextDetected(recognizedText);
     } catch (cause) {
       setCaptureState("ready");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      hapticError();
       onError(cause instanceof Error ? cause.message : "The label could not be read.");
     } finally {
       onCaptureStateChange(false);
