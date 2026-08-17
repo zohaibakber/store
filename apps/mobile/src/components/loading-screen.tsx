@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 
-import { Spinner, useThemeColor } from "@/components/mobile-ui";
+import { Spinner } from "@/components/ui/spinner";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export function LoadingScreen() {
   const background = useThemeColor("background");

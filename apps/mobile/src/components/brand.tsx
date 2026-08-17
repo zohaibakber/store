@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
-import { useThemeColor } from "@/components/mobile-ui";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export function Brand() {
   const [foreground, muted, inverse] = useThemeColor(["foreground", "muted", "accent-foreground"]);

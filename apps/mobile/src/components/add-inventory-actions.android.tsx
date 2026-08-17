@@ -1,9 +1,11 @@
-import { Host, HorizontalFloatingToolbar, Icon, IconButton } from "@expo/ui/jetpack-compose";
+import { Host } from "@expo/ui";
+import { HorizontalFloatingToolbar, Icon, IconButton } from "@expo/ui/jetpack-compose";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
-import { useUniwind } from "uniwind";
 
-import { useThemeColor } from "@/components/mobile-ui";
+import { useThemeColor } from "@/hooks/use-theme-color";
+import { useAppColorScheme } from "@/theme/appearance";
+import { colors } from "@/theme/colors";
 
 type AddInventoryActionsProps = {
   onRefresh: () => void;
@@ -11,7 +13,7 @@ type AddInventoryActionsProps = {
 };
 
 export function AddInventoryActions({ onRefresh, refreshing }: AddInventoryActionsProps) {
-  const { theme } = useUniwind();
+  const colorScheme = useAppColorScheme();
   const [toolbarContainer, toolbarContent, fabContainer, fabContent] = useThemeColor([
     "surface-tertiary",
     "foreground",
@@ -21,7 +23,7 @@ export function AddInventoryActions({ onRefresh, refreshing }: AddInventoryActio
 
   return (
     <View pointerEvents="box-none" style={styles.positioner}>
-      <Host colorScheme={theme === "dark" ? "dark" : "light"} matchContents seedColor="#525252">
+      <Host colorScheme={colorScheme} matchContents seedColor={colors.systemBlue}>
         <HorizontalFloatingToolbar
           colors={{
             fabContainerColor: fabContainer,

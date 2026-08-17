@@ -1,17 +1,21 @@
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import { useDeferredValue, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AddInventoryActions } from "@/components/add-inventory-actions";
-import { Alert, Button, ChoiceChip, Spinner, useThemeColor } from "@/components/mobile-ui";
 import { ProductRow } from "@/components/product-row";
 import { ProductSearchField } from "@/components/product-search-field";
+import { Symbol } from "@/components/symbol";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Spinner } from "@/components/ui/spinner";
 import {
   useProductActions,
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
+import { useThemeColor } from "@/hooks/use-theme-color";
 import type { MobileProduct } from "@/lib/products";
 
 type StockFilter = "all" | "low" | "out" | "hidden";
@@ -112,7 +116,7 @@ export default function ProductsScreen() {
       ) : null}
 
       <View style={styles.summary}>
-        <Text style={[styles.summaryText, { color: muted }]}>
+        <Text selectable style={[styles.summaryText, { color: muted }]}>
           {filtered.length} {filtered.length === 1 ? "product" : "products"}
         </Text>
         {refreshing ? <Spinner size="sm" /> : null}
@@ -127,7 +131,7 @@ export default function ProductsScreen() {
     </View>
   ) : (
     <View style={[styles.empty, { backgroundColor: subtle }]}>
-      <MaterialIcons color={muted} name={query ? "search-off" : "inventory-2"} size={30} />
+      <Symbol name={query ? "magnifyingglass" : "shippingbox"} size={30} tintColor={muted} />
       <Text style={[styles.bodyMedium, { color: foreground }]}>
         {query || filter !== "all" ? "No matching products" : "No products yet"}
       </Text>

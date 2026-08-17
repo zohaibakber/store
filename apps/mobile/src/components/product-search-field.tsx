@@ -1,7 +1,8 @@
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { Input, useThemeColor } from "@/components/mobile-ui";
+import { Symbol } from "@/components/symbol";
+import { Input } from "@/components/ui/input";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 type ProductSearchFieldProps = {
   onChangeText: (query: string) => void;
@@ -31,7 +32,7 @@ export function ProductSearchField({ onChangeText, query }: ProductSearchFieldPr
           onPress={() => onChangeText("")}
           style={({ pressed }) => [styles.clear, { opacity: pressed ? 0.56 : 1 }]}
         >
-          <MaterialIcons color={foreground} name="close" size={20} />
+          <Symbol name="xmark" size={20} tintColor={foreground} />
         </Pressable>
       ) : null}
     </View>

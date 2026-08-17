@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Card, useThemeColor } from "@/components/mobile-ui";
+import { Card } from "@/components/ui/card";
+import { useThemeColor } from "@/hooks/use-theme-color";
 import { formatPrice, type MobileProduct } from "@/lib/products";
 
 const LOW_STOCK_THRESHOLD = 10;
@@ -43,7 +44,7 @@ export function ProductAnalytics({ products }: ProductAnalyticsProps) {
                 {showValue ? "Tap to hide" : "Tap to reveal"}
               </Text>
             </View>
-            <Text style={[styles.stockValue, { color: foreground }]} numberOfLines={1}>
+            <Text selectable style={[styles.stockValue, { color: foreground }]} numberOfLines={1}>
               {showValue ? formatPrice(stockValue) : "••••••"}
             </Text>
           </Pressable>
@@ -74,7 +75,9 @@ function Metric({
 
   return (
     <View style={[styles.metric, { backgroundColor: surface, borderColor: border }]}>
-      <Text style={[styles.metricValue, { color: valueColor }]}>{value}</Text>
+      <Text selectable style={[styles.metricValue, { color: valueColor }]}>
+        {value}
+      </Text>
       <Text style={[styles.metricLabel, { color: muted }]} numberOfLines={1}>
         {label}
       </Text>
@@ -96,9 +99,19 @@ const styles = StyleSheet.create({
   },
   metricLabel: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 16 },
   metrics: { flexDirection: "row", gap: 8 },
-  metricValue: { fontFamily: "GeistMono_400Regular", fontSize: 24, lineHeight: 28 },
+  metricValue: {
+    fontFamily: "GeistMono_400Regular",
+    fontSize: 24,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 28,
+  },
   root: { gap: 12 },
-  stockValue: { fontFamily: "GeistMono_400Regular", fontSize: 16, lineHeight: 22 },
+  stockValue: {
+    fontFamily: "GeistMono_400Regular",
+    fontSize: 16,
+    fontVariant: ["tabular-nums"],
+    lineHeight: 22,
+  },
   valueBody: { paddingHorizontal: 16, paddingVertical: 14 },
   valueCopy: { gap: 2 },
   valueRow: {

@@ -1,45 +1,25 @@
-import "../global.css";
 import { useAuth } from "@clerk/expo";
 import { AuthView } from "@clerk/expo/native";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { Modal, StyleSheet, useColorScheme, View } from "react-native";
+import { Modal, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { MobileClerkProvider } from "@/lib/clerk-provider";
+import { restoreAppColorScheme, useAppColorScheme } from "@/theme/appearance";
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
-  const theme =
-    scheme === "dark"
-      ? {
-          ...DarkTheme,
-          colors: {
-            ...DarkTheme.colors,
-            background: "#111111",
-            border: "#2B2B2B",
-            card: "#141414",
-            primary: "#F5F5F5",
-            text: "#F5F5F5",
-          },
-        }
-      : {
-          ...DefaultTheme,
-          colors: {
-            ...DefaultTheme.colors,
-            background: "#FFFFFF",
-            border: "#E5E5E5",
-            card: "#FFFFFF",
-            primary: "#262626",
-            text: "#262626",
-          },
-        };
+  const scheme = useAppColorScheme();
+
+  useEffect(() => {
+    void restoreAppColorScheme();
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MobileClerkProvider>
-        <MobileAppShell theme={theme} />
+        <MobileAppShell theme={scheme === "dark" ? DarkTheme : DefaultTheme} />
       </MobileClerkProvider>
     </GestureHandlerRootView>
   );
