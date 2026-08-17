@@ -9,6 +9,7 @@ const config: ClerkVerifyConfig = {
     "https://tabaaq.zohaibakber.com",
     "com.tabaaq.desktop://app",
     "com.tabaaq.mobile://",
+    "com.tabaaq.mobile.debug://",
   ],
 };
 
@@ -22,10 +23,10 @@ describe("clerkVerifyConfigForHeaders", () => {
     ).toBe(config);
   });
 
-  it("allows a trusted Electron client to use a native token without azp", () => {
+  it("allows a trusted Expo debug client to use a native token without azp", () => {
     expect(
       clerkVerifyConfigForHeaders(
-        new Headers({ "electron-origin": "com.tabaaq.desktop://app" }),
+        new Headers({ "expo-origin": "com.tabaaq.mobile.debug://app" }),
         config,
       ).authorizedParties,
     ).toBeUndefined();

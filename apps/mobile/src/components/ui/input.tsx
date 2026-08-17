@@ -1,11 +1,12 @@
-import { Host, TextInput as ExpoTextInput, type TextInputRef, useNativeState } from "@expo/ui";
-import { useCallback, useRef, type Ref } from "react";
-import { StyleSheet, type KeyboardTypeOptions, type ReturnKeyTypeOptions } from "react-native";
-import { scheduleOnRN } from "react-native-worklets";
+import { useCallback, type Ref } from "react";
+import {
+  StyleSheet,
+  TextInput,
+  type KeyboardTypeOptions,
+  type ReturnKeyTypeOptions,
+} from "react-native";
 
 import { useThemeColor } from "@/hooks/use-theme-color";
-import { useAppColorScheme } from "@/theme/appearance";
-import { colors, cssColor } from "@/theme/colors";
 
 type InputProps = {
   accessibilityLabel?: string;
@@ -18,7 +19,7 @@ type InputProps = {
   numberOfLines?: number;
   onChangeText?: (text: string) => void;
   placeholder?: string;
-  ref?: Ref<TextInputRef>;
+  ref?: Ref<TextInput>;
   returnKeyType?: ReturnKeyTypeOptions;
   secureTextEntry?: boolean;
   selectTextOnFocus?: boolean;
@@ -44,9 +45,6 @@ export function Input({
   testID,
   value = "",
 }: InputProps) {
-  const colorScheme = useAppColorScheme();
-  const nativeValue = useNativeState(value);
-  const lastExternalValue = useRef(value);
   const [surface, separator, muted, foreground, accent] = useThemeColor([
     "surface",
     "separator",
@@ -54,75 +52,57 @@ export function Input({
     "foreground",
     "accent",
   ]);
-
-  if (value !== lastExternalValue.current) {
-    lastExternalValue.current = value;
-    nativeValue.value = value;
-  }
-
   const handleChangeText = useCallback(
     (next: string) => {
-      "worklet";
-      nativeValue.value = next;
-      if (onChangeText) scheduleOnRN(onChangeText, next);
+      onChangeText?.(next);
     },
-    [nativeValue, onChangeText],
+    [onChangeText],
   );
 
   return (
-    <Host
+    <TextInput
       accessibilityLabel={accessibilityLabel}
-      accessible={Boolean(accessibilityLabel)}
-      colorScheme={colorScheme}
-      matchContents={{ vertical: true }}
-      seedColor={colors.systemBlue}
-      style={multiline ? styles.inputHostMultiline : styles.inputHost}
-    >
-      <ExpoTextInput
-        autoCapitalize={autoCapitalize}
-        autoFocus={autoFocus}
-        editable={editable}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        multiline={multiline}
-        numberOfLines={numberOfLines}
-        onChangeText={handleChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={muted}
-        ref={ref}
-        returnKeyType={returnKeyType}
-        secureTextEntry={secureTextEntry}
-        selectTextOnFocus={selectTextOnFocus}
-        selectionColor={accent}
-        style={{
+      autoCapitalize={autoCapitalize}
+      autoFocus={autoFocus}
+      editable={editable}
+      keyboardType={keyboardType}
+      maxLength={maxLength}
+      multiline={multiline}
+      numberOfLines={numberOfLines}
+      onChangeText={handleChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={muted}
+      ref={ref}
+      returnKeyType={returnKeyType}
+      secureTextEntry={secureTextEntry}
+      selectionColor={accent}
+      selectTextOnFocus={selectTextOnFocus}
+      style={[
+        styles.input,
+        multiline ? styles.multiline : styles.single,
+        {
           backgroundColor: surface,
           borderColor: separator,
-          borderRadius: 10,
-          borderWidth: 1,
-          height: multiline ? 96 : 52,
-          paddingHorizontal: 14,
-          paddingVertical: multiline ? 12 : 0,
-        }}
-        testID={testID}
-        textStyle={{
-          color: cssColor(foreground),
-          fontFamily: "Inter_400Regular",
-          fontSize: 14,
-          lineHeight: 20,
-        }}
-        value={nativeValue}
-      />
-    </Host>
+          color: foreground,
+        },
+      ]}
+      testID={testID}
+      value={value}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  inputHost: {
+  input: {
     alignSelf: "stretch",
-    height: 52,
+    borderCurve: "continuous",
+    borderRadius: 10,
+    borderWidth: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 14,
   },
-  inputHostMultiline: {
-    alignSelf: "stretch",
-    height: 96,
-  },
+  multiline: { height: 96, paddingVertical: 12, textAlignVertical: "top" },
+  single: { height: 52, paddingVertical: 0 },
 });

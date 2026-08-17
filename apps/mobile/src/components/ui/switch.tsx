@@ -1,7 +1,6 @@
-import { Host, Switch as ExpoSwitch } from "@expo/ui";
+import { Switch as RNSwitch } from "react-native";
 
-import { useAppColorScheme } from "@/theme/appearance";
-import { colors } from "@/theme/colors";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export function Switch({
   isSelected,
@@ -13,10 +12,14 @@ export function Switch({
   testID?: string;
   accessibilityLabel?: string;
 }) {
-  const colorScheme = useAppColorScheme();
+  const [accent, muted] = useThemeColor(["accent", "muted"]);
   return (
-    <Host colorScheme={colorScheme} matchContents seedColor={colors.systemBlue}>
-      <ExpoSwitch onValueChange={onSelectedChange} testID={testID} value={isSelected} />
-    </Host>
+    <RNSwitch
+      onValueChange={onSelectedChange}
+      testID={testID}
+      thumbColor={isSelected ? accent : undefined}
+      trackColor={{ false: muted, true: accent }}
+      value={isSelected}
+    />
   );
 }

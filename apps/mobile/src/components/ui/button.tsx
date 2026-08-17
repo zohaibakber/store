@@ -1,10 +1,7 @@
-import { Button as ExpoButton, Host } from "@expo/ui";
-import * as Schema from "effect/Schema";
 import type { ReactNode } from "react";
-import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 
-import { useAppColorScheme } from "@/theme/appearance";
-import { colors } from "@/theme/colors";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 type ButtonProps = {
   children: ReactNode;
@@ -16,14 +13,6 @@ type ButtonProps = {
   variant?: "primary" | "secondary" | "outline" | "ghost" | "danger-soft";
 };
 
-const nativeButtonVariant = {
-  primary: "filled",
-  secondary: "outlined",
-  outline: "outlined",
-  ghost: "text",
-  "danger-soft": "outlined",
-} as const;
-
 export function Button({
   children,
   isDisabled,
@@ -33,40 +22,70 @@ export function Button({
   testID,
   variant = "primary",
 }: ButtonProps) {
-  const colorScheme = useAppColorScheme();
-  const label =
-    Schema.is(Schema.String)(children) || Schema.is(Schema.Number)(children)
-      ? String(children)
-      : undefined;
+  const [accent, onAccent, foreground, surface, separator, danger, dangerSoft] = useThemeColor([
+    "accent",
+    "accent-foreground",
+    "foreground",
+    "surface",
+    "separator",
+    "danger",
+    "danger-soft",
+  ]);
+  const backgroundColor =
+    variant === "primary"
+      ? accent
+      : variant === "danger-soft"
+        ? dangerSoft
+        : variant === "ghost"
+          ? "transparent"
+          : surface;
+  const borderColor = variant === "outline" || variant === "secondary" ? separator : backgroundColor;
+  const color = variant === "primary" ? onAccent : variant === "danger-soft" ? danger : foreground;
+  const label = typeof children === "string" || typeof children === "number" ? String(children) : null;
 
   return (
-    <Host
-      colorScheme={colorScheme}
-      matchContents={{ vertical: true }}
-      seedColor={variant === "danger-soft" ? colors.systemRed : colors.systemBlue}
-      style={style}
+    <Pressable
+      accessibilityRole="button"
+      disabled={isDisabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        size === "sm" ? styles.small : styles.base,
+        {
+          backgroundColor,
+          borderColor,
+          opacity: isDisabled ? 0.48 : pressed ? 0.72 : 1,
+        },
+        style,
+      ]}
+      testID={testID}
     >
-      <ExpoButton
-        disabled={isDisabled}
-        label={label}
-        onPress={onPress}
-        style={size === "sm" ? styles.nativeButtonSmall : styles.nativeButton}
-        testID={testID}
-        variant={nativeButtonVariant[variant]}
-      >
-        {label ? undefined : children}
-      </ExpoButton>
-    </Host>
+      {label ? (
+        <Text style={[styles.label, { color }]}>{label}</Text>
+      ) : (
+        children
+      )}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  nativeButton: {
+  base: {
+    alignItems: "center",
+    borderCurve: "continuous",
     borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     height: 48,
+    justifyContent: "center",
+    paddingHorizontal: 16,
   },
-  nativeButtonSmall: {
+  label: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  small: {
+    alignItems: "center",
+    borderCurve: "continuous",
     borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     height: 40,
+    justifyContent: "center",
+    paddingHorizontal: 12,
   },
 });

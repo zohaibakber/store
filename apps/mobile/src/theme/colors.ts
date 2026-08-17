@@ -1,5 +1,5 @@
 import { Color } from "expo-router";
-import { Platform, type ColorValue } from "react-native";
+import { Platform, processColor, type ColorValue } from "react-native";
 
 export const colors = {
   label: Platform.select({
@@ -100,8 +100,11 @@ export const colors = {
 } as const satisfies Record<string, ColorValue>;
 
 export const cssColor = (value: ColorValue): string => {
-  // SAFETY: expo-router Color values are PlatformColor objects that RN accepts;
-  // @expo/ui textStyle.color is typed as CSS string only.
-  return value as string;
+  if (typeof value === "string" && value.startsWith("#")) return value;
+  const argb = processColor(value);
+  if (typeof argb !== "number") return "#000000";
+  const r = (argb >> 16) & 0xff;
+  const g = (argb >> 8) & 0xff;
+  const b = argb & 0xff;
+  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 };
-

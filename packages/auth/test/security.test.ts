@@ -80,6 +80,7 @@ describe("resolveAuthSecurity", () => {
         "http://localhost:5173",
         "com.tabaaq.desktop://app",
         "com.tabaaq.mobile://",
+        "com.tabaaq.mobile.debug://",
       ],
       rejectedSettings: [],
     });
@@ -161,9 +162,8 @@ describe("resolveAuthSecurity", () => {
     expect(resolved.trustedOrigins).toContain("exp://*");
   });
 
-  it("does not trust Expo Go origins in production", () => {
-    const resolved = resolveAuthSecurity(secureInput);
-    expect(resolved.trustedOrigins).not.toContain("exp://*");
+  it("always trusts the local Android debug package", () => {
+    expect(resolveAuthSecurity(secureInput).trustedOrigins).toContain("com.tabaaq.mobile.debug://");
   });
 
   it.each([
@@ -226,6 +226,7 @@ describe("matchesTrustedOrigin", () => {
     ["exp://10.0.0.29:8081", "exp://192.168.*.*:*", false],
     ["com.tabaaq.desktop://app", "com.tabaaq.desktop://app", true],
     ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
+    ["com.tabaaq.mobile.debug://app", "com.tabaaq.mobile.debug://", true],
     ["https://evil.example.net", "com.tabaaq.mobile://", false],
   ])("matches %s against %s", (origin, pattern, expected) => {
     expect(isTrustedOrigin(origin, [pattern])).toBe(expected);

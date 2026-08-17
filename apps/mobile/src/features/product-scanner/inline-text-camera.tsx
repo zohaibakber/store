@@ -66,7 +66,7 @@ export function InlineTextCamera({
     onCaptureStateChange(true);
     setCaptureState("reading");
     setLineCount(0);
-     hapticSelection();
+    hapticSelection();
     try {
       const picture = await camera.current.takePictureAsync({
         quality: 0.84,

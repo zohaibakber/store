@@ -1,3 +1,4 @@
+import * as Network from "expo-network";
 import {
   createContext,
   type Context,
@@ -11,7 +12,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 
-import { authErrorMessage } from "@/lib/auth-client";
+import { authErrorMessage, isOfflineCause } from "@/lib/auth-client";
 import {
   inventorySnapshot,
   type MobileBatch,
@@ -74,7 +75,7 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
           setProducts(snapshot.products);
           setCategories(snapshot.categories);
         }
-        setError(authErrorMessage(cause));
+        if (!isOfflineCause(cause) || !snapshot) setError(authErrorMessage(cause));
       } finally {
         setRefreshing(false);
         refreshInFlight.current = null;
@@ -149,6 +150,17 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
+
+  useEffect(() => {
+    let wasOnline: boolean | undefined;
+    const subscription = Network.addNetworkStateListener((state) => {
+      const isOnline = state.isConnected !== false && state.isInternetReachable !== false;
+      const reconnected = wasOnline === false && isOnline;
+      wasOnline = isOnline;
+      if (reconnected) void refresh();
     });
     return () => subscription.remove();
   }, [refresh]);

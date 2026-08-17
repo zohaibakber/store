@@ -1,24 +1,43 @@
 import { Image } from "expo-image";
-import type { ColorValue, StyleProp, ImageStyle } from "react-native";
+import type { ColorValue, StyleProp, ImageStyle, ViewStyle } from "react-native";
+import { View } from "react-native";
 
-import { useAppColorScheme } from "@/theme/appearance";
 import { colors, cssColor } from "@/theme/colors";
 
 type SymbolProps = {
   name: string;
   size?: number;
   tintColor?: ColorValue;
-  style?: StyleProp<ImageStyle>;
+  style?: StyleProp<ImageStyle | ViewStyle>;
 };
 
-export function Symbol({ name, size = 20, tintColor, style }: SymbolProps) {
-  useAppColorScheme();
+export function IconSymbol({ name, size = 20, tintColor, style }: SymbolProps) {
+  const color = cssColor(tintColor ?? colors.label);
+  if (process.env.EXPO_OS === "ios") {
+    return (
+      <Image
+        contentFit="contain"
+        source={`sf:${name}`}
+        style={[{ height: size, width: size }, style as StyleProp<ImageStyle>]}
+        tintColor={color}
+      />
+    );
+  }
+
   return (
-    <Image
-      contentFit="contain"
-      source={`sf:${name}`}
-      style={[{ height: size, width: size }, style]}
-      tintColor={cssColor(tintColor ?? colors.label)}
+    <View
+      accessibilityLabel={name}
+      style={[
+        {
+          backgroundColor: color,
+          borderCurve: "continuous",
+          borderRadius: Math.max(2, size / 5),
+          height: size,
+          opacity: 0.72,
+          width: size,
+        },
+        style as StyleProp<ViewStyle>,
+      ]}
     />
   );
 }

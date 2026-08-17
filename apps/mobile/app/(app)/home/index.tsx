@@ -4,7 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native
 
 import { Brand } from "@/components/brand";
 import { ProductAnalytics } from "@/components/product-analytics";
-import { Symbol } from "@/components/symbol";
+import { IconSymbol } from "@/components/symbol";
 import { Alert as HeroAlert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -64,7 +64,7 @@ export default function HomeScreen() {
       <View style={[styles.hero, { backgroundColor: subtle }]}>
         <View style={styles.heroContent}>
           <View style={[styles.heroIcon, { backgroundColor: background }]}>
-            <Symbol name="chart.line.uptrend.xyaxis" size={22} tintColor={foreground} />
+            <IconSymbol name="chart.line.uptrend.xyaxis" size={22} tintColor={foreground} />
           </View>
           <View style={styles.heroCopy}>
             <Text style={[styles.heroTitle, { color: foreground }]}>
@@ -123,7 +123,7 @@ export default function HomeScreen() {
                   {index > 0 ? <Separator /> : null}
                   <View style={styles.attentionRow}>
                     <View style={[styles.attentionIcon, { backgroundColor: subtle }]}>
-                      <Symbol
+                      <IconSymbol
                         name={product.stock === 0 ? "exclamationmark.triangle" : "shippingbox"}
                         size={19}
                         tintColor={product.stock === 0 ? danger : warning}

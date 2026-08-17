@@ -5,7 +5,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { AddInventoryActions } from "@/components/add-inventory-actions";
 import { ProductRow } from "@/components/product-row";
 import { ProductSearchField } from "@/components/product-search-field";
-import { Symbol } from "@/components/symbol";
+import { IconSymbol } from "@/components/symbol";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -131,7 +131,7 @@ export default function ProductsScreen() {
     </View>
   ) : (
     <View style={[styles.empty, { backgroundColor: subtle }]}>
-      <Symbol name={query ? "magnifyingglass" : "shippingbox"} size={30} tintColor={muted} />
+      <IconSymbol name={query ? "magnifyingglass" : "shippingbox"} size={30} tintColor={muted} />
       <Text style={[styles.bodyMedium, { color: foreground }]}>
         {query || filter !== "all" ? "No matching products" : "No products yet"}
       </Text>

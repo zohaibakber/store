@@ -30,7 +30,8 @@ function MobileAppShell({ theme }: { theme: typeof DefaultTheme }) {
   const [authOpen, setAuthOpen] = useState(false);
 
   useEffect(() => {
-    if (isLoaded && !isSignedIn) setAuthOpen(true);
+    if (!isLoaded) return;
+    setAuthOpen(!isSignedIn);
   }, [isLoaded, isSignedIn]);
 
   return (

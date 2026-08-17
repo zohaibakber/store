@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { Symbol } from "@/components/symbol";
+import { IconSymbol } from "@/components/symbol";
 import { Input } from "@/components/ui/input";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
@@ -32,7 +32,7 @@ export function ProductSearchField({ onChangeText, query }: ProductSearchFieldPr
           onPress={() => onChangeText("")}
           style={({ pressed }) => [styles.clear, { opacity: pressed ? 0.56 : 1 }]}
         >
-          <Symbol name="xmark" size={20} tintColor={foreground} />
+          <IconSymbol name="xmark" size={20} tintColor={foreground} />
         </Pressable>
       ) : null}
     </View>
