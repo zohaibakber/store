@@ -25,9 +25,4 @@ export const mountApp = (input: {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>{input.clerk(app)}</React.StrictMode>,
   );
-  const loader = document.getElementById("app-loading");
-  requestAnimationFrame(() => {
-    loader?.classList.add("app-loading-hidden");
-    loader?.addEventListener("transitionend", () => loader.remove(), { once: true });
-  });
 };

@@ -1,6 +1,7 @@
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
+import { AppLoading } from "@/components/app/loading";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
@@ -38,7 +39,7 @@ export function RootLayout() {
 
 function AuthenticatedLayout() {
   const { snapshot, loading, error } = useAuth();
-  if (loading) return null;
+  if (loading) return <AppLoading />;
   if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (

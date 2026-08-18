@@ -4,6 +4,7 @@ import { DEFAULT_ELECTRON_PROTOCOL } from "@store/auth/security";
 import { createHashHistory } from "@tanstack/react-router";
 
 import { bootstrapAuth } from "@/lib/auth";
+import { clerkAppearance } from "@/lib/clerk-runtime";
 import {
   ClerkActiveOrganization,
   ClerkWorkspaceSync,
@@ -23,6 +24,7 @@ export const startElectron = async () => {
       clerkPublishableKey ? (
         <ElectronClerkProvider
           allowedRedirectProtocols={[DEFAULT_ELECTRON_PROTOCOL]}
+          appearance={clerkAppearance}
           passkeys={passkeys}
           publishableKey={clerkPublishableKey}
         >
