@@ -44,12 +44,16 @@ export const apiOrigin = (configuredApiUrl ?? (__DEV__ ? developmentOrigin : "")
   "",
 );
 
-const extraPublishableKey = (() => {
-  const extra = Constants.expoConfig?.extra as { EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: unknown };
-  return typeof extra?.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY === "string"
-    ? extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY.trim()
-    : "";
-})();
+const ExtraConfig = Schema.Struct({
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: Schema.optional(Schema.String),
+});
+
+const extraPublishableKey = Schema.decodeUnknownOption(ExtraConfig)(
+  Constants.expoConfig?.extra ?? {},
+).pipe(
+  Option.map((extra) => extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? ""),
+  Option.getOrElse(() => ""),
+);
 export const clerkPublishableKey = (
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || extraPublishableKey
 ).trim();

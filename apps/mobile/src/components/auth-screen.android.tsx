@@ -41,10 +41,7 @@ function ClerkAuthForm() {
     <Host colorScheme={scheme} style={{ flex: 1 }}>
       <Surface color={colors.surface} modifiers={[fillMaxSize()]}>
         <Column
-          modifiers={[
-            fillMaxSize(),
-            padding(24, insets.top + 24, 24, insets.bottom + 24),
-          ]}
+          modifiers={[fillMaxSize(), padding(24, insets.top + 24, 24, insets.bottom + 24)]}
           verticalArrangement={{ spacedBy: 16 }}
         >
           <Text color={colors.onSurface} style={{ typography: "headlineSmall" }}>
@@ -96,7 +93,11 @@ function ClerkAuthForm() {
             </OutlinedTextField>
           )}
           {step === "identifier" ? (
-            <Button enabled={!busy} modifiers={[fillMaxWidth()]} onClick={() => void sendEmailCode()}>
+            <Button
+              enabled={!busy}
+              modifiers={[fillMaxWidth()]}
+              onClick={() => void sendEmailCode()}
+            >
               <Text>Continue</Text>
             </Button>
           ) : (
