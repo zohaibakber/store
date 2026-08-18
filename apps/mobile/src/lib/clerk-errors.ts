@@ -1,3 +1,6 @@
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
 export type ClerkFieldError = {
   readonly message: string;
   readonly longMessage?: string;
@@ -8,12 +11,25 @@ export type ClerkGlobalError = {
   readonly longMessage?: string;
 };
 
+const ClerkErrorCause = Schema.Struct({
+  code: Schema.optional(Schema.String),
+  longMessage: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+});
+
 const messageOf = (error: ClerkFieldError | ClerkGlobalError | null | undefined) =>
   error?.longMessage || error?.message || undefined;
 
 export const clerkErrorMessage = (
-  error: { readonly code?: string; readonly longMessage?: string; readonly message?: string } | null,
+  error: {
+    readonly code?: string;
+    readonly longMessage?: string;
+    readonly message?: string;
+  } | null,
 ) => error?.longMessage || error?.message || undefined;
+
+export const clerkErrorMessageFromUnknown = (cause: unknown) =>
+  clerkErrorMessage(Schema.decodeUnknownOption(ClerkErrorCause)(cause).pipe(Option.getOrNull));
 
 export const clerkFieldMessage = (
   fields: {

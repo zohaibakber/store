@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import {
   clerkErrorMessage,
+  clerkErrorMessageFromUnknown,
   clerkFieldMessage,
   clerkGlobalMessages,
   isIdentifierNotFound,
@@ -14,14 +15,12 @@ import {
 
 WebBrowser.maybeCompleteAuthSession();
 
-const goHome = (router: ReturnType<typeof useRouter>) => ({
-  session,
-}: {
-  session?: { currentTask?: unknown } | null;
-}) => {
-  if (session?.currentTask) return;
-  router.replace("/home");
-};
+const goHome =
+  (router: ReturnType<typeof useRouter>) =>
+  ({ session }: { session?: { currentTask?: unknown } | null }) => {
+    if (session?.currentTask) return;
+    router.replace("/home");
+  };
 
 export function useClerkAuthFlow() {
   const router = useRouter();
@@ -53,8 +52,8 @@ export function useClerkAuthFlow() {
   const fieldError =
     step === "code"
       ? clerkFieldMessage(verifyingSignUp ? signUpErrors.fields : signInErrors.fields, "code")
-      : clerkFieldMessage(signInErrors.fields, "email") ??
-        clerkFieldMessage(signUpErrors.fields, "email");
+      : (clerkFieldMessage(signInErrors.fields, "email") ??
+        clerkFieldMessage(signUpErrors.fields, "email"));
   const errorMessage =
     localError ??
     fieldError ??
@@ -136,7 +135,7 @@ export function useClerkAuthFlow() {
         setLocalError("Google sign-in needs another step. Try email instead.");
       }
     } catch (cause) {
-      setLocalError(clerkErrorMessage(cause as { message?: string }) ?? "Google sign-in failed.");
+      setLocalError(clerkErrorMessageFromUnknown(cause) ?? "Google sign-in failed.");
     } finally {
       setGoogleBusy(false);
     }
