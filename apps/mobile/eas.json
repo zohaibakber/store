@@ -17,7 +17,7 @@
       "env": {
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_API_URL": "https://tabaaq.zohaibakber.com",
-        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bWVhc3VyZWQtb3dsLTI1LmNsZXJrLmFjY291bnRzLmRldiQ"
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsudGFiYWFxLnpvaGFpYmFrYmVyLmNvbSQ"
       },
       "android": {
         "buildType": "apk"
