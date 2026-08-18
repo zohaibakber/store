@@ -56,6 +56,16 @@ describe("API Worker bundle", () => {
     expect(source).toContain("d1FromEnv(");
   });
 
+  it("does not require process.env production hostnames at Worker runtime", async () => {
+    // `requireProductionApiHostname()` reads process.env and throws. The
+    // Worker bundle folds `__ALCHEMY_RUNTIME__` to true, so that deploy-time
+    // call must be eliminated or every request 1101s (seen as a CORS error).
+    const chunks = await bundleWorker();
+    const code = chunks.map((chunk) => chunk.code).join("\n");
+    expect(code).not.toMatch(/requireProductionApiHostname\s*\(\s*\)/);
+    expect(code).not.toMatch(/requireProductionHostname\s*\(\s*\)/);
+  }, 60_000);
+
   it("never derives a URL from import.meta.url", async () => {
     // workerd leaves `import.meta.url` undefined, so `new URL(relative,
     // import.meta.url)` throws `TypeError: Invalid URL string.` there. The
