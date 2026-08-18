@@ -1,11 +1,11 @@
 export {
   CreateOrganization,
+  SignIn,
+  SignUp,
   useAuth,
   useClerk,
   useOrganization,
   useOrganizationList,
-  useSignIn,
-  useSignUp,
 } from "@clerk/react";
 
 export const clerkAppearance = {
