@@ -24,7 +24,8 @@ export const Website = Cloudflare.Website.Vite(
   "Website",
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const siteHostname = stage === "prod" ? requireProductionHostname() : undefined;
+    const siteHostname =
+      !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod" ? requireProductionHostname() : undefined;
 
     const websiteConfig = {
       rootDir,

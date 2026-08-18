@@ -23,6 +23,24 @@ describe("HTTP auth and CORS", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
   });
 
+  it("answers a session preflight for a trusted origin without using *", async () => {
+    const response = await appFor(true, false).request("/api/auth/session", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
+    expect(response.status).toBeGreaterThanOrEqual(200);
+    expect(response.status).toBeLessThan(300);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    expect(response.headers.get("access-control-allow-origin")).not.toBe("*");
+    expect(response.headers.get("access-control-allow-headers")?.toLowerCase()).toContain(
+      "authorization",
+    );
+  });
+
   it("adds CORS headers for the local web Vite origin", async () => {
     const response = await appFor(true).request("/api/health", {
       headers: { origin: "http://localhost:5174" },
