@@ -5,7 +5,7 @@ import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { clerkAppearance, SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
+import { SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
 import { clerkPublishableKey, useClerkSignOut } from "@/lib/clerk-workspace";
 
 function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
@@ -47,7 +47,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   return (
     <div className="flex w-full flex-col items-center">
       <div className="flex w-full justify-center">
-        <SignIn appearance={clerkAppearance} routing="hash" />
+        <SignIn routing="hash" />
       </div>
       {bridgeError ? (
         <Alert className="mt-6 w-full max-w-xs" variant="error">

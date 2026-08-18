@@ -20,7 +20,7 @@
     "@store/db": "workspace:*",
     "@store/sync-client": "workspace:*",
     "double-metaphone": "^2.0.1",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -1,5 +1,7 @@
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
 @import "shadcn/tailwind.css";
+@import "@clerk/ui/themes/shadcn.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -144,6 +146,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: var(--color-white);
   --foreground: var(--color-neutral-800);
   --card: var(--color-white);
@@ -189,6 +192,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
   --foreground: var(--color-neutral-100);
   --card: color-mix(in srgb, var(--background) 98%, var(--color-white));

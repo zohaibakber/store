@@ -25,6 +25,7 @@
     "@babel/core": "^8.0.1",
     "@base-ui/react": "^1.7.0",
     "@clerk/electron": "^0.0.31",
+    "@clerk/ui": "^1.30.4",
     "@effect/vitest": "catalog:",
     "@electron/asar": "^4.2.1",
     "@fontsource-variable/inter": "^5.3.0",
@@ -71,7 +72,7 @@
     "zod": "^4.4.3"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9"
   },
   "devEngines": {
     "packageManager": {

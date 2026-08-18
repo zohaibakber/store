@@ -1,8 +1,9 @@
 import { ClerkProvider } from "@clerk/react";
 import { createBrowserHistory } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
 import { bootstrapAuth, setAuthSessionBridge } from "@/lib/auth";
-import { clerkAppearance } from "@/lib/clerk-runtime";
+import { useClerkAppearance } from "@/lib/clerk-runtime";
 import {
   ClerkActiveOrganization,
   ClerkWorkspaceSync,
@@ -14,6 +15,17 @@ import { mountApp } from "./mount-app";
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
+function WebClerk({ children }: { children: ReactNode }) {
+  const appearance = useClerkAppearance();
+  return (
+    <ClerkProvider appearance={appearance} publishableKey={clerkPublishableKey}>
+      <ClerkActiveOrganization />
+      <ClerkWorkspaceSync />
+      {children}
+    </ClerkProvider>
+  );
+}
+
 export const startWeb = async () => {
   const { bridge, store } = await startWebWorkspace(apiBaseUrl);
   setAuthSessionBridge(bridge);
@@ -21,15 +33,6 @@ export const startWeb = async () => {
     store,
     initialAuth: await bootstrapAuth(),
     history: createBrowserHistory(),
-    clerk: (app) =>
-      clerkPublishableKey ? (
-        <ClerkProvider appearance={clerkAppearance} publishableKey={clerkPublishableKey}>
-          <ClerkActiveOrganization />
-          <ClerkWorkspaceSync />
-          {app}
-        </ClerkProvider>
-      ) : (
-        app
-      ),
+    clerk: (app) => (clerkPublishableKey ? <WebClerk>{app}</WebClerk> : app),
   });
 };

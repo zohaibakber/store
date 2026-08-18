@@ -16,13 +16,13 @@ export const mountApp = (input: {
 }) => {
   const router = getRouter(input.history, input.store, input.initialAuth);
   const app = (
-    <ThemeProvider>
-      <StoreProvider store={input.store}>
-        <RouterProvider router={router} />
-      </StoreProvider>
-    </ThemeProvider>
+    <StoreProvider store={input.store}>
+      <RouterProvider router={router} />
+    </StoreProvider>
   );
   ReactDOM.createRoot(document.getElementById("root")!).render(
-    <React.StrictMode>{input.clerk(app)}</React.StrictMode>,
+    <React.StrictMode>
+      <ThemeProvider>{input.clerk(app)}</ThemeProvider>
+    </React.StrictMode>,
   );
 };
