@@ -1,5 +1,6 @@
 import { useSignIn, useSignUp } from "@clerk/expo";
 import { useSSO } from "@clerk/expo/experimental";
+import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
@@ -128,6 +129,7 @@ export function useClerkAuthFlow() {
     try {
       const { createdSessionId, signUp: googleSignUp } = await startSSOFlow({
         strategy: "oauth_google",
+        redirectUrl: AuthSession.makeRedirectUri({ path: "sso-callback" }),
       });
       if (createdSessionId) return;
       if (googleSignUp?.status === "missing_requirements") {
