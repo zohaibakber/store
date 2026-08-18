@@ -30,7 +30,7 @@ export default defineConfig({
     sortImports: true,
     sortTailwindcss: {
       functions: ["clsx", "cn", "cva", "twMerge"],
-      stylesheet: "./apps/desktop/src/styles.css",
+      stylesheet: "./apps/web/src/styles.css",
     },
   },
   staged: {
@@ -67,7 +67,7 @@ export default defineConfig({
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
     overrides: [
       {
-        files: ["apps/desktop/src/**/*.{ts,tsx}", "apps/web/src/**/*.{ts,tsx}"],
+        files: ["apps/web/src/**/*.{ts,tsx}"],
         plugins: ["react"],
         rules: {
           "react/no-children-prop": "off",

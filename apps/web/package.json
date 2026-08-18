@@ -11,8 +11,10 @@
     "test": "vitest run --root ../.. apps/web/test"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.61.3",
-    "@libsql/client-wasm": "^0.17.4"
+    "@clerk/electron": "^0.0.31",
+    "@clerk/react": "^6.14.2",
+    "@libsql/client-wasm": "^0.17.4",
+    "thinking-orbs": "^0.1.1"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
@@ -22,6 +24,7 @@
     "@hugeicons/core-free-icons": "^4.2.3",
     "@hugeicons/react": "^1.1.9",
     "@rolldown/plugin-babel": "^0.2.3",
+    "@shadcn/react": "^0.2.1",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
@@ -31,6 +34,8 @@
     "@tanstack/react-form": "^1.33.3",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-table": "^9.0.0",
+    "@tanstack/router-plugin": "^1.168.23",
+    "@testing-library/react": "^16.3.2",
     "@types/babel__core": "^7.20.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -41,10 +46,12 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "effect": "catalog:",
+    "happy-dom": "^20.11.1",
     "react": "^19.2.8",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
+    "shadcn": "^4.16.1",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "catalog:",

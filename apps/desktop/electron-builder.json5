@@ -43,7 +43,7 @@
     },
   ],
   files: ["dist", "dist-electron"],
-  icon: "public/logo.png",
+  icon: "../web/public/logo.png",
   extraResources: [
     {
       from: "../../packages/db/migrations/local",
@@ -53,7 +53,7 @@
       // BrowserWindow's `icon` option loads through nativeImage, which reads
       // the real filesystem and can't see into app.asar — so the icon must
       // live outside the archive to show up at runtime in production.
-      from: "public/logo.png",
+      from: "../web/public/logo.png",
       to: "logo.png",
     },
   ],

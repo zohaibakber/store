@@ -7,8 +7,7 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "paths": {
-      "@/lib/clerk-runtime": ["./src/clerk-runtime.ts"],
-      "@/*": ["../desktop/src/*"]
+      "@/*": ["./src/*"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
@@ -20,6 +19,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "test", "worker.ts", "../desktop/src"],
+  "include": ["src", "test", "worker.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

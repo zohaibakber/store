@@ -10,9 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as SignUpRouteImport } from './routes/sign-up'
+import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
 import { Route as InvoicesIndexRouteImport } from './routes/invoices/index'
 import { Route as InvoicesInvoiceIdRouteImport } from './routes/invoices/$invoiceId'
 import { Route as InvoicesNewRouteImport } from './routes/invoices/new'
@@ -25,6 +29,11 @@ import { Route as ProductsProductIdEditRouteImport } from './routes/products/$pr
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvoicesRoute = InvoicesRouteImport.update({
@@ -40,6 +49,21 @@ const ProductsRoute = ProductsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignUpRoute = SignUpRouteImport.update({
+  id: '/sign-up',
+  path: '/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SsoCallbackRoute = SsoCallbackRouteImport.update({
+  id: '/sso-callback',
+  path: '/sso-callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvoicesIndexRoute = InvoicesIndexRouteImport.update({
@@ -85,9 +109,13 @@ const ProductsProductIdEditRoute = ProductsProductIdEditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -99,7 +127,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -112,9 +144,13 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -128,9 +164,13 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/forgot-password'
     | '/invoices'
     | '/products'
     | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/sso-callback'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
@@ -142,7 +182,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/forgot-password'
     | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/sso-callback'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
@@ -154,9 +198,13 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/forgot-password'
     | '/invoices'
     | '/products'
     | '/settings'
+    | '/sign-in'
+    | '/sign-up'
+    | '/sso-callback'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
@@ -169,9 +217,13 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   InvoicesRoute: typeof InvoicesRouteWithChildren
   ProductsRoute: typeof ProductsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  SignInRoute: typeof SignInRoute
+  SignUpRoute: typeof SignUpRoute
+  SsoCallbackRoute: typeof SsoCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -181,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invoices': {
@@ -202,6 +261,27 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-up': {
+      id: '/sign-up'
+      path: '/sign-up'
+      fullPath: '/sign-up'
+      preLoaderRoute: typeof SignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sso-callback': {
+      id: '/sso-callback'
+      path: '/sso-callback'
+      fullPath: '/sso-callback'
+      preLoaderRoute: typeof SsoCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invoices/': {
@@ -301,9 +381,13 @@ const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   InvoicesRoute: InvoicesRouteWithChildren,
   ProductsRoute: ProductsRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  SignInRoute: SignInRoute,
+  SignUpRoute: SignUpRoute,
+  SsoCallbackRoute: SsoCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

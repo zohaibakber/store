@@ -1,9 +1,10 @@
 # Web app
 
-React SPA for Tabaaq, deployed with [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
-It uses the same renderer as the desktop app, a browser replica of
-`@store/persistence`, and the same `/api/sync` protocol, so inventory created
-here shows up on desktop and mobile after sync.
+Vite + TanStack Router SPA for Tabaaq, deployed with
+[`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
+This app owns the renderer. Electron loads the same routes (hash history +
+`@clerk/electron`). The browser replica of `@store/persistence` and the
+`/api/sync` protocol keep inventory in sync across web, desktop, and mobile.
 
 ## Local development
 

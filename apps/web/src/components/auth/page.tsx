@@ -4,10 +4,16 @@ import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { clerkAppearance, SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
+import { useAuth as useClerkAuth } from "@/lib/clerk-runtime";
 import { clerkPublishableKey, useClerkSignOut } from "@/lib/clerk-workspace";
 
-function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
+function AuthPanel({
+  bridgeError,
+  children,
+}: {
+  bridgeError?: string | null;
+  children: React.ReactNode;
+}) {
   const { isLoaded, isSignedIn } = useClerkAuth();
   const signOut = useClerkSignOut();
   const [signingOut, setSigningOut] = React.useState(false);
@@ -45,7 +51,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 
   return (
     <>
-      <SignIn appearance={clerkAppearance} routing="hash" />
+      {children}
       {bridgeError ? (
         <Alert className="mt-6" variant="error">
           <AlertTitle>Sign-in is not ready</AlertTitle>
@@ -56,7 +62,13 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   );
 }
 
-export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
+export function AuthShell({
+  bridgeError,
+  children,
+}: {
+  bridgeError?: string | null;
+  children: React.ReactNode;
+}) {
   const { isLoaded, isSignedIn } = useClerkAuth();
 
   if (clerkPublishableKey && (!isLoaded || (isSignedIn && !bridgeError))) {
@@ -75,7 +87,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
         <div className="flex w-full justify-center">
           <div className="w-full max-w-xs">
             {clerkPublishableKey ? (
-              <ClerkSignInPanel bridgeError={bridgeError} />
+              <AuthPanel bridgeError={bridgeError}>{children}</AuthPanel>
             ) : (
               <Alert>
                 <AlertTitle>Clerk is not configured</AlertTitle>
