@@ -344,7 +344,7 @@ function createWindow() {
     icon: appIconPath(),
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161616" : "#ffffff",
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,

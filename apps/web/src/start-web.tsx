@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/react";
 import { createBrowserHistory } from "@tanstack/react-router";
 
 import { bootstrapAuth, setAuthSessionBridge } from "@/lib/auth";
+import { clerkAppearance } from "@/lib/clerk-runtime";
 import {
   ClerkActiveOrganization,
   ClerkWorkspaceSync,
@@ -22,7 +23,7 @@ export const startWeb = async () => {
     history: createBrowserHistory(),
     clerk: (app) =>
       clerkPublishableKey ? (
-        <ClerkProvider publishableKey={clerkPublishableKey}>
+        <ClerkProvider appearance={clerkAppearance} publishableKey={clerkPublishableKey}>
           <ClerkActiveOrganization />
           <ClerkWorkspaceSync />
           {app}

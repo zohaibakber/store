@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { AppLoading } from "@/components/app/loading";
 import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 
   if (isSignedIn) {
     return (
-      <Alert variant="error">
+      <Alert className="w-full max-w-xs" variant="error">
         <AlertTitle>Could not finish sign-in</AlertTitle>
         <AlertDescription>
           <span>{bridgeError}</span>
@@ -44,15 +45,17 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   }
 
   return (
-    <>
-      <SignIn appearance={clerkAppearance} routing="hash" />
+    <div className="flex w-full flex-col items-center">
+      <div className="flex w-full justify-center">
+        <SignIn appearance={clerkAppearance} routing="hash" />
+      </div>
       {bridgeError ? (
-        <Alert className="mt-6" variant="error">
+        <Alert className="mt-6 w-full max-w-xs" variant="error">
           <AlertTitle>Sign-in is not ready</AlertTitle>
           <AlertDescription>{bridgeError}</AlertDescription>
         </Alert>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -60,11 +63,7 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const { isLoaded, isSignedIn } = useClerkAuth();
 
   if (clerkPublishableKey && (!isLoaded || (isSignedIn && !bridgeError))) {
-    return (
-      <main className="flex min-h-svh items-center justify-center text-muted-foreground">
-        <Spinner aria-label="Finishing sign-in" className="size-6" />
-      </main>
-    );
+    return <AppLoading label="Finishing sign-in" />;
   }
 
   return (
@@ -72,25 +71,23 @@ export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
       <header className="absolute inset-x-0 top-0 z-10 h-12 [-webkit-app-region:drag]" />
       <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 md:p-10">
         <AuthBrand />
-        <div className="flex w-full justify-center">
-          <div className="w-full max-w-xs">
-            {clerkPublishableKey ? (
-              <ClerkSignInPanel bridgeError={bridgeError} />
-            ) : (
-              <Alert>
-                <AlertTitle>Clerk is not configured</AlertTitle>
-                <AlertDescription>
-                  Set VITE_CLERK_PUBLISHABLE_KEY so sign-in can load.
-                </AlertDescription>
-              </Alert>
-            )}
-            {!clerkPublishableKey && bridgeError ? (
-              <Alert className="mt-6">
-                <AlertTitle>Offline sign-in is not ready</AlertTitle>
-                <AlertDescription>{bridgeError}</AlertDescription>
-              </Alert>
-            ) : null}
-          </div>
+        <div className="flex w-full flex-col items-center">
+          {clerkPublishableKey ? (
+            <ClerkSignInPanel bridgeError={bridgeError} />
+          ) : (
+            <Alert className="w-full max-w-xs">
+              <AlertTitle>Clerk is not configured</AlertTitle>
+              <AlertDescription>
+                Set VITE_CLERK_PUBLISHABLE_KEY so sign-in can load.
+              </AlertDescription>
+            </Alert>
+          )}
+          {!clerkPublishableKey && bridgeError ? (
+            <Alert className="mt-6 w-full max-w-xs">
+              <AlertTitle>Offline sign-in is not ready</AlertTitle>
+              <AlertDescription>{bridgeError}</AlertDescription>
+            </Alert>
+          ) : null}
         </div>
       </div>
     </div>
