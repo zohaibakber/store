@@ -44,7 +44,15 @@ export const apiOrigin = (configuredApiUrl ?? (__DEV__ ? developmentOrigin : "")
   "",
 );
 
-export const clerkPublishableKey = (process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "").trim();
+const extraPublishableKey = (() => {
+  const extra = Constants.expoConfig?.extra as { EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: unknown };
+  return typeof extra?.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY === "string"
+    ? extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY.trim()
+    : "";
+})();
+export const clerkPublishableKey = (
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || extraPublishableKey
+).trim();
 
 const jwtTemplate = process.env.EXPO_PUBLIC_CLERK_JWT_TEMPLATE?.trim();
 export const mobileClerkTokenOptions = jwtTemplate
