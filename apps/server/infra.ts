@@ -21,23 +21,34 @@ import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
 import { d1FromEnv, isD1Database } from "./src/auth/d1";
 import { authenticateHeaders, loadWorkspaceSnapshot } from "./src/auth/session";
+import {
+  PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
+  PRODUCTION_DOMAIN_MISSING_MESSAGE,
+  productionApiOrigin,
+  productionSiteOrigin,
+  requireProductionApiHostname,
+  resolveProductionApiHostname,
+  resolveProductionHostname,
+} from "./src/runtime/production-domain";
 import { reportRejectedAuthSettings } from "./src/runtime/worker";
 import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
 
 export { OrganizationStore };
+export {
+  requireProductionApiHostname,
+  requireProductionHostname,
+  resolveProductionApiHostname,
+  resolveProductionHostname,
+} from "./src/runtime/production-domain";
 
 /**
- * Production's public hostname lives on the Website Worker (`apps/web/infra.ts`)
- * so packaged desktop builds and the browser SPA share one origin that survives
- * redeploys. Cloudflare provisions the DNS record and certificate; the zone is
- * inferred from the hostname and must already exist in the account.
- *
- * Other stages stay on their generated `workers.dev` URL — a custom domain per
- * stage would need one hostname each, and nothing depends on a preview URL
- * being stable. The API Worker itself is always `workers.dev`; `/api/*` is
- * proxied from the Website origin over a service binding.
+ * Production attaches two hostnames on the zone inferred from
+ * `PRODUCTION_DOMAIN`: the Website Worker on the apex, the API Worker on
+ * `api.<domain>` (or `PRODUCTION_API_DOMAIN` / `VITE_API_URL`). Cloudflare
+ * provisions DNS and certificates. Neither hostname is baked into source.
+ * Other stages stay on generated `workers.dev` URLs. Locally, the Website
+ * Worker still proxies `/api/*` so `vp run dev` stays same-origin.
  */
-export const PRODUCTION_DOMAIN = "tabaaq.zohaibakber.com";
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
 /**
@@ -55,12 +66,10 @@ export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
     const authDatabase = yield* AuthDatabase;
-    return {
+    const { stage } = yield* Alchemy.Stack;
+    const apiHostname = stage === "prod" ? requireProductionApiHostname() : undefined;
+    const worker = {
       main: import.meta.url,
-      // Omitting `domain` leaves live attachments in place (Alchemy #942). The
-      // hostname used to live here; `null` detaches it so the Website Worker can
-      // take `tabaaq.zohaibakber.com`. This API Worker stays on workers.dev.
-      domain: null,
       // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
       // alchemy's dev runtime pins workerd exactly, and that build refuses any
       // date past 2026-07-11. Raising this breaks `vp run dev` with a
@@ -81,6 +90,9 @@ export const ApiLive = Api.make(
         AuthDatabase: authDatabase,
       },
     };
+    // Apex stays on the Website Worker. This Worker claims `api.<domain>` in
+    // prod; omitting `domain` on other stages leaves workers.dev in place.
+    return apiHostname ? { ...worker, domain: apiHostname } : worker;
   }),
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
@@ -99,10 +111,18 @@ export const ApiLive = Api.make(
     const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE").pipe(
       Config.withDefault(""),
     );
-    const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+    const trustedOriginsRaw = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
-      Config.map(parseTrustedOrigins),
     );
+    const trustedOrigins = parseTrustedOrigins(trustedOriginsRaw);
+    const productionDomainEnv = {
+      PRODUCTION_DOMAIN: yield* Config.string("PRODUCTION_DOMAIN").pipe(Config.withDefault("")),
+      PRODUCTION_API_DOMAIN: yield* Config.string("PRODUCTION_API_DOMAIN").pipe(
+        Config.withDefault(""),
+      ),
+      VITE_API_URL: yield* Config.string("VITE_API_URL").pipe(Config.withDefault("")),
+      AUTH_TRUSTED_ORIGINS: trustedOriginsRaw,
+    };
     const electronProtocol = yield* Config.string("ELECTRON_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
@@ -112,11 +132,28 @@ export const ApiLive = Api.make(
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
+    const { stage } = yield* Alchemy.Stack;
+    const productionHostname = resolveProductionHostname(productionDomainEnv);
+    const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
+    if (!localDevelopment && stage === "prod") {
+      if (!productionHostname) {
+        return yield* Effect.die(new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE));
+      }
+      if (!productionApiHostname) {
+        return yield* Effect.die(new Error(PRODUCTION_API_DOMAIN_MISSING_MESSAGE));
+      }
+    }
+    const siteOrigin = productionSiteOrigin(productionDomainEnv);
+    const apiOrigin = productionApiOrigin(productionDomainEnv);
     const security = resolveAuthSecurity({
-      baseURL: localDevelopment ? "http://localhost:8787" : `https://${PRODUCTION_DOMAIN}`,
+      baseURL: localDevelopment || !apiOrigin ? "http://localhost:8787" : apiOrigin,
       electronProtocol,
       mobileProtocol,
-      trustedOrigins: localDevelopment ? [...trustedOrigins, ...LOCAL_WEB_ORIGINS] : trustedOrigins,
+      trustedOrigins: [
+        ...trustedOrigins,
+        ...(siteOrigin ? [siteOrigin] : []),
+        ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
+      ],
     });
     reportRejectedAuthSettings(security.rejectedSettings);
     const baseClerkConfig = {

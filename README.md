@@ -90,15 +90,20 @@ Each GitHub Environment must define:
   origins, bare hosts, or wildcard patterns), `CLERK_JWT_AUDIENCE`. Blank values are treated as
   unset, and a value none of those forms fit is ignored and logged rather than breaking sign-in.
 
-The `Production` environment must also define these **variables** for desktop releases:
+The `Production` environment must also define these **variables**. There is no
+domain baked into source; prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 
-- `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
-- `VITE_CLERK_PUBLISHABLE_KEY` — Clerk Frontend API publishable key
+- `PRODUCTION_DOMAIN` — site hostname only (example: `tabaaq.app`). Website Worker.
+- `VITE_API_URL` — API origin (example: `https://api.tabaaq.app`). Desktop and the
+  production SPA. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
+- `AUTH_TRUSTED_ORIGINS` — site origin for CORS / Clerk azp (example: `https://tabaaq.app`)
+- `VITE_CLERK_PUBLISHABLE_KEY` — Clerk Frontend API publishable key (web CSP derives the FAPI host from this)
 - `VITE_CLERK_JWT_TEMPLATE` — optional Clerk JWT template name (must include `org_id`)
+- `EXPO_PUBLIC_API_URL` — same origin as `VITE_API_URL`; read by the mobile app (EAS production profile uses the EAS `production` environment, not GitHub vars)
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the Worker)
 
 In the Clerk Dashboard, enable Organizations and allow these origins (Authorized
-Parties / allowed origins): `https://tabaaq.zohaibakber.com`,
+Parties / allowed origins): the **site** origin (`https://` + `PRODUCTION_DOMAIN`),
 `com.tabaaq.desktop://app`, plus local `http://localhost:5173` and
 `http://localhost:5174` for development. The Electron renderer origin is the
 privileged custom scheme host `app`, matching T3 Code's `@clerk/electron` bridge.
@@ -106,8 +111,8 @@ privileged custom scheme host `app`, matching T3 Code's `@clerk/electron` bridge
 The admin profile can mint API tokens and should only be used for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged desktop app with
-`vp run build`. Production deploys run `bun alchemy deploy`, which builds the SPA and serves it
-from `https://tabaaq.zohaibakber.com`.
+`vp run build`. Production deploys run `bun alchemy deploy`, which serves the SPA from
+`PRODUCTION_DOMAIN` and the API from `api.<PRODUCTION_DOMAIN>`.
 
 ## Install
 

@@ -19,10 +19,10 @@ describe("sync authorization", () => {
 
   it("does not replace a browser-provided origin", () => {
     const authHeaders = authHeadersForRequest(
-      new Headers({ origin: "https://tabaaq.zohaibakber.com", "expo-origin": "untrusted://" }),
+      new Headers({ origin: "https://app.example", "expo-origin": "untrusted://" }),
     );
 
-    expect(authHeaders.get("origin")).toBe("https://tabaaq.zohaibakber.com");
+    expect(authHeaders.get("origin")).toBe("https://app.example");
   });
 
   it("forwards a verified Electron origin when Origin is missing", () => {

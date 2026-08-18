@@ -2,22 +2,20 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-import { Api, PRODUCTION_DOMAIN } from "../server/infra";
+import { Api, requireProductionHostname } from "../server/infra";
 
 const rootDir = import.meta.dirname;
 
 /**
  * React SPA frontend, deployed the way Alchemy documents for Vite SPAs:
  * `Cloudflare.Website.Vite` runs Vite during `alchemy deploy` (CI included)
- * and ships client assets. Deep links fall back to `index.html`. `/api/*`
- * is served by `worker.ts` and proxied to the API Worker so auth
- * cookies stay same-origin.
+ * and ships client assets. Deep links fall back to `index.html`.
  *
- * Production hostname attach is a second `alchemy deploy` with
- * `CLAIM_PRODUCTION_DOMAIN=1`. Alchemy applies the API Worker update and this
- * create in parallel, so claiming the hostname in the same pass races the API
- * Worker's detach (`domain: null`). Omitting `domain` leaves a live attachment
- * alone, so later deploys without the flag do not drop the hostname.
+ * Production attaches this Worker to `PRODUCTION_DOMAIN` (apex). The API Worker
+ * attaches to `api.<domain>` in the same deploy — the hostnames no longer
+ * collide, so there is no two-pass detach. Locally, `/api/*` is still proxied
+ * to the API Worker so `vp run dev` stays same-origin. Production browsers
+ * call `VITE_API_URL` (the API host) with Clerk Bearer tokens.
  *
  * @see https://alchemy.run/cloudflare/frontend/vite-spa/
  * @see https://alchemy.run/cloudflare/frontend/vite/
@@ -26,6 +24,7 @@ export const Website = Cloudflare.Website.Vite(
   "Website",
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    const siteHostname = stage === "prod" ? requireProductionHostname() : undefined;
 
     const websiteConfig = {
       rootDir,
@@ -51,9 +50,7 @@ export const Website = Cloudflare.Website.Vite(
         lockfile: true,
       },
     };
-    return stage === "prod" && process.env.CLAIM_PRODUCTION_DOMAIN === "1"
-      ? { ...websiteConfig, domain: PRODUCTION_DOMAIN }
-      : websiteConfig;
+    return siteHostname ? { ...websiteConfig, domain: siteHostname } : websiteConfig;
   }),
 );
 

@@ -14,10 +14,10 @@
     "production": {
       "autoIncrement": true,
       "distribution": "internal",
+      "environment": "production",
       "env": {
         "APP_VARIANT": "production",
-        "EXPO_PUBLIC_API_URL": "https://tabaaq.zohaibakber.com",
-        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsudGFiYWFxLnpvaGFpYmFrYmVyLmNvbSQ"
+        "EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID": "54702143708-fhbababd6pq22q0qb1e52el891gvab2k.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"

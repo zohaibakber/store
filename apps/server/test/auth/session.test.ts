@@ -6,7 +6,7 @@ import { clerkVerifyConfigForHeaders } from "../../src/auth/session";
 const config: ClerkVerifyConfig = {
   secretKey: "sk_test_example",
   authorizedParties: [
-    "https://tabaaq.zohaibakber.com",
+    "https://app.example",
     "com.tabaaq.desktop://app",
     "com.tabaaq.mobile://",
     "com.tabaaq.mobile.debug://",
@@ -16,10 +16,7 @@ const config: ClerkVerifyConfig = {
 describe("clerkVerifyConfigForHeaders", () => {
   it("keeps authorized-party verification for browser requests", () => {
     expect(
-      clerkVerifyConfigForHeaders(
-        new Headers({ origin: "https://tabaaq.zohaibakber.com" }),
-        config,
-      ),
+      clerkVerifyConfigForHeaders(new Headers({ origin: "https://app.example" }), config),
     ).toBe(config);
   });
 
