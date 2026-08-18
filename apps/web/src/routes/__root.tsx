@@ -1,22 +1,16 @@
-import {
-  createRootRouteWithContext,
-  Navigate,
-  Outlet,
-  useRouterState,
-} from "@tanstack/react-router";
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
 import { CreateOrganizationPage } from "@/components/auth/create-organization-page";
-import { AuthShell } from "@/components/auth/page";
+import { AuthPage } from "@/components/auth/page";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
-import { isAuthPath } from "@/lib/clerk-flow";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
@@ -44,18 +38,8 @@ export function RootLayout() {
 
 function AuthenticatedLayout() {
   const { snapshot, loading, error } = useAuth();
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const onAuthPath = isAuthPath(pathname);
   if (loading) return null;
-  if (!snapshot || snapshot.status === "unauthenticated") {
-    if (!onAuthPath) return <Navigate to="/sign-in" />;
-    return (
-      <AuthShell bridgeError={error}>
-        <Outlet />
-      </AuthShell>
-    );
-  }
-  if (onAuthPath) return <Navigate to="/" />;
+  if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
   return (
     <TooltipProvider>

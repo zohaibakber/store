@@ -4,16 +4,10 @@ import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useAuth as useClerkAuth } from "@/lib/clerk-runtime";
+import { clerkAppearance, SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
 import { clerkPublishableKey, useClerkSignOut } from "@/lib/clerk-workspace";
 
-function AuthPanel({
-  bridgeError,
-  children,
-}: {
-  bridgeError?: string | null;
-  children: React.ReactNode;
-}) {
+function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   const { isLoaded, isSignedIn } = useClerkAuth();
   const signOut = useClerkSignOut();
   const [signingOut, setSigningOut] = React.useState(false);
@@ -51,7 +45,7 @@ function AuthPanel({
 
   return (
     <>
-      {children}
+      <SignIn appearance={clerkAppearance} routing="hash" />
       {bridgeError ? (
         <Alert className="mt-6" variant="error">
           <AlertTitle>Sign-in is not ready</AlertTitle>
@@ -62,13 +56,7 @@ function AuthPanel({
   );
 }
 
-export function AuthShell({
-  bridgeError,
-  children,
-}: {
-  bridgeError?: string | null;
-  children: React.ReactNode;
-}) {
+export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
   const { isLoaded, isSignedIn } = useClerkAuth();
 
   if (clerkPublishableKey && (!isLoaded || (isSignedIn && !bridgeError))) {
@@ -87,7 +75,7 @@ export function AuthShell({
         <div className="flex w-full justify-center">
           <div className="w-full max-w-xs">
             {clerkPublishableKey ? (
-              <AuthPanel bridgeError={bridgeError}>{children}</AuthPanel>
+              <ClerkSignInPanel bridgeError={bridgeError} />
             ) : (
               <Alert>
                 <AlertTitle>Clerk is not configured</AlertTitle>
