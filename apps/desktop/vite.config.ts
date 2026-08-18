@@ -9,48 +9,63 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
 
+const webRoot = path.resolve(__dirname, "../web");
+
 export default defineConfig({
+  root: webRoot,
+  envDir: __dirname,
+  publicDir: path.join(webRoot, "public"),
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
+    "import.meta.env.VITE_ELECTRON": true,
   },
   resolve: {
     tsconfigPaths: true,
+  },
+  server: {
+    fs: {
+      allow: [webRoot, __dirname],
+    },
+  },
+  build: {
+    outDir: path.resolve(__dirname, "dist"),
+    emptyOutDir: true,
   },
   staged: {
     "*": "vp check --fix",
   },
   fmt: {
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+    ignorePatterns: ["dist/**", "dist-electron/**"],
   },
   lint: {
-    env: { browser: true, es2020: true },
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
-    plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
+    env: { node: true, es2020: true },
+    ignorePatterns: ["dist/**", "dist-electron/**"],
+    plugins: ["eslint", "typescript", "unicorn", "oxc"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
-      "react/exhaustive-deps": "warn",
-      "react/only-export-components": [
-        "warn",
-        { allowConstantExport: true, allowExportNames: ["Route"] },
-      ],
-      "react/rules-of-hooks": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
     },
     options: { maxWarnings: 0 },
   },
   plugins: lazyPlugins(() => [
-    tanstackRouter({ target: "react", autoCodeSplitting: true }),
+    tanstackRouter({
+      target: "react",
+      autoCodeSplitting: true,
+      routesDirectory: path.join(webRoot, "src/routes"),
+      generatedRouteTree: path.join(webRoot, "src/routeTree.gen.ts"),
+    }),
     tailwindcss(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     electron({
       main: {
-        entry: "electron/main.ts",
+        entry: path.join(__dirname, "electron/main.ts"),
         // Native libSQL and Clerk passkey packages must remain external and
         // unpacked from asar. Bundling the passkey loader also breaks its
         // __dirname-based platform binary lookup.
         vite: {
           build: {
+            outDir: path.resolve(__dirname, "dist-electron"),
             rolldownOptions: {
               external: [
                 /^@clerk\/electron-passkeys(\/|$|-)/,
@@ -64,6 +79,11 @@ export default defineConfig({
       },
       preload: {
         input: path.join(__dirname, "electron/preload.ts"),
+        vite: {
+          build: {
+            outDir: path.resolve(__dirname, "dist-electron"),
+          },
+        },
       },
       renderer:
         process.env.NODE_ENV === "test"

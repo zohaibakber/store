@@ -47,7 +47,7 @@ export const Website = Cloudflare.Website.Vite(
       // stack (`bun alchemy dev`).
       dev: { port: 5174 },
       memo: {
-        include: ["**/*", "../desktop/src/**", "../desktop/public/**", "../../packages/*/src/**"],
+        include: ["**/*", "../../packages/*/src/**"],
         lockfile: true,
       },
     };

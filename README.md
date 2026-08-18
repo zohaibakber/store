@@ -6,12 +6,13 @@ or on mobile syncs through the same authenticated `/api/sync` protocol.
 
 ## Workspace boundaries
 
-- `apps/web` is the React SPA. Alchemy deploys it with `Cloudflare.Website.Vite`
-  so the production hostname serves the app and `/api/*` on the same origin.
-  Locally `alchemy dev` listens on `:5174`; standalone `vp dev` proxies `/api`
-  to `:8787`.
-- `apps/desktop/src` contains the React renderer shared with the web app; `electron` contains the
-  main process and preload. Desktop keeps hash routing and native libSQL.
+- `apps/web` is the Vite + TanStack Router SPA (web-first, same model as T3 Code).
+  Alchemy deploys it with `Cloudflare.Website.Vite` so the production hostname
+  serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
+  on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
+- `apps/desktop` is the Electron shell: `electron` contains the main process and
+  preload. It loads the web renderer (hash history, `@clerk/electron`) and keeps
+  native libSQL in the main process.
 - `apps/server/src` contains the Worker API and per-organization Durable Object sync service.
 - `packages/contracts` owns shared store, server, and sync contracts.
 - `packages/db` owns local, Durable Object, and authentication database schemas.
@@ -29,7 +30,7 @@ or on mobile syncs through the same authenticated `/api/sync` protocol.
 Tests live in a sibling `test` tree that mirrors each package's `src` domains. Reusable test
 fixtures and harnesses live under `test/lib`.
 
-Desktop components are grouped by feature. `components/app` owns the application shell,
+Web components are grouped by feature. `components/app` owns the application shell,
 `components/shared` holds reusable application components, and `components/ui` remains the
 registry-managed primitive layer.
 

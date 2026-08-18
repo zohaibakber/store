@@ -21,8 +21,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Typography
 
-These rules apply to all UI work in `apps/desktop`. The tokens enforcing them
-live in `apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
+These rules apply to all UI work in `apps/web`. The tokens enforcing them
+live in `apps/web/src/styles.css` (Tailwind v4 `@theme` block).
 
 These are conventions, not constraints: the `@theme` block defines the font
 family, but nothing clamps weights or sizes. Following them is on you.
@@ -41,9 +41,9 @@ family, but nothing clamps weights or sizes. Following them is on you.
 - **Icons**: Hugeicons, via `<HugeiconsIcon icon={...} />` from
   `@hugeicons/react` with icons from `@hugeicons/core-free-icons`.
 
-## Desktop UI components
+## UI components
 
-`apps/desktop/src/components/ui` is a registry surface managed by
+`apps/web/src/components/ui` is a registry surface managed by
 `components.json`, not application code. Primitives there may have no importer
 yet — that is inventory, not dead code, so don't delete them for being unused.
 
