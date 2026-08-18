@@ -11,8 +11,10 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import { useOnline } from "@/hooks/use-online";
 import { AuthProvider, type InitialAuth, useAuth, type WorkspaceSnapshot } from "@/lib/auth";
 import { useAuth as useClerkAuth } from "@/lib/clerk-runtime";
+import { workspaceScreen } from "@/lib/clerk-session-policy";
 import { clerkPublishableKey } from "@/lib/clerk-workspace";
 import type { Store } from "@/lib/store";
 
@@ -45,11 +47,17 @@ function AuthenticatedLayout() {
   if (clerkPublishableKey) {
     return <ClerkSessionGate bridgeError={error} snapshot={snapshot} />;
   }
-  if (!snapshot || snapshot.status === "unauthenticated") {
-    return <AuthPage bridgeError={error} />;
-  }
-  if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
-  return <AppShell />;
+  return (
+    <WorkspaceScreen
+      bridgeError={error}
+      screen={workspaceScreen({
+        snapshot,
+        clerkConfigured: false,
+        clerkLoaded: true,
+        online: true,
+      })}
+    />
+  );
 }
 
 function ClerkSessionGate({
@@ -59,13 +67,32 @@ function ClerkSessionGate({
   bridgeError: string | null;
   snapshot: WorkspaceSnapshot | null;
 }) {
-  const { isLoaded, isSignedIn } = useClerkAuth();
-  if (!isLoaded) return <AppLoading />;
-  if (!isSignedIn || !snapshot || snapshot.status === "unauthenticated") {
-    return <AuthPage bridgeError={bridgeError} />;
-  }
-  if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
-  return <AppShell />;
+  const { isLoaded } = useClerkAuth();
+  const online = useOnline();
+  return (
+    <WorkspaceScreen
+      bridgeError={bridgeError}
+      screen={workspaceScreen({
+        snapshot,
+        clerkConfigured: true,
+        clerkLoaded: isLoaded,
+        online,
+      })}
+    />
+  );
+}
+
+function WorkspaceScreen({
+  bridgeError,
+  screen,
+}: {
+  bridgeError: string | null;
+  screen: ReturnType<typeof workspaceScreen>;
+}) {
+  if (screen === "loading") return <AppLoading />;
+  if (screen === "shell") return <AppShell />;
+  if (screen === "create-org") return <CreateOrganizationPage />;
+  return <AuthPage bridgeError={bridgeError} />;
 }
 
 function AppShell() {

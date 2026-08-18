@@ -1,6 +1,7 @@
 import { clerkTokenOptions, clerkTokenRefreshDelay } from "@store/auth/security";
 import * as React from "react";
 
+import { useOnline } from "@/hooks/use-online";
 import { authSession } from "@/lib/auth";
 import {
   useAuth as useClerkAuth,
@@ -8,6 +9,7 @@ import {
   useOrganization,
   useOrganizationList,
 } from "@/lib/clerk-runtime";
+import { clerkWorkspaceSyncAction } from "@/lib/clerk-session-policy";
 
 const tokenOptions = clerkTokenOptions(import.meta.env.VITE_CLERK_JWT_TEMPLATE);
 
@@ -32,10 +34,16 @@ export function ClerkWorkspaceSync() {
   const { isLoaded, isSignedIn, getToken } = useClerkAuth();
   const { organization } = useOrganization();
   const organizationId = organization?.id ?? null;
+  const online = useOnline();
 
   React.useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) {
+    const action = clerkWorkspaceSyncAction({
+      isLoaded,
+      isSignedIn: isSignedIn === true,
+      online,
+    });
+    if (action === "idle") return;
+    if (action === "clear") {
       void authSession().adoptSession(null);
       return;
     }
@@ -79,7 +87,7 @@ export function ClerkWorkspaceSync() {
       document.removeEventListener("visibilitychange", refreshWhenActive);
       window.removeEventListener("online", refreshWhenActive);
     };
-  }, [getToken, isLoaded, isSignedIn, organizationId]);
+  }, [getToken, isLoaded, isSignedIn, online, organizationId]);
 
   return null;
 }

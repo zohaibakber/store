@@ -4,6 +4,7 @@ import { AuthScreen } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { useOnline } from "@/hooks/use-online";
 import { SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
 import { clerkPublishableKey, useClerkSignOut } from "@/lib/clerk-workspace";
 
@@ -38,8 +39,20 @@ function SignOutAlert({ message }: { message?: string | null }) {
 
 function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   const { isLoaded, isSignedIn } = useClerkAuth();
+  const online = useOnline();
 
   if (!isLoaded) {
+    if (!online) {
+      return (
+        <Alert className="w-full max-w-xs">
+          <AlertTitle>You’re offline</AlertTitle>
+          <AlertDescription>
+            Sign-in needs a connection the first time. After that, this device keeps the catalog
+            locally.
+          </AlertDescription>
+        </Alert>
+      );
+    }
     return (
       <div className="flex items-center justify-center py-8 text-muted-foreground">
         <Spinner aria-label="Loading sign-in" className="size-6" />
