@@ -57,6 +57,7 @@ test("ctrl+k opens the menu and lists the loaded products", async () => {
 
   expect(await screen.findByText("Panadol")).toBeTruthy();
   expect(screen.getByText("Brufen")).toBeTruthy();
+  expect(screen.getAllByText("General")).toHaveLength(2);
 });
 
 test("a misspelled query still ranks the product it meant", async () => {
