@@ -10,7 +10,7 @@ export {
   useClerk,
   useOrganization,
   useOrganizationList,
-} from "@clerk/react";
+} from "@/lib/clerk-hooks";
 
 const clerkVariables = {
   borderRadius: "var(--radius)",

@@ -4,12 +4,25 @@ import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import { searchForWorkspaceRoot, type Plugin } from "vite";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
 
 const webRoot = path.resolve(__dirname, "../web");
+
+/** Swap the boot splash and favicon to the orange mark while `vp dev` is running. */
+const desktopDevSplash = (): Plugin => ({
+  name: "desktop-dev-splash",
+  transformIndexHtml(html) {
+    if (process.env.NODE_ENV === "production") return html;
+    return html
+      .replaceAll("/logo-light.svg", "/logo-dev.svg")
+      .replaceAll("/logo-dark.svg", "/logo-dev.svg")
+      .replaceAll('href="/logo.svg"', 'href="/logo-dev.svg"');
+  },
+});
 
 export default defineConfig({
   root: webRoot,
@@ -21,10 +34,19 @@ export default defineConfig({
   },
   resolve: {
     tsconfigPaths: true,
+    alias: {
+      // Electron's ClerkProvider lives in `@clerk/electron/react`. Hooks imported
+      // from `@clerk/react` see a different context instance and crash.
+      "@/lib/clerk-hooks": path.join(webRoot, "src/lib/clerk-hooks.electron.ts"),
+      [path.join(webRoot, "src/lib/clerk-hooks.ts")]: path.join(
+        webRoot,
+        "src/lib/clerk-hooks.electron.ts",
+      ),
+    },
   },
   server: {
     fs: {
-      allow: [webRoot, __dirname],
+      allow: [searchForWorkspaceRoot(__dirname), webRoot, __dirname],
     },
   },
   build: {
@@ -48,6 +70,7 @@ export default defineConfig({
     options: { maxWarnings: 0 },
   },
   plugins: lazyPlugins(() => [
+    desktopDevSplash(),
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,
@@ -60,6 +83,11 @@ export default defineConfig({
     electron({
       main: {
         entry: path.join(__dirname, "electron/main.ts"),
+        // Vite `root` is the renderer in apps/web. Electron must still start
+        // from this package so it can resolve `main` in package.json.
+        onstart({ startup }) {
+          void startup([".", "--no-sandbox"], { cwd: __dirname });
+        },
         // Native libSQL and Clerk passkey packages must remain external and
         // unpacked from asar. Bundling the passkey loader also breaks its
         // __dirname-based platform binary lookup.

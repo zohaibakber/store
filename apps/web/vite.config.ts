@@ -11,7 +11,7 @@ import packageJson from "./package.json";
 const clerkAccountsDev = /(^|\.)clerk\.accounts\.dev$/iu;
 
 const defaultCsp =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://img.clerk.com; font-src 'self' data:; connect-src 'self' https: ws: http://localhost:*; frame-src 'self' https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://img.clerk.com; font-src 'self' data:; connect-src 'self' https: ws: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src 'self' https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'";
 
 /** Custom Clerk FAPI origin for CSP. Test keys on *.clerk.accounts.dev need no extra host. */
 const clerkFrontendApiOrigin = () => {
@@ -37,6 +37,10 @@ const clerkFrontendApiOrigin = () => {
 
 const clerkCspPlugin = (): Plugin => ({
   name: "clerk-fapi-csp",
+  // Dev leaves CSP off so Alchemy's Cloudflare Vite plugin can open the
+  // module-runner WebSocket on 127.0.0.1. Packaged Electron applies CSP from
+  // the main process instead.
+  apply: "build",
   transformIndexHtml(html) {
     const extra = clerkFrontendApiOrigin();
     const policy = extra
@@ -61,7 +65,9 @@ export default defineConfig({
     },
   },
   server: {
+    host: "127.0.0.1",
     port: 5174,
+    strictPort: true,
     proxy: {
       "/api": {
         target: "http://localhost:8787",

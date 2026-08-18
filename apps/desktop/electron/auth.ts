@@ -33,12 +33,16 @@ export class RequestError extends Error {
   }
 }
 
-const unauthenticated = (isOnline: boolean): WorkspaceSnapshot => ({
+const unauthenticated = (
+  isOnline: boolean,
+  workspaceError: string | null = null,
+): WorkspaceSnapshot => ({
   status: "unauthenticated",
   user: null,
   activeOrganization: null,
   organizations: [],
   isOnline,
+  workspaceError,
 });
 
 export class AuthBroker implements WorkspaceAuthAdapter {
@@ -98,7 +102,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
         await this.#clear();
-        return this.#publish(unauthenticated(true));
+        return this.#publish(unauthenticated(true, error.message));
       }
       return this.#publish({ ...this.#snapshot, isOnline: false });
     }

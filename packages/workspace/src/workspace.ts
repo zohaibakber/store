@@ -222,7 +222,10 @@ export class AuthenticatedWorkspace {
         // Finish the first pull so they cannot cache an empty pre-sync database.
         await store.sync().catch(() => undefined);
       }
-      return this.#publish({ ...snapshot, workspaceError: null });
+      return this.#publish({
+        ...snapshot,
+        workspaceError: target._tag === "Authenticated" ? null : (snapshot.workspaceError ?? null),
+      });
     } catch (cause) {
       if (target._tag === "Authenticated") await this.#recoverLocked(snapshot.isOnline);
       const message = messageOf(cause);

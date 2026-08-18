@@ -10,6 +10,13 @@
     <script src="/theme-init.js"></script>
     <style>
       html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+      html,
       body {
         background: #fff;
       }
@@ -17,10 +24,50 @@
       html.dark body {
         background: color-mix(in srgb, #0a0a0a 95%, #fff);
       }
+      #boot-shell {
+        display: flex;
+        min-height: 100%;
+        align-items: center;
+        justify-content: center;
+        background: inherit;
+      }
+      #boot-shell-card {
+        display: flex;
+        width: 96px;
+        height: 96px;
+        align-items: center;
+        justify-content: center;
+      }
+      .boot-shell-logo {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+      }
+      #boot-shell-logo-dark {
+        display: none;
+      }
+      html.dark #boot-shell-logo-light {
+        display: none;
+      }
+      html.dark #boot-shell-logo-dark {
+        display: block;
+      }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-shell">
+        <div id="boot-shell-card" aria-label="Tabaaq splash screen">
+          <img
+            id="boot-shell-logo-light"
+            class="boot-shell-logo"
+            src="/logo-light.svg"
+            alt="Tabaaq"
+          />
+          <img id="boot-shell-logo-dark" class="boot-shell-logo" src="/logo-dark.svg" alt="" />
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

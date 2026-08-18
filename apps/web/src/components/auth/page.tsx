@@ -1,19 +1,53 @@
 import * as React from "react";
 
-import { AppLoading } from "@/components/app/loading";
-import { AuthBrand } from "@/components/auth/brand";
+import { AuthScreen } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { SignIn, useAuth as useClerkAuth } from "@/lib/clerk-runtime";
 import { clerkPublishableKey, useClerkSignOut } from "@/lib/clerk-workspace";
 
-function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
-  const { isLoaded, isSignedIn } = useClerkAuth();
+function SignOutAlert({ message }: { message?: string | null }) {
   const signOut = useClerkSignOut();
   const [signingOut, setSigningOut] = React.useState(false);
 
-  if (!isLoaded || (isSignedIn && !bridgeError)) {
+  return (
+    <Alert className="w-full max-w-xs" variant="error">
+      <AlertTitle>Could not finish sign-in</AlertTitle>
+      <AlertDescription>
+        <span>
+          {message ??
+            "This Clerk session is not accepted by the workspace. Sign out and use another account."}
+        </span>
+        <Button
+          className="self-start"
+          loading={signingOut}
+          onClick={() => {
+            setSigningOut(true);
+            void signOut().catch(() => setSigningOut(false));
+          }}
+          type="button"
+          variant="outline"
+        >
+          Sign out and try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
+  const { isLoaded, isSignedIn } = useClerkAuth();
+
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <Spinner aria-label="Loading sign-in" className="size-6" />
+      </div>
+    );
+  }
+
+  if (isSignedIn && !bridgeError) {
     return (
       <div className="flex items-center justify-center py-8 text-muted-foreground">
         <Spinner aria-label="Finishing sign-in" className="size-6" />
@@ -22,26 +56,7 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
   }
 
   if (isSignedIn) {
-    return (
-      <Alert className="w-full max-w-xs" variant="error">
-        <AlertTitle>Could not finish sign-in</AlertTitle>
-        <AlertDescription>
-          <span>{bridgeError}</span>
-          <Button
-            className="self-start"
-            loading={signingOut}
-            onClick={() => {
-              setSigningOut(true);
-              void signOut().catch(() => setSigningOut(false));
-            }}
-            type="button"
-            variant="outline"
-          >
-            Sign out and try again
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
+    return <SignOutAlert message={bridgeError} />;
   }
 
   return (
@@ -60,36 +75,24 @@ function ClerkSignInPanel({ bridgeError }: { bridgeError?: string | null }) {
 }
 
 export function AuthPage({ bridgeError }: { bridgeError?: string | null }) {
-  const { isLoaded, isSignedIn } = useClerkAuth();
-
-  if (clerkPublishableKey && (!isLoaded || (isSignedIn && !bridgeError))) {
-    return <AppLoading label="Finishing sign-in" />;
-  }
-
   return (
-    <div className="relative flex min-h-svh flex-col">
-      <header className="absolute inset-x-0 top-0 z-10 h-12 [-webkit-app-region:drag]" />
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 md:p-10">
-        <AuthBrand />
-        <div className="flex w-full flex-col items-center">
-          {clerkPublishableKey ? (
-            <ClerkSignInPanel bridgeError={bridgeError} />
-          ) : (
-            <Alert className="w-full max-w-xs">
-              <AlertTitle>Clerk is not configured</AlertTitle>
-              <AlertDescription>
-                Set VITE_CLERK_PUBLISHABLE_KEY so sign-in can load.
-              </AlertDescription>
-            </Alert>
-          )}
-          {!clerkPublishableKey && bridgeError ? (
-            <Alert className="mt-6 w-full max-w-xs">
-              <AlertTitle>Offline sign-in is not ready</AlertTitle>
-              <AlertDescription>{bridgeError}</AlertDescription>
-            </Alert>
-          ) : null}
-        </div>
+    <AuthScreen>
+      <div className="flex w-full flex-col items-center">
+        {clerkPublishableKey ? (
+          <ClerkSignInPanel bridgeError={bridgeError} />
+        ) : (
+          <Alert className="w-full max-w-xs">
+            <AlertTitle>Clerk is not configured</AlertTitle>
+            <AlertDescription>Set VITE_CLERK_PUBLISHABLE_KEY so sign-in can load.</AlertDescription>
+          </Alert>
+        )}
+        {!clerkPublishableKey && bridgeError ? (
+          <Alert className="mt-6 w-full max-w-xs">
+            <AlertTitle>Offline sign-in is not ready</AlertTitle>
+            <AlertDescription>{bridgeError}</AlertDescription>
+          </Alert>
+        ) : null}
       </div>
-    </div>
+    </AuthScreen>
   );
 }

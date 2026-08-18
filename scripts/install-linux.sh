@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/opt/tabaaq"
 BIN_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_ROOT="${HOME}/.local/share/icons/hicolor"
-ICON_NAME="store-electron"
+ICON_NAME="tabaaq"
 
 command -v curl >/dev/null || { echo "curl is required to install ${APP_NAME}." >&2; exit 1; }
 
@@ -44,10 +44,24 @@ trap cleanup EXIT
     --appimage-extract usr/share/icons/hicolor >/dev/null
 )
 
-for source_icon in \
-  "${extract_dir}"/squashfs-root/usr/share/icons/hicolor/*/apps/"${ICON_NAME}.png"; do
-  [ -f "${source_icon}" ] || continue
-  size=$(basename "$(dirname "$(dirname "${source_icon}")")")
+# Older builds used executableName `store-electron`, so Linux icon themes
+# cached a teal mark under that name. Always install as `tabaaq` and drop
+# the leftover cache key (AppImages before this change still ship the old
+# filename inside squashfs).
+find "${ICON_ROOT}" -name 'store-electron.png' -delete 2>/dev/null || true
+find "${ICON_ROOT}" -name 'com.tabaaq.desktop.png' -delete 2>/dev/null || true
+
+for apps_dir in \
+  "${extract_dir}"/squashfs-root/usr/share/icons/hicolor/*/apps; do
+  [ -d "${apps_dir}" ] || continue
+  size=$(basename "$(dirname "${apps_dir}")")
+  if [ -f "${apps_dir}/${ICON_NAME}.png" ]; then
+    source_icon="${apps_dir}/${ICON_NAME}.png"
+  elif [ -f "${apps_dir}/store-electron.png" ]; then
+    source_icon="${apps_dir}/store-electron.png"
+  else
+    continue
+  fi
   install -Dm644 "${source_icon}" "${ICON_ROOT}/${size}/apps/${ICON_NAME}.png"
 done
 

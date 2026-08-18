@@ -66,10 +66,11 @@ function appIconPath() {
   // nativeImage (which BrowserWindow's `icon` option uses under the hood)
   // reads the real filesystem and can't see into app.asar, so packaged
   // builds must load the icon from extraResources instead of the bundled
-  // renderer assets.
+  // renderer assets. Unpackaged/dev uses the orange mark; packaged/prod
+  // uses the monochrome mark.
   return app.isPackaged
     ? path.join(process.resourcesPath, "logo.png")
-    : path.join(process.env.VITE_PUBLIC, "logo.png");
+    : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
 }
 // Packaged apps ship no .env, so the API URL is baked in at build time via
 // `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
@@ -371,6 +372,9 @@ function createWindow() {
       spellcheck: false,
     },
   });
+
+  win.setIcon(appIconPath());
+  app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
 
