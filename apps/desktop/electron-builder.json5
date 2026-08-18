@@ -2,7 +2,7 @@
 {
   $schema: "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   appId: "com.tabaaq.desktop",
-  executableName: "store-electron",
+  executableName: "tabaaq",
   asar: true,
   // libSQL ships a prebuilt N-API binary that cannot be read from inside the
   // asar archive, so it must stay unpacked. Being N-API, it needs no rebuild
@@ -43,7 +43,9 @@
     },
   ],
   files: ["dist", "dist-electron"],
-  icon: "../web/public/logo.png",
+  // Packaged/prod uses the monochrome mark. Unpackaged `vp dev` loads the
+  // orange mark from apps/web/public/logo-dev.png in the main process.
+  icon: "assets/prod/icon.png",
   extraResources: [
     {
       from: "../../packages/db/migrations/local",
@@ -53,7 +55,7 @@
       // BrowserWindow's `icon` option loads through nativeImage, which reads
       // the real filesystem and can't see into app.asar — so the icon must
       // live outside the archive to show up at runtime in production.
-      from: "../web/public/logo.png",
+      from: "assets/prod/icon.png",
       to: "logo.png",
     },
   ],
@@ -85,7 +87,16 @@
     // instead of generating the standard hicolor size ladder, so the
     // launcher/app-search icon fails to resolve even though it's present.
     // A pre-sized icon set directory forces it to ship all standard sizes.
-    icon: "build/icons",
+    // Named after executableName (`tabaaq`), not the old `store-electron`
+    // template key — Linux icon themes cache by that name, so a leftover
+    // teal store-electron.png would otherwise keep showing after updates.
+    icon: "assets/prod/icons",
+    desktop: {
+      entry: {
+        Icon: "tabaaq",
+        StartupWMClass: "Tabaaq",
+      },
+    },
     // package.json's "name" is the scoped npm name "@store/desktop", which is
     // invalid as a WM_CLASS/app_id. syncDesktopName (paired with
     // package.json's "desktopName") makes the installed .desktop filename

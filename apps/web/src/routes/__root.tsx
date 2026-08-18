@@ -11,7 +11,9 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
-import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
+import { AuthProvider, type InitialAuth, useAuth, type WorkspaceSnapshot } from "@/lib/auth";
+import { useAuth as useClerkAuth } from "@/lib/clerk-runtime";
+import { clerkPublishableKey } from "@/lib/clerk-workspace";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
@@ -40,8 +42,33 @@ export function RootLayout() {
 function AuthenticatedLayout() {
   const { snapshot, loading, error } = useAuth();
   if (loading) return <AppLoading />;
-  if (!snapshot || snapshot.status === "unauthenticated") return <AuthPage bridgeError={error} />;
+  if (clerkPublishableKey) {
+    return <ClerkSessionGate bridgeError={error} snapshot={snapshot} />;
+  }
+  if (!snapshot || snapshot.status === "unauthenticated") {
+    return <AuthPage bridgeError={error} />;
+  }
   if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
+  return <AppShell />;
+}
+
+function ClerkSessionGate({
+  bridgeError,
+  snapshot,
+}: {
+  bridgeError: string | null;
+  snapshot: WorkspaceSnapshot | null;
+}) {
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  if (!isLoaded) return <AppLoading />;
+  if (!isSignedIn || !snapshot || snapshot.status === "unauthenticated") {
+    return <AuthPage bridgeError={bridgeError} />;
+  }
+  if (!snapshot.activeOrganization) return <CreateOrganizationPage />;
+  return <AppShell />;
+}
+
+function AppShell() {
   return (
     <TooltipProvider>
       <CommandMenuProvider>
