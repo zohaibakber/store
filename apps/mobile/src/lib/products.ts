@@ -569,16 +569,14 @@ const mobileBatch = (batch: BatchRow): MobileBatch => ({
 
 const snapshotFromMaps = (maps: ProductSyncMaps): InventorySnapshot => {
   const categories = [...maps.categories.values()]
-    .map(
-      (category): MobileCategory => ({
-        id: category.id,
-        name: category.name,
-        tracksPacks: category.tracksPacks,
-        rowVersion: category.rowVersion,
-        createdAt: category.createdAt,
-        updatedAt: category.updatedAt,
-      }),
-    )
+    .map((category): MobileCategory => ({
+      id: category.id,
+      name: category.name,
+      tracksPacks: category.tracksPacks,
+      rowVersion: category.rowVersion,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    }))
     .sort((left, right) => left.name.localeCompare(right.name));
   const batchesByProduct = new Map<string, Array<MobileBatch>>();
   for (const batch of maps.batches.values()) {

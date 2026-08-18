@@ -8,14 +8,16 @@
       "packages/*"
     ],
     "catalog": {
-      "@effect/sql-libsql": "4.0.0-beta.105",
-      "@effect/sql-sqlite-do": "4.0.0-beta.105",
-      "@effect/vitest": "4.0.0-beta.105",
+      "@effect/sql-libsql": "4.0.0-rc.110",
+      "@effect/sql-sqlite-do": "4.0.0-rc.110",
+      "@effect/vitest": "4.0.0-rc.110",
       "alchemy": "2.0.0-beta.72",
-      "effect": "4.0.0-beta.105",
+      "drizzle-kit": "1.0.0-rc.5-ab785fc",
+      "drizzle-orm": "1.0.0-rc.5-ab785fc",
+      "effect": "4.0.0-rc.110",
       "typescript": "7.0.2",
-      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-      "vite-plus": "0.2.6"
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
+      "vite-plus": "0.2.9"
     }
   },
   "scripts": {
@@ -32,24 +34,24 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260804.1",
-    "@effect/platform-bun": "4.0.0-beta.105",
-    "@effect/platform-node": "4.0.0-beta.105",
+    "@cloudflare/workers-types": "^5.20260818.1",
+    "@effect/platform-bun": "4.0.0-rc.110",
+    "@effect/platform-node": "4.0.0-rc.110",
     "@oxlint/plugins": "1.78.0",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "alchemy": "catalog:",
-    "effect": "4.0.0-beta.105",
+    "effect": "4.0.0-rc.110",
     "oxlint": "1.78.0",
-    "turbo": "^2.10.8",
-    "vite": "^0.2.6",
-    "vite-plus": "^0.2.7",
-    "wrangler": "^4.118.0"
+    "turbo": "^2.10.10",
+    "vite": "^0.2.9",
+    "vite-plus": "^0.2.9",
+    "wrangler": "^4.123.0"
   },
   "overrides": {
-    "@effect/platform-node-shared": "4.0.0-beta.105",
-    "@effect/sql-d1": "4.0.0-beta.105",
+    "@effect/platform-node-shared": "4.0.0-rc.110",
+    "@effect/sql-d1": "4.0.0-rc.110",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9"
   },
   "devEngines": {
     "packageManager": {

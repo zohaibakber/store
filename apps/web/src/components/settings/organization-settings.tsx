@@ -1,7 +1,7 @@
 import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth";
-import { clerkAppearance, CreateOrganization } from "@/lib/clerk-runtime";
+import { CreateOrganization } from "@/lib/clerk-runtime";
 
 export function OrganizationSettings() {
   const { snapshot } = useAuth();
@@ -24,7 +24,7 @@ export function OrganizationSettings() {
         description="Starts a separate workspace with its own catalog and invoices."
         title="New organization"
       >
-        <CreateOrganization appearance={clerkAppearance} />
+        <CreateOrganization />
       </FrameCard>
     </div>
   );

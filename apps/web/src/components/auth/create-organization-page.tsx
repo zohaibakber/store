@@ -1,6 +1,6 @@
 import { AuthBrand } from "@/components/auth/brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { clerkAppearance, CreateOrganization } from "@/lib/clerk-runtime";
+import { CreateOrganization } from "@/lib/clerk-runtime";
 import { clerkPublishableKey } from "@/lib/clerk-workspace";
 
 export function CreateOrganizationPage() {
@@ -11,7 +11,7 @@ export function CreateOrganizationPage() {
         <AuthBrand />
         <div className="flex w-full flex-col items-center">
           {clerkPublishableKey ? (
-            <CreateOrganization appearance={clerkAppearance} />
+            <CreateOrganization />
           ) : (
             <Alert className="w-full max-w-xs">
               <AlertTitle>Clerk is not configured</AlertTitle>

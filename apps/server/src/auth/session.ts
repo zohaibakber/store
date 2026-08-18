@@ -80,15 +80,13 @@ const resolveMembership = (
     clerkOrganizationId: input.clerkOrganizationId,
     clerkUserId: input.clerkUserId,
     email: input.email,
-  }).then(
-    (resolved): AuthOrganizationMembership => ({
-      id: resolved.storeOrganizationId,
-      clerkOrganizationId: resolved.clerkOrganizationId,
-      name: input.name,
-      slug: input.slug,
-      role: mapClerkOrganizationRole(input.role),
-    }),
-  );
+  }).then((resolved): AuthOrganizationMembership => ({
+    id: resolved.storeOrganizationId,
+    clerkOrganizationId: resolved.clerkOrganizationId,
+    name: input.name,
+    slug: input.slug,
+    role: mapClerkOrganizationRole(input.role),
+  }));
 
 export const authenticateHeaders = (
   headers: Headers,
