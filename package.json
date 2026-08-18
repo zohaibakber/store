@@ -26,7 +26,7 @@
     "plan:dev": "bun alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "bun alchemy deploy --stage dev --env-file .env.dev",
     "plan:prod": "bun alchemy plan --stage prod --env-file .env.prod",
-    "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod && CLAIM_PRODUCTION_DOMAIN=1 bun alchemy deploy --stage prod --env-file .env.prod",
+    "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod",
     "destroy:dev": "bun alchemy destroy --stage dev --env-file .env.dev",
     "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin",
     "prepare": "vp config"

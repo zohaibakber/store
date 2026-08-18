@@ -42,17 +42,15 @@ bun run deploy:prod
 **Always pass a stage.** A bare `alchemy deploy` silently creates a personal `dev_$USER` stage,
 which is why every script above pins one explicitly.
 
-`prod` serves the SPA from `https://tabaaq.zohaibakber.com` on the existing `zohaibakber.com`
-zone via `Cloudflare.Website.Vite`; Cloudflare provisions the DNS record and certificate. Other
-stages stay on their generated `workers.dev` URL. Desktop releases use that same public origin
-(`VITE_API_URL`) — `/api/*` is proxied from the Website Worker to this API Worker.
+`prod` serves the SPA from `PRODUCTION_DOMAIN` (example: `tabaaq.app`) and the API
+from `api.<PRODUCTION_DOMAIN>` (example: `api.tabaaq.app`) on that zone via Alchemy.
+Cloudflare provisions DNS and certificates. Other stages stay on generated
+`workers.dev` URLs. Desktop and mobile call `VITE_API_URL` / `EXPO_PUBLIC_API_URL`
+(the API origin). Production browsers do the same; locally the Website Worker still
+proxies `/api/*` so `vp run dev` stays same-origin.
 
 `bun alchemy deploy` builds `apps/web` itself (no separate `vite build` in CI). Deep links fall
-back to `index.html`; `/api/*` is `runWorkerFirst` and forwarded over a service binding.
-Same-origin browser sessions share the Durable Object sync log with desktop and mobile.
-Production apply is two passes: the first detaches the hostname from this API Worker, the
-second (`CLAIM_PRODUCTION_DOMAIN=1`) attaches it to the Website Worker. Alchemy would
-otherwise race those two updates and leave the hostname on the API Worker.
+back to `index.html`. Apex and API are different hostnames, so one deploy attaches both.
 
 Secrets come from `.env.dev` and `.env.prod` at the repository root (both gitignored — copy
 `.env.example`). Use a **different** `CLERK_SECRET_KEY` per stage.
@@ -98,11 +96,15 @@ must pass those keys from the GitHub Environment. After bootstrap, set:
   broad enough to match origins this deployment does not own — is ignored rather than trusted,
   and logged as `auth.setting_rejected`. Sign-in keeps working from the origins that remain.
 
-**`Production` environment only (desktop releases)**
+**`Production` environment only**
 
-- Variable `VITE_API_URL` = `https://tabaaq.zohaibakber.com`
+- Variable `PRODUCTION_DOMAIN` — site hostname only (example: `tabaaq.app`). Required.
+- Variable `PRODUCTION_API_DOMAIN` — optional API hostname. Default `api.<PRODUCTION_DOMAIN>`.
+- Variable `VITE_API_URL` — API origin (example: `https://api.tabaaq.app`)
+- Variable `AUTH_TRUSTED_ORIGINS` — site origin (example: `https://tabaaq.app`) for CORS / Clerk
 - Variable `VITE_CLERK_PUBLISHABLE_KEY`
 - Variable `VITE_CLERK_JWT_TEMPLATE` — optional
+- Variable `EXPO_PUBLIC_API_URL` — same origin as `VITE_API_URL` for EAS / mobile
 - Variable `ELECTRON_PROTOCOL` = `com.tabaaq.desktop`
 
 Unset GitHub variables interpolate as empty strings. The Worker treats blank protocol and
@@ -117,9 +119,9 @@ vp run dev
 
 The Worker runs locally in workerd on port 8787, which is the desktop's default API URL, so no
 extra configuration is needed. Set `STORE_API_URL` for the desktop when pointing at another origin.
-`VITE_API_URL` is reserved for packaged desktop builds. The web SPA on `:5174` leaves
+`VITE_API_URL` is reserved for packaged desktop builds and production web. The web SPA on `:5174` leaves
 `VITE_API_URL` empty and talks to `/api` through the Website Worker (or Vite's proxy in
-standalone `vp dev`) so auth cookies stay same-origin.
+standalone `vp dev`).
 
 Note that `alchemy dev` runs your _code_ locally but uses **real** cloud D1 and Durable
 Objects from the `dev` stage — there is no local emulation, so this loop needs network access.

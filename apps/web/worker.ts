@@ -1,9 +1,9 @@
 /**
  * Website Worker entry for Cloudflare.Website.Vite.
  *
- * Client assets are served by the asset layer. `/api/*` is `runWorkerFirst`,
- * so those requests land here and are forwarded to the API Worker over a
- * service binding — the browser stays same-origin for cookies and sync.
+ * Client assets are served by the asset layer. `/api/*` is `runWorkerFirst`
+ * so local alchemy/Vite stays same-origin. Production browsers call the API
+ * Worker on `api.<PRODUCTION_DOMAIN>` via `VITE_API_URL`.
  *
  * @see https://alchemy.run/cloudflare/frontend/vite-spa/
  * @see https://alchemy.run/cloudflare/frontend/vite/

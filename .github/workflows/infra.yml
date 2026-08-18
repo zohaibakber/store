@@ -59,6 +59,13 @@ jobs:
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
           echo "CLERK_JWT_AUDIENCE=${CLERK_JWT_AUDIENCE:-<unset>}"
+          echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
+          echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
+          if [ "${{ inputs.stage }}" = "prod" ] && [ -z "${PRODUCTION_DOMAIN}" ]; then
+            echo "::error::PRODUCTION_DOMAIN is empty." \
+                 "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
+            exit 1
+          fi
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
@@ -66,6 +73,9 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+          PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
@@ -80,24 +90,8 @@ jobs:
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
-
-      - name: Attach production website domain
-        if: inputs.stage == 'prod' && inputs.action == 'deploy'
-        run: bun alchemy deploy --stage prod --yes
-        env:
-          CI: "1"
-          CLAIM_PRODUCTION_DOMAIN: "1"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
-          CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
-          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
-          MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+          PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}

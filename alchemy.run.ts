@@ -43,11 +43,11 @@ export default Alchemy.Stack(
           ## Preview deployed
 
           **App:** ${website.url}
-          **API:** same origin — \`/api/*\` (health at \`/api/health\`)
+          **API:** ${api.url} — health at \`/api/health\`
 
-          The React SPA is deployed with \`Cloudflare.Website.Vite\`. Deep links
-          fall back to \`index.html\`; \`/api/*\` is proxied to the API Worker so
-          browser sessions and desktop/mobile replicas share one sync API.
+          Preview stages share the Website origin: the React SPA is deployed
+          with \`Cloudflare.Website.Vite\`, and \`/api/*\` is proxied to the API
+          Worker. Production splits the apex (SPA) from \`api.<domain>\`.
           Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
 
           ---

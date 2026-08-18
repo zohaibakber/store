@@ -11,7 +11,7 @@ const metroHost =
   Constants.expoConfig?.hostUri?.split(":")[0] ??
   (process.env.EXPO_OS === "android" ? "10.0.2.2" : "localhost");
 const developmentOrigin = `http://${metroHost}:8787`;
-const productionOrigin = "https://tabaaq.zohaibakber.com";
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/api\/?$/u, "");
 export const mobileApplicationId = __DEV__ ? "com.tabaaq.mobile.debug" : "com.tabaaq.mobile";
 export const mobileNativeOrigin = `${mobileApplicationId}://app`;
 const SESSION_TIMEOUT_MS = 8_000;
@@ -39,9 +39,10 @@ const AuthFailure = Schema.Struct({
   errors: Schema.optional(Schema.Array(Schema.Struct({ message: Schema.optional(Schema.String) }))),
 });
 
-export const apiOrigin = (
-  process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? developmentOrigin : productionOrigin)
-).replace(/\/api\/?$/, "");
+export const apiOrigin = (configuredApiUrl ?? (__DEV__ ? developmentOrigin : "")).replace(
+  /\/api\/?$/u,
+  "",
+);
 
 export const clerkPublishableKey = (process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "").trim();
 
