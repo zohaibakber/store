@@ -6,10 +6,18 @@ import type { RateLimitError } from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
+import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
 import type { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
 import type { SyncActor } from "../sync/model";
+
+export interface SyncLiveInput {
+  readonly organizationId: string;
+  readonly userId: string;
+  readonly deviceId: string;
+  readonly authenticationExpiresAt: number;
+}
 
 /** Explicit boundary between HTTP handlers and the Cloudflare/Clerk runtime. */
 export interface ServerRuntimeContract {
@@ -33,6 +41,9 @@ export interface ServerRuntimeContract {
     actor: SyncActor,
     request: SyncRequest,
   ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
+  readonly connectSyncLive: (
+    input: SyncLiveInput,
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
 export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeContract>()(

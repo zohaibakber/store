@@ -32,6 +32,7 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { STORE_CHANNEL_ENTRIES, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
+import { openDesktopSyncSocket } from "./sync-socket";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,10 +92,9 @@ const CLERK_PUBLISHABLE_KEY = fallbackIfBlank(
   "",
 );
 
-// Local commits signal the sync engine immediately. This slower safety poll is
-// only a fallback for remote changes, so running it every few seconds wastes a
-// network round-trip and SQLite work while the app is idle.
-const DESKTOP_SYNC_POLL_INTERVAL_MS = 60_000;
+// Local commits signal the sync engine immediately. The live socket is the
+// happy path; this slower safety poll is only a fallback for a missed wakeup.
+const DESKTOP_SYNC_POLL_INTERVAL_MS = 300_000;
 const TITLE_BAR_HEIGHT = 40;
 const TITLE_BAR_COLOR = "#01000000";
 const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
@@ -237,7 +237,16 @@ const workspaceStores: WorkspaceStoreAdapter = {
       target._tag === "Authenticated"
         ? {
             ...baseConfig,
-            syncTransport: { exchange: target.exchange },
+            syncTransport: {
+              exchange: target.exchange,
+              openLive: openDesktopSyncSocket({
+                baseUrl: API_BASE_URL,
+                organizationId: target.organizationId,
+                deviceId: target.deviceId,
+                getAccessToken: () => authBroker.accessToken,
+                electronOrigin: `${ELECTRON_PROTOCOL}://app`,
+              }),
+            },
             workspace: {
               organizationId: target.organizationId,
               userId: target.userId,

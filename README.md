@@ -38,10 +38,13 @@ shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
 Local business transactions commit an outbox operation alongside their data. A
-shared single-flight sync runtime pushes those operations through the
+shared single-flight sync runtime pushes those operations through an
 authenticated Worker and pulls the organization's ordered change feed in the same
-transaction. Foreground clients poll HTTP on a short interval. Network failures
-leave local writes pending in FIFO order.
+Durable Object transaction. Foreground web and desktop clients keep a hibernated
+WebSocket at `/api/sync/live` for correlated exchanges and invalidation. `POST
+/api/sync` is the identical transaction used for the first pull, HTTP fallback,
+and mobile. Network failures leave local writes pending in FIFO order; retryable
+transport errors do not burn the outbox toward quarantine.
 
 ## Run locally
 

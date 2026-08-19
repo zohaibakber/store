@@ -1,7 +1,10 @@
 import type { SyncRequest } from "@store/contracts";
+import * as Effect from "effect/Effect";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it, vi } from "vitest";
 
 import { authHeadersForRequest } from "../../src/auth/organization";
+import type { SyncLiveInput } from "../../src/http/runtime";
 import type { SyncActor } from "../../src/sync/service";
 import { appFor, requestFor } from "../lib/app";
 
@@ -133,5 +136,39 @@ describe("sync authorization", () => {
         ),
       },
     });
+  });
+
+  it("authorizes live upgrades and forwards only trusted workspace identity", async () => {
+    const connect = vi.fn((_input: SyncLiveInput) => Effect.succeed(HttpServerResponse.empty()));
+    const response = await appFor(true, true, undefined, { connectSyncLive: connect }).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
+    );
+
+    expect(response.status).toBe(204);
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        userId: "user-1",
+        deviceId: "device-1",
+        authenticationExpiresAt: expect.any(Number),
+      }),
+    );
+    expect(JSON.stringify(connect.mock.calls[0]?.[0])).not.toContain("secret");
+  });
+
+  it("rejects live upgrades for a client-claimed organization", async () => {
+    const response = await appFor(true).request(
+      "/api/sync/live?organizationId=other-org&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("requires a WebSocket upgrade for the live route", async () => {
+    const response = await appFor(true).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+    );
+    expect(response.status).toBe(426);
   });
 });

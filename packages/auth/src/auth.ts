@@ -1,6 +1,8 @@
 export type { ClerkOrganizationMembership, ClerkVerifiedClaims, ClerkVerifyConfig } from "./clerk";
 export {
+  accessTokenFromUrl,
   bearerTokenFromHeaders,
+  headersWithAccessToken,
   loadClerkOrganizationMemberships,
   loadClerkUserProfile,
   makeClerkBackend,
@@ -27,6 +29,7 @@ export interface AuthSessionRecord {
   readonly userId: string;
   readonly activeOrganizationId: string | null;
   readonly clerkOrganizationId: string | null;
+  readonly expiresAt: number;
 }
 
 export interface AuthOrganizationMembership {

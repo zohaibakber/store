@@ -9,6 +9,7 @@
     "./entity-rows": "./src/sync/entity-rows.ts",
     "./managed-columns": "./src/sync/managed-columns.ts",
     "./sync-live": "./src/sync/live.ts",
+    "./sync-session": "./src/sync/session.ts",
     "./offline-store.api": "./src/store/api.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
     "./server-api.schema": "./src/server/schema.ts",
