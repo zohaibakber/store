@@ -61,7 +61,7 @@ const formatISODate = (date: Date): string =>
   ).padStart(2, "0")}`;
 
 // Expiries are stored as local midnight, matching `parseExpiryDate` on the
-// import path — so a date written here reads back as the same calendar day.
+// import path, so a date written here reads back as the same calendar day.
 const expiryTimestamp = (value: string): number | null =>
   value ? (parseISODate(value)?.getTime() ?? null) : null;
 
@@ -90,7 +90,7 @@ const batchFormSchema = z
     path: ["packQuantity"],
   });
 
-// Editing may empty a batch — a miscount corrected to zero is a real state,
+// Editing may empty a batch. A miscount corrected to zero is a real state,
 // unlike creating one with nothing in it.
 const batchEditSchema = z.object({
   ...batchDetailsFields,
@@ -134,7 +134,7 @@ function BatchNumberField({ field }: { field: BatchTextField }) {
 function BatchExpiryField({ field }: { field: BatchTextField }) {
   return (
     <FormField
-      description="Month and year — the calendar is there for an exact day."
+      description="Month and year. The calendar is there for an exact day."
       field={field}
       label="Expiry date"
     >
@@ -395,8 +395,8 @@ export function ProductBatchesCard({ product }: { product: Product }) {
   const packs = productPackStock(product);
   const looseUnits = productLooseUnitStock(product);
 
-  // Stock still lives in batches for a single-unit product — that is what
-  // expiry-first allocation draws from — but nothing about batches is shown.
+  // Stock still lives in batches for a single-unit product. That is what
+  // expiry-first allocation draws from. Nothing about batches is shown.
   const tracksPacks = product.category.tracksPacks;
 
   return (
@@ -418,7 +418,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
             <EmptyTitle>{tracksPacks ? "No batches yet" : "Nothing in stock yet"}</EmptyTitle>
             <EmptyDescription>
               {tracksPacks
-                ? "Add a batch to put this product in stock — sales draw from batches."
+                ? "Add a batch to put this product in stock. Sales draw from batches."
                 : "Add stock to start selling this product."}
             </EmptyDescription>
           </EmptyHeader>

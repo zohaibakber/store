@@ -11,8 +11,8 @@ import {
 
 /**
  * Free text, with what the catalog already uses offered as you type. The
- * suggestions are whole values typed before — a product name, an aisle, a
- * composition — so the same thing does not end up spelled three ways.
+ * suggestions are whole values typed before, a product name, an aisle, a
+ * composition, so the same thing does not end up spelled three ways.
  */
 export function SuggestField({
   autoFocus,

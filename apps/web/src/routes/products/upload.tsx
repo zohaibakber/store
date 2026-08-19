@@ -67,7 +67,7 @@ function UploadPage() {
           </Alert>
         )}
 
-        {/* The dropzone doubles as the empty state — a separate one on top of it
+        {/* The dropzone doubles as the empty state. A separate one on top of it
             said the same thing twice. */}
         <div className="flex flex-col gap-3">
           <UploadDropzone />

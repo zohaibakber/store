@@ -101,7 +101,7 @@ type ProductFormValues = typeof productFormOpts.defaultValues;
 
 /**
  * A category that isn't sold in packs hides the pack fields, so whatever is
- * sitting in them — from a category change, or an earlier edit — must not reach
+ * sitting in them, from a category change or an earlier edit, must not reach
  * the store. One unit per pack and no pack price is what such a product is.
  */
 const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {

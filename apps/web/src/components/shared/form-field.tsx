@@ -16,7 +16,7 @@ interface FormFieldApi {
   };
 }
 
-/** Spreadable onto a DOM input — no stray non-DOM attributes. */
+/** Spreadable onto a DOM input. No stray non-DOM attributes. */
 export interface FormControlProps {
   readonly id: string;
   readonly name: string;
@@ -26,7 +26,7 @@ export interface FormControlProps {
 /**
  * The frame every form control shares: label, invalid derivation, description
  * and error. The control itself stays with the caller, which receives the
- * wiring it needs — so each field keeps its own markup without restating the
+ * wiring it needs, so each field keeps its own markup without restating the
  * `isTouched && !isValid` dance or forgetting `aria-invalid`.
  *
  * `invalid` comes through as a second argument rather than on `control` so

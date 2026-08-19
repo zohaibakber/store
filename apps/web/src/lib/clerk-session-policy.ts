@@ -5,7 +5,7 @@ export type ClerkWorkspaceSyncAction = "idle" | "clear" | "refresh";
 
 /**
  * The local catalog is the source of truth. Clerk is only required to mint a
- * token for the first sign-in and later sync — never to open an existing store.
+ * token for the first sign-in and later sync. Never to open an existing store.
  */
 export function workspaceScreen(input: {
   readonly snapshot: WorkspaceSnapshot | null;

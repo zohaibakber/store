@@ -72,7 +72,7 @@ const withSeparator = (digits: string) =>
 
 /**
  * A month and a year is all a package tells you, so `08/26` resolves to the
- * last day of that month — the last day the stock is good. A four-digit year
+ * last day of that month, the last day the stock is good. A four-digit year
  * is accepted too; anything shorter is still being typed.
  */
 const parseMonthYear = (text: string): Date | undefined => {

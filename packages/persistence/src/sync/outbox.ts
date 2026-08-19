@@ -100,7 +100,7 @@ export const QUARANTINE_ATTEMPTS = 10;
 
 /**
  * Cuts the queue at the first quarantined operation. It is not skipped:
- * later operations may depend on it, so the queue halts there instead —
+ * later operations may depend on it, so the queue halts there instead,
  * which is what makes the `quarantined` flag in {@link OutboxHealth} mean
  * "nothing is moving" rather than merely "something failed a lot".
  */

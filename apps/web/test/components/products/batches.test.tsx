@@ -9,7 +9,7 @@ import { renderWithStore } from "../../lib/render";
 import { storeStub } from "../../lib/store-stub";
 
 // happy-dom has no Web Animations API, and the sheet's scroll area asks for it
-// on a timer — after the test has finished, so it surfaces as an unhandled error.
+// on a timer after the test has finished, so it shows up as an unhandled error.
 if (!("getAnimations" in Element.prototype))
   Object.defineProperty(Element.prototype, "getAnimations", { value: () => [] });
 

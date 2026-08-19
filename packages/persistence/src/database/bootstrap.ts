@@ -6,8 +6,8 @@ import { mapPersistenceError } from "../errors";
 import type { StoreDatabase } from "./client";
 
 /**
- * A workspace starts empty. Categories used to be seeded here — General,
- * Medicine, Cosmetics — but a seeded taxonomy is one nobody chose, and now that
+ * A workspace starts empty. Categories used to be seeded here as General,
+ * Medicine, Cosmetics, but a seeded taxonomy is one nobody chose, and now that
  * a category decides how the product form behaves it has to be the shop's own.
  * They are created from Settings, or inline while adding a product.
  */
