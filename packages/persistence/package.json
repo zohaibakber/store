@@ -24,8 +24,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.10.13",
+    "@types/node": "^26.2.0",
     "typescript": "catalog:",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.10"
   }
 }
