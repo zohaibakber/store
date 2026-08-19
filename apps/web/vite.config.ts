@@ -1,12 +1,12 @@
-import babel from "@rolldown/plugin-babel";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@store/auth/security";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
+import { oxcReactCompiler } from "./vite-plugin-oxc-react-compiler";
 
 const clerkAccountsDev = /(^|\.)clerk\.accounts\.dev$/iu;
 
@@ -102,6 +102,6 @@ export default defineConfig({
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     tailwindcss(),
     react(),
-    babel({ presets: [reactCompilerPreset()] }),
+    oxcReactCompiler(),
   ]),
 });
