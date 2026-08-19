@@ -47,8 +47,8 @@ export interface InvoiceModelObject {
 export type InvoiceModelOutput = string | InvoiceModelObject;
 
 export type ConvertedDocument =
-  | { readonly name: string; readonly data: string }
-  | { readonly name: string; readonly error: string };
+  | { readonly kind: "ok"; readonly name: string; readonly data: string }
+  | { readonly kind: "error"; readonly name: string; readonly error: string };
 
 export interface InvoiceAiClient {
   readonly toMarkdown: (
@@ -143,11 +143,13 @@ const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
 
 const isFailure = (
   document: ConvertedDocument,
-): document is { readonly name: string; readonly error: string } => "error" in document;
+): document is { readonly kind: "error"; readonly name: string; readonly error: string } =>
+  document.kind === "error";
 
 const isSuccess = (
   document: ConvertedDocument,
-): document is { readonly name: string; readonly data: string } => "data" in document;
+): document is { readonly kind: "ok"; readonly name: string; readonly data: string } =>
+  document.kind === "ok";
 
 const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<File>) => {
   const converted = await ai.toMarkdown(files.map((file) => ({ name: file.name, blob: file })));
@@ -157,12 +159,14 @@ const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<Fil
       name: failure.name,
       error: failure.error,
     });
-  if (failures.length === converted.length)
+  if (failures.length === converted.length) {
+    const [failure] = failures;
     throw new Error(
-      failures.length === 1
-        ? `${failures[0]?.name} could not be read.`
+      failure && failures.length === 1
+        ? `${failure.name} could not be read.`
         : "None of the attachments could be read.",
     );
+  }
   return converted
     .filter(isSuccess)
     .filter((document) => document.data.trim())

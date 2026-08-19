@@ -121,9 +121,9 @@ const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {
 const categoryTracksPacks = (categories: ReadonlyArray<Category>, categoryId: string): boolean =>
   categories.find((category) => category.id === categoryId)?.tracksPacks ?? true;
 
-const defaultCategoryId = (categories: ReadonlyArray<Category>) => categories[0]?.id ?? "";
+const defaultCategoryId = (categories: ReadonlyArray<Category>): string => categories[0]?.id ?? "";
 
-const productToFormValues = (product: Product) => {
+const productToFormValues = (product: Product): ProductFormValues => {
   const { strength, strengthUnit } = parseStrength(product.strength);
   return {
     name: product.name,

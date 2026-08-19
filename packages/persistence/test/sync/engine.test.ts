@@ -272,7 +272,6 @@ test("an offline transport never rolls back local writes and leaves outbox work 
         product,
       );
       expect(await runtime.runPromise(store((store) => store.getSyncStatus))).toMatchObject({
-        configured: true,
         phase: "error",
       });
       await runtime.dispose();

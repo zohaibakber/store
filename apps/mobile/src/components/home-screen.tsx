@@ -14,6 +14,7 @@ import {
   useProductActions,
   useProductData,
   useProductStatus,
+  productStatusView,
 } from "@/features/products/products-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { LOW_STOCK_THRESHOLD, needsAttention } from "@/lib/product-catalog";
@@ -21,7 +22,7 @@ import { cssColor } from "@/theme/colors";
 
 export function HomeScreen() {
   const { products } = useProductData();
-  const { loading, refreshing, error } = useProductStatus();
+  const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [foreground, background, warning, danger, muted] = useThemeColor([
     "foreground",

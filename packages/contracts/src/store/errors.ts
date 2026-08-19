@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
 
+import { BatchId, CategoryId, InvoiceId, ProductId } from "../ids";
+
 export class PersistenceError extends Schema.TaggedError<PersistenceError>()("PersistenceError", {
   operation: Schema.String,
   message: Schema.String,
@@ -8,22 +10,22 @@ export class PersistenceError extends Schema.TaggedError<PersistenceError>()("Pe
 
 export class ProductNotFoundError extends Schema.TaggedError<ProductNotFoundError>()(
   "ProductNotFoundError",
-  { id: Schema.String },
+  { id: ProductId },
 ) {}
 
 export class BatchNotFoundError extends Schema.TaggedError<BatchNotFoundError>()(
   "BatchNotFoundError",
-  { id: Schema.String },
+  { id: BatchId },
 ) {}
 
 export class CategoryNotFoundError extends Schema.TaggedError<CategoryNotFoundError>()(
   "CategoryNotFoundError",
-  { id: Schema.String },
+  { id: CategoryId },
 ) {}
 
 export class InvoiceNotFoundError extends Schema.TaggedError<InvoiceNotFoundError>()(
   "InvoiceNotFoundError",
-  { id: Schema.String },
+  { id: InvoiceId },
 ) {}
 
 export const StoreError = Schema.Union([

@@ -17,7 +17,6 @@ class TestSyncError extends Schema.TaggedError<TestSyncError>()("TestSyncError",
 
 const status: SyncStatus = {
   phase: "starting",
-  configured: true,
   lastSyncedAt: null,
   message: "Starting",
   pendingOperations: 0,

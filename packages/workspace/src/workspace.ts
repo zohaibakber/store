@@ -1,7 +1,11 @@
 import {
   SyncResponse,
+  unauthenticatedWorkspace,
+  withWorkspaceError,
+  type OrganizationId,
   type SyncRequest,
   type SyncStatus,
+  type UserId,
   type WorkspaceSnapshot,
 } from "@store/contracts";
 import { type OfflineStore, SyncTransportError } from "@store/persistence/core";
@@ -31,8 +35,8 @@ export type WorkspaceTarget =
   | { readonly _tag: "Locked" }
   | {
       readonly _tag: "Authenticated";
-      readonly organizationId: string;
-      readonly userId: string;
+      readonly organizationId: OrganizationId;
+      readonly userId: UserId;
       readonly deviceId: string;
       readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
     };
@@ -53,17 +57,8 @@ export interface WorkspaceEvents {
   readonly publishSyncStatus: (status: SyncStatus) => void;
 }
 
-const unauthenticated = (
-  isOnline: boolean,
-  workspaceError: string | null = null,
-): WorkspaceSnapshot => ({
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline,
-  workspaceError,
-});
+const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
+  unauthenticatedWorkspace({ isOnline, workspaceError });
 
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The local workspace could not be opened.";
@@ -93,9 +88,9 @@ export class AuthenticatedWorkspace {
   readonly #stores: WorkspaceStoreAdapter;
   readonly #events: WorkspaceEvents;
   readonly #deviceId: string;
-  #snapshot = unauthenticated(false);
+  #snapshot: WorkspaceSnapshot = unauthenticated(false);
   #store: WorkspaceStore | undefined;
-  #activeOrganizationId: string | null = null;
+  #activeOrganizationId: OrganizationId | null = null;
   #stopSyncStatus: (() => void) | undefined;
   #transition = Promise.resolve();
 
@@ -153,6 +148,10 @@ export class AuthenticatedWorkspace {
       case "SignOut":
         await this.#auth.signOut();
         return this.#auth.snapshot;
+      default: {
+        const _exhaustive: never = command;
+        return _exhaustive;
+      }
     }
   }
 
@@ -163,13 +162,13 @@ export class AuthenticatedWorkspace {
       organization.id === this.#activeOrganizationId &&
       this.#store !== undefined
     ) {
-      return this.#publish({ ...snapshot, workspaceError: null });
+      return this.#publish(withWorkspaceError(snapshot, null));
     }
 
     await this.#disposeStore();
     const auth = this.#auth;
     const target: WorkspaceTarget =
-      organization && snapshot.user
+      snapshot.status === "authenticated" && organization
         ? {
             _tag: "Authenticated",
             organizationId: organization.id,
@@ -222,10 +221,12 @@ export class AuthenticatedWorkspace {
         // Finish the first pull so they cannot cache an empty pre-sync database.
         await store.sync().catch(() => undefined);
       }
-      return this.#publish({
-        ...snapshot,
-        workspaceError: target._tag === "Authenticated" ? null : (snapshot.workspaceError ?? null),
-      });
+      return this.#publish(
+        withWorkspaceError(
+          snapshot,
+          target._tag === "Authenticated" ? null : (snapshot.workspaceError ?? null),
+        ),
+      );
     } catch (cause) {
       if (target._tag === "Authenticated") await this.#recoverLocked(snapshot.isOnline);
       const message = messageOf(cause);

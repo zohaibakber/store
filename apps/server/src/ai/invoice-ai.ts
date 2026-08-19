@@ -14,8 +14,8 @@ export const invoiceAiClient = (ai: Ai): InvoiceAiClient => ({
     );
     return converted.map((result): ConvertedDocument =>
       result.format === "error"
-        ? { name: result.name, error: result.error }
-        : { name: result.name, data: result.data },
+        ? { kind: "error", name: result.name, error: result.error }
+        : { kind: "ok", name: result.name, data: result.data },
     );
   },
   generate: async ({ messages, jsonSchema }) => {

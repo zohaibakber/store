@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { WorkspaceSnapshot } from "@store/contracts";
+import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -33,17 +33,8 @@ export class RequestError extends Error {
   }
 }
 
-const unauthenticated = (
-  isOnline: boolean,
-  workspaceError: string | null = null,
-): WorkspaceSnapshot => ({
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline,
-  workspaceError,
-});
+const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
+  unauthenticatedWorkspace({ isOnline, workspaceError });
 
 export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #baseUrl: string;
@@ -69,7 +60,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   async initialize() {
     const persisted = await this.#readPersisted();
     if (persisted) {
-      this.#snapshot = { ...persisted.snapshot, isOnline: false };
+      this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
     }
     return this.#snapshot;
   }
@@ -85,26 +76,25 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   async refresh() {
     if (!this.#token) {
-      return this.#publish({
-        ...this.#snapshot,
-        isOnline: this.#snapshot.status === "authenticated",
-      });
+      return this.#publish(
+        withWorkspaceOnline(this.#snapshot, this.#snapshot.status === "authenticated"),
+      );
     }
     try {
       const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
         await this.#request("/api/auth/session"),
       );
-      if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user) {
+      if (snapshot.status !== "authenticated") {
         await this.#clear();
         return this.#publish(unauthenticated(true));
       }
-      return this.#persistAndPublish({ ...snapshot, isOnline: true });
+      return this.#persistAndPublish(withWorkspaceOnline(snapshot, true));
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
         await this.#clear();
         return this.#publish(unauthenticated(true, error.message));
       }
-      return this.#publish({ ...this.#snapshot, isOnline: false });
+      return this.#publish(withWorkspaceOnline(this.#snapshot, false));
     }
   }
 

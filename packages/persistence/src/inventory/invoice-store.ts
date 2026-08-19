@@ -1,4 +1,5 @@
 import type { CreateInvoiceInput, Invoice, SyncEntityChange } from "@store/contracts";
+import { decodeInvoiceId } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
   batches,
@@ -135,9 +136,9 @@ export const makeInvoiceStore = (
       )
       .limit(1)
       .pipe(mapPersistenceError("find invoice"));
-    if (!invoice) return yield* InvoiceNotFoundError.make({ id });
+    if (!invoice) return yield* InvoiceNotFoundError.make({ id: decodeInvoiceId(id) });
     const [hydrated] = yield* hydrateInvoices([invoice]);
-    if (!hydrated) return yield* InvoiceNotFoundError.make({ id });
+    if (!hydrated) return yield* InvoiceNotFoundError.make({ id: decodeInvoiceId(id) });
     return toInvoice(hydrated);
   });
 

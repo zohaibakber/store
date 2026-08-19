@@ -1,9 +1,12 @@
-import type { ImportInventoryLine } from "@store/contracts";
+import type { ImportInventoryLine, ProductId } from "@store/contracts";
+import { decodeCategoryId } from "@store/contracts";
 import { expect, test } from "vitest";
 
 import { readOutbox, store, withTestStore } from "../lib/store";
 
-const importLine = (name: string, productId: string | null = null): ImportInventoryLine => ({
+const generalCategoryId = decodeCategoryId("general");
+
+const importLine = (name: string, productId: ProductId | null = null): ImportInventoryLine => ({
   name,
   productId,
   batchNumber: `${name.trim().toLocaleUpperCase()}-1`,
@@ -21,7 +24,7 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
       store((store) =>
         store.createProduct({
           name: "Existing product",
-          categoryId: "general",
+          categoryId: generalCategoryId,
           aisle: null,
           composition: null,
           strength: null,
@@ -39,7 +42,7 @@ test("bulk inventory import creates one ordered outbox operation", async () => {
       runtime.runPromise(
         store((store) =>
           store.importInventory({
-            categoryId: "general",
+            categoryId: generalCategoryId,
             lines: [importLine("Aspirin"), importLine("Existing product", existing.id)],
           }),
         ),
@@ -77,7 +80,7 @@ test("duplicate names in one import share one created product", async () => {
     const result = await runtime.runPromise(
       store((store) =>
         store.importInventory({
-          categoryId: "general",
+          categoryId: generalCategoryId,
           lines: [importLine("Panadol"), importLine("  panadol  ")],
         }),
       ),
@@ -98,7 +101,7 @@ test("large imports are committed locally once and queued in bounded sync operat
 
   await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
-      runtime.runPromise(store((store) => store.importInventory({ categoryId: "general", lines }))),
+      runtime.runPromise(store((store) => store.importInventory({ categoryId: generalCategoryId, lines }))),
     ).resolves.toEqual({ createdProducts: 100, createdBatches: 100 });
 
     expect(await runtime.runPromise(store((store) => store.listProducts))).toHaveLength(100);
@@ -117,7 +120,7 @@ test("an invalid line rolls back every row and outbox change", async () => {
       runtime.runPromise(
         store((store) =>
           store.importInventory({
-            categoryId: "general",
+            categoryId: generalCategoryId,
             lines: [
               importLine("First product"),
               { ...importLine("Invalid product"), packQuantity: -1 },
@@ -139,7 +142,7 @@ test("an invalid line rolls back every row and outbox change", async () => {
 });
 
 test("a repeated import reuses products by normalized name", async () => {
-  const input = { categoryId: "general", lines: [importLine("Brufen")] };
+  const input = { categoryId: generalCategoryId, lines: [importLine("Brufen")] };
 
   await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
@@ -152,7 +155,7 @@ test("a repeated import reuses products by normalized name", async () => {
       runtime.runPromise(
         store((store) =>
           store.importInventory({
-            categoryId: "general",
+            categoryId: generalCategoryId,
             lines: [importLine("  brufen  ")],
           }),
         ),

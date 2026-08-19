@@ -16,8 +16,14 @@ export const nextUpdatePhase = (phase: UpdatePhase, event: UpdaterEvent): Update
       return "downloaded";
     case "error":
       return "idle";
-    default:
+    case "checking":
+    case "available":
+    case "not-available":
       return phase;
+    default: {
+      const _exhaustive: never = event;
+      return _exhaustive;
+    }
   }
 };
 

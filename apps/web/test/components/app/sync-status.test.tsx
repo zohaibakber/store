@@ -11,7 +11,6 @@ import { storeStub } from "../../lib/store-stub";
 
 const status = (overrides: Partial<SyncStatus> = {}): SyncStatus => ({
   phase: "idle",
-  configured: true,
   lastSyncedAt: null,
   message: "Ready to sync",
   pendingOperations: 0,
@@ -32,7 +31,7 @@ test("reports a configured store as cloud ready", async () => {
 });
 
 test("reports an unconfigured store as local only", async () => {
-  renderWith(storeStub({ getSyncStatus: () => Promise.resolve(status({ configured: false })) }));
+  renderWith(storeStub({ getSyncStatus: () => Promise.resolve(status({ phase: "local-only" })) }));
 
   await waitFor(() => {
     expect(screen.getByRole("button").getAttribute("aria-label")).toContain("Local only");

@@ -93,13 +93,17 @@ export type SyncPhase =
   | "blocked"
   | "error";
 
-export interface SyncStatus {
-  readonly phase: SyncPhase;
-  readonly configured: boolean;
+type SyncHealth = {
   readonly lastSyncedAt: number | null;
   readonly message: string;
   readonly pendingOperations: number;
   readonly oldestPendingAt: number | null;
   readonly lastError: string | null;
   readonly quarantined: boolean;
-}
+};
+
+export type SyncStatus =
+  | ({ readonly phase: "local-only" } & SyncHealth)
+  | ({ readonly phase: Exclude<SyncPhase, "local-only"> } & SyncHealth);
+
+export const syncConfigured = (status: SyncStatus): boolean => status.phase !== "local-only";

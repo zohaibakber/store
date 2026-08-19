@@ -10,6 +10,7 @@ import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
 import { omitManaged } from "./managed-columns";
 import type { SyncEntity } from "./schema";
 
@@ -20,6 +21,7 @@ const SignedInteger = Schema.Number.check(Schema.isInt());
 const NullableNonNegativeInteger = Schema.NullOr(NonNegativeInteger);
 
 const CategoryRow = createSelectSchema(categories, {
+  id: CategoryId,
   name: NonEmptyString,
   // Change-log entries written before categories gained this column do not
   // contain it. The database migration used the same default for those rows.
@@ -27,29 +29,33 @@ const CategoryRow = createSelectSchema(categories, {
 });
 
 const ProductRow = createSelectSchema(products, {
+  id: ProductId,
   name: NonEmptyString,
-  categoryId: NonEmptyString,
+  categoryId: CategoryId,
   unitsPerPack: PositiveInteger,
   packPrice: NullableNonNegativeInteger,
   unitPrice: NullableNonNegativeInteger,
 });
 
 const BatchRow = createSelectSchema(batches, {
-  productId: NonEmptyString,
+  id: BatchId,
+  productId: ProductId,
   expiresAt: NullableNonNegativeInteger,
   packQuantity: NonNegativeInteger,
   unitQuantity: NonNegativeInteger,
 });
 
 const InvoiceRow = createSelectSchema(invoices, {
+  id: InvoiceId,
   invoiceNumber: PositiveInteger,
   total: NonNegativeInteger,
 });
 
 const InvoiceItemRow = createSelectSchema(invoiceItems, {
-  invoiceId: NonEmptyString,
-  productId: NonEmptyString,
-  batchId: NonEmptyString,
+  id: InvoiceItemId,
+  invoiceId: InvoiceId,
+  productId: ProductId,
+  batchId: BatchId,
   productName: NonEmptyString,
   quantity: PositiveInteger,
   quantityType: Schema.Literals(["unit", "pack"]),
@@ -58,8 +64,8 @@ const InvoiceItemRow = createSelectSchema(invoiceItems, {
 });
 
 const StockMovementRow = createSelectSchema(stockMovements, {
-  productId: NonEmptyString,
-  batchId: NonEmptyString,
+  productId: ProductId,
+  batchId: BatchId,
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
   packDelta: SignedInteger,
   unitDelta: SignedInteger,

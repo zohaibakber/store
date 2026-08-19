@@ -1,4 +1,9 @@
-import { WorkspaceSnapshot } from "@store/contracts";
+import {
+  unauthenticatedWorkspace,
+  withWorkspaceError,
+  withWorkspaceOnline,
+  WorkspaceSnapshot,
+} from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -26,17 +31,8 @@ export class RequestError extends Error {
   }
 }
 
-const unauthenticated = (
-  isOnline: boolean,
-  workspaceError: string | null = null,
-): WorkspaceSnapshot => ({
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline,
-  workspaceError,
-});
+const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
+  unauthenticatedWorkspace({ isOnline, workspaceError });
 
 const navigatorOnline = () => globalThis.navigator?.onLine ?? true;
 
@@ -71,32 +67,31 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
 
   async refresh() {
     if (!this.#token) {
-      return this.#publish({
-        ...this.#snapshot,
-        isOnline: this.#snapshot.status === "authenticated",
-      });
+      return this.#publish(
+        withWorkspaceOnline(this.#snapshot, this.#snapshot.status === "authenticated"),
+      );
     }
     try {
       const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
         await this.apiRequest("/api/auth/session"),
       );
-      if (!snapshot || snapshot.status !== "authenticated" || !snapshot.user)
+      if (snapshot.status !== "authenticated")
         return this.#publish(
           unauthenticated(
             true,
             "Your sign-in completed, but the server could not validate the session.",
           ),
         );
-      return this.#publish({ ...snapshot, isOnline: true });
+      return this.#publish(withWorkspaceOnline(snapshot, true));
     } catch (error) {
       if (error instanceof RequestError && (error.status === 401 || error.status === 403))
         return this.#publish(unauthenticated(true, error.message));
-      return this.#publish({
-        ...this.#snapshot,
-        isOnline: false,
-        workspaceError:
+      return this.#publish(
+        withWorkspaceError(
+          withWorkspaceOnline(this.#snapshot, false),
           error instanceof Error ? error.message : "The session server could not be reached.",
-      });
+        ),
+      );
     }
   }
 

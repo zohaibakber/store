@@ -1,4 +1,9 @@
-import type { SyncEntityChange, SyncRequest } from "@store/contracts";
+import {
+  decodeAuthenticatedWorkspace,
+  unauthenticatedWorkspace,
+  type SyncEntityChange,
+  type SyncRequest,
+} from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import { RuntimeContext } from "alchemy";
@@ -37,13 +42,7 @@ const session = {
   ],
 };
 
-const unauthenticatedWorkspace = {
-  status: "unauthenticated" as const,
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline: true,
-};
+const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
 
 const defaultInvoiceAi: InvoiceAiClient = {
   toMarkdown: async () => [],
@@ -128,8 +127,8 @@ export const appFor = (
       loadWorkspace: () =>
         Effect.succeed(
           authenticated
-            ? {
-                status: "authenticated" as const,
+            ? decodeAuthenticatedWorkspace({
+                status: "authenticated",
                 user: session.user,
                 activeOrganization: {
                   id: "org-1",
@@ -148,8 +147,8 @@ export const appFor = (
                   },
                 ],
                 isOnline: true,
-              }
-            : unauthenticatedWorkspace,
+              })
+            : unauthenticated,
         ),
       invoiceAi: Effect.succeed(invoiceAi),
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),

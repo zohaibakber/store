@@ -12,14 +12,16 @@ export interface AuthSessionBridge {
 }
 
 type AuthContextValue = {
-  snapshot: WorkspaceSnapshot | null;
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-};
+  readonly refresh: () => Promise<void>;
+} & (
+  | { readonly _tag: "Loading"; readonly snapshot: WorkspaceSnapshot | null }
+  | { readonly _tag: "Ready"; readonly snapshot: WorkspaceSnapshot }
+  | { readonly _tag: "Error"; readonly snapshot: WorkspaceSnapshot | null; readonly error: string }
+);
+
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
-  snapshot?.status === "authenticated" && snapshot.user && snapshot.activeOrganization
+  snapshot?.status === "authenticated" && snapshot.activeOrganization
     ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
     : null;
 
@@ -36,10 +38,9 @@ export const authSession = (): AuthSessionBridge => {
 };
 
 /** The session read once at startup, handed to {@link AuthProvider} as props. */
-export interface InitialAuth {
-  readonly snapshot: WorkspaceSnapshot | null;
-  readonly error: string | null;
-}
+export type InitialAuth =
+  | { readonly _tag: "Session"; readonly snapshot: WorkspaceSnapshot }
+  | { readonly _tag: "Failed"; readonly error: string };
 
 /** Ends the session; the host broadcasts the resulting snapshot. */
 export async function signOut() {
@@ -52,12 +53,17 @@ export async function signOut() {
 
 export async function bootstrapAuth(): Promise<InitialAuth> {
   try {
-    const snapshot = await authSession().getSession();
-    return { snapshot, error: snapshot.workspaceError ?? null };
+    return { _tag: "Session", snapshot: await authSession().getSession() };
   } catch (cause) {
-    return { snapshot: null, error: storeErrorMessage(cause) };
+    return { _tag: "Failed", error: storeErrorMessage(cause) };
   }
 }
+
+const initialSnapshot = (initial: InitialAuth): WorkspaceSnapshot | null =>
+  initial._tag === "Session" ? initial.snapshot : null;
+
+const initialError = (initial: InitialAuth): string | null =>
+  initial._tag === "Failed" ? initial.error : (initial.snapshot.workspaceError ?? null);
 
 export function AuthProvider({
   children,
@@ -67,10 +73,12 @@ export function AuthProvider({
   initial: InitialAuth;
 }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(initial.snapshot);
-  const [loading, setLoading] = React.useState(initial.snapshot === null && initial.error === null);
-  const [error, setError] = React.useState<string | null>(initial.error);
-  const currentScopeRef = React.useRef(authScope(initial.snapshot));
+  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(
+    initialSnapshot(initial),
+  );
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(initialError(initial));
+  const currentScopeRef = React.useRef(authScope(snapshot));
   const pendingScopeRef = React.useRef<string | null | undefined>(undefined);
   const transitionRef = React.useRef(0);
 
@@ -124,11 +132,15 @@ export function AuthProvider({
     return () => dispose();
   }, [apply]);
 
-  return (
-    <AuthContext.Provider value={{ snapshot, loading, error, refresh }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value: AuthContextValue = loading
+    ? { _tag: "Loading", snapshot, refresh }
+    : error
+      ? { _tag: "Error", snapshot, error, refresh }
+      : snapshot
+        ? { _tag: "Ready", snapshot, refresh }
+        : { _tag: "Loading", snapshot: null, refresh };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

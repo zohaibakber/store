@@ -17,6 +17,7 @@ import { PackQuantitySheet, UnitQuantitySheet } from "@/features/product-scanner
 import { inferProductText } from "@/features/product-scanner/scan-api";
 import type { ProductScanInference, ProductScanMode } from "@/features/product-scanner/types";
 import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
@@ -30,7 +31,7 @@ const normalizeKey = (value: string | null) => value?.trim().toLocaleLowerCase()
 
 export default function ProductScanScreen() {
   const { products, categories } = useProductData();
-  const { loading } = useProductStatus();
+  const { loading } = productStatusView(useProductStatus());
   const { saveScannedProduct, saveBatchDetails, updateBatchQuantity } = useProductActions();
   const scroll = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ProductScanMode>("product");

@@ -1,4 +1,5 @@
 import { decodeStoreError, encodeStoreError } from "@store/contracts/store-errors";
+import { decodeBatchId, decodeInvoiceId, decodeProductId } from "@store/contracts";
 import { expect, test } from "vitest";
 
 import {
@@ -63,7 +64,7 @@ test("PersistenceError survives an encoded structured-clone round trip", () => {
 });
 
 test("ProductNotFoundError survives an encoded structured-clone round trip", () => {
-  const error = ProductNotFoundError.make({ id: "product-1" });
+  const error = ProductNotFoundError.make({ id: decodeProductId("product-1") });
 
   const encoded = structuredClone(encodeStoreError(error));
   const decoded = decodeStoreError(encoded);
@@ -74,7 +75,7 @@ test("ProductNotFoundError survives an encoded structured-clone round trip", () 
 });
 
 test("BatchNotFoundError survives an encoded structured-clone round trip", () => {
-  const error = BatchNotFoundError.make({ id: "batch-1" });
+  const error = BatchNotFoundError.make({ id: decodeBatchId("batch-1") });
 
   const encoded = structuredClone(encodeStoreError(error));
   const decoded = decodeStoreError(encoded);
@@ -85,7 +86,7 @@ test("BatchNotFoundError survives an encoded structured-clone round trip", () =>
 });
 
 test("InvoiceNotFoundError survives an encoded structured-clone round trip", () => {
-  const error = InvoiceNotFoundError.make({ id: "invoice-1" });
+  const error = InvoiceNotFoundError.make({ id: decodeInvoiceId("invoice-1") });
 
   const encoded = structuredClone(encodeStoreError(error));
   const decoded = decodeStoreError(encoded);

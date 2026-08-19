@@ -1,25 +1,28 @@
-import type { WorkspaceSnapshot } from "@store/contracts";
+import {
+  decodeAuthenticatedWorkspace,
+  unauthenticatedWorkspace,
+  type WorkspaceSnapshot,
+} from "@store/contracts";
 import { expect, test } from "vitest";
 
 import { clerkWorkspaceSyncAction, workspaceScreen } from "@/lib/clerk-session-policy";
 
-const authenticated = (organizationId: string | null): WorkspaceSnapshot => ({
-  status: "authenticated",
-  user: { id: "user-1", name: "Owner", email: "owner@example.com" },
-  activeOrganization: organizationId ? { id: organizationId, name: "Store", role: "owner" } : null,
-  organizations: [],
+const authenticated = (organizationId: string | null): WorkspaceSnapshot =>
+  decodeAuthenticatedWorkspace({
+    status: "authenticated",
+    user: { id: "user-1", name: "Owner", email: "owner@example.com" },
+    activeOrganization: organizationId
+      ? { id: organizationId, name: "Store", role: "owner" }
+      : null,
+    organizations: [],
+    isOnline: false,
+    workspaceError: null,
+  });
+
+const unauthenticated: WorkspaceSnapshot = unauthenticatedWorkspace({
   isOnline: false,
   workspaceError: null,
 });
-
-const unauthenticated: WorkspaceSnapshot = {
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline: false,
-  workspaceError: null,
-};
 
 test("opens the catalog from a persisted workspace even when Clerk is still loading", () => {
   expect(

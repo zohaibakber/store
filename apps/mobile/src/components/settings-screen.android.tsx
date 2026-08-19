@@ -23,6 +23,7 @@ import personIcon from "@/assets/icons/person.xml";
 import refreshIcon from "@/assets/icons/refresh.xml";
 import { TintedIcon } from "@/components/material-list.android";
 import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
@@ -57,8 +58,12 @@ function itemCornerRadii(position: ItemPosition) {
       return { topStart: small, topEnd: small, bottomStart: full, bottomEnd: full };
     case "middle":
       return { topStart: small, topEnd: small, bottomStart: small, bottomEnd: small };
-    default:
+    case "only":
       return { topStart: full, topEnd: full, bottomStart: full, bottomEnd: full };
+    default: {
+      const _exhaustive: never = position;
+      return _exhaustive;
+    }
   }
 }
 
@@ -144,7 +149,7 @@ export function SettingsScreen() {
   const { user } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const { products } = useProductData();
-  const { refreshing, error, lastUpdatedAt } = useProductStatus();
+  const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";
   const userEmail = user?.primaryEmailAddress?.emailAddress;

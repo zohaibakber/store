@@ -1,3 +1,4 @@
+import { decodeBatchId } from "@store/contracts";
 import { expect, test } from "vitest";
 
 import { readOutbox, store, withTestStore } from "../lib/store";
@@ -191,7 +192,9 @@ test("updateBatch fails with BatchNotFoundError for an unknown batch", async () 
   await withTestStore(async ({ runtime }) => {
     await expect(
       runtime.runPromise(
-        store((store) => store.updateBatch({ id: "missing", batchNumber: null, expiresAt: null })),
+        store((store) =>
+          store.updateBatch({ id: decodeBatchId("missing"), batchNumber: null, expiresAt: null }),
+        ),
       ),
     ).rejects.toMatchObject({ _tag: "BatchNotFoundError", id: "missing" });
   });

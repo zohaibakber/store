@@ -1,4 +1,4 @@
-import type { Category, InvoiceExtractionLine, Product } from "@store/contracts";
+import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { createContext, use, useState, type ReactNode } from "react";
 
@@ -11,7 +11,7 @@ import { useStore } from "@/lib/store";
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
   type: "create_product" | "add_inventory";
-  productId?: string;
+  productId?: ProductId;
 };
 type UploadPhase = "idle" | "processing" | "ready" | "syncing";
 

@@ -55,7 +55,7 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "^4.1.10",
+    "vitest": "4.1.10",
     "zod": "^4.4.3"
   },
   "overrides": {

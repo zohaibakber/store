@@ -4,7 +4,7 @@ import {
   ReloadIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { SyncStatus } from "@store/contracts";
+import { syncConfigured, type SyncStatus } from "@store/contracts";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ export function SyncStatusIndicator() {
   }, [refresh, store]);
 
   const sync = async () => {
-    if (!isOnline || !status?.configured || isSyncing) return;
+    if (!isOnline || !status || !syncConfigured(status) || isSyncing) return;
     setStatus((current) =>
       current
         ? {
@@ -56,10 +56,12 @@ export function SyncStatusIndicator() {
   };
 
   const connectionLabel = isSyncing ? "Syncing…" : isOnline ? "Online" : "Offline";
-  const syncLabel = status?.configured
-    ? status.phase === "error"
-      ? "Sync paused"
-      : "Cloud ready"
+  const syncLabel = status
+    ? syncConfigured(status)
+      ? status.phase === "error"
+        ? "Sync paused"
+        : "Cloud ready"
+      : "Local only"
     : "Local only";
   const lastSynced = status?.lastSyncedAt
     ? `Last sync ${formatRelativeTime(status.lastSyncedAt)}`

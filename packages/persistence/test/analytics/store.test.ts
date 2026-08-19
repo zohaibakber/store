@@ -1,3 +1,4 @@
+import type { ProductId } from "@store/contracts";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { store, withTestStore } from "../lib/store";
@@ -122,7 +123,7 @@ test("dashboard analytics aggregates revenue, stock health, and recent activity"
         ),
       );
 
-      const sell = (productId: string, quantity: number, salePrice: number) =>
+      const sell = (productId: ProductId, quantity: number, salePrice: number) =>
         runtime.runPromise(
           store((s) =>
             s.createInvoice({

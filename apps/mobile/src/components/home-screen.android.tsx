@@ -24,6 +24,7 @@ import {
   TintedIcon,
 } from "@/components/material-list.android";
 import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
@@ -37,7 +38,7 @@ export function HomeScreen() {
   const colors = useMaterialColors({ colorScheme });
   const insets = useSafeAreaInsets();
   const { products } = useProductData();
-  const { loading, refreshing, error } = useProductStatus();
+  const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [showValue, setShowValue] = useState(false);
   const attention = needsAttention(products);

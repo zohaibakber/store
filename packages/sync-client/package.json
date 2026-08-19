@@ -17,6 +17,6 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "typescript": "catalog:",
-    "vitest": "^4.1.10"
+    "vitest": "4.1.10"
   }
 }

@@ -1,4 +1,4 @@
-import type { Batch, Category, Invoice, Product, StockMovement } from "@store/contracts";
+import { Batch, Category, Invoice, Product, StockMovement } from "@store/contracts";
 import {
   batches,
   categories,
@@ -7,6 +7,7 @@ import {
   products,
   stockMovements,
 } from "@store/db/local/schema";
+import * as Schema from "effect/Schema";
 
 export type ProductRow = typeof products.$inferSelect;
 export type CategoryRow = typeof categories.$inferSelect;
@@ -18,31 +19,35 @@ export type ProductWithRelations = ProductRow & { category: CategoryRow; batches
 export type InvoiceWithItems = InvoiceRow & { items: InvoiceItemRow[] };
 
 export const toCategory = ({ deletedAt: _deletedAt, ...category }: CategoryRow): Category =>
-  category;
+  Schema.decodeUnknownSync(Category)(category);
 
-export const toBatch = ({ deletedAt: _deletedAt, ...batch }: BatchRow): Batch => batch;
+export const toBatch = ({ deletedAt: _deletedAt, ...batch }: BatchRow): Batch =>
+  Schema.decodeUnknownSync(Batch)(batch);
 
 export const toProduct = ({
   deletedAt: _deletedAt,
   category,
   batches: batchRows,
   ...product
-}: ProductWithRelations): Product => ({
-  ...product,
-  category: toCategory(category),
-  batches: batchRows.map(toBatch),
-});
+}: ProductWithRelations): Product =>
+  Schema.decodeUnknownSync(Product)({
+    ...product,
+    category: toCategory(category),
+    batches: batchRows.map(toBatch),
+  });
 
 export const toInvoice = ({
   deletedAt: _deletedAt,
   items,
   ...invoice
-}: InvoiceWithItems): Invoice => ({
-  ...invoice,
-  items: items.map(({ deletedAt: _itemDeletedAt, ...item }) => item),
-});
+}: InvoiceWithItems): Invoice =>
+  Schema.decodeUnknownSync(Invoice)({
+    ...invoice,
+    items: items.map(({ deletedAt: _itemDeletedAt, ...item }) => item),
+  });
 
-export const toStockMovement = (movement: StockMovementRow): StockMovement => movement;
+export const toStockMovement = (movement: StockMovementRow): StockMovement =>
+  Schema.decodeUnknownSync(StockMovement)(movement);
 
 export const byEarliestExpiry = (left: BatchRow, right: BatchRow) =>
   (left.expiresAt ?? Number.POSITIVE_INFINITY) - (right.expiresAt ?? Number.POSITIVE_INFINITY) ||

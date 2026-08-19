@@ -42,8 +42,10 @@ export function RootLayout() {
 }
 
 function AuthenticatedLayout() {
-  const { snapshot, loading, error } = useAuth();
-  if (loading) return <AppLoading />;
+  const auth = useAuth();
+  if (auth._tag === "Loading") return <AppLoading />;
+  const snapshot = auth.snapshot;
+  const error = auth._tag === "Error" ? auth.error : null;
   if (clerkPublishableKey) {
     return <ClerkSessionGate bridgeError={error} snapshot={snapshot} />;
   }

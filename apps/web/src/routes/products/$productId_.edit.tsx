@@ -1,4 +1,6 @@
+import { ProductId } from "@store/contracts";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
@@ -6,7 +8,7 @@ import { ProductFormPage } from "@/components/products/form-page";
 export const Route = createFileRoute("/products/$productId_/edit")({
   loader: async ({ context, params }) => {
     const [product, categories, suggestions] = await Promise.all([
-      context.store.getProduct({ id: params.productId }),
+      context.store.getProduct({ id: Schema.decodeUnknownSync(ProductId)(params.productId) }),
       context.store.listCategories(),
       context.store.listProductSuggestions(),
     ]);
