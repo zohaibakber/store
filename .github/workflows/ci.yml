@@ -101,7 +101,7 @@ jobs:
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
       - name: Deploy ${{ env.STAGE }}
@@ -118,7 +118,7 @@ jobs:
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
