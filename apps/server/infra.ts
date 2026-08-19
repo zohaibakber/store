@@ -31,7 +31,11 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 import { reportRejectedAuthSettings } from "./src/runtime/worker";
-import { OrganizationStore, OrganizationStoreLive } from "./src/sync/organization-store";
+import {
+  OrganizationStore,
+  OrganizationStoreLive,
+  connectWithOrganizationStore,
+} from "./src/sync/organization-store";
 
 export { OrganizationStore };
 export {
@@ -223,6 +227,7 @@ export const ApiLive = Api.make(
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
       runSync: (actor, request) =>
         organizationStore.getByName(actor.organizationId).exchange(actor, request),
+      connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),

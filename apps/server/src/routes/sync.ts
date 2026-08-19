@@ -1,4 +1,5 @@
 import {
+  MAX_LIVE_IDENTIFIER_LENGTH,
   MAX_SYNC_CHANGES_PER_OPERATION,
   MAX_SYNC_OPERATIONS_PER_REQUEST,
   SyncRequest,
@@ -18,6 +19,7 @@ import {
   internalServerError,
   serviceUnavailable,
   unprocessableEntity,
+  upgradeRequired,
 } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 import { type SyncProtocolCode, SyncProtocolError } from "../sync/errors";
@@ -132,28 +134,60 @@ export const SyncHandlers = HttpApiBuilder.group(
   Effect.fn(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
-    return handlers.handleRaw(
-      "exchange",
-      Effect.fn(function* ({ request }) {
-        const identity = yield* CurrentOrganization;
-        const input = yield* decodeSyncRequest(request).pipe(
-          Effect.mapError((error) => badRequest(error.code, error.message)),
-        );
-        return yield* runtime
-          .runSync({ organizationId: identity.organizationId, userId: identity.user.id }, input)
-          .pipe(
-            Effect.catchTags({
-              SyncProtocolError: (error) => Effect.fail(protocolFailure(error)),
-              SyncDatabaseError: () =>
-                Effect.fail(
-                  serviceUnavailable(
-                    "SYNC_UNAVAILABLE",
-                    "Synchronization is temporarily unavailable.",
-                  ),
-                ),
-            }),
+    return handlers
+      .handleRaw(
+        "exchange",
+        Effect.fn(function* ({ request }) {
+          const identity = yield* CurrentOrganization;
+          const input = yield* decodeSyncRequest(request).pipe(
+            Effect.mapError((error) => badRequest(error.code, error.message)),
           );
-      }),
-    );
+          return yield* runtime
+            .runSync({ organizationId: identity.organizationId, userId: identity.user.id }, input)
+            .pipe(
+              Effect.catchTags({
+                SyncProtocolError: (error) => Effect.fail(protocolFailure(error)),
+                SyncDatabaseError: () =>
+                  Effect.fail(
+                    serviceUnavailable(
+                      "SYNC_UNAVAILABLE",
+                      "Synchronization is temporarily unavailable.",
+                    ),
+                  ),
+              }),
+            );
+        }),
+      )
+      .handle(
+        "live",
+        Effect.fn(function* ({ query, request }) {
+          const identity = yield* CurrentOrganization;
+          if (request.headers.upgrade?.toLowerCase() !== "websocket")
+            return yield* Effect.fail(
+              upgradeRequired("INVALID_UPGRADE", "A WebSocket upgrade is required."),
+            );
+          if (query.organizationId && query.organizationId !== identity.organizationId)
+            return yield* Effect.fail(
+              forbidden("ORGANIZATION_MISMATCH", "The active organization does not match."),
+            );
+          if (!query.deviceId || query.deviceId.length > MAX_LIVE_IDENTIFIER_LENGTH)
+            return yield* Effect.fail(
+              badRequest("INVALID_DEVICE", "The sync device id is invalid."),
+            );
+          if (query.protocolVersion !== undefined && query.protocolVersion !== "2")
+            return yield* Effect.fail(
+              badRequest("UNSUPPORTED_PROTOCOL", "Protocol version 2 is required."),
+            );
+
+          return yield* runtime
+            .connectSyncLive({
+              organizationId: identity.organizationId,
+              userId: identity.user.id,
+              deviceId: query.deviceId,
+              authenticationExpiresAt: identity.session.expiresAt,
+            })
+            .pipe(Effect.orDie);
+        }),
+      );
   }),
 );

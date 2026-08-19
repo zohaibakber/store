@@ -16,6 +16,7 @@ import type { AuthSessionBridge } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 
 import { WebAuthBroker } from "./auth";
+import { openBrowserSyncSocket } from "./sync-socket";
 
 const DEVICE_ID_KEY = "tabaaq-web-device-id";
 
@@ -34,7 +35,10 @@ const dataDirectory = (target: WorkspaceTarget) =>
 
 const withStore = withStoreEffect;
 
-const workspaceStores: WorkspaceStoreAdapter = {
+const makeWorkspaceStores = (input: {
+  readonly baseUrl: string;
+  readonly getAccessToken: () => string | null;
+}): WorkspaceStoreAdapter => ({
   open: async (target) => {
     const baseConfig = {
       dataDir: dataDirectory(target),
@@ -46,7 +50,15 @@ const workspaceStores: WorkspaceStoreAdapter = {
       target._tag === "Authenticated"
         ? {
             ...baseConfig,
-            syncTransport: { exchange: target.exchange },
+            syncTransport: {
+              exchange: target.exchange,
+              openLive: openBrowserSyncSocket({
+                baseUrl: input.baseUrl,
+                organizationId: target.organizationId,
+                deviceId: target.deviceId,
+                getAccessToken: input.getAccessToken,
+              }),
+            },
             workspace: {
               organizationId: target.organizationId,
               userId: target.userId,
@@ -75,7 +87,7 @@ const workspaceStores: WorkspaceStoreAdapter = {
       dispose: () => runtime.dispose(),
     };
   },
-};
+});
 
 export interface WebWorkspace {
   readonly bridge: AuthSessionBridge;
@@ -85,9 +97,13 @@ export interface WebWorkspace {
 export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> => {
   const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
+  const auth = new WebAuthBroker(baseUrl);
   const workspace = new AuthenticatedWorkspace({
-    auth: new WebAuthBroker(baseUrl),
-    stores: workspaceStores,
+    auth,
+    stores: makeWorkspaceStores({
+      baseUrl,
+      getAccessToken: () => auth.accessToken,
+    }),
     deviceId: loadDeviceId(),
     events: {
       publishSnapshot: (snapshot) => {

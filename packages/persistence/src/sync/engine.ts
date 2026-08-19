@@ -16,6 +16,7 @@ import type { PersistenceConfig, Workspace } from "../config";
 import type { StoreDatabase, StoreTransaction } from "../database/client";
 import { PersistenceError, SyncTransportError, mapPersistenceError } from "../errors";
 import { emptyOutboxHealth, makeOutbox } from "./outbox";
+import { makeSyncSocketSession } from "./session";
 
 export { QUARANTINE_ATTEMPTS, retryDelayMillis } from "./outbox";
 
@@ -182,9 +183,16 @@ export const makeSyncEngine = (
       ...initialHealth,
     };
 
+    const session = config.syncTransport?.openLive
+      ? yield* makeSyncSocketSession({
+          open: config.syncTransport.openLive,
+          httpExchange: config.syncTransport.exchange,
+        })
+      : undefined;
+    const exchange = session?.exchange ?? config.syncTransport?.exchange;
+
     const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* () {
-      const transport = config.syncTransport;
-      if (!transport)
+      if (!exchange)
         return { cursor: initialState?.cursor ?? 0, hasMore: false, moreLocalWork: false };
       const localState = yield* database.query.syncState
         .findFirst({ where: { organizationId: workspace.organizationId } })
@@ -222,18 +230,13 @@ export const makeSyncEngine = (
         ? { ...platformRequest, clientVersion: config.clientVersion }
         : platformRequest;
       const attemptedAt = Date.now();
-      yield* Effect.all(
-        [
-          database
-            .update(syncState)
-            .set({ lastAttemptAt: attemptedAt })
-            .where(eq(syncState.organizationId, workspace.organizationId)),
-          outbox.markAttempt(selected.map((queued) => queued.operationId)),
-        ],
-        { concurrency: 1, discard: true },
-      ).pipe(mapPersistenceError("record sync attempt"));
+      yield* database
+        .update(syncState)
+        .set({ lastAttemptAt: attemptedAt })
+        .where(eq(syncState.organizationId, workspace.organizationId))
+        .pipe(mapPersistenceError("record sync attempt"));
 
-      const response = yield* Effect.suspend(() => transport.exchange(request)).pipe(
+      const response = yield* Effect.suspend(() => exchange(request)).pipe(
         Effect.tapError((error) =>
           Effect.logWarning("Sync exchange failed", error).pipe(
             Effect.annotateLogs({
@@ -335,7 +338,11 @@ export const makeSyncEngine = (
               .update(syncState)
               .set({ lastAttemptAt: Date.now(), lastError: error.message })
               .where(eq(syncState.organizationId, workspace.organizationId)),
-            outbox.markFailure(error.message),
+            outbox.markFailure(error.message, {
+              incrementAttempts: !(
+                error.cause instanceof SyncTransportError && error.cause.retryable
+              ),
+            }),
           ],
           { concurrency: 1, discard: true },
         );
@@ -365,7 +372,8 @@ export const makeSyncEngine = (
             message: `Synchronization did not drain after ${maximumRounds} exchanges`,
           }),
       },
-      safetyPollIntervalMillis: config.resyncIntervalMillis ?? 3_000,
+      live: session ? { events: session.events } : undefined,
+      safetyPollIntervalMillis: config.resyncIntervalMillis ?? (session ? 300_000 : 3_000),
       exchangeRetryBaseMillis: config.exchangeRetryBaseMillis,
     });
 

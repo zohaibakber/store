@@ -5,6 +5,7 @@ The Cloudflare Worker exposes:
 - `GET /api/health`
 - `GET /api/auth/session` (and `GET /api/auth/get-session`)
 - `POST /api/sync`
+- `GET /api/sync/live` (WebSocket upgrade)
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
@@ -13,8 +14,9 @@ Clerk verifies session JWTs (`Authorization: Bearer`). D1 `AUTH_DB` keeps only a
 Durable Object names. Each organization's inventory and sync log live in its own
 SQLite-backed Durable Object through `ORGANIZATION_STORE`, named by the store
 organization id, never the Clerk org id.
-The desktop communicates through authenticated HTTP. Foreground clients poll
-`/api/sync` on a short interval. HTTP remains the data and correctness path.
+The desktop communicates through authenticated HTTP and a hibernated WebSocket.
+Foreground clients exchange on the socket when it is up and fall back to `POST
+/api/sync`. HTTP remains the identical Durable Object transaction.
 
 ## Infrastructure
 
@@ -173,11 +175,18 @@ organization pages with `nextCursor`, `headCursor`, and `hasMore`.
 future retention decisions.
 
 The live route uses the same Clerk session and active-membership middleware as
-HTTP sync. After authorization, the Worker forwards only trusted organization,
-user, device, and session expiry metadata to the organization's Durable Object.
-The object accepts the socket through the hibernation API, serializes that
-metadata as a socket attachment, and immediately sends a `hello` cursor. A
-successful sync transaction that applied new operations broadcasts an
-`invalidate` cursor after commit. Failed and duplicate-only transactions
-broadcast nothing. Clients reconnect with capped jittered backoff and always
-perform an HTTP pull after `hello`.
+HTTP sync. Browsers pass `access_token` on the upgrade query because they cannot
+set WebSocket headers; Electron sends `Authorization` and `electron-origin`.
+After authorization, the Worker forwards only trusted organization, user, device,
+and session expiry metadata to the organization's Durable Object. The object
+accepts the socket through the hibernation API, serializes that metadata as a
+socket attachment, and immediately sends a `hello` cursor.
+
+Client frames on that socket are `exchange` (protocol-v2 `SyncRequest`) and
+sparse `ping`. Server frames are `hello`, `invalidate`, `exchange-result`,
+`exchange-error`, and `pong`. A successful sync transaction that applied new
+operations broadcasts an `invalidate` cursor after commit, skipping the
+originating connection. Failed and duplicate-only transactions broadcast
+nothing. Clients reconnect with capped jittered backoff. A hello always pulls.
+Inbox idempotency makes a timed-out socket exchange followed by HTTP retry
+safe.
