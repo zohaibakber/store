@@ -1,5 +1,5 @@
-import { decodeStoreError, encodeStoreError } from "@store/contracts/store-errors";
 import { decodeBatchId, decodeInvoiceId, decodeProductId } from "@store/contracts";
+import { decodeStoreError, encodeStoreError } from "@store/contracts/store-errors";
 import { expect, test } from "vitest";
 
 import {

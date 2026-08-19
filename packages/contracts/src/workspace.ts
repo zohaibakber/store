@@ -64,14 +64,17 @@ export const decodeAuthenticatedWorkspace = Schema.decodeUnknownSync(
 export const unauthenticatedWorkspace = (input: {
   readonly isOnline: boolean;
   readonly workspaceError?: string | null;
-}): UnauthenticatedWorkspaceSnapshot => ({
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline: input.isOnline,
-  ...(input.workspaceError === undefined ? {} : { workspaceError: input.workspaceError }),
-});
+}): UnauthenticatedWorkspaceSnapshot => {
+  const snapshot = {
+    status: "unauthenticated" as const,
+    user: null,
+    activeOrganization: null,
+    organizations: [],
+    isOnline: input.isOnline,
+  };
+  if (input.workspaceError === undefined) return snapshot;
+  return { ...snapshot, workspaceError: input.workspaceError };
+};
 
 export const withWorkspaceOnline = (
   snapshot: WorkspaceSnapshot,

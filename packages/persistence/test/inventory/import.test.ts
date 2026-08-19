@@ -101,7 +101,9 @@ test("large imports are committed locally once and queued in bounded sync operat
 
   await withTestStore(async ({ dataDir, runtime }) => {
     await expect(
-      runtime.runPromise(store((store) => store.importInventory({ categoryId: generalCategoryId, lines }))),
+      runtime.runPromise(
+        store((store) => store.importInventory({ categoryId: generalCategoryId, lines })),
+      ),
     ).resolves.toEqual({ createdProducts: 100, createdBatches: 100 });
 
     expect(await runtime.runPromise(store((store) => store.listProducts))).toHaveLength(100);
