@@ -224,7 +224,7 @@ function InvoiceCreateProvider({
       toastManager.add({
         title:
           storeError?._tag === "PersistenceError"
-            ? "Saving failed locally — your data is safe, try again."
+            ? "Saving failed locally. Your data is safe, try again."
             : storeErrorMessage(error),
         type: "error",
       });

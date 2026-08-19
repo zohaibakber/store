@@ -522,7 +522,7 @@ test("a newer remote product change replaces the local row", async () => {
 });
 
 // The local invoice already created the counter row, so the remote invoice
-// takes the conflict branch — the path where a Postgres `greatest` would have
+// takes the conflict branch, the path where a Postgres `greatest` would have
 // thrown "no such function" against SQLite.
 test("a remote invoice advances the local invoice counter past its own number", async () => {
   await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {

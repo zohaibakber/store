@@ -73,7 +73,7 @@ function appIconPath() {
     : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
 }
 // Packaged apps ship no .env, so the API URL is baked in at build time via
-// `import.meta.env` (dot access on purpose — Vite inlines it); the bracket
+// `import.meta.env` (dot access on purpose, Vite inlines it); the bracket
 // process.env reads stay as runtime overrides for local development.
 const API_BASE_URL = fallbackIfBlank(
   process.env["STORE_API_URL"] ||

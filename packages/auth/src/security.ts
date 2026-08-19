@@ -25,7 +25,7 @@ const unquote = (value: string) =>
  * Splits the `AUTH_TRUSTED_ORIGINS` variable. Commas are the documented
  * separator; whitespace separates too, because a space-separated list is a
  * common way to write one and would otherwise arrive as a single unusable
- * entry. Wrapping quotes are stripped — shells and CI variable editors keep
+ * entry. Wrapping quotes are stripped. Shells and CI variable editors keep
  * them in the value.
  */
 export const parseTrustedOrigins = (value: string | undefined) =>
@@ -101,8 +101,8 @@ const unusableSchemes = new Set(["about", "blob", "data", "file", "javascript", 
 type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly reason: string };
 
 /**
- * CORS and native clients never parse a configured trusted origin as a URL —
- * they pattern match it. Documented values therefore include forms `new URL`
+ * CORS and native clients never parse a configured trusted origin as a URL.
+ * They pattern match it. Documented values therefore include forms `new URL`
  * rejects outright: bare hosts (`app.example.com`), host wildcards
  * (`*.example.com`), and native scheme patterns (`exp://192.168.*.*:*`).
  * Classify an entry rather than parsing it, and drop what cannot be used, so
@@ -134,7 +134,7 @@ const classifyTrustedOrigin = (
 
   if (wildcarded.test(host)) {
     // `*` or `*.com` would trust origins this deployment does not own. Require
-    // two literal labels — what `*.example.com` has — unless it is a loopback
+    // two literal labels, what `*.example.com` has, unless it is a loopback
     // pattern such as `localhost:*` on a local deployment.
     const labels = host.replace(/:.*$/, "").split(".");
     const literal = labels.filter((label) => !wildcarded.test(label));
@@ -201,8 +201,8 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
   );
   const mobileProtocol = protocol(input.mobileProtocol, "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL);
 
-  // The base URL is the deployment's own identity rather than operator input —
-  // `apps/server/infra.ts` states it literally — so it stays fatal.
+  // The base URL is the deployment's own identity rather than operator input.
+  // `apps/server/infra.ts` states it literally, so it stays fatal.
   const baseURL = secureWebOrigin(input.baseURL, "API base URL");
   const secureCookies = baseURL.startsWith("https://");
 
@@ -286,7 +286,7 @@ export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyAr
 /**
  * Clerk publishable keys encode the Frontend API host after the second `_`.
  * That host (for example `clerk.example.com` or `foo.clerk.accounts.dev`) is
- * what Electron CSP must allow — not the Account Portal host.
+ * what Electron CSP must allow, not the Account Portal host.
  */
 export const clerkFrontendApiHostnameFromPublishableKey = (publishableKey: string): string => {
   try {

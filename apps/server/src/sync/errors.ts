@@ -7,7 +7,7 @@ export class SyncDatabaseError extends Schema.TaggedError<SyncDatabaseError>()(
 
 /**
  * Every protocol failure the sync endpoint can report. Keeping this closed is
- * what lets the HTTP status mapping be checked for exhaustiveness — an added
+ * what lets the HTTP status mapping be checked for exhaustiveness. An added
  * code fails to compile until it is given a status.
  */
 export const SyncProtocolCode = Schema.Literals([

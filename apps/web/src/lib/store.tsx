@@ -6,7 +6,7 @@ export type Store = OfflineStoreApi;
 export const electronStore = (): Store => {
   const bridge = globalThis.window?.offlineStore;
   if (!bridge)
-    throw new Error("The offline store bridge is unavailable — is the preload script loaded?");
+    throw new Error("The offline store bridge is unavailable. Is the preload script loaded?");
   return bridge;
 };
 

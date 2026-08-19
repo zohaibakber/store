@@ -30,8 +30,8 @@ export class SyncTransportError extends Schema.TaggedError<SyncTransportError>()
   },
 ) {}
 
-// Reaches the desktop UI, so a bare `String(cause)` — "[object Object]" for
-// any thrown non-Error — is not good enough.
+// Reaches the desktop UI, so a bare `String(cause)` is not good enough.
+// Thrown non-Errors become "[object Object]".
 const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) return cause.message;
   if (Schema.is(Schema.String)(cause)) return cause;
@@ -44,7 +44,7 @@ const messageOf = (cause: unknown): string => {
       const serialized = JSON.stringify(cause);
       if (serialized !== undefined && serialized !== "{}") return serialized;
     } catch {
-      // Circular or non-serializable — fall through to String().
+      // Circular or non-serializable. Fall through to String().
     }
   }
   return String(cause);

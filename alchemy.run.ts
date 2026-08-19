@@ -11,7 +11,7 @@ import { Website } from "./apps/web/infra";
 
 /**
  * Composition root for the Cloudflare stack. Resources live next to the code
- * that owns them — the API Worker in `apps/server/infra.ts`, the Vite SPA in
+ * that owns them. The API Worker in `apps/server/infra.ts`, the Vite SPA in
  * `apps/web/infra.ts`, the auth database in `packages/db/src/auth/infra.ts`.
  *
  * Every deploy targets an explicit stage:
@@ -40,10 +40,10 @@ export default Alchemy.Stack(
         repository: "store",
         issueNumber: Number(process.env.PULL_REQUEST),
         body: Output.interpolate`
-          ## Preview deployed
+          ## Preview is up
 
-          **App:** ${website.url}
-          **API:** ${api.url} — health at \`/api/health\`
+          App: ${website.url}
+          API: ${api.url} (health at \`/api/health\`)
 
           Preview stages share the Website origin: the React SPA is deployed
           with \`Cloudflare.Website.Vite\`, and \`/api/*\` is proxied to the API
@@ -51,12 +51,12 @@ export default Alchemy.Stack(
           Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
 
           ---
-          _This comment updates automatically with each push._
+          This comment updates on each push.
         `,
       });
     }
 
-    // Non-secret outputs only — never surface CLERK_SECRET_KEY here.
+    // Non-secret outputs only. Never print CLERK_SECRET_KEY here.
     return {
       stage,
       websiteUrl: website.url,

@@ -42,7 +42,7 @@ test("an available event is withheld unless nothing is downloading", () => {
   expect(forwardsToRenderer("downloaded", available)).toBe(false);
 });
 
-test("an error during a download is withheld — the download reports it itself", () => {
+test("an error during a download is withheld. The download reports it itself", () => {
   const failed: UpdaterEvent = { type: "error", message: "boom", retrying: false };
   expect(forwardsToRenderer("idle", failed)).toBe(true);
   expect(forwardsToRenderer("downloading", failed)).toBe(false);

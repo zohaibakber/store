@@ -12,7 +12,7 @@ const rootDir = import.meta.dirname;
  * and ships client assets. Deep links fall back to `index.html`.
  *
  * Production attaches this Worker to `PRODUCTION_DOMAIN` (apex). The API Worker
- * attaches to `api.<domain>` in the same deploy — the hostnames no longer
+ * attaches to `api.<domain>` in the same deploy. The hostnames no longer
  * collide, so there is no two-pass detach. Locally, `/api/*` is still proxied
  * to the API Worker so `vp run dev` stays same-origin. Production browsers
  * call `VITE_API_URL` (the API host) with Clerk Bearer tokens.
@@ -37,7 +37,7 @@ export const Website = Cloudflare.Website.Vite(
         notFoundHandling: "single-page-application" as const,
         runWorkerFirst: ["/api", "/api/*"],
       },
-      // Capped by the workerd that `alchemy dev` runs locally — keep in step
+      // Capped by the workerd that `alchemy dev` runs locally. Keep in step
       // with the API Worker. See apps/server/infra.ts.
       compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
       placement: { mode: "smart" as const },

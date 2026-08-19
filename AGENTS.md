@@ -34,54 +34,54 @@ live in `apps/web/src/styles.css` (Tailwind v4 `@theme` block).
 These are conventions, not constraints: the `@theme` block defines the font
 family, but nothing clamps weights or sizes. Following them is on you.
 
-- **Font**: Inter (`"Inter Variable"`, loaded via `@fontsource-variable/inter`).
+- **Font.** Inter (`"Inter Variable"`, loaded via `@fontsource-variable/inter`).
   JetBrains Mono (`"JetBrains Mono Variable"`, loaded via
   `@fontsource-variable/jetbrains-mono`) is for code only.
-- **Weights**: regular (400) and medium (500) only — medium is the maximum.
+- **Weights.** Regular (400) and medium (500) only. Medium is the maximum.
   Avoid `font-semibold` and `font-bold`. Nothing prevents them, so a few uses
   have crept in; don't add more.
-- **Font sizes**: 12px and 14px are the base sizes (body text is 14px, small
+- **Font sizes.** 12px and 14px are the base sizes (body text is 14px, small
   text is 12px). The scale is 12 / 14 / 16 / 18 / 24. Use Tailwind utilities:
   `text-xs` (12), `text-sm` (14, body default), `text-base` (16), `text-lg`
   (18), `text-2xl` (24). Avoid `text-xl` and `text-3xl`+ and don't introduce
   new sizes.
-- **Icons**: Hugeicons, via `<HugeiconsIcon icon={...} />` from
+- **Icons.** Hugeicons, via `<HugeiconsIcon icon={...} />` from
   `@hugeicons/react` with icons from `@hugeicons/core-free-icons`.
 
 ## UI components
 
-`apps/web/src/components/ui` is a registry surface managed by
-`components.json`, not application code. Primitives there may have no importer
-yet — that is inventory, not dead code, so don't delete them for being unused.
+`apps/web/src/components/ui` is a registry managed by `components.json`, not
+application code. Primitives there may have no importer yet. That is inventory,
+not dead code, so don't delete them for being unused.
 
 ## Cursor Cloud specific instructions
 
 Toolchain (Bun `1.3.14` + the Vite+ `vp` CLI) is preinstalled in the VM and on
-`PATH` in login shells. The startup update script runs `vp install` and ensures
-the Electron binary is present. Standard commands are already documented above:
+`PATH` in login shells. The startup update script runs `vp install` and fetches
+the Electron binary. Standard commands are already documented above:
 `vp install`, `vp check`, `vp test`, and `vp build` (run from the repo root;
 Turborepo fans them out per package).
 
-- **Electron binary (non-obvious):** Bun does not run Electron's `postinstall`,
-  so `bun install`/`vp install` alone leave `apps/desktop/node_modules/electron`
-  without its `dist/` binary. It must be fetched via that package's
-  `install.js` (the update script does this with `bun`). If `vp dev` for the
-  desktop errors that Electron is missing, run
+- **Electron binary.** Bun does not run Electron's `postinstall`, so
+  `bun install`/`vp install` alone leave `apps/desktop/node_modules/electron`
+  without its `dist/` binary. Fetch it via that package's `install.js` (the
+  update script does this with `bun`). If `vp dev` for the desktop errors that
+  Electron is missing, run
   `bun apps/desktop/node_modules/electron/install.js`.
-- **Running the desktop app (flagship):** `cd apps/desktop && vp dev` starts the
-  Vite dev server (`:5173`) and launches Electron. In the headless VM you must
-  set `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run)
-  and `DISPLAY=:1`. `ERROR:dbus/...` lines in the log are harmless.
-- **Backend (`apps/server`) needs Cloudflare credentials:** it runs via
-  `bun alchemy dev --stage dev --env-file .env.dev` on port `:8787`, but Alchemy
-  stores state remotely and binds real dev-stage D1 + Durable Objects — there is
-  **no local emulation**. It fails fast without `CLOUDFLARE_API_TOKEN` /
+- **Desktop app.** `cd apps/desktop && vp dev` starts the Vite dev server
+  (`:5173`) and launches Electron. In the headless VM you must set
+  `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
+  `DISPLAY=:1`. `ERROR:dbus/...` lines in the log are harmless.
+- **Backend.** `apps/server` runs via
+  `bun alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
+  stores state remotely and binds real dev-stage D1 + Durable Objects. There is
+  no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and also needs a `.env.dev` containing
-  `CLERK_SECRET_KEY` (copy `.env.example`; use a different Clerk
-  instance or secret per stage).
-- **Auth gating:** the desktop renderer is fully gated behind sign-in/sign-up,
-  which call the backend API. So exercising the authenticated UI end-to-end
-  (sign up → create organization → sync) requires the backend running with the
+  `CLERK_SECRET_KEY` (copy `.env.example`; use a different Clerk instance or
+  secret per stage).
+- **Auth gating.** The desktop renderer is fully gated behind sign-in/sign-up,
+  which call the backend API. Exercising the authenticated UI end-to-end (sign
+  up, create organization, sync) requires the backend running with the
   credentials above. Offline, the desktop still opens a local "Locked" libSQL
-  store; the core inventory engine lives in `@store/persistence` (`OfflineStore`)
-  and can be driven directly for verification without the backend.
+  store. The inventory engine lives in `@store/persistence` (`OfflineStore`) and
+  can be driven directly for verification without the backend.

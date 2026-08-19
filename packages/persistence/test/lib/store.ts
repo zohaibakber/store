@@ -31,8 +31,8 @@ export const authMigrationsFolder = path.resolve(
 type TestStoreConfig = Partial<Omit<PersistenceConfig, "dataDir">>;
 
 /**
- * A workspace starts with no categories — they are the shop's own, nothing is
- * seeded — so the fixture creates the one most tests write their products into,
+ * A workspace starts with no categories. They are the shop's own, nothing is
+ * seeded, so the fixture creates the one most tests write their products into,
  * as its own sync operation. Pass `categories` for a different set, or `[]` for
  * a genuinely empty workspace.
  */
@@ -84,7 +84,7 @@ export const withTestStore = <A>(
   }).pipe(Effect.scoped, Effect.runPromise);
 
 /**
- * A fresh workspace has no categories — they are the shop's own — so a test
+ * A fresh workspace has no categories. They are the shop's own, so a test
  * creates the ones it needs the way the app does. Names slug into the ids the
  * tests use: "Medicine" becomes `medicine`.
  */

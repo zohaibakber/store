@@ -363,7 +363,7 @@ describe("SyncDatabase with libSQL", () => {
   );
 
   // The counter row exists after the first invoice, so every later invoice
-  // takes the conflict branch — the path where a Postgres `greatest` would
+  // takes the conflict branch, the path where a Postgres `greatest` would
   // have thrown "no such function" against SQLite.
   it.effect("advances the invoice counter to the highest invoice number applied", () =>
     withDatabase(({ database, exchange }) =>

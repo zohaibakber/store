@@ -21,7 +21,7 @@ export interface Workspace {
 export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspace, Workspace>()(
   "@store/persistence/AuthenticatedWorkspace",
 ) {
-  /** The workspace a locked — that is, signed-out — store runs under. */
+  /** The workspace a locked, signed-out store runs under. */
   static readonly locked: Workspace = {
     organizationId: "local",
     userId: "local",

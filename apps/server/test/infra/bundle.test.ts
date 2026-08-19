@@ -9,7 +9,7 @@ const authDatabaseSource = `${repoRoot}packages/db/src/auth/infra.ts`;
 /**
  * Bundles the API Worker the way a deploy does: `__ALCHEMY_RUNTIME__` folded to
  * `true` so plan-only branches become dead code, then DCE. The Cloudflare
- * plugin is left out — nothing here depends on its rewrites, and the runtime
+ * plugin is left out. Nothing here depends on its rewrites, and the runtime
  * modules are external.
  */
 const bundleWorker = async () => {

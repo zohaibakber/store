@@ -255,7 +255,7 @@ export function CategorySettings({ categories }: { categories: ReadonlyArray<Cat
             </EmptyMedia>
             <EmptyTitle>No categories yet</EmptyTitle>
             <EmptyDescription>
-              Add the ones this shop uses — products are filed under them.
+              Add the ones this shop uses. Products are filed under them.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

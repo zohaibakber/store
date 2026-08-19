@@ -58,7 +58,7 @@ const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as 
  *
  * `ORGANIZATION_STORE` Durable Object names are the store organization ids
  * (legacy Better Auth org ids when a Clerk org has been bound). Do not rename
- * the class or switch `getByName` to Clerk org ids — that would orphan existing
+ * the class or switch `getByName` to Clerk org ids. That would orphan existing
  * sqlite.
  */
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}

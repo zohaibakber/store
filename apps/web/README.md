@@ -23,11 +23,11 @@ That still listens on `:5174` and uses Vite's `/api` proxy to `:8787`.
 ## Production
 
 `bun alchemy deploy` builds this Vite project and deploys it as a Cloudflare
-Worker with static assets — there is no separate CI `vite build` step. Deep
+Worker with static assets. There is no separate CI `vite build` step. Deep
 links fall back to `index.html` (`notFoundHandling: "single-page-application"`).
-The production site hostname comes from `PRODUCTION_DOMAIN`; the API lives on
+The production site hostname comes from `PRODUCTION_DOMAIN`. The API lives on
 `api.<PRODUCTION_DOMAIN>` (`VITE_API_URL`). Local `vp run dev` still proxies
 `/api/*` to `:8787`. Production browsers call the API origin with Clerk Bearer
-tokens (CORS allows the site origin via `AUTH_TRUSTED_ORIGINS`). The web CSP keeps
+tokens. CORS allows the site origin via `AUTH_TRUSTED_ORIGINS`. The web CSP keeps
 `https://*.clerk.accounts.dev` and adds the production Clerk Frontend API host
 derived at build from `VITE_CLERK_PUBLISHABLE_KEY` (or `VITE_CLERK_FAPI_URL`).
