@@ -1,13 +1,13 @@
 import path from "node:path";
 
-import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react";
 import { searchForWorkspaceRoot, type Plugin } from "vite";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
+import { oxcReactCompiler } from "../web/vite-plugin-oxc-react-compiler";
 import packageJson from "./package.json";
 
 const webRoot = path.resolve(__dirname, "../web");
@@ -79,7 +79,7 @@ export default defineConfig({
     }),
     tailwindcss(),
     react(),
-    babel({ presets: [reactCompilerPreset()] }),
+    oxcReactCompiler(),
     electron({
       main: {
         entry: path.join(__dirname, "electron/main.ts"),
