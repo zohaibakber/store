@@ -12,11 +12,11 @@
     "test": "vitest run --root ../.. packages/auth/test"
   },
   "dependencies": {
-    "@clerk/backend": "^3.16.5"
+    "@clerk/backend": "^3.16.8"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250109.0",
-    "@types/node": "^24.13.3",
+    "@cloudflare/workers-types": "^5.20260819.1",
+    "@types/node": "^26.2.0",
     "typescript": "catalog:",
     "vitest": "^4.1.10"
   }

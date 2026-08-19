@@ -34,7 +34,7 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260818.1",
+    "@cloudflare/workers-types": "^5.20260819.1",
     "@effect/platform-bun": "4.0.0-rc.110",
     "@effect/platform-node": "4.0.0-rc.110",
     "@oxlint/plugins": "1.78.0",
@@ -42,10 +42,10 @@
     "alchemy": "catalog:",
     "effect": "4.0.0-rc.110",
     "oxlint": "1.78.0",
-    "turbo": "^2.10.10",
+    "turbo": "^2.10.11",
     "vite": "^0.2.9",
     "vite-plus": "^0.2.9",
-    "wrangler": "^4.123.0"
+    "wrangler": "^4.124.0"
   },
   "overrides": {
     "@effect/platform-node-shared": "4.0.0-rc.110",

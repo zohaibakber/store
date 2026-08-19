@@ -23,13 +23,13 @@
     "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
-    "@noble/hashes": "1.8.0",
+    "@noble/hashes": "2.3.0",
     "@store/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.2.0",
     "typescript": "catalog:",
     "vitest": "^4.1.10"
   }
