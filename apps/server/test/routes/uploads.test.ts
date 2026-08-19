@@ -29,11 +29,8 @@ const extraction = {
 
 const markdownFor = (documents: ReadonlyArray<{ name: string }>) =>
   documents.map((document) => ({
-    id: document.name,
+    kind: "ok" as const,
     name: document.name,
-    mimeType: "application/pdf",
-    format: "markdown" as const,
-    tokens: 8,
     data: "| item | qty |\n| --- | --- |\n| Paracetamol | 4 |",
   }));
 
@@ -145,10 +142,8 @@ describe("invoice upload extraction", () => {
     const ai = {
       toMarkdown: vi.fn(async (documents: ReadonlyArray<{ name: string }>) =>
         documents.map((document) => ({
-          id: document.name,
+          kind: "error" as const,
           name: document.name,
-          mimeType: "application/pdf",
-          format: "error" as const,
           error: "corrupt document",
         })),
       ),

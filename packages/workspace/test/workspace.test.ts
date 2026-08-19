@@ -1,4 +1,8 @@
-import type { WorkspaceSnapshot } from "@store/contracts";
+import {
+  decodeAuthenticatedWorkspace,
+  unauthenticatedWorkspace,
+  type WorkspaceSnapshot,
+} from "@store/contracts";
 import { expect, test } from "vitest";
 
 import {
@@ -8,25 +12,20 @@ import {
   type WorkspaceStoreAdapter,
 } from "../src/workspace";
 
-const authenticated = (organizationId: string): WorkspaceSnapshot => ({
-  status: "authenticated",
-  user: { id: "user-1", name: "Owner", email: "owner@example.com" },
-  activeOrganization: {
-    id: organizationId,
-    name: `Store ${organizationId}`,
-    role: "owner",
-  },
-  organizations: [],
-  isOnline: true,
-});
+const authenticated = (organizationId: string): WorkspaceSnapshot =>
+  decodeAuthenticatedWorkspace({
+    status: "authenticated",
+    user: { id: "user-1", name: "Owner", email: "owner@example.com" },
+    activeOrganization: {
+      id: organizationId,
+      name: `Store ${organizationId}`,
+      role: "owner",
+    },
+    organizations: [],
+    isOnline: true,
+  });
 
-const unauthenticated: WorkspaceSnapshot = {
-  status: "unauthenticated",
-  user: null,
-  activeOrganization: null,
-  organizations: [],
-  isOnline: true,
-};
+const unauthenticated: WorkspaceSnapshot = unauthenticatedWorkspace({ isOnline: true });
 
 const makeAuth = (
   initial: WorkspaceSnapshot,
@@ -62,7 +61,6 @@ const makeStores = (events: string[], failOrganizationId?: string): WorkspaceSto
         events.push(`sync:${label}`);
         return {
           phase: "idle",
-          configured: label !== "locked",
           lastSyncedAt: Date.now(),
           message: "Local and cloud data are in sync",
           pendingOperations: 0,
@@ -93,7 +91,9 @@ const makeWorkspace = (
     deviceId: "device-1",
     events: {
       publishSnapshot: (snapshot) =>
-        events.push(`publish:${snapshot.activeOrganization?.id ?? snapshot.status}`),
+        events.push(
+          `publish:${snapshot.status === "authenticated" ? (snapshot.activeOrganization?.id ?? snapshot.status) : snapshot.status}`,
+        ),
       publishSyncStatus: () => undefined,
     },
   });
@@ -135,7 +135,11 @@ test("serializes competing session adoptions", async () => {
   releaseFirst?.();
   await Promise.all([first, second]);
   expect(events.indexOf("auth:b:start")).toBeGreaterThan(events.indexOf("publish:a"));
-  expect(workspace.snapshot.activeOrganization?.id).toBe("b");
+  expect(
+    workspace.snapshot.status === "authenticated"
+      ? workspace.snapshot.activeOrganization?.id
+      : undefined,
+  ).toBe("b");
 
   await workspace.dispose();
 });

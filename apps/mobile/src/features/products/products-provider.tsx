@@ -32,12 +32,19 @@ type ProductsData = {
   categories: ReadonlyArray<MobileCategory>;
 };
 
-type ProductsStatus = {
-  loading: boolean;
-  refreshing: boolean;
-  error: string | null;
-  lastUpdatedAt: Date | null;
-};
+type ProductsStatus =
+  | { readonly _tag: "Loading" }
+  | {
+      readonly _tag: "Ready";
+      readonly lastUpdatedAt: Date | null;
+      readonly refreshing: boolean;
+    }
+  | {
+      readonly _tag: "Error";
+      readonly error: string;
+      readonly lastUpdatedAt: Date | null;
+      readonly refreshing: boolean;
+    };
 
 type ProductsActions = {
   refresh: () => Promise<void>;
@@ -166,10 +173,11 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
   }, [refresh]);
 
   const data = useMemo(() => ({ products, categories }), [categories, products]);
-  const status = useMemo(
-    () => ({ loading, refreshing, error, lastUpdatedAt }),
-    [error, lastUpdatedAt, loading, refreshing],
-  );
+  const status = useMemo((): ProductsStatus => {
+    if (loading) return { _tag: "Loading" };
+    if (error) return { _tag: "Error", error, lastUpdatedAt, refreshing };
+    return { _tag: "Ready", lastUpdatedAt, refreshing };
+  }, [error, lastUpdatedAt, loading, refreshing]);
   const actions = useMemo(
     () => ({ refresh, saveScannedProduct, saveBatchDetails, updateBatchQuantity }),
     [refresh, saveBatchDetails, saveScannedProduct, updateBatchQuantity],
@@ -197,6 +205,13 @@ export function useProductData() {
 export function useProductStatus() {
   return useRequiredContext(ProductsStatusContext, "useProductStatus");
 }
+
+export const productStatusView = (status: ProductsStatus) => ({
+  loading: status._tag === "Loading",
+  refreshing: status._tag !== "Loading" && status.refreshing,
+  error: status._tag === "Error" ? status.error : null,
+  lastUpdatedAt: status._tag === "Loading" ? null : status.lastUpdatedAt,
+});
 
 export function useProductActions() {
   return useRequiredContext(ProductsActionsContext, "useProductActions");

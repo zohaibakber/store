@@ -6,7 +6,9 @@ import {
   Trash2,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { ProductId } from "@store/contracts";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
 import { ProductVisibilityCard } from "@/components/products/visibility";
@@ -37,7 +39,7 @@ import { useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/products/$productId")({
   loader: async ({ context, params }) => {
-    const input = { id: params.productId };
+    const input = { id: Schema.decodeUnknownSync(ProductId)(params.productId) };
     const [product, movements] = await Promise.all([
       context.store.getProduct(input),
       context.store.listStockMovements(input),

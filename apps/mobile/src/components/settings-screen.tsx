@@ -9,6 +9,7 @@ import {
   useProductActions,
   useProductData,
   useProductStatus,
+  productStatusView,
 } from "@/features/products/products-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { mobileApplicationId } from "@/lib/auth-client";
@@ -24,7 +25,7 @@ export function SettingsScreen() {
   const { user } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const { products } = useProductData();
-  const { refreshing, error, lastUpdatedAt } = useProductStatus();
+  const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [background, muted, danger] = useThemeColor(["background", "muted", "danger"]);
   const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";

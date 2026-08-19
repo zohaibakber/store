@@ -49,7 +49,6 @@ test("product CRUD remains available without sync configuration", async () => {
       await runtime.runPromise(store((store) => store.deleteProduct(created.id)));
       expect(await runtime.runPromise(store((store) => store.listProducts))).toEqual([]);
       expect(await runtime.runPromise(store((store) => store.getSyncStatus))).toMatchObject({
-        configured: false,
         phase: "local-only",
       });
     },

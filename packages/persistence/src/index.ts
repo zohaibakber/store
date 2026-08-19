@@ -17,16 +17,18 @@ export {
 } from "./errors";
 export { OfflineStore, storeLayer } from "./service";
 
-export const layer = (config: PersistenceConfig) =>
-  storeLayer({
+export const layer = (config: PersistenceConfig) => {
+  const migrationsFolder = config.migrationsFolder;
+  return storeLayer({
     ...config,
     applySchema:
       config.applySchema ??
-      (config.migrationsFolder
+      (migrationsFolder
         ? (database) =>
             migrate(database, {
-              migrationsFolder: config.migrationsFolder!,
+              migrationsFolder,
               migrationsTable: MIGRATIONS_TABLE,
             }).pipe(mapPersistenceError("migrate database"))
         : undefined),
   }).pipe(Layer.provide(nodeClientLayer(config)));
+};

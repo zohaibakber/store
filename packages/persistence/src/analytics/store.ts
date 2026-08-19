@@ -1,7 +1,8 @@
-import type { DashboardAnalytics } from "@store/contracts";
+import { DashboardAnalytics } from "@store/contracts";
 import { batches, invoices, invoiceItems, products } from "@store/db/local/schema";
 import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { Workspace } from "../config";
 import type { StoreDatabase } from "../database/client";
@@ -178,7 +179,7 @@ export const makeAnalyticsStore = (
           const revenue30d = sumSince(windowStart, (day) => day.revenue);
           const invoices30d = sumSince(windowStart, (day) => day.invoices);
 
-          return {
+          return Schema.decodeUnknownSync(DashboardAnalytics)({
             totals: {
               revenueToday: sumSince(todayStart, (day) => day.revenue),
               revenue7d: sumSince(sevenDayStart, (day) => day.revenue),
@@ -193,7 +194,7 @@ export const makeAnalyticsStore = (
             expiringBatches,
             lowStock,
             recentInvoices,
-          };
+          });
         },
       ),
       mapPersistenceError("load dashboard analytics"),

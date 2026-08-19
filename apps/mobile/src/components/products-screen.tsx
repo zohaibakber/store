@@ -14,6 +14,7 @@ import {
   useProductActions,
   useProductData,
   useProductStatus,
+  productStatusView,
 } from "@/features/products/products-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
@@ -35,7 +36,7 @@ const renderProduct: ListRenderItem<MobileProduct> = ({ item }) => (
 
 export function ProductsScreen() {
   const { products } = useProductData();
-  const { loading, refreshing, error } = useProductStatus();
+  const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [query, setQuery] = useState("");
   const [searchResetKey, setSearchResetKey] = useState(0);

@@ -57,8 +57,7 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
     line.pricingMode === "price" &&
     line.salePrice != null &&
     line.salePrice !== paisaToRupees(suggestedPaisa);
-  const adjusted = hasDiscount || hasPriceOverride;
-  const batchItems = [
+  const batchItems: ReadonlyArray<{ label: string; value: SaleLine["batchId"] }> = [
     { label: "Auto (earliest expiry)", value: AUTO_BATCH },
     ...line.product.batches
       .filter((batch) =>
@@ -86,13 +85,11 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
             {line.product.strength && (
               <span className="text-muted-foreground">{line.product.strength}</span>
             )}
-            {adjusted && (
-              <Badge variant="secondary">
-                {hasDiscount
-                  ? `-${line.discount}%`
-                  : formatPrice(Math.round(line.salePrice! * 100))}
-              </Badge>
-            )}
+            {hasDiscount ? (
+              <Badge variant="secondary">-{line.discount}%</Badge>
+            ) : hasPriceOverride && line.salePrice != null ? (
+              <Badge variant="secondary">{formatPrice(Math.round(line.salePrice * 100))}</Badge>
+            ) : null}
           </CollapsibleTrigger>
 
           <ControlGroup className="w-40">
@@ -148,9 +145,11 @@ function InvoiceCreateLine({ error, line }: { error: string | null; line: SaleLi
           <FramePanel className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel>Batch</FieldLabel>
-              <Select
+              <Select<SaleLine["batchId"]>
                 items={batchItems}
-                onValueChange={(value) => value && updateLine(line.key, { batchId: value })}
+                onValueChange={(value) => {
+                  if (value) updateLine(line.key, { batchId: value });
+                }}
                 value={line.batchId}
               >
                 <SelectTrigger aria-label="Batch">

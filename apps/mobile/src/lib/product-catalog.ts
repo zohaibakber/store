@@ -31,8 +31,8 @@ export function filterCatalog(
         product.aisle,
         ...product.batches.map((batch) => batch.batchNumber),
       ]
-        .filter(Boolean)
-        .some((value) => value!.toLocaleLowerCase().includes(term));
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .some((value) => value.toLocaleLowerCase().includes(term));
     })
     .sort((left, right) => {
       if (!term) return left.name.localeCompare(right.name);

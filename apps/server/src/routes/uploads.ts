@@ -38,6 +38,10 @@ const multipartFailure = (
       return Effect.fail(badRequest("INVALID_UPLOAD", "The upload body could not be read."));
     case "InternalError":
       return Effect.die(error);
+    default: {
+      const _exhaustive: never = error.reason._tag;
+      return _exhaustive;
+    }
   }
 };
 

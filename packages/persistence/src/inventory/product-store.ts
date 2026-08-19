@@ -14,6 +14,7 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
+import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/local/schema";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -311,7 +312,7 @@ export const makeProductStore = (
         }),
       )
       .pipe(mapPersistenceError("delete category"));
-    if (!deleted) return yield* CategoryNotFoundError.make({ id });
+    if (!deleted) return yield* CategoryNotFoundError.make({ id: decodeCategoryId(id) });
   });
 
   const listProducts = database
@@ -405,7 +406,7 @@ export const makeProductStore = (
     const row = yield* findProduct(workspace.organizationId, id).pipe(
       mapPersistenceError("find product"),
     );
-    if (!row) return yield* ProductNotFoundError.make({ id });
+    if (!row) return yield* ProductNotFoundError.make({ id: decodeProductId(id) });
     return toProduct(row);
   });
 
@@ -498,11 +499,11 @@ export const makeProductStore = (
         }),
       )
       .pipe(mapPersistenceError("update product"));
-    if (!updated) return yield* ProductNotFoundError.make({ id });
+    if (!updated) return yield* ProductNotFoundError.make({ id: decodeProductId(id) });
     const loaded = yield* findProduct(workspace.organizationId, id).pipe(
       mapPersistenceError("load updated product"),
     );
-    if (!loaded) return yield* ProductNotFoundError.make({ id });
+    if (!loaded) return yield* ProductNotFoundError.make({ id: decodeProductId(id) });
     return toProduct(loaded);
   });
 
@@ -534,7 +535,7 @@ export const makeProductStore = (
         }),
       )
       .pipe(mapPersistenceError("delete product"));
-    if (!deleted) return yield* ProductNotFoundError.make({ id });
+    if (!deleted) return yield* ProductNotFoundError.make({ id: decodeProductId(id) });
   });
 
   const createBatch = Effect.fn("OfflineStore.createBatch")(function* (input: CreateBatchInput) {
@@ -554,7 +555,7 @@ export const makeProductStore = (
     const product = yield* findProduct(workspace.organizationId, input.productId).pipe(
       mapPersistenceError("find product"),
     );
-    if (!product) return yield* ProductNotFoundError.make({ id: input.productId });
+    if (!product) return yield* ProductNotFoundError.make({ id: decodeProductId(input.productId) });
     const row = yield* mutation
       .run("create batch", (transaction, scope) =>
         Effect.gen(function* () {
@@ -698,7 +699,7 @@ export const makeProductStore = (
         }),
       )
       .pipe(mapPersistenceError("update batch"));
-    if (!updated) return yield* BatchNotFoundError.make({ id });
+    if (!updated) return yield* BatchNotFoundError.make({ id: decodeBatchId(id) });
     return toBatch(updated);
   });
 
@@ -749,7 +750,7 @@ export const makeProductStore = (
               let productId: string;
               if (line.productId) {
                 if (!knownProductIds.has(line.productId))
-                  return yield* ProductNotFoundError.make({ id: line.productId });
+                  return yield* ProductNotFoundError.make({ id: decodeProductId(line.productId) });
                 productId = line.productId;
               } else {
                 if (existingProductId) {

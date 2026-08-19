@@ -138,7 +138,10 @@ const upsertRemoteChange = (
           });
         return;
       }
-      default: {
+      case "category":
+      case "product":
+      case "batch":
+      case "invoiceItem": {
         const row = yield* decodeRow(
           syncEntityRows[change.entity].schema,
           change.row,
@@ -146,6 +149,11 @@ const upsertRemoteChange = (
         );
         yield* ensureIdentity(row, workspace, change);
         yield* upsertVersionedRow(transaction, workspace, change, row);
+        return;
+      }
+      default: {
+        const _exhaustive: never = change.entity;
+        return _exhaustive;
       }
     }
   });
@@ -169,7 +177,6 @@ export const makeSyncEngine = (
     const initialHealth = configured ? yield* outbox.health : emptyOutboxHealth;
     const initialStatus: SyncStatus = {
       phase: configured ? "starting" : "local-only",
-      configured,
       lastSyncedAt: initialState?.lastSuccessAt ?? null,
       message: configured ? "Starting synchronization…" : "Cloud sync is not configured",
       ...initialHealth,
@@ -310,7 +317,6 @@ export const makeSyncEngine = (
       const health = yield* outbox.health;
       return {
         phase: health.quarantined ? "blocked" : "idle",
-        configured: true,
         lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
         message: health.quarantined
           ? "Synchronization is blocked by a quarantined operation"

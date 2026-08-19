@@ -4,7 +4,8 @@ import { useAuth } from "@/lib/auth";
 import { CreateOrganization } from "@/lib/clerk-runtime";
 
 export function OrganizationSettings() {
-  const { snapshot } = useAuth();
+  const auth = useAuth();
+  const snapshot = auth.snapshot?.status === "authenticated" ? auth.snapshot : null;
   const organization = snapshot?.activeOrganization;
 
   return (
@@ -16,7 +17,7 @@ export function OrganizationSettings() {
       >
         <p className="truncate font-medium">{organization?.name ?? "No organization"}</p>
         <p className="text-sm text-muted-foreground">
-          {snapshot?.user?.email ?? "—"} is signed in to this workspace.
+          {snapshot?.user.email ?? "—"} is signed in to this workspace.
         </p>
       </FrameCard>
 

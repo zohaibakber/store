@@ -11,9 +11,10 @@ import {
   type ClerkVerifyConfig,
 } from "@store/auth";
 import { matchesTrustedOrigin } from "@store/auth/security";
-import type { WorkspaceSnapshot } from "@store/contracts";
+import { unauthenticatedWorkspace, WorkspaceSnapshot } from "@store/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { makeD1BindingStore } from "./bindings";
 
@@ -117,11 +118,12 @@ export const authenticateHeaders = (
         authFailure(cause instanceof Error ? cause.message : "Clerk user lookup failed."),
     });
 
-    const active = claims.clerkOrganizationId
+    const clerkOrganizationId = claims.clerkOrganizationId;
+    const active = clerkOrganizationId
       ? yield* Effect.tryPromise({
           try: () =>
             resolveMembership(services.database, {
-              clerkOrganizationId: claims.clerkOrganizationId!,
+              clerkOrganizationId,
               clerkUserId: claims.userId,
               email: profile.email,
               name: profile.name,
@@ -159,13 +161,7 @@ export const loadWorkspaceSnapshot = (
   Effect.gen(function* () {
     const session = yield* authenticateHeaders(headers, services);
     if (!session) {
-      return {
-        status: "unauthenticated" as const,
-        user: null,
-        activeOrganization: null,
-        organizations: [],
-        isOnline: true,
-      };
+      return unauthenticatedWorkspace({ isOnline: true });
     }
 
     const memberships = yield* Effect.tryPromise({
@@ -215,8 +211,8 @@ export const loadWorkspaceSnapshot = (
         ) ?? null)
       : null;
 
-    return {
-      status: "authenticated" as const,
+    return Schema.decodeUnknownSync(WorkspaceSnapshot)({
+      status: "authenticated",
       user: {
         id: session.user.id,
         name: session.user.name,
@@ -234,5 +230,5 @@ export const loadWorkspaceSnapshot = (
         : null,
       organizations,
       isOnline: true,
-    };
+    });
   });

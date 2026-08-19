@@ -1,4 +1,4 @@
-import type { Product } from "@store/contracts";
+import type { BatchId, Product } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useState, type ReactNode } from "react";
@@ -12,7 +12,7 @@ const AUTO_BATCH = "auto";
 interface SaleLine {
   key: number;
   product: Product;
-  batchId: string;
+  batchId: BatchId | typeof AUTO_BATCH;
   quantity: number | null;
   quantityUnit: "unit" | "pack";
   pricingMode: "price" | "discount";
@@ -203,16 +203,25 @@ function InvoiceCreateProvider({
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
   const completeSale = async () => {
+    if (!canSubmit || bulkDiscount == null) return;
+    const discount = bulkDiscount;
+    const items = [];
+    for (const line of lines) {
+      const quantity = line.quantity;
+      const salePrice = discountedSalePrice(line, discount);
+      if (quantity == null || salePrice == null) return;
+      items.push({
+        productId: line.product.id,
+        batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
+        quantity,
+        quantityType: line.quantityUnit,
+        salePrice,
+      });
+    }
     try {
       const invoice = await store.createInvoice({
         customerName: customerName.trim() || null,
-        items: lines.map((line) => ({
-          productId: line.product.id,
-          batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
-          quantity: line.quantity!,
-          quantityType: line.quantityUnit,
-          salePrice: discountedSalePrice(line, bulkDiscount!)!,
-        })),
+        items,
       });
       toastManager.add({
         title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,

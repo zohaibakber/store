@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { Batch, Category, Product } from "@store/contracts";
+import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -25,15 +26,15 @@ const syncMetadata = {
 };
 
 const category: Category = {
-  id: "medicine",
+  id: decodeCategoryId("medicine"),
   name: "Medicine",
   tracksPacks: true,
   ...syncMetadata,
 };
 
 const batch: Batch = {
-  id: "batch-1",
-  productId: "product-1",
+  id: decodeBatchId("batch-1"),
+  productId: decodeProductId("product-1"),
   batchNumber: "BN-typo",
   // Local midnight, the same convention the batch form reads and writes.
   expiresAt: new Date(2027, 0, 31).getTime(),
@@ -43,9 +44,9 @@ const batch: Batch = {
 };
 
 const product: Product = {
-  id: "product-1",
+  id: decodeProductId("product-1"),
   name: "Panadol",
-  categoryId: "general",
+  categoryId: decodeCategoryId("general"),
   aisle: null,
   composition: null,
   strength: null,

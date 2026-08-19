@@ -128,6 +128,10 @@ export const invokeStoreHandler = (
       return storeHandlers.getSyncStatus();
     case "sync":
       return storeHandlers.sync();
+    default: {
+      const _exhaustive: never = method;
+      return _exhaustive;
+    }
   }
 };
 

@@ -9,9 +9,9 @@ import { useClerkSignOut } from "@/lib/clerk-workspace";
 import { initials } from "@/lib/format";
 
 export function AccountSettings() {
-  const { snapshot } = useAuth();
+  const auth = useAuth();
   const clerkSignOut = useClerkSignOut();
-  const user = snapshot?.user;
+  const user = auth.snapshot?.status === "authenticated" ? auth.snapshot.user : undefined;
 
   return (
     <FrameCard description="The account signed in on this device." title="Account">

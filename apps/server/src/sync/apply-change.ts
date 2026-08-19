@@ -172,5 +172,9 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
         );
       return canonicalChange(change, 1, saved);
     }
+    default: {
+      const _exhaustive: never = change.entity;
+      return _exhaustive;
+    }
   }
 });

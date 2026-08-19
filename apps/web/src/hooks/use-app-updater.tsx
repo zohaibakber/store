@@ -87,8 +87,14 @@ export function useAppUpdater() {
             type: event.retrying ? "info" : "error",
           });
           break;
-        default:
+        case "checking":
+        case "not-available":
+        case "downloaded":
           break;
+        default: {
+          const _exhaustive: never = event;
+          void _exhaustive;
+        }
       }
     });
 

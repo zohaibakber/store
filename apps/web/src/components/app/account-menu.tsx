@@ -26,10 +26,11 @@ import { useClerkSignOut } from "@/lib/clerk-workspace";
 import { initials } from "@/lib/format";
 
 export function AccountMenu() {
-  const { snapshot } = useAuth();
+  const auth = useAuth();
   const { preference, setTheme } = useTheme();
   const clerkSignOut = useClerkSignOut();
-  if (!snapshot?.activeOrganization || !snapshot.user) return null;
+  const snapshot = auth.snapshot;
+  if (snapshot?.status !== "authenticated" || !snapshot.activeOrganization) return null;
   const { activeOrganization, user } = snapshot;
 
   return (

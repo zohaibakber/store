@@ -80,7 +80,8 @@ const protocolStatus = {
 } satisfies Record<SyncProtocolCode, 400 | 403 | 409 | 422 | 500>;
 
 const protocolFailure = (error: SyncProtocolError) => {
-  switch (protocolStatus[error.code]) {
+  const status = protocolStatus[error.code];
+  switch (status) {
     case 400:
       return badRequest(error.code, error.message);
     case 403:
@@ -91,6 +92,10 @@ const protocolFailure = (error: SyncProtocolError) => {
       return unprocessableEntity(error.code, error.message);
     case 500:
       return internalServerError(error.code, error.message);
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
   }
 };
 

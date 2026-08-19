@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { Category, Product } from "@store/contracts";
+import { decodeCategoryId, decodeProductId } from "@store/contracts";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -20,7 +21,7 @@ const metadata = {
 };
 
 const category = (id: string, name: string): Category => ({
-  id,
+  id: decodeCategoryId(id),
   name,
   tracksPacks: true,
   ...metadata,
@@ -31,7 +32,7 @@ const product = (
   name: string,
   details: Pick<Product, "aisle" | "composition" | "strength" | "category">,
 ): Product => ({
-  id,
+  id: decodeProductId(id),
   name,
   categoryId: details.category.id,
   unitsPerPack: 10,

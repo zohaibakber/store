@@ -27,6 +27,7 @@ import {
   TintedIcon,
 } from "@/components/material-list.android";
 import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
@@ -45,7 +46,7 @@ export function ProductsScreen() {
   const colors = useMaterialColors({ colorScheme });
   const insets = useSafeAreaInsets();
   const { products } = useProductData();
-  const { loading, refreshing, error } = useProductStatus();
+  const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StockFilter>("all");
