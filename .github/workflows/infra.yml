@@ -25,6 +25,7 @@ permissions:
 env:
   # See ci.yml. Skip Vite+ git hook install during `bun install`.
   VITE_GIT_HOOKS: "0"
+  STAGE: ${{ inputs.stage }}
 
 jobs:
   run:
@@ -75,7 +76,7 @@ jobs:
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
@@ -92,6 +93,6 @@ jobs:
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}

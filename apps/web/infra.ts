@@ -14,8 +14,8 @@ const rootDir = import.meta.dirname;
  * Production attaches this Worker to `PRODUCTION_DOMAIN` (apex). The API Worker
  * attaches to `api.<domain>` in the same deploy. The hostnames no longer
  * collide, so there is no two-pass detach. Locally, `/api/*` is still proxied
- * to the API Worker so `vp run dev` stays same-origin. Production browsers
- * call `VITE_API_URL` (the API host) with Clerk Bearer tokens.
+ * to the API Worker so `vp run dev` and `pr-*` previews stay same-origin.
+ * Production browsers call `VITE_API_URL` (the API host) with Clerk Bearer tokens.
  *
  * @see https://alchemy.run/cloudflare/frontend/vite-spa/
  * @see https://alchemy.run/cloudflare/frontend/vite/
