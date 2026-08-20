@@ -56,8 +56,8 @@ the Website Worker still proxies `/api/*` so `vp run dev` stays same-origin.
 Deep links fall back to `index.html`. Apex and API are different hostnames, so
 one deploy attaches both.
 
-Secrets come from `.env.dev` and `.env.prod` at the repository root. Copy
-`.env.example` and use a different JWT key pair and peppers per stage.
+Secrets come from gitignored `.env.dev` and `.env.prod` at the repository root.
+Use a different JWT key pair and peppers per stage.
 
 First-time setup on a new machine:
 

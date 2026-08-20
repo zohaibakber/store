@@ -68,9 +68,9 @@ bun run deploy:dev
 bun run deploy:prod
 ```
 
-Copy `.env.example` to `.env.dev` and `.env.prod`. Give each stage its own ES256
-key pair, refresh and ephemeral peppers, and Google OAuth credentials. Worker
-setup and stage details live in `apps/server/README.md`.
+Create gitignored `.env.dev` and `.env.prod` at the repository root. Give each
+stage its own ES256 key pair, refresh and ephemeral peppers, and Google OAuth
+credentials. Worker setup and stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change, deploys each same-repository pull request
 to an isolated `pr-<number>` stage, comments its Website URL on the pull request,

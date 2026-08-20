@@ -34,11 +34,13 @@ release
 
 .vercel
 .env*
-!.env.example
 .wrangler
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+
+# Play Console JSON written by CI from GOOGLE_SERVICE_ACCOUNT_JSON
+apps/mobile/pc-api-key.json
 
 .claude/worktrees/
 
