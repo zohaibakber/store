@@ -20,7 +20,8 @@ export function RowGroup({ children }: { readonly children: ReactNode }) {
   return (
     <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {rows.map((row, index) => (
-        // eslint-disable-next-line react/no-array-index-key -- rows are positional siblings
+        // The index is the key because a separator has no identity of its own;
+        // the row inside carries whatever key its caller gave it.
         <Fragment key={index}>
           {index > 0 ? <Separator /> : null}
           {row}
@@ -31,6 +32,7 @@ export function RowGroup({ children }: { readonly children: ReactNode }) {
 }
 
 export function Row({
+  accessibilityHint,
   isDisabled,
   leading,
   onPress,
@@ -39,6 +41,8 @@ export function Row({
   tone = "default",
   trailing,
 }: {
+  /** What the tap does, when the title alone doesn't say. */
+  readonly accessibilityHint?: string;
   readonly isDisabled?: boolean;
   readonly leading?: ReactNode;
   readonly onPress?: () => void;
@@ -67,7 +71,12 @@ export function Row({
   if (!onPress) return body;
 
   return (
-    <PressableScale accessibilityLabel={title} isDisabled={isDisabled} onPress={onPress}>
+    <PressableScale
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={title}
+      isDisabled={isDisabled}
+      onPress={onPress}
+    >
       {body}
     </PressableScale>
   );
@@ -85,13 +94,16 @@ export function RowChevron() {
 /** Right-aligned value for a row: muted, tabular, never wrapping. */
 export function RowValue({
   children,
+  label,
   tone = "muted",
 }: {
   readonly children: string;
+  /** Spoken instead of the glyphs, for values rendered as a mask. */
+  readonly label?: string;
   readonly tone?: "muted" | "default" | "destructive" | "warning" | "success";
 }) {
   return (
-    <Text numberOfLines={1} tone={tone} variant="mono">
+    <Text accessibilityLabel={label} numberOfLines={1} tone={tone} variant="mono">
       {children}
     </Text>
   );

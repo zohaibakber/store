@@ -40,10 +40,11 @@ export function ProductAnalytics({
         }
       />
       <Row
+        accessibilityHint={valueShown ? "Hides the stock value" : "Reveals the stock value"}
         onPress={() => setValueShown((shown) => !shown)}
         title="Stock value"
         trailing={
-          <RowValue tone="default">
+          <RowValue label={valueShown ? undefined : "Hidden"} tone="default">
             {valueShown ? formatPrice(overview.stockValue) : "••••••"}
           </RowValue>
         }
