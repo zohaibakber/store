@@ -1,10 +1,4 @@
-import {
-  InvoiceExtraction,
-  ProductScanInput,
-  ProductScanResult,
-  SyncRequest,
-  SyncResponse,
-} from "@store/contracts";
+import { InvoiceExtraction, ProductScanInput, ProductScanResult } from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
@@ -15,13 +9,9 @@ import { OrganizationAuth } from "../auth/organization";
 import {
   BadGateway,
   BadRequest,
-  Conflict,
   Forbidden,
-  InternalServerError,
   PayloadTooLarge,
-  ServiceUnavailable,
   TooManyRequests,
-  UnprocessableEntity,
   UnsupportedMediaType,
   UpgradeRequired,
 } from "./errors";
@@ -46,33 +36,18 @@ const system = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
   .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
 
-const sync = HttpApiGroup.make("sync")
-  .add(
-    HttpApiEndpoint.post("exchange", "/api/sync", {
-      payload: SyncRequest,
-      success: SyncResponse,
-      error: [
-        BadRequest,
-        Forbidden,
-        Conflict,
-        UnprocessableEntity,
-        InternalServerError,
-        ServiceUnavailable,
-      ],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.get("live", "/api/sync/live", {
-      query: {
-        organizationId: Schema.optionalKey(Schema.String),
-        deviceId: Schema.optionalKey(Schema.String),
-        protocolVersion: Schema.optionalKey(Schema.String),
-        access_token: Schema.optionalKey(Schema.String),
-      },
-      success: HttpApiSchema.NoContent,
-      error: [BadRequest, Forbidden, UpgradeRequired],
-    }).middleware(OrganizationAuth),
-  );
+const sync = HttpApiGroup.make("sync").add(
+  HttpApiEndpoint.get("live", "/api/sync/live", {
+    query: {
+      organizationId: Schema.optionalKey(Schema.String),
+      deviceId: Schema.optionalKey(Schema.String),
+      protocolVersion: Schema.optionalKey(Schema.String),
+      access_token: Schema.optionalKey(Schema.String),
+    },
+    success: HttpApiSchema.NoContent,
+    error: [BadRequest, Forbidden, UpgradeRequired],
+  }).middleware(OrganizationAuth),
+);
 
 const uploads = HttpApiGroup.make("uploads").add(
   HttpApiEndpoint.post("extract", "/api/uploads", {

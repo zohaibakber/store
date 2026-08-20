@@ -69,10 +69,9 @@ export function ClerkWorkspaceSync() {
         }
       } catch {
         nextRefresh = 5_000;
-      } finally {
-        refreshing = false;
-        schedule(nextRefresh);
       }
+      refreshing = false;
+      schedule(nextRefresh);
     };
     const refreshWhenActive = () => {
       if (document.visibilityState === "visible") void refresh();

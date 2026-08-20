@@ -50,7 +50,7 @@ describe("HTTP auth and CORS", () => {
   });
 
   it("allows a CORS origin that a wildcard trusted origin covers", async () => {
-    const app = appFor(true, true, undefined, {
+    const app = appFor(true, true, {
       trustedOrigins: ["https://*.tabaaq.example.com"],
     });
 

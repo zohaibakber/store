@@ -80,9 +80,8 @@ export function CategoryField({
       toastManager.add({ title: `Category “${category.name}” added`, type: "success" });
     } catch (error) {
       toastStoreError(error);
-    } finally {
-      setPending(false);
     }
+    setPending(false);
   };
 
   return (

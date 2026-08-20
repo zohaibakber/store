@@ -1,11 +1,11 @@
 import type { SyncRequest, SyncResponse } from "@store/contracts";
+import type { SyncSocket } from "@store/sync-client";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { StoreDatabase } from "./database/client";
 import type { PersistenceError, SyncTransportError } from "./errors";
-import type { SyncSocket } from "./sync/session";
 
 /**
  * The signed-in user's selected organization together with the device its
@@ -33,15 +33,13 @@ export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspa
     Layer.succeed(AuthenticatedWorkspace, AuthenticatedWorkspace.of(workspace));
 }
 
-export interface SyncTransport {
-  readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
-  /**
-   * Opens a live socket for the current workspace. Persistence never sees
-   * frames; the session turns this handle into correlated exchanges and
-   * `hello`/`invalidate` events. Missing this keeps HTTP polling.
-   */
-  readonly openLive?: Effect.Effect<SyncSocket, SyncTransportError>;
-}
+export type SyncTransport =
+  | {
+      readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
+    }
+  | {
+      readonly openLive: Effect.Effect<SyncSocket, SyncTransportError>;
+    };
 
 export interface PersistenceConfig {
   readonly dataDir: string;
@@ -55,7 +53,7 @@ export interface PersistenceConfig {
   readonly clientPlatform?: string;
   readonly clientVersion?: string;
   /**
-   * How often the engine re-signals a background HTTP sync. Default: 5 minutes
+   * How often the engine re-signals a background sync. Default: 5 minutes
    * when a live socket is configured, otherwise 3 seconds.
    */
   readonly resyncIntervalMillis?: number;

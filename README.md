@@ -3,7 +3,7 @@
 Bun workspace for an offline-first inventory stack: a TanStack web app, an
 Electron desktop app, and a Cloudflare Worker API. Inventory written in the
 browser, on desktop, or on mobile syncs through the same authenticated
-`/api/sync` protocol.
+live socket at `/api/sync/live`.
 
 ## Workspace boundaries
 
@@ -41,9 +41,8 @@ Local business transactions commit an outbox operation alongside their data. A
 shared single-flight sync runtime pushes those operations through an
 authenticated Worker and pulls the organization's ordered change feed in the same
 Durable Object transaction. Foreground web and desktop clients keep a hibernated
-WebSocket at `/api/sync/live` for correlated exchanges and invalidation. `POST
-/api/sync` is the identical transaction used for the first pull, HTTP fallback,
-and mobile. Network failures leave local writes pending in FIFO order; retryable
+WebSocket at `/api/sync/live` for correlated exchanges and invalidation. Network
+failures leave local writes pending in FIFO order; retryable
 transport errors do not burn the outbox toward quarantine.
 
 ## Run locally
@@ -55,7 +54,7 @@ vp run dev
 
 That starts the Worker (`:8787`), the desktop Vite/Electron renderer (`:5173`),
 and the web SPA (`:5174`, via `Cloudflare.Website.Vite` in `alchemy dev`). Sign
-in on either client. Writes sync through `/api/sync`.
+in on either client. Writes sync through `/api/sync/live`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each

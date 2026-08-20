@@ -183,13 +183,13 @@ export const makeSyncEngine = (
       ...initialHealth,
     };
 
-    const session = config.syncTransport?.openLive
-      ? yield* makeSyncSocketSession({
-          open: config.syncTransport.openLive,
-          httpExchange: config.syncTransport.exchange,
-        })
-      : undefined;
-    const exchange = session?.exchange ?? config.syncTransport?.exchange;
+    const transport = config.syncTransport;
+    const session =
+      transport && "openLive" in transport
+        ? yield* makeSyncSocketSession({ open: transport.openLive })
+        : undefined;
+    const exchange =
+      session?.exchange ?? (transport && "exchange" in transport ? transport.exchange : undefined);
 
     const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* () {
       if (!exchange)

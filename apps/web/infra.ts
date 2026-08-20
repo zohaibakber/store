@@ -35,7 +35,11 @@ export const Website = Cloudflare.Website.Vite(
       },
       assets: {
         notFoundHandling: "single-page-application" as const,
-        runWorkerFirst: ["/api", "/api/*"],
+        // `/__vite_module_runner/*` must reach the Worker: alchemy's Cloudflare
+        // Vite plugin opens `ws://…/__vite_module_runner/init` against workerd.
+        // SPA fallback would answer that with `index.html` (200) and the child
+        // exits: "Expected 101 status code".
+        runWorkerFirst: ["/api", "/api/*", "/__vite_module_runner/*"],
       },
       // Capped by the workerd that `alchemy dev` runs locally. Keep in step
       // with the API Worker. See apps/server/infra.ts.

@@ -1,12 +1,10 @@
-import type { SyncRequest } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it, vi } from "vitest";
 
 import { authHeadersForRequest } from "../../src/auth/organization";
 import type { SyncLiveInput } from "../../src/http/runtime";
-import type { SyncActor } from "../../src/sync/service";
-import { appFor, requestFor } from "../lib/app";
+import { appFor } from "../lib/app";
 
 describe("sync authorization", () => {
   it("normalizes Expo's trusted native origin", () => {
@@ -50,97 +48,25 @@ describe("sync authorization", () => {
     expect(authHeaders.get("origin")).toBe("com.tabaaq.desktop://app");
   });
 
-  it("denies unauthenticated sync requests", async () => {
-    const response = await appFor(false, false).request("/api/sync", {
-      method: "POST",
-      body: JSON.stringify(requestFor()),
-      headers: { "content-type": "application/json" },
-    });
+  it("denies unauthenticated live upgrades", async () => {
+    const response = await appFor(false, false).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
+    );
     expect(response.status).toBe(401);
   });
 
-  it("denies sync requests after organization access is revoked", async () => {
-    const response = await appFor(false).request("/api/sync", {
-      method: "POST",
-      body: JSON.stringify(requestFor()),
-      headers: { "content-type": "application/json" },
-    });
-    expect(response.status).toBe(403);
-  });
-
-  it("passes authoritative identity to the sync runner without returning credentials", async () => {
-    const runner = vi.fn(async (actor: SyncActor, request: SyncRequest) => ({
-      protocolVersion: 2 as const,
-      organizationId: actor.organizationId,
-      cursor: request.cursor,
-      nextCursor: request.cursor,
-      headCursor: request.cursor,
-      hasMore: false,
-      acknowledgements: [],
-      changes: [],
-    }));
-    const response = await appFor(true, true, runner).request("/api/sync", {
-      method: "POST",
-      body: JSON.stringify(requestFor()),
-      headers: { "content-type": "application/json" },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      organizationId: "org-1",
-      cursor: 0,
-      hasMore: false,
-    });
-    expect(runner).toHaveBeenCalledWith(
-      { organizationId: "org-1", userId: "user-1" },
-      expect.objectContaining({ organizationId: "org-1", deviceId: "device-1" }),
+  it("denies live upgrades after organization access is revoked", async () => {
+    const response = await appFor(false).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket" } },
     );
-    const apiResponse = await appFor(true).request("/api");
-    expect(JSON.stringify(await apiResponse.json())).not.toContain("authToken");
-  });
-
-  it("returns the Effect schema failure for an invalid sync request", async () => {
-    const request = requestFor();
-    const operation = request.operations[0];
-    if (!operation) throw new Error("Expected a sync operation");
-    const change = operation.changes[0];
-    if (!change) throw new Error("Expected a sync change");
-
-    const response = await appFor(true).request("/api/sync", {
-      method: "POST",
-      body: JSON.stringify({
-        organizationId: request.organizationId,
-        deviceId: request.deviceId,
-        cursor: request.cursor,
-        operations: [
-          {
-            operationId: operation.operationId,
-            organizationId: operation.organizationId,
-            deviceId: operation.deviceId,
-            actorUserId: operation.actorUserId,
-            clientSequence: operation.clientSequence,
-            occurredAt: operation.occurredAt,
-            payloadHash: operation.payloadHash,
-            changes: Array.from({ length: 1_001 }, () => change),
-          },
-        ],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      error: {
-        code: "INVALID_SYNC_REQUEST",
-        message: expect.stringContaining(
-          "operations[0].changes contains 1001 items; at most 1000 are allowed",
-        ),
-      },
-    });
+    expect(response.status).toBe(403);
   });
 
   it("authorizes live upgrades and forwards only trusted workspace identity", async () => {
     const connect = vi.fn((_input: SyncLiveInput) => Effect.succeed(HttpServerResponse.empty()));
-    const response = await appFor(true, true, undefined, { connectSyncLive: connect }).request(
+    const response = await appFor(true, true, { connectSyncLive: connect }).request(
       "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
       { headers: { Upgrade: "websocket" } },
     );
@@ -155,6 +81,17 @@ describe("sync authorization", () => {
       }),
     );
     expect(JSON.stringify(connect.mock.calls[0]?.[0])).not.toContain("secret");
+  });
+
+  it("does not attach CORS headers to WebSocket upgrades", async () => {
+    const connect = vi.fn((_input: SyncLiveInput) => Effect.succeed(HttpServerResponse.empty()));
+    const response = await appFor(true, true, { connectSyncLive: connect }).request(
+      "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
+      { headers: { Upgrade: "websocket", origin: "http://localhost:5173" } },
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("rejects live upgrades for a client-claimed organization", async () => {

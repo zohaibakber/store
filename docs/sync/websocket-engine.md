@@ -22,38 +22,29 @@ habits, without pretending 3-second HTTP is live sync.
 
 ## Usage (caller's view)
 
-Hosts still open an authenticated store with an `exchange` function. They also
-give the engine a way to open a live socket. Persistence never sees frames.
+Live hosts give the engine a way to open a socket. Persistence never sees frames.
+Tests that only care about apply/LWW pass a fake `exchange` instead.
 
 ```ts
-const httpExchange = (request: SyncRequest) =>
-  auth.apiRequest("/api/sync", { method: "POST", body: request }).pipe(decodeSyncResponse);
-
 const store = await openStore({
   workspace: { organizationId, userId, deviceId },
   syncTransport: {
-    exchange: httpExchange,
-    openLive: () =>
-      openLiveSocket({
-        baseUrl: apiOrigin,
-        organizationId,
-        deviceId,
-        getAccessToken: () => auth.token,
-        headers: nativeHeaders, // Electron: Authorization + electron-origin
-      }),
+    openLive: openLiveSocket({
+      baseUrl: apiOrigin,
+      organizationId,
+      deviceId,
+      getAccessToken: () => auth.token,
+      headers: nativeHeaders, // Electron: Authorization + electron-origin
+    }),
   },
 });
 ```
 
 A local write still commits to SQLite and the outbox in one transaction, then
-signals sync. The coordinator drains the outbox. If a socket is up, that drain
-is a correlated `exchange` frame on the socket. If the socket is down, it is
-the same `SyncRequest` on `POST /api/sync`. Both call the same Durable Object
-`exchange`. Inbox idempotency makes a timeout-then-HTTP retry safe.
-
-Web and desktop hosts pass `openLive`. Tests that only care about apply/LWW
-keep passing `exchange`. Mobile can keep HTTP until it moves onto this
-transport; protocol v2 on the wire is unchanged.
+signals sync. The coordinator drains the outbox as a correlated `exchange` frame
+on the live socket. If the socket is down, the exchange fails retryably and the
+coordinator retries after reconnect. `hello` is the first pull. Inbox
+idempotency makes a timeout-then-retry on the same socket safe.
 
 ## Shape
 
@@ -86,18 +77,18 @@ leak that job into the wrong process.
 
 ## Synthesis decision
 
-Base: bidirectional session (design A). The public surface is still
-`SyncTransport.exchange` plus an optional live opener. Complexity lives in the
-session: reconnect, correlation ids, HTTP fallback, hibernation.
+Base: bidirectional session (design A). Live hosts pass `openLive`. Tests that
+do not open a socket pass `exchange`. Complexity lives in the session:
+reconnect, correlation ids, hibernation.
 
-Grafted from invalidate-and-pull (B): keep `POST /api/sync` as the identical
-Durable Object transaction; keep `hello`/`invalidate`; Worker-terminates-auth;
+Grafted from invalidate-and-pull (B): keep the Durable Object `exchange` as
+the one transaction; keep `hello`/`invalidate`; Worker-terminates-auth;
 identity headers into the object; browser cannot set WebSocket headers so the
 upgrade accepts `access_token`.
 
 Grafted from split planes (C): do not burn `attemptCount` on retryable
 failures; treat a socket timeout as "retry the same operation", not "the
-operation is bad"; HTTP fallback when upgrade is blocked.
+operation is bad".
 
 Rejected query/shape subscriptions (D): every device already holds the
 organization catalog. A CVR would add per-device server state without changing
@@ -112,16 +103,14 @@ write-ups did not land in time; the lead synthesis above is the contract.
 
 ## Tradeoffs accepted
 
-- We accept HTTP fallback in exchange for working through proxies and the
-  first-sync-before-socket-up window, instead of making the socket the only
-  correctness path.
+- We accept a dead socket as a retryable transport error, not a second HTTP
+  data path. Apply/LWW tests still inject a fake `exchange`.
 - We accept whole-org changelog paging instead of Zero-style query shapes,
   because that is the product replica.
 - We accept reconnect-for-token-refresh instead of refreshing Clerk inside the
   Durable Object.
 - We accept a 5 minute safety poll while live, so a missed invalidate cannot
   freeze a replica forever.
-- We accept mobile staying on HTTP for this change. The envelope is still v2.
 
 ## Alternatives considered
 
@@ -143,11 +132,10 @@ Not the transport change we were asked for.
 - Should Electron keep using the `ws` package for Authorization headers, or
   put the JWT in the query like the browser? Headers stay off the query log.
 - How hard do corporate TLS middleboxes make WebSocket upgrade on desktop in
-  practice? HTTP fallback exists because we do not know.
-- When should mobile join the socket? It has its own `/api/sync` client today.
+  practice? Live hosts no longer silently POST when upgrade fails.
 
 ## Next implementation step
 
 Filled in against this contract: frames, Durable Object hibernation handlers,
-session HTTP fallback, outbox attempt-count semantics, and web/desktop live
-openers. Mobile stays on HTTP.
+socket-only live exchange, outbox attempt-count semantics, and web, desktop,
+and mobile live openers.

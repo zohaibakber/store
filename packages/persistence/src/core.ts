@@ -7,5 +7,5 @@ export {
   SyncTransportError,
 } from "./errors";
 export { OfflineStore, storeLayer } from "./service";
-export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "./sync/session";
-export { makeSyncSocketSession, syncSocketFromHandle } from "./sync/session";
+export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "@store/sync-client";
+export { makeSyncSocketSession, syncSocketFromHandle } from "@store/sync-client";
