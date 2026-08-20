@@ -1,13 +1,14 @@
 import { StyleSheet, View } from "react-native";
 
 import { Spinner } from "@/components/ui/spinner";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { useColors } from "@/theme/colors";
 
+/** The gap between launch and a resolved session. Nothing but the indicator. */
 export function LoadingScreen() {
-  const background = useThemeColor("background");
+  const colors = useColors();
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
-      <Spinner color="default" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <Spinner tone="muted" />
     </View>
   );
 }

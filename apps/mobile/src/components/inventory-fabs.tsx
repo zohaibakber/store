@@ -1,74 +1,69 @@
-import { Image } from "expo-image";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
-import { cssColor } from "@/theme/colors";
+import { Icon } from "@/components/ui/icon";
+import { PressableScale } from "@/components/ui/pressable-scale";
+import { Text } from "@/components/ui/text";
+import { useColors } from "@/theme/colors";
+import { radius } from "@/theme/tokens";
 
+/**
+ * The two ways to add stock. Only one is filled: creating a product is the
+ * primary action, scanning a label is the quiet alternative beside it.
+ *
+ * The FAB is one of the two places the design system allows a shadow, because
+ * it floats over content that scrolls underneath it.
+ */
 export function InventoryFabs() {
-  const [accent, onAccent] = useThemeColor(["accent", "accent-foreground"]);
+  const colors = useColors();
 
   return (
     <View style={styles.stack}>
-      <Pressable
-        accessibilityLabel="Scan product"
-        accessibilityRole="button"
+      <PressableScale
+        accessibilityLabel="Scan a product label"
         onPress={() => router.push("/products/scan")}
-        style={({ pressed }) => [
-          styles.small,
-          { backgroundColor: accent, opacity: pressed ? 0.88 : 1 },
-        ]}
+        style={[styles.scan, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
-        <Image
-          contentFit="contain"
-          source="sf:camera"
-          style={styles.icon}
-          tintColor={cssColor(onAccent)}
-        />
-      </Pressable>
-      <Pressable
+        <Icon name="camera" size={22} />
+      </PressableScale>
+      <PressableScale
         accessibilityLabel="New product"
-        accessibilityRole="button"
         onPress={() => router.push("/products/new")}
-        style={({ pressed }) => [
-          styles.extended,
-          { backgroundColor: accent, opacity: pressed ? 0.88 : 1 },
-        ]}
+        style={[styles.create, { backgroundColor: colors.primary }]}
       >
-        <Image
-          contentFit="contain"
-          source="sf:plus"
-          style={styles.icon}
-          tintColor={cssColor(onAccent)}
-        />
-        <Text style={[styles.label, { color: onAccent }]}>New product</Text>
-      </Pressable>
+        <Icon color={colors.primaryForeground} name="plus" size={20} />
+        <Text style={{ color: colors.primaryForeground }} variant="bodyMedium">
+          New product
+        </Text>
+      </PressableScale>
     </View>
   );
 }
 
+const shadow = { boxShadow: "0 6px 16px rgba(0, 0, 0, 0.18)" } as const;
+
 const styles = StyleSheet.create({
-  extended: {
+  create: {
+    ...shadow,
     alignItems: "center",
     borderCurve: "continuous",
-    borderRadius: 16,
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.24)",
+    borderRadius: radius.full,
     flexDirection: "row",
-    gap: 12,
-    height: 56,
+    gap: 8,
+    height: 52,
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  icon: { height: 24, width: 24 },
-  label: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  small: {
+  scan: {
+    ...shadow,
     alignItems: "center",
+    alignSelf: "flex-end",
     borderCurve: "continuous",
-    borderRadius: 12,
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.24)",
-    height: 40,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
     justifyContent: "center",
-    width: 40,
+    width: 44,
   },
-  stack: { alignItems: "flex-end", gap: 16 },
+  stack: { alignItems: "flex-end", gap: 12 },
 });

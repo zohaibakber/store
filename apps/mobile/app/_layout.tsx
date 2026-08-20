@@ -4,8 +4,31 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { MobileAuthProvider } from "@/lib/auth-provider";
 import { followDeviceColorScheme, useAppColorScheme } from "@/theme/appearance";
+import { palettes } from "@/theme/tokens";
 
 followDeviceColorScheme();
+
+/**
+ * React Navigation's own themes ship iOS blue as `primary` and use it for the
+ * back button, the header tint and the ripple. Rebuild them from the palette so
+ * the navigator can't paint anything we didn't choose.
+ */
+const navigationTheme = (scheme: "light" | "dark") => {
+  const base = scheme === "dark" ? DarkTheme : DefaultTheme;
+  const colors = palettes[scheme];
+
+  return {
+    ...base,
+    colors: {
+      background: colors.background,
+      border: colors.border,
+      card: colors.background,
+      notification: colors.destructive,
+      primary: colors.foreground,
+      text: colors.foreground,
+    },
+  };
+};
 
 export default function RootLayout() {
   const scheme = useAppColorScheme();
@@ -13,7 +36,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MobileAuthProvider>
-        <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
+        <ThemeProvider value={navigationTheme(scheme)}>
           <StatusBar style={scheme === "dark" ? "light" : "dark"} />
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />

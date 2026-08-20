@@ -1,17 +1,15 @@
 import { StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { InventoryFabs } from "@/components/inventory-fabs";
+import { useOverlayInsets } from "@/hooks/use-overlay-insets";
 
+/** Pins the inventory actions above whichever bottom navigation the platform draws. */
 export function InventoryFabAnchor() {
-  const insets = useSafeAreaInsets();
+  const { actionsBottom } = useOverlayInsets();
 
   return (
     <View pointerEvents="box-none" style={styles.overlay}>
-      <View
-        pointerEvents="box-none"
-        style={[styles.anchor, { bottom: Math.max(insets.bottom, 16), right: 16 }]}
-      >
+      <View pointerEvents="box-none" style={[styles.anchor, { bottom: actionsBottom }]}>
         <InventoryFabs />
       </View>
     </View>
@@ -19,6 +17,6 @@ export function InventoryFabAnchor() {
 }
 
 const styles = StyleSheet.create({
-  anchor: { position: "absolute" },
+  anchor: { position: "absolute", right: 16 },
   overlay: { bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
 });

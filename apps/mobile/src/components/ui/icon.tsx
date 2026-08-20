@@ -6,9 +6,9 @@ import type { Hex } from "@/theme/tokens";
 
 /**
  * A stroke icon set on a 24 grid at 1.5 weight, drawn once so iOS and Android
- * are identical and match the Hugeicons weight the web app uses. Native list
- * rows and tab bars still use platform symbols (`list-icons.ts`) — this is for
- * the surfaces React Native draws itself.
+ * are identical and match the Hugeicons weight the web app uses. Platform
+ * symbols stay where the platform owns the chrome — tab bars, FABs — and this
+ * covers every surface React Native draws itself.
  */
 const paths = {
   alert: ["M12 3.6 21 19.6H3z", "M12 9.4v4.1"],

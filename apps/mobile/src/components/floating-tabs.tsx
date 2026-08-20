@@ -1,30 +1,31 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { useColors } from "@/theme/colors";
+import { typography } from "@/theme/typography";
 
+/**
+ * The platform tab bar, painted from the palette: `card` bar, `mutedForeground`
+ * → `foreground` on selection, `accent` indicator. No platform tint, no shadow.
+ */
 export function FloatingTabs() {
-  const [background, foreground, muted, indicator] = useThemeColor([
-    "surface",
-    "foreground",
-    "muted",
-    "surface-tertiary",
-  ]);
+  const colors = useColors();
+  const label = { fontFamily: typography.caption.fontFamily, fontSize: 12 } as const;
 
   return (
     <NativeTabs
-      backgroundColor={background}
       backBehavior="history"
-      iconColor={{ default: muted, selected: foreground }}
-      indicatorColor={indicator}
+      backgroundColor={colors.card}
+      iconColor={{ default: colors.mutedForeground, selected: colors.foreground }}
+      indicatorColor={colors.accent}
       labelStyle={{
-        default: { color: muted, fontFamily: "Inter_400Regular", fontSize: 12 },
-        selected: { color: foreground, fontFamily: "Inter_500Medium", fontSize: 12 },
+        default: { ...label, color: colors.mutedForeground },
+        selected: { ...label, color: colors.foreground, fontFamily: typography.label.fontFamily },
       }}
       labelVisibilityMode="labeled"
       minimizeBehavior="onScrollDown"
-      rippleColor={indicator}
+      rippleColor={colors.accent}
       shadowColor="transparent"
-      tintColor={foreground}
+      tintColor={colors.foreground}
     >
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Icon

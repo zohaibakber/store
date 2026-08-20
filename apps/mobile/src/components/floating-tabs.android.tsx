@@ -1,69 +1,56 @@
 import { Host } from "@expo/ui";
-import {
-  HorizontalFloatingToolbar,
-  Icon,
-  IconToggleButton,
-  useMaterialColors,
-} from "@expo/ui/jetpack-compose";
+import { HorizontalFloatingToolbar, Icon, IconToggleButton } from "@expo/ui/jetpack-compose";
 import { router, usePathname } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { setBackgroundColorAsync } from "expo-system-ui";
 import { useEffect } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import addIcon from "@/assets/icons/add.xml";
 import homeIcon from "@/assets/icons/home.xml";
 import inventoryIcon from "@/assets/icons/inventory.xml";
 import settingsIcon from "@/assets/icons/settings.xml";
-import { useAppColorScheme } from "@/theme/appearance";
+import { useComposeTheme } from "@/theme/compose-colors";
 
 type TabName = "home" | "products" | "settings";
 
-function tabFromPath(pathname: string): TabName {
+const tabFromPath = (pathname: string): TabName => {
   if (pathname.startsWith("/products")) return "products";
   if (pathname.startsWith("/settings")) return "settings";
   return "home";
-}
+};
 
+/**
+ * Android keeps Material's floating toolbar — it is the platform's current
+ * bottom-navigation shape — but takes its colours from the palette, so the
+ * selected tab reads as `primary`/`accent` rather than a wallpaper tint.
+ */
 function FloatingTabBar() {
-  const colorScheme = useAppColorScheme();
-  const colors = useMaterialColors({ colorScheme });
+  const { scheme, seedColor, tokens } = useComposeTheme();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const selected = tabFromPath(pathname);
 
-  if (pathname.endsWith("/new") || pathname.endsWith("/scan")) {
-    return null;
-  }
+  if (pathname.endsWith("/new") || pathname.endsWith("/scan")) return null;
 
   const toggleColors = {
-    checkedContainerColor: colors.secondaryContainer,
-    checkedContentColor: colors.onSecondaryContainer,
-    contentColor: colors.onSurfaceVariant,
+    checkedContainerColor: tokens.primary,
+    checkedContentColor: tokens.primaryForeground,
+    contentColor: tokens.mutedForeground,
   };
 
   return (
     <View
       pointerEvents="box-none"
-      style={{
-        alignItems: "center",
-        bottom: 0,
-        left: 0,
-        paddingBottom: Math.max(insets.bottom, 12) + 8,
-        position: "absolute",
-        right: 0,
-      }}
+      style={[styles.anchor, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}
     >
-      <Host colorScheme={colorScheme} key={colorScheme} matchContents>
+      <Host colorScheme={scheme} key={scheme} matchContents seedColor={seedColor}>
         <HorizontalFloatingToolbar
           colors={{
-            fabContainerColor: colors.primaryContainer,
-            fabContentColor: colors.onPrimaryContainer,
-            toolbarContainerColor: colors.surfaceContainerLowest,
-            toolbarContentColor: colors.onSurfaceVariant,
+            toolbarContainerColor: tokens.card,
+            toolbarContentColor: tokens.mutedForeground,
           }}
-          variant="vibrant"
+          variant="standard"
         >
           <IconToggleButton
             checked={selected === "home"}
@@ -92,11 +79,6 @@ function FloatingTabBar() {
           >
             <Icon contentDescription="Settings" source={settingsIcon} />
           </IconToggleButton>
-          <HorizontalFloatingToolbar.FloatingActionButton
-            onPress={() => router.navigate("/products/new")}
-          >
-            <Icon contentDescription="New product" source={addIcon} />
-          </HorizontalFloatingToolbar.FloatingActionButton>
         </HorizontalFloatingToolbar>
       </Host>
     </View>
@@ -104,35 +86,25 @@ function FloatingTabBar() {
 }
 
 export function FloatingTabs() {
-  const colorScheme = useAppColorScheme();
-  const colors = useMaterialColors({ colorScheme });
+  const { tokens } = useComposeTheme();
 
   useEffect(() => {
-    void setBackgroundColorAsync(colors.surfaceContainer);
-  }, [colors.surfaceContainer]);
+    void setBackgroundColorAsync(tokens.background);
+  }, [tokens.background]);
 
   return (
-    <View style={{ backgroundColor: colors.surfaceContainer, flex: 1 }}>
-      <NativeTabs backgroundColor={colors.surfaceContainer} hidden>
+    <View style={{ backgroundColor: tokens.background, flex: 1 }}>
+      <NativeTabs backgroundColor={tokens.background} hidden>
         <NativeTabs.Trigger disableAutomaticContentInsets name="home">
-          <NativeTabs.Trigger.Icon
-            md={{ default: "home", selected: "home" }}
-            sf={{ default: "house", selected: "house.fill" }}
-          />
+          <NativeTabs.Trigger.Icon md={{ default: "home", selected: "home" }} />
           <NativeTabs.Trigger.Label hidden>Home</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger disableAutomaticContentInsets name="products">
-          <NativeTabs.Trigger.Icon
-            md={{ default: "inventory_2", selected: "inventory_2" }}
-            sf={{ default: "shippingbox", selected: "shippingbox.fill" }}
-          />
+          <NativeTabs.Trigger.Icon md={{ default: "inventory_2", selected: "inventory_2" }} />
           <NativeTabs.Trigger.Label hidden>Products</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger disableAutomaticContentInsets name="settings">
-          <NativeTabs.Trigger.Icon
-            md={{ default: "settings", selected: "settings" }}
-            sf={{ default: "gearshape", selected: "gearshape.fill" }}
-          />
+          <NativeTabs.Trigger.Icon md={{ default: "settings", selected: "settings" }} />
           <NativeTabs.Trigger.Label hidden>Settings</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
@@ -140,3 +112,7 @@ export function FloatingTabs() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  anchor: { alignItems: "center", bottom: 0, left: 0, position: "absolute", right: 0 },
+});
