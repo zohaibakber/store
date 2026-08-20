@@ -12,6 +12,7 @@ import {
   normalizeEmail,
   type AuthClientKind,
   type BeginGoogleInput,
+  type ExchangeGoogleIdTokenInput,
   type ExchangeGoogleInput,
   type IdentifyInput,
   type LoginCommand,
@@ -26,7 +27,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { EphemeralStore } from "./ephemeral";
-import { GoogleOAuth } from "./google";
+import { GoogleOAuth, type GoogleProfile } from "./google";
 import { AuthRepository, type UserRecord } from "./repository";
 
 const textEncoder = new TextEncoder();
@@ -55,6 +56,9 @@ export interface AuthServiceApi {
     readonly state: string;
   }) => Effect.Effect<GoogleCallback, AuthError>;
   readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSetType, AuthError>;
+  readonly exchangeGoogleIdToken: (
+    input: ExchangeGoogleIdTokenInput,
+  ) => Effect.Effect<TokenSetType, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
 }
@@ -308,6 +312,23 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         }
       });
 
+      /** One Google identity, one Tabaaq user, however the identity arrived. */
+      const linkGoogleUser = Effect.fn("AuthService.linkGoogleUser")(function* (
+        profile: GoogleProfile,
+      ) {
+        const linked = yield* repository.findUserByGoogleId(profile.providerAccountId);
+        if (linked) return linked;
+        const existing = yield* repository.findUserByEmail(profile.email);
+        if (existing) {
+          yield* repository.attachGoogleAccount({
+            userId: existing.id,
+            providerAccountId: profile.providerAccountId,
+          });
+          return existing;
+        }
+        return yield* repository.createGoogleUser(profile);
+      });
+
       const beginGoogle = Effect.fn("AuthService.beginGoogle")(function* (input: BeginGoogleInput) {
         if (!redirectAllowed(input.redirectUri, configuration.trustedRedirects)) {
           return yield* authError(400, "INVALID_REDIRECT", "The OAuth redirect is not allowed.");
@@ -334,18 +355,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
           );
         }
         const profile = yield* google.exchangeCode(input.code);
-        let user = yield* repository.findUserByGoogleId(profile.providerAccountId);
-        if (!user) {
-          user = yield* repository.findUserByEmail(profile.email);
-          if (user) {
-            yield* repository.attachGoogleAccount({
-              userId: user.id,
-              providerAccountId: profile.providerAccountId,
-            });
-          } else {
-            user = yield* repository.createGoogleUser(profile);
-          }
-        }
+        const user = yield* linkGoogleUser(profile);
         const code = yield* ephemeral.createAuthorizationGrant({
           userId: user.id,
           codeChallenge: state.codeChallenge,
@@ -386,6 +396,33 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
           return yield* authError(401, "ACCOUNT_NOT_FOUND", "The account no longer exists.");
         }
         return yield* issueSession(user, grant.client, `oauth-${input.code}`);
+      });
+
+      /**
+       * Native clients present Google's own account picker, so there is no
+       * redirect to protect with PKCE: the ID token itself is the proof.
+       */
+      const exchangeGoogleIdToken = Effect.fn("AuthService.exchangeGoogleIdToken")(function* (
+        input: ExchangeGoogleIdTokenInput,
+      ) {
+        const profile = yield* google
+          .verifyIdToken(input.idToken)
+          .pipe(
+            Effect.mapError(() =>
+              authError(401, "INVALID_GOOGLE_IDENTITY", "Google sign-in could not be verified."),
+            ),
+          );
+        const allowed = yield* ephemeral.allow({
+          key: `google-identity:${profile.providerAccountId}`,
+          limit: 10,
+          windowSeconds: 60,
+          now: Date.now(),
+        });
+        if (!allowed) {
+          return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
+        }
+        const user = yield* linkGoogleUser(profile);
+        return yield* issueSession(user, input.client);
       });
 
       const refresh = Effect.fn("AuthService.refresh")(function* (input: RefreshInput) {
@@ -484,6 +521,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         beginGoogle: (input) => handle(beginGoogle(input)),
         completeGoogle: (input) => handle(completeGoogle(input)),
         exchangeGoogle: (input) => handle(exchangeGoogle(input)),
+        exchangeGoogleIdToken: (input) => handle(exchangeGoogleIdToken(input)),
         refresh: (input) => handle(refresh(input)),
         signOut: (input) => handle(signOut(input)),
       });

@@ -1,5 +1,6 @@
 import {
   BeginGoogleInput,
+  ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   GoogleAuthorization,
   IdentifyInput,
@@ -200,6 +201,17 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
             Effect.gen(function* () {
               const input = yield* requestJson(ExchangeGoogleInput);
               const tokens = yield* auth.exchangeGoogle(input);
+              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
+            }),
+          ),
+        );
+        yield* router.add(
+          "POST",
+          "/v1/oauth/google/native",
+          withAuthErrorResponse(
+            Effect.gen(function* () {
+              const input = yield* requestJson(ExchangeGoogleIdTokenInput);
+              const tokens = yield* auth.exchangeGoogleIdToken(input);
               return browserTokenResponse(tokens, input.client, configuration.secureCookies);
             }),
           ),

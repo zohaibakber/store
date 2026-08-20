@@ -144,6 +144,16 @@ export const AuthLive = Auth.make(
     const ephemeralPepper = Redacted.value(yield* Config.redacted("AUTH_EPHEMERAL_PEPPER"));
     const googleClientId = yield* Config.string("GOOGLE_OAUTH_CLIENT_ID");
     const googleClientSecret = Redacted.value(yield* Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET"));
+    /** Native apps sign in with Google's own SDK, which mints its own audience. */
+    const googleNativeClientIds = yield* Config.string("GOOGLE_OAUTH_NATIVE_CLIENT_IDS").pipe(
+      Config.withDefault(""),
+      Config.map((value) =>
+        value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      ),
+    );
     const developmentOtp = yield* Config.boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
     if (stage === "prod" && developmentOtp) {
       return yield* Effect.die(
@@ -170,6 +180,7 @@ export const AuthLive = Auth.make(
             clientId: googleClientId,
             clientSecret: googleClientSecret,
             callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
+            nativeClientIds: googleNativeClientIds,
           }),
         );
       }),

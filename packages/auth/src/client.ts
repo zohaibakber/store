@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 
 import {
   BeginGoogleInput,
+  ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   GoogleAuthorization,
   IdentifyInput,
@@ -14,6 +15,7 @@ import {
   SignOutInput,
   TokenSet,
   type BeginGoogleInput as BeginGoogleInputType,
+  type ExchangeGoogleIdTokenInput as ExchangeGoogleIdTokenInputType,
   type ExchangeGoogleInput as ExchangeGoogleInputType,
   type GoogleAuthorization as GoogleAuthorizationType,
   type IdentifyInput as IdentifyInputType,
@@ -53,6 +55,9 @@ export interface AuthClientApi {
   ) => Effect.Effect<GoogleAuthorizationType, AuthClientError>;
   readonly exchangeGoogle: (
     input: ExchangeGoogleInputType,
+  ) => Effect.Effect<TokenSetType, AuthClientError>;
+  readonly exchangeGoogleIdToken: (
+    input: ExchangeGoogleIdTokenInputType,
   ) => Effect.Effect<TokenSetType, AuthClientError>;
   readonly refresh: (input?: RefreshInputType) => Effect.Effect<TokenSetType, AuthClientError>;
   readonly signOut: (input?: SignOutInputType) => Effect.Effect<void, AuthClientError>;
@@ -179,6 +184,17 @@ export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClie
           request("google.exchange", "/v1/oauth/google/exchange", valid, TokenSet),
         ),
       ),
+    ),
+    exchangeGoogleIdToken: Effect.fn("AuthClient.exchangeGoogleIdToken")(
+      (input: ExchangeGoogleIdTokenInputType) =>
+        Schema.decodeUnknownEffect(ExchangeGoogleIdTokenInput)(input).pipe(
+          Effect.mapError(() =>
+            failure("google.native", 0, "INVALID_INPUT", "The Google sign-in is invalid."),
+          ),
+          Effect.flatMap((valid) =>
+            request("google.native", "/v1/oauth/google/native", valid, TokenSet),
+          ),
+        ),
     ),
     refresh: Effect.fn("AuthClient.refresh")((input: RefreshInputType = {}) =>
       Schema.decodeUnknownEffect(RefreshInput)(input).pipe(
