@@ -3,7 +3,9 @@ import type {
   OrganizationCommandResult,
   OrganizationRoster,
 } from "@store/auth";
+import { useSearch } from "@tanstack/react-router";
 import * as React from "react";
+import * as z from "zod";
 
 import { toastManager } from "@/components/ui/toast";
 import { authSession } from "@/lib/auth";
@@ -21,6 +23,12 @@ export const invitationHandoff = (token: string) => {
     ? { kind: "link" as const, value: `${origin}/settings?invitation=${encodeURIComponent(token)}` }
     : { kind: "token" as const, value: token };
 };
+
+const linkedInvitation = z.object({ invitation: z.string().default("") }).catch({ invitation: "" });
+
+/** The token an invite link carries, or an empty string when it carries none. */
+export const useLinkedInvitation = () =>
+  linkedInvitation.parse(useSearch({ strict: false })).invitation;
 
 export async function copyInvitation(token: string) {
   const handoff = invitationHandoff(token);

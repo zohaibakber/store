@@ -2,7 +2,7 @@ import { TicketStarIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { InvitationToken } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import * as z from "zod";
 
@@ -12,17 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
-import { useOrganization } from "@/lib/organization";
+import { useLinkedInvitation, useOrganization } from "@/lib/organization";
 
 const acceptSchema = z.object({
   token: z.string().trim().min(8, "Paste the invitation you were sent."),
 });
-
-/**
- * An invite link lands on `/settings?invitation=…`, so the token arrives
- * already filled in. Anyone handed a bare token pastes it instead.
- */
-const linkedInvitation = z.object({ invitation: z.string().default("") }).catch({ invitation: "" });
 
 /** People paste whatever they were sent, which is often the whole link. */
 const redeemable = (pasted: string) => {
@@ -35,7 +29,9 @@ const redeemable = (pasted: string) => {
 export function AcceptInvitationCard() {
   const { actions } = useOrganization();
   const navigate = useNavigate();
-  const linked = linkedInvitation.parse(useSearch({ strict: false })).invitation;
+  // An invite link lands on `/settings?invitation=…`, so the token arrives
+  // already filled in. Anyone handed a bare token pastes it instead.
+  const linked = useLinkedInvitation();
 
   const form = useForm({
     defaultValues: { token: linked },
