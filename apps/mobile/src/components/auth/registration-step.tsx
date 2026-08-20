@@ -1,11 +1,12 @@
 import { StyleSheet, View } from "react-native";
 
-import { Footnote, StepHeader } from "@/components/auth/auth-shell";
+import { StepHeader } from "@/components/auth/auth-shell";
 import { QuietAction, QuietActions } from "@/components/auth/quiet-action";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonText } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { TextField } from "@/components/ui/text-field";
+
+const MIN_PASSWORD = 10;
 
 export function RegistrationStep({
   busy,
@@ -26,12 +27,14 @@ export function RegistrationStep({
   readonly onSubmit: () => void;
   readonly password: string;
 }) {
+  const tooShort = password.length > 0 && password.length < MIN_PASSWORD;
+
   return (
     <View style={styles.step}>
       <StepHeader caption={email} title="Create your account" />
       <View style={styles.form}>
-        <TextField>
-          <Label>Name</Label>
+        <Field>
+          <FieldLabel>Name</FieldLabel>
           <Input
             accessibilityLabel="Name"
             autoComplete="name"
@@ -42,13 +45,14 @@ export function RegistrationStep({
             textContentType="name"
             value={name}
           />
-        </TextField>
-        <TextField>
-          <Label>Password</Label>
+        </Field>
+        <Field>
+          <FieldLabel>Password</FieldLabel>
           <Input
             accessibilityLabel="Password"
             autoComplete="new-password"
             editable={!busy}
+            invalid={tooShort}
             onChangeText={onPasswordChange}
             onSubmitEditing={onSubmit}
             returnKeyType="done"
@@ -56,13 +60,14 @@ export function RegistrationStep({
             textContentType="newPassword"
             value={password}
           />
-        </TextField>
-        <Footnote>At least 10 characters.</Footnote>
+          <FieldDescription>{`At least ${MIN_PASSWORD} characters.`}</FieldDescription>
+        </Field>
         <Button
-          isDisabled={busy || name.trim().length === 0 || password.length < 10}
+          isDisabled={busy || name.trim().length === 0 || password.length < MIN_PASSWORD}
+          loading={busy}
           onPress={onSubmit}
         >
-          {busy ? "Creating…" : "Create account"}
+          <ButtonText>Create account</ButtonText>
         </Button>
         <QuietActions>
           <QuietAction isDisabled={busy} label="Use a different email" onPress={onStartOver} />

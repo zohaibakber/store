@@ -1,10 +1,13 @@
-import { StyleSheet, Text, View } from "react-native";
-
 import { GoogleMark } from "@/components/auth/google-mark";
-import { PressableScale } from "@/components/ui/pressable-scale";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Button, ButtonText } from "@/components/ui/button";
 
-/** Opens Google's account picker. Quieter than the email action on purpose. */
+/**
+ * Opens Google's account picker. An `outline` button, quieter than the email
+ * action on purpose — the mark is the only colour on the screen, and it is
+ * Google's, not ours.
+ *
+ * Presentation only: the press still hands straight to the native sign-in SDK.
+ */
 export function GoogleAction({
   isDisabled,
   onPress,
@@ -12,33 +15,15 @@ export function GoogleAction({
   readonly isDisabled?: boolean;
   readonly onPress: () => void;
 }) {
-  const [foreground, surface] = useThemeColor(["foreground", "surface"]);
-
   return (
-    <PressableScale
+    <Button
       accessibilityLabel="Continue with Google"
       isDisabled={isDisabled}
       onPress={onPress}
-      style={[styles.row, { backgroundColor: surface }]}
+      variant="outline"
     >
-      <View style={styles.mark}>
-        <GoogleMark />
-      </View>
-      <Text style={[styles.label, { color: foreground }]}>Continue with Google</Text>
-    </PressableScale>
+      <GoogleMark />
+      <ButtonText>Continue with Google</ButtonText>
+    </Button>
   );
 }
-
-const styles = StyleSheet.create({
-  label: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  mark: { alignItems: "center", height: 18, justifyContent: "center", width: 18 },
-  row: {
-    alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: 10,
-    flexDirection: "row",
-    gap: 10,
-    height: 48,
-    justifyContent: "center",
-  },
-});

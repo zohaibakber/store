@@ -2,10 +2,9 @@ import { StyleSheet, View } from "react-native";
 
 import { StepHeader } from "@/components/auth/auth-shell";
 import { GoogleAction } from "@/components/auth/google-action";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonText } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { TextField } from "@/components/ui/text-field";
 import { isGoogleSignInConfigured } from "@/lib/google-signin";
 
 export function IdentifierStep({
@@ -25,8 +24,8 @@ export function IdentifierStep({
     <View style={styles.step}>
       <StepHeader caption="An account is required to use Tabaaq on this device." title="Sign in" />
       <View style={styles.form}>
-        <TextField>
-          <Label>Email</Label>
+        <Field>
+          <FieldLabel>Email</FieldLabel>
           <Input
             accessibilityLabel="Email"
             autoCapitalize="none"
@@ -41,9 +40,13 @@ export function IdentifierStep({
             textContentType="emailAddress"
             value={email}
           />
-        </TextField>
-        <Button isDisabled={busy || email.trim().length === 0} onPress={onContinue}>
-          {busy ? "Checking…" : "Continue"}
+        </Field>
+        <Button
+          isDisabled={busy || email.trim().length === 0}
+          loading={busy}
+          onPress={onContinue}
+        >
+          <ButtonText>Continue</ButtonText>
         </Button>
         {isGoogleSignInConfigured ? <GoogleAction isDisabled={busy} onPress={onGoogle} /> : null}
       </View>

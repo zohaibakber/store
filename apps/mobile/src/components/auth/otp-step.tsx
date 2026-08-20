@@ -1,10 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { Footnote, StepHeader } from "@/components/auth/auth-shell";
 import { OtpField } from "@/components/auth/otp-field";
 import { QuietAction, QuietActions } from "@/components/auth/quiet-action";
-import { Button } from "@/components/ui/button";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Button, ButtonText } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 
 export function OtpStep({
   busy,
@@ -25,15 +25,13 @@ export function OtpStep({
   readonly onStartOver: () => void;
   readonly onSubmit: () => void;
 }) {
-  const foreground = useThemeColor("foreground");
-
   return (
     <View style={styles.step}>
       <StepHeader caption={email} title="Enter your code" />
       <View style={styles.form}>
         <OtpField code={code} editable={!busy} onChange={onCodeChange} />
         {developmentCode ? (
-          <Text selectable style={[styles.code, { color: foreground }]}>
+          <Text selectable style={styles.code} variant="monoMedium">
             {developmentCode}
           </Text>
         ) : null}
@@ -42,8 +40,8 @@ export function OtpStep({
             ? "Email delivery is not live yet, so the code is printed above instead of sent."
             : "Email delivery is not live yet, so this code never reached your inbox."}
         </Footnote>
-        <Button isDisabled={busy || code.length < 6} onPress={onSubmit}>
-          {busy ? "Verifying…" : "Verify code"}
+        <Button isDisabled={busy || code.length < 6} loading={busy} onPress={onSubmit}>
+          <ButtonText>Verify code</ButtonText>
         </Button>
         <QuietActions>
           <QuietAction isDisabled={busy} label="New code" onPress={onResend} />
@@ -55,7 +53,7 @@ export function OtpStep({
 }
 
 const styles = StyleSheet.create({
-  code: { fontFamily: "GeistMono_500Medium", fontSize: 18, letterSpacing: 4, lineHeight: 24 },
+  code: { letterSpacing: 4 },
   form: { gap: 12 },
   step: { gap: 24 },
 });

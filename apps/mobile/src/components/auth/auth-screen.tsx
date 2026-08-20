@@ -10,18 +10,19 @@ import { PasswordStep } from "@/components/auth/password-step";
 import { RegistrationStep } from "@/components/auth/registration-step";
 import { LoadingScreen } from "@/components/loading-screen";
 import { useAuthFlow } from "@/hooks/use-auth-flow";
-import { useThemeColor } from "@/hooks/use-theme-color";
 import { useMobileAuth } from "@/lib/auth-provider";
 import { hapticSelection } from "@/lib/haptics";
+import { useColors } from "@/theme/colors";
+import { motion } from "@/theme/tokens";
 
 /** Each step arrives from just below, once, when it replaces the previous one. */
-const STEP_IN = FadeInDown.duration(220).reduceMotion(ReduceMotion.System);
+const STEP_IN = FadeInDown.duration(motion.enterMs).reduceMotion(ReduceMotion.System);
 
 const stepKey = (route: LoginRoute | null) => route?._tag ?? "Identifier";
 
 export function AuthScreen() {
   const { state } = useMobileAuth();
-  const background = useThemeColor("background");
+  const colors = useColors();
   const flow = useAuthFlow();
 
   if (state._tag === "Loading") return <LoadingScreen />;
@@ -34,7 +35,7 @@ export function AuthScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <AuthShell>
         {flow.errorMessage ? <ErrorLine message={flow.errorMessage} /> : null}
         <Animated.View entering={STEP_IN} key={stepKey(flow.route)}>

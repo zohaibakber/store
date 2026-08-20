@@ -1,16 +1,18 @@
 import type { ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { Brand } from "@/components/brand";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Text } from "@/components/ui/text";
+import { useColors } from "@/theme/colors";
+import { motion } from "@/theme/tokens";
 
-const ERROR_IN = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
-const ERROR_OUT = FadeOut.duration(140).reduceMotion(ReduceMotion.System);
+const ERROR_IN = FadeIn.duration(motion.enterMs - 20).reduceMotion(ReduceMotion.System);
+const ERROR_OUT = FadeOut.duration(motion.pressMs + 20).reduceMotion(ReduceMotion.System);
 
 /** The one auth surface. Every step composes into it; nothing else pushes a route. */
 export function AuthShell({ children }: { readonly children: ReactNode }) {
-  const background = useThemeColor("background");
+  const colors = useColors();
 
   return (
     <ScrollView
@@ -19,7 +21,7 @@ export function AuthShell({ children }: { readonly children: ReactNode }) {
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
-      style={{ backgroundColor: background }}
+      style={{ backgroundColor: colors.background }}
     >
       <Brand />
       {children}
@@ -34,12 +36,10 @@ export function StepHeader({
   readonly caption: string;
   readonly title: string;
 }) {
-  const [foreground, muted] = useThemeColor(["foreground", "muted"]);
-
   return (
     <View style={styles.header}>
-      <Text style={[styles.title, { color: foreground }]}>{title}</Text>
-      <Text selectable style={[styles.caption, { color: muted }]}>
+      <Text variant="title">{title}</Text>
+      <Text selectable tone="muted" variant="body">
         {caption}
       </Text>
     </View>
@@ -47,11 +47,9 @@ export function StepHeader({
 }
 
 export function ErrorLine({ message }: { readonly message: string }) {
-  const danger = useThemeColor("danger");
-
   return (
     <Animated.View entering={ERROR_IN} exiting={ERROR_OUT}>
-      <Text selectable style={[styles.error, { color: danger }]}>
+      <Text selectable tone="destructive" variant="body">
         {message}
       </Text>
     </Animated.View>
@@ -59,16 +57,14 @@ export function ErrorLine({ message }: { readonly message: string }) {
 }
 
 export function Footnote({ children }: { readonly children: string }) {
-  const muted = useThemeColor("muted");
   return (
-    <Text selectable style={[styles.footnote, { color: muted }]}>
+    <Text selectable tone="muted" variant="caption">
       {children}
     </Text>
   );
 }
 
 const styles = StyleSheet.create({
-  caption: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
   content: {
     alignSelf: "center",
     flexGrow: 1,
@@ -78,8 +74,5 @@ const styles = StyleSheet.create({
     padding: 24,
     width: "100%",
   },
-  error: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  footnote: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 18 },
   header: { gap: 6 },
-  title: { fontFamily: "Inter_500Medium", fontSize: 24, lineHeight: 30 },
 });

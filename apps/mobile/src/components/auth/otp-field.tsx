@@ -1,13 +1,16 @@
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, TextInput, View } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Text } from "@/components/ui/text";
+import { useColors } from "@/theme/colors";
+import { radius } from "@/theme/tokens";
 
 const SLOTS = [0, 1, 2, 3, 4, 5];
 const digitsOnly = (value: string) => value.replace(/\D/gu, "").slice(0, SLOTS.length);
 
 /**
  * Six slots for the eye, one real field for the system: autofill, paste and
- * VoiceOver all talk to the transparent input layered over the slots.
+ * VoiceOver all talk to the transparent input layered over the slots. The slot
+ * awaiting a digit carries the `ring` border, the same focus signal `Input` uses.
  */
 export function OtpField({
   code,
@@ -18,12 +21,7 @@ export function OtpField({
   readonly editable: boolean;
   readonly onChange: (value: string) => void;
 }) {
-  const [foreground, surface, separator, accent] = useThemeColor([
-    "foreground",
-    "surface",
-    "separator",
-    "accent",
-  ]);
+  const colors = useColors();
 
   return (
     <View style={styles.root}>
@@ -34,12 +32,12 @@ export function OtpField({
             style={[
               styles.slot,
               {
-                backgroundColor: surface,
-                borderColor: slot === code.length ? accent : separator,
+                backgroundColor: colors.card,
+                borderColor: slot === code.length ? colors.ring : colors.input,
               },
             ]}
           >
-            <Text style={[styles.digit, { color: foreground }]}>{code[slot] ?? ""}</Text>
+            <Text variant="monoMedium">{code[slot] ?? ""}</Text>
           </View>
         ))}
       </View>
@@ -61,16 +59,15 @@ export function OtpField({
 }
 
 const styles = StyleSheet.create({
-  digit: { fontFamily: "Inter_500Medium", fontSize: 18, lineHeight: 24 },
   input: { bottom: 0, left: 0, opacity: 0, position: "absolute", right: 0, top: 0 },
   root: { position: "relative" },
   slot: {
     alignItems: "center",
     borderCurve: "continuous",
-    borderRadius: 10,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flex: 1,
-    height: 56,
+    height: 52,
     justifyContent: "center",
   },
   slots: { flexDirection: "row", gap: 8 },
