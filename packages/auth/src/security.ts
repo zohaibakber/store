@@ -60,6 +60,12 @@ export interface AuthSecurityConfig {
   readonly mobileProtocol: string;
   readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
+  /**
+   * Where an OAuth authorization may be sent. It is the origin allowlist plus
+   * the bare app schemes: the deep link lands on a path of our own scheme
+   * (`com.tabaaq.desktop://auth/callback`) rather than on the renderer origin.
+   */
+  readonly trustedRedirects: ReadonlyArray<string>;
   readonly rejectedSettings: ReadonlyArray<RejectedAuthSetting>;
 }
 
@@ -233,6 +239,7 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     mobileProtocol,
     secureCookies,
     trustedOrigins: [...new Set(trustedOrigins)],
+    trustedRedirects: [...new Set([...trustedOrigins, `${electronProtocol}://`])],
     rejectedSettings,
   };
 };
@@ -282,3 +289,23 @@ export const matchesTrustedOrigin = (origin: string | undefined, pattern: string
 
 export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyArray<string>) =>
   patterns.some((pattern) => matchesTrustedOrigin(origin, pattern));
+
+/**
+ * An OAuth redirect is trusted when its origin is. A web redirect carries a
+ * path (`https://app.example.com/callback`), so it is reduced to its origin
+ * before matching. A native redirect has no host authority to compare —
+ * `com.tabaaq.desktop://auth/callback` and the renderer's
+ * `com.tabaaq.desktop://app` share only the scheme the OS handed our app — so
+ * the whole target is matched against the scheme patterns, which
+ * {@link matchesTrustedOrigin} compares by prefix.
+ */
+export const isTrustedRedirect = (redirectUri: string, patterns: ReadonlyArray<string>) => {
+  let target: string;
+  try {
+    const url = new URL(redirectUri);
+    target = url.protocol === "http:" || url.protocol === "https:" ? url.origin : redirectUri;
+  } catch {
+    return false;
+  }
+  return isTrustedOrigin(target, patterns);
+};

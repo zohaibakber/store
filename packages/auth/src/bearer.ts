@@ -1,10 +1,12 @@
-export const bearerTokenFromHeaders = (headers: Headers) => {
-  const authorization = headers.get("authorization");
+export const bearerToken = (authorization: string | undefined) => {
   if (!authorization) return null;
   const [scheme, token] = authorization.split(" ");
   if (!scheme || !token || scheme.toLowerCase() !== "bearer") return null;
   return token.trim() || null;
 };
+
+export const bearerTokenFromHeaders = (headers: Headers) =>
+  bearerToken(headers.get("authorization") ?? undefined);
 
 /** Browser WebSocket constructors cannot set Authorization; live sync uses this query. */
 export const accessTokenFromUrl = (url: string) => {

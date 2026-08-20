@@ -5,6 +5,7 @@ import {
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   isTrustedOrigin,
+  isTrustedRedirect,
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "../src/security";
@@ -73,6 +74,15 @@ describe("resolveAuthSecurity", () => {
         "com.tabaaq.desktop://app",
         "com.tabaaq.mobile://",
         "com.tabaaq.mobile.debug://",
+      ],
+      trustedRedirects: [
+        "https://api.example.com",
+        "https://app.example.com",
+        "http://localhost:5173",
+        "com.tabaaq.desktop://app",
+        "com.tabaaq.mobile://",
+        "com.tabaaq.mobile.debug://",
+        "com.tabaaq.desktop://",
       ],
       rejectedSettings: [],
     });
@@ -191,5 +201,23 @@ describe("matchesTrustedOrigin", () => {
   it("matches a bare host pattern against the origin host", () => {
     expect(isTrustedOrigin("https://api.example.com", ["*.example.com"])).toBe(true);
     expect(isTrustedOrigin("https://api.example.com", ["*.other.com"])).toBe(false);
+  });
+});
+
+describe("isTrustedRedirect", () => {
+  const redirects = resolveAuthSecurity(secureInput).trustedRedirects;
+
+  it.each([
+    ["https://app.example.com/auth/callback", true],
+    ["https://api.example.com/auth/callback", true],
+    ["https://evil.example.net/auth/callback", false],
+    // The renderer origin is `com.tabaaq.desktop://app`, while the deep link
+    // lands on a path of the same scheme, so the whole target is matched.
+    ["com.tabaaq.desktop://auth/callback", true],
+    ["com.tabaaq.mobile://auth/callback", true],
+    ["com.tabaaq.other://auth/callback", false],
+    ["not a url", false],
+  ])("decides %s", (redirectUri, expected) => {
+    expect(isTrustedRedirect(redirectUri, redirects)).toBe(expected);
   });
 });

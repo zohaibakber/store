@@ -48,6 +48,31 @@ export type OtpCode = typeof OtpCode.Type;
 export const OrganizationRole = Schema.Literals(["owner", "admin", "member"]);
 export type OrganizationRole = typeof OrganizationRole.Type;
 
+/** Ownership transfers through a role change, so an invitation cannot grant it. */
+export const InvitableRole = Schema.Literals(["admin", "member"]);
+export type InvitableRole = typeof InvitableRole.Type;
+
+export const OrganizationName = Schema.String.check(
+  Schema.isMinLength(2),
+  Schema.isMaxLength(60),
+  Schema.makeFilter((value) => value === value.trim(), {
+    title: "Organization name without surrounding whitespace",
+  }),
+).pipe(Schema.brand("OrganizationName"));
+export type OrganizationName = typeof OrganizationName.Type;
+
+export const InvitationId = Identifier.pipe(Schema.brand("AuthInvitationId"));
+export type InvitationId = typeof InvitationId.Type;
+
+/**
+ * An opaque secret. D1 stores only its hash, so the token is readable exactly
+ * once: in the response that created it.
+ */
+export const InvitationToken = NonEmptyString.check(Schema.isMaxLength(256)).pipe(
+  Schema.brand("InvitationToken"),
+);
+export type InvitationToken = typeof InvitationToken.Type;
+
 export const AuthClientKind = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Browser"),
@@ -213,5 +238,112 @@ export const AuthSession = Schema.Struct({
   organizations: Schema.Array(AuthOrganizationMembership),
 });
 export interface AuthSession extends Schema.Schema.Type<typeof AuthSession> {}
+
+export const OrganizationMember = Schema.Struct({
+  userId: UserId,
+  name: Schema.String,
+  email: EmailAddress,
+  image: Schema.NullOr(Schema.String),
+  role: OrganizationRole,
+  joinedAt: Schema.Number,
+});
+export interface OrganizationMember extends Schema.Schema.Type<typeof OrganizationMember> {}
+
+export const OrganizationInvitation = Schema.Struct({
+  id: InvitationId,
+  organizationId: OrganizationId,
+  organizationName: Schema.String,
+  email: EmailAddress,
+  role: OrganizationRole,
+  expiresAt: Schema.Number,
+  createdAt: Schema.Number,
+});
+export interface OrganizationInvitation extends Schema.Schema.Type<typeof OrganizationInvitation> {}
+
+/** One organization with everything its settings surface shows. */
+export const OrganizationRoster = Schema.Struct({
+  organization: AuthOrganizationMembership,
+  members: Schema.Array(OrganizationMember),
+  invitations: Schema.Array(OrganizationInvitation),
+});
+export interface OrganizationRoster extends Schema.Schema.Type<typeof OrganizationRoster> {}
+
+/** Every organization the signed-in user can switch to, plus invitations waiting for them. */
+export const OrganizationDirectory = Schema.Struct({
+  organizations: Schema.Array(AuthOrganizationMembership),
+  invitations: Schema.Array(OrganizationInvitation),
+});
+export interface OrganizationDirectory extends Schema.Schema.Type<typeof OrganizationDirectory> {}
+
+export const OrganizationCommand = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("CreateOrganization"),
+    name: OrganizationName,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("InviteMember"),
+    organizationId: OrganizationId,
+    email: EmailAddress,
+    role: InvitableRole,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RevokeInvitation"),
+    organizationId: OrganizationId,
+    invitationId: InvitationId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("AcceptInvitation"),
+    token: InvitationToken,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ChangeMemberRole"),
+    organizationId: OrganizationId,
+    userId: UserId,
+    role: OrganizationRole,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RemoveMember"),
+    organizationId: OrganizationId,
+    userId: UserId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("LeaveOrganization"),
+    organizationId: OrganizationId,
+  }),
+]);
+export type OrganizationCommand = typeof OrganizationCommand.Type;
+
+/**
+ * Membership changed, and the caller learns whatever the change produced: the
+ * organization they now belong to, the invitation token they have to deliver
+ * themselves while email is stubbed, or nothing beyond success.
+ */
+export const OrganizationCommandResult = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Joined"),
+    organization: AuthOrganizationMembership,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Invited"),
+    invitation: OrganizationInvitation,
+    token: InvitationToken,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Applied"),
+  }),
+]);
+export type OrganizationCommandResult = typeof OrganizationCommandResult.Type;
+
+/**
+ * The refresh credential authorizes the switch, because the access token that
+ * names the old organization is exactly what this call replaces.
+ */
+export const SwitchOrganizationInput = Schema.Struct({
+  organizationId: OrganizationId,
+  refreshToken: Schema.optionalKey(RefreshToken),
+});
+export interface SwitchOrganizationInput extends Schema.Schema.Type<
+  typeof SwitchOrganizationInput
+> {}
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();

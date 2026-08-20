@@ -5,9 +5,13 @@ import {
   GoogleAuthorization,
   IdentifyInput,
   LoginCommand,
+  OrganizationCommand,
+  OrganizationId,
   RefreshInput,
   RefreshToken,
   SignOutInput,
+  SwitchOrganizationInput,
+  bearerToken,
   isTrustedOrigin,
   type AuthClientKind,
   type TokenSet,
@@ -98,6 +102,31 @@ const browserTokenResponse = (tokens: TokenSet, client: AuthClientKind, secureCo
     );
   }
   return response;
+};
+
+const requireBearer = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const token = bearerToken(request.headers.authorization);
+  if (!token) {
+    return yield* new AuthError({
+      status: 401,
+      code: "UNAUTHENTICATED",
+      message: "Sign in to continue.",
+    });
+  }
+  return token;
+});
+
+const refreshTokenFromRequest = (
+  request: HttpServerRequest.HttpServerRequest,
+  secureCookies: boolean,
+  provided?: typeof RefreshToken.Type,
+) => {
+  if (provided) return provided;
+  const cookie = request.cookies[refreshCookieName(secureCookies)];
+  if (!cookie) return undefined;
+  const decoded = Schema.decodeUnknownOption(RefreshToken)(cookie);
+  return decoded._tag === "Some" ? decoded.value : undefined;
 };
 
 const withAuthErrorResponse = <R>(
@@ -224,13 +253,11 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
               const request = yield* HttpServerRequest.HttpServerRequest;
               const input = yield* requestJson(RefreshInput);
               const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
-              const refreshToken =
-                input.refreshToken ??
-                (cookie
-                  ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
-                      option._tag === "Some" ? option.value : undefined,
-                    )
-                  : undefined);
+              const refreshToken = refreshTokenFromRequest(
+                request,
+                configuration.secureCookies,
+                input.refreshToken,
+              );
               const tokens = yield* auth.refresh({ refreshToken });
               const client: AuthClientKind = cookie
                 ? { _tag: "Browser" }
@@ -246,14 +273,11 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
             Effect.gen(function* () {
               const request = yield* HttpServerRequest.HttpServerRequest;
               const input = yield* requestJson(SignOutInput);
-              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
-              const refreshToken =
-                input.refreshToken ??
-                (cookie
-                  ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
-                      option._tag === "Some" ? option.value : undefined,
-                    )
-                  : undefined);
+              const refreshToken = refreshTokenFromRequest(
+                request,
+                configuration.secureCookies,
+                input.refreshToken,
+              );
               yield* auth.signOut({ ...input, refreshToken });
               return HttpServerResponse.expireCookieUnsafe(
                 HttpServerResponse.jsonUnsafe({ ok: true }),
@@ -265,6 +289,76 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
                   path: "/",
                 },
               );
+            }),
+          ),
+        );
+        yield* router.add(
+          "GET",
+          "/v1/organizations",
+          withAuthErrorResponse(
+            Effect.gen(function* () {
+              const token = yield* requireBearer;
+              return HttpServerResponse.jsonUnsafe(yield* auth.directory(token));
+            }),
+          ),
+        );
+        yield* router.add(
+          "GET",
+          "/v1/organizations/roster",
+          withAuthErrorResponse(
+            Effect.gen(function* () {
+              const token = yield* requireBearer;
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const url = new URL(request.originalUrl, configuration.baseUrl);
+              const organizationId = yield* Schema.decodeUnknownEffect(OrganizationId)(
+                url.searchParams.get("organizationId"),
+              ).pipe(
+                Effect.mapError(
+                  () =>
+                    new AuthError({
+                      status: 400,
+                      code: "INVALID_REQUEST",
+                      message: "Name the organization to read.",
+                    }),
+                ),
+              );
+              return HttpServerResponse.jsonUnsafe(
+                yield* auth.roster({ accessToken: token, organizationId }),
+              );
+            }),
+          ),
+        );
+        yield* router.add(
+          "POST",
+          "/v1/organizations",
+          withAuthErrorResponse(
+            Effect.gen(function* () {
+              const token = yield* requireBearer;
+              const command = yield* requestJson(OrganizationCommand);
+              return HttpServerResponse.jsonUnsafe(
+                yield* auth.organize({ accessToken: token, command }),
+              );
+            }),
+          ),
+        );
+        yield* router.add(
+          "POST",
+          "/v1/organizations/switch",
+          withAuthErrorResponse(
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const input = yield* requestJson(SwitchOrganizationInput);
+              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
+              const refreshToken = refreshTokenFromRequest(
+                request,
+                configuration.secureCookies,
+                input.refreshToken,
+              );
+              const tokens = yield* auth.switchOrganization({ ...input, refreshToken });
+              const client: AuthClientKind = cookie
+                ? { _tag: "Browser" }
+                : { _tag: "Native", deviceName: "Native client" };
+              return browserTokenResponse(tokens, client, configuration.secureCookies);
             }),
           ),
         );
@@ -300,7 +394,7 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
       Effect.succeed(
         HttpMiddleware.cors({
           allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
-          allowedHeaders: ["Content-Type"],
+          allowedHeaders: ["Authorization", "Content-Type"],
           allowedMethods: ["GET", "POST", "OPTIONS"],
           credentials: true,
           maxAge: 600,

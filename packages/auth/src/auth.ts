@@ -1,4 +1,9 @@
-export { accessTokenFromUrl, bearerTokenFromHeaders, headersWithAccessToken } from "./bearer";
+export {
+  accessTokenFromUrl,
+  bearerToken,
+  bearerTokenFromHeaders,
+  headersWithAccessToken,
+} from "./bearer";
 export {
   AuthClient,
   AuthClientError,
@@ -13,6 +18,7 @@ export {
   EmailDeliveryError,
   EmailProvider,
   type EmailProviderApi,
+  type SendInvitationInput,
   type SendOtpInput,
 } from "./email";
 export {
