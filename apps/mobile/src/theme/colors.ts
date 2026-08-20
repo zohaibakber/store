@@ -12,24 +12,34 @@ export { alpha };
  */
 export const useColors = (): Palette => palettes[useAppColorScheme()];
 
+/** The palette and the appearance that chose it. */
+export type Theme = {
+  readonly colors: Palette;
+  readonly scheme: ColorScheme;
+};
+
 /**
  * Appearance plus palette, for the `@expo/ui` hosts that need both: they take
  * `colorScheme` so the native subtree flips with the JS tree, and
  * `seedColor` so Compose/SwiftUI derive their implicit tints from our neutral
  * primary instead of Material You or iOS blue.
  */
-export const useTheme = (): { readonly colors: Palette; readonly scheme: ColorScheme } => {
+export const useTheme = (): Theme => {
   const scheme = useAppColorScheme();
   return { colors: palettes[scheme], scheme };
 };
 
 export type StatusToken = "destructive" | "success" | "warning" | "info";
 
+/** A tinted surface and the colour anything drawn on it should use. */
+export type StatusSurface = {
+  readonly backgroundColor: Hex;
+  readonly borderColor: Hex;
+  readonly tint: Hex;
+};
+
 /** The coss Alert surface: a 6% wash inside a 32% border. */
-export const statusSurface = (
-  colors: Palette,
-  status: StatusToken,
-): { readonly backgroundColor: Hex; readonly borderColor: Hex; readonly tint: Hex } => ({
+export const statusSurface = (colors: Palette, status: StatusToken): StatusSurface => ({
   backgroundColor: alpha(colors[status], 0.06),
   borderColor: alpha(colors[status], 0.32),
   tint: colors[status],

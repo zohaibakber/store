@@ -243,10 +243,7 @@ export function InlineTextCamera({
           accessibilityState={{ selected: torch }}
           isDisabled={status !== "ready" || busy}
           onPress={() => setTorch((current) => !current)}
-          style={[
-            styles.torch,
-            { backgroundColor: torch ? colors.onScrim : colors.scrim },
-          ]}
+          style={[styles.torch, { backgroundColor: torch ? colors.onScrim : colors.scrim }]}
         >
           <Icon color={torch ? colors.foreground : colors.onScrim} name="bolt" size={18} />
         </PressableScale>

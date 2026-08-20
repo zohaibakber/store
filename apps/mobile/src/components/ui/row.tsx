@@ -18,9 +18,7 @@ export function RowGroup({ children }: { readonly children: ReactNode }) {
   const rows = Children.toArray(children).filter(Boolean);
 
   return (
-    <View
-      style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}
-    >
+    <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {rows.map((row, index) => (
         // eslint-disable-next-line react/no-array-index-key -- rows are positional siblings
         <Fragment key={index}>

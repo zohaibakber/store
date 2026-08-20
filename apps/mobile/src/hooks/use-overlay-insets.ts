@@ -13,14 +13,18 @@ const useBottomNav = (): number => {
     : 49 + insets.bottom;
 };
 
+export type OverlayInsets = {
+  /** Offset from the screen edge to the bottom of the floating action stack. */
+  readonly actionsBottom: number;
+  /** Bottom padding a scroller needs so its last row clears both overlays. */
+  readonly scrollBottom: number;
+};
+
 /**
  * Where the floating actions sit, and how much room a scroller has to leave so
  * its last row is not stuck underneath them.
  */
-export const useOverlayInsets = (): {
-  readonly actionsBottom: number;
-  readonly scrollBottom: number;
-} => {
+export const useOverlayInsets = (): OverlayInsets => {
   const bottomNav = useBottomNav();
 
   return {

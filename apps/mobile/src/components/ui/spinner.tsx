@@ -16,8 +16,10 @@ export function Spinner({
   const colors = useColors();
   const tint =
     color ??
-    { default: colors.foreground, inverse: colors.primaryForeground, muted: colors.mutedForeground }[
-      tone
-    ];
+    {
+      default: colors.foreground,
+      inverse: colors.primaryForeground,
+      muted: colors.mutedForeground,
+    }[tone];
   return <ActivityIndicator color={tint} size={size} />;
 }

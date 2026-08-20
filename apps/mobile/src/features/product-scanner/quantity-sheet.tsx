@@ -17,10 +17,7 @@ type QuantitySheetProps = {
   readonly saving: boolean;
   readonly saveError?: string | null;
   readonly onClose: () => void;
-  readonly onSave: (quantities: {
-    packQuantity: number;
-    unitQuantity: number;
-  }) => Promise<void>;
+  readonly onSave: (quantities: { packQuantity: number; unitQuantity: number }) => Promise<void>;
 };
 
 type QuantityMode = "packs" | "units";

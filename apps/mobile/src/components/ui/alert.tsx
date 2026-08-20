@@ -4,17 +4,17 @@ import { StyleSheet, View } from "react-native";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { statusSurface, useColors, type StatusToken } from "@/theme/colors";
-import { radius, type Hex } from "@/theme/tokens";
+import { radius } from "@/theme/tokens";
 
 export type AlertVariant = "default" | StatusToken;
 
-const iconFor: Record<AlertVariant, IconName> = {
+const iconFor = {
   default: "info",
   destructive: "alert",
   info: "info",
   success: "check",
   warning: "alert",
-};
+} as const satisfies Record<AlertVariant, IconName>;
 
 const AlertContext = createContext<AlertVariant>("default");
 
@@ -30,7 +30,7 @@ export function Alert({
   ...props
 }: ComponentProps<typeof View> & { readonly variant?: AlertVariant }) {
   const colors = useColors();
-  const surface: { backgroundColor: Hex; borderColor: Hex } =
+  const surface =
     variant === "default"
       ? { backgroundColor: colors.card, borderColor: colors.border }
       : statusSurface(colors, variant);
@@ -47,7 +47,8 @@ export function Alert({
 
 function AlertIndicator() {
   const variant = use(AlertContext);
-  const tone = variant === "default" ? "muted" : variant === "destructive" ? "destructive" : variant;
+  const tone =
+    variant === "default" ? "muted" : variant === "destructive" ? "destructive" : variant;
   return <Icon name={iconFor[variant]} style={styles.icon} tone={tone} />;
 }
 

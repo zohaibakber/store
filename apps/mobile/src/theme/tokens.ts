@@ -111,12 +111,15 @@ const dark = {
 export type ColorScheme = "light" | "dark";
 export type Palette = Readonly<Record<ColorToken, Hex>>;
 
-export const palettes: Readonly<Record<ColorScheme, Palette>> = { dark, light };
+export const palettes = { dark, light } as const satisfies Record<ColorScheme, Palette>;
 
 /** Tailwind's `/nn` opacity suffix. Tokens that already carry alpha pass through. */
 export const alpha = (color: Hex, fraction: number): Hex => {
   if (color.length === 9) return color;
   const clamped = Math.round(Math.min(1, Math.max(0, fraction)) * 255);
+  // SAFETY: `color` is `#RRGGBB` here (the 9-char case returned above) and
+  // `clamped` is a byte, so `toString(16).padStart(2, "0")` is exactly two hex
+  // digits — the result is a `#RRGGBBAA` string.
   return `${color}${clamped.toString(16).padStart(2, "0")}` as Hex;
 };
 

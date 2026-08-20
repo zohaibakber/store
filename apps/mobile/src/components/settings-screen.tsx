@@ -67,9 +67,7 @@ export function SettingsScreen() {
           <SectionTitle>Inventory</SectionTitle>
           <RowGroup>
             <Row
-              leading={
-                <Icon name="bolt" size={18} tone={error ? "destructive" : "muted"} />
-              }
+              leading={<Icon name="bolt" size={18} tone={error ? "destructive" : "muted"} />}
               supporting={
                 lastUpdatedAt
                   ? `${products.length} products, synced at ${timeFormatter.format(lastUpdatedAt)}`

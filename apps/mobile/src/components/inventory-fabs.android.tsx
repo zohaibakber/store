@@ -43,7 +43,11 @@ export function InventoryFabs() {
           onClick={() => router.push("/products/new")}
         >
           <ExtendedFloatingActionButton.Icon>
-            <Icon contentDescription="New product" source={addIcon} tint={tokens.primaryForeground} />
+            <Icon
+              contentDescription="New product"
+              source={addIcon}
+              tint={tokens.primaryForeground}
+            />
           </ExtendedFloatingActionButton.Icon>
           <ExtendedFloatingActionButton.Text>
             <Text

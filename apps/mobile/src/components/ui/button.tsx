@@ -7,13 +7,7 @@ import { Text } from "@/components/ui/text";
 import { useColors, type Palette } from "@/theme/colors";
 import { radius, size as sizes, type Hex } from "@/theme/tokens";
 
-export type ButtonVariant =
-  | "default"
-  | "outline"
-  | "ghost"
-  | "secondary"
-  | "destructive"
-  | "link";
+export type ButtonVariant = "default" | "outline" | "ghost" | "secondary" | "destructive" | "link";
 export type ButtonSize = "default" | "sm" | "icon";
 
 type ButtonSkin = {
@@ -37,7 +31,11 @@ const skin = (colors: Palette, variant: ButtonVariant): ButtonSkin => {
         foreground: colors.background,
       };
     case "outline":
-      return { backgroundColor: colors.card, borderColor: colors.input, foreground: colors.foreground };
+      return {
+        backgroundColor: colors.card,
+        borderColor: colors.input,
+        foreground: colors.foreground,
+      };
     case "secondary":
       return {
         backgroundColor: colors.secondary,

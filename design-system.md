@@ -27,8 +27,8 @@ and paints it with native primitives.
 3. **Subtract.** No gradients, no marketing chrome, no decorative shadows, no
    duplicate summaries of the same number.
 4. **Native where it earns it.** Native tab bars, native lists, native sheets,
-   native switches, native refresh, native scroll. Native *structure*, our
-   *paint* — never the platform's opinion about brand color.
+   native switches, native refresh, native scroll. Native _structure_, our
+   _paint_ — never the platform's opinion about brand color.
 5. **Tokens, never literals.** No hex in a component. If a value is missing from
    the token set, add it to the token set.
 6. **Gap, not margin.** Spacing belongs to the container.
@@ -44,40 +44,40 @@ resolved sRGB values that mobile uses (Tailwind v4 ships oklch; React Native
 cannot parse it, so the mobile token file stores the converted hex and the
 conversion is documented in that file).
 
-| Token                    | Web variable             | Light                     | Dark                      | Use |
-| ------------------------ | ------------------------ | ------------------------- | ------------------------- | --- |
-| `background`             | `--background`           | `#ffffff`                 | `#161616`                 | Screen behind everything |
-| `foreground`             | `--foreground`           | `#262626` (neutral-800)   | `#f5f5f5` (neutral-100)   | Primary text, icons |
-| `card`                   | `--card`                 | `#ffffff`                 | `#1b1b1b`                 | Raised content surface |
-| `cardForeground`         | `--card-foreground`      | `#262626`                 | `#f5f5f5`                 | Text on `card` |
-| `popover`                | `--popover`              | `#ffffff`                 | `#1b1b1b`                 | Sheets, menus, dialogs |
-| `popoverForeground`      | `--popover-foreground`   | `#262626`                 | `#f5f5f5`                 | Text on `popover` |
-| `primary`                | `--primary`              | `#262626`                 | `#f5f5f5`                 | Filled button, switch on, selected chip |
-| `primaryForeground`      | `--primary-foreground`   | `#fafafa` (neutral-50)    | `#262626`                 | Text on `primary` |
-| `secondary`              | `--secondary`            | `#0000000a` (black 4%)    | `#ffffff0a` (white 4%)    | Quiet fill |
-| `secondaryForeground`    | `--secondary-foreground` | `#262626`                 | `#f5f5f5`                 | Text on `secondary` |
-| `muted`                  | `--muted`                | `#0000000a`               | `#ffffff0a`               | Skeletons, inert fills |
-| `mutedForeground`        | `--muted-foreground`     | `#686868`                 | `#818181`                 | Secondary text, captions |
-| `accent`                 | `--accent`               | `#0000000a`               | `#ffffff0a`               | Hover / pressed wash |
-| `accentForeground`       | `--accent-foreground`    | `#262626`                 | `#f5f5f5`                 | Text on `accent` |
-| `destructive`            | `--destructive`          | `#fb2c36` (red-500)       | `#fb414a`                 | Destructive fill, error icon |
-| `destructiveForeground`  | `--destructive-foreground`| `#c10007` (red-700)      | `#ff6467` (red-400)       | Error *text* on a normal surface |
-| `success`                | `--success`              | `#00bc7d` (emerald-500)   | `#00bc7d`                 | Success fill / icon |
-| `successForeground`      | `--success-foreground`   | `#007a55` (emerald-700)   | `#00d492` (emerald-400)   | Success text |
-| `warning`                | `--warning`              | `#fe9a00` (amber-500)     | `#fe9a00`                 | Warning fill / icon |
-| `warningForeground`      | `--warning-foreground`   | `#bb4d00` (amber-700)     | `#ffb900` (amber-400)     | Warning text |
-| `info`                   | `--info`                 | `#2b7fff` (blue-500)      | `#2b7fff`                 | Info fill / icon |
-| `infoForeground`         | `--info-foreground`      | `#1447e6` (blue-700)      | `#51a2ff` (blue-400)      | Info text |
-| `border`                 | `--border`               | `#00000014` (black 8%)    | `#ffffff0f` (white 6%)    | Hairlines, dividers |
-| `input`                  | `--input`                | `#0000001a` (black 10%)   | `#ffffff14` (white 8%)    | Control borders, switch off |
-| `ring`                   | `--ring`                 | `#a1a1a1` (neutral-400)   | `#737373` (neutral-500)   | Focus ring |
+| Token                   | Web variable               | Light                   | Dark                    | Use                                     |
+| ----------------------- | -------------------------- | ----------------------- | ----------------------- | --------------------------------------- |
+| `background`            | `--background`             | `#ffffff`               | `#161616`               | Screen behind everything                |
+| `foreground`            | `--foreground`             | `#262626` (neutral-800) | `#f5f5f5` (neutral-100) | Primary text, icons                     |
+| `card`                  | `--card`                   | `#ffffff`               | `#1b1b1b`               | Raised content surface                  |
+| `cardForeground`        | `--card-foreground`        | `#262626`               | `#f5f5f5`               | Text on `card`                          |
+| `popover`               | `--popover`                | `#ffffff`               | `#1b1b1b`               | Sheets, menus, dialogs                  |
+| `popoverForeground`     | `--popover-foreground`     | `#262626`               | `#f5f5f5`               | Text on `popover`                       |
+| `primary`               | `--primary`                | `#262626`               | `#f5f5f5`               | Filled button, switch on, selected chip |
+| `primaryForeground`     | `--primary-foreground`     | `#fafafa` (neutral-50)  | `#262626`               | Text on `primary`                       |
+| `secondary`             | `--secondary`              | `#0000000a` (black 4%)  | `#ffffff0a` (white 4%)  | Quiet fill                              |
+| `secondaryForeground`   | `--secondary-foreground`   | `#262626`               | `#f5f5f5`               | Text on `secondary`                     |
+| `muted`                 | `--muted`                  | `#0000000a`             | `#ffffff0a`             | Skeletons, inert fills                  |
+| `mutedForeground`       | `--muted-foreground`       | `#686868`               | `#818181`               | Secondary text, captions                |
+| `accent`                | `--accent`                 | `#0000000a`             | `#ffffff0a`             | Hover / pressed wash                    |
+| `accentForeground`      | `--accent-foreground`      | `#262626`               | `#f5f5f5`               | Text on `accent`                        |
+| `destructive`           | `--destructive`            | `#fb2c36` (red-500)     | `#fb414a`               | Destructive fill, error icon            |
+| `destructiveForeground` | `--destructive-foreground` | `#c10007` (red-700)     | `#ff6467` (red-400)     | Error _text_ on a normal surface        |
+| `success`               | `--success`                | `#00bc7d` (emerald-500) | `#00bc7d`               | Success fill / icon                     |
+| `successForeground`     | `--success-foreground`     | `#007a55` (emerald-700) | `#00d492` (emerald-400) | Success text                            |
+| `warning`               | `--warning`                | `#fe9a00` (amber-500)   | `#fe9a00`               | Warning fill / icon                     |
+| `warningForeground`     | `--warning-foreground`     | `#bb4d00` (amber-700)   | `#ffb900` (amber-400)   | Warning text                            |
+| `info`                  | `--info`                   | `#2b7fff` (blue-500)    | `#2b7fff`               | Info fill / icon                        |
+| `infoForeground`        | `--info-foreground`        | `#1447e6` (blue-700)    | `#51a2ff` (blue-400)    | Info text                               |
+| `border`                | `--border`                 | `#00000014` (black 8%)  | `#ffffff0f` (white 6%)  | Hairlines, dividers                     |
+| `input`                 | `--input`                  | `#0000001a` (black 10%) | `#ffffff14` (white 8%)  | Control borders, switch off             |
+| `ring`                  | `--ring`                   | `#a1a1a1` (neutral-400) | `#737373` (neutral-500) | Focus ring                              |
 
 Mobile-only additions (no web equivalent because the web has no camera):
 
-| Token     | Light                | Dark                 | Use |
-| --------- | -------------------- | -------------------- | --- |
-| `scrim`   | `#00000099`          | `#000000b3`          | Camera overlay, media chrome |
-| `onScrim` | `#ffffff`            | `#ffffff`            | Text/icons over `scrim` |
+| Token     | Light       | Dark        | Use                          |
+| --------- | ----------- | ----------- | ---------------------------- |
+| `scrim`   | `#00000099` | `#000000b3` | Camera overlay, media chrome |
+| `onScrim` | `#ffffff`   | `#ffffff`   | Text/icons over `scrim`      |
 
 Two derived helpers exist instead of extra tokens:
 
@@ -95,7 +95,7 @@ These break the "same product on every platform" rule and must never appear:
   A wallpaper is not our brand.
 - ❌ `Color.android.holo_*` — a deprecated 2011 palette.
 - ❌ `Color.ios.systemBlue` / `systemPurple` / `systemGreen` … used as brand,
-  accent or primary. iOS semantic *greys* are also out: they don't match
+  accent or primary. iOS semantic _greys_ are also out: they don't match
   `neutral-800` / `neutral-100`.
 - ❌ Any raw hex or `rgba()` in a component file.
 - ❌ Material `primaryContainer` / `tertiaryContainer` / `secondaryContainer`
@@ -128,16 +128,16 @@ the JS tree instead of one frame later.
 - **Scale:** 12 / 14 / 16 / 18 / 24. Body is 14, small is 12. Nothing else.
   Do not introduce 20, 22 or anything ≥ 28.
 
-| Role       | Size / line height | Weight | Web utility  | Mobile variant |
-| ---------- | ------------------ | ------ | ------------ | -------------- |
-| Title      | 24 / 30            | 500    | `text-2xl`   | `title` |
-| Heading    | 18 / 26            | 500    | `text-lg`    | `heading` |
-| Subheading | 16 / 24            | 500    | `text-base`  | `subheading` |
-| Body       | 14 / 20            | 400    | `text-sm`    | `body` |
-| Body med.  | 14 / 20            | 500    | `text-sm`    | `bodyMedium` |
-| Caption    | 12 / 16            | 400    | `text-xs`    | `caption` |
-| Label      | 12 / 16            | 500    | `text-xs`    | `label` |
-| Mono       | 14 / 20            | 400    | `font-mono`  | `mono` |
+| Role       | Size / line height | Weight | Web utility | Mobile variant |
+| ---------- | ------------------ | ------ | ----------- | -------------- |
+| Title      | 24 / 30            | 500    | `text-2xl`  | `title`        |
+| Heading    | 18 / 26            | 500    | `text-lg`   | `heading`      |
+| Subheading | 16 / 24            | 500    | `text-base` | `subheading`   |
+| Body       | 14 / 20            | 400    | `text-sm`   | `body`         |
+| Body med.  | 14 / 20            | 500    | `text-sm`   | `bodyMedium`   |
+| Caption    | 12 / 16            | 400    | `text-xs`   | `caption`      |
+| Label      | 12 / 16            | 500    | `text-xs`   | `label`        |
+| Mono       | 14 / 20            | 400    | `font-mono` | `mono`         |
 
 Rules: sentence case everywhere. No `textTransform: "uppercase"` and no
 letter-spaced micro-labels — they read as marketing chrome. Tabular numerals
@@ -152,15 +152,15 @@ letter-spaced micro-labels — they read as marketing chrome. Tabular numerals
 `--radius: 0.625rem` (10 px) is the base. The scale is multiplicative and
 matches `apps/web/src/styles.css`:
 
-| Name   | Formula        | px   | Use |
-| ------ | -------------- | ---- | --- |
-| `sm`   | `radius * 0.6` | 6    | Badges, chips-in-text |
-| `md`   | `radius * 0.8` | 8    | Small buttons, inline controls |
-| `lg`   | `radius`       | 10   | Buttons, inputs, list rows |
-| `xl`   | `radius * 1.4` | 14   | Cards, alerts |
-| `2xl`  | `radius * 1.8` | 18   | Sheets, camera viewfinder |
-| `3xl`  | `radius * 2.2` | 22   | Full-bleed media |
-| `full` | —              | 999  | Pills, avatars, FABs |
+| Name   | Formula        | px  | Use                            |
+| ------ | -------------- | --- | ------------------------------ |
+| `sm`   | `radius * 0.6` | 6   | Badges, chips-in-text          |
+| `md`   | `radius * 0.8` | 8   | Small buttons, inline controls |
+| `lg`   | `radius`       | 10  | Buttons, inputs, list rows     |
+| `xl`   | `radius * 1.4` | 14  | Cards, alerts                  |
+| `2xl`  | `radius * 1.8` | 18  | Sheets, camera viewfinder      |
+| `3xl`  | `radius * 2.2` | 22  | Full-bleed media               |
+| `full` | —              | 999 | Pills, avatars, FABs           |
 
 React Native must set `borderCurve: "continuous"` wherever it sets
 `borderRadius`.
@@ -177,15 +177,15 @@ React Native must set `borderCurve: "continuous"` wherever it sets
 
 ### Density and hit targets
 
-| Element                       | Height |
-| ----------------------------- | ------ |
-| Primary / default button      | 48 |
-| Small button                  | 40 |
-| Icon button                   | 40 (44 hit target) |
-| Input (single line)           | 48 |
-| List row (single line)        | 48 |
-| List row (two lines)          | 64 |
-| Product row (avatar + 2 lines)| 68 |
+| Element                        | Height             |
+| ------------------------------ | ------------------ |
+| Primary / default button       | 48                 |
+| Small button                   | 40                 |
+| Icon button                    | 40 (44 hit target) |
+| Input (single line)            | 48                 |
+| List row (single line)         | 48                 |
+| List row (two lines)           | 64                 |
+| Product row (avatar + 2 lines) | 68                 |
 
 Minimum touch target is 44 × 44 — extend with `hitSlop`, not with padding that
 inflates the visual box.
@@ -218,14 +218,14 @@ Mobile primitives live in `apps/mobile/src/components/ui/`.
 
 coss: `Button` with `variant` × `size`, `loading`, and inline icons.
 
-| Variant       | Fill                     | Text                 | Border    |
-| ------------- | ------------------------ | -------------------- | --------- |
-| `default`     | `primary`                | `primaryForeground`  | `primary` |
-| `outline`     | `card`                   | `foreground`         | `input` |
-| `ghost`       | transparent → `accent` pressed | `foreground`   | none |
-| `secondary`   | `secondary`              | `secondaryForeground`| none |
-| `destructive` | `destructive`            | `#ffffff`            | `destructive` |
-| `link`        | none                     | `foreground`         | none |
+| Variant       | Fill                           | Text                  | Border        |
+| ------------- | ------------------------------ | --------------------- | ------------- |
+| `default`     | `primary`                      | `primaryForeground`   | `primary`     |
+| `outline`     | `card`                         | `foreground`          | `input`       |
+| `ghost`       | transparent → `accent` pressed | `foreground`          | none          |
+| `secondary`   | `secondary`                    | `secondaryForeground` | none          |
+| `destructive` | `destructive`                  | `#ffffff`             | `destructive` |
+| `link`        | none                           | `foreground`          | none          |
 
 Sizes: `default` 48, `sm` 40, `icon` 40 square. Radius `lg` (`md` for `sm`).
 Disabled is `opacity: 0.64` — never a different color. `loading` swaps the label
@@ -276,17 +276,17 @@ padding 14/12, `gap: 8`. Leading dot or icon in `status`. Title `bodyMedium`
 
 ### Badge
 
-coss: `Badge` with `variant` and `size`. Because a badge *is* a text node, mobile
+coss: `Badge` with `variant` and `size`. Because a badge _is_ a text node, mobile
 implements it as a styled `Text` and accepts a string child.
 
-| Variant     | Fill                       | Text |
-| ----------- | -------------------------- | ---- |
-| `default`   | `primary`                  | `primaryForeground` |
-| `secondary` | `secondary`                | `secondaryForeground` |
-| `outline`   | `card` + `input` border    | `foreground` |
-| `error`     | `alpha(destructive, 0.1)`  | `destructiveForeground` |
-| `warning`   | `alpha(warning, 0.12)`     | `warningForeground` |
-| `success`   | `alpha(success, 0.12)`     | `successForeground` |
+| Variant     | Fill                      | Text                    |
+| ----------- | ------------------------- | ----------------------- |
+| `default`   | `primary`                 | `primaryForeground`     |
+| `secondary` | `secondary`               | `secondaryForeground`   |
+| `outline`   | `card` + `input` border   | `foreground`            |
+| `error`     | `alpha(destructive, 0.1)` | `destructiveForeground` |
+| `warning`   | `alpha(warning, 0.12)`    | `warningForeground`     |
+| `success`   | `alpha(success, 0.12)`    | `successForeground`     |
 
 Radius `sm`, height 20, `label` type. Badges label, they do not shout: no pill
 radius, no uppercase.
@@ -305,7 +305,7 @@ Web/desktop: coss `Tabs` — `ghost`-weight triggers, `foreground` when active,
 Mobile: `expo-router` `NativeTabs`. Painted as: bar `card`, icons
 `mutedForeground` → `foreground` when selected, labels `caption` 12 with the
 same pair, indicator/ripple `accent`, no shadow. Android's floating toolbar
-variant uses the same three colors — it is a different *shape*, not a different
+variant uses the same three colors — it is a different _shape_, not a different
 palette.
 
 ### List
@@ -381,7 +381,7 @@ padding, at most one action.
    Native structure is used for navigation chrome (native tab bar on iOS,
    Material floating toolbar on Android), headers and large titles, FABs,
    sheets, switches, pull-to-refresh, keyboard handling and the camera. Screen
-   *content* is drawn by React Native from the shared primitives, from one file,
+   _content_ is drawn by React Native from the shared primitives, from one file,
    so both platforms render the same hierarchy by construction.
 
    This line is drawn from experience: the previous build had a `*.android.tsx`
@@ -390,6 +390,7 @@ padding, at most one action.
    build without anyone noticing. A platform split may differ in structure; it
    may never differ in palette, type, radius, copy or hierarchy. If a split
    only changes colors, delete it.
+
 4. Scrolling: `contentInsetAdjustmentBehavior="automatic"` on the root scroller;
    no `SafeAreaView` wrappers, no manual `insets.top` padding on iOS.
 5. Lists: virtualize everything (`FlashList`), pass primitives to rows, keep

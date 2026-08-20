@@ -41,11 +41,7 @@ export function IdentifierStep({
             value={email}
           />
         </Field>
-        <Button
-          isDisabled={busy || email.trim().length === 0}
-          loading={busy}
-          onPress={onContinue}
-        >
+        <Button isDisabled={busy || email.trim().length === 0} loading={busy} onPress={onContinue}>
           <ButtonText>Continue</ButtonText>
         </Button>
         {isGoogleSignInConfigured ? <GoogleAction isDisabled={busy} onPress={onGoogle} /> : null}

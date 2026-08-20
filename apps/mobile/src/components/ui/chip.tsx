@@ -25,10 +25,7 @@ export function Chip({
       accessibilityLabel={children}
       accessibilityState={{ selected: isSelected }}
       onPress={onPress}
-      style={[
-        styles.chip,
-        { backgroundColor: isSelected ? colors.primary : colors.secondary },
-      ]}
+      style={[styles.chip, { backgroundColor: isSelected ? colors.primary : colors.secondary }]}
     >
       <Text
         style={[

@@ -34,7 +34,9 @@ export function ProductRow({
   visible,
 }: ProductRowProps) {
   const colors = useColors();
-  const supporting = [category, details, aisle ? `Aisle ${aisle}` : null].filter(Boolean).join(" · ");
+  const supporting = [category, details, aisle ? `Aisle ${aisle}` : null]
+    .filter(Boolean)
+    .join(" · ");
   const stockTone = stock === 0 ? "destructive" : stock <= 10 ? "warning" : "muted";
 
   return (

@@ -1,7 +1,7 @@
 import type { MaterialColors } from "@expo/ui/jetpack-compose";
 
 import { useTheme } from "@/theme/colors";
-import { alpha, type Palette } from "@/theme/tokens";
+import { alpha, type ColorScheme, type Hex, type Palette } from "@/theme/tokens";
 
 /**
  * Our tokens, wearing Material 3's role names.
@@ -68,13 +68,18 @@ export const composeColors = (colors: Palette): MaterialColors => ({
   tertiaryFixedDim: alpha(colors.warning, 0.12),
 });
 
-/** Compose palette, appearance and the neutral seed every `Host` needs. */
-export const useComposeTheme = (): {
+/** What a Compose `Host` needs to stop deriving its own colors. */
+export type ComposeTheme = {
+  /** Every Material 3 role, repainted from our palette. */
   readonly colors: MaterialColors;
-  readonly scheme: "light" | "dark";
-  readonly seedColor: string;
+  readonly scheme: ColorScheme;
+  /** `Host seedColor`, so implicit tints come from our neutral primary. */
+  readonly seedColor: Hex;
+  /** The palette itself, for props that take a color directly. */
   readonly tokens: Palette;
-} => {
+};
+
+export const useComposeTheme = (): ComposeTheme => {
   const { colors, scheme } = useTheme();
   return { colors: composeColors(colors), scheme, seedColor: colors.primary, tokens: colors };
 };
