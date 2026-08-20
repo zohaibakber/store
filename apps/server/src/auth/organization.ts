@@ -59,7 +59,7 @@ export const OrganizationAuthLive = Layer.effect(
         );
         const session = yield* runtime
           .getSession(headers)
-          .pipe(logAuthFailure("Clerk session lookup failed"), Effect.orDie);
+          .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
         if (!session)
           return yield* Effect.fail(
             unauthenticated("UNAUTHENTICATED", "Authentication is required."),
@@ -73,7 +73,7 @@ export const OrganizationAuthLive = Layer.effect(
 
         const hasActiveMember = yield* runtime
           .hasActiveMember(headers)
-          .pipe(logAuthFailure("Clerk organization lookup failed"), Effect.orDie);
+          .pipe(logAuthFailure("Organization membership verification failed"), Effect.orDie);
         if (!hasActiveMember)
           return yield* Effect.fail(
             forbidden("ORGANIZATION_ACCESS_DENIED", "Organization access is denied."),

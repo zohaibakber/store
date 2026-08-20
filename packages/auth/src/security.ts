@@ -203,7 +203,7 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
 
   // The base URL is the deployment's own identity rather than operator input.
   // `apps/server/infra.ts` states it literally, so it stays fatal.
-  const baseURL = secureWebOrigin(input.baseURL, "API base URL");
+  const baseURL = secureWebOrigin(input.baseURL, "Auth base URL");
   const secureCookies = baseURL.startsWith("https://");
 
   const configured = resolveTrustedOrigins(input.trustedOrigins, {
@@ -262,9 +262,9 @@ const webOriginOf = (url: string) => {
 };
 
 /**
- * Matches wildcard and native-scheme entries the same way the CORS allowlist
- * and Clerk authorized parties do. Web patterns match the origin; native
- * schemes match by glob, or by prefix when the pattern holds no wildcard.
+ * Matches wildcard and native-scheme entries the same way as the CORS
+ * allowlist. Web patterns match the origin; native schemes match by glob, or by
+ * prefix when the pattern holds no wildcard.
  */
 export const matchesTrustedOrigin = (origin: string | undefined, pattern: string) => {
   // Effect's CORS middleware types the origin as a string but hands over
@@ -282,51 +282,3 @@ export const matchesTrustedOrigin = (origin: string | undefined, pattern: string
 
 export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyArray<string>) =>
   patterns.some((pattern) => matchesTrustedOrigin(origin, pattern));
-
-/**
- * Clerk publishable keys encode the Frontend API host after the second `_`.
- * That host (for example `clerk.example.com` or `foo.clerk.accounts.dev`) is
- * what Electron CSP must allow, not the Account Portal host.
- */
-export const clerkFrontendApiHostnameFromPublishableKey = (publishableKey: string): string => {
-  try {
-    const encodedFrontendApi = publishableKey.split("_").slice(2).join("_");
-    const frontendApi = globalThis.atob(encodedFrontendApi).replace(/\$$/u, "");
-    if (!frontendApi || frontendApi.includes("/")) {
-      throw new Error("Clerk publishable key does not contain a Frontend API host.");
-    }
-    return new URL(`https://${frontendApi}`).hostname;
-  } catch (cause) {
-    if (cause instanceof Error && cause.message.includes("Frontend API host")) throw cause;
-    throw new Error("Clerk publishable key does not contain a Frontend API host.");
-  }
-};
-
-export const clerkTokenOptions = (template: string | undefined) =>
-  template?.trim()
-    ? ({ template: template.trim(), skipCache: true } as const)
-    : ({ skipCache: true } as const);
-
-const CLERK_TOKEN_REFRESH_FALLBACK_MS = 30_000;
-const CLERK_TOKEN_REFRESH_LEAD_MS = 15_000;
-const CLERK_TOKEN_REFRESH_MIN_MS = 5_000;
-const CLERK_TOKEN_REFRESH_MAX_MS = 45_000;
-
-/** Schedules rotation shortly before the JWT expiry without trusting a fixed token lifetime. */
-export const clerkTokenRefreshDelay = (token: string, now = Date.now()) => {
-  try {
-    const payloadSegment = token.split(".")[1];
-    if (!payloadSegment) return CLERK_TOKEN_REFRESH_FALLBACK_MS;
-    const base64 = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-    const payload: { readonly exp?: number } = JSON.parse(globalThis.atob(padded));
-    const expiration = payload.exp ?? Number.NaN;
-    if (!Number.isFinite(expiration)) return CLERK_TOKEN_REFRESH_FALLBACK_MS;
-    return Math.min(
-      CLERK_TOKEN_REFRESH_MAX_MS,
-      Math.max(CLERK_TOKEN_REFRESH_MIN_MS, expiration * 1_000 - now - CLERK_TOKEN_REFRESH_LEAD_MS),
-    );
-  } catch {
-    return CLERK_TOKEN_REFRESH_FALLBACK_MS;
-  }
-};

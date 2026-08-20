@@ -1,13 +1,12 @@
 /// <reference types="vite/client" />
 
 import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
+import type { TokenSet } from "@store/auth";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
-  readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
-  readonly VITE_CLERK_JWT_TEMPLATE?: string;
-  readonly VITE_CLERK_FAPI_URL?: string;
+  readonly VITE_AUTH_URL?: string;
   readonly VITE_ELECTRON?: boolean;
 }
 
@@ -21,8 +20,10 @@ declare global {
   interface Window {
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;
-      adoptSession(token: string | null): Promise<WorkspaceSnapshot>;
+      adoptSession(tokens: TokenSet | null): Promise<WorkspaceSnapshot>;
       signOut(): Promise<void>;
+      openExternal(url: string): Promise<void>;
+      onOAuthCallback(listener: (url: string) => void): () => void;
       onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;
     };
     serverApi?: {

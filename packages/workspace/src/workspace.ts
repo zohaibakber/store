@@ -6,6 +6,7 @@ import {
   type UserId,
   type WorkspaceSnapshot,
 } from "@store/contracts";
+import type { TokenSet } from "@store/auth";
 import type { OfflineStore } from "@store/persistence/core";
 import type * as Effect from "effect/Effect";
 
@@ -16,13 +17,13 @@ export interface JsonApiObject {
 }
 
 export type WorkspaceCommand =
-  | { readonly _tag: "AdoptSession"; readonly token: string | null }
+  | { readonly _tag: "AdoptSession"; readonly tokens: TokenSet | null }
   | { readonly _tag: "SignOut" };
 
 export interface WorkspaceAuthAdapter {
   readonly snapshot: WorkspaceSnapshot;
   readonly initialize: () => Promise<WorkspaceSnapshot>;
-  readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
   readonly apiRequest: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
 }
@@ -129,7 +130,7 @@ export class AuthenticatedWorkspace {
   async #runCommand(command: WorkspaceCommand): Promise<WorkspaceSnapshot> {
     switch (command._tag) {
       case "AdoptSession":
-        return this.#auth.adoptSession(command.token);
+        return this.#auth.adoptSession(command.tokens);
       case "SignOut":
         await this.#auth.signOut();
         return this.#auth.snapshot;

@@ -1,10 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import {
-  clerkFrontendApiHostnameFromPublishableKey,
-  ELECTRON_RENDERER_HOST,
-} from "@store/auth/security";
+import { ELECTRON_RENDERER_HOST } from "@store/auth/security";
 import { net, protocol } from "electron";
 
 export const desktopRendererOrigin = (scheme: string) => `${scheme}://${ELECTRON_RENDERER_HOST}`;
@@ -26,36 +23,22 @@ export const registerDesktopSchemePrivileges = (scheme: string) => {
   ]);
 };
 
-export const clerkFrontendApiHostname = (publishableKey: string | undefined) => {
-  const key = publishableKey?.trim();
-  if (!key) return undefined;
-  try {
-    return clerkFrontendApiHostnameFromPublishableKey(key);
-  } catch {
-    return undefined;
-  }
-};
-
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
   readonly apiOrigin: string;
-  readonly clerkFrontendApiHostname?: string;
+  readonly authOrigin: string;
   readonly development: boolean;
 }) => {
-  const clerkOrigin = input.clerkFrontendApiHostname
-    ? `https://${input.clerkFrontendApiHostname}`
-    : undefined;
   const scriptSources = [
     "'self'",
     "'unsafe-inline'",
     ...(input.development ? ["'unsafe-eval'"] : []),
-    ...(clerkOrigin ? [clerkOrigin] : []),
     "https://challenges.cloudflare.com",
   ];
   const connectSources = [
     "'self'",
     input.apiOrigin,
-    ...(clerkOrigin ? [clerkOrigin] : []),
+    input.authOrigin,
     ...(input.development ? ["ws:", "http://localhost:*"] : []),
   ];
 
@@ -63,7 +46,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
-    `img-src 'self' ${input.scheme}: data: blob: https://img.clerk.com user-image:`,
+    `img-src 'self' ${input.scheme}: data: blob: https:`,
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",

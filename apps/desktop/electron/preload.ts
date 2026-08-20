@@ -1,11 +1,9 @@
-import { exposeClerkBridge } from "@clerk/electron/preload";
+import type { TokenSet } from "@store/auth";
 import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import { ipcRenderer, contextBridge } from "electron";
 
 import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
-
-exposeClerkBridge({ passkeys: true });
 
 const invoke = <Result, Arguments extends ReadonlyArray<string | null> = []>(
   channel: string,
@@ -14,9 +12,15 @@ const invoke = <Result, Arguments extends ReadonlyArray<string | null> = []>(
 
 contextBridge.exposeInMainWorld("auth", {
   getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
-  adoptSession: (token: string | null) =>
-    invoke<WorkspaceSnapshot, [string | null]>("auth:adopt-session", token),
+  adoptSession: (tokens: TokenSet | null) =>
+    ipcRenderer.invoke("auth:adopt-session", tokens) as Promise<WorkspaceSnapshot>,
   signOut: () => invoke<void>("auth:sign-out"),
+  openExternal: (url: string) => invoke<void, [string]>("auth:open-external", url),
+  onOAuthCallback(callback: (url: string) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
+    ipcRenderer.on("auth:oauth-callback", listener);
+    return () => ipcRenderer.off("auth:oauth-callback", listener);
+  },
   onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: WorkspaceSnapshot) =>
       callback(snapshot);

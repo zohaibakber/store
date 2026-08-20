@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
+import type { TokenSet } from "@store/auth";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -6,7 +7,7 @@ import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
 export interface AuthSessionBridge {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }
