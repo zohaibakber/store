@@ -4,6 +4,30 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 const timestamp = () => integer({ mode: "timestamp" });
 const nowDefault = sql`(unixepoch())`;
 
+/**
+ * Cutover-only data from the hosted auth era. The first-party runtime never
+ * reads this table. Keep it until production accounts have been linked to
+ * first-party users and organizations, then remove it in a dedicated migration.
+ */
+export const legacyOrganizationBinding = sqliteTable(
+  "clerk_org_binding",
+  {
+    legacyOrganizationId: text("clerkOrganizationId").primaryKey(),
+    storeOrganizationId: text().notNull(),
+    legacyUserId: text("clerkUserId").notNull(),
+    email: text().notNull(),
+    createdAt: timestamp().default(nowDefault).notNull(),
+    updatedAt: timestamp()
+      .default(nowDefault)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("clerk_org_binding_store_organization_id_idx").on(table.storeOrganizationId),
+    index("clerk_org_binding_email_idx").on(table.email),
+  ],
+);
+
 export const user = sqliteTable(
   "auth_user",
   {
@@ -34,10 +58,7 @@ export const oauthAccount = sqliteTable(
     createdAt: timestamp().default(nowDefault).notNull(),
   },
   (table) => [
-    uniqueIndex("auth_oauth_account_provider_idx").on(
-      table.provider,
-      table.providerAccountId,
-    ),
+    uniqueIndex("auth_oauth_account_provider_idx").on(table.provider, table.providerAccountId),
     index("auth_oauth_account_user_idx").on(table.userId),
   ],
 );
@@ -71,10 +92,7 @@ export const organizationMembership = sqliteTable(
     createdAt: timestamp().default(nowDefault).notNull(),
   },
   (table) => [
-    uniqueIndex("auth_organization_membership_org_user_idx").on(
-      table.organizationId,
-      table.userId,
-    ),
+    uniqueIndex("auth_organization_membership_org_user_idx").on(table.organizationId, table.userId),
     index("auth_organization_membership_user_idx").on(table.userId),
   ],
 );

@@ -1,5 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 
 import { Auth } from "../auth/infra";
@@ -25,6 +26,7 @@ export const Website = Cloudflare.Website.Vite(
   "Website",
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    const auth = yield* Auth;
     const siteHostname =
       !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod" ? requireProductionHostname() : undefined;
 
@@ -33,7 +35,7 @@ export const Website = Cloudflare.Website.Vite(
       main: "worker.ts",
       env: {
         API: Api,
-        VITE_AUTH_URL: Auth.URL,
+        VITE_AUTH_URL: Output.interpolate`${auth.url}`,
       },
       assets: {
         notFoundHandling: "single-page-application" as const,

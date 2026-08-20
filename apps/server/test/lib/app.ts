@@ -1,3 +1,4 @@
+import { AuthSession, EmailAddress, OrganizationId, SessionId, UserId } from "@store/auth";
 import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/contracts";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import { RuntimeContext } from "alchemy";
@@ -15,28 +16,28 @@ import {
   type SyncLiveInput,
 } from "../../src/http/runtime";
 
-const session = {
+const session = AuthSession.make({
   user: {
-    id: "user-1",
+    id: UserId.make("user-1"),
     name: "Member",
-    email: "member@example.com",
+    email: EmailAddress.make("member@example.com"),
     image: null,
   },
   session: {
-    id: "session-1",
-    userId: "user-1",
-    activeOrganizationId: "org-1",
+    id: SessionId.make("session-1"),
+    userId: UserId.make("user-1"),
+    activeOrganizationId: OrganizationId.make("org-1"),
     expiresAt: Date.now() + 60_000,
   },
   organizations: [
     {
-      id: "org-1",
+      id: OrganizationId.make("org-1"),
       name: "Tabaaq",
       slug: "tabaaq",
       role: "owner",
     },
   ],
-};
+});
 
 const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
 

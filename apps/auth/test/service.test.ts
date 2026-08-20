@@ -78,8 +78,7 @@ const Dependencies = Layer.mergeAll(
       consumeOtp: () => Effect.succeed(null),
       createOAuthState: () => Effect.succeed("oauth-state"),
       consumeOAuthState: () => Effect.succeed(null),
-      createAuthorizationGrant: () =>
-        Effect.succeed(AuthorizationCode.make("authorization-code")),
+      createAuthorizationGrant: () => Effect.succeed(AuthorizationCode.make("authorization-code")),
       consumeAuthorizationGrant: () => Effect.succeed(null),
       allow: () => Effect.succeed(true),
     }),

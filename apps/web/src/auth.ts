@@ -1,10 +1,10 @@
+import { TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import {
   unauthenticatedWorkspace,
   withWorkspaceError,
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts";
-import { TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -43,6 +43,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
   #tokens: TokenSetType | null = null;
+  #refreshInFlight: Promise<TokenSetType | null> | null = null;
 
   constructor(baseUrl: string, authBaseUrl: string) {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -64,16 +65,8 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
 
   async initialize() {
     try {
-      const response = await fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: "{}",
-      });
-      if (response.ok) {
-        this.#tokens = Schema.decodeUnknownSync(TokenSet)(await response.json());
-        return this.refresh();
-      }
+      const tokens = await this.#refreshTokens(true);
+      if (tokens) return this.refresh();
     } catch {}
     return this.#snapshot;
   }
@@ -115,17 +108,19 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   }
 
   async signOut() {
+    await this.#refreshInFlight?.catch(() => null);
+    this.#tokens = null;
     await fetch(`${this.#authBaseUrl}/v1/session/logout`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
       body: "{}",
     }).catch(() => undefined);
-    this.#tokens = null;
     this.#publish(unauthenticated(navigatorOnline()));
   }
 
   async apiRequest(pathname: string, init?: JsonRequestInit) {
+    await this.#refreshTokens();
     const headers = new Headers(init?.headers);
     if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
     const requestBody = init?.body;
@@ -159,6 +154,35 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       );
     }
     return payload;
+  }
+
+  #refreshTokens(force = false): Promise<TokenSetType | null> {
+    if (
+      !force &&
+      (!this.#tokens || this.#tokens.accessExpiresAt > Date.now() + 30_000)
+    ) {
+      return Promise.resolve(this.#tokens);
+    }
+    if (this.#refreshInFlight) return this.#refreshInFlight;
+    this.#refreshInFlight = fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) this.#tokens = null;
+          return null;
+        }
+        const tokens = Schema.decodeUnknownSync(TokenSet)(await response.json());
+        this.#tokens = tokens;
+        return tokens;
+      })
+      .finally(() => {
+        this.#refreshInFlight = null;
+      });
+    return this.#refreshInFlight;
   }
 
   #publish(snapshot: WorkspaceSnapshot) {

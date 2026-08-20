@@ -29,12 +29,9 @@ export function SettingsScreen() {
   const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [background, muted, danger] = useThemeColor(["background", "muted", "danger"]);
-  const userName =
-    state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
+  const userName = state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
   const userEmail =
-    state._tag === "Authenticated"
-      ? state.workspace.user.email
-      : "Sign in to sync across devices";
+    state._tag === "Authenticated" ? state.workspace.user.email : "Sign in to sync across devices";
   const version = Constants.expoConfig?.version ?? "0.1.0";
   const syncDetail = lastUpdatedAt
     ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`

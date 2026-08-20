@@ -11,7 +11,7 @@ export interface SendOtpInput {
   readonly expiresAt: number;
 }
 
-export class EmailDeliveryError extends Schema.TaggedErrorClass<EmailDeliveryError>()(
+export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
   "Auth.EmailDeliveryError",
   {
     message: Schema.String,
@@ -40,6 +40,25 @@ export const developmentEmailLayer = Layer.succeed(
           code: input.code,
           expiresAt: input.expiresAt,
           delivery: "development-log-only",
+        }),
+      );
+    }),
+  }),
+);
+
+/**
+ * Production placeholder until Cloudflare Email is wired. It records that an
+ * OTP was requested without logging the code or claiming delivery.
+ */
+export const disabledEmailLayer = Layer.succeed(
+  EmailProvider,
+  EmailProvider.of({
+    sendOtp: Effect.fn("EmailProvider.disabled.sendOtp")(function* (input) {
+      yield* Effect.logInfo("auth.otp_delivery_disabled").pipe(
+        Effect.annotateLogs({
+          email: input.email,
+          expiresAt: input.expiresAt,
+          delivery: "disabled",
         }),
       );
     }),

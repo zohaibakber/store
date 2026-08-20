@@ -1,3 +1,4 @@
+import type { KVNamespace } from "@cloudflare/workers-types";
 import {
   AuthorizationCode,
   EmailAddress,
@@ -43,15 +44,16 @@ const AuthorizationGrantRecord = Schema.Struct({
   ]),
   expiresAt: Schema.Number,
 });
-export interface AuthorizationGrantRecord
-  extends Schema.Schema.Type<typeof AuthorizationGrantRecord> {}
+export interface AuthorizationGrantRecord extends Schema.Schema.Type<
+  typeof AuthorizationGrantRecord
+> {}
 
 const RateLimitRecord = Schema.Struct({
   count: Schema.Number,
   expiresAt: Schema.Number,
 });
 
-export class EphemeralStoreError extends Schema.TaggedErrorClass<EphemeralStoreError>()(
+export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>()(
   "Auth.EphemeralStoreError",
   {
     operation: Schema.String,
@@ -163,11 +165,9 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         const state = keyId();
         yield* Effect.tryPromise({
           try: () =>
-            namespace.put(
-              `oauth-state:${state}`,
-              JSON.stringify(input),
-              { expiration: Math.floor(input.expiresAt / 1_000) },
-            ),
+            namespace.put(`oauth-state:${state}`, JSON.stringify(input), {
+              expiration: Math.floor(input.expiresAt / 1_000),
+            }),
           catch: (cause) => error("createOAuthState", cause),
         });
         return state;
@@ -193,11 +193,9 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
           const code = AuthorizationCode.make(keyId());
           yield* Effect.tryPromise({
             try: () =>
-              namespace.put(
-                `authorization:${code}`,
-                JSON.stringify(input),
-                { expiration: Math.floor(input.expiresAt / 1_000) },
-              ),
+              namespace.put(`authorization:${code}`, JSON.stringify(input), {
+                expiration: Math.floor(input.expiresAt / 1_000),
+              }),
             catch: (cause) => error("createAuthorizationGrant", cause),
           });
           return code;

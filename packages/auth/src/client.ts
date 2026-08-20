@@ -31,15 +31,12 @@ const ErrorPayload = Schema.Struct({
   }),
 });
 
-export class AuthClientError extends Schema.TaggedErrorClass<AuthClientError>()(
-  "Auth.AuthClientError",
-  {
-    operation: Schema.String,
-    status: Schema.Number,
-    code: Schema.String,
-    message: Schema.String,
-  },
-) {}
+export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth.AuthClientError", {
+  operation: Schema.String,
+  status: Schema.Number,
+  code: Schema.String,
+  message: Schema.String,
+}) {}
 
 export interface AuthClientConfiguration {
   readonly baseUrl: string;
@@ -47,9 +44,7 @@ export interface AuthClientConfiguration {
 }
 
 export interface AuthClientApi {
-  readonly identify: (
-    input: IdentifyInputType,
-  ) => Effect.Effect<LoginRouteType, AuthClientError>;
+  readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
   readonly authenticate: (
     command: LoginCommandType,
   ) => Effect.Effect<TokenSetType, AuthClientError>;
@@ -59,9 +54,7 @@ export interface AuthClientApi {
   readonly exchangeGoogle: (
     input: ExchangeGoogleInputType,
   ) => Effect.Effect<TokenSetType, AuthClientError>;
-  readonly refresh: (
-    input?: RefreshInputType,
-  ) => Effect.Effect<TokenSetType, AuthClientError>;
+  readonly refresh: (input?: RefreshInputType) => Effect.Effect<TokenSetType, AuthClientError>;
   readonly signOut: (input?: SignOutInputType) => Effect.Effect<void, AuthClientError>;
 }
 
@@ -69,22 +62,18 @@ export class AuthClient extends Context.Service<AuthClient, AuthClientApi>()(
   "@store/auth/AuthClient",
 ) {}
 
-const failure = (
-  operation: string,
-  status: number,
-  code: string,
-  message: string,
-) => new AuthClientError({ operation, status, code, message });
+const failure = (operation: string, status: number, code: string, message: string) =>
+  new AuthClientError({ operation, status, code, message });
 
 export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClientApi => {
   const baseUrl = configuration.baseUrl.replace(/\/+$/u, "");
   const fetch = configuration.fetch ?? globalThis.fetch;
 
-  const request = <A, I>(
+  const request = <A, Input>(
     operation: string,
     pathname: string,
-    input: unknown,
-    schema: Schema.Schema<A, I, never>,
+    input: Input,
+    schema: Schema.ConstraintDecoder<A>,
   ): Effect.Effect<A, AuthClientError> =>
     Effect.tryPromise({
       try: (signal) =>
@@ -158,12 +147,7 @@ export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClie
           case "Otp":
             return request("authenticate.otp", "/v1/sign-in/otp", valid, TokenSet);
           case "RegisterPassword":
-            return request(
-              "authenticate.register",
-              "/v1/sign-up/password",
-              valid,
-              TokenSet,
-            );
+            return request("authenticate.register", "/v1/sign-up/password", valid, TokenSet);
           default: {
             const _exhaustive: never = valid;
             return _exhaustive;

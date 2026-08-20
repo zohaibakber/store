@@ -1,3 +1,4 @@
+import { decodeJsonWebKey } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
@@ -5,7 +6,6 @@ import {
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "@store/auth/security";
-import { decodeJsonWebKey } from "@store/auth";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
@@ -163,7 +163,7 @@ export const ApiLive = Api.make(
     const publicJwk = yield* Effect.try({
       try: () => JSON.parse(authPublicJwkText),
       catch: (cause) => new Error(`AUTH_JWT_PUBLIC_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey));
+    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
     const jwtConfig = {
       issuer: security.baseURL,
       audience: "tabaaq-api",

@@ -18,17 +18,19 @@ handle HTTP payloads, cookies, refresh rotation, or JWT parsing.
 
 ```ts
 const program = Effect.gen(function* () {
-  const auth = yield* AuthClient.Service;
-  const next = yield* auth.identify({ email: "owner@example.com" });
-
-  return LoginRoute.match(next, {
-    Password: () => "show-password",
-    Otp: ({ challengeId, developmentCode }) => ({
-      challengeId,
-      developmentCode,
-    }),
-    Registration: () => "show-registration",
+  const auth = yield* AuthClient;
+  const route = yield* auth.identify({
+    email: EmailAddress.make("owner@example.com"),
   });
+
+  switch (route._tag) {
+    case "Password":
+      return "show-password";
+    case "Otp":
+      return { challengeId: route.challengeId, developmentCode: route.developmentCode };
+    case "Registration":
+      return "show-registration";
+  }
 });
 ```
 
@@ -36,37 +38,37 @@ The same operation accepts explicit credential variants. There is no options
 object with `password?`, `code?`, and provider booleans.
 
 ```ts
-const tokens = yield* auth.authenticate(
-  LoginCommand.Password({
-    email,
-    password,
-    client: AuthClientKind.Native({ deviceName: "Zohaib's Mac" }),
-  }),
-);
+const tokens = yield* auth.authenticate({
+  _tag: "Password",
+  email,
+  password,
+  client: nativeClient("Zohaib's Mac"),
+});
 
-const tokens = yield* auth.authenticate(
-  LoginCommand.Otp({
-    challengeId,
-    code,
-    client: AuthClientKind.Browser(),
-  }),
-);
+const tokens = yield* auth.authenticate({
+  _tag: "Otp",
+  challengeId,
+  code,
+  client: browserClient(),
+});
 ```
 
 Google uses an authorization code and PKCE between the app and the auth
 service. The Google client secret stays in the Worker.
 
 ```ts
+const client = nativeClient("Desktop");
 const authorization = yield* auth.beginGoogle({
   redirectUri: "com.tabaaq.desktop://auth/callback",
   codeChallenge,
-  client: AuthClientKind.Native({ deviceName: "Desktop" }),
+  client,
 });
 
 // Open authorization.url, receive authorization code through the deep link.
 const tokens = yield* auth.exchangeGoogle({
   code: callback.code,
   codeVerifier,
+  client,
 });
 ```
 
@@ -74,15 +76,13 @@ The API Worker only verifies access tokens. It never calls the auth Worker on a
 request path.
 
 ```ts
-const session = yield* AccessToken.verify(token).pipe(
-  Effect.provide(AccessToken.layer({ issuer, audience, publicJwk })),
-);
+const claims = yield* verifyAccessToken(token, { issuer, audience, publicJwk });
 ```
 
 The host owns secure token storage. Electron uses `safeStorage`, Expo uses
 SecureStore, and the browser keeps the refresh credential in an HttpOnly
-SameSite cookie. A host gives the workspace a current access token or `null`.
-`null` always activates the local store.
+SameSite cookie. A host gives the workspace a token set or `null`. `null`
+always activates the local store.
 
 ## Shape
 
@@ -131,6 +131,8 @@ interface AccessClaims {
   readonly subject: UserId;
   readonly sessionId: SessionId;
   readonly activeOrganizationId: OrganizationId;
+  readonly organizationName: string;
+  readonly organizationSlug: string | null;
   readonly role: OrganizationRole;
   readonly email: EmailAddress;
   readonly name: string;
@@ -147,40 +149,22 @@ identifier-first and credential flows exhaustive.
 
 ```ts
 interface AuthClient {
-  readonly identify: (
-    input: IdentifyInput,
-  ) => Effect.Effect<LoginRoute, AuthClientError>;
-  readonly authenticate: (
-    command: LoginCommand,
-  ) => Effect.Effect<TokenSet, AuthClientError>;
+  readonly identify: (input: IdentifyInput) => Effect.Effect<LoginRoute, AuthClientError>;
+  readonly authenticate: (command: LoginCommand) => Effect.Effect<TokenSet, AuthClientError>;
   readonly beginGoogle: (
     input: BeginGoogleInput,
   ) => Effect.Effect<GoogleAuthorization, AuthClientError>;
-  readonly exchangeGoogle: (
-    input: ExchangeGoogleInput,
-  ) => Effect.Effect<TokenSet, AuthClientError>;
-  readonly refresh: (
-    input: RefreshInput,
-  ) => Effect.Effect<TokenSet, AuthClientError>;
-  readonly signOut: (
-    input: SignOutInput,
-  ) => Effect.Effect<void, AuthClientError>;
+  readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthClientError>;
+  readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthClientError>;
+  readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthClientError>;
 }
 
 interface AuthService {
   readonly identify: (input: IdentifyInput) => Effect.Effect<LoginRoute, AuthError>;
-  readonly authenticate: (
-    command: LoginCommand,
-  ) => Effect.Effect<TokenSet, AuthError>;
-  readonly beginGoogle: (
-    input: BeginGoogleInput,
-  ) => Effect.Effect<GoogleAuthorization, AuthError>;
-  readonly completeGoogle: (
-    input: GoogleCallbackInput,
-  ) => Effect.Effect<GoogleCallback, AuthError>;
-  readonly exchangeGoogle: (
-    input: ExchangeGoogleInput,
-  ) => Effect.Effect<TokenSet, AuthError>;
+  readonly authenticate: (command: LoginCommand) => Effect.Effect<TokenSet, AuthError>;
+  readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<GoogleAuthorization, AuthError>;
+  readonly completeGoogle: (input: GoogleCallbackInput) => Effect.Effect<GoogleCallback, AuthError>;
+  readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
 }
@@ -291,7 +275,7 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 - We accept D1 writes on refresh in exchange for correct rotation, replay
   detection, and logout.
 - We accept identifier enumeration in exchange for the required password versus
-  OTP route. Per-identifier and per-network rate limits constrain abuse.
+  OTP route. Per-identifier and per-challenge rate limits constrain abuse.
 - We accept PBKDF2-HMAC-SHA-256 in the first Worker implementation because Web
   Crypto supports it without native modules. The password module isolates a
   future Argon2id service.
@@ -316,7 +300,18 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 - Should a later Cloudflare Email provider send OTP through Email Routing or an
   external transactional provider bound to the Worker?
 
-## Next implementation step
+## Implementation notes and deviations
 
-Build and test the domain schemas, JWT module, password module, and D1 schema
-before wiring the Worker routes.
+- The implemented workspace command adopts the complete token set, not only an
+  access token. Native hosts need the rotating refresh credential, and keeping
+  that contract explicit prevents hidden token storage inside React components.
+- Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
+  development uses an unprefixed cookie because the prefix requires `Secure`.
+- The auth database keeps the old organization-binding table until production
+  account linking is complete. No runtime code reads it. A dedicated cutover
+  migration can remove it after existing organizations have first-party owners.
+- The first release creates one owner organization during registration and
+  Google sign-up. Organization creation, invitations, and membership management
+  endpoints remain separate product work.
+- The repository pins an Effect prerelease where schema-backed errors are named
+  `Schema.TaggedError`. The design's error model is unchanged.

@@ -1,4 +1,5 @@
 import {
+  AuthorizationCode,
   DEFAULT_ELECTRON_PROTOCOL,
   makeAuthClient,
   nativeClient,
@@ -10,6 +11,7 @@ import {
   type TokenSet,
 } from "@store/auth";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { authSession } from "@/lib/auth";
 
@@ -25,8 +27,7 @@ const currentClient = (): AuthClientKind =>
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
-export const identify = (input: IdentifyInput): Promise<LoginRoute> =>
-  run(client.identify(input));
+export const identify = (input: IdentifyInput): Promise<LoginRoute> => run(client.identify(input));
 
 export const authenticate = async (command: LoginCommand): Promise<TokenSet> => {
   const tokens = await run(client.authenticate(command));
@@ -43,9 +44,7 @@ const base64Url = (bytes: Uint8Array) => {
 const pkce = async () => {
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
-    ),
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
   );
   return { verifier, challenge };
 };
@@ -77,9 +76,10 @@ export const completeGoogle = async (callbackUrl: string) => {
   const verifier = sessionStorage.getItem(PKCE_KEY);
   if (!code || !verifier) return false;
   sessionStorage.removeItem(PKCE_KEY);
+  const authorizationCode = await run(Schema.decodeUnknownEffect(AuthorizationCode)(code));
   const tokens = await run(
     client.exchangeGoogle({
-      code,
+      code: authorizationCode,
       codeVerifier: verifier,
       client: currentClient(),
     }),

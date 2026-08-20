@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
-import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { TokenSet } from "@store/auth";
+import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
 interface ImportMetaEnv {

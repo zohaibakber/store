@@ -1,3 +1,4 @@
+import type { TokenSet } from "@store/auth";
 import {
   unauthenticatedWorkspace,
   withWorkspaceError,
@@ -6,7 +7,6 @@ import {
   type UserId,
   type WorkspaceSnapshot,
 } from "@store/contracts";
-import type { TokenSet } from "@store/auth";
 import type { OfflineStore } from "@store/persistence/core";
 import type * as Effect from "effect/Effect";
 

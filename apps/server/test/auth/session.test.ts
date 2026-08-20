@@ -12,11 +12,10 @@ import { describe, expect, it } from "vitest";
 import { authenticateHeaders } from "../../src/auth/session";
 
 const configuration = async (): Promise<JwtConfiguration> => {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    true,
-    ["sign", "verify"],
-  );
+  const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+    "verify",
+  ]);
   return {
     issuer: "https://auth.example.com",
     audience: "tabaaq-api",
@@ -47,10 +46,7 @@ describe("authenticateHeaders", () => {
     );
 
     const session = await Effect.runPromise(
-      authenticateHeaders(
-        new Headers({ authorization: `Bearer ${issued.token}` }),
-        config,
-      ),
+      authenticateHeaders(new Headers({ authorization: `Bearer ${issued.token}` }), config),
     );
 
     expect(session).toMatchObject({

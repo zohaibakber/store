@@ -5,7 +5,7 @@ import { ipcRenderer, contextBridge } from "electron";
 
 import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 
-const invoke = <Result, Arguments extends ReadonlyArray<string | null> = []>(
+const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
   ...args: Arguments
 ): Promise<Result> => ipcRenderer.invoke(channel, ...args);
@@ -13,7 +13,7 @@ const invoke = <Result, Arguments extends ReadonlyArray<string | null> = []>(
 contextBridge.exposeInMainWorld("auth", {
   getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
   adoptSession: (tokens: TokenSet | null) =>
-    ipcRenderer.invoke("auth:adopt-session", tokens) as Promise<WorkspaceSnapshot>,
+    invoke<WorkspaceSnapshot, [TokenSet | null]>("auth:adopt-session", tokens),
   signOut: () => invoke<void>("auth:sign-out"),
   openExternal: (url: string) => invoke<void, [string]>("auth:open-external", url),
   onOAuthCallback(callback: (url: string) => void) {
