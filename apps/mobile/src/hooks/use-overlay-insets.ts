@@ -4,6 +4,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 /** Height of the floating action stack in `inventory-fabs`: 44 + 12 + 52. */
 const ACTIONS_HEIGHT = 108;
 
+/** Breathing room between the last row and whatever floats over it. */
+const CLEARANCE = 24;
+
 /** Space the bottom navigation occupies, measured up from the screen edge. */
 const useBottomNav = (): number => {
   const insets = useSafeAreaInsets();
@@ -13,25 +16,22 @@ const useBottomNav = (): number => {
     : 49 + insets.bottom;
 };
 
-export type OverlayInsets = {
-  /** Offset from the screen edge to the bottom of the floating action stack. */
-  readonly actionsBottom: number;
-  /** Bottom padding a scroller needs so its last row clears both overlays. */
-  readonly scrollBottom: number;
-};
+/** Where the floating action stack sits, measured from the screen edge. */
+export const useActionsInset = (): number => useBottomNav() + 16;
+
+/** What floats over a scroller and therefore has to be scrolled clear of. */
+export type Overlays = "nav" | "nav-and-actions";
 
 /**
- * Where the floating actions sit, and how much room a scroller has to leave so
- * its last row is not stuck underneath them.
+ * Bottom padding so a scroller's last row is not stranded under the bottom
+ * navigation, or under the floating actions above it.
+ *
+ * iOS scrollers already clear the native tab bar themselves through
+ * `contentInsetAdjustmentBehavior`, so the navigation costs nothing there.
+ * Android's floating toolbar is an overlay we drew ourselves, so it does.
  */
-export const useOverlayInsets = (): OverlayInsets => {
+export const useScrollInset = (overlays: Overlays): number => {
   const bottomNav = useBottomNav();
-
-  return {
-    actionsBottom: bottomNav + 16,
-    // iOS scrollers already clear the native tab bar through
-    // `contentInsetAdjustmentBehavior`, so only the actions need room. Android's
-    // toolbar is an overlay we drew ourselves, so it does not.
-    scrollBottom: (Platform.OS === "android" ? bottomNav : 0) + ACTIONS_HEIGHT + 24,
-  };
+  const nav = Platform.OS === "android" ? bottomNav : 0;
+  return nav + (overlays === "nav-and-actions" ? ACTIONS_HEIGHT : 0) + CLEARANCE;
 };

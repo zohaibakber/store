@@ -15,7 +15,7 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
-import { useOverlayInsets } from "@/hooks/use-overlay-insets";
+import { useScrollInset } from "@/hooks/use-overlay-insets";
 import { LOW_STOCK_THRESHOLD, needsAttention } from "@/lib/product-catalog";
 import { useColors } from "@/theme/colors";
 
@@ -28,7 +28,7 @@ export function HomeScreen() {
   const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const colors = useColors();
-  const { scrollBottom } = useOverlayInsets();
+  const scrollBottom = useScrollInset("nav-and-actions");
   const attention = needsAttention(products);
 
   return (
