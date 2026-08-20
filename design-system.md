@@ -115,6 +115,13 @@ for anything Compose paints implicitly — ripples, chips, indicators, search ba
 On iOS the same prop becomes the SwiftUI tint, so native controls stop being
 blue. Everything else is painted explicitly from the token table.
 
+Native views outside an `@expo/ui` host have no seed to inherit, so they need
+every tint named. `NativeTabs` is the one that matters: left alone it is
+systemBlue on iOS and wallpaper-derived on Android, so `tintColor`, `iconColor`,
+`indicatorColor`, `rippleColor` and the label colors are all set from the
+palette. The same goes for React Navigation's theme, which ships iOS blue as
+`primary` and is rebuilt from the palette in `app/_layout.tsx`.
+
 ### 2.3 Dark mode
 
 Follows the device; there is no in-app toggle
@@ -318,11 +325,27 @@ gesture, size and animation stay native while the color is ours.
 Web/desktop: coss `Tabs` — `ghost`-weight triggers, `foreground` when active,
 `mutedForeground` otherwise, 2 px `primary` indicator.
 
-Mobile: `expo-router` `NativeTabs`. Painted as: bar `card`, icons
+Mobile: `expo-router` `NativeTabs` — a real `UITabBar` on iOS, a Material
+navigation bar on Android, one component for both. Painted as: `tintColor`
+`foreground` (this is what replaces systemBlue and Material You), icons
 `mutedForeground` → `foreground` when selected, labels `caption` 12 with the
-same pair, indicator/ripple `accent`, no shadow. Android's floating toolbar
-variant uses the same three colors — it is a different _shape_, not a different
-palette.
+same pair, Android indicator and ripple `accent`, hairline `border` — a border,
+not an elevation shadow.
+
+The bar's fill differs by platform because the two toolkits differ: iOS keeps
+the `systemChromeMaterial` blur so a list stays visible scrolling under it,
+while Android, which has no blur material, takes an opaque `card`. A blur is a
+translucency rather than a hue, so it adds no color the palette didn't pick.
+
+Selection reads differently too, and should. iOS swaps each outline SF Symbol
+for its filled twin; Material has no filled twin for two of the three glyphs, so
+Android carries selection in the indicator and icon color, which is Material's
+own idiom. Same palette, each platform's grammar.
+
+Two things not to do. Don't draw the tab bar yourself — no floating pill, no
+Compose toolbar over a hidden `NativeTabs`, no JS fallback. And don't animate a
+tab change: selecting a tab is a switch, not a push, so the root screen of each
+tab stack sets `animation: "none"`.
 
 ### List
 
@@ -394,11 +417,11 @@ padding, at most one action.
 2. `@expo/ui/jetpack-compose` imports only in `*.android.tsx`;
    `@expo/ui/swift-ui` only in `*.ios.tsx`. `Host` always comes from `@expo/ui`.
 3. **Native where the platform owns the interaction; shared everywhere else.**
-   Native structure is used for navigation chrome (native tab bar on iOS,
-   Material floating toolbar on Android), headers and large titles, FABs,
-   sheets, switches, pull-to-refresh, keyboard handling and the camera. Screen
-   _content_ is drawn by React Native from the shared primitives, from one file,
-   so both platforms render the same hierarchy by construction.
+   Native structure is used for navigation chrome (`NativeTabs` and native
+   stacks), headers and large titles, FABs, sheets, switches, pull-to-refresh,
+   keyboard handling and the camera. Screen _content_ is drawn by React Native
+   from the shared primitives, from one file, so both platforms render the same
+   hierarchy by construction.
 
    This line is drawn from experience: the previous build had a `*.android.tsx`
    twin for every screen, and the twins were what let Material You colors, a
@@ -408,7 +431,12 @@ padding, at most one action.
    only changes colors, delete it.
 
 4. Scrolling: `contentInsetAdjustmentBehavior="automatic"` on the root scroller;
-   no `SafeAreaView` wrappers, no manual `insets.top` padding on iOS.
+   no `SafeAreaView` wrappers, no manual `insets.top` padding on iOS. Let the
+   tab bar inset the content itself — iOS insets its first scroll view
+   automatically and Android sits the content above the bar, so
+   `disableAutomaticContentInsets` should stay off and bottom padding should
+   only ever budget for what _we_ draw over the content. See
+   `hooks/use-overlay-insets`.
 5. Lists: virtualize everything (`FlashList`), pass primitives to rows, keep
    rows free of queries and context, hoist callbacks to the list root.
 6. Never store scroll or press position in `useState`.
@@ -429,9 +457,11 @@ padding, at most one action.
 - **Mobile:** split by who draws the pixel.
   - _Native chrome_ — tab bars, FABs — uses platform symbols, because the
     platform owns the container and the symbol is what makes it feel native: SF
-    Symbols on iOS (`sf={{ default, selected }}`), Material vector XML from
-    `src/assets/icons` on Android. Keep that directory to the symbols native
-    chrome actually imports; an unreferenced drawable still ships in the APK.
+    Symbols on iOS (`sf={{ default, selected }}`), Material Symbols on Android
+    (`md="…"`, glyph names from `expo-symbols`). Compose components that take a
+    drawable instead read vector XML from `src/assets/icons`. Keep that
+    directory to the drawables something actually imports; an unreferenced one
+    still ships in the APK.
   - _Everything React Native draws_ uses the shared `ui/icon` set: one stroke
     family on a 24 grid at 1.5 weight, so a row on Android and the same row on
     iOS are identical and match the Hugeicons weight on web.
