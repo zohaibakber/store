@@ -222,6 +222,11 @@ defaults. Where web uses `shadow-xs/5` + a 1 px inset highlight, mobile uses a
 Each recipe lists the coss anatomy, then how web/desktop and mobile realise it.
 Mobile primitives live in `apps/mobile/src/components/ui/`.
 
+That directory is the mobile end of this document, the same way
+`apps/web/src/components/ui` is the web end. A recipe below with no caller yet
+(`Switch`, `FieldError` at the time of writing) is inventory, not dead code —
+the point of a design system is that the next screen doesn't have to invent one.
+
 ### Button
 
 coss: `Button` with `variant` × `size`, `loading`, and inline icons.
