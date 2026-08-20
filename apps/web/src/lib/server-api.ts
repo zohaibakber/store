@@ -3,10 +3,15 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { resolveBrowserApiBaseUrl } from "@/lib/api-base-url";
+
 const ApiFailure = Schema.Struct({ message: Schema.String });
 
 const apiUrl = (pathname: string) => {
-  const base = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+  const base = resolveBrowserApiBaseUrl({
+    configuredApiUrl: import.meta.env.VITE_API_URL ?? "",
+    pageOrigin: globalThis.location.origin,
+  });
   return `${base}${pathname}`;
 };
 

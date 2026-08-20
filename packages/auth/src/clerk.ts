@@ -1,4 +1,6 @@
 import { createClerkClient, verifyToken } from "@clerk/backend";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 export interface ClerkVerifyConfig {
   readonly secretKey: string;
@@ -16,6 +18,7 @@ export interface ClerkVerifiedClaims {
   readonly email: string | null;
   readonly name: string | null;
   readonly image: string | null;
+  readonly expiresAt: number;
 }
 
 export interface ClerkOrganizationMembership {
@@ -42,6 +45,7 @@ interface ClerkClaimsPayload {
   readonly lastName?: unknown;
   readonly image?: unknown;
   readonly picture?: unknown;
+  readonly exp?: unknown;
 }
 
 interface ClerkOrganizationClaim {
@@ -88,6 +92,30 @@ export const bearerTokenFromHeaders = (headers: Headers) => {
   return token.trim() || null;
 };
 
+/** Browser WebSocket constructors cannot set Authorization; the live upgrade uses this query. */
+export const accessTokenFromUrl = (url: string) => {
+  const query = url.includes("://")
+    ? (() => {
+        try {
+          return new URL(url).searchParams.get("access_token");
+        } catch {
+          return null;
+        }
+      })()
+    : new URLSearchParams(url.split("?")[1] ?? "").get("access_token");
+  const token = query?.trim();
+  return token || null;
+};
+
+export const headersWithAccessToken = (headers: Headers, url: string) => {
+  if (bearerTokenFromHeaders(headers)) return headers;
+  const token = accessTokenFromUrl(url);
+  if (!token) return headers;
+  const next = new Headers(headers);
+  next.set("authorization", `Bearer ${token}`);
+  return next;
+};
+
 /** Supports both Clerk JWT v2 organization claims and legacy v1 flat claims. */
 export const clerkClaimsFromPayload = (payload: ClerkClaimsPayload): ClerkVerifiedClaims => {
   const userId = textClaim(payload.sub);
@@ -105,6 +133,13 @@ export const clerkClaimsFromPayload = (payload: ClerkClaimsPayload): ClerkVerifi
     email: textClaim(payload.email) ?? textClaim(payload.email_address),
     name: nameFromClaims(payload),
     image: textClaim(payload.image) ?? textClaim(payload.picture),
+    expiresAt: Option.match(
+      Schema.decodeUnknownOption(Schema.Number.check(Schema.isFinite()))(payload.exp),
+      {
+        onNone: () => Date.now() + 60_000,
+        onSome: (seconds) => seconds * 1_000,
+      },
+    ),
   };
 };
 

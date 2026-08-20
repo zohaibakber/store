@@ -284,7 +284,8 @@ test("an offline transport never rolls back local writes and leaves outbox work 
       const pending = await readOutbox(dataDir);
       expect(pending).toHaveLength(2);
       expect(pending.every((operation) => operation.acknowledgedAt === null)).toBe(true);
-      expect(pending.every((operation) => operation.attemptCount > 0)).toBe(true);
+      expect(pending.every((operation) => operation.attemptCount === 0)).toBe(true);
+      expect(pending[0]?.nextAttemptAt).not.toBeNull();
     },
     { syncTransport: transport },
   );
@@ -602,7 +603,7 @@ test("remoteChangeWins keeps a strictly newer local row and overwrites on a tie"
   expect(remoteChangeWins({ rowVersion: 3 }, { rowVersion: 2 })).toBe(false);
 });
 
-test("a failed exchange sets a future nextAttemptAt and increments attemptCount", async () => {
+test("a failed retryable exchange sets a future nextAttemptAt without burning attemptCount", async () => {
   const transport = {
     exchange: () =>
       Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true })),
@@ -629,11 +630,50 @@ test("a failed exchange sets a future nextAttemptAt and increments attemptCount"
 
       const outbox = await readOutbox(dataDir);
       expect(outbox.length).toBeGreaterThan(0);
-      expect(outbox[0]?.attemptCount).toBeGreaterThan(0);
+      expect(outbox[0]?.attemptCount).toBe(0);
       expect(outbox[0]?.nextAttemptAt).not.toBeNull();
       // SAFETY: The preceding assertion establishes that nextAttemptAt is non-null.
       expect(outbox[0]?.nextAttemptAt as number).toBeGreaterThan(before);
       expect(outbox.slice(1).every((operation) => operation.nextAttemptAt === null)).toBe(true);
+    },
+    { syncTransport: transport },
+  );
+});
+
+test("a non-retryable exchange increments attemptCount toward quarantine", async () => {
+  const transport = {
+    exchange: () =>
+      Effect.fail(
+        SyncTransportError.make({
+          message: "operations[0].changes must contain at most 1,000 items",
+          retryable: false,
+          status: 400,
+          code: "INVALID_SYNC_REQUEST",
+        }),
+      ),
+  };
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Poison candidate",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+      await runtime.dispose();
+
+      const outbox = await readOutbox(dataDir);
+      expect(outbox[0]?.attemptCount).toBe(1);
+      expect(outbox[0]?.nextAttemptAt).not.toBeNull();
     },
     { syncTransport: transport },
   );
