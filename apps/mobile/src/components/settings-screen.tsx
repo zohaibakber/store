@@ -11,7 +11,7 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
-import { useScrollInset } from "@/hooks/use-overlay-insets";
+import { scrollInset } from "@/hooks/use-overlay-insets";
 import { mobileApplicationId } from "@/lib/auth-client";
 import { useMobileAuth } from "@/lib/auth-provider";
 import { useColors } from "@/theme/colors";
@@ -28,7 +28,7 @@ export function SettingsScreen() {
   const { refresh } = useProductActions();
   const colors = useColors();
   // Settings has no floating actions, only the bottom navigation.
-  const scrollBottom = useScrollInset("nav");
+  const scrollBottom = scrollInset("nav");
   const authenticated = state._tag === "Authenticated";
   const version = Constants.expoConfig?.version ?? "0.1.0";
 

@@ -23,7 +23,7 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
-import { useScrollInset } from "@/hooks/use-overlay-insets";
+import { scrollInset } from "@/hooks/use-overlay-insets";
 import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
 import { formatPrice, type MobileProduct } from "@/lib/products";
 import { useColors } from "@/theme/colors";
@@ -57,7 +57,7 @@ export function ProductsScreen() {
   const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const colors = useColors();
-  const scrollBottom = useScrollInset("nav-and-actions");
+  const scrollBottom = scrollInset("nav-and-actions");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StockFilter>("all");
   const deferredQuery = useDeferredValue(query);

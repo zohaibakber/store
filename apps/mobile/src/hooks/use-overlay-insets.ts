@@ -7,31 +7,43 @@ const ACTIONS_HEIGHT = 108;
 /** Breathing room between the last row and whatever floats over it. */
 const CLEARANCE = 24;
 
-/** Space the bottom navigation occupies, measured up from the screen edge. */
-const useBottomNav = (): number => {
-  const insets = useSafeAreaInsets();
-  return Platform.OS === "android"
-    ? // The floating toolbar plus the margin it floats on.
-      72 + Math.max(insets.bottom, 12) + 8
-    : 49 + insets.bottom;
-};
+/** Gap between the bottom navigation and the actions floating above it. */
+const MARGIN = 16;
 
-/** Where the floating action stack sits, measured from the screen edge. */
-export const useActionsInset = (): number => useBottomNav() + 16;
+/**
+ * Height of a standard `UITabBar` above the home indicator. Pinned rather than
+ * measured because `AppTabs` sets `minimizeBehavior="never"`, so the bar does
+ * not change height while scrolling.
+ */
+const IOS_TAB_BAR = 49;
+
+/**
+ * Where the floating action stack sits, measured up from the bottom of the tab
+ * screen's content area.
+ *
+ * The two platforms lay a native tab bar out differently, and that is the whole
+ * reason this is a hook. iOS content extends *under* a translucent `UITabBar`,
+ * so an overlay has to be lifted past it or it lands behind the bar. Android's
+ * Material navigation bar is a sibling of the content, not a layer over it, so
+ * the content area already stops where the bar begins and only a margin is
+ * needed.
+ */
+export const useActionsInset = (): number => {
+  const insets = useSafeAreaInsets();
+  return Platform.OS === "android" ? MARGIN : IOS_TAB_BAR + insets.bottom + MARGIN;
+};
 
 /** What floats over a scroller and therefore has to be scrolled clear of. */
 export type Overlays = "nav" | "nav-and-actions";
 
 /**
- * Bottom padding so a scroller's last row is not stranded under the bottom
- * navigation, or under the floating actions above it.
+ * Bottom padding so a scroller's last row is not stranded underneath something.
  *
- * iOS scrollers already clear the native tab bar themselves through
- * `contentInsetAdjustmentBehavior`, so the navigation costs nothing there.
- * Android's floating toolbar is an overlay we drew ourselves, so it does.
+ * Not a hook, and deliberately so: the tab bar never appears in this sum. iOS
+ * gives its first scroll view automatic content insets and Android sits the
+ * content above the bar, so on both platforms the navigation is already paid
+ * for by the platform. Only the actions we draw ourselves need budgeting, which
+ * is why `"nav"` costs nothing but breathing room.
  */
-export const useScrollInset = (overlays: Overlays): number => {
-  const bottomNav = useBottomNav();
-  const nav = Platform.OS === "android" ? bottomNav : 0;
-  return nav + (overlays === "nav-and-actions" ? ACTIONS_HEIGHT : 0) + CLEARANCE;
-};
+export const scrollInset = (overlays: Overlays): number =>
+  (overlays === "nav-and-actions" ? ACTIONS_HEIGHT + MARGIN : 0) + CLEARANCE;

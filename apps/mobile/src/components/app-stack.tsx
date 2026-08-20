@@ -35,6 +35,9 @@ export function AppStack({ title, children }: { title: string; children?: ReactN
       <Stack.Screen
         name="index"
         options={{
+          // The root of a tab. Selecting a tab is a switch, not a push, so it
+          // must never slide in from the side.
+          animation: "none",
           headerLargeTitle: true,
           headerLargeTitleShadowVisible: false,
           headerLargeTitleStyle: {
