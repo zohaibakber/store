@@ -1,12 +1,11 @@
 import {
   AuthClientError,
-  AuthorizationCode,
-  BeginGoogleInput,
-  ExchangeGoogleInput,
+  ExchangeGoogleIdTokenInput,
   IdentifyInput,
   makeAuthClient,
   nativeClient,
   TokenSet,
+  type GoogleIdToken,
   type LoginCommand as LoginCommandType,
   type LoginRoute,
   type TokenSet as TokenSetType,
@@ -20,7 +19,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
-import * as Crypto from "expo-crypto";
 import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
@@ -180,39 +178,14 @@ export const authenticateMobile = async (command: LoginCommandType) => {
   return next;
 };
 
-const base64Url = (value: string) =>
-  value.replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-
-const makePkce = async () => {
-  const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}`.replace(/-/gu, "");
-  const challenge = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, {
-    encoding: Crypto.CryptoEncoding.BASE64,
-  });
-  return { verifier, challenge: base64Url(challenge) };
-};
-
-export const beginGoogleMobile = async (redirectUri: string) => {
-  const { verifier, challenge } = await makePkce();
-  const input = BeginGoogleInput.make({
-    redirectUri,
-    codeChallenge: challenge,
-    client: native,
-  });
-  const authorization = await run(client.beginGoogle(input));
-  return { authorization, verifier };
-};
-
-export const exchangeGoogleMobile = async (input: {
-  readonly code: string;
-  readonly verifier: string;
-}) => {
-  const code = await run(Schema.decodeUnknownEffect(AuthorizationCode)(input.code));
-  const command = ExchangeGoogleInput.make({
-    code,
-    codeVerifier: input.verifier,
-    client: native,
-  });
-  const next = await run(client.exchangeGoogle(command));
+/**
+ * Mobile signs in through Google's native SDK, so the Worker receives an ID
+ * token instead of walking an authorization code through the browser.
+ */
+export const exchangeGoogleIdTokenMobile = async (idToken: GoogleIdToken) => {
+  const next = await run(
+    client.exchangeGoogleIdToken(ExchangeGoogleIdTokenInput.make({ idToken, client: native })),
+  );
   await persistTokens(next);
   return next;
 };
@@ -239,6 +212,7 @@ const AuthFailure = Schema.Struct({
 export const authErrorMessage = (cause: unknown) => {
   if (isOfflineCause(cause)) return "You're offline. Your local inventory is still available.";
   if (cause instanceof AuthClientError) return cause.message;
+  if (cause instanceof Error && cause.message) return cause.message;
   const failure = Schema.decodeUnknownOption(AuthFailure)(cause).pipe(Option.getOrNull);
   if (failure?.message) return failure.message;
   const nested = failure?.errors?.[0]?.message;

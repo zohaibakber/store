@@ -95,6 +95,9 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
+- Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
+  Android OAuth client IDs, accepted as ID token audiences alongside the web
+  client ID.
 - Variables with code defaults (optional): `ELECTRON_PROTOCOL`
   (`com.tabaaq.desktop`), `MOBILE_PROTOCOL` (`com.tabaaq.mobile`),
   `AUTH_TRUSTED_ORIGINS` (comma-separated `https://` origins, bare hosts, or
@@ -118,7 +121,22 @@ domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
-to the trusted web origin or native custom scheme after PKCE verification.
+to the trusted web origin or native custom scheme after PKCE verification. Web
+and desktop use that redirect flow.
+
+Mobile does not. It signs in through Google's own SDK, which presents Google's
+account picker, and posts the resulting ID token to
+`POST /v1/oauth/google/native`. The Worker verifies the token with Google and
+issues the same session as every other route. That needs:
+
+- OAuth clients of type iOS and Android in the same Google Cloud project, with
+  the mobile bundle ID / package name and the Android signing SHA-1.
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (the web client ID, so Google mints an ID
+  token) and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` at build time. The iOS client ID
+  becomes the reversed URL scheme when `expo prebuild` runs the config plugin.
+- A development build or a release build. The SDK is native code, so Expo Go
+  cannot run it. Without `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` the app builds fine
+  and hides the Google action.
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
