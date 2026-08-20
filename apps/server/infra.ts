@@ -17,7 +17,11 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
 import { invoiceAiClient } from "./src/ai/invoice-ai";
 import { productScanAiClient } from "./src/ai/product-scan-ai";
-import { authenticateHeaders, loadWorkspaceSnapshot } from "./src/auth/session";
+import {
+  authenticateHeaders,
+  loadWorkspaceSnapshot,
+  type AuthVerificationConfig,
+} from "./src/auth/session";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -164,7 +168,7 @@ export const ApiLive = Api.make(
       try: () => JSON.parse(authPublicJwkText),
       catch: (cause) => new Error(`AUTH_JWT_PUBLIC_JWK is invalid JSON: ${String(cause)}`),
     }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
-    const jwtConfig = {
+    const jwtConfig: AuthVerificationConfig = {
       issuer: security.baseURL,
       audience: "tabaaq-api",
       publicJwk,
