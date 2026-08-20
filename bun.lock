@@ -23,8 +23,10 @@
       "name": "@store/auth-worker",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/sql-d1": "catalog:",
         "@store/auth": "workspace:*",
         "@store/db": "workspace:*",
+        "drizzle-orm": "catalog:",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -329,6 +331,7 @@
     "vitest": "4.1.10",
   },
   "catalog": {
+    "@effect/sql-d1": "4.0.0-rc.110",
     "@effect/sql-libsql": "4.0.0-rc.110",
     "@effect/sql-sqlite-do": "4.0.0-rc.110",
     "@effect/vitest": "4.0.0-rc.110",

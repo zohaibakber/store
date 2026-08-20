@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import * as D1Client from "@effect/sql-d1/D1Client";
 import {
   EmailAddress,
   InvitationId,
@@ -17,6 +18,16 @@ import {
   type SessionId as SessionIdType,
   type UserId as UserIdType,
 } from "@store/auth";
+import {
+  oauthAccount,
+  organization,
+  organizationInvitation,
+  organizationMembership,
+  session,
+  user,
+} from "@store/db/auth.schema";
+import { and, asc, count, desc, eq, exists, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -73,56 +84,6 @@ const SessionRecord = Schema.Struct({
   replacedBySessionId: Schema.NullOr(SessionId),
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
-
-/** SQLite has no boolean, so verification arrives as `0` or `1`. */
-interface UserRow {
-  readonly id: string;
-  readonly email: string;
-  readonly name: string;
-  readonly image: string | null;
-  readonly passwordHash: string | null;
-  readonly emailVerified: number;
-}
-
-interface DecodableUserRow extends Omit<UserRow, "emailVerified"> {
-  readonly emailVerified: boolean;
-}
-
-interface MembershipRow {
-  readonly organizationId: string;
-  readonly organizationName: string;
-  readonly organizationSlug: string | null;
-  readonly role: string;
-}
-
-interface InvitationRow {
-  readonly id: string;
-  readonly organizationId: string;
-  readonly organizationName: string;
-  readonly organizationSlug: string | null;
-  readonly email: string;
-  readonly role: string;
-  readonly invitedByUserId: string;
-  readonly expiresAt: number;
-  readonly acceptedAt: number | null;
-  readonly revokedAt: number | null;
-  readonly createdAt: number;
-}
-
-interface SessionRow {
-  readonly id: string;
-  readonly familyId: string;
-  readonly userId: string;
-  readonly activeOrganizationId: string;
-  readonly refreshTokenHash: string;
-  readonly clientKind: string;
-  readonly deviceName: string | null;
-  readonly expiresAt: number;
-  readonly revokedAt: number | null;
-  readonly replacedBySessionId: string | null;
-}
-
-type AuthRow = DecodableUserRow | MembershipRow | InvitationRow | SessionRow;
 
 export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth.RepositoryError", {
   operation: Schema.String,
@@ -273,681 +234,687 @@ export class AuthRepository extends Context.Service<AuthRepository, AuthReposito
 const repositoryError = (operation: string, cause: unknown) =>
   new RepositoryError({ operation, message: String(cause) });
 
-const decodeNullable = <A>(
-  schema: Schema.ConstraintDecoder<A>,
-  operation: string,
-  value: AuthRow | null,
-) => {
-  if (value === null) return Effect.succeed(null);
-  return Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError((cause) => repositoryError(operation, cause)),
-  );
-};
-
-const decodeUser = (operation: string, row: UserRow | null) =>
-  decodeNullable(
-    UserRecord,
-    operation,
-    row === null ? null : { ...row, emailVerified: row.emailVerified !== 0 },
-  );
-
 const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
   Schema.decodeUnknownSync(schema)(crypto.randomUUID());
 
-const seconds = (milliseconds: number) => Math.floor(milliseconds / 1_000);
+const at = (milliseconds: number) => /* @__PURE__ */ new Date(milliseconds);
+const millis = (value: Date | null) => (value === null ? null : value.getTime());
 
-const USER_COLUMNS = `id, email, name, image, passwordHash,
-  CASE WHEN emailVerifiedAt IS NULL THEN 0 ELSE 1 END AS emailVerified`;
+type AuthDrizzle = Effect.Success<ReturnType<typeof D1Drizzle.makeWithDefaults>>;
 
-const MEMBERSHIP_SELECT = `SELECT
-    m.organizationId,
-    o.name AS organizationName,
-    o.slug AS organizationSlug,
-    m.role
-  FROM auth_organization_membership m
-  JOIN auth_organization o ON o.id = m.organizationId`;
+/** Any Drizzle query builder, which is also the SQL it would send. */
+interface Compilable {
+  readonly toSQL: () => { readonly sql: string; readonly params: ReadonlyArray<unknown> };
+}
 
-const INVITATION_SELECT = `SELECT
-    i.id,
-    i.organizationId,
-    o.name AS organizationName,
-    o.slug AS organizationSlug,
-    i.email,
-    i.role,
-    i.invitedByUserId,
-    i.expiresAt * 1000 AS expiresAt,
-    i.acceptedAt * 1000 AS acceptedAt,
-    i.revokedAt * 1000 AS revokedAt,
-    i.createdAt * 1000 AS createdAt
-  FROM auth_organization_invitation i
-  JOIN auth_organization o ON o.id = i.organizationId`;
+/** Every guarded statement in a batch returns the id of the row it matched. */
+interface ReturnedId {
+  readonly id: string;
+}
 
-/** A live invitation: not spent, not withdrawn, not stale. */
-const PENDING_CLAUSE = "i.acceptedAt IS NULL AND i.revokedAt IS NULL AND i.expiresAt > ?";
+const userColumns = {
+  id: user.id,
+  email: user.email,
+  name: user.name,
+  image: user.image,
+  passwordHash: user.passwordHash,
+  emailVerifiedAt: user.emailVerifiedAt,
+};
 
-const insertSession = (database: D1Database, input: NewSession) =>
-  database
-    .prepare(
-      `INSERT INTO auth_session (
-        id, familyId, userId, activeOrganizationId, refreshTokenHash,
-        clientKind, deviceName, expiresAt, lastUsedAt, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
-    )
-    .bind(
-      input.id,
-      input.familyId,
-      input.userId,
-      input.activeOrganizationId,
-      input.refreshTokenHash,
-      input.client._tag,
-      input.client._tag === "Native" ? input.client.deviceName : null,
-      Math.floor(input.expiresAt / 1_000),
+interface UserColumns {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string;
+  readonly image: string | null;
+  readonly passwordHash: string | null;
+  readonly emailVerifiedAt: Date | null;
+}
+
+const membershipColumns = {
+  organizationId: organizationMembership.organizationId,
+  organizationName: organization.name,
+  organizationSlug: organization.slug,
+  role: organizationMembership.role,
+};
+
+const invitationColumns = {
+  id: organizationInvitation.id,
+  organizationId: organizationInvitation.organizationId,
+  organizationName: organization.name,
+  organizationSlug: organization.slug,
+  email: organizationInvitation.email,
+  role: organizationInvitation.role,
+  invitedByUserId: organizationInvitation.invitedByUserId,
+  expiresAt: organizationInvitation.expiresAt,
+  acceptedAt: organizationInvitation.acceptedAt,
+  revokedAt: organizationInvitation.revokedAt,
+  createdAt: organizationInvitation.createdAt,
+};
+
+interface InvitationColumns {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly organizationName: string;
+  readonly organizationSlug: string | null;
+  readonly email: string;
+  readonly role: string;
+  readonly invitedByUserId: string;
+  readonly expiresAt: Date;
+  readonly acceptedAt: Date | null;
+  readonly revokedAt: Date | null;
+  readonly createdAt: Date;
+}
+
+const sessionColumns = {
+  id: session.id,
+  familyId: session.familyId,
+  userId: session.userId,
+  activeOrganizationId: session.activeOrganizationId,
+  refreshTokenHash: session.refreshTokenHash,
+  clientKind: session.clientKind,
+  deviceName: session.deviceName,
+  expiresAt: session.expiresAt,
+  revokedAt: session.revokedAt,
+  replacedBySessionId: session.replacedBySessionId,
+};
+
+/** Parses a driver row, whatever shape the query asked for, into a record. */
+const decode =
+  <A>(schema: Schema.ConstraintDecoder<A>, operation: string) =>
+  <Row>(row: Row) =>
+    Schema.decodeUnknownEffect(schema)(row).pipe(
+      Effect.mapError((cause) => repositoryError(operation, cause)),
     );
 
-export const authRepositoryLayer = (database: D1Database) =>
-  Layer.succeed(
-    AuthRepository,
-    AuthRepository.of({
-      findUserByEmail: Effect.fn("AuthRepository.findUserByEmail")(function* (email) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(`SELECT ${USER_COLUMNS} FROM auth_user WHERE email = ?`)
-              .bind(email)
-              .first<UserRow>(),
-          catch: (cause) => repositoryError("findUserByEmail", cause),
-        });
-        return yield* decodeUser("findUserByEmail.decode", row);
-      }),
-      findUserById: Effect.fn("AuthRepository.findUserById")(function* (userId) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(`SELECT ${USER_COLUMNS} FROM auth_user WHERE id = ?`)
-              .bind(userId)
-              .first<UserRow>(),
-          catch: (cause) => repositoryError("findUserById", cause),
-        });
-        return yield* decodeUser("findUserById.decode", row);
-      }),
-      findUserByGoogleId: Effect.fn("AuthRepository.findUserByGoogleId")(
-        function* (providerAccountId) {
-          const row = yield* Effect.tryPromise({
-            try: () =>
-              database
-                .prepare(
-                  `SELECT u.id, u.email, u.name, u.image, u.passwordHash,
-                    CASE WHEN u.emailVerifiedAt IS NULL THEN 0 ELSE 1 END AS emailVerified
-                 FROM auth_oauth_account a
-                 JOIN auth_user u ON u.id = a.userId
-                 WHERE a.provider = 'google' AND a.providerAccountId = ?`,
-                )
-                .bind(providerAccountId)
-                .first<UserRow>(),
-            catch: (cause) => repositoryError("findUserByGoogleId", cause),
-          });
-          return yield* decodeUser("findUserByGoogleId.decode", row);
-        },
+const asUser = (row: UserColumns | undefined, operation: string) =>
+  row === undefined
+    ? Effect.succeed(null)
+    : decode(
+        UserRecord,
+        operation,
+      )({
+        id: row.id,
+        email: row.email,
+        name: row.name,
+        image: row.image,
+        passwordHash: row.passwordHash,
+        emailVerified: row.emailVerifiedAt !== null,
+      });
+
+const asInvitation = (row: InvitationColumns, operation: string) =>
+  decode(
+    InvitationRecord,
+    operation,
+  )({
+    ...row,
+    expiresAt: row.expiresAt.getTime(),
+    acceptedAt: millis(row.acceptedAt),
+    revokedAt: millis(row.revokedAt),
+    createdAt: row.createdAt.getTime(),
+  });
+
+/** A live invitation: not spent, not withdrawn, not stale. */
+const stillPending = (now: number) =>
+  and(
+    isNull(organizationInvitation.acceptedAt),
+    isNull(organizationInvitation.revokedAt),
+    gt(organizationInvitation.expiresAt, at(now)),
+  );
+
+const sessionValues = (input: NewSession) => ({
+  id: input.id,
+  familyId: input.familyId,
+  userId: input.userId,
+  activeOrganizationId: input.activeOrganizationId,
+  refreshTokenHash: input.refreshTokenHash,
+  clientKind: input.client._tag,
+  deviceName: input.client._tag === "Native" ? input.client.deviceName : null,
+  expiresAt: at(input.expiresAt),
+});
+
+const ownerMembership = (organizationId: OrganizationIdType, userId: UserIdType) => ({
+  id: crypto.randomUUID(),
+  organizationId,
+  userId,
+  role: "owner" as const,
+});
+
+const startingOrganization = (name: string) => ({
+  id: makeId(OrganizationId),
+  name: `${name || "My"}'s Store`,
+});
+
+export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
+  const client = database.$client;
+  const fail = (operation: string) =>
+    Effect.mapError((cause: unknown) => repositoryError(operation, cause));
+
+  /**
+   * D1 has no transactions, only atomic batches, so every statement a guard
+   * depends on is compiled from its query builder and sent as one request.
+   * `RETURNING` is what reports whether a guarded statement matched, because a
+   * batch answers with rows rather than with an affected-row count.
+   */
+  const batch = (operation: string, queries: ReadonlyArray<Compilable>) =>
+    client
+      .batch(
+        queries.map((query) => {
+          const compiled = query.toSQL();
+          return client.unsafe<ReturnedId>(compiled.sql, compiled.params);
+        }),
+      )
+      .pipe(fail(operation));
+
+  const invitationById = (invitationId: string) =>
+    database
+      .select(invitationColumns)
+      .from(organizationInvitation)
+      .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
+      .where(eq(organizationInvitation.id, invitationId));
+
+  const membershipOf = (userId: UserIdType, organizationId: OrganizationIdType) =>
+    database
+      .select(membershipColumns)
+      .from(organizationMembership)
+      .innerJoin(organization, eq(organization.id, organizationMembership.organizationId))
+      .where(
+        and(
+          eq(organizationMembership.userId, userId),
+          eq(organizationMembership.organizationId, organizationId),
+        ),
+      );
+
+  const findUserWhere = Effect.fn("AuthRepository.findUserWhere")(function* (
+    operation: string,
+    rows: Effect.Effect<ReadonlyArray<UserColumns>, unknown>,
+  ) {
+    const [row] = yield* rows.pipe(fail(operation));
+    return yield* asUser(row, `${operation}.decode`);
+  });
+
+  return {
+    findUserByEmail: (email) =>
+      findUserWhere(
+        "findUserByEmail",
+        database.select(userColumns).from(user).where(eq(user.email, email)),
       ),
-      createPasswordUser: Effect.fn("AuthRepository.createPasswordUser")(function* (input) {
-        const userId = makeId(UserId);
-        const organizationId = makeId(OrganizationId);
-        const membershipId = crypto.randomUUID();
-        const organizationName = `${input.name.trim() || "My"}'s Store`;
-        yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `INSERT INTO auth_user (
-                    id, email, name, image, passwordHash, emailVerifiedAt, createdAt, updatedAt
-                  ) VALUES (?, ?, ?, NULL, ?, NULL, unixepoch(), unixepoch())`,
-                )
-                .bind(userId, input.email, input.name.trim(), input.passwordHash),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization (
-                    id, name, slug, createdAt, updatedAt
-                  ) VALUES (?, ?, NULL, unixepoch(), unixepoch())`,
-                )
-                .bind(organizationId, organizationName),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization_membership (
-                    id, organizationId, userId, role, createdAt
-                  ) VALUES (?, ?, ?, 'owner', unixepoch())`,
-                )
-                .bind(membershipId, organizationId, userId),
-            ]),
-          catch: (cause) => repositoryError("createPasswordUser", cause),
-        });
-        return UserRecord.make({
+    findUserById: (userId) =>
+      findUserWhere(
+        "findUserById",
+        database.select(userColumns).from(user).where(eq(user.id, userId)),
+      ),
+    findUserByGoogleId: (providerAccountId) =>
+      findUserWhere(
+        "findUserByGoogleId",
+        database
+          .select(userColumns)
+          .from(oauthAccount)
+          .innerJoin(user, eq(user.id, oauthAccount.userId))
+          .where(
+            and(
+              eq(oauthAccount.provider, "google"),
+              eq(oauthAccount.providerAccountId, providerAccountId),
+            ),
+          ),
+      ),
+    createPasswordUser: Effect.fn("AuthRepository.createPasswordUser")(function* (input) {
+      const userId = makeId(UserId);
+      const name = input.name.trim();
+      const store = startingOrganization(name);
+      yield* batch("createPasswordUser", [
+        database.insert(user).values({
           id: userId,
           email: input.email,
-          name: input.name.trim(),
+          name,
           image: null,
           passwordHash: input.passwordHash,
-          emailVerified: false,
-        });
-      }),
-      createGoogleUser: Effect.fn("AuthRepository.createGoogleUser")(function* (input) {
-        const userId = makeId(UserId);
-        const organizationId = makeId(OrganizationId);
-        const membershipId = crypto.randomUUID();
-        const organizationName = `${input.name.trim() || "My"}'s Store`;
-        yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `INSERT INTO auth_user (
-                    id, email, name, image, passwordHash, emailVerifiedAt, createdAt, updatedAt
-                  ) VALUES (?, ?, ?, ?, NULL, unixepoch(), unixepoch(), unixepoch())`,
-                )
-                .bind(userId, input.email, input.name.trim(), input.image),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization (
-                    id, name, slug, createdAt, updatedAt
-                  ) VALUES (?, ?, NULL, unixepoch(), unixepoch())`,
-                )
-                .bind(organizationId, organizationName),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization_membership (
-                    id, organizationId, userId, role, createdAt
-                  ) VALUES (?, ?, ?, 'owner', unixepoch())`,
-                )
-                .bind(membershipId, organizationId, userId),
-              database
-                .prepare(
-                  `INSERT INTO auth_oauth_account (
-                    id, userId, provider, providerAccountId, createdAt
-                  ) VALUES (?, ?, 'google', ?, unixepoch())`,
-                )
-                .bind(crypto.randomUUID(), userId, input.providerAccountId),
-            ]),
-          catch: (cause) => repositoryError("createGoogleUser", cause),
-        });
-        return UserRecord.make({
+          emailVerifiedAt: null,
+        }),
+        database.insert(organization).values({ id: store.id, name: store.name, slug: null }),
+        database.insert(organizationMembership).values(ownerMembership(store.id, userId)),
+      ]);
+      return UserRecord.make({
+        id: userId,
+        email: input.email,
+        name,
+        image: null,
+        passwordHash: input.passwordHash,
+        emailVerified: false,
+      });
+    }),
+    createGoogleUser: Effect.fn("AuthRepository.createGoogleUser")(function* (input) {
+      const userId = makeId(UserId);
+      const name = input.name.trim();
+      const store = startingOrganization(name);
+      yield* batch("createGoogleUser", [
+        database.insert(user).values({
           id: userId,
           email: input.email,
-          name: input.name.trim(),
+          name,
           image: input.image,
           passwordHash: null,
-          emailVerified: true,
-        });
-      }),
-      attachGoogleAccount: Effect.fn("AuthRepository.attachGoogleAccount")(function* (input) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `INSERT INTO auth_oauth_account (
-                  id, userId, provider, providerAccountId, createdAt
-                ) VALUES (?, ?, 'google', ?, unixepoch())
-                ON CONFLICT(provider, providerAccountId) DO NOTHING`,
-              )
-              .bind(crypto.randomUUID(), input.userId, input.providerAccountId)
-              .run(),
-          catch: (cause) => repositoryError("attachGoogleAccount", cause),
-        });
-        return (result.meta.changes ?? 0) === 1;
-      }),
-      claimUnverifiedPasswordUser: Effect.fn("AuthRepository.claimUnverifiedPasswordUser")(
-        function* (input) {
-          // The link is written first and every following statement requires it
-          // to name this user, so an identity another account already holds
-          // leaves the password and the sessions untouched.
-          const ownsIdentity = `EXISTS (
-            SELECT 1 FROM auth_oauth_account
-            WHERE provider = 'google' AND providerAccountId = ? AND userId = ?
-          )`;
-          const results = yield* Effect.tryPromise({
-            try: () =>
-              database.batch([
-                database
-                  .prepare(
-                    `INSERT INTO auth_oauth_account (
-                      id, userId, provider, providerAccountId, createdAt
-                    ) VALUES (?, ?, 'google', ?, unixepoch())
-                    ON CONFLICT(provider, providerAccountId) DO NOTHING`,
-                  )
-                  .bind(crypto.randomUUID(), input.userId, input.providerAccountId),
-                database
-                  .prepare(
-                    `UPDATE auth_user
-                     SET passwordHash = NULL,
-                         emailVerifiedAt = ?,
-                         image = COALESCE(image, ?),
-                         updatedAt = ?
-                     WHERE id = ?
-                       AND passwordHash IS NOT NULL
-                       AND emailVerifiedAt IS NULL
-                       AND ${ownsIdentity}`,
-                  )
-                  .bind(
-                    seconds(input.now),
-                    input.image,
-                    seconds(input.now),
-                    input.userId,
-                    input.providerAccountId,
-                    input.userId,
-                  ),
-                database
-                  .prepare(
-                    `UPDATE auth_session SET revokedAt = ?
-                     WHERE userId = ? AND revokedAt IS NULL AND ${ownsIdentity}`,
-                  )
-                  .bind(seconds(input.now), input.userId, input.providerAccountId, input.userId),
-              ]),
-            catch: (cause) => repositoryError("claimUnverifiedPasswordUser", cause),
-          });
-          return (results[1]?.meta.changes ?? 0) === 1;
-        },
-      ),
-      membershipForUser: Effect.fn("AuthRepository.membershipForUser")(function* (userId) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(`${MEMBERSHIP_SELECT} WHERE m.userId = ? ORDER BY m.createdAt ASC LIMIT 1`)
-              .bind(userId)
-              .first<MembershipRow>(),
-          catch: (cause) => repositoryError("membershipForUser", cause),
-        });
-        const membership = yield* decodeNullable(MembershipRecord, "membershipForUser.decode", row);
-        if (!membership) {
-          return yield* repositoryError(
-            "membershipForUser",
-            `User ${userId} has no organization membership.`,
-          );
-        }
-        return membership;
-      }),
-      membershipsForUser: Effect.fn("AuthRepository.membershipsForUser")(function* (userId) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(`${MEMBERSHIP_SELECT} WHERE m.userId = ? ORDER BY m.createdAt ASC`)
-              .bind(userId)
-              .all<MembershipRow>(),
-          catch: (cause) => repositoryError("membershipsForUser", cause),
-        });
-        return yield* Schema.decodeUnknownEffect(Schema.Array(MembershipRecord))(
-          result.results,
-        ).pipe(Effect.mapError((cause) => repositoryError("membershipsForUser.decode", cause)));
-      }),
-      membershipInOrganization: Effect.fn("AuthRepository.membershipInOrganization")(
-        function* (input) {
-          const row = yield* Effect.tryPromise({
-            try: () =>
-              database
-                .prepare(`${MEMBERSHIP_SELECT} WHERE m.userId = ? AND m.organizationId = ?`)
-                .bind(input.userId, input.organizationId)
-                .first<MembershipRow>(),
-            catch: (cause) => repositoryError("membershipInOrganization", cause),
-          });
-          return yield* decodeNullable(MembershipRecord, "membershipInOrganization.decode", row);
-        },
-      ),
-      createOrganization: Effect.fn("AuthRepository.createOrganization")(function* (input) {
-        const organizationId = makeId(OrganizationId);
-        const name = input.name.trim();
-        yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `INSERT INTO auth_organization (
-                    id, name, slug, createdAt, updatedAt
-                  ) VALUES (?, ?, NULL, unixepoch(), unixepoch())`,
-                )
-                .bind(organizationId, name),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization_membership (
-                    id, organizationId, userId, role, createdAt
-                  ) VALUES (?, ?, ?, 'owner', unixepoch())`,
-                )
-                .bind(crypto.randomUUID(), organizationId, input.ownerUserId),
-            ]),
-          catch: (cause) => repositoryError("createOrganization", cause),
-        });
-        return MembershipRecord.make({
-          organizationId,
-          organizationName: name,
-          organizationSlug: null,
-          role: "owner",
-        });
-      }),
-      listMembers: Effect.fn("AuthRepository.listMembers")(function* (organizationId) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `SELECT
-                  u.id AS userId,
-                  u.name,
-                  u.email,
-                  u.image,
-                  m.role,
-                  m.createdAt * 1000 AS joinedAt
-                FROM auth_organization_membership m
-                JOIN auth_user u ON u.id = m.userId
-                WHERE m.organizationId = ?
-                ORDER BY m.createdAt ASC`,
-              )
-              .bind(organizationId)
-              .all(),
-          catch: (cause) => repositoryError("listMembers", cause),
-        });
-        return yield* Schema.decodeUnknownEffect(Schema.Array(OrganizationMember))(
-          result.results,
-        ).pipe(Effect.mapError((cause) => repositoryError("listMembers.decode", cause)));
-      }),
-      countRole: Effect.fn("AuthRepository.countRole")(function* (input) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `SELECT COUNT(*) AS total FROM auth_organization_membership
-                 WHERE organizationId = ? AND role = ?`,
-              )
-              .bind(input.organizationId, input.role)
-              .first<{ readonly total: number }>(),
-          catch: (cause) => repositoryError("countRole", cause),
-        });
-        return row?.total ?? 0;
-      }),
-      changeMemberRole: Effect.fn("AuthRepository.changeMemberRole")(function* (input) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `UPDATE auth_organization_membership SET role = ?
-                 WHERE organizationId = ? AND userId = ? AND role <> ?`,
-              )
-              .bind(input.role, input.organizationId, input.userId, input.role)
-              .run(),
-          catch: (cause) => repositoryError("changeMemberRole", cause),
-        });
-        return (result.meta.changes ?? 0) === 1;
-      }),
-      removeMember: Effect.fn("AuthRepository.removeMember")(function* (input) {
-        const results = yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `DELETE FROM auth_organization_membership
-                   WHERE organizationId = ? AND userId = ?`,
-                )
-                .bind(input.organizationId, input.userId),
-              // A session naming an organization the user left would keep
-              // refreshing into a store they can no longer read.
-              database
-                .prepare(
-                  `UPDATE auth_session SET revokedAt = unixepoch()
-                   WHERE userId = ? AND activeOrganizationId = ? AND revokedAt IS NULL`,
-                )
-                .bind(input.userId, input.organizationId),
-            ]),
-          catch: (cause) => repositoryError("removeMember", cause),
-        });
-        return (results[0]?.meta.changes ?? 0) === 1;
-      }),
-      createInvitation: Effect.fn("AuthRepository.createInvitation")(function* (input) {
-        const invitationId = makeId(InvitationId);
-        yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `UPDATE auth_organization_invitation SET revokedAt = ?
-                   WHERE organizationId = ? AND email = ?
-                     AND acceptedAt IS NULL AND revokedAt IS NULL`,
-                )
-                .bind(seconds(input.now), input.organizationId, input.email),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization_invitation (
-                    id, organizationId, email, role, tokenHash,
-                    invitedByUserId, expiresAt, acceptedAt, revokedAt, createdAt
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
-                )
-                .bind(
-                  invitationId,
-                  input.organizationId,
-                  input.email,
-                  input.role,
-                  input.tokenHash,
-                  input.invitedByUserId,
-                  seconds(input.expiresAt),
-                  seconds(input.now),
-                ),
-            ]),
-          catch: (cause) => repositoryError("createInvitation", cause),
-        });
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(`${INVITATION_SELECT} WHERE i.id = ?`)
-              .bind(invitationId)
-              .first<InvitationRow>(),
-          catch: (cause) => repositoryError("createInvitation.read", cause),
-        });
-        const invitation = yield* decodeNullable(InvitationRecord, "createInvitation.decode", row);
-        if (!invitation) {
-          return yield* repositoryError("createInvitation", "The invitation was not stored.");
-        }
-        return invitation;
-      }),
-      revokeInvitation: Effect.fn("AuthRepository.revokeInvitation")(function* (input) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `UPDATE auth_organization_invitation SET revokedAt = ?
-                 WHERE id = ? AND organizationId = ?
-                   AND acceptedAt IS NULL AND revokedAt IS NULL`,
-              )
-              .bind(seconds(input.now), input.invitationId, input.organizationId)
-              .run(),
-          catch: (cause) => repositoryError("revokeInvitation", cause),
-        });
-        return (result.meta.changes ?? 0) === 1;
-      }),
-      findInvitationByTokenHash: Effect.fn("AuthRepository.findInvitationByTokenHash")(
-        function* (tokenHash) {
-          const row = yield* Effect.tryPromise({
-            try: () =>
-              database
-                .prepare(`${INVITATION_SELECT} WHERE i.tokenHash = ?`)
-                .bind(tokenHash)
-                .first<InvitationRow>(),
-            catch: (cause) => repositoryError("findInvitationByTokenHash", cause),
-          });
-          return yield* decodeNullable(InvitationRecord, "findInvitationByTokenHash.decode", row);
-        },
-      ),
-      pendingInvitationsForOrganization: Effect.fn(
-        "AuthRepository.pendingInvitationsForOrganization",
-      )(function* (input) {
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `${INVITATION_SELECT} WHERE i.organizationId = ? AND ${PENDING_CLAUSE}
-                 ORDER BY i.createdAt DESC`,
-              )
-              .bind(input.organizationId, seconds(input.now))
-              .all<InvitationRow>(),
-          catch: (cause) => repositoryError("pendingInvitationsForOrganization", cause),
-        });
-        return yield* Schema.decodeUnknownEffect(Schema.Array(InvitationRecord))(
-          result.results,
-        ).pipe(
-          Effect.mapError((cause) =>
-            repositoryError("pendingInvitationsForOrganization.decode", cause),
-          ),
-        );
-      }),
-      pendingInvitationsForEmail: Effect.fn("AuthRepository.pendingInvitationsForEmail")(
-        function* (input) {
-          const result = yield* Effect.tryPromise({
-            try: () =>
-              database
-                .prepare(
-                  `${INVITATION_SELECT} WHERE i.email = ? AND ${PENDING_CLAUSE}
-                   ORDER BY i.createdAt DESC`,
-                )
-                .bind(input.email, seconds(input.now))
-                .all<InvitationRow>(),
-            catch: (cause) => repositoryError("pendingInvitationsForEmail", cause),
-          });
-          return yield* Schema.decodeUnknownEffect(Schema.Array(InvitationRecord))(
-            result.results,
-          ).pipe(
-            Effect.mapError((cause) => repositoryError("pendingInvitationsForEmail.decode", cause)),
-          );
-        },
-      ),
-      acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
-        const results = yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `UPDATE auth_organization_invitation SET acceptedAt = ?
-                   WHERE id = ? AND acceptedAt IS NULL AND revokedAt IS NULL AND expiresAt > ?`,
-                )
-                .bind(seconds(input.now), input.invitation.id, seconds(input.now)),
-              database
-                .prepare(
-                  `INSERT INTO auth_organization_membership (
-                    id, organizationId, userId, role, createdAt
-                  ) VALUES (?, ?, ?, ?, ?)
-                  ON CONFLICT(organizationId, userId) DO NOTHING`,
-                )
-                .bind(
-                  crypto.randomUUID(),
-                  input.invitation.organizationId,
-                  input.userId,
-                  input.invitation.role,
-                  seconds(input.now),
-                ),
-            ]),
-          catch: (cause) => repositoryError("acceptInvitation", cause),
-        });
-        if ((results[0]?.meta.changes ?? 0) === 1) return true;
-        // D1 rolls a batch back on a failed statement, not on one that matched
-        // no row, so a token spent concurrently has to undo its own insert.
-        if ((results[1]?.meta.changes ?? 0) === 1) {
-          yield* Effect.tryPromise({
-            try: () =>
-              database
-                .prepare(
-                  `DELETE FROM auth_organization_membership
-                   WHERE organizationId = ? AND userId = ?`,
-                )
-                .bind(input.invitation.organizationId, input.userId)
-                .run(),
-            catch: (cause) => repositoryError("acceptInvitation.cleanup", cause),
-          });
-        }
-        return false;
-      }),
-      createSession: Effect.fn("AuthRepository.createSession")(function* (input) {
-        yield* Effect.tryPromise({
-          try: () => insertSession(database, input).run(),
-          catch: (cause) => repositoryError("createSession", cause),
-        });
-      }),
-      findSession: Effect.fn("AuthRepository.findSession")(function* (sessionId) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `SELECT
-                  id, familyId, userId, activeOrganizationId, refreshTokenHash,
-                  clientKind, deviceName, expiresAt * 1000 AS expiresAt,
-                  revokedAt * 1000 AS revokedAt, replacedBySessionId
-                FROM auth_session WHERE id = ?`,
-              )
-              .bind(sessionId)
-              .first<SessionRow>(),
-          catch: (cause) => repositoryError("findSession", cause),
-        });
-        return yield* decodeNullable(SessionRecord, "findSession.decode", row);
-      }),
-      rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
-        const results = yield* Effect.tryPromise({
-          try: () =>
-            database.batch([
-              database
-                .prepare(
-                  `UPDATE auth_session
-                   SET revokedAt = ?, replacedBySessionId = ?, lastUsedAt = ?
-                   WHERE id = ? AND revokedAt IS NULL AND expiresAt > ?`,
-                )
-                .bind(
-                  Math.floor(input.now / 1_000),
-                  input.replacement.id,
-                  Math.floor(input.now / 1_000),
-                  input.currentId,
-                  Math.floor(input.now / 1_000),
-                ),
-              insertSession(database, input.replacement),
-            ]),
-          catch: (cause) => repositoryError("rotateSession", cause),
-        });
-        if ((results[0]?.meta.changes ?? 0) === 1) return true;
-        yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare("DELETE FROM auth_session WHERE id = ?")
-              .bind(input.replacement.id)
-              .run(),
-          catch: (cause) => repositoryError("rotateSession.cleanup", cause),
-        });
-        return false;
-      }),
-      revokeSession: Effect.fn("AuthRepository.revokeSession")(function* (sessionId, now) {
-        yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare("UPDATE auth_session SET revokedAt = ? WHERE id = ? AND revokedAt IS NULL")
-              .bind(Math.floor(now / 1_000), sessionId)
-              .run(),
-          catch: (cause) => repositoryError("revokeSession", cause),
-        });
-      }),
-      revokeFamily: Effect.fn("AuthRepository.revokeFamily")(function* (familyId, now) {
-        yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                "UPDATE auth_session SET revokedAt = ? WHERE familyId = ? AND revokedAt IS NULL",
-              )
-              .bind(Math.floor(now / 1_000), familyId)
-              .run(),
-          catch: (cause) => repositoryError("revokeFamily", cause),
-        });
-      }),
-      revokeUser: Effect.fn("AuthRepository.revokeUser")(function* (userId, now) {
-        yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                "UPDATE auth_session SET revokedAt = ? WHERE userId = ? AND revokedAt IS NULL",
-              )
-              .bind(Math.floor(now / 1_000), userId)
-              .run(),
-          catch: (cause) => repositoryError("revokeUser", cause),
-        });
-      }),
+          emailVerifiedAt: at(Date.now()),
+        }),
+        database.insert(organization).values({ id: store.id, name: store.name, slug: null }),
+        database.insert(organizationMembership).values(ownerMembership(store.id, userId)),
+        database.insert(oauthAccount).values({
+          id: crypto.randomUUID(),
+          userId,
+          provider: "google",
+          providerAccountId: input.providerAccountId,
+        }),
+      ]);
+      return UserRecord.make({
+        id: userId,
+        email: input.email,
+        name,
+        image: input.image,
+        passwordHash: null,
+        emailVerified: true,
+      });
     }),
-  );
+    attachGoogleAccount: Effect.fn("AuthRepository.attachGoogleAccount")(function* (input) {
+      const linked = yield* database
+        .insert(oauthAccount)
+        .values({
+          id: crypto.randomUUID(),
+          userId: input.userId,
+          provider: "google",
+          providerAccountId: input.providerAccountId,
+        })
+        .onConflictDoNothing({
+          target: [oauthAccount.provider, oauthAccount.providerAccountId],
+        })
+        .returning({ id: oauthAccount.id })
+        .pipe(fail("attachGoogleAccount"));
+      return linked.length === 1;
+    }),
+    claimUnverifiedPasswordUser: Effect.fn("AuthRepository.claimUnverifiedPasswordUser")(
+      function* (input) {
+        // The link is written first and every following statement requires it
+        // to name this user, so an identity another account already holds
+        // leaves the password and the sessions untouched.
+        const ownsIdentity = exists(
+          database
+            .select({ id: oauthAccount.id })
+            .from(oauthAccount)
+            .where(
+              and(
+                eq(oauthAccount.provider, "google"),
+                eq(oauthAccount.providerAccountId, input.providerAccountId),
+                eq(oauthAccount.userId, input.userId),
+              ),
+            ),
+        );
+        const results = yield* batch("claimUnverifiedPasswordUser", [
+          database
+            .insert(oauthAccount)
+            .values({
+              id: crypto.randomUUID(),
+              userId: input.userId,
+              provider: "google",
+              providerAccountId: input.providerAccountId,
+            })
+            .onConflictDoNothing({
+              target: [oauthAccount.provider, oauthAccount.providerAccountId],
+            }),
+          database
+            .update(user)
+            .set({
+              passwordHash: null,
+              emailVerifiedAt: at(input.now),
+              image: sql`coalesce(${user.image}, ${input.image})`,
+            })
+            .where(
+              and(
+                eq(user.id, input.userId),
+                isNotNull(user.passwordHash),
+                isNull(user.emailVerifiedAt),
+                ownsIdentity,
+              ),
+            )
+            .returning({ id: user.id }),
+          database
+            .update(session)
+            .set({ revokedAt: at(input.now) })
+            .where(and(eq(session.userId, input.userId), isNull(session.revokedAt), ownsIdentity)),
+        ]);
+        return (results[1]?.length ?? 0) === 1;
+      },
+    ),
+    membershipForUser: Effect.fn("AuthRepository.membershipForUser")(function* (userId) {
+      const [row] = yield* database
+        .select(membershipColumns)
+        .from(organizationMembership)
+        .innerJoin(organization, eq(organization.id, organizationMembership.organizationId))
+        .where(eq(organizationMembership.userId, userId))
+        .orderBy(asc(organizationMembership.createdAt))
+        .limit(1)
+        .pipe(fail("membershipForUser"));
+      if (!row) {
+        return yield* repositoryError(
+          "membershipForUser",
+          `User ${userId} has no organization membership.`,
+        );
+      }
+      return yield* decode(MembershipRecord, "membershipForUser.decode")(row);
+    }),
+    membershipsForUser: Effect.fn("AuthRepository.membershipsForUser")(function* (userId) {
+      const rows = yield* database
+        .select(membershipColumns)
+        .from(organizationMembership)
+        .innerJoin(organization, eq(organization.id, organizationMembership.organizationId))
+        .where(eq(organizationMembership.userId, userId))
+        .orderBy(asc(organizationMembership.createdAt))
+        .pipe(fail("membershipsForUser"));
+      return yield* decode(Schema.Array(MembershipRecord), "membershipsForUser.decode")(rows);
+    }),
+    membershipInOrganization: Effect.fn("AuthRepository.membershipInOrganization")(
+      function* (input) {
+        const [row] = yield* membershipOf(input.userId, input.organizationId).pipe(
+          fail("membershipInOrganization"),
+        );
+        if (!row) return null;
+        return yield* decode(MembershipRecord, "membershipInOrganization.decode")(row);
+      },
+    ),
+    createOrganization: Effect.fn("AuthRepository.createOrganization")(function* (input) {
+      const organizationId = makeId(OrganizationId);
+      const name = input.name.trim();
+      yield* batch("createOrganization", [
+        database.insert(organization).values({ id: organizationId, name, slug: null }),
+        database
+          .insert(organizationMembership)
+          .values(ownerMembership(organizationId, input.ownerUserId)),
+      ]);
+      return MembershipRecord.make({
+        organizationId,
+        organizationName: name,
+        organizationSlug: null,
+        role: "owner",
+      });
+    }),
+    listMembers: Effect.fn("AuthRepository.listMembers")(function* (organizationId) {
+      const rows = yield* database
+        .select({
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          role: organizationMembership.role,
+          joinedAt: organizationMembership.createdAt,
+        })
+        .from(organizationMembership)
+        .innerJoin(user, eq(user.id, organizationMembership.userId))
+        .where(eq(organizationMembership.organizationId, organizationId))
+        .orderBy(asc(organizationMembership.createdAt))
+        .pipe(fail("listMembers"));
+      return yield* decode(
+        Schema.Array(OrganizationMember),
+        "listMembers.decode",
+      )(rows.map((row) => ({ ...row, joinedAt: row.joinedAt.getTime() })));
+    }),
+    countRole: Effect.fn("AuthRepository.countRole")(function* (input) {
+      const [row] = yield* database
+        .select({ total: count() })
+        .from(organizationMembership)
+        .where(
+          and(
+            eq(organizationMembership.organizationId, input.organizationId),
+            eq(organizationMembership.role, input.role),
+          ),
+        )
+        .pipe(fail("countRole"));
+      return row?.total ?? 0;
+    }),
+    changeMemberRole: Effect.fn("AuthRepository.changeMemberRole")(function* (input) {
+      const changed = yield* database
+        .update(organizationMembership)
+        .set({ role: input.role })
+        .where(
+          and(
+            eq(organizationMembership.organizationId, input.organizationId),
+            eq(organizationMembership.userId, input.userId),
+            ne(organizationMembership.role, input.role),
+          ),
+        )
+        .returning({ id: organizationMembership.id })
+        .pipe(fail("changeMemberRole"));
+      return changed.length === 1;
+    }),
+    removeMember: Effect.fn("AuthRepository.removeMember")(function* (input) {
+      const results = yield* batch("removeMember", [
+        database
+          .delete(organizationMembership)
+          .where(
+            and(
+              eq(organizationMembership.organizationId, input.organizationId),
+              eq(organizationMembership.userId, input.userId),
+            ),
+          )
+          .returning({ id: organizationMembership.id }),
+        // A session naming an organization the user left would keep refreshing
+        // into a store they can no longer read.
+        database
+          .update(session)
+          .set({ revokedAt: at(Date.now()) })
+          .where(
+            and(
+              eq(session.userId, input.userId),
+              eq(session.activeOrganizationId, input.organizationId),
+              isNull(session.revokedAt),
+            ),
+          ),
+      ]);
+      return (results[0]?.length ?? 0) === 1;
+    }),
+    createInvitation: Effect.fn("AuthRepository.createInvitation")(function* (input) {
+      const invitationId = makeId(InvitationId);
+      yield* batch("createInvitation", [
+        database
+          .update(organizationInvitation)
+          .set({ revokedAt: at(input.now) })
+          .where(
+            and(
+              eq(organizationInvitation.organizationId, input.organizationId),
+              eq(organizationInvitation.email, input.email),
+              isNull(organizationInvitation.acceptedAt),
+              isNull(organizationInvitation.revokedAt),
+            ),
+          ),
+        database.insert(organizationInvitation).values({
+          id: invitationId,
+          organizationId: input.organizationId,
+          email: input.email,
+          role: input.role,
+          tokenHash: input.tokenHash,
+          invitedByUserId: input.invitedByUserId,
+          expiresAt: at(input.expiresAt),
+          acceptedAt: null,
+          revokedAt: null,
+          createdAt: at(input.now),
+        }),
+      ]);
+      const [row] = yield* invitationById(invitationId).pipe(fail("createInvitation.read"));
+      if (!row) {
+        return yield* repositoryError("createInvitation", "The invitation was not stored.");
+      }
+      return yield* asInvitation(row, "createInvitation.decode");
+    }),
+    revokeInvitation: Effect.fn("AuthRepository.revokeInvitation")(function* (input) {
+      const revoked = yield* database
+        .update(organizationInvitation)
+        .set({ revokedAt: at(input.now) })
+        .where(
+          and(
+            eq(organizationInvitation.id, input.invitationId),
+            eq(organizationInvitation.organizationId, input.organizationId),
+            isNull(organizationInvitation.acceptedAt),
+            isNull(organizationInvitation.revokedAt),
+          ),
+        )
+        .returning({ id: organizationInvitation.id })
+        .pipe(fail("revokeInvitation"));
+      return revoked.length === 1;
+    }),
+    findInvitationByTokenHash: Effect.fn("AuthRepository.findInvitationByTokenHash")(
+      function* (tokenHash) {
+        const [row] = yield* database
+          .select(invitationColumns)
+          .from(organizationInvitation)
+          .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
+          .where(eq(organizationInvitation.tokenHash, tokenHash))
+          .pipe(fail("findInvitationByTokenHash"));
+        if (!row) return null;
+        return yield* asInvitation(row, "findInvitationByTokenHash.decode");
+      },
+    ),
+    pendingInvitationsForOrganization: Effect.fn(
+      "AuthRepository.pendingInvitationsForOrganization",
+    )(function* (input) {
+      const rows = yield* database
+        .select(invitationColumns)
+        .from(organizationInvitation)
+        .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
+        .where(
+          and(
+            eq(organizationInvitation.organizationId, input.organizationId),
+            stillPending(input.now),
+          ),
+        )
+        .orderBy(desc(organizationInvitation.createdAt))
+        .pipe(fail("pendingInvitationsForOrganization"));
+      return yield* Effect.forEach(rows, (row) =>
+        asInvitation(row, "pendingInvitationsForOrganization.decode"),
+      );
+    }),
+    pendingInvitationsForEmail: Effect.fn("AuthRepository.pendingInvitationsForEmail")(
+      function* (input) {
+        const rows = yield* database
+          .select(invitationColumns)
+          .from(organizationInvitation)
+          .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
+          .where(and(eq(organizationInvitation.email, input.email), stillPending(input.now)))
+          .orderBy(desc(organizationInvitation.createdAt))
+          .pipe(fail("pendingInvitationsForEmail"));
+        return yield* Effect.forEach(rows, (row) =>
+          asInvitation(row, "pendingInvitationsForEmail.decode"),
+        );
+      },
+    ),
+    acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
+      const results = yield* batch("acceptInvitation", [
+        database
+          .update(organizationInvitation)
+          .set({ acceptedAt: at(input.now) })
+          .where(and(eq(organizationInvitation.id, input.invitation.id), stillPending(input.now)))
+          .returning({ id: organizationInvitation.id }),
+        database
+          .insert(organizationMembership)
+          .values({
+            id: crypto.randomUUID(),
+            organizationId: input.invitation.organizationId,
+            userId: input.userId,
+            role: input.invitation.role,
+            createdAt: at(input.now),
+          })
+          .onConflictDoNothing({
+            target: [organizationMembership.organizationId, organizationMembership.userId],
+          })
+          .returning({ id: organizationMembership.id }),
+      ]);
+      if ((results[0]?.length ?? 0) === 1) return true;
+      // A batch rolls back on a failed statement, not on one that matched no
+      // row, so a token spent concurrently has to undo its own insert.
+      if ((results[1]?.length ?? 0) === 1) {
+        yield* database
+          .delete(organizationMembership)
+          .where(
+            and(
+              eq(organizationMembership.organizationId, input.invitation.organizationId),
+              eq(organizationMembership.userId, input.userId),
+            ),
+          )
+          .pipe(fail("acceptInvitation.cleanup"));
+      }
+      return false;
+    }),
+    createSession: Effect.fn("AuthRepository.createSession")(function* (input) {
+      yield* database.insert(session).values(sessionValues(input)).pipe(fail("createSession"));
+    }),
+    findSession: Effect.fn("AuthRepository.findSession")(function* (sessionId) {
+      const [row] = yield* database
+        .select(sessionColumns)
+        .from(session)
+        .where(eq(session.id, sessionId))
+        .pipe(fail("findSession"));
+      if (!row) return null;
+      return yield* decode(
+        SessionRecord,
+        "findSession.decode",
+      )({
+        ...row,
+        expiresAt: row.expiresAt.getTime(),
+        revokedAt: millis(row.revokedAt),
+      });
+    }),
+    rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
+      const results = yield* batch("rotateSession", [
+        database
+          .update(session)
+          .set({
+            revokedAt: at(input.now),
+            replacedBySessionId: input.replacement.id,
+            lastUsedAt: at(input.now),
+          })
+          .where(
+            and(
+              eq(session.id, input.currentId),
+              isNull(session.revokedAt),
+              gt(session.expiresAt, at(input.now)),
+            ),
+          )
+          .returning({ id: session.id }),
+        database.insert(session).values(sessionValues(input.replacement)),
+      ]);
+      if ((results[0]?.length ?? 0) === 1) return true;
+      yield* database
+        .delete(session)
+        .where(eq(session.id, input.replacement.id))
+        .pipe(fail("rotateSession.cleanup"));
+      return false;
+    }),
+    revokeSession: Effect.fn("AuthRepository.revokeSession")(function* (sessionId, now) {
+      yield* database
+        .update(session)
+        .set({ revokedAt: at(now) })
+        .where(and(eq(session.id, sessionId), isNull(session.revokedAt)))
+        .pipe(fail("revokeSession"));
+    }),
+    revokeFamily: Effect.fn("AuthRepository.revokeFamily")(function* (familyId, now) {
+      yield* database
+        .update(session)
+        .set({ revokedAt: at(now) })
+        .where(and(eq(session.familyId, familyId), isNull(session.revokedAt)))
+        .pipe(fail("revokeFamily"));
+    }),
+    revokeUser: Effect.fn("AuthRepository.revokeUser")(function* (userId, now) {
+      yield* database
+        .update(session)
+        .set({ revokedAt: at(now) })
+        .where(and(eq(session.userId, userId), isNull(session.revokedAt)))
+        .pipe(fail("revokeUser"));
+    }),
+  };
+};
+
+export const authRepositoryLayer = (database: D1Database) =>
+  Layer.effect(
+    AuthRepository,
+    Effect.map(D1Drizzle.makeWithDefaults({}), (drizzle) =>
+      AuthRepository.of(makeAuthRepository(drizzle)),
+    ),
+  ).pipe(Layer.provide(D1Client.layer({ db: database })));
 
 export const decodeSessionId = Schema.decodeUnknownEffect(SessionId);
 export const decodeUserId = Schema.decodeUnknownEffect(UserId);

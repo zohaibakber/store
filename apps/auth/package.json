@@ -8,8 +8,10 @@
     "test": "vitest run --root ../.. apps/auth/test"
   },
   "dependencies": {
+    "@effect/sql-d1": "catalog:",
     "@store/auth": "workspace:*",
     "@store/db": "workspace:*",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
