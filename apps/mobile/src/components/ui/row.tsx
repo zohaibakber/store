@@ -63,7 +63,6 @@ export function Row({
         ) : null}
       </View>
       {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
-      {onPress ? <Icon name="chevron" size={16} tone="muted" /> : null}
     </View>
   );
 
@@ -74,6 +73,15 @@ export function Row({
       {body}
     </PressableScale>
   );
+}
+
+/**
+ * The "this pushes a route" affordance. It is explicit rather than inferred from
+ * `onPress`, because plenty of rows are tappable without navigating anywhere —
+ * a row that reveals a hidden value should not promise a screen.
+ */
+export function RowChevron() {
+  return <Icon name="chevron" size={16} tone="muted" />;
 }
 
 /** Right-aligned value for a row: muted, tabular, never wrapping. */
@@ -103,5 +111,11 @@ const styles = StyleSheet.create({
   row: { alignItems: "center", flexDirection: "row", gap: 12, paddingHorizontal: 16 },
   rowOneLine: { minHeight: sizes.listRow },
   rowTwoLine: { minHeight: sizes.listRowTwoLine, paddingVertical: 10 },
-  trailing: { alignItems: "flex-end", maxWidth: "45%" },
+  trailing: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "flex-end",
+    maxWidth: "45%",
+  },
 });

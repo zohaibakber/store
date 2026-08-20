@@ -314,14 +314,16 @@ Web/desktop: coss `Table` for data, `Card` + `Separator` for settings groups.
 
 Mobile:
 
-- Grouped settings and summaries → `@expo/ui` `List`/`ListItem` (SwiftUI `List`,
-  Compose `ListItem`) inside a `Host` carrying `colorScheme` + `seedColor`.
-  Row text colors are passed explicitly.
-- Long catalogs → `FlashList` with a token-painted `ProductRow`. Native list
-  containers are for short, fixed groups only; `@expo/ui` `List` renders every
-  child on the JS thread.
+- Grouped settings and summaries → `RowGroup` + `Row`: one bordered `card`
+  surface with hairline separators, the same shape the web builds from `Card` +
+  `Separator`. Not `@expo/ui` `List`/`ListItem` — see §6.3 for why.
+- Long catalogs → `FlashList` with a token-painted `ProductRow` taking
+  primitives only.
 - Section header: `label` type, `mutedForeground`, sentence case, 16 gutter.
 - Rows separate with a hairline `border` inset past the leading slot.
+- The chevron is an explicit `RowChevron` in the trailing slot, not something
+  inferred from `onPress`. A row that reveals a value is tappable and goes
+  nowhere; it must not promise a screen.
 
 ### Sheet
 
@@ -375,10 +377,19 @@ padding, at most one action.
    `seedColor={primary}`. Missing `seedColor` is how wallpaper color leaks in.
 2. `@expo/ui/jetpack-compose` imports only in `*.android.tsx`;
    `@expo/ui/swift-ui` only in `*.ios.tsx`. `Host` always comes from `@expo/ui`.
-3. Platform splits are allowed when the *structure* differs (Compose
-   `LazyColumn` vs SwiftUI `List`, floating toolbar vs tab bar). They are not
-   allowed to diverge in palette, type, radius, copy or information hierarchy.
-   If a split only changes colors, delete it.
+3. **Native where the platform owns the interaction; shared everywhere else.**
+   Native structure is used for navigation chrome (native tab bar on iOS,
+   Material floating toolbar on Android), headers and large titles, FABs,
+   sheets, switches, pull-to-refresh, keyboard handling and the camera. Screen
+   *content* is drawn by React Native from the shared primitives, from one file,
+   so both platforms render the same hierarchy by construction.
+
+   This line is drawn from experience: the previous build had a `*.android.tsx`
+   twin for every screen, and the twins were what let Material You colors, a
+   second type scale and a different information hierarchy into the Android
+   build without anyone noticing. A platform split may differ in structure; it
+   may never differ in palette, type, radius, copy or hierarchy. If a split
+   only changes colors, delete it.
 4. Scrolling: `contentInsetAdjustmentBehavior="automatic"` on the root scroller;
    no `SafeAreaView` wrappers, no manual `insets.top` padding on iOS.
 5. Lists: virtualize everything (`FlashList`), pass primitives to rows, keep

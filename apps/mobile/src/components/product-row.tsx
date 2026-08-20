@@ -1,117 +1,97 @@
-import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { Badge } from "@/components/ui/badge";
-import { useThemeColor } from "@/hooks/use-theme-color";
-import { formatPrice } from "@/lib/products";
+import { Separator } from "@/components/ui/separator";
+import { Text } from "@/components/ui/text";
+import { useColors } from "@/theme/colors";
+import { radius, size as sizes } from "@/theme/tokens";
+import { typography } from "@/theme/typography";
 
 type ProductRowProps = {
-  name: string;
-  category: string;
-  details: string;
-  aisle: string | null;
-  stock: number;
-  stockLabel: string;
-  unitPrice: number | null;
-  visible: boolean;
+  readonly aisle: string | null;
+  readonly category: string;
+  readonly details: string;
+  readonly name: string;
+  readonly stock: number;
+  readonly stockLabel: string;
+  readonly unitPriceLabel: string;
+  readonly visible: boolean;
 };
 
-export const ProductRow = memo(function ProductRow({
-  name,
+/**
+ * One catalog row. It takes primitives only — no product object, no context, no
+ * queries — so `FlashList` can recycle it without re-rendering the whole page
+ * as the user types. See `design-system.md` §6.
+ */
+export function ProductRow({
+  aisle,
   category,
   details,
-  aisle,
+  name,
   stock,
   stockLabel,
-  unitPrice,
+  unitPriceLabel,
   visible,
 }: ProductRowProps) {
-  const secondary = [category, details, aisle ? `Aisle ${aisle}` : null]
-    .filter(Boolean)
-    .join(" · ");
-  const [separator, foreground, muted, danger, warning, success] = useThemeColor([
-    "separator",
-    "foreground",
-    "muted",
-    "danger",
-    "warning",
-    "success",
-  ]);
-  const trailingColor = stock === 0 ? danger : stock <= 10 ? warning : success;
+  const colors = useColors();
+  const supporting = [category, details, aisle ? `Aisle ${aisle}` : null].filter(Boolean).join(" · ");
+  const stockTone = stock === 0 ? "destructive" : stock <= 10 ? "warning" : "muted";
 
   return (
-    <View
-      accessibilityLabel={`${name}, ${stockLabel}, ${formatPrice(unitPrice)}`}
-      style={styles.root}
-    >
+    <View accessibilityLabel={`${name}, ${stockLabel}, ${unitPriceLabel}`}>
       <View style={styles.row}>
-        <View style={[styles.avatar, { backgroundColor: separator }]}>
-          <Text style={[styles.avatarText, { color: foreground }]}>
+        <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
+          <Text style={styles.avatarText} tone="muted">
             {name.slice(0, 1).toLocaleUpperCase()}
           </Text>
         </View>
         <View style={styles.content}>
           <View style={styles.nameRow}>
-            <Text style={[styles.name, { color: foreground }]} numberOfLines={1}>
+            <Text numberOfLines={1} style={styles.name} variant="bodyMedium">
               {name}
             </Text>
-            {!visible ? <Badge>Hidden</Badge> : null}
+            {visible ? null : <Badge>Hidden</Badge>}
           </View>
-          {secondary ? (
-            <Text style={[styles.secondary, { color: muted }]} numberOfLines={2}>
-              {secondary}
+          {supporting ? (
+            <Text numberOfLines={1} tone="muted" variant="caption">
+              {supporting}
             </Text>
           ) : null}
         </View>
         <View style={styles.trailing}>
-          <Text selectable style={[styles.price, { color: foreground }]} numberOfLines={1}>
-            {formatPrice(unitPrice)}
+          <Text numberOfLines={1} selectable variant="mono">
+            {unitPriceLabel}
           </Text>
-          <Text selectable style={[styles.stock, { color: trailingColor }]} numberOfLines={1}>
+          <Text numberOfLines={1} tone={stockTone} variant="caption">
             {stockLabel}
           </Text>
         </View>
       </View>
-      <View style={[styles.divider, { backgroundColor: separator }]} />
+      <Separator inset={68} />
     </View>
   );
-});
+}
 
 const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
-    borderRadius: 20,
-    height: 40,
+    borderCurve: "continuous",
+    borderRadius: radius.md,
+    height: 36,
     justifyContent: "center",
-    width: 40,
+    width: 36,
   },
-  avatarText: { fontFamily: "Inter_500Medium", fontSize: 16 },
+  avatarText: typography.bodyMedium,
   content: { flex: 1, gap: 2, minWidth: 0 },
-  divider: { height: StyleSheet.hairlineWidth, marginStart: 72 },
-  name: { flexShrink: 1, fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 24 },
-  nameRow: { alignItems: "center", flexDirection: "row", gap: 8 },
-  price: {
-    fontFamily: "GeistMono_400Regular",
-    fontSize: 14,
-    fontVariant: ["tabular-nums"],
-    lineHeight: 20,
-  },
-  root: { minHeight: 72 },
+  name: { flexShrink: 1 },
+  nameRow: { alignItems: "center", flexDirection: "row", gap: 6 },
   row: {
     alignItems: "center",
     flexDirection: "row",
     gap: 16,
-    minHeight: 72,
-    paddingEnd: 16,
-    paddingStart: 16,
-    paddingVertical: 8,
+    minHeight: sizes.productRow,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  secondary: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  stock: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    fontVariant: ["tabular-nums"],
-    lineHeight: 16,
-  },
-  trailing: { alignItems: "flex-end", gap: 4, maxWidth: "38%" },
+  trailing: { alignItems: "flex-end", gap: 2, maxWidth: "36%" },
 });
