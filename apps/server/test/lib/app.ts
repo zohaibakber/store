@@ -1,10 +1,4 @@
-import {
-  decodeAuthenticatedWorkspace,
-  unauthenticatedWorkspace,
-  type SyncEntityChange,
-  type SyncRequest,
-} from "@store/contracts";
-import { operationPayloadHash } from "@store/contracts/operation-hash";
+import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/contracts";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
@@ -13,7 +7,6 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { vi } from "vitest";
 
 import { ServerRoutes } from "../../src/http/app";
 import {
@@ -21,7 +14,6 @@ import {
   type ServerRuntimeContract,
   type SyncLiveInput,
 } from "../../src/http/runtime";
-import type { SyncActor } from "../../src/sync/model";
 
 const session = {
   user: {
@@ -84,49 +76,7 @@ export interface AppOptions {
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
-export const requestFor = (): SyncRequest => {
-  const operation = {
-    operationId: "operation-1",
-    organizationId: "org-1",
-    deviceId: "device-1",
-    actorUserId: "user-1",
-    clientSequence: 1,
-    occurredAt: 1_750_000_000_000,
-    payloadHash: "",
-    changes: [
-      {
-        entity: "category",
-        action: "upsert",
-        entityId: "general",
-        rowVersion: 1,
-        row: { id: "general", name: "General" },
-      },
-    ] satisfies ReadonlyArray<SyncEntityChange>,
-  };
-  return {
-    protocolVersion: 2,
-    organizationId: "org-1",
-    deviceId: "device-1",
-    cursor: 0,
-    operations: [{ ...operation, payloadHash: operationPayloadHash(operation) }],
-  };
-};
-
-export const appFor = (
-  member: boolean,
-  authenticated = true,
-  runSync = vi.fn(async (actor: SyncActor, request: SyncRequest) => ({
-    protocolVersion: 2 as const,
-    organizationId: actor.organizationId,
-    cursor: request.cursor,
-    nextCursor: request.cursor,
-    headCursor: request.cursor,
-    hasMore: false,
-    acknowledgements: [],
-    changes: [],
-  })),
-  options: AppOptions = {},
-) => ({
+export const appFor = (member: boolean, authenticated = true, options: AppOptions = {}) => ({
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
     const runtime = {
       electronProtocol: "com.tabaaq.desktop",
@@ -162,7 +112,17 @@ export const appFor = (
       invoiceAi: Effect.succeed(invoiceAi),
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-      runSync: (actor, request) => Effect.promise(() => runSync(actor, request)),
+      runSync: (actor, request) =>
+        Effect.succeed({
+          protocolVersion: 2 as const,
+          organizationId: actor.organizationId,
+          cursor: request.cursor,
+          nextCursor: request.cursor,
+          headCursor: request.cursor,
+          hasMore: false,
+          acknowledgements: [],
+          changes: [],
+        }),
       connectSyncLive: (input) =>
         options.connectSyncLive
           ? options.connectSyncLive(input)

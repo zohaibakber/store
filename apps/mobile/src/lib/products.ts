@@ -1,10 +1,17 @@
+import { SyncRequest, SyncResponse } from "@store/contracts";
+import {
+  connectSyncSocketSession,
+  makeSyncSocketSession,
+  SyncTransportError,
+} from "@store/sync-client";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
-import { apiOrigin, fetchWorkspaceSession, nativeAuthHeaders } from "@/lib/auth-client";
+import { apiOrigin, fetchWorkspaceSession, getAccessToken } from "@/lib/auth-client";
 import { forgetLastUserId } from "@/lib/local-session";
 import { type MobileSyncOperation, reattributePendingOperations } from "@/lib/mobile-sync-queue";
 import {
@@ -16,8 +23,8 @@ import {
   type ProductSyncMaps,
   restoreProductSyncState,
   serializeProductSyncState,
-  type SyncChange,
 } from "@/lib/product-sync-state";
+import { openMobileSyncSocket } from "@/lib/sync-socket";
 
 type SyncEntity = "category" | "product" | "batch" | "stockMovement";
 
@@ -35,30 +42,6 @@ type SyncEntityChange = {
 };
 
 type SyncOperation = MobileSyncOperation<SyncEntityChange>;
-
-type SyncAcknowledgement = {
-  operationId: string;
-  status: "applied" | "duplicate";
-  cursor: number;
-};
-
-type SyncResponse = {
-  nextCursor: number;
-  hasMore: boolean;
-  acknowledgements: ReadonlyArray<SyncAcknowledgement>;
-  changes: ReadonlyArray<SyncChange>;
-};
-
-class InventorySyncError extends Error {
-  constructor(
-    readonly code: string | null,
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "InventorySyncError";
-  }
-}
 
 type StoredMutationState = {
   version: 1;
@@ -373,53 +356,22 @@ const payloadHash = (operation: Omit<SyncOperation, "payloadHash">) => {
   );
 };
 
-const requestPage = async (
+const requestPage = (
+  exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>,
   organizationId: string,
   id: string,
   cursor: number,
   operations: ReadonlyArray<SyncOperation>,
-) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${apiOrigin}/api/sync`, {
-      method: "POST",
-      credentials: "omit",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        ...(await nativeAuthHeaders()),
-      },
-      body: JSON.stringify({
-        protocolVersion: 2,
-        organizationId,
-        deviceId: id,
-        clientPlatform: "mobile",
-        clientVersion: Constants.expoConfig?.version ?? "0.3.14",
-        cursor,
-        operations,
-      }),
-    });
-    // SAFETY: The response is consumed only through the declared sync-envelope fields below.
-    const payload = (await response.json().catch(() => null)) as
-      | (SyncResponse & { error?: { code?: string; message?: string } })
-      | null;
-    if (!response.ok)
-      throw new InventorySyncError(
-        payload?.error?.code ?? null,
-        response.status,
-        payload?.error?.message ?? `Sync failed (${response.status}).`,
-      );
-    if (!payload) throw new Error("The inventory server returned an empty response.");
-    return payload;
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError")
-      throw new Error("Inventory sync timed out. Please try again.");
-    throw cause;
-  } finally {
-    clearTimeout(timeout);
-  }
-};
+) =>
+  exchange({
+    protocolVersion: 2,
+    organizationId,
+    deviceId: id,
+    clientPlatform: "mobile",
+    clientVersion: Constants.expoConfig?.version ?? "0.3.14",
+    cursor,
+    operations,
+  });
 
 const selectPendingOperations = (pending: ReadonlyArray<SyncOperation>) => {
   const selected: SyncOperation[] = [];
@@ -464,6 +416,41 @@ const loadInventoryState = async (organizationId: string): Promise<InventoryStat
 const exchangeInventory = async (organizationId: string): Promise<InventoryState> => {
   const stableDeviceId = await persistentDeviceId();
   const userId = await authenticatedUserId();
+  const accessToken = await getAccessToken();
+  const initial = await withInventoryLock(() => loadInventoryState(organizationId));
+  const sessionDeviceId =
+    (initial.mutationState?.pendingOperations.length ?? 0) > 0
+      ? (initial.mutationState?.deviceId ?? stableDeviceId)
+      : stableDeviceId;
+
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const session = yield* makeSyncSocketSession({
+          open: openMobileSyncSocket({
+            baseUrl: apiOrigin,
+            organizationId,
+            deviceId: sessionDeviceId,
+            accessToken,
+          }),
+          exchangeTimeoutMillis: REQUEST_TIMEOUT_MS,
+        });
+        yield* connectSyncSocketSession(session);
+        return yield* Effect.tryPromise({
+          try: () => drainInventory(organizationId, userId, sessionDeviceId, session.exchange),
+          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+        });
+      }),
+    ),
+  );
+};
+
+const drainInventory = async (
+  organizationId: string,
+  userId: string,
+  sessionDeviceId: string,
+  exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>,
+): Promise<InventoryState> => {
   let hasMore = true;
   let pageCount = 0;
   let conflictMessage: string | null = null;
@@ -484,18 +471,18 @@ const exchangeInventory = async (organizationId: string): Promise<InventoryState
         }
       }
       const outgoing = selectPendingOperations(state.mutationState?.pendingOperations ?? []);
-      const deviceId =
-        outgoing.length > 0 ? (state.mutationState?.deviceId ?? stableDeviceId) : stableDeviceId;
-      return { cursor: state.cursor, deviceId, outgoing };
+      return { cursor: state.cursor, outgoing };
     });
-    const { cursor, deviceId, outgoing } = prepared;
+    const { cursor, outgoing } = prepared;
     let page: SyncResponse;
     try {
-      page = await requestPage(organizationId, deviceId, cursor, outgoing);
+      page = await Effect.runPromise(
+        requestPage(exchange, organizationId, sessionDeviceId, cursor, outgoing),
+      );
     } catch (cause) {
       const conflictedOperation = outgoing[0];
       if (
-        cause instanceof InventorySyncError &&
+        cause instanceof SyncTransportError &&
         cause.code === "ENTITY_CONFLICT" &&
         conflictedOperation &&
         isMobileStockCorrection(conflictedOperation)

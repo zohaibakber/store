@@ -4,7 +4,6 @@ The Cloudflare Worker exposes:
 
 - `GET /api/health`
 - `GET /api/auth/session` (and `GET /api/auth/get-session`)
-- `POST /api/sync`
 - `GET /api/sync/live` (WebSocket upgrade)
 - `POST /api/uploads`
 - `POST /api/product-scans`
@@ -15,8 +14,8 @@ Durable Object names. Each organization's inventory and sync log live in its own
 SQLite-backed Durable Object through `ORGANIZATION_STORE`, named by the store
 organization id, never the Clerk org id.
 The desktop communicates through authenticated HTTP and a hibernated WebSocket.
-Foreground clients exchange on the socket when it is up and fall back to `POST
-/api/sync`. HTTP remains the identical Durable Object transaction.
+Foreground clients exchange on the live socket. The Durable Object `exchange`
+is the same transaction the socket frames call.
 
 ## Infrastructure
 
@@ -188,5 +187,5 @@ sparse `ping`. Server frames are `hello`, `invalidate`, `exchange-result`,
 operations broadcasts an `invalidate` cursor after commit, skipping the
 originating connection. Failed and duplicate-only transactions broadcast
 nothing. Clients reconnect with capped jittered backoff. A hello always pulls.
-Inbox idempotency makes a timed-out socket exchange followed by HTTP retry
+Inbox idempotency makes a timed-out socket exchange followed by a retry
 safe.

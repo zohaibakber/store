@@ -18,17 +18,7 @@ export {
   ProductNotFoundError,
   type StoreError,
 };
-
-export class SyncTransportError extends Schema.TaggedError<SyncTransportError>()(
-  "SyncTransportError",
-  {
-    message: Schema.String,
-    retryable: Schema.Boolean,
-    status: Schema.optionalKey(Schema.Number),
-    code: Schema.optionalKey(Schema.String),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {}
+export { SyncTransportError } from "@store/sync-client";
 
 // Reaches the desktop UI, so a bare `String(cause)` is not good enough.
 // Thrown non-Errors become "[object Object]".

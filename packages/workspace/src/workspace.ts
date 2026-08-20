@@ -1,17 +1,13 @@
 import {
-  SyncResponse,
   unauthenticatedWorkspace,
   withWorkspaceError,
   type OrganizationId,
-  type SyncRequest,
   type SyncStatus,
   type UserId,
   type WorkspaceSnapshot,
 } from "@store/contracts";
-import { type OfflineStore, SyncTransportError } from "@store/persistence/core";
-import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
+import type { OfflineStore } from "@store/persistence/core";
+import type * as Effect from "effect/Effect";
 
 export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
 export type JsonApiResponse = string | number | boolean | null | JsonApiObject | JsonApiResponse[];
@@ -38,7 +34,6 @@ export type WorkspaceTarget =
       readonly organizationId: OrganizationId;
       readonly userId: UserId;
       readonly deviceId: string;
-      readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
     };
 
 export interface WorkspaceStore {
@@ -62,16 +57,6 @@ const unauthenticated = (isOnline: boolean, workspaceError: string | null = null
 
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The local workspace could not be opened.";
-
-const RequestFailureDetails = Schema.Struct({
-  status: Schema.optional(Schema.Number),
-  code: Schema.optional(Schema.String),
-});
-
-const requestDetails = (cause: unknown) =>
-  Schema.decodeUnknownOption(RequestFailureDetails)(cause).pipe(
-    Option.getOrElse(() => ({ status: undefined, code: undefined })),
-  );
 
 export class WorkspaceActivationError extends Error {
   override readonly name = "WorkspaceActivationError";
@@ -166,7 +151,6 @@ export class AuthenticatedWorkspace {
     }
 
     await this.#disposeStore();
-    const auth = this.#auth;
     const target: WorkspaceTarget =
       snapshot.status === "authenticated" && organization
         ? {
@@ -174,40 +158,6 @@ export class AuthenticatedWorkspace {
             organizationId: organization.id,
             userId: snapshot.user.id,
             deviceId: this.#deviceId,
-            exchange: Effect.fn("AuthenticatedWorkspace.exchange")(function* (request) {
-              const response = yield* Effect.tryPromise({
-                try: (signal) =>
-                  auth.apiRequest("/api/sync", {
-                    method: "POST",
-                    body: request,
-                    signal,
-                  }),
-                catch: (cause) => {
-                  const details = requestDetails(cause);
-                  return SyncTransportError.make({
-                    message: messageOf(cause),
-                    retryable:
-                      details.status === undefined ||
-                      details.status === 401 ||
-                      details.status === 408 ||
-                      details.status === 429 ||
-                      details.status >= 500,
-                    ...details,
-                    cause,
-                  });
-                },
-              });
-              return yield* Schema.decodeUnknownEffect(SyncResponse)(response).pipe(
-                Effect.mapError((cause) =>
-                  SyncTransportError.make({
-                    message: "The sync server returned an invalid response.",
-                    retryable: false,
-                    code: "INVALID_SYNC_RESPONSE",
-                    cause,
-                  }),
-                ),
-              );
-            }),
           }
         : { _tag: "Locked" };
 

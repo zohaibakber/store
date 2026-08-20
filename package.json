@@ -21,7 +21,7 @@
     }
   },
   "scripts": {
-    "dev": "turbo run dev --filter=!@store/web",
+    "dev": "turbo run dev --filter=!@store/web --filter=!@store/mobile",
     "build": "turbo run build",
     "check": "turbo run check",
     "test": "turbo run test",

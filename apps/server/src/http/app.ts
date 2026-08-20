@@ -58,12 +58,16 @@ const Cors = HttpRouter.middleware(
       credentials: true,
     });
     return (httpEffect) =>
-      Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
         // Effect stores `url` without scheme/host. `new URL(originalUrl)`
         // throws TypeError: Invalid URL string on Cloudflare when that value
         // is a path rather than an absolute URL.
-        request.url.startsWith("/api") ? cors(httpEffect) : httpEffect,
-      );
+        if (!request.url.startsWith("/api")) return httpEffect;
+        // Received 101 upgrade Responses have immutable headers in workerd.
+        // Effect CORS still calls `headers.set` (credentials are always applied).
+        if (request.headers.upgrade?.toLowerCase() === "websocket") return httpEffect;
+        return cors(httpEffect);
+      });
   }),
   { global: true },
 );

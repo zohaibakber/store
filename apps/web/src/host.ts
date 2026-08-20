@@ -51,7 +51,6 @@ const makeWorkspaceStores = (input: {
         ? {
             ...baseConfig,
             syncTransport: {
-              exchange: target.exchange,
               openLive: openBrowserSyncSocket({
                 baseUrl: input.baseUrl,
                 organizationId: target.organizationId,

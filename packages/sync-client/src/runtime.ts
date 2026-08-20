@@ -157,8 +157,8 @@ export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE
     const start = Effect.fn("SyncClientRuntime.start")(function* () {
       if (yield* Ref.getAndSet(started, true)) return;
       yield* signalConsumer.pipe(Effect.forkIn(scope));
-      yield* requestSync("startup").pipe(Effect.ignore);
       yield* startLive;
+      if (!live) yield* requestSync("startup").pipe(Effect.ignore);
       const interval = options.safetyPollIntervalMillis ?? 3_000;
       yield* signal("safety-poll").pipe(
         Effect.delay(interval),

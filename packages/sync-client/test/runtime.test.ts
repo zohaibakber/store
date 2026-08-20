@@ -38,11 +38,11 @@ it.effect("coalesces invalidations into one active pass and one pending rerun", 
       adapter: {
         exchangeOnce: Effect.gen(function* () {
           const call = yield* Ref.updateAndGet(calls, (count) => count + 1);
-          if (call === 2) {
+          if (call === 1) {
             yield* Deferred.succeed(active, undefined);
             yield* Deferred.await(release);
           }
-          if (call === 3) yield* Deferred.succeed(rerun, undefined);
+          if (call === 2) yield* Deferred.succeed(rerun, undefined);
           return { cursor: 10, hasMore: false, moreLocalWork: false };
         }),
         completedStatus: Effect.succeed({
@@ -78,7 +78,7 @@ it.effect("coalesces invalidations into one active pass and one pending rerun", 
     yield* Deferred.succeed(release, undefined);
     yield* Deferred.await(rerun);
     yield* Effect.yieldNow;
-    assert.strictEqual(yield* Ref.get(calls), 3);
+    assert.strictEqual(yield* Ref.get(calls), 2);
   }),
 );
 

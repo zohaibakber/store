@@ -4,7 +4,7 @@ Vite + TanStack Router SPA for Tabaaq, deployed with
 [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
 This app owns the renderer. Electron loads the same routes (hash history +
 `@clerk/electron`). The browser replica of `@store/persistence` and the
-`/api/sync` protocol keep inventory in sync across web, desktop, and mobile.
+`/api/sync/live` socket keep inventory in sync across web, desktop, and mobile.
 
 ## Local development
 

@@ -31,7 +31,7 @@ const responseFor = (value: SyncRequest): SyncResponse => ({
 
 const queuedSocket = (
   messages: Queue.Queue<string>,
-  onSend?: (payload: string) => Effect.Effect<void>,
+  onSend?: (payload: string) => Effect.Effect<void, SyncTransportError>,
 ): SyncSocket => ({
   send: (payload) => onSend?.(payload) ?? Effect.void,
   messages: Stream.fromQueue(messages),
@@ -56,29 +56,23 @@ const waitForLive = (
     yield* Deferred.await(ready);
   });
 
-test("exchanges over HTTP when the live socket is not connected", async () => {
-  const result = await Effect.gen(function* () {
+test("fails when the live socket is not connected", async () => {
+  const error = await Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
-    let httpCalls = 0;
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
-      httpExchange: (value) => {
-        httpCalls += 1;
-        return Effect.succeed(responseFor(value));
-      },
     });
-    const response = yield* session.exchange(request);
-    return { response, httpCalls };
+    return yield* session.exchange(request).pipe(Effect.flip);
   }).pipe(Effect.scoped, Effect.runPromise);
 
-  expect(result.httpCalls).toBe(1);
-  expect(result.response.organizationId).toBe("org-1");
+  expect(error).toBeInstanceOf(SyncTransportError);
+  expect(error.retryable).toBe(true);
+  expect(error.message).toBe("Live synchronization disconnected.");
 });
 
 test("correlates an exchange-result frame on the live socket", async () => {
-  const result = await Effect.gen(function* () {
+  const response = await Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
-    let httpCalls = 0;
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(
         queuedSocket(messages, (payload) => {
@@ -94,39 +88,28 @@ test("correlates an exchange-result frame on the live socket", async () => {
           );
         }),
       ),
-      httpExchange: (value) => {
-        httpCalls += 1;
-        return Effect.succeed(responseFor(value));
-      },
     });
     yield* waitForLive(session, messages);
-    const response = yield* session.exchange(request);
-    return { response, httpCalls };
+    return yield* session.exchange(request);
   }).pipe(Effect.scoped, Effect.runPromise);
 
-  expect(result.httpCalls).toBe(0);
-  expect(result.response.nextCursor).toBe(0);
+  expect(response.nextCursor).toBe(0);
 });
 
-test("falls back to HTTP when a live exchange times out", async () => {
-  const result = await Effect.gen(function* () {
+test("fails when a live exchange times out", async () => {
+  const error = await Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
-    let httpCalls = 0;
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
-      httpExchange: (value) => {
-        httpCalls += 1;
-        return Effect.succeed(responseFor(value));
-      },
       exchangeTimeoutMillis: 10,
     });
     yield* waitForLive(session, messages);
-    const response = yield* session.exchange(request);
-    return { response, httpCalls };
+    return yield* session.exchange(request).pipe(Effect.flip);
   }).pipe(Effect.scoped, Effect.runPromise);
 
-  expect(result.httpCalls).toBe(1);
-  expect(result.response.organizationId).toBe("org-1");
+  expect(error).toBeInstanceOf(SyncTransportError);
+  expect(error.retryable).toBe(true);
+  expect(error.message).toBe("Live synchronization timed out.");
 });
 
 test("hello and invalidate frames still surface as live pull signals", async () => {
@@ -134,7 +117,6 @@ test("hello and invalidate frames still surface as live pull signals", async () 
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
-      httpExchange: (value) => Effect.succeed(responseFor(value)),
     });
     yield* Queue.offer(
       messages,

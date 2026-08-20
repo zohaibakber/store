@@ -59,8 +59,10 @@ export const setAccessTokenProvider = (provider: AccessTokenProvider) => {
   accessTokenProvider = provider;
 };
 
+export const getAccessToken = () => accessTokenProvider();
+
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {
-  const token = await accessTokenProvider();
+  const token = await getAccessToken();
   const nativeHeaders = {
     "expo-origin": mobileNativeOrigin,
   };

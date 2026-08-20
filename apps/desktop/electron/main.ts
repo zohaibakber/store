@@ -238,7 +238,6 @@ const workspaceStores: WorkspaceStoreAdapter = {
         ? {
             ...baseConfig,
             syncTransport: {
-              exchange: target.exchange,
               openLive: openDesktopSyncSocket({
                 baseUrl: API_BASE_URL,
                 organizationId: target.organizationId,
