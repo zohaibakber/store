@@ -64,6 +64,8 @@ export const composeColors = (colors: Palette): MaterialColors => ({
   surfaceVariant: colors.secondary,
   tertiary: colors.warning,
   tertiaryContainer: alpha(colors.warning, 0.12),
+  tertiaryFixed: alpha(colors.warning, 0.12),
+  tertiaryFixedDim: alpha(colors.warning, 0.12),
 });
 
 /** Compose palette, appearance and the neutral seed every `Host` needs. */
