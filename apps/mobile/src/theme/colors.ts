@@ -1,111 +1,40 @@
-import { Color } from "expo-router";
-import { Platform, processColor, type ColorValue } from "react-native";
+import { useAppColorScheme } from "@/theme/appearance";
+import { alpha, palettes, type ColorScheme, type Hex, type Palette } from "@/theme/tokens";
 
-export const colors = {
-  label: Platform.select({
-    ios: Color.ios.label,
-    android: Color.android.dynamic.onSurface,
-    default: "#000000",
-  })!,
-  secondaryLabel: Platform.select({
-    ios: Color.ios.secondaryLabel,
-    android: Color.android.dynamic.onSurfaceVariant,
-    default: "#3c3c43",
-  })!,
-  tertiaryLabel: Platform.select({
-    ios: Color.ios.tertiaryLabel,
-    android: Color.android.dynamic.onSurfaceVariant,
-    default: "#8e8e93",
-  })!,
-  separator: Platform.select({
-    ios: Color.ios.separator,
-    android: Color.android.dynamic.outlineVariant,
-    default: "#c6c6c8",
-  })!,
-  systemBackground: Platform.select({
-    ios: Color.ios.systemBackground,
-    android: Color.android.dynamic.surface,
-    default: "#ffffff",
-  })!,
-  secondarySystemBackground: Platform.select({
-    ios: Color.ios.secondarySystemBackground,
-    android: Color.android.dynamic.surfaceContainer,
-    default: "#f2f2f7",
-  })!,
-  tertiarySystemBackground: Platform.select({
-    ios: Color.ios.tertiarySystemBackground,
-    android: Color.android.dynamic.surfaceContainerLow,
-    default: "#ffffff",
-  })!,
-  systemGroupedBackground: Platform.select({
-    ios: Color.ios.systemGroupedBackground,
-    android: Color.android.dynamic.background,
-    default: "#f2f2f7",
-  })!,
-  secondarySystemGroupedBackground: Platform.select({
-    ios: Color.ios.secondarySystemGroupedBackground,
-    android: Color.android.dynamic.surfaceContainer,
-    default: "#ffffff",
-  })!,
-  systemFill: Platform.select({
-    ios: Color.ios.systemGray6,
-    android: Color.android.dynamic.surfaceContainerHighest,
-    default: "#e5e5ea",
-  })!,
-  systemBlue: Platform.select({
-    ios: Color.ios.systemBlue,
-    android: Color.android.dynamic.primary,
-    default: "#007aff",
-  })!,
-  systemPurple: Platform.select({
-    ios: Color.ios.systemPurple,
-    android: Color.android.dynamic.tertiary,
-    default: "#af52de",
-  })!,
-  systemOrange: Platform.select({
-    ios: Color.ios.systemOrange,
-    android: Color.android.dynamic.tertiary,
-    default: "#ff9500",
-  })!,
-  systemRed: Platform.select({
-    ios: Color.ios.systemRed,
-    android: Color.android.dynamic.error,
-    default: "#ff3b30",
-  })!,
-  systemGreen: Platform.select({
-    ios: Color.ios.systemGreen,
-    android: Color.android.holo_green_dark,
-    default: "#34c759",
-  })!,
-  onAccent: Platform.select({
-    ios: Color.ios.lightText,
-    android: Color.android.dynamic.onPrimary,
-    default: "#ffffff",
-  })!,
-  warningSoft: Platform.select({
-    ios: Color.ios.tertiarySystemFill,
-    android: Color.android.dynamic.tertiaryContainer,
-    default: "#ffedd5",
-  })!,
-  dangerSoft: Platform.select({
-    ios: Color.ios.secondarySystemFill,
-    android: Color.android.dynamic.errorContainer,
-    default: "#fee2e2",
-  })!,
-  successSoft: Platform.select({
-    ios: Color.ios.tertiarySystemFill,
-    android: Color.android.dynamic.primaryContainer,
-    default: "#dcfce7",
-  })!,
-} as const satisfies Record<string, ColorValue>;
+export type { ColorScheme, Hex, Palette };
+export { alpha };
 
-export const cssColor = (value: ColorValue): string => {
-  const hexCandidate = String(value);
-  if (hexCandidate.startsWith("#")) return hexCandidate;
-  const packed = Number(processColor(value));
-  if (!Number.isFinite(packed)) return "#000000";
-  const r = (packed >> 16) & 0xff;
-  const g = (packed >> 8) & 0xff;
-  const b = packed & 0xff;
-  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+/**
+ * The app's colors, for the current appearance. Semantic names only — this is
+ * deliberately not `Color.ios.*` or `Color.android.dynamic.*`: the product is
+ * neutral on both platforms and does not inherit a wallpaper or a system accent.
+ * See `design-system.md` §2.
+ */
+export const useColors = (): Palette => palettes[useAppColorScheme()];
+
+/**
+ * Appearance plus palette, for the `@expo/ui` hosts that need both: they take
+ * `colorScheme` so the native subtree flips with the JS tree, and
+ * `seedColor` so Compose/SwiftUI derive their implicit tints from our neutral
+ * primary instead of Material You or iOS blue.
+ */
+export const useTheme = (): { readonly colors: Palette; readonly scheme: ColorScheme } => {
+  const scheme = useAppColorScheme();
+  return { colors: palettes[scheme], scheme };
 };
+
+export type StatusToken = "destructive" | "success" | "warning" | "info";
+
+/** The coss Alert surface: a 6% wash inside a 32% border. */
+export const statusSurface = (
+  colors: Palette,
+  status: StatusToken,
+): { readonly backgroundColor: Hex; readonly borderColor: Hex; readonly tint: Hex } => ({
+  backgroundColor: alpha(colors[status], 0.06),
+  borderColor: alpha(colors[status], 0.32),
+  tint: colors[status],
+});
+
+/** Text colour for a status, which is always the *-Foreground end of the pair. */
+export const statusText = (colors: Palette, status: StatusToken): Hex =>
+  colors[`${status}Foreground`];
