@@ -1,69 +1,53 @@
-import type { ComponentProps, ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import type { ComponentProps } from "react";
+import { StyleSheet, View } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Text } from "@/components/ui/text";
+import { useColors } from "@/theme/colors";
+import { radius } from "@/theme/tokens";
 
-type CardProps = ComponentProps<typeof View> & {
-  children: ReactNode;
-  variant?: "default" | "secondary" | "accent" | "blue" | "purple";
-};
-
-const CardRoot = ({ children, style, variant = "default", ...props }: CardProps) => {
-  const [surface, secondary, separator] = useThemeColor([
-    "surface",
-    "surface-secondary",
-    "separator",
-  ]);
+/** A grouped content surface: `card` fill, hairline border, no shadow. */
+export function Card({ style, ...props }: ComponentProps<typeof View>) {
+  const colors = useColors();
   return (
     <View
-      style={[
-        styles.card,
-        { backgroundColor: variant === "default" ? surface : secondary, borderColor: separator },
-        style,
-      ]}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }, style]}
       {...props}
-    >
-      {children}
-    </View>
+    />
   );
-};
+}
 
-const CardBody = ({ style, ...props }: ComponentProps<typeof View>) => (
-  <View style={[styles.cardBody, style]} {...props} />
-);
-const CardHeader = ({ style, ...props }: ComponentProps<typeof View>) => (
-  <View style={[styles.cardHeader, style]} {...props} />
-);
-const CardFooter = ({ style, ...props }: ComponentProps<typeof View>) => (
-  <View style={[styles.cardFooter, style]} {...props} />
-);
-const CardTitle = ({ style, ...props }: ComponentProps<typeof Text>) => {
-  const foreground = useThemeColor("foreground");
-  return <Text style={[styles.cardTitle, { color: foreground }, style]} {...props} />;
-};
-const CardDescription = ({ style, ...props }: ComponentProps<typeof Text>) => {
-  const muted = useThemeColor("muted");
-  return <Text style={[styles.cardDescription, { color: muted }, style]} {...props} />;
-};
+export function CardHeader({ style, ...props }: ComponentProps<typeof View>) {
+  return <View style={[styles.header, style]} {...props} />;
+}
 
-export const Card = Object.assign(CardRoot, {
-  Body: CardBody,
-  Description: CardDescription,
-  Footer: CardFooter,
-  Header: CardHeader,
-  Title: CardTitle,
-});
+export function CardContent({ style, ...props }: ComponentProps<typeof View>) {
+  return <View style={[styles.content, style]} {...props} />;
+}
+
+export function CardFooter({ style, ...props }: ComponentProps<typeof View>) {
+  return <View style={[styles.footer, style]} {...props} />;
+}
+
+export function CardTitle({ children }: { readonly children: string }) {
+  return <Text variant="subheading">{children}</Text>;
+}
+
+export function CardDescription({ children }: { readonly children: string }) {
+  return (
+    <Text tone="muted" variant="caption">
+      {children}
+    </Text>
+  );
+}
 
 const styles = StyleSheet.create({
   card: {
     borderCurve: "continuous",
-    borderRadius: 12,
+    borderRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
-  cardBody: { padding: 16 },
-  cardDescription: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
-  cardFooter: { flexDirection: "row", paddingBottom: 16, paddingHorizontal: 16 },
-  cardHeader: { gap: 4, paddingHorizontal: 16, paddingTop: 16 },
-  cardTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
+  content: { gap: 12, padding: 16 },
+  footer: { gap: 12, paddingBottom: 16, paddingHorizontal: 16 },
+  header: { gap: 4, padding: 16 },
 });

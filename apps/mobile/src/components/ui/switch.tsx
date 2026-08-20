@@ -1,24 +1,34 @@
 import { Switch as RNSwitch } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { useColors } from "@/theme/colors";
 
+/**
+ * The platform switch — native gesture, size and animation — with the coss
+ * colours: `primary` track when on, `input` when off, `background` thumb.
+ */
 export function Switch({
+  accessibilityLabel,
+  isDisabled,
   isSelected,
   onSelectedChange,
   testID,
 }: {
-  isSelected: boolean;
-  onSelectedChange: (selected: boolean) => void;
-  testID?: string;
-  accessibilityLabel?: string;
+  readonly accessibilityLabel?: string;
+  readonly isDisabled?: boolean;
+  readonly isSelected: boolean;
+  readonly onSelectedChange: (selected: boolean) => void;
+  readonly testID?: string;
 }) {
-  const [accent, muted] = useThemeColor(["accent", "muted"]);
+  const colors = useColors();
   return (
     <RNSwitch
+      accessibilityLabel={accessibilityLabel}
+      disabled={isDisabled}
+      ios_backgroundColor={colors.input}
       onValueChange={onSelectedChange}
       testID={testID}
-      thumbColor={isSelected ? accent : undefined}
-      trackColor={{ false: muted, true: accent }}
+      thumbColor={colors.background}
+      trackColor={{ false: colors.input, true: colors.primary }}
       value={isSelected}
     />
   );

@@ -1,48 +1,72 @@
-import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { useColors } from "@/theme/colors";
+import { alpha, radius } from "@/theme/tokens";
+import { typography } from "@/theme/typography";
 
+export type BadgeVariant = "default" | "secondary" | "outline" | "error" | "warning" | "success";
+
+/**
+ * A short status label. It *is* a text node, so it takes a string child and
+ * renders as styled `Text` rather than a View wrapper. Badges label; they do not
+ * shout — no pill radius, no uppercase. See `design-system.md` §5.
+ */
 export function Badge({
   children,
-  tone = "default",
+  variant = "secondary",
 }: {
-  children: ReactNode;
-  tone?: "default" | "danger" | "warning" | "success";
+  readonly children: string;
+  readonly variant?: BadgeVariant;
 }) {
-  const [surface, foreground, danger, dangerSoft, warning, warningSoft, success, successSoft] =
-    useThemeColor([
-      "surface-tertiary",
-      "foreground",
-      "danger",
-      "danger-soft",
-      "warning",
-      "warning-soft",
-      "success",
-      "success-soft",
-    ]);
-  const toneColors = {
-    default: [surface, foreground],
-    danger: [dangerSoft, danger],
-    success: [successSoft, success],
-    warning: [warningSoft, warning],
-  } as const;
-  const [backgroundColor, color] = toneColors[tone];
+  const colors = useColors();
+  const { backgroundColor, borderColor, color } = {
+    default: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+      color: colors.primaryForeground,
+    },
+    error: {
+      backgroundColor: alpha(colors.destructive, 0.1),
+      borderColor: "transparent",
+      color: colors.destructiveForeground,
+    },
+    outline: {
+      backgroundColor: colors.card,
+      borderColor: colors.input,
+      color: colors.foreground,
+    },
+    secondary: {
+      backgroundColor: colors.secondary,
+      borderColor: "transparent",
+      color: colors.secondaryForeground,
+    },
+    success: {
+      backgroundColor: alpha(colors.success, 0.12),
+      borderColor: "transparent",
+      color: colors.successForeground,
+    },
+    warning: {
+      backgroundColor: alpha(colors.warning, 0.12),
+      borderColor: "transparent",
+      color: colors.warningForeground,
+    },
+  }[variant];
+
   return (
-    <View style={[styles.chip, { backgroundColor }]}>
-      <Text style={[styles.chipText, { color }]}>{children}</Text>
-    </View>
+    <Text numberOfLines={1} style={[styles.badge, { backgroundColor, borderColor, color }]}>
+      {children}
+    </Text>
   );
 }
 
 const styles = StyleSheet.create({
-  chip: {
-    alignItems: "center",
+  badge: {
+    ...typography.label,
     borderCurve: "continuous",
-    borderRadius: 999,
-    justifyContent: "center",
-    minHeight: 32,
-    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  chipText: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 16 },
 });

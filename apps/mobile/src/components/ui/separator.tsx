@@ -1,24 +1,28 @@
 import { StyleSheet, View } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { useColors } from "@/theme/colors";
 
-export const Separator = ({
+/** A hairline in `border`. `inset` clears a leading slot, e.g. a row avatar. */
+export function Separator({
+  inset = 0,
   orientation = "horizontal",
 }: {
-  orientation?: "horizontal" | "vertical";
-}) => {
-  const separator = useThemeColor("separator");
+  readonly inset?: number;
+  readonly orientation?: "horizontal" | "vertical";
+}) {
+  const colors = useColors();
   return (
     <View
       style={[
-        orientation === "vertical" ? styles.separatorVertical : styles.separator,
-        { backgroundColor: separator },
+        orientation === "vertical" ? styles.vertical : styles.horizontal,
+        orientation === "horizontal" && { marginStart: inset },
+        { backgroundColor: colors.border },
       ]}
     />
   );
-};
+}
 
 const styles = StyleSheet.create({
-  separator: { height: StyleSheet.hairlineWidth },
-  separatorVertical: { marginHorizontal: 8, width: StyleSheet.hairlineWidth },
+  horizontal: { height: StyleSheet.hairlineWidth },
+  vertical: { alignSelf: "stretch", width: StyleSheet.hairlineWidth },
 });

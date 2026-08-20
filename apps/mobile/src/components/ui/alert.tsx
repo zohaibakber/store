@@ -1,84 +1,84 @@
-import { createContext, use, type ComponentProps } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { createContext, use, type ComponentProps, type ReactNode } from "react";
+import { StyleSheet, View } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Icon, type IconName } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { statusSurface, useColors, type StatusToken } from "@/theme/colors";
+import { radius, type Hex } from "@/theme/tokens";
 
-type AlertTone = "danger" | "success";
-const AlertToneContext = createContext<AlertTone>("danger");
+export type AlertVariant = "default" | StatusToken;
 
-const AlertRoot = ({
+const iconFor: Record<AlertVariant, IconName> = {
+  default: "info",
+  destructive: "alert",
+  info: "info",
+  success: "check",
+  warning: "alert",
+};
+
+const AlertContext = createContext<AlertVariant>("default");
+
+/**
+ * Inline, persistent status. The coss Alert recipe: a 6% wash of the status
+ * colour inside a 32% border, icon in the status colour, title in `foreground`,
+ * body in `mutedForeground`. `default` is untinted.
+ */
+export function Alert({
   children,
+  variant = "default",
   style,
-  status = "danger",
   ...props
-}: ComponentProps<typeof View> & { status?: AlertTone }) => (
-  <AlertToneContext value={status}>
-    <AlertSurface status={status} style={style} {...props}>
-      {children}
-    </AlertSurface>
-  </AlertToneContext>
-);
+}: ComponentProps<typeof View> & { readonly variant?: AlertVariant }) {
+  const colors = useColors();
+  const surface: { backgroundColor: Hex; borderColor: Hex } =
+    variant === "default"
+      ? { backgroundColor: colors.card, borderColor: colors.border }
+      : statusSurface(colors, variant);
 
-const AlertSurface = ({
-  children,
-  status,
-  style,
-  ...props
-}: ComponentProps<typeof View> & { status: AlertTone }) => {
-  const [background, border] = useThemeColor([
-    status === "danger" ? "danger-soft" : "success-soft",
-    status === "danger" ? "danger" : "success",
-  ]);
   return (
-    <View
-      style={[styles.alert, { backgroundColor: background, borderColor: border }, style]}
-      {...props}
-    >
-      {children}
-    </View>
+    <AlertContext value={variant}>
+      <View accessibilityRole="alert" style={[styles.alert, surface, style]} {...props}>
+        <AlertIndicator />
+        <View style={styles.body}>{children}</View>
+      </View>
+    </AlertContext>
   );
-};
+}
 
-const AlertIndicator = () => {
-  const tone = use(AlertToneContext);
-  const color = useThemeColor(tone === "danger" ? "danger" : "success");
-  return <View style={[styles.alertIndicator, { backgroundColor: color }]} />;
-};
+function AlertIndicator() {
+  const variant = use(AlertContext);
+  const tone = variant === "default" ? "muted" : variant === "destructive" ? "destructive" : variant;
+  return <Icon name={iconFor[variant]} style={styles.icon} tone={tone} />;
+}
 
-const AlertContent = ({ style, ...props }: ComponentProps<typeof View>) => (
-  <View style={[styles.alertContent, style]} {...props} />
-);
+export function AlertTitle({ children }: { readonly children: string }) {
+  return <Text variant="bodyMedium">{children}</Text>;
+}
 
-const AlertTitle = ({ style, ...props }: ComponentProps<typeof Text>) => {
-  const foreground = useThemeColor("foreground");
-  return <Text style={[styles.alertTitle, { color: foreground }, style]} {...props} />;
-};
+export function AlertDescription({ children }: { readonly children: string }) {
+  return (
+    <Text selectable tone="muted" variant="caption">
+      {children}
+    </Text>
+  );
+}
 
-const AlertDescription = ({ style, ...props }: ComponentProps<typeof Text>) => {
-  const muted = useThemeColor("muted");
-  return <Text selectable style={[styles.alertDescription, { color: muted }, style]} {...props} />;
-};
-
-export const Alert = Object.assign(AlertRoot, {
-  Content: AlertContent,
-  Description: AlertDescription,
-  Indicator: AlertIndicator,
-  Title: AlertTitle,
-});
+/** Trailing action, at most one, always `ghost` or `outline`. */
+export function AlertAction({ children }: { readonly children: ReactNode }) {
+  return <View style={styles.action}>{children}</View>;
+}
 
 const styles = StyleSheet.create({
+  action: { alignItems: "flex-start", paddingTop: 4 },
   alert: {
-    alignItems: "flex-start",
     borderCurve: "continuous",
-    borderRadius: 10,
+    borderRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 16,
+    gap: 10,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  alertContent: { flex: 1, gap: 2, minWidth: 0 },
-  alertDescription: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
-  alertIndicator: { borderRadius: 4, height: 8, marginTop: 4, width: 8 },
-  alertTitle: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
+  body: { flex: 1, gap: 2, minWidth: 0 },
+  icon: { marginTop: 1 },
 });
