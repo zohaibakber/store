@@ -18,8 +18,19 @@ const isIOS = process.env.EXPO_OS === "ios";
 export function AppTabs() {
   const colors = useColors();
 
-  const label = { fontFamily: typography.caption.fontFamily, fontSize: 12 } as const;
-  const selectedLabel = { ...label, fontFamily: typography.label.fontFamily };
+  // `caption` and `label` are the same 12px, differing only in weight, which is
+  // exactly the unselected/selected pair a tab bar wants. `lineHeight` is left
+  // off: the native bar lays the label out itself.
+  const label = {
+    color: colors.mutedForeground,
+    fontFamily: typography.caption.fontFamily,
+    fontSize: typography.caption.fontSize,
+  };
+  const selectedLabel = {
+    ...label,
+    color: colors.foreground,
+    fontFamily: typography.label.fontFamily,
+  };
 
   return (
     <NativeTabs
@@ -33,10 +44,7 @@ export function AppTabs() {
       blurEffect="systemChromeMaterial"
       iconColor={{ default: colors.mutedForeground, selected: colors.foreground }}
       indicatorColor={colors.accent}
-      labelStyle={{
-        default: { ...label, color: colors.mutedForeground },
-        selected: { ...selectedLabel, color: colors.foreground },
-      }}
+      labelStyle={{ default: label, selected: selectedLabel }}
       labelVisibilityMode="labeled"
       // The bar's height has to stay put: the inventory actions float at a
       // fixed offset above it, and a bar that shrinks mid-scroll would leave
