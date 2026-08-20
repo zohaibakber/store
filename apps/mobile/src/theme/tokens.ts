@@ -60,6 +60,8 @@ const light = {
   /** `color-mix(in srgb, neutral-500 90%, black)` */
   mutedForeground: "#686868",
   onScrim: swatch.white,
+  /** Web's `text-white` on a `destructive` fill: white in both appearances. */
+  onStatus: swatch.white,
   popover: swatch.white,
   popoverForeground: swatch.neutral800,
   primary: swatch.neutral800,
@@ -96,6 +98,7 @@ const dark = {
   /** `color-mix(in srgb, neutral-500 90%, white)` */
   mutedForeground: "#818181",
   onScrim: swatch.white,
+  onStatus: swatch.white,
   popover: "#1b1b1b",
   popoverForeground: swatch.neutral100,
   primary: swatch.neutral100,

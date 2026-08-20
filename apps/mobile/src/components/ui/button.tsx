@@ -28,7 +28,9 @@ const skin = (colors: Palette, variant: ButtonVariant): ButtonSkin => {
       return {
         backgroundColor: colors.destructive,
         borderColor: colors.destructive,
-        foreground: colors.background,
+        // Not `background`: that is near-black in dark mode, and dark text on a
+        // red fill reads as a warning chip. Web uses `text-white` in both.
+        foreground: colors.onStatus,
       };
     case "outline":
       return {

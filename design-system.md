@@ -72,16 +72,20 @@ conversion is documented in that file).
 | `input`                 | `--input`                  | `#0000001a` (black 10%) | `#ffffff14` (white 8%)  | Control borders, switch off             |
 | `ring`                  | `--ring`                   | `#a1a1a1` (neutral-400) | `#737373` (neutral-500) | Focus ring                              |
 
-Mobile-only additions (no web equivalent because the web has no camera):
+Mobile-only additions. Web has no camera, and expresses the third as a literal
+`text-white` rather than a variable:
 
 | Token        | Light       | Dark        | Use                                 |
 | ------------ | ----------- | ----------- | ----------------------------------- |
 | `scrim`      | `#00000099` | `#000000b3` | Camera overlay, media chrome        |
 | `onScrim`    | `#ffffff`   | `#ffffff`   | Text/icons over `scrim`             |
+| `onStatus`   | `#ffffff`   | `#ffffff`   | Text/icons on a `destructive` fill  |
 | `viewfinder` | `#000000`   | `#000000`   | Letterbox behind a live camera feed |
 
-`viewfinder` does not flip with the appearance. It is the absence of an image,
-not a surface.
+None of these flip with the appearance, and that is the point. `onStatus` exists
+because `background` is near-black in dark mode, and dark text on a red fill
+reads as a warning chip rather than a button. `viewfinder` is the absence of an
+image, not a surface.
 
 Two derived helpers exist instead of extra tokens:
 
@@ -228,7 +232,7 @@ coss: `Button` with `variant` × `size`, `loading`, and inline icons.
 | `outline`     | `card`                         | `foreground`          | `input`       |
 | `ghost`       | transparent → `accent` pressed | `foreground`          | none          |
 | `secondary`   | `secondary`                    | `secondaryForeground` | none          |
-| `destructive` | `destructive`                  | `#ffffff`             | `destructive` |
+| `destructive` | `destructive`                  | `onStatus` (white)    | `destructive` |
 | `link`        | none                           | `foreground`          | none          |
 
 Sizes: `default` 48, `sm` 40, `icon` 40 square. Radius `lg` (`md` for `sm`).
@@ -239,10 +243,13 @@ Mobile is a **compound** component, because a `Pressable` is not a text node:
 
 ```tsx
 <Button variant="outline" size="sm" onPress={retry}>
-  <ButtonIcon name="arrow.clockwise" />
+  <ButtonIcon name="refresh" />
   <ButtonText>Retry</ButtonText>
 </Button>
 ```
+
+`ButtonIcon` takes a name from the shared `ui/icon` set (§7), not a platform
+symbol name — the label and the glyph are drawn by the same renderer.
 
 No boolean props like `isPrimary` / `isDanger`. One `variant` union.
 
