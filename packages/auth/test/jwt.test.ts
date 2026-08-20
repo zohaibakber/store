@@ -1,3 +1,6 @@
+import * as Effect from "effect/Effect";
+import { describe, expect, it } from "vitest";
+
 import {
   EmailAddress,
   issueAccessToken,
@@ -7,15 +10,12 @@ import {
   verifyAccessToken,
   type JwtConfiguration,
 } from "../src/auth";
-import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
 
 const configuration = async (): Promise<JwtConfiguration> => {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    true,
-    ["sign", "verify"],
-  );
+  const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+    "verify",
+  ]);
   return {
     issuer: "https://auth.example.com",
     audience: "tabaaq-api",

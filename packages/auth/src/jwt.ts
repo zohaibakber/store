@@ -37,7 +37,6 @@ const JsonWebKeySchema = Schema.Struct({
   y: Schema.optionalKey(Schema.String),
   d: Schema.optionalKey(Schema.String),
   use: Schema.optionalKey(Schema.String),
-  key_ops: Schema.optionalKey(Schema.Array(Schema.String)),
   alg: Schema.optionalKey(Schema.String),
   kid: Schema.optionalKey(Schema.String),
 });
@@ -72,12 +71,12 @@ const JwtHeader = Schema.Struct({
   typ: Schema.Literal("JWT"),
 });
 
-export class JwtError extends Schema.TaggedErrorClass<JwtError>()("Auth.JwtError", {
+export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
   reason: Schema.Literals(["Malformed", "InvalidSignature", "Expired", "InvalidClaims", "NoKey"]),
   message: Schema.String,
 }) {}
 
-const decodeJson = <A, I, R>(schema: Schema.Schema<A, I, R>, bytes: Uint8Array) =>
+const decodeJson = <A>(schema: Schema.ConstraintDecoder<A>, bytes: Uint8Array) =>
   Effect.try({
     try: () => JSON.parse(textDecoder.decode(bytes)),
     catch: () => new JwtError({ reason: "Malformed", message: "The access token is malformed." }),
@@ -87,7 +86,7 @@ const decodeJson = <A, I, R>(schema: Schema.Schema<A, I, R>, bytes: Uint8Array) 
       (cause) =>
         new JwtError({
           reason: "InvalidClaims",
-          message: `The access token claims are invalid: ${String(cause)}`,
+          message: `The access token claims are invalid: ${cause.message}`,
         }),
     ),
   );
@@ -95,13 +94,7 @@ const decodeJson = <A, I, R>(schema: Schema.Schema<A, I, R>, bytes: Uint8Array) 
 const importSigningKey = (jwk: JsonWebKey) =>
   Effect.tryPromise({
     try: () =>
-      crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["sign"],
-      ),
+      crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]),
     catch: (cause) =>
       new JwtError({
         reason: "NoKey",
@@ -112,13 +105,9 @@ const importSigningKey = (jwk: JsonWebKey) =>
 const importVerificationKey = (jwk: JsonWebKey) =>
   Effect.tryPromise({
     try: () =>
-      crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["verify"],
-      ),
+      crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, [
+        "verify",
+      ]),
     catch: (cause) =>
       new JwtError({
         reason: "NoKey",
@@ -179,11 +168,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   const key = yield* importSigningKey(configuration.privateJwk);
   const signature = yield* Effect.tryPromise({
     try: () =>
-      crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        key,
-        textEncoder.encode(signingInput),
-      ),
+      crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, textEncoder.encode(signingInput)),
     catch: (cause) =>
       new JwtError({
         reason: "NoKey",
@@ -265,9 +250,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
 });
 
 export interface AccessTokenServiceApi {
-  readonly issue: (
-    input: IssueAccessTokenInput,
-  ) => Effect.Effect<IssuedAccessToken, JwtError>;
+  readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;
   readonly verify: (token: string, now?: number) => Effect.Effect<AccessClaimsType, JwtError>;
 }
 

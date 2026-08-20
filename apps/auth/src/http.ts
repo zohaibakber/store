@@ -21,7 +21,8 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { AuthError, AuthService } from "./service";
 
-const REFRESH_COOKIE = "__Host-tabaaq_refresh";
+const refreshCookieName = (secureCookies: boolean) =>
+  secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh";
 
 export interface AuthHttpConfiguration {
   readonly baseUrl: string;
@@ -38,7 +39,7 @@ const errorResponse = (error: AuthError) =>
 const invalidRequest = (message: string) =>
   errorResponse(new AuthError({ status: 400, code: "INVALID_REQUEST", message }));
 
-const requestJson = <A, I>(schema: Schema.Schema<A, I, never>) =>
+const requestJson = <A>(schema: Schema.ConstraintDecoder<A>) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
@@ -50,12 +51,13 @@ const requestJson = <A, I>(schema: Schema.Schema<A, I, never>) =>
       });
     }
     const json = yield* request.json.pipe(
-      Effect.mapError(() =>
-        new AuthError({
-          status: 400,
-          code: "INVALID_JSON",
-          message: "The request body is not valid JSON.",
-        }),
+      Effect.mapError(
+        () =>
+          new AuthError({
+            status: 400,
+            code: "INVALID_JSON",
+            message: "The request body is not valid JSON.",
+          }),
       ),
     );
     return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
@@ -70,11 +72,7 @@ const requestJson = <A, I>(schema: Schema.Schema<A, I, never>) =>
     );
   });
 
-const browserTokenResponse = (
-  tokens: TokenSet,
-  client: AuthClientKind,
-  secureCookies: boolean,
-) => {
+const browserTokenResponse = (tokens: TokenSet, client: AuthClientKind, secureCookies: boolean) => {
   const responseTokens =
     client._tag === "Browser"
       ? {
@@ -85,20 +83,26 @@ const browserTokenResponse = (
       : tokens;
   let response = HttpServerResponse.jsonUnsafe(responseTokens);
   if (client._tag === "Browser" && tokens.refreshToken) {
-    response = HttpServerResponse.setCookieUnsafe(response, REFRESH_COOKIE, tokens.refreshToken, {
-      httpOnly: true,
-      secure: secureCookies,
-      sameSite: "lax",
-      path: "/v1",
-      expires: new Date(tokens.refreshExpiresAt),
-    });
+    response = HttpServerResponse.setCookieUnsafe(
+      response,
+      refreshCookieName(secureCookies),
+      tokens.refreshToken,
+      {
+        httpOnly: true,
+        secure: secureCookies,
+        sameSite: "lax",
+        path: "/",
+        expires: new Date(tokens.refreshExpiresAt),
+      },
+    );
   }
   return response;
 };
 
 const withAuthErrorResponse = <R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, AuthError, R>,
-) => effect.pipe(Effect.catchTag("Auth.AuthError", (error) => Effect.succeed(errorResponse(error))));
+) =>
+  effect.pipe(Effect.catchTag("Auth.AuthError", (error) => Effect.succeed(errorResponse(error))));
 
 export const authRoutes = (configuration: AuthHttpConfiguration) =>
   Layer.mergeAll(
@@ -207,12 +211,14 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
             Effect.gen(function* () {
               const request = yield* HttpServerRequest.HttpServerRequest;
               const input = yield* requestJson(RefreshInput);
-              const cookie = request.cookies[REFRESH_COOKIE];
+              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
               const refreshToken =
                 input.refreshToken ??
-                (cookie ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
-                  option._tag === "Some" ? option.value : undefined,
-                ) : undefined);
+                (cookie
+                  ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
+                      option._tag === "Some" ? option.value : undefined,
+                    )
+                  : undefined);
               const tokens = yield* auth.refresh({ refreshToken });
               const client: AuthClientKind = cookie
                 ? { _tag: "Browser" }
@@ -228,17 +234,24 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
             Effect.gen(function* () {
               const request = yield* HttpServerRequest.HttpServerRequest;
               const input = yield* requestJson(SignOutInput);
-              const cookie = request.cookies[REFRESH_COOKIE];
+              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
               const refreshToken =
                 input.refreshToken ??
-                (cookie ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
-                  option._tag === "Some" ? option.value : undefined,
-                ) : undefined);
+                (cookie
+                  ? Schema.decodeUnknownOption(RefreshToken)(cookie).pipe((option) =>
+                      option._tag === "Some" ? option.value : undefined,
+                    )
+                  : undefined);
               yield* auth.signOut({ ...input, refreshToken });
               return HttpServerResponse.expireCookieUnsafe(
                 HttpServerResponse.jsonUnsafe({ ok: true }),
-                REFRESH_COOKIE,
-                { secure: configuration.secureCookies, httpOnly: true, sameSite: "lax", path: "/v1" },
+                refreshCookieName(configuration.secureCookies),
+                {
+                  secure: configuration.secureCookies,
+                  httpOnly: true,
+                  sameSite: "lax",
+                  path: "/",
+                },
               );
             }),
           ),
@@ -249,10 +262,11 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
       Effect.succeed((httpEffect) =>
         Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const origin = request.headers.origin;
-          const hasRefreshCookie = REFRESH_COOKIE in request.cookies;
+          const hasRefreshCookie =
+            refreshCookieName(configuration.secureCookies) in request.cookies;
           if (
             request.method !== "GET" &&
-            hasRefreshCookie &&
+            (origin !== undefined || hasRefreshCookie) &&
             !isTrustedOrigin(origin, configuration.trustedOrigins)
           ) {
             return Effect.succeed(
@@ -273,8 +287,7 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
     HttpRouter.middleware(
       Effect.succeed(
         HttpMiddleware.cors({
-          allowedOrigins: (origin) =>
-            isTrustedOrigin(origin, configuration.trustedOrigins),
+          allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
           allowedHeaders: ["Content-Type"],
           allowedMethods: ["GET", "POST", "OPTIONS"],
           credentials: true,

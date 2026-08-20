@@ -27,14 +27,14 @@ export const PasswordHash = Schema.String.check(
 ).pipe(Schema.brand("PasswordHash"));
 export type PasswordHash = typeof PasswordHash.Type;
 
-export class PasswordHashError extends Schema.TaggedErrorClass<PasswordHashError>()(
+export class PasswordHashError extends Schema.TaggedError<PasswordHashError>()(
   "Auth.PasswordHashError",
   {
     message: Schema.String,
   },
 ) {}
 
-const derive = (password: Password, salt: Uint8Array, iterations: number) =>
+const derive = (password: Password, salt: Uint8Array<ArrayBuffer>, iterations: number) =>
   Effect.tryPromise({
     try: async () => {
       const key = await crypto.subtle.importKey(

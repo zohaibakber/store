@@ -35,7 +35,7 @@ const OTP_TTL_MS = 10 * 60 * 1_000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
 const AUTHORIZATION_TTL_MS = 5 * 60 * 1_000;
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()("Auth.AuthError", {
+export class AuthError extends Schema.TaggedError<AuthError>()("Auth.AuthError", {
   status: Schema.Number,
   code: Schema.String,
   message: Schema.String,
@@ -54,9 +54,7 @@ export interface AuthServiceApi {
     readonly code: string;
     readonly state: string;
   }) => Effect.Effect<GoogleCallback, AuthError>;
-  readonly exchangeGoogle: (
-    input: ExchangeGoogleInput,
-  ) => Effect.Effect<TokenSetType, AuthError>;
+  readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSetType, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
 }
@@ -138,9 +136,7 @@ const parseRefreshToken = (token: string) =>
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
     const sessionId = yield* Schema.decodeUnknownEffect(SessionId)(token.slice(0, separator)).pipe(
-      Effect.mapError(() =>
-        authError(401, "INVALID_REFRESH_TOKEN", "The session has expired."),
-      ),
+      Effect.mapError(() => authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.")),
     );
     return { sessionId, secret: token.slice(separator + 1) };
   });
@@ -200,9 +196,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
       const identify = Effect.fn("AuthService.identify")(function* (input: IdentifyInput) {
         const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
           normalizeEmail(input.email),
-        ).pipe(
-          Effect.mapError(() => authError(400, "INVALID_EMAIL", "Enter a valid email.")),
-        );
+        ).pipe(Effect.mapError(() => authError(400, "INVALID_EMAIL", "Enter a valid email.")));
         const allowed = yield* ephemeral.allow({
           key: `identify:${normalized}`,
           limit: 10,
@@ -223,17 +217,18 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
           expiresAt,
         });
         yield* email.sendOtp({ email: normalized, code, expiresAt });
-        return LoginRoute.make({
-          _tag: "Otp",
-          email: normalized,
-          challengeId,
-          ...(configuration.developmentOtp ? { developmentCode: code } : {}),
-        });
+        if (configuration.developmentOtp) {
+          return LoginRoute.make({
+            _tag: "Otp",
+            email: normalized,
+            challengeId,
+            developmentCode: code,
+          });
+        }
+        return LoginRoute.make({ _tag: "Otp", email: normalized, challengeId });
       });
 
-      const authenticate = Effect.fn("AuthService.authenticate")(function* (
-        command: LoginCommand,
-      ) {
+      const authenticate = Effect.fn("AuthService.authenticate")(function* (command: LoginCommand) {
         switch (command._tag) {
           case "Password": {
             const emailAddress = EmailAddress.make(normalizeEmail(command.email));
@@ -265,25 +260,26 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
             return yield* issueSession(user, command.client);
           }
           case "Otp": {
+            const allowed = yield* ephemeral.allow({
+              key: `otp-attempt:${command.challengeId}`,
+              limit: 5,
+              windowSeconds: OTP_TTL_MS / 1_000,
+              now: Date.now(),
+            });
+            if (!allowed) {
+              return yield* authError(429, "RATE_LIMITED", "Wait before trying another code.");
+            }
             const emailAddress = yield* ephemeral.consumeOtp({
               challengeId: command.challengeId,
               code: command.code,
               now: Date.now(),
             });
             if (!emailAddress) {
-              return yield* authError(
-                401,
-                "INVALID_OTP",
-                "The code is invalid or has expired.",
-              );
+              return yield* authError(401, "INVALID_OTP", "The code is invalid or has expired.");
             }
             const user = yield* repository.findUserByEmail(emailAddress);
             if (!user || user.passwordHash) {
-              return yield* authError(
-                401,
-                "INVALID_OTP",
-                "The code is invalid or has expired.",
-              );
+              return yield* authError(401, "INVALID_OTP", "The code is invalid or has expired.");
             }
             return yield* issueSession(user, command.client, `otp-${command.challengeId}`);
           }
@@ -312,15 +308,9 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         }
       });
 
-      const beginGoogle = Effect.fn("AuthService.beginGoogle")(function* (
-        input: BeginGoogleInput,
-      ) {
+      const beginGoogle = Effect.fn("AuthService.beginGoogle")(function* (input: BeginGoogleInput) {
         if (!redirectAllowed(input.redirectUri, configuration.trustedRedirects)) {
-          return yield* authError(
-            400,
-            "INVALID_REDIRECT",
-            "The OAuth redirect is not allowed.",
-          );
+          return yield* authError(400, "INVALID_REDIRECT", "The OAuth redirect is not allowed.");
         }
         const state = yield* ephemeral.createOAuthState({
           redirectUri: input.redirectUri,
@@ -407,9 +397,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         if (!current) {
           return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
         }
-        const actualHash = yield* sha256(
-          `${configuration.refreshTokenPepper}:${parsed.secret}`,
-        );
+        const actualHash = yield* sha256(`${configuration.refreshTokenPepper}:${parsed.secret}`);
         if (!safeEqual(actualHash, current.refreshTokenHash)) {
           return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
         }
@@ -481,9 +469,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         const parsed = yield* parseRefreshToken(input.refreshToken);
         const session = yield* repository.findSession(parsed.sessionId);
         if (!session) return;
-        const actualHash = yield* sha256(
-          `${configuration.refreshTokenPepper}:${parsed.secret}`,
-        );
+        const actualHash = yield* sha256(`${configuration.refreshTokenPepper}:${parsed.secret}`);
         if (!safeEqual(actualHash, session.refreshTokenHash)) return;
         if (input.everywhere) yield* repository.revokeUser(session.userId, Date.now());
         else yield* repository.revokeSession(session.id, Date.now());

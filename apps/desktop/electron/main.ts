@@ -3,8 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { TokenSet } from "@store/auth";
+import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
 import {
@@ -98,11 +98,7 @@ const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
-const authBroker = new AuthBroker(
-  API_BASE_URL,
-  AUTH_BASE_URL,
-  `${ELECTRON_PROTOCOL}://app`,
-);
+const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
@@ -115,7 +111,7 @@ function registerRendererCsp() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
-        ...(details.responseHeaders ?? {}),
+        ...details.responseHeaders,
         "Content-Security-Policy": [rendererCsp],
       },
     });

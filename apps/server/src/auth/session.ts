@@ -4,18 +4,20 @@ import {
   verifyAccessToken,
   type JwtConfiguration,
 } from "@store/auth";
-import { unauthenticatedWorkspace, WorkspaceSnapshot } from "@store/contracts";
+import {
+  decodeOrganizationId,
+  decodeUserId,
+  unauthenticatedWorkspace,
+  WorkspaceSnapshot,
+} from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()("Server.AuthError", {
+export class AuthError extends Schema.TaggedError<AuthError>()("Server.AuthError", {
   message: Schema.String,
 }) {}
 
-export type AuthVerificationConfig = Pick<
-  JwtConfiguration,
-  "issuer" | "audience" | "publicJwk"
->;
+export type AuthVerificationConfig = Pick<JwtConfiguration, "issuer" | "audience" | "publicJwk">;
 
 export const authenticateHeaders = (
   headers: Headers,
@@ -66,12 +68,23 @@ export const loadWorkspaceSnapshot = (
   Effect.gen(function* () {
     const session = yield* authenticateHeaders(headers, config);
     if (!session) return unauthenticatedWorkspace({ isOnline: true });
-    const activeOrganization = session.organizations[0] ?? null;
+    const organizations = session.organizations.map((organization) => ({
+      id: decodeOrganizationId(organization.id),
+      name: organization.name,
+      slug: organization.slug,
+      role: organization.role,
+    }));
+    const activeOrganization = organizations[0] ?? null;
     return WorkspaceSnapshot.make({
       status: "authenticated",
-      user: session.user,
+      user: {
+        id: decodeUserId(session.user.id),
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image,
+      },
       activeOrganization,
-      organizations: [...session.organizations],
+      organizations,
       isOnline: true,
     });
   });

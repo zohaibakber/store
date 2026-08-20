@@ -1,12 +1,13 @@
 import {
   AuthClientError,
+  AuthorizationCode,
   BeginGoogleInput,
   ExchangeGoogleInput,
   IdentifyInput,
-  LoginCommand,
   makeAuthClient,
   nativeClient,
   TokenSet,
+  type LoginCommand as LoginCommandType,
   type LoginRoute,
   type TokenSet as TokenSetType,
 } from "@store/auth";
@@ -39,9 +40,10 @@ const metroHost =
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 const configuredAuthUrl = process.env.EXPO_PUBLIC_AUTH_URL?.trim();
 
-export const apiOrigin = (
-  configuredApiUrl || (__DEV__ ? `http://${metroHost}:8787` : "")
-).replace(/\/api\/?$/u, "");
+export const apiOrigin = (configuredApiUrl || (__DEV__ ? `http://${metroHost}:8787` : "")).replace(
+  /\/api\/?$/u,
+  "",
+);
 export const authOrigin = (
   configuredAuthUrl || (__DEV__ ? `http://${metroHost}:8788` : "")
 ).replace(/\/+$/u, "");
@@ -172,8 +174,7 @@ export const identifyMobile = async (email: string): Promise<LoginRoute> => {
   return run(client.identify(input));
 };
 
-export const authenticateMobile = async (input: unknown) => {
-  const command = await run(Schema.decodeUnknownEffect(LoginCommand)(input));
+export const authenticateMobile = async (command: LoginCommandType) => {
   const next = await run(client.authenticate(command));
   await persistTokens(next);
   return next;
@@ -205,8 +206,9 @@ export const exchangeGoogleMobile = async (input: {
   readonly code: string;
   readonly verifier: string;
 }) => {
+  const code = await run(Schema.decodeUnknownEffect(AuthorizationCode)(input.code));
   const command = ExchangeGoogleInput.make({
-    code: input.code,
+    code,
     codeVerifier: input.verifier,
     client: native,
   });
@@ -217,9 +219,11 @@ export const exchangeGoogleMobile = async (input: {
 
 export const signOutMobile = async (everywhere = false) => {
   if (!tokens) await restoreTokens();
+  await refreshInFlight?.catch(() => null);
   const refreshToken = tokens?.refreshToken;
+  const input = refreshToken ? { refreshToken, everywhere } : { everywhere };
   try {
-    await run(client.signOut({ ...(refreshToken ? { refreshToken } : {}), everywhere }));
+    await run(client.signOut(input));
   } catch (cause) {
     if (!isOfflineCause(cause)) throw cause;
   } finally {

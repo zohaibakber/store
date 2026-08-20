@@ -23,7 +23,7 @@ export interface GoogleProfile {
   readonly image: string | null;
 }
 
-export class GoogleOAuthError extends Schema.TaggedErrorClass<GoogleOAuthError>()(
+export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()(
   "Auth.GoogleOAuthError",
   {
     operation: Schema.String,

@@ -1,10 +1,4 @@
-import {
-  EmailAddress,
-  OtpCode,
-  Password,
-  normalizeEmail,
-  type LoginRoute,
-} from "@store/auth";
+import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from "@store/auth";
 import * as React from "react";
 
 import { AuthScreen } from "@/components/auth/brand";
@@ -12,12 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  authenticate,
-  beginGoogle,
-  currentAuthClient,
-  identify,
-} from "@/lib/first-party-auth";
+import { authenticate, beginGoogle, currentAuthClient, identify } from "@/lib/first-party-auth";
 
 type AuthStep =
   | { readonly _tag: "Identifier" }
@@ -63,12 +52,7 @@ function IdentifierSignIn({
       <Button loading={busy} type="submit">
         Continue
       </Button>
-      <Button
-        disabled={busy}
-        onClick={() => void beginGoogle()}
-        type="button"
-        variant="outline"
-      >
+      <Button disabled={busy} onClick={() => void beginGoogle()} type="button" variant="outline">
         Continue with Google
       </Button>
     </form>
@@ -195,6 +179,7 @@ function PasswordRegistration({
           onChange={(event) => setName(event.currentTarget.value)}
           value={name}
         />
+        <FieldDescription>This account will use {email}.</FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor="auth-new-password">Password</FieldLabel>
@@ -205,7 +190,9 @@ function PasswordRegistration({
           type="password"
           value={password}
         />
-        <FieldDescription>Use 10 to 100 characters. Spaces at the edges are rejected.</FieldDescription>
+        <FieldDescription>
+          Use 10 to 100 characters. Spaces at the edges are rejected.
+        </FieldDescription>
       </Field>
       <Button loading={busy} type="submit">
         Create account

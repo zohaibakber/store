@@ -1,7 +1,4 @@
-import {
-  type AuthenticatedWorkspaceSnapshot,
-  unauthenticatedWorkspace,
-} from "@store/contracts";
+import { type AuthenticatedWorkspaceSnapshot, unauthenticatedWorkspace } from "@store/contracts";
 import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";

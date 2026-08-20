@@ -1,11 +1,7 @@
-import type { LoginRoute } from "@store/auth";
+import { OtpCode, Password, type LoginRoute } from "@store/auth";
 import { useState } from "react";
 
-import {
-  authErrorMessage,
-  authenticateMobile,
-  identifyMobile,
-} from "@/lib/auth-client";
+import { authErrorMessage, authenticateMobile, identifyMobile } from "@/lib/auth-client";
 import { useMobileAuth } from "@/lib/auth-provider";
 
 const nativeClient = {
@@ -50,7 +46,7 @@ export function useAuthFlow() {
           await authenticateMobile({
             _tag: "Password",
             email: route.email,
-            password,
+            password: Password.make(password),
             client: nativeClient,
           });
           break;
@@ -58,7 +54,7 @@ export function useAuthFlow() {
           await authenticateMobile({
             _tag: "Otp",
             challengeId: route.challengeId,
-            code,
+            code: OtpCode.make(code),
             client: nativeClient,
           });
           break;
@@ -67,7 +63,7 @@ export function useAuthFlow() {
             _tag: "RegisterPassword",
             email: route.email,
             name,
-            password,
+            password: Password.make(password),
             client: nativeClient,
           });
           break;

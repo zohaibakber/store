@@ -177,8 +177,9 @@ export const AuthOrganizationMembership = Schema.Struct({
   slug: Schema.NullOr(Schema.String),
   role: OrganizationRole,
 });
-export interface AuthOrganizationMembership
-  extends Schema.Schema.Type<typeof AuthOrganizationMembership> {}
+export interface AuthOrganizationMembership extends Schema.Schema.Type<
+  typeof AuthOrganizationMembership
+> {}
 
 export const AuthSessionRecord = Schema.Struct({
   id: SessionId,

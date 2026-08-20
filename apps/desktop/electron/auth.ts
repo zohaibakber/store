@@ -1,8 +1,8 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
 import { RefreshInput, SignOutInput, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
+import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -44,6 +44,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
   #tokens: TokenSetType | null = null;
+  #refreshInFlight: Promise<void> | null = null;
 
   constructor(baseUrl: string, authBaseUrl: string, electronOrigin: string) {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -108,7 +109,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   async signOut() {
+    await this.#refreshInFlight?.catch(() => undefined);
     const refreshToken = this.#tokens?.refreshToken;
+    this.#tokens = null;
     if (refreshToken) {
       await net
         .fetch(`${this.#authBaseUrl}/v1/session/logout`, {
@@ -216,6 +219,14 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   async #refreshTokens() {
     const tokens = this.#tokens;
     if (!tokens?.refreshToken || tokens.accessExpiresAt > Date.now() + 30_000) return;
+    if (this.#refreshInFlight) return this.#refreshInFlight;
+    this.#refreshInFlight = this.#rotateTokens(tokens).finally(() => {
+      this.#refreshInFlight = null;
+    });
+    return this.#refreshInFlight;
+  }
+
+  async #rotateTokens(tokens: TokenSetType) {
     const response = await net.fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -225,6 +236,8 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       if (response.status === 401 || response.status === 403) await this.#clear();
       throw new RequestError("The session could not be refreshed.", response.status);
     }
-    this.#tokens = Schema.decodeUnknownSync(TokenSet)(await response.json());
+    const next = Schema.decodeUnknownSync(TokenSet)(await response.json());
+    this.#tokens = next;
+    await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
   }
 }

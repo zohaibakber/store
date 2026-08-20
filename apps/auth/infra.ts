@@ -3,6 +3,7 @@ import {
   DEFAULT_MOBILE_PROTOCOL,
   accessTokenLayer,
   decodeJsonWebKey,
+  disabledEmailLayer,
   developmentEmailLayer,
   fallbackIfBlank,
   parseTrustedOrigins,
@@ -49,7 +50,7 @@ export const resolveProductionAuthHostname = (input: {
     return root ? `auth.${root}` : undefined;
   })();
 
-export class Auth extends Cloudflare.Worker<Auth>()("Auth") {}
+export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 
 export const AuthLive = Auth.make(
   Effect.gen(function* () {
@@ -93,15 +94,11 @@ export const AuthLive = Auth.make(
     const { stage } = yield* Alchemy.Stack;
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
 
-    const productionDomain = yield* Config.string("PRODUCTION_DOMAIN").pipe(
-      Config.withDefault(""),
-    );
+    const productionDomain = yield* Config.string("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.string("PRODUCTION_AUTH_DOMAIN").pipe(
       Config.withDefault(""),
     );
-    const configuredAuthUrl = yield* Config.string("AUTH_BASE_URL").pipe(
-      Config.withDefault(""),
-    );
+    const configuredAuthUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
     const authHostname = resolveProductionAuthHostname({
       productionDomain,
       productionAuthDomain,
@@ -138,24 +135,21 @@ export const AuthLive = Auth.make(
     const privateJwk = yield* Effect.try({
       try: () => JSON.parse(privateJwkText),
       catch: (cause) => new Error(`AUTH_JWT_PRIVATE_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey));
+    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
     const publicJwk = yield* Effect.try({
       try: () => JSON.parse(publicJwkText),
       catch: (cause) => new Error(`AUTH_JWT_PUBLIC_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey));
-    const refreshTokenPepper = Redacted.value(
-      yield* Config.redacted("AUTH_REFRESH_TOKEN_PEPPER"),
-    );
-    const ephemeralPepper = Redacted.value(
-      yield* Config.redacted("AUTH_EPHEMERAL_PEPPER"),
-    );
+    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
+    const refreshTokenPepper = Redacted.value(yield* Config.redacted("AUTH_REFRESH_TOKEN_PEPPER"));
+    const ephemeralPepper = Redacted.value(yield* Config.redacted("AUTH_EPHEMERAL_PEPPER"));
     const googleClientId = yield* Config.string("GOOGLE_OAUTH_CLIENT_ID");
-    const googleClientSecret = Redacted.value(
-      yield* Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET"),
-    );
-    const developmentOtp = yield* Config.boolean("AUTH_DEV_OTP").pipe(
-      Config.withDefault(false),
-    );
+    const googleClientSecret = Redacted.value(yield* Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET"));
+    const developmentOtp = yield* Config.boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
+    if (stage === "prod" && developmentOtp) {
+      return yield* Effect.die(
+        new Error("AUTH_DEV_OTP must be disabled in production because it exposes OTP codes."),
+      );
+    }
 
     const DependenciesLive = Layer.unwrap(
       Effect.gen(function* () {
@@ -171,7 +165,7 @@ export const AuthLive = Auth.make(
             privateJwk,
             publicJwk,
           }),
-          developmentEmailLayer,
+          developmentOtp ? developmentEmailLayer : disabledEmailLayer,
           googleOAuthLayer({
             clientId: googleClientId,
             clientSecret: googleClientSecret,

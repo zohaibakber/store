@@ -1,3 +1,4 @@
+import type { D1Database } from "@cloudflare/workers-types";
 import {
   EmailAddress,
   OrganizationId,
@@ -8,7 +9,6 @@ import {
   type AuthClientKind,
   type EmailAddress as EmailAddressType,
   type OrganizationId as OrganizationIdType,
-  type OrganizationRole as OrganizationRoleType,
   type PasswordHash as PasswordHashType,
   type SessionId as SessionIdType,
   type UserId as UserIdType,
@@ -49,13 +49,40 @@ const SessionRecord = Schema.Struct({
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
 
-export class RepositoryError extends Schema.TaggedErrorClass<RepositoryError>()(
-  "Auth.RepositoryError",
-  {
-    operation: Schema.String,
-    message: Schema.String,
-  },
-) {}
+interface UserRow {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string;
+  readonly image: string | null;
+  readonly passwordHash: string | null;
+}
+
+interface MembershipRow {
+  readonly organizationId: string;
+  readonly organizationName: string;
+  readonly organizationSlug: string | null;
+  readonly role: string;
+}
+
+interface SessionRow {
+  readonly id: string;
+  readonly familyId: string;
+  readonly userId: string;
+  readonly activeOrganizationId: string;
+  readonly refreshTokenHash: string;
+  readonly clientKind: string;
+  readonly deviceName: string | null;
+  readonly expiresAt: number;
+  readonly revokedAt: number | null;
+  readonly replacedBySessionId: string | null;
+}
+
+type AuthRow = UserRow | MembershipRow | SessionRow;
+
+export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth.RepositoryError", {
+  operation: Schema.String,
+  message: Schema.String,
+}) {}
 
 export interface NewSession {
   readonly id: SessionIdType;
@@ -71,9 +98,7 @@ export interface AuthRepositoryApi {
   readonly findUserByEmail: (
     email: EmailAddressType,
   ) => Effect.Effect<UserRecord | null, RepositoryError>;
-  readonly findUserById: (
-    userId: UserIdType,
-  ) => Effect.Effect<UserRecord | null, RepositoryError>;
+  readonly findUserById: (userId: UserIdType) => Effect.Effect<UserRecord | null, RepositoryError>;
   readonly findUserByGoogleId: (
     providerAccountId: string,
   ) => Effect.Effect<UserRecord | null, RepositoryError>;
@@ -111,14 +136,8 @@ export interface AuthRepositoryApi {
     sessionId: SessionIdType,
     now: number,
   ) => Effect.Effect<void, RepositoryError>;
-  readonly revokeFamily: (
-    familyId: string,
-    now: number,
-  ) => Effect.Effect<void, RepositoryError>;
-  readonly revokeUser: (
-    userId: UserIdType,
-    now: number,
-  ) => Effect.Effect<void, RepositoryError>;
+  readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
+  readonly revokeUser: (userId: UserIdType, now: number) => Effect.Effect<void, RepositoryError>;
 }
 
 export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
@@ -128,10 +147,10 @@ export class AuthRepository extends Context.Service<AuthRepository, AuthReposito
 const repositoryError = (operation: string, cause: unknown) =>
   new RepositoryError({ operation, message: String(cause) });
 
-const decodeNullable = <A, I>(
-  schema: Schema.Schema<A, I, never>,
+const decodeNullable = <A>(
+  schema: Schema.ConstraintDecoder<A>,
   operation: string,
-  value: unknown,
+  value: AuthRow | null,
 ) => {
   if (value === null) return Effect.succeed(null);
   return Schema.decodeUnknownEffect(schema)(value).pipe(
@@ -139,7 +158,7 @@ const decodeNullable = <A, I>(
   );
 };
 
-const makeId = <A, I>(schema: Schema.Schema<A, I, never>) =>
+const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
   Schema.decodeUnknownSync(schema)(crypto.randomUUID());
 
 const insertSession = (database: D1Database, input: NewSession) =>
@@ -174,7 +193,7 @@ export const authRepositoryLayer = (database: D1Database) =>
                  FROM auth_user WHERE email = ?`,
               )
               .bind(email)
-              .first(),
+              .first<UserRow>(),
           catch: (cause) => repositoryError("findUserByEmail", cause),
         });
         return yield* decodeNullable(UserRecord, "findUserByEmail.decode", row);
@@ -188,29 +207,29 @@ export const authRepositoryLayer = (database: D1Database) =>
                  FROM auth_user WHERE id = ?`,
               )
               .bind(userId)
-              .first(),
+              .first<UserRow>(),
           catch: (cause) => repositoryError("findUserById", cause),
         });
         return yield* decodeNullable(UserRecord, "findUserById.decode", row);
       }),
-      findUserByGoogleId: Effect.fn("AuthRepository.findUserByGoogleId")(function* (
-        providerAccountId,
-      ) {
-        const row = yield* Effect.tryPromise({
-          try: () =>
-            database
-              .prepare(
-                `SELECT u.id, u.email, u.name, u.image, u.passwordHash
+      findUserByGoogleId: Effect.fn("AuthRepository.findUserByGoogleId")(
+        function* (providerAccountId) {
+          const row = yield* Effect.tryPromise({
+            try: () =>
+              database
+                .prepare(
+                  `SELECT u.id, u.email, u.name, u.image, u.passwordHash
                  FROM auth_oauth_account a
                  JOIN auth_user u ON u.id = a.userId
                  WHERE a.provider = 'google' AND a.providerAccountId = ?`,
-              )
-              .bind(providerAccountId)
-              .first(),
-          catch: (cause) => repositoryError("findUserByGoogleId", cause),
-        });
-        return yield* decodeNullable(UserRecord, "findUserByGoogleId.decode", row);
-      }),
+                )
+                .bind(providerAccountId)
+                .first<UserRow>(),
+            catch: (cause) => repositoryError("findUserByGoogleId", cause),
+          });
+          return yield* decodeNullable(UserRecord, "findUserByGoogleId.decode", row);
+        },
+      ),
       createPasswordUser: Effect.fn("AuthRepository.createPasswordUser")(function* (input) {
         const userId = makeId(UserId);
         const organizationId = makeId(OrganizationId);
@@ -329,14 +348,10 @@ export const authRepositoryLayer = (database: D1Database) =>
                 ORDER BY m.createdAt ASC LIMIT 1`,
               )
               .bind(userId)
-              .first(),
+              .first<MembershipRow>(),
           catch: (cause) => repositoryError("membershipForUser", cause),
         });
-        const membership = yield* decodeNullable(
-          MembershipRecord,
-          "membershipForUser.decode",
-          row,
-        );
+        const membership = yield* decodeNullable(MembershipRecord, "membershipForUser.decode", row);
         if (!membership) {
           return yield* repositoryError(
             "membershipForUser",
@@ -361,14 +376,12 @@ export const authRepositoryLayer = (database: D1Database) =>
                 ORDER BY m.createdAt ASC`,
               )
               .bind(userId)
-              .all(),
+              .all<MembershipRow>(),
           catch: (cause) => repositoryError("membershipsForUser", cause),
         });
         return yield* Schema.decodeUnknownEffect(Schema.Array(MembershipRecord))(
           result.results,
-        ).pipe(
-          Effect.mapError((cause) => repositoryError("membershipsForUser.decode", cause)),
-        );
+        ).pipe(Effect.mapError((cause) => repositoryError("membershipsForUser.decode", cause)));
       }),
       createSession: Effect.fn("AuthRepository.createSession")(function* (input) {
         yield* Effect.tryPromise({
@@ -388,7 +401,7 @@ export const authRepositoryLayer = (database: D1Database) =>
                 FROM auth_session WHERE id = ?`,
               )
               .bind(sessionId)
-              .first(),
+              .first<SessionRow>(),
           catch: (cause) => repositoryError("findSession", cause),
         });
         return yield* decodeNullable(SessionRecord, "findSession.decode", row);
