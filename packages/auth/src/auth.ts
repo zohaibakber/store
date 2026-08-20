@@ -9,6 +9,7 @@ export {
 } from "./client";
 export {
   developmentEmailLayer,
+  disabledEmailLayer,
   EmailDeliveryError,
   EmailProvider,
   type EmailProviderApi,

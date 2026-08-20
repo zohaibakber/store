@@ -157,10 +157,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   }
 
   #refreshTokens(force = false): Promise<TokenSetType | null> {
-    if (
-      !force &&
-      (!this.#tokens || this.#tokens.accessExpiresAt > Date.now() + 30_000)
-    ) {
+    if (!force && (!this.#tokens || this.#tokens.accessExpiresAt > Date.now() + 30_000)) {
       return Promise.resolve(this.#tokens);
     }
     if (this.#refreshInFlight) return this.#refreshInFlight;
