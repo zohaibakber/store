@@ -1,4 +1,3 @@
-import { useClerk, useUser } from "@clerk/expo";
 import { ListItem, Text as UiText } from "@expo/ui";
 import Constants from "expo-constants";
 import { router } from "expo-router";
@@ -13,7 +12,7 @@ import {
 } from "@/features/products/products-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { mobileApplicationId } from "@/lib/auth-client";
-import { resetProductsSession } from "@/lib/products";
+import { useMobileAuth } from "@/lib/auth-provider";
 import { cssColor } from "@/theme/colors";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -22,30 +21,33 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 export function SettingsScreen() {
-  const { user } = useUser();
-  const { signOut: clerkSignOut } = useClerk();
+  const {
+    state,
+    actions: { signOut },
+  } = useMobileAuth();
   const { products } = useProductData();
   const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [background, muted, danger] = useThemeColor(["background", "muted", "danger"]);
-  const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";
-  const userEmail = user?.primaryEmailAddress?.emailAddress;
+  const userName =
+    state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
+  const userEmail =
+    state._tag === "Authenticated"
+      ? state.workspace.user.email
+      : "Sign in to sync across devices";
   const version = Constants.expoConfig?.version ?? "0.1.0";
   const syncDetail = lastUpdatedAt
     ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
     : "Inventory has not synced yet.";
 
-  const signOut = () => {
+  const confirmSignOut = () => {
     Alert.alert("Sign out?", "You can sign back in at any time.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out",
         style: "destructive",
         onPress: () => {
-          void clerkSignOut().finally(() => {
-            resetProductsSession();
-            router.replace("/auth");
-          });
+          void signOut();
         },
       },
     ]);
@@ -60,11 +62,22 @@ export function SettingsScreen() {
       <Text style={[styles.sectionTitle, { color: muted }]}>Account</Text>
       <AppList>
         <ListItem supportingText={userEmail}>{userName}</ListItem>
+        {state._tag === "Anonymous" ? (
+          <ListItem onPress={() => router.push("/auth")} supportingText="Sync and account features">
+            Sign in
+          </ListItem>
+        ) : null}
       </AppList>
 
       <Text style={[styles.sectionTitle, { color: muted }]}>Inventory sync</Text>
       <AppList>
-        <ListItem supportingText={`${error ? "Needs attention" : "Up to date"} · ${syncDetail}`}>
+        <ListItem
+          supportingText={
+            state._tag === "Authenticated"
+              ? `${error ? "Needs attention" : "Up to date"} · ${syncDetail}`
+              : "Local only. Sign in to sync across devices."
+          }
+        >
           Sync status
         </ListItem>
         <ListItem onPress={() => void refresh()} supportingText="Refresh local inventory now">
@@ -80,9 +93,11 @@ export function SettingsScreen() {
         <ListItem supportingText={mobileApplicationId}>
           {__DEV__ ? "Development build" : "Production build"}
         </ListItem>
-        <ListItem onPress={signOut}>
-          <UiText textStyle={{ color: cssColor(danger) }}>Sign out</UiText>
-        </ListItem>
+        {state._tag === "Authenticated" ? (
+          <ListItem onPress={confirmSignOut}>
+            <UiText textStyle={{ color: cssColor(danger) }}>Sign out</UiText>
+          </ListItem>
+        ) : null}
       </AppList>
 
       <Text style={[styles.footnote, { color: muted }]}>

@@ -12,7 +12,7 @@ import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
 import { apiOrigin, fetchWorkspaceSession, getAccessToken } from "@/lib/auth-client";
-import { forgetLastUserId } from "@/lib/local-session";
+import { isLocalUserId } from "@/lib/local-session";
 import { type MobileSyncOperation, reattributePendingOperations } from "@/lib/mobile-sync-queue";
 import {
   applyProductSyncChanges,
@@ -220,11 +220,20 @@ const organizationIdFromLocalContext = async (userId: string) => {
   return localContext?.organizationId ?? null;
 };
 
+const ensureLocalOrganizationId = async (userId: string) => {
+  const existing = await organizationIdFromLocalContext(userId);
+  if (existing) return existing;
+  const organizationId = `local-org:${Crypto.randomUUID()}`;
+  await persistInventoryContext(userId, organizationId);
+  return organizationId;
+};
+
 const activeOrganizationId = async () => {
   organizationIdPromise ??= (async () => {
     if (activeUserId) {
       const localOrganizationId = await organizationIdFromLocalContext(activeUserId);
       if (localOrganizationId) return localOrganizationId;
+      if (isLocalUserId(activeUserId)) return ensureLocalOrganizationId(activeUserId);
     }
 
     try {
@@ -539,7 +548,9 @@ const loadActiveInventoryState = async (): Promise<InventoryState | null> => {
 
 const loadSynchronizedState = async (): Promise<InventoryState | null> => {
   const organizationId = await activeOrganizationId();
-  return organizationId ? withInventorySyncLock(() => exchangeInventory(organizationId)) : null;
+  if (!organizationId) return null;
+  if (activeUserId && isLocalUserId(activeUserId)) return loadInventoryState(organizationId);
+  return withInventorySyncLock(() => exchangeInventory(organizationId));
 };
 
 const mobileBatch = (batch: BatchRow): MobileBatch => ({
@@ -853,7 +864,15 @@ export const inventorySnapshot = async (): Promise<InventorySnapshot> => {
 export const readCachedInventorySnapshot = (userId: string): Promise<InventorySnapshot> =>
   withInventoryLock(async () => {
     activeUserId = userId;
-    const context = await readInventoryContext(userId);
+    const context =
+      (await readInventoryContext(userId)) ??
+      (isLocalUserId(userId)
+        ? {
+            version: 1 as const,
+            userId,
+            organizationId: await ensureLocalOrganizationId(userId),
+          }
+        : null);
     if (!context) return emptySnapshot();
     organizationIdPromise = Promise.resolve(context.organizationId);
     const state = await loadInventoryState(context.organizationId);
@@ -999,7 +1018,6 @@ export const updateBatchQuantity = (input: UpdateBatchQuantityInput): Promise<Mo
 export const resetProductsSession = () => {
   organizationIdPromise = null;
   activeUserId = null;
-  void forgetLastUserId();
 };
 
 export const formatPrice = (paisa: number | null) => {

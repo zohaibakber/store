@@ -16,15 +16,9 @@ androidComponents {
 }
 `;
 
-const debugPlaceholders = `manifestPlaceholders = [
-            appAuthScheme: '${DEBUG_ID}',
-            clerkCallbackHost: '${DEBUG_ID}.hosted-callback'
-        ]`;
+const debugPlaceholders = `manifestPlaceholders = [appAuthScheme: '${DEBUG_ID}']`;
 
-const releasePlaceholders = `manifestPlaceholders = [
-                appAuthScheme: '${PRODUCTION_ID}',
-                clerkCallbackHost: '${PRODUCTION_ID}.hosted-callback'
-            ]`;
+const releasePlaceholders = `manifestPlaceholders = [appAuthScheme: '${PRODUCTION_ID}']`;
 
 const debugStrings = `<resources>
   <string name="app_name">Tabaaq Dev</string>
@@ -73,9 +67,6 @@ const withDebugManifestPlaceholders = (config) =>
           data.$?.["android:scheme"] === DEBUG_ID
         ) {
           data.$["android:scheme"] = "${appAuthScheme}";
-        }
-        if (data.$?.["android:scheme"] === "clerk") {
-          data.$["android:host"] = "${clerkCallbackHost}";
         }
       }
     }

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clerkFrontendApiHostnameFromPublishableKey,
-  clerkTokenRefreshDelay,
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
@@ -10,12 +8,6 @@ import {
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "../src/security";
-
-const encodeBase64 = (value: string) => globalThis.btoa(value);
-const encodeBase64Url = (value: string) =>
-  encodeBase64(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const tokenWithExpiry = (expiresAtSeconds: number) =>
-  `header.${encodeBase64Url(JSON.stringify({ exp: expiresAtSeconds }))}.signature`;
 
 const secureInput = {
   baseURL: "https://api.example.com",
@@ -148,11 +140,6 @@ describe("resolveAuthSecurity", () => {
     expect(production.trustedOrigins).not.toContain("http://localhost:5173");
   });
 
-  it("parses the Frontend API host from a Clerk publishable key", () => {
-    const key = `pk_test_${encodeBase64("clerk.example.com$")}`;
-    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("clerk.example.com");
-  });
-
   it("allows HTTP only for local development origins", () => {
     const resolved = resolveAuthSecurity({
       ...secureInput,
@@ -177,37 +164,6 @@ describe("resolveAuthSecurity", () => {
     expect(resolved.rejectedSettings).toEqual([
       { setting, value: "not a scheme", reason: "is not a valid URI scheme" },
     ]);
-  });
-});
-
-describe("clerkFrontendApiHostnameFromPublishableKey", () => {
-  it("decodes the Frontend API host after the second underscore", () => {
-    const frontendApi = "foo.clerk.accounts.dev$";
-    const key = `pk_test_${encodeBase64(frontendApi)}`;
-    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("foo.clerk.accounts.dev");
-  });
-
-  it("rejects a key that does not encode a host", () => {
-    expect(() => clerkFrontendApiHostnameFromPublishableKey("pk_test_not-valid")).toThrow(
-      /Frontend API host/,
-    );
-  });
-});
-
-describe("clerkTokenRefreshDelay", () => {
-  const now = 1_800_000_000_000;
-
-  it("refreshes shortly before the token expiry", () => {
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 + 40), now)).toBe(25_000);
-  });
-
-  it("caps long lifetimes and retries expired tokens promptly", () => {
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 + 120), now)).toBe(45_000);
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 - 1), now)).toBe(5_000);
-  });
-
-  it("uses a safe fallback for malformed tokens", () => {
-    expect(clerkTokenRefreshDelay("not-a-jwt", now)).toBe(30_000);
   });
 });
 

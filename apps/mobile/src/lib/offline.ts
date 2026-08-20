@@ -11,7 +11,7 @@ const NetworkCodedError = Schema.Struct({
   code: Schema.Literal("network_error"),
 });
 
-const offlineErrorNames = new Set(["AbortError", "OfflineError", "ClerkOfflineError"]);
+const offlineErrorNames = new Set(["AbortError", "OfflineError"]);
 const offlineMessage = /network request failed|failed to fetch|network error|internet|offline/i;
 
 export const isOfflineCause = (cause: unknown) => {

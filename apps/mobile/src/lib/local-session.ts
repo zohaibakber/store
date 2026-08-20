@@ -1,9 +1,11 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Crypto from "expo-crypto";
 import Storage from "expo-sqlite/kv-store";
 import { useEffect, useState } from "react";
 
 const LAST_USER_KEY = "tabaaq-last-user-v1";
+const LOCAL_USER_KEY = "tabaaq-local-user-v1";
 const INVENTORY_CONTEXT_KEY = "tabaaq-product-context-v1";
 const InventoryContextUser = Schema.Struct({
   userId: Schema.String,
@@ -60,6 +62,24 @@ export const rememberLastUserId = async (userId: string) => {
 export const forgetLastUserId = async () => {
   publish(null);
   await Storage.setItem(LAST_USER_KEY, "");
+};
+
+export const isLocalUserId = (userId: string) => userId.startsWith("local:");
+
+let localUserIdPromise: Promise<string> | null = null;
+
+export const localInventoryUserId = () => {
+  localUserIdPromise ??= (async () => {
+    const stored = await Storage.getItem(LOCAL_USER_KEY);
+    if (stored?.trim()) return stored;
+    const created = `local:${Crypto.randomUUID()}`;
+    await Storage.setItem(LOCAL_USER_KEY, created);
+    return created;
+  })().catch((cause) => {
+    localUserIdPromise = null;
+    throw cause;
+  });
+  return localUserIdPromise;
 };
 
 export function useLastUserId() {

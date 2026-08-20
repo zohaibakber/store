@@ -9,7 +9,7 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  it("returns an unauthenticated workspace snapshot for Clerk session lookups", async () => {
+  it("returns an unauthenticated workspace snapshot for session lookups", async () => {
     const response = await appFor(true, false).request("/api/auth/session");
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "unauthenticated" });

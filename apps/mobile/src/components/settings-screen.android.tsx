@@ -1,4 +1,3 @@
-import { useClerk, useUser } from "@clerk/expo";
 import { Host } from "@expo/ui";
 import {
   Column,
@@ -29,7 +28,7 @@ import {
   useProductStatus,
 } from "@/features/products/products-provider";
 import { mobileApplicationId } from "@/lib/auth-client";
-import { resetProductsSession } from "@/lib/products";
+import { useMobileAuth } from "@/lib/auth-provider";
 import { useAppColorScheme } from "@/theme/appearance";
 
 const composeClip = ComposeModifiers["Shapes"];
@@ -146,29 +145,32 @@ export function SettingsScreen() {
   const colorScheme = useAppColorScheme();
   const colors = useMaterialColors({ colorScheme });
   const insets = useSafeAreaInsets();
-  const { user } = useUser();
-  const { signOut: clerkSignOut } = useClerk();
+  const {
+    state,
+    actions: { signOut },
+  } = useMobileAuth();
   const { products } = useProductData();
   const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
-  const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Tabaaq user";
-  const userEmail = user?.primaryEmailAddress?.emailAddress;
+  const userName =
+    state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
+  const userEmail =
+    state._tag === "Authenticated"
+      ? state.workspace.user.email
+      : "Sign in to sync across devices";
   const version = Constants.expoConfig?.version ?? "0.1.0";
   const syncDetail = lastUpdatedAt
     ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
     : "Inventory has not synced yet.";
 
-  const signOut = () => {
+  const confirmSignOut = () => {
     Alert.alert("Sign out?", "You can sign back in at any time.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out",
         style: "destructive",
         onPress: () => {
-          void clerkSignOut().finally(() => {
-            resetProductsSession();
-            router.replace("/auth");
-          });
+          void signOut();
         },
       },
     ]);
@@ -194,6 +196,20 @@ export function SettingsScreen() {
               }
               supporting={userEmail}
             />
+            {state._tag === "Anonymous" ? (
+              <SettingsListItem
+                headline="Sign in"
+                leading={
+                  <TintedIcon
+                    container={colors.primaryContainer}
+                    source={personIcon}
+                    tint={colors.onPrimaryContainer}
+                  />
+                }
+                onClick={() => router.push("/auth")}
+                supporting="Sync and account features"
+              />
+            ) : null}
           </SettingsSection>
 
           <SettingsSection headline="Inventory sync">
@@ -206,7 +222,11 @@ export function SettingsScreen() {
                   tint={error ? colors.onErrorContainer : colors.onSecondaryContainer}
                 />
               }
-              supporting={`${error ? "Needs attention" : "Up to date"} · ${syncDetail}`}
+              supporting={
+                state._tag === "Authenticated"
+                  ? `${error ? "Needs attention" : "Up to date"} · ${syncDetail}`
+                  : "Local only. Sign in to sync across devices."
+              }
             />
             <SettingsListItem
               headline={refreshing ? "Syncing…" : "Sync now"}
@@ -245,18 +265,20 @@ export function SettingsScreen() {
               }
               supporting={mobileApplicationId}
             />
-            <SettingsListItem
-              destructive
-              headline="Sign out"
-              leading={
-                <TintedIcon
-                  container={colors.errorContainer}
-                  source={logoutIcon}
-                  tint={colors.onErrorContainer}
-                />
-              }
-              onClick={signOut}
-            />
+            {state._tag === "Authenticated" ? (
+              <SettingsListItem
+                destructive
+                headline="Sign out"
+                leading={
+                  <TintedIcon
+                    container={colors.errorContainer}
+                    source={logoutIcon}
+                    tint={colors.onErrorContainer}
+                  />
+                }
+                onClick={confirmSignOut}
+              />
+            ) : null}
           </SettingsSection>
 
           <Text color={colors.onSurfaceVariant} style={{ typography: "bodySmall" }}>

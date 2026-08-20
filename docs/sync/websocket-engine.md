@@ -5,8 +5,8 @@
 Foreground clients treat `POST /api/sync` as both the transaction and the live
 channel. They poll every few seconds. That was an emergency substitute after
 PR #5 dropped the hibernated invalidation socket so a Better Auth Electron
-plugin would stop throwing on Cloudflare's immutable `Request.headers`. Auth
-is Clerk now. The poll is still the happy path.
+plugin would stop throwing on Cloudflare's immutable `Request.headers`. The
+poll is still the happy path.
 
 The local replica, FIFO outbox, Durable Object inbox, changelog cursor, and
 last-writer-wins `rowVersion` rules are the correctness model. They stay.
@@ -48,8 +48,8 @@ idempotency makes a timeout-then-retry on the same socket safe.
 
 ## Shape
 
-One hibernated WebSocket per device against `/api/sync/live`. Clerk finishes at
-the Worker. The object receives `organizationId`, `userId`, `deviceId`, and
+One hibernated WebSocket per device against `/api/sync/live`. JWT verification
+finishes at the Worker. The object receives `organizationId`, `userId`, `deviceId`, and
 `authenticationExpiresAt` as a socket attachment. No JWT is stored in the
 object.
 
@@ -72,7 +72,7 @@ transport errors set `nextAttemptAt` and leave the attempt count alone.
 Quarantine still stops the FIFO head after repeated non-retryable failures.
 
 Token refresh reconnects through the Worker with a new Bearer or
-`access_token`. The object cannot verify Clerk. An in-band auth frame would
+`access_token`. The object does not verify access tokens. An in-band auth frame would
 leak that job into the wrong process.
 
 ## Synthesis decision
@@ -107,7 +107,7 @@ write-ups did not land in time; the lead synthesis above is the contract.
   data path. Apply/LWW tests still inject a fake `exchange`.
 - We accept whole-org changelog paging instead of Zero-style query shapes,
   because that is the product replica.
-- We accept reconnect-for-token-refresh instead of refreshing Clerk inside the
+- We accept reconnect-for-token-refresh instead of refreshing auth inside the
   Durable Object.
 - We accept a 5 minute safety poll while live, so a missed invalidate cannot
   freeze a replica forever.
