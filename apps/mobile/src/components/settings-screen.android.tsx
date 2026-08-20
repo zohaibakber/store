@@ -10,7 +10,6 @@ import {
 import * as ComposeModifiers from "@expo/ui/jetpack-compose/modifiers";
 import { clickable, clip, fillMaxSize, fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import Constants from "expo-constants";
-import { router } from "expo-router";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -152,16 +151,15 @@ export function SettingsScreen() {
   const { products } = useProductData();
   const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
-  const userName = state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
-  const userEmail =
-    state._tag === "Authenticated" ? state.workspace.user.email : "Sign in to sync across devices";
+  const userName = state._tag === "Authenticated" ? state.workspace.user.name : "Signed out";
+  const userEmail = state._tag === "Authenticated" ? state.workspace.user.email : undefined;
   const version = Constants.expoConfig?.version ?? "0.1.0";
   const syncDetail = lastUpdatedAt
     ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
     : "Inventory has not synced yet.";
 
   const confirmSignOut = () => {
-    Alert.alert("Sign out?", "You can sign back in at any time.", [
+    Alert.alert("Sign out?", "Tabaaq needs an account, so this returns you to sign-in.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out",
@@ -193,20 +191,6 @@ export function SettingsScreen() {
               }
               supporting={userEmail}
             />
-            {state._tag === "Anonymous" ? (
-              <SettingsListItem
-                headline="Sign in"
-                leading={
-                  <TintedIcon
-                    container={colors.primaryContainer}
-                    source={personIcon}
-                    tint={colors.onPrimaryContainer}
-                  />
-                }
-                onClick={() => router.push("/auth")}
-                supporting="Sync and account features"
-              />
-            ) : null}
           </SettingsSection>
 
           <SettingsSection headline="Inventory sync">
@@ -219,11 +203,7 @@ export function SettingsScreen() {
                   tint={error ? colors.onErrorContainer : colors.onSecondaryContainer}
                 />
               }
-              supporting={
-                state._tag === "Authenticated"
-                  ? `${error ? "Needs attention" : "Up to date"} · ${syncDetail}`
-                  : "Local only. Sign in to sync across devices."
-              }
+              supporting={`${error ? "Needs attention" : "Up to date"} · ${syncDetail}`}
             />
             <SettingsListItem
               headline={refreshing ? "Syncing…" : "Sync now"}

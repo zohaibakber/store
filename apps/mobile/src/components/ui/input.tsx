@@ -4,6 +4,7 @@ import {
   TextInput,
   type KeyboardTypeOptions,
   type ReturnKeyTypeOptions,
+  type TextInputProps,
 } from "react-native";
 
 import { useThemeColor } from "@/hooks/use-theme-color";
@@ -11,6 +12,7 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 type InputProps = {
   accessibilityLabel?: string;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoComplete?: TextInputProps["autoComplete"];
   autoFocus?: boolean;
   editable?: boolean;
   keyboardType?: KeyboardTypeOptions;
@@ -18,18 +20,21 @@ type InputProps = {
   multiline?: boolean;
   numberOfLines?: number;
   onChangeText?: (text: string) => void;
+  onSubmitEditing?: () => void;
   placeholder?: string;
   ref?: Ref<TextInput>;
   returnKeyType?: ReturnKeyTypeOptions;
   secureTextEntry?: boolean;
   selectTextOnFocus?: boolean;
   testID?: string;
+  textContentType?: TextInputProps["textContentType"];
   value?: string;
 };
 
 export function Input({
   accessibilityLabel,
   autoCapitalize,
+  autoComplete,
   autoFocus,
   editable,
   keyboardType,
@@ -37,12 +42,14 @@ export function Input({
   multiline,
   numberOfLines,
   onChangeText,
+  onSubmitEditing,
   placeholder,
   ref,
   returnKeyType,
   secureTextEntry,
   selectTextOnFocus,
   testID,
+  textContentType,
   value = "",
 }: InputProps) {
   const [surface, separator, muted, foreground, accent] = useThemeColor([
@@ -63,6 +70,7 @@ export function Input({
     <TextInput
       accessibilityLabel={accessibilityLabel}
       autoCapitalize={autoCapitalize}
+      autoComplete={autoComplete}
       autoFocus={autoFocus}
       editable={editable}
       keyboardType={keyboardType}
@@ -70,6 +78,7 @@ export function Input({
       multiline={multiline}
       numberOfLines={numberOfLines}
       onChangeText={handleChangeText}
+      onSubmitEditing={onSubmitEditing}
       placeholder={placeholder}
       placeholderTextColor={muted}
       ref={ref}
@@ -87,6 +96,7 @@ export function Input({
         },
       ]}
       testID={testID}
+      textContentType={textContentType}
       value={value}
     />
   );

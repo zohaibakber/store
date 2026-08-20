@@ -17,8 +17,15 @@ export default function RootLayout() {
           <StatusBar style={scheme === "dark" ? "light" : "dark"} />
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="(app)" options={{ headerShown: false, gestureEnabled: false }} />
+            {/* Signing in and out is a state change, not navigation: cross-fade, never push. */}
+            <Stack.Screen
+              name="auth"
+              options={{ animation: "fade", gestureEnabled: false, headerShown: false }}
+            />
+            <Stack.Screen
+              name="(app)"
+              options={{ animation: "fade", gestureEnabled: false, headerShown: false }}
+            />
           </Stack>
         </ThemeProvider>
       </MobileAuthProvider>

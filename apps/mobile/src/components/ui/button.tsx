@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 
+import { PressableScale } from "@/components/ui/pressable-scale";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 type ButtonProps = {
@@ -43,23 +44,15 @@ export function Button({
   const color = variant === "primary" ? onAccent : variant === "danger-soft" ? danger : foreground;
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={isDisabled}
+    <PressableScale
+      isDisabled={isDisabled}
+      layoutStyle={style}
       onPress={onPress}
-      style={({ pressed }) => [
-        size === "sm" ? styles.small : styles.base,
-        {
-          backgroundColor,
-          borderColor,
-          opacity: isDisabled ? 0.48 : pressed ? 0.72 : 1,
-        },
-        style,
-      ]}
+      style={[size === "sm" ? styles.small : styles.base, { backgroundColor, borderColor }]}
       testID={testID}
     >
       <Text style={[styles.label, { color }]}>{children}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 

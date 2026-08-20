@@ -1,8 +1,14 @@
 import { OtpCode, Password, type LoginRoute } from "@store/auth";
 import { useState } from "react";
 
-import { authErrorMessage, authenticateMobile, identifyMobile } from "@/lib/auth-client";
+import {
+  authErrorMessage,
+  authenticateMobile,
+  identifyMobile,
+  isOfflineCause,
+} from "@/lib/auth-client";
 import { useMobileAuth } from "@/lib/auth-provider";
+import { hapticError } from "@/lib/haptics";
 
 const nativeClient = {
   _tag: "Native" as const,
@@ -27,7 +33,12 @@ export function useAuthFlow() {
     try {
       await operation();
     } catch (cause) {
-      setErrorMessage(authErrorMessage(cause));
+      setErrorMessage(
+        isOfflineCause(cause)
+          ? "You're offline. Signing in needs a connection."
+          : authErrorMessage(cause),
+      );
+      hapticError();
     } finally {
       setBusy(false);
     }

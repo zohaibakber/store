@@ -1,4 +1,4 @@
-import { type AuthenticatedWorkspaceSnapshot, unauthenticatedWorkspace } from "@store/contracts";
+import type { AuthenticatedWorkspaceSnapshot } from "@store/contracts";
 import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -24,15 +24,17 @@ import {
   saveWorkspaceSnapshot,
   signOutMobile,
 } from "@/lib/auth-client";
-import { localInventoryUserId, rememberLastUserId } from "@/lib/local-session";
+import { hapticSuccess } from "@/lib/haptics";
+import { rememberLastUserId } from "@/lib/local-session";
 import { resetProductsSession } from "@/lib/products";
 
 WebBrowser.maybeCompleteAuthSession();
 
-type AnonymousAuth = {
-  readonly _tag: "Anonymous";
-  readonly inventoryUserId: string;
-  readonly workspace: ReturnType<typeof unauthenticatedWorkspace>;
+/** Mobile has no guest mode: without a session there is no inventory to open. */
+type SignedOutAuth = {
+  readonly _tag: "SignedOut";
+  readonly inventoryUserId: null;
+  readonly workspace: null;
 };
 
 type AuthenticatedAuth = {
@@ -47,7 +49,7 @@ type LoadingAuth = {
   readonly workspace: null;
 };
 
-export type MobileAuthState = LoadingAuth | AnonymousAuth | AuthenticatedAuth;
+export type MobileAuthState = LoadingAuth | SignedOutAuth | AuthenticatedAuth;
 
 interface MobileAuthActions {
   readonly reload: () => Promise<void>;
@@ -63,11 +65,7 @@ interface MobileAuthContextValue {
 
 const MobileAuthContext = createContext<MobileAuthContextValue | null>(null);
 
-const anonymousState = async (): Promise<AnonymousAuth> => ({
-  _tag: "Anonymous",
-  inventoryUserId: await localInventoryUserId(),
-  workspace: unauthenticatedWorkspace({ isOnline: false }),
-});
+const signedOut: SignedOutAuth = { _tag: "SignedOut", inventoryUserId: null, workspace: null };
 
 const authenticatedState = async (
   workspace: AuthenticatedWorkspaceSnapshot,
@@ -88,7 +86,7 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
   const load = useCallback(async () => {
     const restored = await restoreTokens();
     if (!restored) {
-      setState(await anonymousState());
+      setState(signedOut);
       return;
     }
 
@@ -100,7 +98,7 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
         return;
       }
       await clearMobileTokens();
-      setState(await anonymousState());
+      setState(signedOut);
     } catch {
       const cached = await readWorkspaceSnapshot();
       if (cached) {
@@ -113,7 +111,7 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
         );
         return;
       }
-      setState(await anonymousState());
+      setState(signedOut);
     }
   }, []);
 
@@ -129,16 +127,26 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
     }
     resetProductsSession();
     setState(await authenticatedState(workspace));
+    hapticSuccess();
     router.replace("/home");
   }, [router]);
 
+  /**
+   * Google runs in the platform's own authentication sheet: ASWebAuthenticationSession
+   * on iOS, a Custom Tab on Android. No route, no in-app browser screen.
+   */
   const signInWithGoogle = useCallback(async () => {
     const redirectUri = AuthSession.makeRedirectUri({
       scheme: mobileApplicationId,
       path: "auth/callback",
     });
     const { authorization, verifier } = await beginGoogleMobile(redirectUri);
-    const result = await WebBrowser.openAuthSessionAsync(authorization.url, redirectUri);
+    const result = await WebBrowser.openAuthSessionAsync(authorization.url, redirectUri, {
+      dismissButtonStyle: "cancel",
+      enableBarCollapsing: true,
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      showTitle: false,
+    });
     if (result.type !== "success") return;
     const code = new URL(result.url).searchParams.get("code");
     if (!code) throw new Error("Google did not return an authorization code.");
@@ -150,8 +158,8 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
     async (everywhere = false) => {
       await signOutMobile(everywhere);
       resetProductsSession();
-      setState(await anonymousState());
-      router.replace("/home");
+      setState(signedOut);
+      router.replace("/auth");
     },
     [router],
   );

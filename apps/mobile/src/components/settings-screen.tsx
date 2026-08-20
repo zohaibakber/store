@@ -1,6 +1,5 @@
 import { ListItem, Text as UiText } from "@expo/ui";
 import Constants from "expo-constants";
-import { router } from "expo-router";
 import { Alert, ScrollView, StyleSheet, Text } from "react-native";
 
 import { AppList } from "@/components/app-list";
@@ -29,16 +28,15 @@ export function SettingsScreen() {
   const { refreshing, error, lastUpdatedAt } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
   const [background, muted, danger] = useThemeColor(["background", "muted", "danger"]);
-  const userName = state._tag === "Authenticated" ? state.workspace.user.name : "Local inventory";
-  const userEmail =
-    state._tag === "Authenticated" ? state.workspace.user.email : "Sign in to sync across devices";
+  const userName = state._tag === "Authenticated" ? state.workspace.user.name : "Signed out";
+  const userEmail = state._tag === "Authenticated" ? state.workspace.user.email : "";
   const version = Constants.expoConfig?.version ?? "0.1.0";
   const syncDetail = lastUpdatedAt
     ? `${products.length} products synced at ${timeFormatter.format(lastUpdatedAt)}`
     : "Inventory has not synced yet.";
 
   const confirmSignOut = () => {
-    Alert.alert("Sign out?", "You can sign back in at any time.", [
+    Alert.alert("Sign out?", "Tabaaq needs an account, so this returns you to sign-in.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out",
@@ -59,22 +57,11 @@ export function SettingsScreen() {
       <Text style={[styles.sectionTitle, { color: muted }]}>Account</Text>
       <AppList>
         <ListItem supportingText={userEmail}>{userName}</ListItem>
-        {state._tag === "Anonymous" ? (
-          <ListItem onPress={() => router.push("/auth")} supportingText="Sync and account features">
-            Sign in
-          </ListItem>
-        ) : null}
       </AppList>
 
       <Text style={[styles.sectionTitle, { color: muted }]}>Inventory sync</Text>
       <AppList>
-        <ListItem
-          supportingText={
-            state._tag === "Authenticated"
-              ? `${error ? "Needs attention" : "Up to date"} · ${syncDetail}`
-              : "Local only. Sign in to sync across devices."
-          }
-        >
+        <ListItem supportingText={`${error ? "Needs attention" : "Up to date"} · ${syncDetail}`}>
           Sync status
         </ListItem>
         <ListItem onPress={() => void refresh()} supportingText="Refresh local inventory now">
