@@ -70,6 +70,8 @@ const light = {
   secondaryForeground: swatch.neutral800,
   success: swatch.emerald500,
   successForeground: swatch.emerald700,
+  /** Letterbox behind a live camera feed, which is black in every appearance. */
+  viewfinder: swatch.black,
   warning: swatch.amber500,
   warningForeground: swatch.amber700,
 } as const;
@@ -104,6 +106,7 @@ const dark = {
   secondaryForeground: swatch.neutral100,
   success: swatch.emerald500,
   successForeground: swatch.emerald400,
+  viewfinder: swatch.black,
   warning: swatch.amber500,
   warningForeground: swatch.amber400,
 } satisfies Record<ColorToken, Hex>;

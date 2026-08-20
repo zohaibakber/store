@@ -188,7 +188,7 @@ export function InlineTextCamera({
         : promptFor(mode);
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: colors.viewfinder }]}>
       <CameraView
         ref={camera}
         active
@@ -290,7 +290,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   shell: {
-    backgroundColor: "#000000",
     borderCurve: "continuous",
     borderRadius: radius["2xl"],
     height: 360,

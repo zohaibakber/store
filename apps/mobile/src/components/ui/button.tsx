@@ -56,10 +56,13 @@ const skin = (colors: Palette, variant: ButtonVariant): ButtonSkin => {
   }
 };
 
-const ButtonContext = createContext<{ readonly foreground: Hex; readonly underline: boolean }>({
-  foreground: "#262626",
-  underline: false,
-});
+type ButtonLabel = {
+  /** The variant's text colour, so the label never re-derives it. */
+  readonly foreground: Hex;
+  readonly underline: boolean;
+};
+
+const ButtonContext = createContext<ButtonLabel | null>(null);
 
 /**
  * A tappable box, not a text node, so the label is an explicit `ButtonText`
@@ -116,8 +119,14 @@ export function Button({
   );
 }
 
+/** The variant's own text colour, or the plain one outside a `Button`. */
+const useLabel = (): ButtonLabel => {
+  const colors = useColors();
+  return use(ButtonContext) ?? { foreground: colors.foreground, underline: false };
+};
+
 export function ButtonText({ children }: { readonly children: string }) {
-  const { foreground, underline } = use(ButtonContext);
+  const { foreground, underline } = useLabel();
   return (
     <Text
       numberOfLines={1}
@@ -130,7 +139,7 @@ export function ButtonText({ children }: { readonly children: string }) {
 }
 
 export function ButtonIcon({ name }: { readonly name: IconName }) {
-  const { foreground } = use(ButtonContext);
+  const { foreground } = useLabel();
   return <Icon color={foreground} name={name} size={18} />;
 }
 

@@ -74,10 +74,14 @@ conversion is documented in that file).
 
 Mobile-only additions (no web equivalent because the web has no camera):
 
-| Token     | Light       | Dark        | Use                          |
-| --------- | ----------- | ----------- | ---------------------------- |
-| `scrim`   | `#00000099` | `#000000b3` | Camera overlay, media chrome |
-| `onScrim` | `#ffffff`   | `#ffffff`   | Text/icons over `scrim`      |
+| Token        | Light       | Dark        | Use                                 |
+| ------------ | ----------- | ----------- | ----------------------------------- |
+| `scrim`      | `#00000099` | `#000000b3` | Camera overlay, media chrome        |
+| `onScrim`    | `#ffffff`   | `#ffffff`   | Text/icons over `scrim`             |
+| `viewfinder` | `#000000`   | `#000000`   | Letterbox behind a live camera feed |
+
+`viewfinder` does not flip with the appearance. It is the absence of an image,
+not a surface.
 
 Two derived helpers exist instead of extra tokens:
 
@@ -410,11 +414,18 @@ padding, at most one action.
 - **Web / desktop:** Hugeicons — `<HugeiconsIcon icon={…} />` from
   `@hugeicons/react` with `@hugeicons/core-free-icons`. No numeric `size` prop;
   size via `size-*` utilities. Decorative icons get `aria-hidden="true"`.
-- **Mobile:** platform symbols are fine — SF Symbols on iOS, Material Symbols
-  (the vector XML assets in `src/assets/icons`) on Android — provided they match
-  in metric and weight: **20 px** inline / **24 px** in list leading slots,
-  regular weight, tinted `foreground` or `mutedForeground`, never a platform
-  accent. Icons never carry information that the label doesn't.
+- **Mobile:** split by who draws the pixel.
+  - _Native chrome_ — tab bars, FABs — uses platform symbols, because the
+    platform owns the container and the symbol is what makes it feel native: SF
+    Symbols on iOS (`sf={{ default, selected }}`), Material vector XML from
+    `src/assets/icons` on Android. Keep that directory to the symbols native
+    chrome actually imports; an unreferenced drawable still ships in the APK.
+  - _Everything React Native draws_ uses the shared `ui/icon` set: one stroke
+    family on a 24 grid at 1.5 weight, so a row on Android and the same row on
+    iOS are identical and match the Hugeicons weight on web.
+- Either way the metrics are the same: **20 px** inline, **24 px** in a list
+  leading slot, tinted `foreground` or `mutedForeground`, never a platform
+  accent. Icons never carry information the label doesn't.
 - One icon per row maximum. Tinted icon chips as decoration are out.
 
 ---
