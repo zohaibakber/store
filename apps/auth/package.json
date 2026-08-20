@@ -1,22 +1,21 @@
 {
-  "name": "@store/auth",
+  "name": "@store/auth-worker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/auth.ts",
-    "./security": "./src/security.ts"
-  },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/auth/test"
+    "test": "vitest run --root ../.. apps/auth/test"
   },
   "dependencies": {
+    "@store/auth": "workspace:*",
+    "@store/db": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260819.1",
     "@types/node": "^26.2.0",
+    "alchemy": "catalog:",
     "typescript": "catalog:",
     "vitest": "4.1.10"
   }

@@ -93,10 +93,13 @@ export interface WebWorkspace {
   readonly store: Store;
 }
 
-export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> => {
+export const startWebWorkspace = async (
+  baseUrl: string,
+  authBaseUrl: string,
+): Promise<WebWorkspace> => {
   const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
-  const auth = new WebAuthBroker(baseUrl);
+  const auth = new WebAuthBroker(baseUrl, authBaseUrl);
   const workspace = new AuthenticatedWorkspace({
     auth,
     stores: makeWorkspaceStores({
@@ -119,7 +122,7 @@ export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> 
   return {
     bridge: {
       getSession: async () => workspace.snapshot,
-      adoptSession: (token) => workspace.execute({ _tag: "AdoptSession", token }),
+      adoptSession: (tokens) => workspace.execute({ _tag: "AdoptSession", tokens }),
       signOut: async () => {
         await workspace.execute({ _tag: "SignOut" });
       },

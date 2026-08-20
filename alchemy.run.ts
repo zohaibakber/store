@@ -6,6 +6,7 @@ import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { Auth, AuthLive } from "./apps/auth/infra";
 import { Api, ApiLive } from "./apps/server/infra";
 import { Website } from "./apps/web/infra";
 
@@ -31,6 +32,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    const auth = yield* Auth;
     const api = yield* Api;
     const website = yield* Website;
 
@@ -43,6 +45,7 @@ export default Alchemy.Stack(
           ## Preview is up
 
           App: ${website.url}
+          Auth: ${auth.url} (health at \`/health\`)
           API: ${api.url} (health at \`/api/health\`)
 
           Preview stages share the Website origin: the React SPA is deployed
@@ -56,12 +59,13 @@ export default Alchemy.Stack(
       });
     }
 
-    // Non-secret outputs only. Never print CLERK_SECRET_KEY here.
+    // Non-secret outputs only. Authentication secrets stay in Worker bindings.
     return {
       stage,
       websiteUrl: website.url,
+      authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
     };
-  }).pipe(Effect.provide(ApiLive)),
+  }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),
 );
