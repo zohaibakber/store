@@ -38,19 +38,23 @@ The same operation accepts explicit credential variants. There is no options
 object with `password?`, `code?`, and provider booleans.
 
 ```ts
-const tokens = yield* auth.authenticate({
-  _tag: "Password",
-  email,
-  password,
-  client: nativeClient("Zohaib's Mac"),
-});
+const tokens =
+  yield *
+  auth.authenticate({
+    _tag: "Password",
+    email,
+    password,
+    client: nativeClient("Zohaib's Mac"),
+  });
 
-const tokens = yield* auth.authenticate({
-  _tag: "Otp",
-  challengeId,
-  code,
-  client: browserClient(),
-});
+const tokens =
+  yield *
+  auth.authenticate({
+    _tag: "Otp",
+    challengeId,
+    code,
+    client: browserClient(),
+  });
 ```
 
 Google uses an authorization code and PKCE between the app and the auth
@@ -58,25 +62,29 @@ service. The Google client secret stays in the Worker.
 
 ```ts
 const client = nativeClient("Desktop");
-const authorization = yield* auth.beginGoogle({
-  redirectUri: "com.tabaaq.desktop://auth/callback",
-  codeChallenge,
-  client,
-});
+const authorization =
+  yield *
+  auth.beginGoogle({
+    redirectUri: "com.tabaaq.desktop://auth/callback",
+    codeChallenge,
+    client,
+  });
 
 // Open authorization.url, receive authorization code through the deep link.
-const tokens = yield* auth.exchangeGoogle({
-  code: callback.code,
-  codeVerifier,
-  client,
-});
+const tokens =
+  yield *
+  auth.exchangeGoogle({
+    code: callback.code,
+    codeVerifier,
+    client,
+  });
 ```
 
 The API Worker only verifies access tokens. It never calls the auth Worker on a
 request path.
 
 ```ts
-const claims = yield* verifyAccessToken(token, { issuer, audience, publicJwk });
+const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk });
 ```
 
 The host owns secure token storage. Electron uses `safeStorage`, Expo uses

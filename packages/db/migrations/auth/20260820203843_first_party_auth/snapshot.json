@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "b40d38e6-a04f-42b3-800a-aba9a82c10ec",
-  "prevIds": [
-    "a3934fb1-4fc0-45f0-9fd1-2bff5dad02b7"
-  ],
+  "prevIds": ["a3934fb1-4fc0-45f0-9fd1-2bff5dad02b7"],
   "ddl": [
     {
       "name": "clerk_org_binding",
@@ -441,13 +439,9 @@
       "table": "auth_user"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -456,13 +450,9 @@
       "table": "auth_oauth_account"
     },
     {
-      "columns": [
-        "organizationId"
-      ],
+      "columns": ["organizationId"],
       "tableTo": "auth_organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -471,13 +461,9 @@
       "table": "auth_organization_membership"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -486,13 +472,9 @@
       "table": "auth_organization_membership"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -501,13 +483,9 @@
       "table": "auth_session"
     },
     {
-      "columns": [
-        "activeOrganizationId"
-      ],
+      "columns": ["activeOrganizationId"],
       "tableTo": "auth_organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -516,54 +494,42 @@
       "table": "auth_session"
     },
     {
-      "columns": [
-        "clerkOrganizationId"
-      ],
+      "columns": ["clerkOrganizationId"],
       "nameExplicit": false,
       "name": "clerk_org_binding_pk",
       "table": "clerk_org_binding",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_oauth_account_pk",
       "table": "auth_oauth_account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_organization_pk",
       "table": "auth_organization",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_organization_membership_pk",
       "table": "auth_organization_membership",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_session_pk",
       "table": "auth_session",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_user_pk",
       "table": "auth_user",
