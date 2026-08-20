@@ -4,6 +4,7 @@ import {
   AuthorizationCode,
   EmailAddress,
   EmailProvider,
+  GoogleIdToken,
   IdentifyInput,
   OrganizationId,
   OtpChallengeId,
@@ -18,7 +19,7 @@ import * as Layer from "effect/Layer";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { EphemeralStore } from "../src/ephemeral";
-import { GoogleOAuth } from "../src/google";
+import { GoogleOAuth, GoogleOAuthError } from "../src/google";
 import { AuthRepository, type AuthRepositoryApi, type UserRecord } from "../src/repository";
 import { AuthService, authServiceLayer } from "../src/service";
 
@@ -55,7 +56,8 @@ const repository: AuthRepositoryApi = {
     Effect.succeed(
       userId === passwordUser.id ? passwordUser : userId === googleUser.id ? googleUser : null,
     ),
-  findUserByGoogleId: () => Effect.succeed(null),
+  findUserByGoogleId: (providerAccountId) =>
+    Effect.succeed(providerAccountId === "google-sub-1" ? googleUser : null),
   createPasswordUser: () => Effect.die("not used"),
   createGoogleUser: () => Effect.die("not used"),
   attachGoogleAccount: () => Effect.die("not used"),
@@ -114,6 +116,20 @@ const Dependencies = Layer.mergeAll(
     GoogleOAuth.of({
       authorizationUrl: (state) => new URL(`https://accounts.example/authorize?state=${state}`),
       exchangeCode: () => Effect.die("not used"),
+      verifyIdToken: (idToken) =>
+        idToken === "valid-id-token"
+          ? Effect.succeed({
+              providerAccountId: "google-sub-1",
+              email: googleUser.email,
+              name: googleUser.name,
+              image: null,
+            })
+          : Effect.fail(
+              new GoogleOAuthError({
+                operation: "verifyIdToken.audience",
+                message: "The identity token was issued for another application.",
+              }),
+            ),
     }),
   ),
 );
@@ -172,5 +188,35 @@ describe("AuthService", () => {
       organizationSlug: "my-store",
       role: "owner",
     });
+  });
+
+  it("signs in the Google account behind a verified identity token", async () => {
+    const tokens = await Effect.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* AuthService;
+        return yield* auth.exchangeGoogleIdToken({
+          idToken: GoogleIdToken.make("valid-id-token"),
+          client: { _tag: "Native", deviceName: "Test device" },
+        });
+      }).pipe(Effect.provide(Live)),
+    );
+
+    expect(tokens.accessToken).toBe("access-token");
+    expect(issuedClaims).toMatchObject({ subject: "google-user", email: "google@example.com" });
+  });
+
+  it("refuses an identity token Google did not mint for us", async () => {
+    const failure = await Effect.runPromise(
+      Effect.gen(function* () {
+        const auth = yield* AuthService;
+        return yield* auth.exchangeGoogleIdToken({
+          idToken: GoogleIdToken.make("someone-elses-id-token"),
+          client: { _tag: "Native", deviceName: "Test device" },
+        });
+      }).pipe(Effect.provide(Live), Effect.flip),
+    );
+
+    expect(failure).toMatchObject({ status: 401, code: "INVALID_GOOGLE_IDENTITY" });
+    expect(issuedClaims).toBeNull();
   });
 });

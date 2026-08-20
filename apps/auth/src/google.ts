@@ -16,6 +16,25 @@ const GoogleUserInfo = Schema.Struct({
   picture: Schema.optionalKey(Schema.String),
 });
 
+/**
+ * `tokeninfo` answers with JSON strings for the numeric and boolean claims,
+ * and has answered with real numbers and booleans in the past. Accept both.
+ */
+const GoogleTokenInfo = Schema.Struct({
+  iss: Schema.String,
+  aud: Schema.String,
+  sub: Schema.String,
+  exp: Schema.Union([Schema.Finite, Schema.FiniteFromString]),
+  email: EmailAddress,
+  email_verified: Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])]),
+  name: Schema.optionalKey(Schema.String),
+  picture: Schema.optionalKey(Schema.String),
+});
+
+const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
+
+const isTrue = (value: boolean | "true" | "false") => value === true || value === "true";
+
 export interface GoogleProfile {
   readonly providerAccountId: string;
   readonly email: EmailAddressType;
@@ -34,6 +53,7 @@ export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()(
 export interface GoogleOAuthApi {
   readonly authorizationUrl: (state: string) => URL;
   readonly exchangeCode: (code: string) => Effect.Effect<GoogleProfile, GoogleOAuthError>;
+  readonly verifyIdToken: (idToken: string) => Effect.Effect<GoogleProfile, GoogleOAuthError>;
 }
 
 export class GoogleOAuth extends Context.Service<GoogleOAuth, GoogleOAuthApi>()(
@@ -44,6 +64,8 @@ export interface GoogleOAuthConfiguration {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly callbackUrl: string;
+  /** Client IDs of the native apps, whose ID tokens carry their own audience. */
+  readonly nativeClientIds?: ReadonlyArray<string>;
   readonly fetch?: typeof globalThis.fetch;
 }
 
@@ -52,6 +74,11 @@ const oauthError = (operation: string, cause: unknown) =>
 
 export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
   const fetch = configuration.fetch ?? globalThis.fetch;
+  const audiences = new Set(
+    [configuration.clientId, ...(configuration.nativeClientIds ?? [])].filter(
+      (value) => value.trim().length > 0,
+    ),
+  );
   return Layer.succeed(
     GoogleOAuth,
     GoogleOAuth.of({
@@ -127,6 +154,61 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
           email: profile.email,
           name: profile.name,
           image: profile.picture ?? null,
+        } satisfies GoogleProfile;
+      }),
+      /**
+       * Google's `tokeninfo` endpoint checks the signature and expiry for us;
+       * the audience and issuer are ours to check, otherwise an ID token minted
+       * for any other app would be accepted here.
+       */
+      verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
+        const response = yield* Effect.tryPromise({
+          try: (signal) =>
+            fetch(
+              `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+              { signal },
+            ),
+          catch: (cause) => oauthError("verifyIdToken.request", cause),
+        });
+        if (!response.ok) {
+          return yield* oauthError(
+            "verifyIdToken.response",
+            `Google rejected the identity token (${response.status}).`,
+          );
+        }
+        const info = yield* Effect.tryPromise({
+          try: () => response.json(),
+          catch: (cause) => oauthError("verifyIdToken.json", cause),
+        }).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(GoogleTokenInfo)),
+          Effect.mapError((cause) => oauthError("verifyIdToken.decode", cause)),
+        );
+        if (!GOOGLE_ISSUERS.includes(info.iss)) {
+          return yield* oauthError(
+            "verifyIdToken.issuer",
+            "The identity token is not from Google.",
+          );
+        }
+        if (!audiences.has(info.aud)) {
+          return yield* oauthError(
+            "verifyIdToken.audience",
+            "The identity token was issued for another application.",
+          );
+        }
+        if (info.exp * 1_000 <= Date.now()) {
+          return yield* oauthError("verifyIdToken.expiry", "The identity token has expired.");
+        }
+        if (!isTrue(info.email_verified)) {
+          return yield* oauthError(
+            "verifyIdToken.email",
+            "Google did not verify this email address.",
+          );
+        }
+        return {
+          providerAccountId: info.sub,
+          email: info.email,
+          name: info.name ?? info.email.split("@")[0] ?? info.email,
+          image: info.picture ?? null,
         } satisfies GoogleProfile;
       }),
     }),

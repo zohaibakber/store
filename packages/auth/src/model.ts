@@ -152,6 +152,24 @@ export const ExchangeGoogleInput = Schema.Struct({
 });
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}
 
+/** An OpenID Connect ID token minted by Google for one of our client IDs. */
+export const GoogleIdToken = NonEmptyString.check(Schema.isMaxLength(8192)).pipe(
+  Schema.brand("GoogleIdToken"),
+);
+export type GoogleIdToken = typeof GoogleIdToken.Type;
+
+/**
+ * Native clients sign in through Google's own account picker, so they arrive
+ * with an ID token instead of an authorization code.
+ */
+export const ExchangeGoogleIdTokenInput = Schema.Struct({
+  idToken: GoogleIdToken,
+  client: AuthClientKind,
+});
+export interface ExchangeGoogleIdTokenInput extends Schema.Schema.Type<
+  typeof ExchangeGoogleIdTokenInput
+> {}
+
 export const RefreshInput = Schema.Struct({
   refreshToken: Schema.optionalKey(RefreshToken),
 });

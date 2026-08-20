@@ -57,8 +57,9 @@ const tokens =
   });
 ```
 
-Google uses an authorization code and PKCE between the app and the auth
-service. The Google client secret stays in the Worker.
+Google in the browser and on the desktop uses an authorization code and PKCE
+between the app and the auth service. The Google client secret stays in the
+Worker.
 
 ```ts
 const client = nativeClient("Desktop");
@@ -77,6 +78,20 @@ const tokens =
     code: callback.code,
     codeVerifier,
     client,
+  });
+```
+
+Mobile presents Google's own account picker through the Google Sign-In SDK, so
+there is no redirect to protect and no PKCE. The ID token Google mints is the
+proof; the Worker verifies its signature, issuer, audience, and expiry with
+Google before issuing the same session.
+
+```ts
+const tokens =
+  yield *
+  auth.exchangeGoogleIdToken({
+    idToken,
+    client: nativeClient("Tabaaq Mobile"),
   });
 ```
 
@@ -163,6 +178,9 @@ interface AuthClient {
     input: BeginGoogleInput,
   ) => Effect.Effect<GoogleAuthorization, AuthClientError>;
   readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthClientError>;
+  readonly exchangeGoogleIdToken: (
+    input: ExchangeGoogleIdTokenInput,
+  ) => Effect.Effect<TokenSet, AuthClientError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthClientError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthClientError>;
 }
@@ -173,12 +191,15 @@ interface AuthService {
   readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<GoogleAuthorization, AuthError>;
   readonly completeGoogle: (input: GoogleCallbackInput) => Effect.Effect<GoogleCallback, AuthError>;
   readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthError>;
+  readonly exchangeGoogleIdToken: (
+    input: ExchangeGoogleIdTokenInput,
+  ) => Effect.Effect<TokenSet, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
 }
 ```
 
-`AuthClient` is a deep module. Six operations hide transport, validation,
+`AuthClient` is a deep module. Seven operations hide transport, validation,
 refresh rotation, browser cookie policy, native token handling, provider
 payloads, and error decoding. The Worker-side `AuthService` owns each complete
 authentication transition. HTTP handlers only decode, call one method, and
