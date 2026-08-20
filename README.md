@@ -140,6 +140,12 @@ issues the same session as every other route. That needs:
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
+Android store builds run from `.github/workflows/android.yml` on a push to
+`main` and on `workflow_dispatch`. The job needs repository secret `EXPO_TOKEN`
+(an Expo access token) and, unless the Play Console key already lives on the
+Expo account, Production secret `GOOGLE_SERVICE_ACCOUNT_JSON`. It submits an
+Android App Bundle to the Play internal track as a draft.
+
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build`. Production deploys run `bun alchemy deploy`,
 which serves the SPA from `PRODUCTION_DOMAIN` and the API from
