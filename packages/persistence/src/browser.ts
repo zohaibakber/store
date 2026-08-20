@@ -13,6 +13,8 @@ export {
   SyncTransportError,
 } from "./errors";
 export { OfflineStore } from "./service";
+export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "./sync/session";
+export { makeSyncSocketSession, syncSocketFromHandle } from "./sync/session";
 
 export const browserLayer = (config: PersistenceConfig) =>
   storeLayer(config).pipe(Layer.provide(browserClientLayer(config)));

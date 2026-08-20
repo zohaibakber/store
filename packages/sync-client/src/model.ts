@@ -19,7 +19,7 @@ export interface SyncAdapter<E> {
 }
 
 export interface LiveTransport<E> {
-  /** Optional invalidation stream used by tests. Production uses HTTP polling. */
+  /** Optional invalidation and hello stream. Production hosts open a live socket. */
   readonly events: Stream.Stream<SyncLiveEvent, E>;
 }
 

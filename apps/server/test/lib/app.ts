@@ -12,10 +12,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { vi } from "vitest";
 
 import { ServerRoutes } from "../../src/http/app";
-import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
+import {
+  ServerRuntime,
+  type ServerRuntimeContract,
+  type SyncLiveInput,
+} from "../../src/http/runtime";
 import type { SyncActor } from "../../src/sync/model";
 
 const session = {
@@ -30,6 +35,7 @@ const session = {
     userId: "user-1",
     activeOrganizationId: "org-1",
     clerkOrganizationId: "org_clerk_1",
+    expiresAt: Date.now() + 60_000,
   },
   organizations: [
     {
@@ -73,6 +79,9 @@ export interface AppOptions {
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
+  readonly connectSyncLive?: (
+    input: SyncLiveInput,
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
 export const requestFor = (): SyncRequest => {
@@ -154,6 +163,10 @@ export const appFor = (
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
       runSync: (actor, request) => Effect.promise(() => runSync(actor, request)),
+      connectSyncLive: (input) =>
+        options.connectSyncLive
+          ? options.connectSyncLive(input)
+          : Effect.succeed(HttpServerResponse.empty()),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

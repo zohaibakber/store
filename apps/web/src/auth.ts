@@ -50,6 +50,10 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.#snapshot;
   }
 
+  get accessToken() {
+    return this.#token;
+  }
+
   onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);

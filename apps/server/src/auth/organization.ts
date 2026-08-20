@@ -1,4 +1,4 @@
-import type { AuthSession } from "@store/auth";
+import { headersWithAccessToken, type AuthSession } from "@store/auth";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -53,7 +53,10 @@ export const OrganizationAuthLive = Layer.effect(
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        const headers = authHeadersForRequest(new Headers(request.headers));
+        const headers = headersWithAccessToken(
+          authHeadersForRequest(new Headers(request.headers)),
+          request.url,
+        );
         const session = yield* runtime
           .getSession(headers)
           .pipe(logAuthFailure("Clerk session lookup failed"), Effect.orDie);

@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 
 import type { StoreDatabase } from "./database/client";
 import type { PersistenceError, SyncTransportError } from "./errors";
+import type { SyncSocket } from "./sync/session";
 
 /**
  * The signed-in user's selected organization together with the device its
@@ -34,6 +35,12 @@ export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspa
 
 export interface SyncTransport {
   readonly exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>;
+  /**
+   * Opens a live socket for the current workspace. Persistence never sees
+   * frames; the session turns this handle into correlated exchanges and
+   * `hello`/`invalidate` events. Missing this keeps HTTP polling.
+   */
+  readonly openLive?: Effect.Effect<SyncSocket, SyncTransportError>;
 }
 
 export interface PersistenceConfig {
@@ -47,7 +54,10 @@ export interface PersistenceConfig {
   /** Recorded on each sync exchange so the Durable Object can tell devices apart. */
   readonly clientPlatform?: string;
   readonly clientVersion?: string;
-  /** How often the engine re-signals a background HTTP sync. Default: 3 seconds. */
+  /**
+   * How often the engine re-signals a background HTTP sync. Default: 5 minutes
+   * when a live socket is configured, otherwise 3 seconds.
+   */
   readonly resyncIntervalMillis?: number;
   /**
    * Base delay of the exponential backoff used when retrying a failed sync

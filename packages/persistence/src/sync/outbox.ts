@@ -309,23 +309,6 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
     return selectBatch(sendableDuePrefix(pending, Date.now()));
   });
 
-  const markAttempt = Effect.fn("Outbox.markAttempt")(function* (
-    operationIds: ReadonlyArray<string>,
-  ) {
-    if (operationIds.length === 0) return;
-    yield* database
-      .update(syncOutbox)
-      .set({ attemptCount: sql`${syncOutbox.attemptCount} + 1`, lastError: null })
-      .where(
-        and(
-          eq(syncOutbox.organizationId, workspace.organizationId),
-          inArray(syncOutbox.operationId, operationIds),
-          isNull(syncOutbox.acknowledgedAt),
-        ),
-      )
-      .pipe(mapPersistenceError("record outbox attempt"));
-  });
-
   const acknowledge = Effect.fn("Outbox.acknowledge")(function* (
     transaction: StoreTransaction,
     operationIds: ReadonlyArray<string>,
@@ -342,7 +325,10 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       );
   });
 
-  const markFailure = Effect.fn("Outbox.markFailure")(function* (message: string) {
+  const markFailure = Effect.fn("Outbox.markFailure")(function* (
+    message: string,
+    options: { readonly incrementAttempts?: boolean } = {},
+  ) {
     const [head] = yield* database
       .select({ attemptCount: syncOutbox.attemptCount })
       .from(syncOutbox)
@@ -355,12 +341,16 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(1)
       .pipe(mapPersistenceError("read outbox head for backoff"));
-    const nextAttemptAt =
-      head === undefined ? null : Date.now() + retryDelayMillis(head.attemptCount);
     if (head === undefined) return;
+    const attemptCount = options.incrementAttempts ? head.attemptCount + 1 : head.attemptCount;
+    const nextAttemptAt = Date.now() + retryDelayMillis(attemptCount);
     yield* database
       .update(syncOutbox)
-      .set({ lastError: message, nextAttemptAt })
+      .set({
+        lastError: message,
+        nextAttemptAt,
+        attemptCount,
+      })
       .where(
         and(
           eq(syncOutbox.organizationId, workspace.organizationId),
@@ -381,7 +371,6 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
   return {
     health: health(),
     nextBatch: nextBatch(),
-    markAttempt,
     acknowledge,
     markFailure,
     migratePendingActor,

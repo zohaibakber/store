@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clerkClaimsFromPayload } from "../src/clerk";
+import { accessTokenFromUrl, clerkClaimsFromPayload, headersWithAccessToken } from "../src/clerk";
 
 describe("clerkClaimsFromPayload", () => {
   it("reads Clerk JWT v2 organization claims", () => {
@@ -57,5 +57,31 @@ describe("clerkClaimsFromPayload", () => {
     expect(() => clerkClaimsFromPayload({ o: { id: "org_123" } })).toThrow(
       "Clerk session token is missing a subject.",
     );
+  });
+
+  it("reads JWT expiry as milliseconds", () => {
+    const claims = clerkClaimsFromPayload({ sub: "user_123", exp: 1_700_000_000 });
+    expect(claims.expiresAt).toBe(1_700_000_000_000);
+  });
+});
+
+describe("live upgrade access tokens", () => {
+  it("copies a query access_token onto Authorization when missing", () => {
+    expect(accessTokenFromUrl("https://api.example.com/api/sync/live?access_token=abc")).toBe(
+      "abc",
+    );
+    const headers = headersWithAccessToken(
+      new Headers(),
+      "https://api.example.com/api/sync/live?access_token=abc",
+    );
+    expect(headers.get("authorization")).toBe("Bearer abc");
+  });
+
+  it("does not overwrite an existing Bearer token", () => {
+    const headers = headersWithAccessToken(
+      new Headers({ authorization: "Bearer existing" }),
+      "https://api.example.com/api/sync/live?access_token=abc",
+    );
+    expect(headers.get("authorization")).toBe("Bearer existing");
   });
 });

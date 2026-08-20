@@ -149,6 +149,7 @@ export const authenticateHeaders = (
         userId: claims.userId,
         activeOrganizationId: active?.id ?? null,
         clerkOrganizationId: claims.clerkOrganizationId,
+        expiresAt: claims.expiresAt,
       },
       organizations: active ? [active] : [],
     } satisfies AuthSession;
