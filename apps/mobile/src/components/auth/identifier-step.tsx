@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TextField } from "@/components/ui/text-field";
+import { isGoogleSignInConfigured } from "@/lib/google-signin";
 
 export function IdentifierStep({
   busy,
@@ -44,7 +45,7 @@ export function IdentifierStep({
         <Button isDisabled={busy || email.trim().length === 0} onPress={onContinue}>
           {busy ? "Checking…" : "Continue"}
         </Button>
-        <GoogleAction isDisabled={busy} onPress={onGoogle} />
+        {isGoogleSignInConfigured ? <GoogleAction isDisabled={busy} onPress={onGoogle} /> : null}
       </View>
     </View>
   );

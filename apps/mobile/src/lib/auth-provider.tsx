@@ -1,7 +1,5 @@
 import type { AuthenticatedWorkspaceSnapshot } from "@store/contracts";
-import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import {
   createContext,
   type PropsWithChildren,
@@ -13,22 +11,19 @@ import {
 } from "react";
 
 import {
-  beginGoogleMobile,
   clearMobileTokens,
-  exchangeGoogleMobile,
+  exchangeGoogleIdTokenMobile,
   fetchWorkspaceSession,
-  mobileApplicationId,
   readWorkspaceSnapshot,
   refreshMobileSession,
   restoreTokens,
   saveWorkspaceSnapshot,
   signOutMobile,
 } from "@/lib/auth-client";
+import { forgetGoogleAccount, signInWithGoogleAccount } from "@/lib/google-signin";
 import { hapticSuccess } from "@/lib/haptics";
 import { rememberLastUserId } from "@/lib/local-session";
 import { resetProductsSession } from "@/lib/products";
-
-WebBrowser.maybeCompleteAuthSession();
 
 /** Mobile has no guest mode: without a session there is no inventory to open. */
 type SignedOutAuth = {
@@ -132,31 +127,20 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
   }, [router]);
 
   /**
-   * Google runs in the platform's own authentication sheet: ASWebAuthenticationSession
-   * on iOS, a Custom Tab on Android. No route, no in-app browser screen.
+   * Google's own account picker, presented by its SDK. There is no Tabaaq sheet
+   * in front of it and no browser: the picker is the whole interaction.
    */
   const signInWithGoogle = useCallback(async () => {
-    const redirectUri = AuthSession.makeRedirectUri({
-      scheme: mobileApplicationId,
-      path: "auth/callback",
-    });
-    const { authorization, verifier } = await beginGoogleMobile(redirectUri);
-    const result = await WebBrowser.openAuthSessionAsync(authorization.url, redirectUri, {
-      dismissButtonStyle: "cancel",
-      enableBarCollapsing: true,
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      showTitle: false,
-    });
-    if (result.type !== "success") return;
-    const code = new URL(result.url).searchParams.get("code");
-    if (!code) throw new Error("Google did not return an authorization code.");
-    await exchangeGoogleMobile({ code, verifier });
+    const result = await signInWithGoogleAccount();
+    if (result._tag === "Cancelled") return;
+    await exchangeGoogleIdTokenMobile(result.idToken);
     await completeAuthentication();
   }, [completeAuthentication]);
 
   const signOut = useCallback(
     async (everywhere = false) => {
       await signOutMobile(everywhere);
+      await forgetGoogleAccount();
       resetProductsSession();
       setState(signedOut);
       router.replace("/auth");

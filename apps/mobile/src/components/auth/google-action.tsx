@@ -4,7 +4,7 @@ import { GoogleMark } from "@/components/auth/google-mark";
 import { PressableScale } from "@/components/ui/pressable-scale";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
-/** Opens the Google sheet. Quieter than the email action on purpose. */
+/** Opens Google's account picker. Quieter than the email action on purpose. */
 export function GoogleAction({
   isDisabled,
   onPress,

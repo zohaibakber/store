@@ -11,12 +11,32 @@ const extraFromEnv = Object.fromEntries(
   }).filter(([, value]) => Boolean(value?.trim())),
 );
 
+/**
+ * Google's iOS SDK returns to the app through the reversed client ID, so its
+ * config plugin needs that scheme at prebuild time. Without an iOS client ID
+ * the plugin throws, so the app builds without Google Sign-In instead.
+ */
+const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
+const googleSignInPlugin: NonNullable<ExpoConfig["plugins"]> = googleIosClientId
+  ? [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          iosUrlScheme: `com.googleusercontent.apps.${googleIosClientId.replace(
+            /\.apps\.googleusercontent\.com$/u,
+            "",
+          )}`,
+        },
+      ],
+    ]
+  : [];
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: isProductionBuild ? "Tabaaq" : "Tabaaq Dev",
   slug: config.slug ?? "tabaaq",
   scheme: isProductionBuild ? "com.tabaaq.mobile" : "com.tabaaq.mobile.debug",
-  plugins: [...(config.plugins ?? []), "./plugins/with-android-dev-variant"],
+  plugins: [...(config.plugins ?? []), ...googleSignInPlugin, "./plugins/with-android-dev-variant"],
   extra: {
     ...config.extra,
     ...extraFromEnv,

@@ -1,11 +1,9 @@
 import type { LoginRoute } from "@store/auth";
 import { Redirect } from "expo-router";
-import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 
 import { AuthShell, ErrorLine } from "@/components/auth/auth-shell";
-import { GoogleSheet } from "@/components/auth/google-sheet";
 import { IdentifierStep } from "@/components/auth/identifier-step";
 import { OtpStep } from "@/components/auth/otp-step";
 import { PasswordStep } from "@/components/auth/password-step";
@@ -25,22 +23,14 @@ export function AuthScreen() {
   const { state } = useMobileAuth();
   const background = useThemeColor("background");
   const flow = useAuthFlow();
-  const [isGoogleSheetOpen, setGoogleSheetOpen] = useState(false);
 
   if (state._tag === "Loading") return <LoadingScreen />;
   if (state._tag === "Authenticated") return <Redirect href="/home" />;
 
-  const openGoogleSheet = () => {
+  /** The tap hands straight over to Google's picker. Nothing in between. */
+  const continueWithGoogle = () => {
     hapticSelection();
-    setGoogleSheetOpen(true);
-  };
-
-  const continueWithGoogle = async () => {
-    try {
-      await flow.startGoogle();
-    } finally {
-      setGoogleSheetOpen(false);
-    }
+    void flow.startGoogle();
   };
 
   return (
@@ -48,15 +38,9 @@ export function AuthScreen() {
       <AuthShell>
         {flow.errorMessage ? <ErrorLine message={flow.errorMessage} /> : null}
         <Animated.View entering={STEP_IN} key={stepKey(flow.route)}>
-          <AuthStep flow={flow} onGoogle={openGoogleSheet} />
+          <AuthStep flow={flow} onGoogle={continueWithGoogle} />
         </Animated.View>
       </AuthShell>
-      <GoogleSheet
-        busy={flow.busy}
-        isPresented={isGoogleSheetOpen}
-        onContinue={() => void continueWithGoogle()}
-        onDismiss={() => setGoogleSheetOpen(false)}
-      />
     </View>
   );
 }
