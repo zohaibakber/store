@@ -30,6 +30,7 @@ export function IdentifierStep({
             accessibilityLabel="Email"
             autoCapitalize="none"
             autoComplete="email"
+            autoFocus
             editable={!busy}
             keyboardType="email-address"
             onChangeText={onEmailChange}
