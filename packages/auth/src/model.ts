@@ -61,6 +61,14 @@ export const OrganizationName = Schema.String.check(
 ).pipe(Schema.brand("OrganizationName"));
 export type OrganizationName = typeof OrganizationName.Type;
 
+/** A URL-safe handle. The column is uniquely indexed, so two stores cannot share one. */
+export const OrganizationSlug = Schema.String.check(
+  Schema.isMinLength(2),
+  Schema.isMaxLength(40),
+  Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+).pipe(Schema.brand("OrganizationSlug"));
+export type OrganizationSlug = typeof OrganizationSlug.Type;
+
 export const InvitationId = Identifier.pipe(Schema.brand("AuthInvitationId"));
 export type InvitationId = typeof InvitationId.Type;
 
@@ -260,7 +268,12 @@ export const OrganizationInvitation = Schema.Struct({
 });
 export interface OrganizationInvitation extends Schema.Schema.Type<typeof OrganizationInvitation> {}
 
-/** One organization with everything its settings surface shows. */
+/**
+ * The signed-in session's own organization with everything its settings
+ * surface shows. There is no directory of other organizations: a session
+ * belongs to one store, and redeeming an invitation is the only thing that
+ * moves it to another.
+ */
 export const OrganizationRoster = Schema.Struct({
   organization: AuthOrganizationMembership,
   members: Schema.Array(OrganizationMember),
@@ -268,17 +281,16 @@ export const OrganizationRoster = Schema.Struct({
 });
 export interface OrganizationRoster extends Schema.Schema.Type<typeof OrganizationRoster> {}
 
-/** Every organization the signed-in user can switch to, plus invitations waiting for them. */
-export const OrganizationDirectory = Schema.Struct({
-  organizations: Schema.Array(AuthOrganizationMembership),
-  invitations: Schema.Array(OrganizationInvitation),
-});
-export interface OrganizationDirectory extends Schema.Schema.Type<typeof OrganizationDirectory> {}
-
+/**
+ * Every command names the organization it acts on except the one that joins a
+ * new one, where the token is the only thing the caller has.
+ */
 export const OrganizationCommand = Schema.Union([
   Schema.Struct({
-    _tag: Schema.Literal("CreateOrganization"),
+    _tag: Schema.Literal("UpdateOrganization"),
+    organizationId: OrganizationId,
     name: OrganizationName,
+    slug: Schema.NullOr(OrganizationSlug),
   }),
   Schema.Struct({
     _tag: Schema.Literal("InviteMember"),
@@ -306,21 +318,24 @@ export const OrganizationCommand = Schema.Union([
     organizationId: OrganizationId,
     userId: UserId,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("LeaveOrganization"),
-    organizationId: OrganizationId,
-  }),
 ]);
 export type OrganizationCommand = typeof OrganizationCommand.Type;
 
 /**
- * Membership changed, and the caller learns whatever the change produced: the
- * organization they now belong to, the invitation token they have to deliver
- * themselves while email is stubbed, or nothing beyond success.
+ * The caller learns whatever the change produced: the organization as it now
+ * reads, the invitation token they have to deliver themselves while email is
+ * stubbed, or nothing beyond success.
+ *
+ * `Joined` also means the session moved: redeeming an invitation points it at
+ * the organization that was joined, so the next token refresh lands there.
  */
 export const OrganizationCommandResult = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Joined"),
+    organization: AuthOrganizationMembership,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Updated"),
     organization: AuthOrganizationMembership,
   }),
   Schema.Struct({
@@ -333,17 +348,5 @@ export const OrganizationCommandResult = Schema.Union([
   }),
 ]);
 export type OrganizationCommandResult = typeof OrganizationCommandResult.Type;
-
-/**
- * The refresh credential authorizes the switch, because the access token that
- * names the old organization is exactly what this call replaces.
- */
-export const SwitchOrganizationInput = Schema.Struct({
-  organizationId: OrganizationId,
-  refreshToken: Schema.optionalKey(RefreshToken),
-});
-export interface SwitchOrganizationInput extends Schema.Schema.Type<
-  typeof SwitchOrganizationInput
-> {}
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();

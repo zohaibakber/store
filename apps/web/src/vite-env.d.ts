@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
-import type { TokenSet } from "@store/auth";
+import type {
+  OrganizationCommand,
+  OrganizationCommandResult,
+  OrganizationRoster,
+  TokenSet,
+} from "@store/auth";
 import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
@@ -21,7 +26,10 @@ declare global {
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;
       adoptSession(tokens: TokenSet | null): Promise<WorkspaceSnapshot>;
+      renewSession(): Promise<WorkspaceSnapshot>;
       signOut(): Promise<void>;
+      organizationRoster(): Promise<OrganizationRoster>;
+      organize(command: OrganizationCommand): Promise<OrganizationCommandResult>;
       openExternal(url: string): Promise<void>;
       onOAuthCallback(listener: (url: string) => void): () => void;
       onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;

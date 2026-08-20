@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TokenSet } from "@store/auth";
+import {
+  OrganizationCommand,
+  OrganizationCommandResult,
+  OrganizationRoster,
+  TokenSet,
+} from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
@@ -297,7 +302,19 @@ function registerAuthIpc() {
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
     return currentWorkspace().execute({ _tag: "AdoptSession", tokens });
   });
+  ipcMain.handle("auth:renew-session", () => currentWorkspace().execute({ _tag: "RenewSession" }));
   ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
+  ipcMain.handle("auth:organization", async () =>
+    Schema.decodeUnknownSync(OrganizationRoster)(
+      await currentWorkspace().authRequest("/v1/organization"),
+    ),
+  );
+  ipcMain.handle("auth:organize", async (_event, input) => {
+    const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
+    return Schema.decodeUnknownSync(OrganizationCommandResult)(
+      await currentWorkspace().authRequest("/v1/organization", { method: "POST", body: command }),
+    );
+  });
   ipcMain.handle("auth:open-external", async (_event, input) => {
     const url = Schema.decodeUnknownSync(Schema.String)(input);
     const parsed = new URL(url);

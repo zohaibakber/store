@@ -3,21 +3,14 @@ import {
   InvitationId,
   InvitationToken,
   OrganizationName,
-  RefreshToken,
+  OrganizationSlug,
   type OrganizationCommand,
 } from "@store/auth";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/service";
-import {
-  harness,
-  refreshTokenHash,
-  seedOrganization,
-  seedSession,
-  seedUser,
-  type Harness,
-} from "./harness";
+import { harness, seedOrganization, seedSession, seedUser, type Harness } from "./harness";
 
 type Api = ReturnType<typeof AuthService.of>;
 
@@ -139,6 +132,11 @@ describe("organization invitations", () => {
     expect(
       instance.store.memberships.filter((entry) => entry.organizationId === organizationId),
     ).toHaveLength(2);
+    // Redeeming the link is the only thing that moves a session, so the store
+    // it was for is where the next refresh lands.
+    expect(
+      instance.store.sessions.find((entry) => entry.id === inviteeSession.id)?.activeOrganizationId,
+    ).toBe(organizationId);
   });
 
   it("refuses a token presented by anyone but the invited address", async () => {
@@ -360,188 +358,70 @@ describe("organization role guards", () => {
     expect(failure).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
   });
 
-  it("keeps the last organization from being left", async () => {
+  it("lets an admin rename the organization but keeps a member out", async () => {
     const team = withTeam();
-    const failure = await failing(team.instance, team.memberToken, {
-      _tag: "LeaveOrganization",
+
+    const refused = await failing(team.instance, team.memberToken, {
+      _tag: "UpdateOrganization",
       organizationId: team.organizationId,
+      name: OrganizationName.make("Renamed"),
+      slug: null,
     });
-    expect(failure).toMatchObject({ status: 409, code: "LAST_ORGANIZATION" });
+    expect(refused).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
+
+    const updated = await command(team.instance, team.adminToken, {
+      _tag: "UpdateOrganization",
+      organizationId: team.organizationId,
+      name: OrganizationName.make("Renamed"),
+      slug: OrganizationSlug.make("renamed"),
+    });
+    expect(updated).toEqual({
+      _tag: "Updated",
+      organization: {
+        id: team.organizationId,
+        name: "Renamed",
+        slug: "renamed",
+        role: "admin",
+      },
+    });
   });
 
-  it("lets a member leave once they have somewhere else to be", async () => {
+  it("refuses a handle another store already uses", async () => {
     const team = withTeam();
-    const created = await command(team.instance, team.memberToken, {
-      _tag: "CreateOrganization",
-      name: OrganizationName.make("Side Project"),
+    const stranger = seedUser(team.instance.store, {
+      id: "stranger",
+      email: "stranger@example.com",
     });
-    expect(created).toMatchObject({ _tag: "Joined" });
-
-    const applied = await command(team.instance, team.memberToken, {
-      _tag: "LeaveOrganization",
-      organizationId: team.organizationId,
-    });
-    expect(applied).toEqual({ _tag: "Applied" });
-    expect(
-      team.instance.store.memberships.filter((entry) => entry.userId === team.member.id),
-    ).toHaveLength(1);
-  });
-});
-
-describe("switching organizations", () => {
-  it("reissues the access token against the organization asked for", async () => {
-    const instance = harness();
-    const user = seedUser(instance.store, { id: "user-1", email: "user@example.com" });
-    const first = seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "First Store",
-      members: [{ userId: user.id, role: "owner" }],
-    });
-    const second = seedOrganization(instance.store, {
-      id: "organization-2",
-      name: "Second Store",
-      members: [{ userId: user.id, role: "member" }],
-    });
-    seedSession(instance.store, {
-      id: "session-1",
-      userId: user.id,
-      organizationId: first,
-      refreshTokenHash: await refreshTokenHash("secret-1"),
-    });
-
-    const tokens = await run(instance, (auth) =>
-      auth.switchOrganization({
-        organizationId: second,
-        refreshToken: RefreshToken.make("session-1.secret-1"),
-      }),
-    );
-
-    expect(instance.issued.at(-1)).toMatchObject({
-      subject: user.id,
-      activeOrganizationId: second,
-      organizationName: "Second Store",
-      role: "member",
-    });
-    // The refresh family carries forward, so the old credential is spent.
-    expect(
-      instance.store.sessions.find((session) => session.id === "session-1")?.revokedAt,
-    ).not.toBeNull();
-    const rotated = instance.store.sessions.find((session) => session.revokedAt === null);
-    expect(rotated?.activeOrganizationId).toBe(second);
-    expect(tokens.refreshToken).toBeDefined();
-  });
-
-  it("refuses an organization the caller does not belong to", async () => {
-    const instance = harness();
-    const user = seedUser(instance.store, { id: "user-1", email: "user@example.com" });
-    const mine = seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "Mine",
-      members: [{ userId: user.id, role: "owner" }],
-    });
-    const stranger = seedUser(instance.store, { id: "user-2", email: "other@example.com" });
-    const theirs = seedOrganization(instance.store, {
-      id: "organization-2",
-      name: "Theirs",
+    seedOrganization(team.instance.store, {
+      id: "organization-taken",
+      name: "Taken",
+      slug: "taken",
       members: [{ userId: stranger.id, role: "owner" }],
     });
-    seedSession(instance.store, {
-      id: "session-1",
-      userId: user.id,
-      organizationId: mine,
-      refreshTokenHash: await refreshTokenHash("secret-1"),
+
+    const failure = await failing(team.instance, team.ownerToken, {
+      _tag: "UpdateOrganization",
+      organizationId: team.organizationId,
+      name: OrganizationName.make("Store"),
+      slug: OrganizationSlug.make("taken"),
     });
-
-    const failure = await run(instance, (auth) =>
-      Effect.flip(
-        auth.switchOrganization({
-          organizationId: theirs,
-          refreshToken: RefreshToken.make("session-1.secret-1"),
-        }),
-      ),
-    );
-
-    expect(failure).toMatchObject({ status: 404, code: "ORGANIZATION_NOT_FOUND" });
-    expect(instance.store.sessions.find((session) => session.id === "session-1")?.revokedAt).toBe(
-      null,
-    );
-  });
-
-  it("keeps refreshing into the organization the session switched to", async () => {
-    const instance = harness();
-    const user = seedUser(instance.store, { id: "user-1", email: "user@example.com" });
-    const first = seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "First Store",
-      members: [{ userId: user.id, role: "owner" }],
-    });
-    const second = seedOrganization(instance.store, {
-      id: "organization-2",
-      name: "Second Store",
-      members: [{ userId: user.id, role: "member" }],
-    });
-    seedSession(instance.store, {
-      id: "session-1",
-      userId: user.id,
-      organizationId: first,
-      refreshTokenHash: await refreshTokenHash("secret-1"),
-    });
-
-    const switched = await run(instance, (auth) =>
-      auth.switchOrganization({
-        organizationId: second,
-        refreshToken: RefreshToken.make("session-1.secret-1"),
-      }),
-    );
-    const refreshed = await run(instance, (auth) =>
-      auth.refresh({ refreshToken: switched.refreshToken }),
-    );
-
-    expect(refreshed.accessToken).toBeDefined();
-    expect(instance.issued.at(-1)).toMatchObject({ activeOrganizationId: second });
+    expect(failure).toMatchObject({ status: 409, code: "SLUG_TAKEN" });
   });
 });
 
-describe("the organization directory", () => {
-  it("lists memberships and the invitations waiting for that address", async () => {
+describe("the organization roster", () => {
+  it("answers with the organization this session is signed in to", async () => {
     const { instance, token, organizationId } = withOwner();
-    const invitee = seedUser(instance.store, { id: "invitee", email: "invitee@example.com" });
-    const inviteeOrganization = seedOrganization(instance.store, {
-      id: "organization-invitee",
-      name: "Invitee Store",
-      members: [{ userId: invitee.id, role: "owner" }],
-    });
-    const inviteeSession = seedSession(instance.store, {
-      id: "session-invitee",
-      userId: invitee.id,
-      organizationId: inviteeOrganization,
-    });
 
-    await command(instance, token, {
-      _tag: "InviteMember",
-      organizationId,
-      email: invitee.email,
-      role: "member",
+    const roster = await run(instance, (auth) => auth.roster(token));
+
+    expect(roster.organization).toEqual({
+      id: organizationId,
+      name: "Owner Store",
+      slug: null,
+      role: "owner",
     });
-
-    const directory = await run(instance, (auth) =>
-      auth.directory(
-        accessTokenFor({
-          userId: invitee.id,
-          sessionId: inviteeSession.id,
-          organizationId: inviteeOrganization,
-          email: invitee.email,
-          role: "owner",
-        }),
-      ),
-    );
-
-    expect(directory.organizations).toEqual([
-      { id: inviteeOrganization, name: "Invitee Store", slug: null, role: "owner" },
-    ]);
-    expect(directory.invitations).toMatchObject([
-      { organizationId, organizationName: "Owner Store", role: "member" },
-    ]);
+    expect(roster.members).toHaveLength(1);
   });
 
   it("keeps the pending invitation list away from plain members", async () => {
@@ -566,20 +446,17 @@ describe("the organization directory", () => {
       role: "member",
     });
 
-    const asOwner = await run(instance, (auth) =>
-      auth.roster({ accessToken: token, organizationId }),
-    );
+    const asOwner = await run(instance, (auth) => auth.roster(token));
     const asMember = await run(instance, (auth) =>
-      auth.roster({
-        accessToken: accessTokenFor({
+      auth.roster(
+        accessTokenFor({
           userId: member.id,
           sessionId: memberSession.id,
           organizationId,
           email: member.email,
           role: "member",
         }),
-        organizationId,
-      }),
+      ),
     );
 
     expect(asOwner.invitations).toHaveLength(1);
@@ -590,7 +467,7 @@ describe("the organization directory", () => {
 
   it("turns away a request without a session", async () => {
     const instance = harness();
-    const failure = await run(instance, (auth) => Effect.flip(auth.directory("not-a-token")));
+    const failure = await run(instance, (auth) => Effect.flip(auth.roster("not-a-token")));
     expect(failure).toMatchObject({ status: 401, code: "UNAUTHENTICATED" });
   });
 
@@ -599,7 +476,7 @@ describe("the organization directory", () => {
     const index = instance.store.sessions.findIndex((entry) => entry.id === session.id);
     instance.store.sessions[index] = { ...session, revokedAt: Date.now() };
 
-    const failure = await run(instance, (auth) => Effect.flip(auth.directory(token)));
+    const failure = await run(instance, (auth) => Effect.flip(auth.roster(token)));
     expect(failure).toMatchObject({ status: 401, code: "SESSION_REVOKED" });
   });
 });

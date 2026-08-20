@@ -6,7 +6,6 @@ import {
   EmailProvider,
   InvitationToken,
   LoginRoute,
-  OrganizationDirectory,
   OrganizationInvitation,
   OrganizationRoster,
   OtpCode,
@@ -26,13 +25,12 @@ import {
   type LoginRoute as LoginRouteType,
   type OrganizationCommand,
   type OrganizationCommandResult,
-  type OrganizationDirectory as OrganizationDirectoryType,
   type OrganizationId,
   type OrganizationRole,
   type OrganizationRoster as OrganizationRosterType,
+  type OrganizationSlug,
   type RefreshInput,
   type SignOutInput,
-  type SwitchOrganizationInput,
   type TokenSet as TokenSetType,
   type UserId,
 } from "@store/auth";
@@ -84,24 +82,12 @@ export interface AuthServiceApi {
   ) => Effect.Effect<TokenSetType, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
-  /** Everything the signed-in user could switch to or accept. */
-  readonly directory: (accessToken: string) => Effect.Effect<OrganizationDirectoryType, AuthError>;
-  readonly roster: (input: {
-    readonly accessToken: string;
-    readonly organizationId: OrganizationId;
-  }) => Effect.Effect<OrganizationRosterType, AuthError>;
+  /** The organization this session is signed in to, with its people. */
+  readonly roster: (accessToken: string) => Effect.Effect<OrganizationRosterType, AuthError>;
   readonly organize: (input: {
     readonly accessToken: string;
     readonly command: OrganizationCommand;
   }) => Effect.Effect<OrganizationCommandResult, AuthError>;
-  /**
-   * Rotates the session onto another organization. The refresh credential is
-   * the authority, because the access token naming the old organization is
-   * what this call replaces.
-   */
-  readonly switchOrganization: (
-    input: SwitchOrganizationInput,
-  ) => Effect.Effect<TokenSetType, AuthError>;
 }
 
 export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
@@ -674,35 +660,21 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
           createdAt: invitation.createdAt,
         });
 
-      const directory = Effect.fn("AuthService.directory")(function* (accessToken: string) {
+      /**
+       * The session's own organization. There is nowhere else to look: the
+       * access token names one organization, and that is the store this
+       * device is signed in to.
+       */
+      const roster = Effect.fn("AuthService.roster")(function* (accessToken: string) {
         const claims = yield* authorize(accessToken);
-        const memberships = yield* repository.membershipsForUser(claims.subject);
-        const invitations = yield* repository.pendingInvitationsForEmail({
-          email: claims.email,
-          now: Date.now(),
-        });
-        const joined = new Set(memberships.map((membership) => membership.organizationId));
-        return OrganizationDirectory.make({
-          organizations: memberships.map(membershipView),
-          invitations: invitations
-            .filter((invitation) => !joined.has(invitation.organizationId))
-            .map(invitationView),
-        });
-      });
-
-      const roster = Effect.fn("AuthService.roster")(function* (input: {
-        readonly accessToken: string;
-        readonly organizationId: OrganizationId;
-      }) {
-        const claims = yield* authorize(input.accessToken);
-        const membership = yield* membershipOf(claims.subject, input.organizationId);
-        const members = yield* repository.listMembers(input.organizationId);
+        const membership = yield* membershipOf(claims.subject, claims.activeOrganizationId);
+        const members = yield* repository.listMembers(claims.activeOrganizationId);
         // A plain member sees who they work with, not who is being courted.
         const invitations =
           membership.role === "member"
             ? []
             : yield* repository.pendingInvitationsForOrganization({
-                organizationId: input.organizationId,
+                organizationId: claims.activeOrganizationId,
                 now: Date.now(),
               });
         return OrganizationRoster.make({
@@ -712,28 +684,28 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         });
       });
 
-      const createOrganization = Effect.fn("AuthService.createOrganization")(function* (
+      const updateOrganization = Effect.fn("AuthService.updateOrganization")(function* (
         claims: AccessClaims,
-        name: string,
+        input: {
+          readonly organizationId: OrganizationId;
+          readonly name: string;
+          readonly slug: OrganizationSlug | null;
+        },
       ) {
-        const allowed = yield* ephemeral.allow({
-          key: `create-organization:${claims.subject}`,
-          limit: 10,
-          windowSeconds: 3_600,
-          now: Date.now(),
+        const membership = yield* requireRole(claims.subject, input.organizationId, [
+          "owner",
+          "admin",
+        ]);
+        const updated = yield* repository.updateOrganization({
+          organizationId: input.organizationId,
+          name: input.name,
+          slug: input.slug,
+          role: membership.role,
         });
-        if (!allowed) {
-          return yield* authError(
-            429,
-            "RATE_LIMITED",
-            "Wait before creating another organization.",
-          );
+        if (!updated) {
+          return yield* authError(409, "SLUG_TAKEN", "Another store already uses that handle.");
         }
-        const membership = yield* repository.createOrganization({
-          name,
-          ownerUserId: claims.subject,
-        });
-        return { _tag: "Joined", organization: membershipView(membership) } as const;
+        return { _tag: "Updated", organization: membershipView(updated) } as const;
       });
 
       const inviteMember = Effect.fn("AuthService.inviteMember")(function* (
@@ -837,6 +809,13 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
             "This invitation has already been used.",
           );
         }
+        // Redeeming an invitation is the only thing that moves a session, so
+        // the store the link was for is the one this device lands in on its
+        // next refresh. Without this the membership would be unreachable.
+        yield* repository.moveSession({
+          sessionId: claims.sessionId,
+          organizationId: invitation.organizationId,
+        });
         return {
           _tag: "Joined",
           organization: AuthOrganizationMembership.make({
@@ -919,35 +898,6 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         return { _tag: "Applied" } as const;
       });
 
-      const leaveOrganization = Effect.fn("AuthService.leaveOrganization")(function* (
-        claims: AccessClaims,
-        organizationId: OrganizationId,
-      ) {
-        const membership = yield* membershipOf(claims.subject, organizationId);
-        const memberships = yield* repository.membershipsForUser(claims.subject);
-        // Every session resolves to an organization, so the last one cannot be
-        // left. Somewhere to land is what makes leaving possible.
-        if (memberships.length <= 1) {
-          return yield* authError(
-            409,
-            "LAST_ORGANIZATION",
-            "Create or join another organization before leaving this one.",
-          );
-        }
-        if (membership.role === "owner") {
-          const owners = yield* repository.countRole({ organizationId, role: "owner" });
-          if (owners <= 1) {
-            return yield* authError(
-              409,
-              "LAST_OWNER",
-              "Make someone else an owner before leaving this organization.",
-            );
-          }
-        }
-        yield* repository.removeMember({ organizationId, userId: claims.subject });
-        return { _tag: "Applied" } as const;
-      });
-
       const organize = Effect.fn("AuthService.organize")(function* (input: {
         readonly accessToken: string;
         readonly command: OrganizationCommand;
@@ -955,8 +905,8 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         const claims = yield* authorize(input.accessToken);
         const command = input.command;
         switch (command._tag) {
-          case "CreateOrganization":
-            return yield* createOrganization(claims, command.name);
+          case "UpdateOrganization":
+            return yield* updateOrganization(claims, command);
           case "InviteMember":
             return yield* inviteMember(claims, command);
           case "RevokeInvitation": {
@@ -981,21 +931,11 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
             return yield* changeMemberRole(claims, command);
           case "RemoveMember":
             return yield* removeMember(claims, command);
-          case "LeaveOrganization":
-            return yield* leaveOrganization(claims, command.organizationId);
           default: {
             const _exhaustive: never = command;
             return _exhaustive;
           }
         }
-      });
-
-      const switchOrganization = Effect.fn("AuthService.switchOrganization")(function* (
-        input: SwitchOrganizationInput,
-      ) {
-        const open = yield* openRefresh(input.refreshToken);
-        const membership = yield* membershipOf(open.user.id, input.organizationId);
-        return yield* rotateInto({ ...open, membership });
       });
 
       const handle = <A, E>(effect: Effect.Effect<A, E>) =>
@@ -1010,10 +950,8 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         exchangeGoogleIdToken: (input) => handle(exchangeGoogleIdToken(input)),
         refresh: (input) => handle(refresh(input)),
         signOut: (input) => handle(signOut(input)),
-        directory: (accessToken) => handle(directory(accessToken)),
-        roster: (input) => handle(roster(input)),
+        roster: (accessToken) => handle(roster(accessToken)),
         organize: (input) => handle(organize(input)),
-        switchOrganization: (input) => handle(switchOrganization(input)),
       });
     }),
   );

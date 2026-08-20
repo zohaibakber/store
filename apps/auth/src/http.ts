@@ -6,11 +6,9 @@ import {
   IdentifyInput,
   LoginCommand,
   OrganizationCommand,
-  OrganizationId,
   RefreshInput,
   RefreshToken,
   SignOutInput,
-  SwitchOrganizationInput,
   bearerToken,
   isTrustedOrigin,
   type AuthClientKind,
@@ -294,43 +292,17 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
         );
         yield* router.add(
           "GET",
-          "/v1/organizations",
+          "/v1/organization",
           withAuthErrorResponse(
             Effect.gen(function* () {
               const token = yield* requireBearer;
-              return HttpServerResponse.jsonUnsafe(yield* auth.directory(token));
-            }),
-          ),
-        );
-        yield* router.add(
-          "GET",
-          "/v1/organizations/roster",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const token = yield* requireBearer;
-              const request = yield* HttpServerRequest.HttpServerRequest;
-              const url = new URL(request.originalUrl, configuration.baseUrl);
-              const organizationId = yield* Schema.decodeUnknownEffect(OrganizationId)(
-                url.searchParams.get("organizationId"),
-              ).pipe(
-                Effect.mapError(
-                  () =>
-                    new AuthError({
-                      status: 400,
-                      code: "INVALID_REQUEST",
-                      message: "Name the organization to read.",
-                    }),
-                ),
-              );
-              return HttpServerResponse.jsonUnsafe(
-                yield* auth.roster({ accessToken: token, organizationId }),
-              );
+              return HttpServerResponse.jsonUnsafe(yield* auth.roster(token));
             }),
           ),
         );
         yield* router.add(
           "POST",
-          "/v1/organizations",
+          "/v1/organization",
           withAuthErrorResponse(
             Effect.gen(function* () {
               const token = yield* requireBearer;
@@ -338,27 +310,6 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
               return HttpServerResponse.jsonUnsafe(
                 yield* auth.organize({ accessToken: token, command }),
               );
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/organizations/switch",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const request = yield* HttpServerRequest.HttpServerRequest;
-              const input = yield* requestJson(SwitchOrganizationInput);
-              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
-              const refreshToken = refreshTokenFromRequest(
-                request,
-                configuration.secureCookies,
-                input.refreshToken,
-              );
-              const tokens = yield* auth.switchOrganization({ ...input, refreshToken });
-              const client: AuthClientKind = cookie
-                ? { _tag: "Browser" }
-                : { _tag: "Native", deviceName: "Native client" };
-              return browserTokenResponse(tokens, client, configuration.secureCookies);
             }),
           ),
         );

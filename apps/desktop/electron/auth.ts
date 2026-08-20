@@ -84,6 +84,12 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     return this.refresh();
   }
 
+  async renewSession() {
+    const tokens = this.#tokens;
+    if (tokens?.refreshToken) await this.#rotateTokens(tokens).catch(() => undefined);
+    return this.refresh();
+  }
+
   async refresh() {
     if (!this.#tokens) {
       return this.#publish(
@@ -126,11 +132,15 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     this.#publish(unauthenticated(true));
   }
 
-  async apiRequest(pathname: string, init?: JsonRequestInit) {
+  apiRequest(pathname: string, init?: JsonRequestInit) {
     return this.#request(pathname, init);
   }
 
-  async #request(pathname: string, init?: JsonRequestInit) {
+  authRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(pathname, init, this.#authBaseUrl);
+  }
+
+  async #request(pathname: string, init?: JsonRequestInit, baseUrl = this.#baseUrl) {
     await this.#refreshTokens();
     const headers = new Headers(init?.headers);
     if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
@@ -145,7 +155,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
     }
-    const response = await net.fetch(`${this.#baseUrl}${pathname}`, {
+    const response = await net.fetch(`${baseUrl}${pathname}`, {
       ...init,
       body,
       credentials: "omit",

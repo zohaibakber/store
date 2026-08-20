@@ -1,4 +1,9 @@
-import type { TokenSet } from "@store/auth";
+import type {
+  OrganizationCommand,
+  OrganizationCommandResult,
+  OrganizationRoster,
+  TokenSet,
+} from "@store/auth";
 import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import { ipcRenderer, contextBridge } from "electron";
@@ -14,7 +19,11 @@ contextBridge.exposeInMainWorld("auth", {
   getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
   adoptSession: (tokens: TokenSet | null) =>
     invoke<WorkspaceSnapshot, [TokenSet | null]>("auth:adopt-session", tokens),
+  renewSession: () => invoke<WorkspaceSnapshot>("auth:renew-session"),
   signOut: () => invoke<void>("auth:sign-out"),
+  organizationRoster: () => invoke<OrganizationRoster>("auth:organization"),
+  organize: (command: OrganizationCommand) =>
+    invoke<OrganizationCommandResult, [OrganizationCommand]>("auth:organize", command),
   openExternal: (url: string) => invoke<void, [string]>("auth:open-external", url),
   onOAuthCallback(callback: (url: string) => void) {
     const listener = (_event: Electron.IpcRendererEvent, url: string) => callback(url);

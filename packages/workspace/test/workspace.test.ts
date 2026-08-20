@@ -52,10 +52,12 @@ const makeAuth = (
     },
     initialize: () => Promise.resolve(snapshot),
     adoptSession: (tokens) => adoptSession(tokens).then(update),
+    renewSession: () => Promise.resolve(snapshot),
     signOut: async () => {
       snapshot = unauthenticated;
     },
     apiRequest: () => Promise.reject(new Error("Not used by this test")),
+    authRequest: () => Promise.reject(new Error("Not used by this test")),
   };
 };
 

@@ -18,14 +18,24 @@ export interface JsonApiObject {
 
 export type WorkspaceCommand =
   | { readonly _tag: "AdoptSession"; readonly tokens: TokenSet | null }
-  | { readonly _tag: "SignOut" };
+  | { readonly _tag: "SignOut" }
+  /**
+   * Trades the refresh token for a new access token straight away. The claims
+   * carry the organization's name and the session's active organization, so a
+   * rename or a redeemed invitation only reaches the app once the token that
+   * still names the old one has been replaced.
+   */
+  | { readonly _tag: "RenewSession" };
 
 export interface WorkspaceAuthAdapter {
   readonly snapshot: WorkspaceSnapshot;
   readonly initialize: () => Promise<WorkspaceSnapshot>;
   readonly adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
+  readonly renewSession: () => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
   readonly apiRequest: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
+  /** The same, against the authentication service rather than the store API. */
+  readonly authRequest: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
 }
 
 export type WorkspaceTarget =
@@ -123,6 +133,10 @@ export class AuthenticatedWorkspace {
     return this.#auth.apiRequest(pathname, init);
   }
 
+  authRequest(pathname: string, init?: JsonRequestInit): Promise<JsonApiResponse> {
+    return this.#auth.authRequest(pathname, init);
+  }
+
   dispose(): Promise<void> {
     return this.#serialize(() => this.#disposeStore());
   }
@@ -131,6 +145,8 @@ export class AuthenticatedWorkspace {
     switch (command._tag) {
       case "AdoptSession":
         return this.#auth.adoptSession(command.tokens);
+      case "RenewSession":
+        return this.#auth.renewSession();
       case "SignOut":
         await this.#auth.signOut();
         return this.#auth.snapshot;

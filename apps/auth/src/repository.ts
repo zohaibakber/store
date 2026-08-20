@@ -14,6 +14,7 @@ import {
   type InvitationId as InvitationIdType,
   type OrganizationId as OrganizationIdType,
   type OrganizationRole as OrganizationRoleType,
+  type OrganizationSlug as OrganizationSlugType,
   type PasswordHash as PasswordHashType,
   type SessionId as SessionIdType,
   type UserId as UserIdType,
@@ -27,11 +28,13 @@ import {
   user,
 } from "@store/db/auth.schema";
 import { and, asc, count, desc, eq, exists, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
 const UserRecord = Schema.Struct({
   id: UserId,
@@ -153,17 +156,20 @@ export interface AuthRepositoryApi {
   readonly membershipForUser: (
     userId: UserIdType,
   ) => Effect.Effect<MembershipRecord, RepositoryError>;
-  readonly membershipsForUser: (
-    userId: UserIdType,
-  ) => Effect.Effect<ReadonlyArray<MembershipRecord>, RepositoryError>;
   readonly membershipInOrganization: (input: {
     readonly userId: UserIdType;
     readonly organizationId: OrganizationIdType;
   }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
-  readonly createOrganization: (input: {
+  /**
+   * Renames the organization in place. Answers `null` when the handle is
+   * taken, which the unique index is what actually decides.
+   */
+  readonly updateOrganization: (input: {
+    readonly organizationId: OrganizationIdType;
     readonly name: string;
-    readonly ownerUserId: UserIdType;
-  }) => Effect.Effect<MembershipRecord, RepositoryError>;
+    readonly slug: OrganizationSlugType | null;
+    readonly role: OrganizationRoleType;
+  }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
   readonly listMembers: (
     organizationId: OrganizationIdType,
   ) => Effect.Effect<ReadonlyArray<OrganizationMember>, RepositoryError>;
@@ -196,10 +202,6 @@ export interface AuthRepositoryApi {
     readonly organizationId: OrganizationIdType;
     readonly now: number;
   }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
-  readonly pendingInvitationsForEmail: (input: {
-    readonly email: EmailAddressType;
-    readonly now: number;
-  }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
   /**
    * Marks the invitation redeemed and adds the membership together. Answers
    * `false` when the invitation was already spent, which is how two concurrent
@@ -214,6 +216,14 @@ export interface AuthRepositoryApi {
   readonly findSession: (
     sessionId: SessionIdType,
   ) => Effect.Effect<SessionRecord | null, RepositoryError>;
+  /**
+   * Points a live session at the organization an invitation was for. The
+   * access token still names the old one until the session is refreshed.
+   */
+  readonly moveSession: (input: {
+    readonly sessionId: SessionIdType;
+    readonly organizationId: OrganizationIdType;
+  }) => Effect.Effect<void, RepositoryError>;
   readonly rotateSession: (input: {
     readonly currentId: SessionIdType;
     readonly replacement: NewSession;
@@ -251,6 +261,12 @@ interface Compilable {
 interface ReturnedId {
   readonly id: string;
 }
+
+/** The slug column is uniquely indexed, so the database decides who gets one. */
+const isHandleTaken = (cause: unknown) =>
+  cause instanceof EffectDrizzleQueryError &&
+  cause.cause instanceof SqlError &&
+  cause.cause.reason instanceof UniqueViolation;
 
 const userColumns = {
   id: user.id,
@@ -599,16 +615,6 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
       }
       return yield* decode(MembershipRecord, "membershipForUser.decode")(row);
     }),
-    membershipsForUser: Effect.fn("AuthRepository.membershipsForUser")(function* (userId) {
-      const rows = yield* database
-        .select(membershipColumns)
-        .from(organizationMembership)
-        .innerJoin(organization, eq(organization.id, organizationMembership.organizationId))
-        .where(eq(organizationMembership.userId, userId))
-        .orderBy(asc(organizationMembership.createdAt))
-        .pipe(fail("membershipsForUser"));
-      return yield* decode(Schema.Array(MembershipRecord), "membershipsForUser.decode")(rows);
-    }),
     membershipInOrganization: Effect.fn("AuthRepository.membershipInOrganization")(
       function* (input) {
         const [row] = yield* membershipOf(input.userId, input.organizationId).pipe(
@@ -618,20 +624,26 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         return yield* decode(MembershipRecord, "membershipInOrganization.decode")(row);
       },
     ),
-    createOrganization: Effect.fn("AuthRepository.createOrganization")(function* (input) {
-      const organizationId = makeId(OrganizationId);
-      const name = input.name.trim();
-      yield* batch("createOrganization", [
-        database.insert(organization).values({ id: organizationId, name, slug: null }),
-        database
-          .insert(organizationMembership)
-          .values(ownerMembership(organizationId, input.ownerUserId)),
-      ]);
-      return MembershipRecord.make({
-        organizationId,
-        organizationName: name,
-        organizationSlug: null,
-        role: "owner",
+    updateOrganization: Effect.fn("AuthRepository.updateOrganization")(function* (input) {
+      const updated = yield* database
+        .update(organization)
+        .set({ name: input.name, slug: input.slug })
+        .where(eq(organization.id, input.organizationId))
+        .returning({ id: organization.id, name: organization.name, slug: organization.slug })
+        .pipe(
+          Effect.map((rows) => rows[0]),
+          Effect.catchIf(isHandleTaken, () => Effect.succeed(undefined)),
+          fail("updateOrganization"),
+        );
+      if (!updated) return null;
+      return yield* decode(
+        MembershipRecord,
+        "updateOrganization.decode",
+      )({
+        organizationId: updated.id,
+        organizationName: updated.name,
+        organizationSlug: updated.slug,
+        role: input.role,
       });
     }),
     listMembers: Effect.fn("AuthRepository.listMembers")(function* (organizationId) {
@@ -788,20 +800,6 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         asInvitation(row, "pendingInvitationsForOrganization.decode"),
       );
     }),
-    pendingInvitationsForEmail: Effect.fn("AuthRepository.pendingInvitationsForEmail")(
-      function* (input) {
-        const rows = yield* database
-          .select(invitationColumns)
-          .from(organizationInvitation)
-          .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
-          .where(and(eq(organizationInvitation.email, input.email), stillPending(input.now)))
-          .orderBy(desc(organizationInvitation.createdAt))
-          .pipe(fail("pendingInvitationsForEmail"));
-        return yield* Effect.forEach(rows, (row) =>
-          asInvitation(row, "pendingInvitationsForEmail.decode"),
-        );
-      },
-    ),
     acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
       const results = yield* batch("acceptInvitation", [
         database
@@ -857,6 +855,13 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         expiresAt: row.expiresAt.getTime(),
         revokedAt: millis(row.revokedAt),
       });
+    }),
+    moveSession: Effect.fn("AuthRepository.moveSession")(function* (input) {
+      yield* database
+        .update(session)
+        .set({ activeOrganizationId: input.organizationId })
+        .where(and(eq(session.id, input.sessionId), isNull(session.revokedAt)))
+        .pipe(fail("moveSession"));
     }),
     rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
       const results = yield* batch("rotateSession", [

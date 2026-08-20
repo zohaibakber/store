@@ -77,6 +77,11 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.refresh();
   }
 
+  async renewSession() {
+    await this.#refreshTokens(true);
+    return this.refresh();
+  }
+
   async refresh() {
     if (!this.#tokens) {
       return this.#publish(
@@ -85,7 +90,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     }
     try {
       const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
-        await this.apiRequest("/api/auth/session"),
+        await this.#request(this.#baseUrl, "/api/auth/session"),
       );
       if (snapshot.status !== "authenticated")
         return this.#publish(
@@ -119,7 +124,15 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     this.#publish(unauthenticated(navigatorOnline()));
   }
 
-  async apiRequest(pathname: string, init?: JsonRequestInit) {
+  apiRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(this.#baseUrl, pathname, init);
+  }
+
+  authRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(this.#authBaseUrl, pathname, init);
+  }
+
+  async #request(baseUrl: string, pathname: string, init?: JsonRequestInit) {
     await this.#refreshTokens();
     const headers = new Headers(init?.headers);
     if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
@@ -133,7 +146,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
     }
-    const response = await fetch(`${this.#baseUrl}${pathname}`, {
+    const response = await fetch(`${baseUrl}${pathname}`, {
       ...init,
       body,
       credentials: "omit",

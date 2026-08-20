@@ -106,11 +106,12 @@ export const seedOrganization = (
   input: {
     readonly id: string;
     readonly name: string;
+    readonly slug?: string;
     readonly members: ReadonlyArray<{ readonly userId: UserId; readonly role: OrganizationRole }>;
   },
 ) => {
   const id = OrganizationId.make(input.id);
-  store.organizations.push({ id, name: input.name, slug: null });
+  store.organizations.push({ id, name: input.name, slug: input.slug ?? null });
   input.members.forEach((member, index) => {
     store.memberships.push({
       organizationId: id,
@@ -253,26 +254,24 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
       const resolved = membership ? membershipOf(store, userId, membership.organizationId) : null;
       return resolved ? Effect.succeed(resolved) : Effect.die(`${userId} has no membership`);
     }),
-  membershipsForUser: (userId) =>
-    Effect.sync(() =>
-      store.memberships
-        .filter((entry) => entry.userId === userId)
-        .sort((left, right) => left.createdAt - right.createdAt)
-        .flatMap((entry) => {
-          const membership = membershipOf(store, userId, entry.organizationId);
-          return membership ? [membership] : [];
-        }),
-    ),
   membershipInOrganization: (input) =>
     Effect.sync(() => membershipOf(store, input.userId, input.organizationId)),
-  createOrganization: (input) =>
+  updateOrganization: (input) =>
     Effect.sync(() => {
-      const id = seedOrganization(store, {
-        id: `organization-${store.organizations.length + 1}`,
-        name: input.name,
-        members: [{ userId: input.ownerUserId, role: "owner" }],
-      });
-      return membershipOf(store, input.ownerUserId, id)!;
+      const index = store.organizations.findIndex((entry) => entry.id === input.organizationId);
+      const organization = store.organizations[index];
+      if (!organization) return null;
+      const taken = store.organizations.some(
+        (entry) => entry.id !== organization.id && input.slug !== null && entry.slug === input.slug,
+      );
+      if (taken) return null;
+      store.organizations[index] = { ...organization, name: input.name, slug: input.slug };
+      return {
+        organizationId: organization.id,
+        organizationName: input.name,
+        organizationSlug: input.slug,
+        role: input.role,
+      } satisfies MembershipRecord;
     }),
   listMembers: (organizationId) =>
     Effect.sync(() =>
@@ -387,12 +386,6 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
         )
         .map((entry) => entry.record),
     ),
-  pendingInvitationsForEmail: (input) =>
-    Effect.sync(() =>
-      store.invitations
-        .filter((entry) => entry.record.email === input.email && pending(entry.record, input.now))
-        .map((entry) => entry.record),
-    ),
   acceptInvitation: (input) =>
     Effect.sync(() => {
       const index = store.invitations.findIndex((entry) => entry.record.id === input.invitation.id);
@@ -431,6 +424,13 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
     }),
   findSession: (sessionId) =>
     Effect.sync(() => store.sessions.find((session) => session.id === sessionId) ?? null),
+  moveSession: (input) =>
+    Effect.sync(() => {
+      const index = store.sessions.findIndex((session) => session.id === input.sessionId);
+      const session = store.sessions[index];
+      if (!session || session.revokedAt !== null) return;
+      store.sessions[index] = { ...session, activeOrganizationId: input.organizationId };
+    }),
   rotateSession: (input) =>
     Effect.sync(() => {
       const index = store.sessions.findIndex((session) => session.id === input.currentId);
