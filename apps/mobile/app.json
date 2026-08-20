@@ -23,7 +23,6 @@
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
-      ["@clerk/expo", { "theme": "./clerk-theme.json" }],
       [
         "expo-camera",
         {

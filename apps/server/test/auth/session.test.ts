@@ -1,64 +1,67 @@
-import type { ClerkVerifyConfig } from "@store/auth";
+import {
+  EmailAddress,
+  issueAccessToken,
+  OrganizationId,
+  SessionId,
+  UserId,
+  type JwtConfiguration,
+} from "@store/auth";
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import { clerkVerifyConfigForHeaders } from "../../src/auth/session";
+import { authenticateHeaders } from "../../src/auth/session";
 
-const config: ClerkVerifyConfig = {
-  secretKey: "sk_test_example",
-  authorizedParties: [
-    "https://app.example",
-    "com.tabaaq.desktop://app",
-    "com.tabaaq.mobile://",
-    "com.tabaaq.mobile.debug://",
-  ],
+const configuration = async (): Promise<JwtConfiguration> => {
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
+  return {
+    issuer: "https://auth.example.com",
+    audience: "tabaaq-api",
+    privateJwk: await crypto.subtle.exportKey("jwk", keyPair.privateKey),
+    publicJwk: await crypto.subtle.exportKey("jwk", keyPair.publicKey),
+    accessTokenTtlSeconds: 300,
+  };
 };
 
-describe("clerkVerifyConfigForHeaders", () => {
-  it("keeps authorized-party verification for browser requests", () => {
-    expect(
-      clerkVerifyConfigForHeaders(new Headers({ origin: "https://app.example" }), config),
-    ).toBe(config);
-  });
-
-  it("allows a trusted Expo debug client to use a native token without azp", () => {
-    expect(
-      clerkVerifyConfigForHeaders(
-        new Headers({ "expo-origin": "com.tabaaq.mobile.debug://app" }),
-        config,
-      ).authorizedParties,
-    ).toBeUndefined();
-  });
-
-  it("allows the trusted Electron origin after request normalization", () => {
-    expect(
-      clerkVerifyConfigForHeaders(
-        new Headers({
-          origin: "com.tabaaq.desktop://app",
-          "electron-origin": "com.tabaaq.desktop://app",
-        }),
-        config,
-      ).authorizedParties,
-    ).toBeUndefined();
-  });
-
-  it("keeps authorized-party verification for an untrusted native origin", () => {
-    expect(
-      clerkVerifyConfigForHeaders(
-        new Headers({ "electron-origin": "com.attacker.desktop://app" }),
+describe("authenticateHeaders", () => {
+  it("builds the API session from first-party access claims", async () => {
+    const config = await configuration();
+    const issued = await Effect.runPromise(
+      issueAccessToken(
+        {
+          subject: UserId.make("user-1"),
+          sessionId: SessionId.make("session-1"),
+          activeOrganizationId: OrganizationId.make("organization-1"),
+          organizationName: "My Store",
+          organizationSlug: "my-store",
+          role: "owner",
+          email: EmailAddress.make("owner@example.com"),
+          name: "Owner",
+          image: null,
+        },
         config,
       ),
-    ).toBe(config);
-  });
+    );
 
-  it("does not let a native header override a real browser origin", () => {
-    expect(
-      clerkVerifyConfigForHeaders(
-        new Headers({
-          origin: "https://attacker.example",
-          "electron-origin": "com.tabaaq.desktop://app",
-        }),
+    const session = await Effect.runPromise(
+      authenticateHeaders(
+        new Headers({ authorization: `Bearer ${issued.token}` }),
         config,
       ),
-    ).toBe(config);
+    );
+
+    expect(session).toMatchObject({
+      user: { id: "user-1", email: "owner@example.com" },
+      session: { id: "session-1", activeOrganizationId: "organization-1" },
+      organizations: [{ id: "organization-1", name: "My Store", role: "owner" }],
+    });
+  });
+
+  it("treats a missing access token as an anonymous request", async () => {
+    const config = await configuration();
+    await expect(Effect.runPromise(authenticateHeaders(new Headers(), config))).resolves.toBeNull();
   });
 });

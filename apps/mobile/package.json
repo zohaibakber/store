@@ -11,12 +11,12 @@
     "test": "vitest run --root ../.. apps/mobile/test"
   },
   "dependencies": {
-    "@clerk/expo": "4.5.0",
     "@expo-google-fonts/geist-mono": "^0.4.3",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/metro-runtime": "~57.0.11",
     "@expo/ui": "~57.0.11",
     "@shopify/flash-list": "2.0.2",
+    "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/sync-client": "workspace:*",
     "effect": "catalog:",

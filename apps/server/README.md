@@ -8,11 +8,11 @@ The Cloudflare Worker exposes:
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
-Clerk verifies session JWTs (`Authorization: Bearer`). D1 `AUTH_DB` keeps only a
-`clerk_org_binding` table so migrated Clerk organizations retain their existing
-Durable Object names. Each organization's inventory and sync log live in its own
-SQLite-backed Durable Object through `ORGANIZATION_STORE`, named by the store
-organization id, never the Clerk org id.
+The auth Worker issues short-lived ES256 JWTs. The API verifies them locally
+from `Authorization: Bearer` and trusts the organization membership in the
+signed claims. Auth users, organizations, memberships, and refresh sessions live
+in D1. Each organization's inventory and sync log live in its own SQLite-backed
+Durable Object through `ORGANIZATION_STORE`.
 The desktop communicates through authenticated HTTP and a hibernated WebSocket.
 Foreground clients exchange on the live socket. The Durable Object `exchange`
 is the same transaction the socket frames call.
@@ -56,8 +56,8 @@ the Website Worker still proxies `/api/*` so `vp run dev` stays same-origin.
 Deep links fall back to `index.html`. Apex and API are different hostnames, so
 one deploy attaches both.
 
-Secrets come from `.env.dev` and `.env.prod` at the repository root (both
-gitignored; copy `.env.example`). Use a different `CLERK_SECRET_KEY` per stage.
+Secrets come from `.env.dev` and `.env.prod` at the repository root. Copy
+`.env.example` and use a different JWT key pair and peppers per stage.
 
 First-time setup on a new machine:
 
@@ -91,10 +91,12 @@ bootstrap, set:
 
 **Both `Development` and `Production` environments**
 
-- Secret `CLERK_SECRET_KEY`. Required, unique per Clerk instance/stage.
-- Secret `CLERK_JWT_KEY`. Optional PEM for networkless JWT verify.
-- Variable `CLERK_JWT_AUDIENCE`. Optional. Must match a Clerk JWT template
-  audience.
+- Secret `AUTH_JWT_PRIVATE_JWK`. ES256 private JWK, unique per stage.
+- Variable `AUTH_JWT_PUBLIC_JWK`. Matching ES256 public JWK.
+- Secrets `AUTH_REFRESH_TOKEN_PEPPER` and `AUTH_EPHEMERAL_PEPPER`.
+- Variable `GOOGLE_OAUTH_CLIENT_ID` and secret `GOOGLE_OAUTH_CLIENT_SECRET`.
+- Variable `AUTH_DEV_OTP`. Set only in development when the OTP should be
+  returned to the client and development logs.
 - Variable `ELECTRON_PROTOCOL`. Optional, default `com.tabaaq.desktop`.
 - Variable `MOBILE_PROTOCOL`. Optional, default `com.tabaaq.mobile`.
 - Variable `AUTH_TRUSTED_ORIGINS`. Optional comma-separated HTTPS origins. A
@@ -112,17 +114,18 @@ bootstrap, set:
   Required.
 - Variable `PRODUCTION_API_DOMAIN`. Optional API hostname. Default
   `api.<PRODUCTION_DOMAIN>`.
+- Variable `PRODUCTION_AUTH_DOMAIN`. Optional auth hostname. Default
+  `auth.<PRODUCTION_DOMAIN>`.
 - Variable `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`).
-- Variable `AUTH_TRUSTED_ORIGINS`. Site origin (example: `https://tabaaq.app`)
-  for CORS / Clerk.
-- Variable `VITE_CLERK_PUBLISHABLE_KEY`.
-- Variable `VITE_CLERK_JWT_TEMPLATE`. Optional.
+- Variable `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`).
+- Variable `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
 - Variable `EXPO_PUBLIC_API_URL`. Same origin as `VITE_API_URL` for EAS / mobile.
+- Variable `EXPO_PUBLIC_AUTH_URL`. Same origin as `VITE_AUTH_URL`.
 - Variable `ELECTRON_PROTOCOL` = `com.tabaaq.desktop`.
 
 Unset GitHub variables interpolate as empty strings. The Worker treats blank
-protocol and origin values as missing so they cannot override the defaults. A
-missing `CLERK_SECRET_KEY` fails the deploy job before Alchemy runs.
+protocol and origin values as missing so they cannot override the defaults.
+Missing auth credentials fail the deploy job before Alchemy runs.
 
 ## Local development
 
@@ -173,7 +176,7 @@ organization pages with `nextCursor`, `headCursor`, and `hasMore`.
 `sync_devices` records authenticated device checkpoints used for diagnostics and
 future retention decisions.
 
-The live route uses the same Clerk session and active-membership middleware as
+The live route uses the same first-party session and membership middleware as
 HTTP sync. Browsers pass `access_token` on the upgrade query because they cannot
 set WebSocket headers; Electron sends `Authorization` and `electron-origin`.
 After authorization, the Worker forwards only trusted organization, user, device,

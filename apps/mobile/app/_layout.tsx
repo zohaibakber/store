@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { MobileClerkProvider } from "@/lib/clerk-provider";
+import { MobileAuthProvider } from "@/lib/auth-provider";
 import { followDeviceColorScheme, useAppColorScheme } from "@/theme/appearance";
 
 followDeviceColorScheme();
@@ -12,7 +12,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <MobileClerkProvider>
+      <MobileAuthProvider>
         <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
           <StatusBar style={scheme === "dark" ? "light" : "dark"} />
           <Stack>
@@ -21,7 +21,7 @@ export default function RootLayout() {
             <Stack.Screen name="(app)" options={{ headerShown: false, gestureEnabled: false }} />
           </Stack>
         </ThemeProvider>
-      </MobileClerkProvider>
+      </MobileAuthProvider>
     </GestureHandlerRootView>
   );
 }

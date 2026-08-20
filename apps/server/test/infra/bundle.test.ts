@@ -46,14 +46,14 @@ describe("API Worker bundle", () => {
     expect(source).toContain('out: "packages/db/migrations/auth"');
   });
 
-  it("does not import Better Auth", () => {
+  it("uses first-party JWT verification without an auth framework", () => {
     const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
     expect(source).not.toContain("@alchemy.run/better-auth");
     expect(source).not.toContain("makeAuth(");
     expect(source).not.toContain("better-auth");
-    expect(source).toContain("CLERK_SECRET_KEY");
-    expect(source).toContain("AUTH_DB:");
-    expect(source).toContain("d1FromEnv(");
+    expect(source).not.toMatch(/clerk/iu);
+    expect(source).toContain("AUTH_JWT_PUBLIC_JWK");
+    expect(source).toContain("AuthVerificationConfig");
   });
 
   it("does not require process.env production hostnames at Worker runtime", async () => {

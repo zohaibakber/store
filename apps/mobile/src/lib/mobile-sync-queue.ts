@@ -13,12 +13,7 @@ type OperationHasher<Change> = (
   operation: Omit<MobileSyncOperation<Change>, "payloadHash">,
 ) => Promise<string>;
 
-/**
- * Clerk migration changed user identifiers without changing the person or
- * organization. Pending local mutations must therefore be attributed to the
- * currently authenticated uploader and rehashed before the server can accept
- * them.
- */
+/** Reattribute local mutations when the inventory adopts an authenticated owner. */
 export const reattributePendingOperations = async <Change>(
   operations: ReadonlyArray<MobileSyncOperation<Change>>,
   actorUserId: string,

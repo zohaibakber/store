@@ -40,4 +40,4 @@ export {
   verifyPassword,
   type PasswordHasherApi,
 } from "./password";
-export { resolveAuthSecurity } from "./security";
+export * from "./security";

@@ -1,12 +1,20 @@
+import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WebAuthBroker } from "../src/auth";
+
+const tokens = TokenSet.make({
+  accessToken: AccessToken.make("access-token"),
+  accessExpiresAt: Date.now() + 60_000,
+  refreshToken: RefreshToken.make("session.secret"),
+  refreshExpiresAt: Date.now() + 120_000,
+});
 
 describe("WebAuthBroker", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("starts unauthenticated before the first session lookup", () => {
-    const auth = new WebAuthBroker("http://localhost:8787");
+    const auth = new WebAuthBroker("http://localhost:8787", "http://localhost:8788");
     expect(auth.snapshot).toMatchObject({
       status: "unauthenticated",
       user: null,
@@ -15,7 +23,7 @@ describe("WebAuthBroker", () => {
     });
   });
 
-  it("reports when a Clerk token is not accepted as an authenticated session", async () => {
+  it("reports when an access token is not accepted as an authenticated session", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -28,9 +36,9 @@ describe("WebAuthBroker", () => {
         }),
       ),
     );
-    const auth = new WebAuthBroker("http://localhost:8787");
+    const auth = new WebAuthBroker("http://localhost:8787", "http://localhost:8788");
 
-    const snapshot = await auth.adoptSession("clerk-token");
+    const snapshot = await auth.adoptSession(tokens);
 
     expect(snapshot).toMatchObject({
       status: "unauthenticated",
@@ -47,9 +55,9 @@ describe("WebAuthBroker", () => {
           Response.json({ message: "This session is not authorized." }, { status: 403 }),
         ),
     );
-    const auth = new WebAuthBroker("http://localhost:8787");
+    const auth = new WebAuthBroker("http://localhost:8787", "http://localhost:8788");
 
-    const snapshot = await auth.adoptSession("clerk-token");
+    const snapshot = await auth.adoptSession(tokens);
 
     expect(snapshot).toMatchObject({
       status: "unauthenticated",

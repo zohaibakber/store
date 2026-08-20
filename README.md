@@ -12,8 +12,10 @@ live socket at `/api/sync/live`.
   serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
   on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
-  preload. It loads the web renderer (hash history, `@clerk/electron`) and keeps
-  native libSQL in the main process.
+  preload. It loads the web renderer with hash history and keeps native libSQL
+  plus encrypted refresh credentials in the main process.
+- `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
+  OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API and the per-organization Durable Object
   sync service.
 - `packages/contracts` owns shared store, server, and sync contracts.
@@ -25,9 +27,8 @@ live socket at `/api/sync/live`.
   and web.
 - `packages/sync-client` owns the Effect coordinator, retries, page draining, and
   sync status state machine used by local replica adapters.
-- `packages/auth` owns Clerk JWT verification and the Clerk-to-store organization
-  binding. Better Auth identity tables stay in `packages/db` so existing Durable
-  Object names can be recovered by email.
+- `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
+  the shared Effect HTTP client.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
@@ -52,9 +53,10 @@ vp install
 vp run dev
 ```
 
-That starts the Worker (`:8787`), the desktop Vite/Electron renderer (`:5173`),
-and the web SPA (`:5174`, via `Cloudflare.Website.Vite` in `alchemy dev`). Sign
-in on either client. Writes sync through `/api/sync/live`.
+That starts the API Worker (`:8787`), auth Worker (`:8788`), desktop
+Vite/Electron renderer (`:5173`), and web SPA (`:5174`). Sign-in is optional.
+Local inventory works without an account; authenticated writes sync through
+`/api/sync/live`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
@@ -66,10 +68,9 @@ bun run deploy:dev
 bun run deploy:prod
 ```
 
-Copy `.env.example` to `.env.dev` and `.env.prod` (both gitignored) and give each
-stage its own `CLERK_SECRET_KEY`. Worker setup and stage details live in
-`apps/server/README.md`. An authenticated user can keep using a previously opened
-organization offline. First sign-in and organization creation need the API.
+Copy `.env.example` to `.env.dev` and `.env.prod`. Give each stage its own ES256
+key pair, refresh and ephemeral peppers, and Google OAuth credentials. Worker
+setup and stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change, deploys each same-repository pull request
 to an isolated `pr-<number>` stage, comments its Website URL on the pull request,
@@ -90,17 +91,14 @@ reads.
 
 Each GitHub Environment must define:
 
-- Secret `CLERK_SECRET_KEY`. Use a different Clerk instance (or at least a
-  different secret) per environment so a preview JWT is never valid against
-  production.
-- Secret `CLERK_JWT_KEY` (optional). PEM JWKS for networkless JWT verify on the
-  Worker.
+- Secret `AUTH_JWT_PRIVATE_JWK` and variable `AUTH_JWT_PUBLIC_JWK`.
+- Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
+  `GOOGLE_OAUTH_CLIENT_SECRET`.
+- Variable `GOOGLE_OAUTH_CLIENT_ID`.
 - Variables with code defaults (optional): `ELECTRON_PROTOCOL`
   (`com.tabaaq.desktop`), `MOBILE_PROTOCOL` (`com.tabaaq.mobile`),
   `AUTH_TRUSTED_ORIGINS` (comma-separated `https://` origins, bare hosts, or
-  wildcard patterns), `CLERK_JWT_AUDIENCE`. Blank values are treated as unset. A
-  value none of those forms fit is ignored and logged rather than breaking
-  sign-in.
+  wildcard patterns), and `AUTH_DEV_OTP`. Blank values are treated as unset.
 
 The `Production` environment must also define these variables. There is no
 domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
@@ -108,30 +106,26 @@ domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 - `PRODUCTION_DOMAIN`. Site hostname only (example: `tabaaq.app`). Website Worker.
 - `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`). Desktop and the
   production SPA. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
-- `AUTH_TRUSTED_ORIGINS`. Site origin for CORS / Clerk azp (example:
-  `https://tabaaq.app`).
-- `VITE_CLERK_PUBLISHABLE_KEY`. Clerk Frontend API publishable key. Web CSP
-  derives the FAPI host from this.
-- `VITE_CLERK_JWT_TEMPLATE`. Optional Clerk JWT template name. Must include
-  `org_id`.
+- `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
+  the auth hostname is `auth.<PRODUCTION_DOMAIN>`.
+- `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
 - `EXPO_PUBLIC_API_URL`. Same origin as `VITE_API_URL`. The mobile app reads it.
+- `EXPO_PUBLIC_AUTH_URL`. Same origin as `VITE_AUTH_URL`.
   The EAS production profile uses the EAS `production` environment, not GitHub
   vars.
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the
   Worker).
 
-In the Clerk Dashboard, enable Organizations and allow these origins (Authorized
-Parties / allowed origins): the site origin (`https://` + `PRODUCTION_DOMAIN`),
-`com.tabaaq.desktop://app`, plus local `http://localhost:5173` and
-`http://localhost:5174` for development. The Electron renderer origin is the
-privileged custom scheme host `app`, matching T3 Code's `@clerk/electron` bridge.
+Configure the Google OAuth client callback as
+`https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
+to the trusted web origin or native custom scheme after PKCE verification.
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build`. Production deploys run `bun alchemy deploy`,
 which serves the SPA from `PRODUCTION_DOMAIN` and the API from
-`api.<PRODUCTION_DOMAIN>`.
+`api.<PRODUCTION_DOMAIN>`, with auth at `auth.<PRODUCTION_DOMAIN>`.
 
 ## Install
 

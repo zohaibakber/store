@@ -26,13 +26,11 @@ const session = {
     id: "session-1",
     userId: "user-1",
     activeOrganizationId: "org-1",
-    clerkOrganizationId: "org_clerk_1",
     expiresAt: Date.now() + 60_000,
   },
   organizations: [
     {
       id: "org-1",
-      clerkOrganizationId: "org_clerk_1",
       name: "Tabaaq",
       slug: "tabaaq",
       role: "owner",
@@ -94,7 +92,6 @@ export const appFor = (member: boolean, authenticated = true, options: AppOption
                   name: "Tabaaq",
                   slug: "tabaaq",
                   role: "owner",
-                  clerkOrganizationId: "org_clerk_1",
                 },
                 organizations: [
                   {
@@ -102,7 +99,6 @@ export const appFor = (member: boolean, authenticated = true, options: AppOption
                     name: "Tabaaq",
                     slug: "tabaaq",
                     role: "owner",
-                    clerkOrganizationId: "org_clerk_1",
                   },
                 ],
                 isOnline: true,
