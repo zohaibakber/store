@@ -59,7 +59,7 @@ export default function NewProductScreen() {
     setSaving(true);
     setError(null);
     try {
-      await saveScannedProduct({
+      const product = await saveScannedProduct({
         newProductId: createInventoryEntityId(),
         productId: null,
         name,
@@ -72,7 +72,7 @@ export default function NewProductScreen() {
         unitPrice: priceInPaisa(unitPrice),
       });
       hapticSuccess();
-      router.back();
+      router.replace(`/products/${product.id}`);
     } catch (cause) {
       setError(authErrorMessage(cause));
     } finally {

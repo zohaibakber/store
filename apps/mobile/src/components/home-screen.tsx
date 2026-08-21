@@ -83,12 +83,16 @@ export function HomeScreen() {
                     tone={product.stock === 0 ? "destructive" : "warning"}
                   />
                 }
+                onPress={() => router.push(`/products/${product.id}`)}
                 supporting={product.category}
                 title={product.name}
                 trailing={
-                  <RowValue tone={product.stock === 0 ? "destructive" : "warning"}>
-                    {product.stock === 0 ? "Out" : String(product.stock)}
-                  </RowValue>
+                  <>
+                    <RowValue tone={product.stock === 0 ? "destructive" : "warning"}>
+                      {product.stock === 0 ? "Out" : String(product.stock)}
+                    </RowValue>
+                    <RowChevron />
+                  </>
                 }
               />
             ))}

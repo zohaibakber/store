@@ -18,10 +18,20 @@ export default function ProductsLayout() {
       <Stack.Screen
         name="scan"
         options={{
+          animation: "fade",
+          headerLargeTitle: false,
+          headerShown: false,
+          presentation: "fullScreenModal",
+          title: "Scan product",
+        }}
+      />
+      <Stack.Screen
+        name="[productId]"
+        options={{
           animation: "default",
           headerLargeTitle: false,
           headerShown: true,
-          title: "Scan product",
+          title: "Product",
         }}
       />
     </AppStack>

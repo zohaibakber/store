@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 
 import { Badge } from "@/components/ui/badge";
+import { PressableScale } from "@/components/ui/pressable-scale";
 import { Separator } from "@/components/ui/separator";
 import { Text } from "@/components/ui/text";
 import { useColors } from "@/theme/colors";
@@ -16,6 +17,7 @@ type ProductRowProps = {
   readonly stockLabel: string;
   readonly unitPriceLabel: string;
   readonly visible: boolean;
+  readonly onPress?: () => void;
 };
 
 /**
@@ -32,15 +34,17 @@ export function ProductRow({
   stockLabel,
   unitPriceLabel,
   visible,
+  onPress,
 }: ProductRowProps) {
   const colors = useColors();
   const supporting = [category, details, aisle ? `Aisle ${aisle}` : null]
     .filter(Boolean)
     .join(" · ");
   const stockTone = stock === 0 ? "destructive" : stock <= 10 ? "warning" : "muted";
+  const label = `${name}, ${stockLabel}, ${unitPriceLabel}`;
 
-  return (
-    <View accessibilityLabel={`${name}, ${stockLabel}, ${unitPriceLabel}`}>
+  const body = (
+    <>
       <View style={styles.row}>
         <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
           <Text style={styles.avatarText} tone="muted">
@@ -70,7 +74,17 @@ export function ProductRow({
         </View>
       </View>
       <Separator inset={68} />
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View accessibilityLabel={label}>{body}</View>;
+  }
+
+  return (
+    <PressableScale accessibilityHint="Opens product details" accessibilityLabel={label} onPress={onPress}>
+      {body}
+    </PressableScale>
   );
 }
 

@@ -1,4 +1,5 @@
-import { FlashList, type ListRenderItem } from "@shopify/flash-list";
+import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
+import { router } from "expo-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
@@ -30,16 +31,13 @@ import { useColors } from "@/theme/colors";
 
 const keyExtractor = (item: MobileProduct) => item.id;
 
-/**
- * Hoisted to module scope: the row takes primitives, so nothing in this function
- * closes over the screen's state and the list can recycle rows freely.
- */
-const renderProduct: ListRenderItem<MobileProduct> = ({ item }) => (
+const renderProduct = ({ item }: ListRenderItemInfo<MobileProduct>) => (
   <ProductRow
     aisle={item.aisle}
     category={item.category}
     details={item.details}
     name={item.name}
+    onPress={() => router.push(`/products/${item.id}`)}
     stock={item.stock}
     stockLabel={item.stockLabel}
     unitPriceLabel={formatPrice(item.unitPrice)}

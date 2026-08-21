@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,11 +18,11 @@ import { Chip } from "@/components/ui/chip";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { InlineTextCamera } from "@/features/product-scanner/inline-text-camera";
+import { FullscreenTextCamera } from "@/features/product-scanner/fullscreen-text-camera";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
 import { findProductMatch } from "@/features/product-scanner/product-match";
 import { PackQuantitySheet, UnitQuantitySheet } from "@/features/product-scanner/quantity-sheet";
-import { inferProductText } from "@/features/product-scanner/scan-api";
+import { inferProductFromImage } from "@/features/product-scanner/scan-api";
 import type { ProductScanInference, ProductScanMode } from "@/features/product-scanner/types";
 import {
   productStatusView,
@@ -42,6 +43,7 @@ export default function ProductScanScreen() {
   const { loading } = productStatusView(useProductStatus());
   const { saveScannedProduct, saveBatchDetails, updateBatchQuantity } = useProductActions();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const scroll = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ProductScanMode>("product");
   const [cameraResetKey, setCameraResetKey] = useState(0);
@@ -91,6 +93,9 @@ export default function ProductScanScreen() {
     activeProduct?.batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const selectedCategory = categories.find((category) => category.id === categoryId) ?? null;
   const cameraBusy = cameraReading || analyzing;
+  const reviewOpen = Boolean(
+    productInference || (mode === "batch" && batchInference) || (activeProduct && savedProductId),
+  );
   const cameraActive = screenFocused && appActive && !quantityOpen;
   const cameraStatus = !cameraActive
     ? "paused"
@@ -104,6 +109,10 @@ export default function ProductScanScreen() {
     setMode(nextMode);
     setCameraResetKey((current) => current + 1);
     if (nextMode === "batch") setBatchInference(null);
+    if (nextMode === "product") {
+      setProductInference(null);
+      setSavedProductId(null);
+    }
     setError(null);
     setNotice(null);
     scroll.current?.scrollTo({ y: 0, animated: true });
@@ -145,18 +154,24 @@ export default function ProductScanScreen() {
     setNewBatchId(createInventoryEntityId());
   };
 
-  const onTextDetected = async (recognizedText: string) => {
+  const onImageCaptured = async (imageUri: string) => {
     setAnalyzing(true);
     setError(null);
     setNotice(null);
     try {
-      const inference = await inferProductText(recognizedText, mode);
+      const inference = await inferProductFromImage(imageUri, mode);
       if (mode === "batch") {
         applyBatchInference(inference);
         return;
       }
 
-      const match = findProductMatch(products, inference, recognizedText);
+      const match = findProductMatch(products, inference, [
+        inference.name,
+        inference.composition,
+        inference.strength,
+      ]
+        .filter(Boolean)
+        .join("\n"));
       setProductInference(inference);
       setBatchInference(null);
       setMatchedProductId(match?.id ?? null);
@@ -317,269 +332,297 @@ export default function ProductScanScreen() {
   };
 
   return (
-    <>
-      <ScrollView
-        ref={scroll}
-        contentContainerStyle={styles.content}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        style={{ backgroundColor: colors.background }}
-      >
-        <View style={styles.intro}>
-          <Text variant="subheading">
-            {mode === "product" ? "Scan the front label" : "Scan the batch panel"}
-          </Text>
-          <Text tone="muted" variant="caption">
-            {mode === "product"
-              ? "Text is read on this phone, then filled into fields you can edit."
-              : "Turn the pack to the printed lot and expiry, then read it again."}
-          </Text>
-        </View>
+    <View style={[styles.root, { backgroundColor: colors.viewfinder }]}>
+      <FullscreenTextCamera
+        mode={mode}
+        onCaptureStateChange={onCaptureStateChange}
+        onClose={() => router.back()}
+        onError={setError}
+        onImageCaptured={onImageCaptured}
+        resetKey={cameraResetKey}
+        status={cameraStatus}
+      />
 
-        <InlineTextCamera
-          mode={mode}
-          onCaptureStateChange={onCaptureStateChange}
-          onError={setError}
-          onTextDetected={onTextDetected}
-          resetKey={cameraResetKey}
-          status={cameraStatus}
-        />
-
-        {error ? (
+      {error && !reviewOpen ? (
+        <View style={[styles.floatingAlert, { bottom: insets.bottom + 110 }]}>
           <Alert variant="destructive">
             <AlertTitle>Needs attention</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
-        ) : null}
+        </View>
+      ) : null}
 
-        {notice ? (
-          <Alert variant="success">
-            <AlertTitle>Saved</AlertTitle>
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        ) : null}
+      {reviewOpen ? (
+        <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+          <ScrollView
+            ref={scroll}
+            contentContainerStyle={[
+              styles.content,
+              { paddingBottom: Math.max(insets.bottom, 16) + 24 },
+            ]}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            style={styles.sheetScroll}
+          >
+            <View style={styles.intro}>
+              <Text variant="subheading">
+                {mode === "batch" ? "Review batch" : productInference ? "Review product" : "Inventory"}
+              </Text>
+              <Text tone="muted" variant="caption">
+                {mode === "batch"
+                  ? "Confirm the lot and expiry, then save."
+                  : "Everything stays editable until you save."}
+              </Text>
+            </View>
 
-        {productInference ? (
-          <Card>
-            <CardHeader style={styles.reviewHeader}>
-              <View style={styles.headerCopy}>
-                <CardTitle>Review product</CardTitle>
-                <CardDescription>Everything stays editable until you save.</CardDescription>
-              </View>
-              <Badge variant={productInference.source === "cloud" ? "secondary" : "warning"}>
-                {productInference.source === "cloud" ? "Structured" : "On device"}
-              </Badge>
-            </CardHeader>
-            <CardContent>
-              <View style={[styles.match, { backgroundColor: colors.secondary }]}>
-                <View style={styles.matchCopy}>
-                  <Text variant="label">
-                    {matchedProduct ? "Matched an existing product" : "New product"}
-                  </Text>
-                  <Text numberOfLines={1} tone="muted" variant="caption">
-                    {matchedProduct
-                      ? [matchedProduct.name, matchedProduct.details || matchedProduct.category]
-                          .filter(Boolean)
-                          .join(" · ")
-                      : "A new inventory record will be created"}
-                  </Text>
-                </View>
-                {matchedProduct ? (
+            {error ? (
+              <Alert variant="destructive">
+                <AlertTitle>Needs attention</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {notice ? (
+              <Alert variant="success">
+                <AlertTitle>Saved</AlertTitle>
+                <AlertDescription>{notice}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {productInference ? (
+              <Card>
+                <CardHeader style={styles.reviewHeader}>
+                  <View style={styles.headerCopy}>
+                    <CardTitle>Product</CardTitle>
+                    <CardDescription>Edit anything that looks off.</CardDescription>
+                  </View>
+                  <Badge variant={productInference.source === "cloud" ? "secondary" : "warning"}>
+                    {productInference.source === "cloud" ? "AI" : "On device"}
+                  </Badge>
+                </CardHeader>
+                <CardContent>
+                  <View style={[styles.match, { backgroundColor: colors.secondary }]}>
+                    <View style={styles.matchCopy}>
+                      <Text variant="label">
+                        {matchedProduct ? "Matched an existing product" : "New product"}
+                      </Text>
+                      <Text numberOfLines={1} tone="muted" variant="caption">
+                        {matchedProduct
+                          ? [matchedProduct.name, matchedProduct.details || matchedProduct.category]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : "A new inventory record will be created"}
+                      </Text>
+                    </View>
+                    {matchedProduct ? (
+                      <Button
+                        onPress={() => {
+                          setMatchedProductId(null);
+                          setSavedProductId(null);
+                          setCategoryId(categories[0]?.id ?? "");
+                          setNewProductId(createInventoryEntityId());
+                        }}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        <ButtonText>Create new</ButtonText>
+                      </Button>
+                    ) : null}
+                  </View>
+
+                  <Field>
+                    <FieldLabel>Product name</FieldLabel>
+                    <Input onChangeText={setName} placeholder="Product name" value={name} />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Composition</FieldLabel>
+                    <Input
+                      multiline
+                      numberOfLines={2}
+                      onChangeText={setComposition}
+                      placeholder="Active ingredient"
+                      value={composition}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Strength</FieldLabel>
+                    <Input onChangeText={setStrength} placeholder="e.g. 500mg" value={strength} />
+                  </Field>
+
+                  {!matchedProduct && selectedCategory?.tracksPacks !== false ? (
+                    <Field>
+                      <FieldLabel>Units per sealed pack</FieldLabel>
+                      <Input
+                        keyboardType="number-pad"
+                        mono
+                        onChangeText={setUnitsPerPack}
+                        placeholder="10"
+                        value={unitsPerPack}
+                      />
+                    </Field>
+                  ) : null}
+
+                  {!matchedProduct ? (
+                    <Field>
+                      <FieldLabel>Category</FieldLabel>
+                      {categories.length > 0 ? (
+                        <View style={styles.chips}>
+                          {categories.map((category) => (
+                            <Chip
+                              key={category.id}
+                              isSelected={categoryId === category.id}
+                              onPress={() => setCategoryId(category.id)}
+                            >
+                              {category.name}
+                            </Chip>
+                          ))}
+                        </View>
+                      ) : (
+                        <FieldDescription>
+                          A General category is created with this first product.
+                        </FieldDescription>
+                      )}
+                    </Field>
+                  ) : null}
+                </CardContent>
+                <CardFooter style={styles.rowActions}>
                   <Button
-                    onPress={() => {
-                      setMatchedProductId(null);
-                      setSavedProductId(null);
-                      setCategoryId(categories[0]?.id ?? "");
-                      setNewProductId(createInventoryEntityId());
-                    }}
-                    size="sm"
+                    isDisabled={cameraBusy || savingProduct}
+                    loading={savingProduct}
+                    onPress={() => void confirmProduct()}
+                    style={styles.flex}
+                  >
+                    <ButtonText>
+                      {matchedProduct ? "Confirm product" : "Create product"}
+                    </ButtonText>
+                  </Button>
+                  <Button
+                    isDisabled={cameraBusy || savingProduct}
+                    onPress={() => resetCamera("product")}
+                    style={styles.flex}
                     variant="ghost"
                   >
-                    <ButtonText>Create new</ButtonText>
+                    <ButtonText>Scan again</ButtonText>
                   </Button>
-                ) : null}
-              </View>
+                </CardFooter>
+              </Card>
+            ) : null}
 
-              <Field>
-                <FieldLabel>Product name</FieldLabel>
-                <Input onChangeText={setName} placeholder="Product name" value={name} />
-              </Field>
-              <Field>
-                <FieldLabel>Composition</FieldLabel>
-                <Input
-                  multiline
-                  numberOfLines={2}
-                  onChangeText={setComposition}
-                  placeholder="Active ingredient"
-                  value={composition}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Strength</FieldLabel>
-                <Input onChangeText={setStrength} placeholder="e.g. 500mg" value={strength} />
-              </Field>
-
-              {!matchedProduct && selectedCategory?.tracksPacks !== false ? (
-                <Field>
-                  <FieldLabel>Units per sealed pack</FieldLabel>
-                  <Input
-                    keyboardType="number-pad"
-                    mono
-                    onChangeText={setUnitsPerPack}
-                    placeholder="10"
-                    value={unitsPerPack}
-                  />
-                </Field>
-              ) : null}
-
-              {!matchedProduct ? (
-                <Field>
-                  <FieldLabel>Category</FieldLabel>
-                  {categories.length > 0 ? (
-                    <View style={styles.chips}>
-                      {categories.map((category) => (
-                        <Chip
-                          key={category.id}
-                          isSelected={categoryId === category.id}
-                          onPress={() => setCategoryId(category.id)}
-                        >
-                          {category.name}
+            {activeProduct && savedProductId ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Inventory</CardTitle>
+                  <CardDescription>Batch details and quantity are separate steps.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {activeProduct.batches.length > 0 ? (
+                    <Field>
+                      <FieldLabel>Target batch</FieldLabel>
+                      <View style={styles.chips}>
+                        {activeProduct.batches.map((batch, index) => (
+                          <Chip
+                            key={batch.id}
+                            isSelected={selectedBatchId === batch.id}
+                            onPress={() => selectBatch(batch.id)}
+                          >
+                            {batch.batchNumber || `Batch ${index + 1}`}
+                          </Chip>
+                        ))}
+                        <Chip isSelected={selectedBatchId === null} onPress={() => selectBatch(null)}>
+                          New batch
                         </Chip>
-                      ))}
-                    </View>
-                  ) : (
-                    <FieldDescription>
-                      A General category is created with this first product.
-                    </FieldDescription>
-                  )}
-                </Field>
-              ) : null}
-            </CardContent>
-            <CardFooter>
-              <Button
-                isDisabled={cameraBusy || savingProduct}
-                loading={savingProduct}
-                onPress={() => void confirmProduct()}
-              >
-                <ButtonText>{matchedProduct ? "Confirm product" : "Create product"}</ButtonText>
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : null}
+                      </View>
+                    </Field>
+                  ) : null}
+                </CardContent>
+                <CardFooter style={styles.rowActions}>
+                  <Button
+                    isDisabled={cameraBusy}
+                    onPress={() => {
+                      setError(null);
+                      setNotice(null);
+                      setQuantityOpen(true);
+                    }}
+                    style={styles.flex}
+                  >
+                    <ButtonText>Set quantity</ButtonText>
+                  </Button>
+                  <Button
+                    isDisabled={cameraBusy}
+                    onPress={() => resetCamera("batch")}
+                    style={styles.flex}
+                    variant="outline"
+                  >
+                    <ButtonIcon name="camera" />
+                    <ButtonText>Scan batch</ButtonText>
+                  </Button>
+                </CardFooter>
+              </Card>
+            ) : null}
 
-        {activeProduct && savedProductId ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Inventory</CardTitle>
-              <CardDescription>Batch details and quantity are separate steps.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {activeProduct.batches.length > 0 ? (
-                <Field>
-                  <FieldLabel>Target batch</FieldLabel>
-                  <View style={styles.chips}>
-                    {activeProduct.batches.map((batch, index) => (
-                      <Chip
-                        key={batch.id}
-                        isSelected={selectedBatchId === batch.id}
-                        onPress={() => selectBatch(batch.id)}
-                      >
-                        {batch.batchNumber || `Batch ${index + 1}`}
-                      </Chip>
-                    ))}
-                    <Chip isSelected={selectedBatchId === null} onPress={() => selectBatch(null)}>
-                      New batch
-                    </Chip>
+            {mode === "batch" && activeProduct && batchInference ? (
+              <Card>
+                <CardHeader style={styles.reviewHeader}>
+                  <View style={styles.headerCopy}>
+                    <CardTitle>Batch</CardTitle>
+                    <CardDescription>{activeProduct.name}</CardDescription>
                   </View>
-                </Field>
-              ) : null}
-            </CardContent>
-            <CardFooter style={styles.rowActions}>
-              <Button
-                isDisabled={cameraBusy}
-                onPress={() => {
-                  setError(null);
-                  setNotice(null);
-                  setQuantityOpen(true);
-                }}
-                style={styles.flex}
-              >
-                <ButtonText>Set quantity</ButtonText>
-              </Button>
-              <Button
-                isDisabled={cameraBusy}
-                onPress={() => resetCamera("batch")}
-                style={styles.flex}
-                variant="outline"
-              >
-                <ButtonIcon name="camera" />
-                <ButtonText>Scan batch</ButtonText>
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : null}
+                  <Badge variant={batchInference.source === "cloud" ? "secondary" : "warning"}>
+                    {batchInference.source === "cloud" ? "AI" : "On device"}
+                  </Badge>
+                </CardHeader>
+                <CardContent>
+                  <Field>
+                    <FieldLabel>Batch or lot number</FieldLabel>
+                    <Input
+                      autoCapitalize="characters"
+                      mono
+                      onChangeText={setBatchNumber}
+                      placeholder="BN-2048"
+                      value={batchNumber}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Expiry</FieldLabel>
+                    <Input
+                      autoCapitalize="none"
+                      mono
+                      onChangeText={setExpiresAt}
+                      placeholder="YYYY-MM-DD"
+                      value={expiresAt}
+                    />
+                  </Field>
+                </CardContent>
+                <CardFooter style={styles.rowActions}>
+                  <Button
+                    isDisabled={cameraBusy || savingBatch}
+                    loading={savingBatch}
+                    onPress={() => void confirmBatchDetails()}
+                    style={styles.flex}
+                  >
+                    <ButtonText>Save batch</ButtonText>
+                  </Button>
+                  <Button
+                    isDisabled={cameraBusy || savingBatch}
+                    onPress={() => resetCamera("batch")}
+                    style={styles.flex}
+                    variant="ghost"
+                  >
+                    <ButtonText>Scan again</ButtonText>
+                  </Button>
+                </CardFooter>
+              </Card>
+            ) : null}
 
-        {mode === "batch" && activeProduct && batchInference ? (
-          <Card>
-            <CardHeader style={styles.reviewHeader}>
-              <View style={styles.headerCopy}>
-                <CardTitle>Review batch</CardTitle>
-                <CardDescription>{activeProduct.name}</CardDescription>
-              </View>
-              <Badge variant={batchInference.source === "cloud" ? "secondary" : "warning"}>
-                {batchInference.source === "cloud" ? "Structured" : "On device"}
-              </Badge>
-            </CardHeader>
-            <CardContent>
-              <Field>
-                <FieldLabel>Batch or lot number</FieldLabel>
-                <Input
-                  autoCapitalize="characters"
-                  mono
-                  onChangeText={setBatchNumber}
-                  placeholder="BN-2048"
-                  value={batchNumber}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Expiry</FieldLabel>
-                <Input
-                  autoCapitalize="none"
-                  mono
-                  onChangeText={setExpiresAt}
-                  placeholder="YYYY-MM-DD"
-                  value={expiresAt}
-                />
-              </Field>
-            </CardContent>
-            <CardFooter style={styles.rowActions}>
-              <Button
-                isDisabled={cameraBusy || savingBatch}
-                loading={savingBatch}
-                onPress={() => void confirmBatchDetails()}
-                style={styles.flex}
-              >
-                <ButtonText>Save batch</ButtonText>
+            {activeProduct && savedProductId ? (
+              <Button onPress={() => router.replace(`/products/${savedProductId}`)} variant="ghost">
+                <ButtonText>Done</ButtonText>
               </Button>
-              <Button
-                isDisabled={cameraBusy || savingBatch}
-                onPress={() => resetCamera("batch")}
-                style={styles.flex}
-                variant="ghost"
-              >
-                <ButtonText>Scan again</ButtonText>
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : null}
-
-        {activeProduct && savedProductId ? (
-          <Button onPress={() => router.back()} variant="ghost">
-            <ButtonText>Done</ButtonText>
-          </Button>
-        ) : null}
-      </ScrollView>
+            ) : null}
+          </ScrollView>
+        </View>
+      ) : null}
 
       {activeProduct?.tracksPacks ? (
         <PackQuantitySheet
@@ -606,14 +649,19 @@ export default function ProductScanScreen() {
           visible={quantityOpen}
         />
       ) : null}
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  content: { gap: 16, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 12 },
+  content: { gap: 16, paddingHorizontal: 16, paddingTop: 4 },
   flex: { flex: 1 },
+  floatingAlert: {
+    left: 16,
+    position: "absolute",
+    right: 16,
+  },
   headerCopy: { flex: 1, gap: 4, minWidth: 0 },
   intro: { gap: 4 },
   match: {
@@ -633,5 +681,25 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "space-between",
   },
+  root: { flex: 1 },
   rowActions: { flexDirection: "row" },
+  sheet: {
+    borderCurve: "continuous",
+    borderTopLeftRadius: radius["2xl"],
+    borderTopRightRadius: radius["2xl"],
+    bottom: 0,
+    left: 0,
+    maxHeight: "72%",
+    position: "absolute",
+    right: 0,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    borderRadius: radius.full,
+    height: 4,
+    marginBottom: 8,
+    marginTop: 10,
+    width: 36,
+  },
+  sheetScroll: { flexGrow: 0 },
 });

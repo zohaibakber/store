@@ -2,29 +2,27 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
 import { Linking, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, ButtonText } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { PressableScale } from "@/components/ui/pressable-scale";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
-import {
-  extractTextFromImage,
-  isTextRecognitionSupported,
-} from "@/features/product-scanner/text-extractor";
 import type { ProductScanMode } from "@/features/product-scanner/types";
 import { hapticError, hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
 import { useColors } from "@/theme/colors";
 import { alpha, radius } from "@/theme/tokens";
 import { typography } from "@/theme/typography";
 
-type InlineTextCameraProps = {
+type FullscreenTextCameraProps = {
   readonly mode: ProductScanMode;
   readonly status: "ready" | "paused" | "syncing" | "analyzing";
   readonly resetKey: number;
+  readonly onClose: () => void;
   readonly onError: (message: string) => void;
   readonly onCaptureStateChange: (capturing: boolean) => void;
-  readonly onTextDetected: (recognizedText: string) => Promise<void>;
+  readonly onImageCaptured: (imageUri: string) => Promise<void>;
 };
 
 type CaptureState = "ready" | "reading" | "found";
@@ -35,29 +33,28 @@ const promptFor = (mode: ProductScanMode) =>
     : "Fit the batch number and expiry date inside the frame";
 
 /**
- * The viewfinder. Chrome that sits over live video is the one place the palette
- * does not apply — text has to stay legible against whatever the lens sees — so
- * it uses the `scrim` and `onScrim` tokens, which exist for exactly this.
+ * Edge-to-edge viewfinder. Overlay chrome uses `scrim` / `onScrim` so labels
+ * stay readable against whatever the lens sees.
  */
-export function InlineTextCamera({
+export function FullscreenTextCamera({
   mode,
   status,
   resetKey,
+  onClose,
   onError,
   onCaptureStateChange,
-  onTextDetected,
-}: InlineTextCameraProps) {
+  onImageCaptured,
+}: FullscreenTextCameraProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [torch, setTorch] = useState(false);
   const [captureState, setCaptureState] = useState<CaptureState>("ready");
-  const [lineCount, setLineCount] = useState(0);
   const camera = useRef<CameraView>(null);
   const colors = useColors();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     setCaptureState("ready");
-    setLineCount(0);
   }, [mode, resetKey]);
 
   useEffect(() => {
@@ -68,14 +65,9 @@ export function InlineTextCamera({
 
   const capture = async () => {
     if (!ready || status !== "ready" || captureState === "reading" || !camera.current) return;
-    if (!isTextRecognitionSupported) {
-      onError("Text recognition is not available on this device.");
-      return;
-    }
 
     onCaptureStateChange(true);
     setCaptureState("reading");
-    setLineCount(0);
     hapticSelection();
     try {
       const picture = await camera.current.takePictureAsync({
@@ -98,22 +90,10 @@ export function InlineTextCamera({
         compress: 0.9,
         format: SaveFormat.JPEG,
       });
-      const lines = (await extractTextFromImage(labelImage.uri))
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const recognizedText = lines.join("\n").trim();
 
-      if (recognizedText.length < 3) {
-        setCaptureState("ready");
-        hapticWarning();
-        onError("No readable text yet. Move closer, reduce glare, and try again.");
-        return;
-      }
-
-      setLineCount(lines.length);
       setCaptureState("found");
       hapticSuccess();
-      await onTextDetected(recognizedText);
+      await onImageCaptured(labelImage.uri);
     } catch (cause) {
       setCaptureState("ready");
       hapticError();
@@ -123,13 +103,15 @@ export function InlineTextCamera({
     }
   };
 
-  const placeholder = { backgroundColor: colors.secondary };
+  const placeholder = { backgroundColor: colors.viewfinder, flex: 1 };
 
   if (status === "paused") {
     return (
-      <View style={[styles.placeholder, placeholder]}>
-        <Text variant="bodyMedium">Camera paused</Text>
-        <Text style={styles.centered} tone="muted" variant="caption">
+      <View style={[styles.placeholder, placeholder, { paddingTop: insets.top }]}>
+        <Text style={{ color: colors.onScrim }} variant="bodyMedium">
+          Camera paused
+        </Text>
+        <Text style={[styles.centered, { color: alpha(colors.onScrim, 0.76) }]} variant="caption">
           Return to this screen to continue scanning.
         </Text>
       </View>
@@ -139,16 +121,18 @@ export function InlineTextCamera({
   if (!permission) {
     return (
       <View style={[styles.placeholder, placeholder]}>
-        <Spinner tone="muted" />
+        <Spinner color={colors.onScrim} />
       </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={[styles.placeholder, placeholder]}>
-        <Text variant="bodyMedium">Camera access is needed</Text>
-        <Text style={styles.centered} tone="muted" variant="caption">
+      <View style={[styles.placeholder, placeholder, { paddingTop: insets.top + 24 }]}>
+        <Text style={{ color: colors.onScrim }} variant="bodyMedium">
+          Camera access is needed
+        </Text>
+        <Text style={[styles.centered, { color: alpha(colors.onScrim, 0.76) }]} variant="caption">
           The camera is used only while you scan a product label.
         </Text>
         <View style={styles.permissionAction}>
@@ -162,6 +146,13 @@ export function InlineTextCamera({
             <ButtonText>{permission.canAskAgain ? "Allow camera" : "Open settings"}</ButtonText>
           </Button>
         </View>
+        <PressableScale
+          accessibilityLabel="Close scanner"
+          onPress={onClose}
+          style={[styles.close, { backgroundColor: colors.scrim, top: insets.top + 12 }]}
+        >
+          <Icon color={colors.onScrim} name="close" size={20} />
+        </PressableScale>
       </View>
     );
   }
@@ -174,21 +165,23 @@ export function InlineTextCamera({
       : status === "analyzing"
         ? "Reading the label…"
         : captureState === "reading"
-          ? "Reading on this phone…"
+          ? "Capturing…"
           : found
-            ? "Text detected"
+            ? "Label captured"
             : mode === "product"
               ? "Ready for the product label"
               : "Ready for batch details";
   const detail =
     status === "syncing"
       ? "Scanning unlocks once products are ready"
-      : found
-        ? `${lineCount} ${lineCount === 1 ? "line" : "lines"} found`
-        : promptFor(mode);
+      : status === "analyzing"
+        ? "Extracting fields with AI"
+        : found
+          ? "Hold steady"
+          : promptFor(mode);
 
   return (
-    <View style={[styles.shell, { backgroundColor: colors.viewfinder }]}>
+    <View style={styles.shell}>
       <CameraView
         ref={camera}
         active
@@ -198,16 +191,30 @@ export function InlineTextCamera({
         mode="picture"
         onCameraReady={() => setReady(true)}
         onMountError={({ message }) => onError(message)}
-        ratio="4:3"
         style={StyleSheet.absoluteFill}
       />
 
       <View
         pointerEvents="none"
-        style={[styles.guide, { borderColor: found ? colors.success : alpha(colors.onScrim, 0.8) }]}
+        style={[
+          styles.guide,
+          {
+            borderColor: found ? colors.success : alpha(colors.onScrim, 0.85),
+            bottom: insets.bottom + 120,
+            top: insets.top + 100,
+          },
+        ]}
       />
 
-      <View style={styles.topControls}>
+      <View style={[styles.topControls, { paddingTop: insets.top + 10 }]}>
+        <PressableScale
+          accessibilityLabel="Close scanner"
+          onPress={onClose}
+          style={[styles.iconButton, { backgroundColor: colors.scrim }]}
+        >
+          <Icon color={colors.onScrim} name="close" size={20} />
+        </PressableScale>
+
         <View
           accessibilityLiveRegion="polite"
           accessible
@@ -238,26 +245,41 @@ export function InlineTextCamera({
             </Text>
           </View>
         </View>
+
         <PressableScale
           accessibilityLabel={torch ? "Turn the torch off" : "Turn the torch on"}
           accessibilityState={{ selected: torch }}
           isDisabled={status !== "ready" || busy}
           onPress={() => setTorch((current) => !current)}
-          style={[styles.torch, { backgroundColor: torch ? colors.onScrim : colors.scrim }]}
+          style={[
+            styles.iconButton,
+            { backgroundColor: torch ? colors.onScrim : colors.scrim },
+          ]}
         >
           <Icon color={torch ? colors.foreground : colors.onScrim} name="bolt" size={18} />
         </PressableScale>
       </View>
 
-      <View style={styles.captureRow}>
+      <View style={[styles.captureRow, { bottom: Math.max(insets.bottom, 12) + 16 }]}>
         <PressableScale
           accessibilityHint={`Reads ${mode === "product" ? "the product name" : "the batch and expiry"} from the camera`}
           accessibilityLabel={busy ? "Reading the label" : "Read the label"}
           isDisabled={!ready || status !== "ready" || busy}
-          onPress={() => void capture()}
+          onPress={() => {
+            if (busy) {
+              hapticWarning();
+              return;
+            }
+            void capture();
+          }}
           style={[styles.shutter, { borderColor: colors.onScrim }]}
         >
-          <View style={[styles.shutterCore, { backgroundColor: colors.onScrim }]} />
+          <View
+            style={[
+              styles.shutterCore,
+              { backgroundColor: busy ? alpha(colors.onScrim, 0.45) : colors.onScrim },
+            ]}
+          />
         </PressableScale>
       </View>
     </View>
@@ -265,45 +287,56 @@ export function InlineTextCamera({
 }
 
 const styles = StyleSheet.create({
-  captureRow: { alignItems: "center", bottom: 18, left: 0, position: "absolute", right: 0 },
-  centered: { textAlign: "center" },
+  captureRow: { alignItems: "center", left: 0, position: "absolute", right: 0 },
+  centered: { paddingHorizontal: 32, textAlign: "center" },
+  close: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: radius.xl,
+    height: 40,
+    justifyContent: "center",
+    left: 16,
+    position: "absolute",
+    width: 40,
+  },
   guide: {
     borderCurve: "continuous",
     borderRadius: radius["2xl"],
     borderWidth: 2,
-    bottom: 92,
     left: 28,
     position: "absolute",
     right: 28,
-    top: 92,
+  },
+  iconButton: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: radius.xl,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   overlayCaption: typography.caption,
   overlayLabel: typography.label,
-  permissionAction: { paddingTop: 8 },
+  permissionAction: { paddingTop: 12 },
   placeholder: {
     alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: radius["2xl"],
-    gap: 6,
-    height: 360,
+    gap: 8,
     justifyContent: "center",
     paddingHorizontal: 32,
   },
   shell: {
-    borderCurve: "continuous",
-    borderRadius: radius["2xl"],
-    height: 360,
-    overflow: "hidden",
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "#000000",
   },
   shutter: {
     alignItems: "center",
     borderRadius: radius.full,
     borderWidth: 3,
-    height: 66,
+    height: 72,
     justifyContent: "center",
-    width: 66,
+    width: 72,
   },
-  shutterCore: { borderRadius: radius.full, height: 50, width: 50 },
+  shutterCore: { borderRadius: radius.full, height: 56, width: 56 },
   status: {
     alignItems: "center",
     borderCurve: "continuous",
@@ -324,14 +357,5 @@ const styles = StyleSheet.create({
     left: 14,
     position: "absolute",
     right: 14,
-    top: 14,
-  },
-  torch: {
-    alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: radius.xl,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
   },
 });
