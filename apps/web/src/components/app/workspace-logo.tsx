@@ -8,7 +8,12 @@ export function WorkspaceLogo({ className }: { className?: string }) {
   const name = organization?.name ?? "Tabaaq";
 
   return (
-    <span className={cn("flex min-w-0 items-center gap-2", className)}>
+    <span
+      className={cn(
+        "flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0",
+        className,
+      )}
+    >
       {organization?.image ? (
         <img
           alt=""
@@ -18,7 +23,7 @@ export function WorkspaceLogo({ className }: { className?: string }) {
       ) : (
         <BrandMark alt="" className="size-6 shrink-0 rounded-[5px]" />
       )}
-      <span className="truncate font-medium">{name}</span>
+      <span className="truncate font-medium group-data-[collapsible=icon]:hidden">{name}</span>
     </span>
   );
 }

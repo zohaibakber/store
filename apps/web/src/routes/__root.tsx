@@ -52,7 +52,7 @@ function AppShell() {
   return (
     <TooltipProvider>
       <CommandMenuProvider>
-        <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+        <SidebarProvider className="h-svh min-h-0 overflow-hidden" defaultOpen={false}>
           <AppSidebar />
           <SidebarInset className="min-h-0 scrollbar-none overflow-y-auto">
             <SiteHeader />

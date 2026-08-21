@@ -20,6 +20,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
 } from "@/components/ui/sidebar";
 
 const navMain = [
@@ -44,9 +45,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <div className="flex items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center">
-          <WorkspaceLogo className="group-data-[collapsible=icon]:hidden" />
-          <NavHistory className="group-data-[collapsible=icon]:flex-col" />
+        <div className="flex items-center justify-between group-data-[collapsible=icon]:justify-center">
+          <WorkspaceLogo />
+          <NavHistory className="group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -74,6 +75,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }
