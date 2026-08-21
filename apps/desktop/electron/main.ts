@@ -337,9 +337,7 @@ function registerServerIpc() {
     const raw = await currentWorkspace().request("/api/uploads", { method: "POST", body });
     return await Effect.runPromise(
       Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
-        Effect.mapError(
-          () => new Error("Invoice analysis returned an unexpected response."),
-        ),
+        Effect.mapError(() => new Error("Invoice analysis returned an unexpected response.")),
       ),
     );
   });
