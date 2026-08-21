@@ -4,6 +4,9 @@ import { toastManager } from "@/components/ui/toast";
 
 const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
+const UPDATE_CHECK_TOAST_ID = "app-update-check";
+
+let manualCheck = false;
 
 const showDownloadProgress = (value: number, description: string) => {
   toastManager.add({
@@ -54,6 +57,32 @@ const startDownload = (version: string) => {
     });
 };
 
+/** True when this build can ask the desktop updater for a newer package. */
+export const canCheckForAppUpdate = () => Boolean(window.updater);
+
+/** Ask the desktop updater for a newer package and surface the result in a toast. */
+export const checkForAppUpdate = () => {
+  const updater = window.updater;
+  if (!updater) return;
+  manualCheck = true;
+  toastManager.add({
+    id: UPDATE_CHECK_TOAST_ID,
+    timeout: 0,
+    title: "Checking for updates…",
+    type: "loading",
+  });
+  void updater.check().catch((error) => {
+    manualCheck = false;
+    toastManager.add({
+      description: error instanceof Error ? error.message : "Please try again.",
+      id: UPDATE_CHECK_TOAST_ID,
+      priority: "high",
+      title: "Update check failed",
+      type: "error",
+    });
+  });
+};
+
 export function useAppUpdater() {
   useEffect(() => {
     const updater = window.updater;
@@ -62,6 +91,8 @@ export function useAppUpdater() {
     const unsubscribe = updater.onEvent((event) => {
       switch (event.type) {
         case "available":
+          manualCheck = false;
+          toastManager.close(UPDATE_CHECK_TOAST_ID);
           toastManager.add({
             id: UPDATE_AVAILABLE_TOAST_ID,
             title: "Update available",
@@ -76,19 +107,33 @@ export function useAppUpdater() {
             },
           });
           break;
+        case "not-available":
+          if (manualCheck) {
+            manualCheck = false;
+            toastManager.add({
+              description: `Version ${__APP_VERSION__} is the latest.`,
+              id: UPDATE_CHECK_TOAST_ID,
+              title: "You're up to date",
+              type: "success",
+            });
+          }
+          break;
         case "progress":
           showDownloadProgress(event.percent, "The update will be ready to install shortly.");
           break;
         case "error":
-          toastManager.add({
-            description: event.message,
-            priority: "high",
-            title: event.retrying ? "Update check delayed" : "Update check failed",
-            type: event.retrying ? "info" : "error",
-          });
+          if (manualCheck || !event.retrying) {
+            manualCheck = false;
+            toastManager.add({
+              description: event.message,
+              id: UPDATE_CHECK_TOAST_ID,
+              priority: "high",
+              title: event.retrying ? "Update check delayed" : "Update check failed",
+              type: event.retrying ? "info" : "error",
+            });
+          }
           break;
         case "checking":
-        case "not-available":
         case "downloaded":
           break;
         default: {

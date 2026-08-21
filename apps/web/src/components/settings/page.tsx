@@ -2,11 +2,13 @@ import {
   Building01Icon,
   InformationCircleIcon,
   PaintBoardIcon,
+  ReloadIcon,
   TagIcon,
   UserIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
+import { useState } from "react";
 
 import { AccountSettings } from "@/components/settings/account-settings";
 import { CategorySettings } from "@/components/settings/category-settings";
@@ -14,7 +16,9 @@ import { OrganizationSettings } from "@/components/settings/organization-setting
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { FrameCard } from "@/components/shared/frame-card";
 import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/shared/page-layout";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+import { canCheckForAppUpdate, checkForAppUpdate } from "@/hooks/use-app-updater";
 import { useLinkedInvitation } from "@/lib/organization";
 
 const tabs = [
@@ -24,6 +28,35 @@ const tabs = [
   { value: "appearance", label: "Appearance", icon: PaintBoardIcon },
   { value: "about", label: "About", icon: InformationCircleIcon },
 ] as const;
+
+function AboutSettings() {
+  const [supportsUpdates] = useState(canCheckForAppUpdate);
+
+  return (
+    <FrameCard title="About Tabaaq">
+      <div className="flex flex-col gap-4">
+        <dl className="flex items-center justify-between gap-4">
+          <dt className="text-muted-foreground">Version</dt>
+          <dd className="font-mono tabular-nums">v{__APP_VERSION__}</dd>
+        </dl>
+        {supportsUpdates ? (
+          <div className="flex items-center justify-between gap-4 border-t pt-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Updates</p>
+              <p className="text-sm text-muted-foreground">
+                Check GitHub for a newer desktop build.
+              </p>
+            </div>
+            <Button className="shrink-0" onClick={checkForAppUpdate} variant="outline">
+              <HugeiconsIcon aria-hidden="true" icon={ReloadIcon} />
+              Check for updates
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </FrameCard>
+  );
+}
 
 export function SettingsPage({ categories }: { categories: ReadonlyArray<Category> }) {
   // An invite link points at this page, so it opens where the invitation is
@@ -66,12 +99,7 @@ export function SettingsPage({ categories }: { categories: ReadonlyArray<Categor
             </FrameCard>
           </TabsPanel>
           <TabsPanel className="min-w-0 flex-1" value="about">
-            <FrameCard title="About Tabaaq">
-              <dl className="flex items-center justify-between gap-4">
-                <dt className="text-muted-foreground">Version</dt>
-                <dd className="font-mono tabular-nums">v{__APP_VERSION__}</dd>
-              </dl>
-            </FrameCard>
+            <AboutSettings />
           </TabsPanel>
         </Tabs>
       </PageContent>
