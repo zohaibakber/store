@@ -91,7 +91,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        {authenticated ? null : <SignInCard />}
       </SidebarContent>
       <SidebarFooter>
         {authenticated ? (
@@ -101,7 +100,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <NavHistory />
             </div>
           </div>
-        ) : null}
+        ) : (
+          <SignInCard />
+        )}
       </SidebarFooter>
     </Sidebar>
   );
