@@ -16,23 +16,17 @@
     },
     "production": {
       "autoIncrement": true,
-      "distribution": "store",
+      "distribution": "internal",
       "environment": "production",
       "env": {
         "APP_VARIANT": "production"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       }
     }
   },
   "submit": {
-    "production": {
-      "android": {
-        "track": "internal",
-        "releaseStatus": "draft",
-        "changesNotSentForReview": true
-      }
-    }
+    "production": {}
   }
 }

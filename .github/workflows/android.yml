@@ -16,7 +16,7 @@ env:
   VITE_GIT_HOOKS: "0"
 
 jobs:
-  eas-build-submit:
+  eas-build:
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -39,37 +39,7 @@ jobs:
           packager: bun
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Check Expo token
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ -z "${EXPO_TOKEN}" ]; then
-            echo "::error::EXPO_TOKEN is empty." \
-                 "Create an access token at https://expo.dev/settings/access-tokens" \
-                 "and set it as the repository secret EXPO_TOKEN."
-            exit 1
-          fi
-
-      - name: Write Play service account key
-        working-directory: apps/mobile
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          if [ -z "${GOOGLE_SERVICE_ACCOUNT_JSON}" ]; then
-            echo "GOOGLE_SERVICE_ACCOUNT_JSON is unset." \
-                 "EAS Submit will use a Google Play key stored on the Expo account."
-            exit 0
-          fi
-          printf '%s' "${GOOGLE_SERVICE_ACCOUNT_JSON}" > pc-api-key.json
-          node -e '
-            const fs = require("node:fs");
-            const path = "eas.json";
-            const config = JSON.parse(fs.readFileSync(path, "utf8"));
-            config.submit.production.android.serviceAccountKeyPath = "./pc-api-key.json";
-            fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
-          '
-
-      - name: Build and submit Android
+      - name: Build Android on EAS
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -77,4 +47,4 @@ jobs:
           EXPO_PUBLIC_AUTH_URL: ${{ vars.EXPO_PUBLIC_AUTH_URL }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
           EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
-        run: eas build --platform android --profile production --non-interactive --auto-submit
+        run: eas build --platform android --profile production --non-interactive --no-wait
