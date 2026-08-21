@@ -1,3 +1,4 @@
+import { TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import {
   unauthenticatedWorkspace,
   withWorkspaceError,
@@ -38,12 +39,15 @@ const navigatorOnline = () => globalThis.navigator?.onLine ?? true;
 
 export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #baseUrl: string;
+  readonly #authBaseUrl: string;
   readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
-  #token: string | null = null;
+  #tokens: TokenSetType | null = null;
+  #refreshInFlight: Promise<TokenSetType | null> | null = null;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, authBaseUrl: string) {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
+    this.#authBaseUrl = authBaseUrl.replace(/\/$/, "");
   }
 
   get snapshot() {
@@ -51,7 +55,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   }
 
   get accessToken() {
-    return this.#token;
+    return this.#tokens?.accessToken ?? null;
   }
 
   onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
@@ -60,24 +64,33 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   }
 
   async initialize() {
+    try {
+      const tokens = await this.#refreshTokens(true);
+      if (tokens) return this.refresh();
+    } catch {}
     return this.#snapshot;
   }
 
-  async adoptSession(token: string | null) {
-    this.#token = token;
-    if (!token) return this.#publish(unauthenticated(true));
+  async adoptSession(tokens: TokenSetType | null) {
+    this.#tokens = tokens;
+    if (!tokens) return this.#publish(unauthenticated(true));
+    return this.refresh();
+  }
+
+  async renewSession() {
+    await this.#refreshTokens(true);
     return this.refresh();
   }
 
   async refresh() {
-    if (!this.#token) {
+    if (!this.#tokens) {
       return this.#publish(
         withWorkspaceOnline(this.#snapshot, this.#snapshot.status === "authenticated"),
       );
     }
     try {
       const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
-        await this.apiRequest("/api/auth/session"),
+        await this.#request(this.#baseUrl, "/api/auth/session"),
       );
       if (snapshot.status !== "authenticated")
         return this.#publish(
@@ -100,13 +113,29 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   }
 
   async signOut() {
-    this.#token = null;
+    await this.#refreshInFlight?.catch(() => null);
+    this.#tokens = null;
+    await fetch(`${this.#authBaseUrl}/v1/session/logout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    }).catch(() => undefined);
     this.#publish(unauthenticated(navigatorOnline()));
   }
 
-  async apiRequest(pathname: string, init?: JsonRequestInit) {
+  apiRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(this.#baseUrl, pathname, init);
+  }
+
+  authRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(this.#authBaseUrl, pathname, init);
+  }
+
+  async #request(baseUrl: string, pathname: string, init?: JsonRequestInit) {
+    await this.#refreshTokens();
     const headers = new Headers(init?.headers);
-    if (this.#token) headers.set("authorization", `Bearer ${this.#token}`);
+    if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
     const requestBody = init?.body;
     const body =
       requestBody === undefined || requestBody === null || requestBody instanceof FormData
@@ -117,7 +146,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
     }
-    const response = await fetch(`${this.#baseUrl}${pathname}`, {
+    const response = await fetch(`${baseUrl}${pathname}`, {
       ...init,
       body,
       credentials: "omit",
@@ -138,6 +167,32 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       );
     }
     return payload;
+  }
+
+  #refreshTokens(force = false): Promise<TokenSetType | null> {
+    if (!force && (!this.#tokens || this.#tokens.accessExpiresAt > Date.now() + 30_000)) {
+      return Promise.resolve(this.#tokens);
+    }
+    if (this.#refreshInFlight) return this.#refreshInFlight;
+    this.#refreshInFlight = fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) this.#tokens = null;
+          return null;
+        }
+        const tokens = Schema.decodeUnknownSync(TokenSet)(await response.json());
+        this.#tokens = tokens;
+        return tokens;
+      })
+      .finally(() => {
+        this.#refreshInFlight = null;
+      });
+    return this.#refreshInFlight;
   }
 
   #publish(snapshot: WorkspaceSnapshot) {

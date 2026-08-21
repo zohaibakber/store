@@ -1,86 +1,165 @@
-import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
+import { createContext, use, type ReactNode } from "react";
+import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { Icon, type IconName } from "@/components/ui/icon";
+import { PressableScale } from "@/components/ui/pressable-scale";
+import { Text } from "@/components/ui/text";
+import { useColors, type Palette } from "@/theme/colors";
+import { radius, size as sizes, type Hex } from "@/theme/tokens";
 
-type ButtonProps = {
-  children: string;
-  isDisabled?: boolean;
-  onPress?: () => void;
-  size?: "sm" | "md";
-  style?: StyleProp<ViewStyle>;
-  testID?: string;
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger-soft";
+export type ButtonVariant = "default" | "outline" | "ghost" | "secondary" | "destructive" | "link";
+export type ButtonSize = "default" | "sm" | "icon";
+
+type ButtonSkin = {
+  readonly backgroundColor: Hex | "transparent";
+  readonly borderColor: Hex | "transparent";
+  readonly foreground: Hex;
 };
 
+const skin = (colors: Palette, variant: ButtonVariant): ButtonSkin => {
+  switch (variant) {
+    case "default":
+      return {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+        foreground: colors.primaryForeground,
+      };
+    case "destructive":
+      return {
+        backgroundColor: colors.destructive,
+        borderColor: colors.destructive,
+        // Not `background`: that is near-black in dark mode, and dark text on a
+        // red fill reads as a warning chip. Web uses `text-white` in both.
+        foreground: colors.onStatus,
+      };
+    case "outline":
+      return {
+        backgroundColor: colors.card,
+        borderColor: colors.input,
+        foreground: colors.foreground,
+      };
+    case "secondary":
+      return {
+        backgroundColor: colors.secondary,
+        borderColor: "transparent",
+        foreground: colors.secondaryForeground,
+      };
+    case "ghost":
+    case "link":
+      return {
+        backgroundColor: "transparent",
+        borderColor: "transparent",
+        foreground: colors.foreground,
+      };
+    default: {
+      const exhaustive: never = variant;
+      return exhaustive;
+    }
+  }
+};
+
+type ButtonLabel = {
+  /** The variant's text colour, so the label never re-derives it. */
+  readonly foreground: Hex;
+  readonly underline: boolean;
+};
+
+const ButtonContext = createContext<ButtonLabel | null>(null);
+
+/**
+ * A tappable box, not a text node, so the label is an explicit `ButtonText`
+ * child rather than a string prop. Variants follow the coss Button recipe in
+ * `design-system.md` §5.
+ */
 export function Button({
+  accessibilityLabel,
   children,
   isDisabled,
+  loading = false,
   onPress,
-  size = "md",
+  size = "default",
   style,
   testID,
-  variant = "primary",
-}: ButtonProps) {
-  const [accent, onAccent, foreground, surface, separator, danger, dangerSoft] = useThemeColor([
-    "accent",
-    "accent-foreground",
-    "foreground",
-    "surface",
-    "separator",
-    "danger",
-    "danger-soft",
-  ]);
-  const backgroundColor =
-    variant === "primary"
-      ? accent
-      : variant === "danger-soft"
-        ? dangerSoft
-        : variant === "ghost"
-          ? "transparent"
-          : surface;
-  const borderColor =
-    variant === "outline" || variant === "secondary" ? separator : backgroundColor;
-  const color = variant === "primary" ? onAccent : variant === "danger-soft" ? danger : foreground;
+  variant = "default",
+}: {
+  readonly accessibilityLabel?: string;
+  readonly children: ReactNode;
+  readonly isDisabled?: boolean;
+  readonly loading?: boolean;
+  readonly onPress?: () => void;
+  readonly size?: ButtonSize;
+  readonly style?: StyleProp<ViewStyle>;
+  readonly testID?: string;
+  readonly variant?: ButtonVariant;
+}) {
+  const colors = useColors();
+  const { backgroundColor, borderColor, foreground } = skin(colors, variant);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={isDisabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        size === "sm" ? styles.small : styles.base,
-        {
-          backgroundColor,
-          borderColor,
-          opacity: isDisabled ? 0.48 : pressed ? 0.72 : 1,
-        },
-        style,
-      ]}
-      testID={testID}
-    >
-      <Text style={[styles.label, { color }]}>{children}</Text>
-    </Pressable>
+    <ButtonContext value={{ foreground, underline: variant === "link" }}>
+      <PressableScale
+        accessibilityLabel={accessibilityLabel}
+        isDisabled={isDisabled || loading}
+        layoutStyle={style}
+        onPress={onPress}
+        style={[
+          styles.base,
+          size === "sm" && styles.sm,
+          size === "icon" && styles.iconOnly,
+          variant === "link" && styles.link,
+          { backgroundColor, borderColor },
+        ]}
+        testID={testID}
+      >
+        {/* The label keeps its slot while loading so the button never resizes. */}
+        <View style={[styles.row, loading && styles.hidden]}>{children}</View>
+        {loading ? (
+          <ActivityIndicator color={foreground} size="small" style={styles.spinner} />
+        ) : null}
+      </PressableScale>
+    </ButtonContext>
   );
+}
+
+/** The variant's own text colour, or the plain one outside a `Button`. */
+const useLabel = (): ButtonLabel => {
+  const colors = useColors();
+  return use(ButtonContext) ?? { foreground: colors.foreground, underline: false };
+};
+
+export function ButtonText({ children }: { readonly children: string }) {
+  const { foreground, underline } = useLabel();
+  return (
+    <Text
+      numberOfLines={1}
+      style={[{ color: foreground }, underline && styles.underline]}
+      variant="bodyMedium"
+    >
+      {children}
+    </Text>
+  );
+}
+
+export function ButtonIcon({ name }: { readonly name: IconName }) {
+  const { foreground } = useLabel();
+  return <Icon color={foreground} name={name} size={18} />;
 }
 
 const styles = StyleSheet.create({
   base: {
     alignItems: "center",
     borderCurve: "continuous",
-    borderRadius: 10,
+    borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    height: 48,
+    height: sizes.control,
     justifyContent: "center",
     paddingHorizontal: 16,
   },
-  label: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  small: {
-    alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 40,
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
+  hidden: { opacity: 0 },
+  iconOnly: { height: sizes.icon, paddingHorizontal: 0, width: sizes.icon },
+  link: { height: sizes.touch, paddingHorizontal: 4 },
+  row: { alignItems: "center", flexDirection: "row", gap: 8 },
+  sm: { borderRadius: radius.md, height: sizes.buttonSm, paddingHorizontal: 12 },
+  spinner: { position: "absolute" },
+  underline: { textDecorationLine: "underline" },
 });

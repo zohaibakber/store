@@ -1,13 +1,14 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { RefreshInput, SignOutInput, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { app, net, safeStorage } from "electron";
 
-const PersistedAuth = Schema.Struct({ snapshot: WorkspaceSnapshot });
+const PersistedAuth = Schema.Struct({ snapshot: WorkspaceSnapshot, tokens: TokenSet });
 type PersistedAuth = typeof PersistedAuth.Type;
 
 const RequestFailure = Schema.Struct({
@@ -38,13 +39,16 @@ const unauthenticated = (isOnline: boolean, workspaceError: string | null = null
 
 export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #baseUrl: string;
+  readonly #authBaseUrl: string;
   readonly #electronOrigin: string;
   readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
-  #token: string | null = null;
+  #tokens: TokenSetType | null = null;
+  #refreshInFlight: Promise<void> | null = null;
 
-  constructor(baseUrl: string, electronOrigin: string) {
+  constructor(baseUrl: string, authBaseUrl: string, electronOrigin: string) {
     this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
+    this.#authBaseUrl = authBaseUrl.replace(/\/$/, "");
     this.#electronOrigin = electronOrigin;
   }
 
@@ -53,7 +57,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   get accessToken() {
-    return this.#token;
+    return this.#tokens?.accessToken ?? null;
   }
 
   onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
@@ -64,22 +68,30 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   async initialize() {
     const persisted = await this.#readPersisted();
     if (persisted) {
+      this.#tokens = persisted.tokens;
       this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
+      await this.#refreshTokens().catch(() => undefined);
     }
     return this.#snapshot;
   }
 
-  async adoptSession(token: string | null) {
-    this.#token = token;
-    if (!token) {
+  async adoptSession(tokens: TokenSetType | null) {
+    this.#tokens = tokens;
+    if (!tokens) {
       await this.#clear();
       return this.#publish(unauthenticated(true));
     }
     return this.refresh();
   }
 
+  async renewSession() {
+    const tokens = this.#tokens;
+    if (tokens?.refreshToken) await this.#rotateTokens(tokens).catch(() => undefined);
+    return this.refresh();
+  }
+
   async refresh() {
-    if (!this.#token) {
+    if (!this.#tokens) {
       return this.#publish(
         withWorkspaceOnline(this.#snapshot, this.#snapshot.status === "authenticated"),
       );
@@ -103,18 +115,35 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   async signOut() {
-    this.#token = null;
+    await this.#refreshInFlight?.catch(() => undefined);
+    const refreshToken = this.#tokens?.refreshToken;
+    this.#tokens = null;
+    if (refreshToken) {
+      await net
+        .fetch(`${this.#authBaseUrl}/v1/session/logout`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(SignOutInput.make({ refreshToken })),
+        })
+        .catch(() => undefined);
+    }
+    this.#tokens = null;
     await this.#clear();
     this.#publish(unauthenticated(true));
   }
 
-  async apiRequest(pathname: string, init?: JsonRequestInit) {
+  apiRequest(pathname: string, init?: JsonRequestInit) {
     return this.#request(pathname, init);
   }
 
-  async #request(pathname: string, init?: JsonRequestInit) {
+  authRequest(pathname: string, init?: JsonRequestInit) {
+    return this.#request(pathname, init, this.#authBaseUrl);
+  }
+
+  async #request(pathname: string, init?: JsonRequestInit, baseUrl = this.#baseUrl) {
+    await this.#refreshTokens();
     const headers = new Headers(init?.headers);
-    if (this.#token) headers.set("authorization", `Bearer ${this.#token}`);
+    if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
     headers.set("electron-origin", this.#electronOrigin);
     const requestBody = init?.body;
     const body =
@@ -126,7 +155,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
       headers.set("content-type", "application/json");
     }
-    const response = await net.fetch(`${this.#baseUrl}${pathname}`, {
+    const response = await net.fetch(`${baseUrl}${pathname}`, {
       ...init,
       body,
       credentials: "omit",
@@ -157,12 +186,12 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   async #persistAndPublish(snapshot: WorkspaceSnapshot) {
     this.#publish(snapshot);
-    await this.#writePersisted({ snapshot });
+    if (this.#tokens) await this.#writePersisted({ snapshot, tokens: this.#tokens });
     return snapshot;
   }
 
   async #clear() {
-    this.#token = null;
+    this.#tokens = null;
     this.#snapshot = unauthenticated(true);
     await rm(this.#storagePath(), { force: true });
   }
@@ -195,5 +224,30 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     await writeFile(this.#storagePath(), safeStorage.encryptString(JSON.stringify(value)), {
       mode: 0o600,
     });
+  }
+
+  async #refreshTokens() {
+    const tokens = this.#tokens;
+    if (!tokens?.refreshToken || tokens.accessExpiresAt > Date.now() + 30_000) return;
+    if (this.#refreshInFlight) return this.#refreshInFlight;
+    this.#refreshInFlight = this.#rotateTokens(tokens).finally(() => {
+      this.#refreshInFlight = null;
+    });
+    return this.#refreshInFlight;
+  }
+
+  async #rotateTokens(tokens: TokenSetType) {
+    const response = await net.fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(RefreshInput.make({ refreshToken: tokens.refreshToken })),
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) await this.#clear();
+      throw new RequestError("The session could not be refreshed.", response.status);
+    }
+    const next = Schema.decodeUnknownSync(TokenSet)(await response.json());
+    this.#tokens = next;
+    await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
   }
 }

@@ -26,24 +26,24 @@ describe("mobile sync queue", () => {
     );
     const result = await reattributePendingOperations(
       [operation("legacy-user")],
-      "clerk-user",
+      "current-user",
       hash,
     );
 
     expect(result.changed).toBe(true);
     expect(result.operations[0]).toMatchObject({
-      actorUserId: "clerk-user",
-      payloadHash: "hash-for-clerk-user",
+      actorUserId: "current-user",
+      payloadHash: "hash-for-current-user",
     });
     expect(hash).toHaveBeenCalledWith(
-      expect.objectContaining({ actorUserId: "clerk-user", operationId: "operation-1" }),
+      expect.objectContaining({ actorUserId: "current-user", operationId: "operation-1" }),
     );
   });
 
   it("leaves current-user operations and hashes untouched", async () => {
-    const current = operation("clerk-user");
+    const current = operation("current-user");
     const hash = vi.fn();
-    const result = await reattributePendingOperations([current], "clerk-user", hash);
+    const result = await reattributePendingOperations([current], "current-user", hash);
 
     expect(result).toEqual({ operations: [current], changed: false });
     expect(hash).not.toHaveBeenCalled();

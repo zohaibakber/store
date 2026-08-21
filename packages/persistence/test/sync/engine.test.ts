@@ -847,14 +847,14 @@ test("opening a store after an auth migration reattributes and rehashes pending 
     userId: "legacy-user",
     deviceId: "device-1",
   };
-  const clerkWorkspace = { ...legacyWorkspace, userId: "clerk-user" };
+  const authenticatedWorkspace = { ...legacyWorkspace, userId: "authenticated-user" };
 
   await withTestStore(
     async ({ dataDir, runtime, makeRuntime }) => {
       await runtime.runPromise(
         store((store) =>
           store.createProduct({
-            name: "Created before Clerk migration",
+            name: "Created before auth migration",
             aisle: null,
             composition: null,
             strength: null,
@@ -867,7 +867,7 @@ test("opening a store after an auth migration reattributes and rehashes pending 
 
       const requests: Array<SyncRequest> = [];
       const migrated = makeRuntime({
-        workspace: clerkWorkspace,
+        workspace: authenticatedWorkspace,
         syncTransport: {
           exchange: (request) => {
             requests.push(request);
@@ -879,9 +879,9 @@ test("opening a store after an auth migration reattributes and rehashes pending 
       const migratedOperations = requests.flatMap((request) => request.operations);
 
       expect(migratedOperations.length).toBeGreaterThan(0);
-      expect(migratedOperations.every((operation) => operation.actorUserId === "clerk-user")).toBe(
-        true,
-      );
+      expect(
+        migratedOperations.every((operation) => operation.actorUserId === "authenticated-user"),
+      ).toBe(true);
       expect(
         migratedOperations.every(
           (operation) => operation.payloadHash === operationPayloadHash(operation),

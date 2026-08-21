@@ -1,26 +1,39 @@
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import { useDeferredValue, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { InventoryFabAnchor } from "@/components/inventory-fab-anchor";
 import { ProductRow } from "@/components/product-row";
 import { ProductSearchField } from "@/components/product-search-field";
-import { IconSymbol } from "@/components/symbol";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { ChoiceChip } from "@/components/ui/choice-chip";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
+import { Text } from "@/components/ui/text";
+import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
-  productStatusView,
 } from "@/features/products/products-provider";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { scrollInset } from "@/hooks/use-overlay-insets";
 import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
-import type { MobileProduct } from "@/lib/products";
+import { formatPrice, type MobileProduct } from "@/lib/products";
+import { useColors } from "@/theme/colors";
 
 const keyExtractor = (item: MobileProduct) => item.id;
+
+/**
+ * Hoisted to module scope: the row takes primitives, so nothing in this function
+ * closes over the screen's state and the list can recycle rows freely.
+ */
 const renderProduct: ListRenderItem<MobileProduct> = ({ item }) => (
   <ProductRow
     aisle={item.aisle}
@@ -29,28 +42,34 @@ const renderProduct: ListRenderItem<MobileProduct> = ({ item }) => (
     name={item.name}
     stock={item.stock}
     stockLabel={item.stockLabel}
-    unitPrice={item.unitPrice}
+    unitPriceLabel={formatPrice(item.unitPrice)}
     visible={item.visible}
   />
 );
 
+/**
+ * The catalog. A virtualized list on both platforms: a long product list is
+ * exactly where a native list container earns nothing and recycling earns
+ * everything. See `design-system.md` §5.
+ */
 export function ProductsScreen() {
   const { products } = useProductData();
   const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
+  const colors = useColors();
+  const scrollBottom = scrollInset("nav-and-actions");
   const [query, setQuery] = useState("");
-  const [searchResetKey, setSearchResetKey] = useState(0);
   const [filter, setFilter] = useState<StockFilter>("all");
   const deferredQuery = useDeferredValue(query);
-  const [foreground, muted, background] = useThemeColor(["foreground", "muted", "background"]);
   const filtered = useMemo(
     () => filterCatalog(products, deferredQuery, filter),
     [deferredQuery, filter, products],
   );
+  const narrowed = Boolean(query) || filter !== "all";
 
   const header = (
     <View style={styles.header}>
-      <ProductSearchField onChangeText={setQuery} query={query} resetKey={searchResetKey} />
+      <ProductSearchField onChangeText={setQuery} query={query} />
 
       <ScrollView
         contentContainerStyle={styles.filters}
@@ -59,85 +78,92 @@ export function ProductsScreen() {
         showsHorizontalScrollIndicator={false}
       >
         {STOCK_FILTERS.map((option) => (
-          <ChoiceChip
+          <Chip
             key={option.value}
+            isSelected={filter === option.value}
             onPress={() => setFilter(option.value)}
-            selected={filter === option.value}
           >
             {option.label}
-          </ChoiceChip>
+          </Chip>
         ))}
       </ScrollView>
 
       {error ? (
-        <Alert status="danger">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>Inventory may be out of date</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-          <Button size="sm" variant="ghost" onPress={() => void refresh()}>
-            Retry
-          </Button>
+        <Alert variant="destructive">
+          <AlertTitle>Inventory may be out of date</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+          <AlertAction>
+            <Button onPress={() => void refresh()} size="sm" variant="outline">
+              <ButtonIcon name="refresh" />
+              <ButtonText>Retry</ButtonText>
+            </Button>
+          </AlertAction>
         </Alert>
       ) : null}
 
-      <View style={styles.summary}>
-        <Text selectable style={[styles.summaryText, { color: muted }]}>
+      <View style={styles.count}>
+        <Text tone="muted" variant="caption">
           {filtered.length} {filtered.length === 1 ? "product" : "products"}
         </Text>
-        {refreshing ? <Spinner size="sm" /> : null}
+        {refreshing ? <Spinner tone="muted" /> : null}
       </View>
     </View>
   );
 
   const empty = loading ? (
     <View style={styles.loading}>
-      <Spinner />
-      <Text style={[styles.body, { color: muted }]}>Syncing products…</Text>
+      <Spinner tone="muted" />
+      <Text tone="muted" variant="caption">
+        Syncing products…
+      </Text>
     </View>
   ) : (
-    <View style={styles.empty}>
-      <IconSymbol name={query ? "magnifyingglass" : "shippingbox"} size={30} tintColor={muted} />
-      <Text style={[styles.bodyMedium, { color: foreground }]}>
-        {query || filter !== "all" ? "No matching products" : "No products yet"}
-      </Text>
-      <Text style={[styles.emptyText, { color: muted }]}>
-        {query || filter !== "all"
-          ? "Try a broader search or another stock filter."
-          : "Use the + button to create a product or the camera to scan a label."}
-      </Text>
-      {query || filter !== "all" ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          onPress={() => {
-            setQuery("");
-            setFilter("all");
-            setSearchResetKey((value) => value + 1);
-          }}
-        >
-          Clear filters
-        </Button>
+    <Empty>
+      <EmptyMedia name={narrowed ? "search" : "box"} />
+      <EmptyTitle>{narrowed ? "No matching products" : "No products yet"}</EmptyTitle>
+      <EmptyDescription>
+        {narrowed
+          ? "Try a broader search, or another stock filter."
+          : "Create a product, or scan a label to fill one in."}
+      </EmptyDescription>
+      {narrowed ? (
+        <EmptyContent>
+          <Button
+            onPress={() => {
+              setQuery("");
+              setFilter("all");
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <ButtonText>Clear filters</ButtonText>
+          </Button>
+        </EmptyContent>
       ) : null}
-    </View>
+    </Empty>
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <FlashList
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ paddingBottom: scrollBottom }}
         contentInsetAdjustmentBehavior="automatic"
         data={filtered}
-        keyExtractor={keyExtractor}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
+        keyExtractor={keyExtractor}
         ListEmptyComponent={empty}
         ListHeaderComponent={header}
-        onRefresh={refresh}
-        refreshing={refreshing}
+        refreshControl={
+          <RefreshControl
+            colors={[colors.foreground]}
+            onRefresh={() => void refresh()}
+            progressBackgroundColor={colors.card}
+            refreshing={refreshing}
+            tintColor={colors.mutedForeground}
+          />
+        }
         renderItem={renderProduct}
-        style={styles.list}
       />
       <InventoryFabAnchor />
     </View>
@@ -147,37 +173,9 @@ export function ProductsScreen() {
 export default ProductsScreen;
 
 const styles = StyleSheet.create({
-  body: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  bodyMedium: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  empty: {
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 32,
-    paddingVertical: 48,
-  },
-  emptyText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  filters: { gap: 8 },
-  header: { gap: 16, paddingBottom: 8, paddingHorizontal: 16, paddingTop: 12 },
-  list: { flex: 1 },
-  listContent: { paddingBottom: 160 },
+  count: { alignItems: "center", flexDirection: "row", gap: 8, justifyContent: "space-between" },
+  filters: { gap: 8, paddingVertical: 2 },
+  header: { gap: 12, paddingBottom: 12, paddingHorizontal: 16, paddingTop: 8 },
   loading: { alignItems: "center", gap: 12, paddingVertical: 64 },
   root: { flex: 1 },
-  summary: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-  },
-  summaryText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    letterSpacing: 0.5,
-    lineHeight: 16,
-    textTransform: "uppercase",
-  },
 });

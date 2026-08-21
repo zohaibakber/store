@@ -1,15 +1,22 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, ScrollView, StyleSheet, View } from "react-native";
 
-import { Alert as HeroAlert } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { TextField } from "@/components/ui/text-field";
+import { Text } from "@/components/ui/text";
 import { InlineTextCamera } from "@/features/product-scanner/inline-text-camera";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
 import { findProductMatch } from "@/features/product-scanner/product-match";
@@ -22,10 +29,11 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
-import { useThemeColor } from "@/hooks/use-theme-color";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId } from "@/lib/products";
+import { useColors } from "@/theme/colors";
+import { radius } from "@/theme/tokens";
 
 const normalizeKey = (value: string | null) => value?.trim().toLocaleLowerCase() ?? "";
 
@@ -33,6 +41,7 @@ export default function ProductScanScreen() {
   const { products, categories } = useProductData();
   const { loading } = productStatusView(useProductStatus());
   const { saveScannedProduct, saveBatchDetails, updateBatchQuantity } = useProductActions();
+  const colors = useColors();
   const scroll = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ProductScanMode>("product");
   const [cameraResetKey, setCameraResetKey] = useState(0);
@@ -60,12 +69,6 @@ export default function ProductScanScreen() {
   const [expiresAt, setExpiresAt] = useState("");
   const [newProductId, setNewProductId] = useState(createInventoryEntityId);
   const [newBatchId, setNewBatchId] = useState(createInventoryEntityId);
-  const [background, foreground, muted, subtle] = useThemeColor([
-    "background",
-    "foreground",
-    "muted",
-    "surface-secondary",
-  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -96,14 +99,6 @@ export default function ProductScanScreen() {
       : analyzing
         ? "analyzing"
         : "ready";
-  const confidence = productInference
-    ? `${Math.round(productInference.confidence * 100)}% confidence`
-    : null;
-
-  const sourceLabel = useMemo(() => {
-    if (!productInference) return null;
-    return productInference.source === "cloud" ? "AI structured" : "On-device result";
-  }, [productInference]);
 
   const resetCamera = (nextMode: ProductScanMode) => {
     setMode(nextMode);
@@ -232,7 +227,7 @@ export default function ProductScanScreen() {
         setBatchNumber(nextBatch.batchNumber ?? "");
         setExpiresAt(expiryInputValue(nextBatch.expiresAt));
       }
-      setNotice(`${product.name} is ready. Update quantity or scan batch details next.`);
+      setNotice(`${product.name} is saved. Set the quantity, or scan its batch panel next.`);
       hapticSuccess();
     } catch (cause) {
       setError(authErrorMessage(cause));
@@ -329,16 +324,16 @@ export default function ProductScanScreen() {
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        style={{ backgroundColor: background }}
+        style={{ backgroundColor: colors.background }}
       >
         <View style={styles.intro}>
-          <Text style={[styles.sectionTitle, { color: foreground }]}>
-            {mode === "product" ? "Scan the front label" : "Scan batch & expiry"}
+          <Text variant="subheading">
+            {mode === "product" ? "Scan the front label" : "Scan the batch panel"}
           </Text>
-          <Text style={[styles.caption, { color: muted }]}>
+          <Text tone="muted" variant="caption">
             {mode === "product"
-              ? "Text is read privately on this phone, then structured into editable product fields."
-              : "Turn the pack to the printed lot and expiry panel, then read it again."}
+              ? "Text is read on this phone, then filled into fields you can edit."
+              : "Turn the pack to the printed lot and expiry, then read it again."}
           </Text>
         </View>
 
@@ -352,46 +347,37 @@ export default function ProductScanScreen() {
         />
 
         {error ? (
-          <HeroAlert status="danger">
-            <HeroAlert.Indicator />
-            <HeroAlert.Content>
-              <HeroAlert.Title>Needs attention</HeroAlert.Title>
-              <HeroAlert.Description>{error}</HeroAlert.Description>
-            </HeroAlert.Content>
-          </HeroAlert>
+          <Alert variant="destructive">
+            <AlertTitle>Needs attention</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : null}
 
         {notice ? (
-          <HeroAlert status="success">
-            <HeroAlert.Indicator />
-            <HeroAlert.Content>
-              <HeroAlert.Title>Saved</HeroAlert.Title>
-              <HeroAlert.Description>{notice}</HeroAlert.Description>
-            </HeroAlert.Content>
-          </HeroAlert>
+          <Alert variant="success">
+            <AlertTitle>Saved</AlertTitle>
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
         ) : null}
 
         {productInference ? (
-          <Card variant="default">
-            <Card.Header style={styles.reviewHeader}>
+          <Card>
+            <CardHeader style={styles.reviewHeader}>
               <View style={styles.headerCopy}>
-                <Card.Title>Review product</Card.Title>
-                <Card.Description>Everything stays editable before it is saved.</Card.Description>
+                <CardTitle>Review product</CardTitle>
+                <CardDescription>Everything stays editable until you save.</CardDescription>
               </View>
-              <View style={styles.source}>
-                <Badge tone={productInference.source === "cloud" ? "default" : "warning"}>
-                  {sourceLabel}
-                </Badge>
-                <Text style={[styles.caption, { color: muted }]}>{confidence}</Text>
-              </View>
-            </Card.Header>
-            <Card.Body style={styles.cardBody}>
-              <View style={[styles.match, { backgroundColor: subtle }]}>
+              <Badge variant={productInference.source === "cloud" ? "secondary" : "warning"}>
+                {productInference.source === "cloud" ? "Structured" : "On device"}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <View style={[styles.match, { backgroundColor: colors.secondary }]}>
                 <View style={styles.matchCopy}>
-                  <Text style={[styles.captionMedium, { color: foreground }]}>
-                    {matchedProduct ? "Existing product matched" : "New product"}
+                  <Text variant="label">
+                    {matchedProduct ? "Matched an existing product" : "New product"}
                   </Text>
-                  <Text style={[styles.caption, { color: muted }]} numberOfLines={1}>
+                  <Text numberOfLines={1} tone="muted" variant="caption">
                     {matchedProduct
                       ? [matchedProduct.name, matchedProduct.details || matchedProduct.category]
                           .filter(Boolean)
@@ -401,26 +387,26 @@ export default function ProductScanScreen() {
                 </View>
                 {matchedProduct ? (
                   <Button
-                    size="sm"
-                    variant="ghost"
                     onPress={() => {
                       setMatchedProductId(null);
                       setSavedProductId(null);
                       setCategoryId(categories[0]?.id ?? "");
                       setNewProductId(createInventoryEntityId());
                     }}
+                    size="sm"
+                    variant="ghost"
                   >
-                    Create new
+                    <ButtonText>Create new</ButtonText>
                   </Button>
                 ) : null}
               </View>
 
-              <TextField isRequired>
-                <Label>Product name</Label>
+              <Field>
+                <FieldLabel>Product name</FieldLabel>
                 <Input onChangeText={setName} placeholder="Product name" value={name} />
-              </TextField>
-              <TextField>
-                <Label>Composition</Label>
+              </Field>
+              <Field>
+                <FieldLabel>Composition</FieldLabel>
                 <Input
                   multiline
                   numberOfLines={2}
@@ -428,184 +414,169 @@ export default function ProductScanScreen() {
                   placeholder="Active ingredient"
                   value={composition}
                 />
-              </TextField>
+              </Field>
+              <Field>
+                <FieldLabel>Strength</FieldLabel>
+                <Input onChangeText={setStrength} placeholder="e.g. 500mg" value={strength} />
+              </Field>
 
               {!matchedProduct && selectedCategory?.tracksPacks !== false ? (
-                <TextField isRequired>
-                  <Label>Units per sealed pack</Label>
+                <Field>
+                  <FieldLabel>Units per sealed pack</FieldLabel>
                   <Input
                     keyboardType="number-pad"
+                    mono
                     onChangeText={setUnitsPerPack}
-                    placeholder="e.g. 10"
+                    placeholder="10"
                     value={unitsPerPack}
                   />
-                </TextField>
+                </Field>
               ) : null}
-              <TextField>
-                <Label>Strength</Label>
-                <Input onChangeText={setStrength} placeholder="e.g. 500mg" value={strength} />
-              </TextField>
 
               {!matchedProduct ? (
-                <View style={styles.fieldGroup}>
-                  <Text style={[styles.captionMedium, { color: foreground }]}>Category</Text>
+                <Field>
+                  <FieldLabel>Category</FieldLabel>
                   {categories.length > 0 ? (
                     <View style={styles.chips}>
                       {categories.map((category) => (
-                        <ChoiceChip
+                        <Chip
                           key={category.id}
+                          isSelected={categoryId === category.id}
                           onPress={() => setCategoryId(category.id)}
-                          selected={categoryId === category.id}
                         >
                           {category.name}
-                        </ChoiceChip>
+                        </Chip>
                       ))}
                     </View>
                   ) : (
-                    <Text style={[styles.caption, { color: muted }]}>
-                      A General category will be created with this first product.
-                    </Text>
+                    <FieldDescription>
+                      A General category is created with this first product.
+                    </FieldDescription>
                   )}
-                </View>
+                </Field>
               ) : null}
-            </Card.Body>
-            <Card.Footer>
+            </CardContent>
+            <CardFooter>
               <Button
                 isDisabled={cameraBusy || savingProduct}
+                loading={savingProduct}
                 onPress={() => void confirmProduct()}
               >
-                {savingProduct
-                  ? "Saving product…"
-                  : matchedProduct
-                    ? "Confirm product"
-                    : "Create product"}
+                <ButtonText>{matchedProduct ? "Confirm product" : "Create product"}</ButtonText>
               </Button>
-            </Card.Footer>
+            </CardFooter>
           </Card>
-        ) : (
-          <Card variant="secondary">
-            <Card.Body style={styles.guidance}>
-              <Text style={[styles.bodyMedium, { color: foreground }]}>
-                One clear photo is enough
-              </Text>
-              <Text style={[styles.caption, { color: muted }]}>
-                Avoid glare, keep the printed name sharp, and include the ingredient or composition
-                line when possible.
-              </Text>
-            </Card.Body>
-          </Card>
-        )}
+        ) : null}
 
         {activeProduct && savedProductId ? (
-          <Card variant="secondary">
-            <Card.Header>
-              <Card.Title>Inventory details</Card.Title>
-              <Card.Description>
-                Batch details and quantity are deliberately separate actions.
-              </Card.Description>
-            </Card.Header>
-            <Card.Body style={styles.cardBody}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Inventory</CardTitle>
+              <CardDescription>Batch details and quantity are separate steps.</CardDescription>
+            </CardHeader>
+            <CardContent>
               {activeProduct.batches.length > 0 ? (
-                <View style={styles.fieldGroup}>
-                  <Text style={[styles.captionMedium, { color: foreground }]}>Target batch</Text>
+                <Field>
+                  <FieldLabel>Target batch</FieldLabel>
                   <View style={styles.chips}>
                     {activeProduct.batches.map((batch, index) => (
-                      <ChoiceChip
+                      <Chip
                         key={batch.id}
+                        isSelected={selectedBatchId === batch.id}
                         onPress={() => selectBatch(batch.id)}
-                        selected={selectedBatchId === batch.id}
                       >
                         {batch.batchNumber || `Batch ${index + 1}`}
-                      </ChoiceChip>
+                      </Chip>
                     ))}
-                    <ChoiceChip
-                      onPress={() => selectBatch(null)}
-                      selected={selectedBatchId === null}
-                    >
+                    <Chip isSelected={selectedBatchId === null} onPress={() => selectBatch(null)}>
                       New batch
-                    </ChoiceChip>
+                    </Chip>
                   </View>
-                </View>
+                </Field>
               ) : null}
-
-              <View style={styles.actions}>
-                <Button
-                  isDisabled={cameraBusy}
-                  variant="secondary"
-                  onPress={() => resetCamera("batch")}
-                >
-                  Scan batch & expiry
-                </Button>
-                <Button
-                  variant="outline"
-                  isDisabled={cameraBusy}
-                  onPress={() => {
-                    setError(null);
-                    setNotice(null);
-                    setQuantityOpen(true);
-                  }}
-                >
-                  Update quantity
-                </Button>
-              </View>
-            </Card.Body>
+            </CardContent>
+            <CardFooter style={styles.rowActions}>
+              <Button
+                isDisabled={cameraBusy}
+                onPress={() => {
+                  setError(null);
+                  setNotice(null);
+                  setQuantityOpen(true);
+                }}
+                style={styles.flex}
+              >
+                <ButtonText>Set quantity</ButtonText>
+              </Button>
+              <Button
+                isDisabled={cameraBusy}
+                onPress={() => resetCamera("batch")}
+                style={styles.flex}
+                variant="outline"
+              >
+                <ButtonIcon name="camera" />
+                <ButtonText>Scan batch</ButtonText>
+              </Button>
+            </CardFooter>
           </Card>
         ) : null}
 
         {mode === "batch" && activeProduct && batchInference ? (
-          <Card variant="default">
-            <Card.Header style={styles.reviewHeader}>
+          <Card>
+            <CardHeader style={styles.reviewHeader}>
               <View style={styles.headerCopy}>
-                <Card.Title>Review batch details</Card.Title>
-                <Card.Description>{activeProduct.name}</Card.Description>
+                <CardTitle>Review batch</CardTitle>
+                <CardDescription>{activeProduct.name}</CardDescription>
               </View>
-              <Badge tone={batchInference.source === "cloud" ? "default" : "warning"}>
-                {batchInference.source === "cloud" ? "AI structured" : "On-device result"}
+              <Badge variant={batchInference.source === "cloud" ? "secondary" : "warning"}>
+                {batchInference.source === "cloud" ? "Structured" : "On device"}
               </Badge>
-            </Card.Header>
-            <Card.Body style={styles.cardBody}>
-              <TextField>
-                <Label>Batch / lot number</Label>
+            </CardHeader>
+            <CardContent>
+              <Field>
+                <FieldLabel>Batch or lot number</FieldLabel>
                 <Input
                   autoCapitalize="characters"
+                  mono
                   onChangeText={setBatchNumber}
-                  placeholder="e.g. BN-2048"
+                  placeholder="BN-2048"
                   value={batchNumber}
                 />
-              </TextField>
-              <TextField>
-                <Label>Expiry</Label>
+              </Field>
+              <Field>
+                <FieldLabel>Expiry</FieldLabel>
                 <Input
                   autoCapitalize="none"
+                  mono
                   onChangeText={setExpiresAt}
-                  placeholder="YYYY-MM-DD or YYYY-MM"
+                  placeholder="YYYY-MM-DD"
                   value={expiresAt}
                 />
-              </TextField>
-            </Card.Body>
-            <Card.Footer style={styles.footerActions}>
+              </Field>
+            </CardContent>
+            <CardFooter style={styles.rowActions}>
               <Button
-                style={styles.flex}
                 isDisabled={cameraBusy || savingBatch}
+                loading={savingBatch}
                 onPress={() => void confirmBatchDetails()}
+                style={styles.flex}
               >
-                {savingBatch ? "Saving…" : "Save details"}
+                <ButtonText>Save batch</ButtonText>
               </Button>
               <Button
-                style={styles.flex}
                 isDisabled={cameraBusy || savingBatch}
-                variant="ghost"
                 onPress={() => resetCamera("batch")}
+                style={styles.flex}
+                variant="ghost"
               >
-                Scan again
+                <ButtonText>Scan again</ButtonText>
               </Button>
-            </Card.Footer>
+            </CardFooter>
           </Card>
         ) : null}
 
         {activeProduct && savedProductId ? (
-          <Button variant="ghost" onPress={() => router.back()}>
-            Done
+          <Button onPress={() => router.back()} variant="ghost">
+            <ButtonText>Done</ButtonText>
           </Button>
         ) : null}
       </ScrollView>
@@ -640,23 +611,15 @@ export default function ProductScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  actions: { gap: 12 },
-  bodyMedium: { fontFamily: "Inter_500Medium", fontSize: 14, lineHeight: 20 },
-  caption: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 20 },
-  captionMedium: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 18 },
-  cardBody: { gap: 16 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  content: { gap: 20, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 12 },
-  fieldGroup: { gap: 8 },
+  content: { gap: 16, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 12 },
   flex: { flex: 1 },
-  footerActions: { gap: 12 },
-  guidance: { gap: 4 },
   headerCopy: { flex: 1, gap: 4, minWidth: 0 },
   intro: { gap: 4 },
   match: {
     alignItems: "center",
     borderCurve: "continuous",
-    borderRadius: 10,
+    borderRadius: radius.lg,
     flexDirection: "row",
     gap: 12,
     justifyContent: "space-between",
@@ -670,6 +633,5 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "space-between",
   },
-  sectionTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
-  source: { alignItems: "flex-end", gap: 6 },
+  rowActions: { flexDirection: "row" },
 });

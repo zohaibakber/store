@@ -3,19 +3,16 @@ import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 
 /**
- * Clerk-to-store organization bindings. Clerk owns identity, sessions, and
- * memberships; D1 only preserves stable Durable Object names for inventory.
+ * First-party identity, credentials, organizations, memberships, and refresh
+ * sessions.
  *
  * Wired the way Alchemy documents for D1 + Drizzle (`alchemy.run/cloudflare/data/d1-drizzle`):
  * `Drizzle.Schema` regenerates pending SQL from `schema.ts` on every deploy, and
  * `migrationsDir` applies it. Both resources move together on a schema change,
  * which is why they share a file.
  *
- * Paths are relative to the process working directory (the repo root, where
- * `alchemy.run.ts` lives). The Worker yields this effect on every request to
- * find its D1 binding; constructing those paths with the `URL` constructor
- * against the module URL throws `TypeError: Invalid URL string.` on workerd
- * and takes every `/api/auth/session` request down.
+ * Paths are relative to the process working directory, the repo root where
+ * `alchemy.run.ts` lives.
  */
 export const AuthDatabase = Effect.gen(function* () {
   const schema = yield* Drizzle.Schema("AuthSchema", {

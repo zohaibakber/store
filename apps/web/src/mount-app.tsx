@@ -12,7 +12,6 @@ export const mountApp = (input: {
   readonly store: Store;
   readonly initialAuth: InitialAuth;
   readonly history: RouterHistory;
-  readonly clerk: (app: React.ReactElement) => React.ReactElement;
 }) => {
   const router = getRouter(input.history, input.store, input.initialAuth);
   const app = (
@@ -22,7 +21,7 @@ export const mountApp = (input: {
   );
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <ThemeProvider>{input.clerk(app)}</ThemeProvider>
+      <ThemeProvider>{app}</ThemeProvider>
     </React.StrictMode>,
   );
 };

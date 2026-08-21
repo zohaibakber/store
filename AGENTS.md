@@ -77,8 +77,9 @@ Turborepo fans them out per package).
   stores state remotely and binds real dev-stage D1 + Durable Objects. There is
   no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and also needs a `.env.dev` containing
-  `CLERK_SECRET_KEY` (copy `.env.example`; use a different Clerk instance or
-  secret per stage).
+  the auth JWT key pair, refresh and ephemeral peppers, and Google OAuth
+  credentials in `.env.dev`. Use different secrets per stage. Do not commit
+  env files or env templates.
 - **Auth gating.** The desktop renderer is fully gated behind sign-in/sign-up,
   which call the backend API. Exercising the authenticated UI end-to-end (sign
   up, create organization, sync) requires the backend running with the

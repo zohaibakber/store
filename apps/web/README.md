@@ -3,7 +3,7 @@
 Vite + TanStack Router SPA for Tabaaq, deployed with
 [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
 This app owns the renderer. Electron loads the same routes (hash history +
-`@clerk/electron`). The browser replica of `@store/persistence` and the
+Electron preload bridge). The browser replica of `@store/persistence` and the
 `/api/sync/live` socket keep inventory in sync across web, desktop, and mobile.
 
 ## Local development
@@ -27,7 +27,7 @@ Worker with static assets. There is no separate CI `vite build` step. Deep
 links fall back to `index.html` (`notFoundHandling: "single-page-application"`).
 The production site hostname comes from `PRODUCTION_DOMAIN`. The API lives on
 `api.<PRODUCTION_DOMAIN>` (`VITE_API_URL`). Local `vp run dev` still proxies
-`/api/*` to `:8787`. Production browsers call the API origin with Clerk Bearer
-tokens. CORS allows the site origin via `AUTH_TRUSTED_ORIGINS`. The web CSP keeps
-`https://*.clerk.accounts.dev` and adds the production Clerk Frontend API host
-derived at build from `VITE_CLERK_PUBLISHABLE_KEY` (or `VITE_CLERK_FAPI_URL`).
+`/api/*` to `:8787`. Auth lives at `auth.<PRODUCTION_DOMAIN>`
+(`VITE_AUTH_URL`). Production browsers call the API with short-lived
+first-party access tokens. CORS and OAuth redirects allow the site origin via
+`AUTH_TRUSTED_ORIGINS`.

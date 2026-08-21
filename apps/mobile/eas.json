@@ -9,15 +9,17 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "autoIncrement": true,
       "distribution": "internal",
       "environment": "production",
       "env": {
-        "APP_VARIANT": "production",
-        "EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID": "54702143708-fhbababd6pq22q0qb1e52el891gvab2k.apps.googleusercontent.com"
+        "APP_VARIANT": "production"
       },
       "android": {
         "buildType": "apk"

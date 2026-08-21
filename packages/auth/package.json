@@ -12,7 +12,7 @@
     "test": "vitest run --root ../.. packages/auth/test"
   },
   "dependencies": {
-    "@clerk/backend": "^3.16.8"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260819.1",

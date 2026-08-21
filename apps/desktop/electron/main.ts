@@ -3,8 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createClerkBridge } from "@clerk/electron";
-import { storage } from "@clerk/electron/storage";
+import {
+  OrganizationCommand,
+  OrganizationCommandResult,
+  OrganizationRoster,
+  TokenSet,
+} from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
@@ -19,12 +23,10 @@ import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
-import { nativeClerkRequestHeaders, nativeClerkResponseHeaders } from "./clerk-headers";
 import {
-  clerkFrontendApiHostname,
   desktopRendererOrigin,
   desktopRendererUrl,
   makeDesktopContentSecurityPolicy,
@@ -87,9 +89,9 @@ const ELECTRON_PROTOCOL = fallbackIfBlank(
   process.env["ELECTRON_PROTOCOL"],
   DEFAULT_ELECTRON_PROTOCOL,
 );
-const CLERK_PUBLISHABLE_KEY = fallbackIfBlank(
-  process.env["VITE_CLERK_PUBLISHABLE_KEY"] ?? import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-  "",
+const AUTH_BASE_URL = fallbackIfBlank(
+  process.env["AUTH_BASE_URL"] ?? import.meta.env.VITE_AUTH_URL,
+  "http://localhost:8788",
 );
 
 // Local commits signal the sync engine immediately. The live socket is the
@@ -101,42 +103,20 @@ const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
-const clerkBridge = createClerkBridge({
-  storage: storage(),
-  passkeys: true,
-  renderer: { scheme: ELECTRON_PROTOCOL, host: "app" },
-  userAgent: `Tabaaq/${app.getVersion()}`,
-});
-
-const authBroker = new AuthBroker(API_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
+const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
   apiOrigin: new URL(API_BASE_URL).origin,
-  clerkFrontendApiHostname: clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
+  authOrigin: new URL(AUTH_BASE_URL).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
 
 function registerRendererCsp() {
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    callback({
-      requestHeaders: nativeClerkRequestHeaders(
-        details.url,
-        details.requestHeaders,
-        clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
-      ),
-    });
-  });
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const responseHeaders = nativeClerkResponseHeaders(
-      details.url,
-      details.responseHeaders ?? {},
-      clerkFrontendApiHostname(CLERK_PUBLISHABLE_KEY),
-      desktopRendererOrigin(ELECTRON_PROTOCOL),
-    );
     callback({
       responseHeaders: {
-        ...responseHeaders,
+        ...details.responseHeaders,
         "Content-Security-Policy": [rendererCsp],
       },
     });
@@ -304,9 +284,7 @@ async function disposeWorkspace() {
   if (current) await current.dispose();
 }
 
-const AuthToken = Schema.NullOr(
-  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16_384)),
-);
+const AuthTokens = Schema.NullOr(TokenSet);
 const InvoiceUpload = Schema.Struct({
   files: Schema.Array(
     Schema.Struct({
@@ -321,10 +299,30 @@ const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 function registerAuthIpc() {
   ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
   ipcMain.handle("auth:adopt-session", async (_event, input) => {
-    const token = input === undefined ? null : Schema.decodeUnknownSync(AuthToken)(input);
-    return currentWorkspace().execute({ _tag: "AdoptSession", token: token?.trim() ?? null });
+    const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
+    return currentWorkspace().execute({ _tag: "AdoptSession", tokens });
   });
+  ipcMain.handle("auth:renew-session", () => currentWorkspace().execute({ _tag: "RenewSession" }));
   ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
+  ipcMain.handle("auth:organization", async () =>
+    Schema.decodeUnknownSync(OrganizationRoster)(
+      await currentWorkspace().authRequest("/v1/organization"),
+    ),
+  );
+  ipcMain.handle("auth:organize", async (_event, input) => {
+    const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
+    return Schema.decodeUnknownSync(OrganizationCommandResult)(
+      await currentWorkspace().authRequest("/v1/organization", { method: "POST", body: command }),
+    );
+  });
+  ipcMain.handle("auth:open-external", async (_event, input) => {
+    const url = Schema.decodeUnknownSync(Schema.String)(input);
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "accounts.google.com") {
+      throw new Error("Only Google authorization URLs can be opened.");
+    }
+    await shell.openExternal(parsed.href);
+  });
 }
 
 function registerServerIpc() {
@@ -435,16 +433,35 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  clerkBridge.cleanup();
   void disposeWorkspace();
   void disposeUpdater?.();
 });
 
-void app.whenReady().then(async () => {
-  if (!clerkBridge.isPrimaryInstance) {
-    app.quit();
-    return;
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+
+const publishOAuthCallback = (url: string) => {
+  if (url.startsWith(`${ELECTRON_PROTOCOL}://auth/callback`)) {
+    win?.webContents.send("auth:oauth-callback", url);
   }
+};
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  publishOAuthCallback(url);
+});
+app.on("second-instance", (_event, argv) => {
+  const callback = argv.find((value) => value.startsWith(`${ELECTRON_PROTOCOL}://`));
+  if (callback) publishOAuthCallback(callback);
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+});
+
+void app.whenReady().then(async () => {
+  if (!primaryInstance) return;
+  app.setAsDefaultProtocolClient(ELECTRON_PROTOCOL);
   registerDesktopProtocolHandler({
     scheme: ELECTRON_PROTOCOL,
     rendererRoot: RENDERER_DIST,

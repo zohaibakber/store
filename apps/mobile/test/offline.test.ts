@@ -8,12 +8,9 @@ describe("offline cause detection", () => {
     const aborted = new Error("The operation was aborted.");
     aborted.name = "AbortError";
     expect(isOfflineCause(aborted)).toBe(true);
-    const clerkOffline = new Error("Clerk is offline");
-    clerkOffline.name = "ClerkOfflineError";
-    expect(isOfflineCause(clerkOffline)).toBe(true);
   });
 
-  it("recognizes Clerk network error codes", () => {
+  it("recognizes network error codes", () => {
     expect(isOfflineCause({ code: "network_error" })).toBe(true);
     expect(isOfflineCause(new Error("Network request failed"))).toBe(true);
   });

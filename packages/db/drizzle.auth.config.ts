@@ -1,6 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 
-// Clerk-to-store organization bindings, stored in D1 (SQLite).
+// First-party users, organizations, credentials, and refresh sessions in D1.
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/auth/schema.ts",

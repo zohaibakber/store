@@ -1,17 +1,24 @@
 import { LogoutIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { AuthForm } from "@/components/auth/page";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth";
-import { useClerkSignOut } from "@/lib/clerk-workspace";
+import { signOut, useAuth } from "@/lib/auth";
 import { initials } from "@/lib/format";
 
 export function AccountSettings() {
   const auth = useAuth();
-  const clerkSignOut = useClerkSignOut();
   const user = auth.snapshot?.status === "authenticated" ? auth.snapshot.user : undefined;
+
+  if (!user) {
+    return (
+      <FrameCard description="Sign in when you want to sync this device." title="Account">
+        <AuthForm />
+      </FrameCard>
+    );
+  }
 
   return (
     <FrameCard description="The account signed in on this device." title="Account">
@@ -37,7 +44,7 @@ export function AccountSettings() {
           <Button
             className="shrink-0"
             disabled={!user}
-            onClick={() => void clerkSignOut()}
+            onClick={() => void signOut()}
             variant="destructive-outline"
           >
             <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />

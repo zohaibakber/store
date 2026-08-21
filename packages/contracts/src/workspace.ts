@@ -16,7 +16,6 @@ export const WorkspaceOrganization = Schema.Struct({
   name: Schema.String,
   slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: Schema.String,
-  clerkOrganizationId: Schema.optionalKey(Schema.String),
 });
 
 export interface WorkspaceOrganization extends Schema.Schema.Type<typeof WorkspaceOrganization> {}

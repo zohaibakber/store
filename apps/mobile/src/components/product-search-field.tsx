@@ -1,23 +1,27 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
-import { IconSymbol } from "@/components/symbol";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { PressableScale } from "@/components/ui/pressable-scale";
 
-type ProductSearchFieldProps = {
-  onChangeText: (query: string) => void;
-  query: string;
-  resetKey: number;
-};
-
-export function ProductSearchField({ onChangeText, query }: ProductSearchFieldProps) {
-  const foreground = useThemeColor("foreground");
-
+/**
+ * The catalog search box: one `Input` with the magnifier in its leading slot and
+ * a clear button that only exists while there is something to clear.
+ */
+export function ProductSearchField({
+  onChangeText,
+  query,
+}: {
+  readonly onChangeText: (query: string) => void;
+  readonly query: string;
+}) {
   return (
     <View style={styles.row}>
       <View style={styles.field}>
         <Input
           accessibilityLabel="Search inventory"
+          autoCapitalize="none"
+          leadingIcon="search"
           onChangeText={onChangeText}
           placeholder="Name, category, aisle or batch"
           returnKeyType="search"
@@ -25,27 +29,20 @@ export function ProductSearchField({ onChangeText, query }: ProductSearchFieldPr
         />
       </View>
       {query ? (
-        <Pressable
+        <PressableScale
           accessibilityLabel="Clear search"
-          accessibilityRole="button"
-          hitSlop={10}
           onPress={() => onChangeText("")}
-          style={({ pressed }) => [styles.clear, { opacity: pressed ? 0.56 : 1 }]}
+          style={styles.clear}
         >
-          <IconSymbol name="xmark" size={20} tintColor={foreground} />
-        </Pressable>
+          <Icon name="close" size={18} tone="muted" />
+        </PressableScale>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  clear: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 40,
-  },
+  clear: { alignItems: "center", height: 44, justifyContent: "center", width: 36 },
   field: { flex: 1, minWidth: 0 },
   row: { alignItems: "center", flexDirection: "row", gap: 4 },
 });

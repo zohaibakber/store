@@ -1,7 +1,7 @@
 # Shared packages
 
-- `auth`. Clerk JWT verification, trusted-origin policy, and Clerk-to-store
-  organization bindings.
+- `auth`. First-party auth schemas, ES256 JWTs, password hashing, trusted-origin
+  policy, and the shared Effect client.
 - `contracts`. Public data contracts grouped into `server`, `store`, and `sync`.
 - `db`. Drizzle schemas and migrations for authentication, local storage, and Durable Objects.
 - `persistence`. Local database, inventory, analytics, and synchronization services. Import

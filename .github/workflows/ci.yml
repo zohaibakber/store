@@ -70,47 +70,51 @@ jobs:
 
       - name: Check required configuration
         run: |
-          if [ -z "${CLERK_SECRET_KEY}" ]; then
-            echo "::error::CLERK_SECRET_KEY is empty." \
-                 "Set it on the GitHub Environment used by this job" \
-                 "(Production for main, Development for pull requests)."
-            exit 1
-          fi
-          if [ -z "${VITE_CLERK_PUBLISHABLE_KEY}" ]; then
-            echo "::error::VITE_CLERK_PUBLISHABLE_KEY is empty." \
-                 "Set it on the GitHub Environment used by this job or web sign-in cannot load Clerk."
-            exit 1
-          fi
+          for name in AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
+            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::$name is empty for ${STAGE}."
+              exit 1
+            fi
+          done
           echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
-          echo "CLERK_JWT_AUDIENCE=${CLERK_JWT_AUDIENCE:-<unset>}"
           echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
           echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
+          echo "VITE_AUTH_URL=${VITE_AUTH_URL:-<unset>}"
           if [ "${STAGE}" = "prod" ] && [ -z "${PRODUCTION_DOMAIN}" ]; then
             echo "::error::PRODUCTION_DOMAIN is empty." \
                  "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
             exit 1
           fi
         env:
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
-          CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+          AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
+          AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
+          AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
+          PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_AUTH_URL: ${{ github.event_name == 'push' && vars.VITE_AUTH_URL || '' }}
 
       - name: Deploy ${{ env.STAGE }}
         run: bun alchemy deploy --stage "${STAGE}" --yes
         env:
           CI: "1"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_JWT_KEY: ${{ secrets.CLERK_JWT_KEY }}
-          CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+          AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
+          AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
+          AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
+          AUTH_DEV_OTP: ${{ vars.AUTH_DEV_OTP }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
@@ -118,9 +122,9 @@ jobs:
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
+          PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CLERK_JWT_TEMPLATE: ${{ vars.VITE_CLERK_JWT_TEMPLATE }}
+          VITE_AUTH_URL: ${{ github.event_name == 'push' && vars.VITE_AUTH_URL || '' }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -156,7 +160,6 @@ jobs:
         run: bun alchemy destroy --stage "${STAGE}" --yes
         env:
           CI: "1"
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PULL_REQUEST: ${{ github.event.number }}

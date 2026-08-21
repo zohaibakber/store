@@ -2,16 +2,17 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from "react-native";
 
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button, ButtonText } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { SectionTitle } from "@/components/ui/text";
 import { useProductActions, useProductData } from "@/features/products/products-provider";
-import { useThemeColor } from "@/hooks/use-theme-color";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId } from "@/lib/products";
+import { useColors } from "@/theme/colors";
 
 const priceInPaisa = (value: string): number | null => {
   const trimmed = value.trim();
@@ -23,7 +24,7 @@ const priceInPaisa = (value: string): number | null => {
 export default function NewProductScreen() {
   const { categories } = useProductData();
   const { saveScannedProduct } = useProductActions();
-  const background = useThemeColor("background");
+  const colors = useColors();
   const [name, setName] = useState("");
   const [composition, setComposition] = useState("");
   const [strength, setStrength] = useState("");
@@ -82,71 +83,106 @@ export default function NewProductScreen() {
   return (
     <KeyboardAvoidingView
       behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
-      style={[styles.root, { backgroundColor: background }]}
+      style={[styles.root, { backgroundColor: colors.background }]}
     >
-      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+      >
         {error ? (
-          <Alert status="danger">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>Check the product</Alert.Title>
-              <Alert.Description>{error}</Alert.Description>
-            </Alert.Content>
+          <Alert variant="destructive">
+            <AlertTitle>Check the product</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
 
         <View style={styles.section}>
-          <Label>Product details</Label>
-          <Input autoFocus onChangeText={setName} placeholder="Product name" value={name} />
-          {categories.length > 0 ? (
-            <View style={styles.chips}>
-              {categories.map((category) => (
-                <ChoiceChip
-                  key={category.id}
-                  onPress={() => setCategoryId(category.id)}
-                  selected={category.id === categoryId}
-                >
-                  {category.name}
-                </ChoiceChip>
-              ))}
-            </View>
-          ) : (
-            <Label>The General category will be created automatically.</Label>
-          )}
-          <Input onChangeText={setComposition} placeholder="Composition" value={composition} />
-          <Input onChangeText={setStrength} placeholder="Strength" value={strength} />
-          <Input onChangeText={setAisle} placeholder="Aisle" value={aisle} />
+          <SectionTitle>Product</SectionTitle>
+          <Field>
+            <FieldLabel>Name</FieldLabel>
+            <Input autoFocus onChangeText={setName} placeholder="Product name" value={name} />
+          </Field>
+          <Field>
+            <FieldLabel>Category</FieldLabel>
+            {categories.length > 0 ? (
+              <View style={styles.chips}>
+                {categories.map((category) => (
+                  <Chip
+                    key={category.id}
+                    isSelected={category.id === categoryId}
+                    onPress={() => setCategoryId(category.id)}
+                  >
+                    {category.name}
+                  </Chip>
+                ))}
+              </View>
+            ) : (
+              <FieldDescription>A General category is created with this product.</FieldDescription>
+            )}
+          </Field>
+          <Field>
+            <FieldLabel>Composition</FieldLabel>
+            <Input
+              onChangeText={setComposition}
+              placeholder="Active ingredient"
+              value={composition}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>Strength</FieldLabel>
+            <Input onChangeText={setStrength} placeholder="e.g. 500mg" value={strength} />
+          </Field>
+          <Field>
+            <FieldLabel>Aisle</FieldLabel>
+            <Input onChangeText={setAisle} placeholder="Where it is shelved" value={aisle} />
+          </Field>
         </View>
 
         <View style={styles.section}>
-          <Label>Pack & pricing</Label>
+          <SectionTitle>Pack and pricing</SectionTitle>
           {tracksPacks ? (
-            <Input
-              keyboardType="number-pad"
-              onChangeText={setUnitsPerPack}
-              placeholder="Units per pack"
-              value={unitsPerPack}
-            />
+            <Field>
+              <FieldLabel>Units per sealed pack</FieldLabel>
+              <Input
+                keyboardType="number-pad"
+                mono
+                onChangeText={setUnitsPerPack}
+                placeholder="1"
+                value={unitsPerPack}
+              />
+            </Field>
           ) : null}
           {tracksPacks ? (
+            <Field>
+              <FieldLabel>Pack price</FieldLabel>
+              <Input
+                keyboardType="decimal-pad"
+                mono
+                onChangeText={setPackPrice}
+                placeholder="0"
+                value={packPrice}
+              />
+            </Field>
+          ) : null}
+          <Field>
+            <FieldLabel>Unit price</FieldLabel>
             <Input
               keyboardType="decimal-pad"
-              onChangeText={setPackPrice}
-              placeholder="Pack price"
-              value={packPrice}
+              mono
+              onChangeText={setUnitPrice}
+              placeholder="0"
+              value={unitPrice}
             />
-          ) : null}
-          <Input
-            keyboardType="decimal-pad"
-            onChangeText={setUnitPrice}
-            placeholder="Unit price"
-            value={unitPrice}
-          />
-          <Label>Prices are entered in PKR. Batch and quantity can be updated afterward.</Label>
+            <FieldDescription>
+              Prices are in PKR. Batch and quantity are set afterwards.
+            </FieldDescription>
+          </Field>
         </View>
 
-        <Button isDisabled={saving} onPress={() => void save()}>
-          {saving ? "Creating…" : "Create product"}
+        <Button isDisabled={saving} loading={saving} onPress={() => void save()}>
+          <ButtonText>Create product</ButtonText>
         </Button>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -155,7 +191,7 @@ export default function NewProductScreen() {
 
 const styles = StyleSheet.create({
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  content: { gap: 24, paddingBottom: 40, paddingHorizontal: 16, paddingTop: 12 },
+  content: { gap: 24, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 12 },
   root: { flex: 1 },
   section: { gap: 12 },
 });

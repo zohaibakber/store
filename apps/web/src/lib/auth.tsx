@@ -1,3 +1,9 @@
+import type {
+  OrganizationCommand,
+  OrganizationCommandResult,
+  OrganizationRoster,
+  TokenSet,
+} from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
@@ -6,8 +12,12 @@ import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
 export interface AuthSessionBridge {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly adoptSession: (token: string | null) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
+  /** Picks up an organization rename or a redeemed invitation. */
+  readonly renewSession: () => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
+  readonly organizationRoster: () => Promise<OrganizationRoster>;
+  readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }
 

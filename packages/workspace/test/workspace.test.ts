@@ -1,3 +1,4 @@
+import { AccessToken, RefreshToken, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import {
   decodeAuthenticatedWorkspace,
   unauthenticatedWorkspace,
@@ -27,10 +28,18 @@ const authenticated = (organizationId: string): WorkspaceSnapshot =>
 
 const unauthenticated: WorkspaceSnapshot = unauthenticatedWorkspace({ isOnline: true });
 
+const tokenSet = (label: string): TokenSetType =>
+  TokenSet.make({
+    accessToken: AccessToken.make(label),
+    accessExpiresAt: 1,
+    refreshToken: RefreshToken.make(`refresh-${label}`),
+    refreshExpiresAt: 2,
+  });
+
 const makeAuth = (
   initial: WorkspaceSnapshot,
-  adoptSession: (token: string | null) => Promise<WorkspaceSnapshot> = async (token) =>
-    token ? authenticated(token) : unauthenticated,
+  adoptSession: (tokens: TokenSetType | null) => Promise<WorkspaceSnapshot> = async (tokens) =>
+    tokens ? authenticated(tokens.accessToken) : unauthenticated,
 ): WorkspaceAuthAdapter => {
   let snapshot = initial;
   const update = async (next: WorkspaceSnapshot) => {
@@ -42,11 +51,13 @@ const makeAuth = (
       return snapshot;
     },
     initialize: () => Promise.resolve(snapshot),
-    adoptSession: (token) => adoptSession(token).then(update),
+    adoptSession: (tokens) => adoptSession(tokens).then(update),
+    renewSession: () => Promise.resolve(snapshot),
     signOut: async () => {
       snapshot = unauthenticated;
     },
     apiRequest: () => Promise.reject(new Error("Not used by this test")),
+    authRequest: () => Promise.reject(new Error("Not used by this test")),
   };
 };
 
@@ -117,18 +128,19 @@ test("serializes competing session adoptions", async () => {
   const firstGate = new Promise<void>((resolve) => {
     releaseFirst = resolve;
   });
-  const auth = makeAuth(authenticated("initial"), async (token) => {
-    events.push(`auth:${token}:start`);
-    if (token === "a") await firstGate;
-    events.push(`auth:${token}:finish`);
-    return token ? authenticated(token) : unauthenticated;
+  const auth = makeAuth(authenticated("initial"), async (tokens) => {
+    const label = tokens?.accessToken ?? "anonymous";
+    events.push(`auth:${label}:start`);
+    if (label === "a") await firstGate;
+    events.push(`auth:${label}:finish`);
+    return tokens ? authenticated(label) : unauthenticated;
   });
   const workspace = makeWorkspace(auth, makeStores(events), events);
   await workspace.initialize();
   events.length = 0;
 
-  const first = workspace.execute({ _tag: "AdoptSession", token: "a" });
-  const second = workspace.execute({ _tag: "AdoptSession", token: "b" });
+  const first = workspace.execute({ _tag: "AdoptSession", tokens: tokenSet("a") });
+  const second = workspace.execute({ _tag: "AdoptSession", tokens: tokenSet("b") });
   await Promise.resolve();
   expect(events).toEqual(["auth:a:start"]);
 
@@ -150,9 +162,9 @@ test("falls back to the locked workspace when organization activation fails", as
   await workspace.initialize();
   events.length = 0;
 
-  await expect(workspace.execute({ _tag: "AdoptSession", token: "b" })).rejects.toBeInstanceOf(
-    WorkspaceActivationError,
-  );
+  await expect(
+    workspace.execute({ _tag: "AdoptSession", tokens: tokenSet("b") }),
+  ).rejects.toBeInstanceOf(WorkspaceActivationError);
 
   expect(events).toEqual([
     "unsubscribe:a",

@@ -15,6 +15,7 @@ import { ThemePicker } from "@/components/settings/theme-picker";
 import { FrameCard } from "@/components/shared/frame-card";
 import { PageContent, PageHeader, PageHeading, PageLayout } from "@/components/shared/page-layout";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+import { useLinkedInvitation } from "@/lib/organization";
 
 const tabs = [
   { value: "account", label: "Account", icon: UserIcon },
@@ -25,6 +26,10 @@ const tabs = [
 ] as const;
 
 export function SettingsPage({ categories }: { categories: ReadonlyArray<Category> }) {
+  // An invite link points at this page, so it opens where the invitation is
+  // redeemed rather than on the account the recipient is already signed in to.
+  const invited = useLinkedInvitation() !== "";
+
   return (
     <PageLayout contentClassName="max-w-5xl">
       <PageHeader>
@@ -32,7 +37,11 @@ export function SettingsPage({ categories }: { categories: ReadonlyArray<Categor
       </PageHeader>
 
       <PageContent className="mt-2">
-        <Tabs className="w-full items-start gap-6" defaultValue="account" orientation="vertical">
+        <Tabs
+          className="w-full items-start gap-6"
+          defaultValue={invited ? "organization" : "account"}
+          orientation="vertical"
+        >
           <TabsList className="w-44 shrink-0">
             {tabs.map((tab) => (
               <TabsTab className="justify-start gap-2" key={tab.value} value={tab.value}>

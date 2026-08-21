@@ -62,6 +62,9 @@ export const forgetLastUserId = async () => {
   await Storage.setItem(LAST_USER_KEY, "");
 };
 
+/** Inventories created before mobile required an account still carry this prefix. */
+export const isLocalUserId = (userId: string) => userId.startsWith("local:");
+
 export function useLastUserId() {
   const [userId, setUserId] = useState<string | null | undefined>(rememberedUserId);
 

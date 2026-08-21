@@ -1,71 +1,126 @@
-import { unauthenticatedWorkspace, WorkspaceSnapshot } from "@store/contracts";
+import {
+  AuthClientError,
+  ExchangeGoogleIdTokenInput,
+  IdentifyInput,
+  makeAuthClient,
+  nativeClient,
+  TokenSet,
+  type GoogleIdToken,
+  type LoginCommand as LoginCommandType,
+  type LoginRoute,
+  type TokenSet as TokenSetType,
+} from "@store/auth";
+import {
+  type AuthenticatedWorkspaceSnapshot,
+  unauthenticatedWorkspace,
+  WorkspaceSnapshot,
+} from "@store/contracts";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import * as Network from "expo-network";
+import * as SecureStore from "expo-secure-store";
+import Storage from "expo-sqlite/kv-store";
 
 import { isOfflineCause, OfflineError } from "@/lib/offline";
 
 export { isOfflineCause, OfflineError } from "@/lib/offline";
 
+const TOKEN_KEY = "tabaaq-auth-tokens-v1";
+const SNAPSHOT_KEY = "tabaaq-auth-snapshot-v1";
+const SESSION_TIMEOUT_MS = 8_000;
+const REFRESH_WINDOW_MS = 60_000;
+
 const metroHost =
   Constants.expoConfig?.hostUri?.split(":")[0] ??
   (process.env.EXPO_OS === "android" ? "10.0.2.2" : "localhost");
-const developmentOrigin = `http://${metroHost}:8787`;
-const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/api\/?$/u, "");
-export const mobileApplicationId = __DEV__ ? "com.tabaaq.mobile.debug" : "com.tabaaq.mobile";
-export const mobileNativeOrigin = `${mobileApplicationId}://app`;
-const SESSION_TIMEOUT_MS = 8_000;
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+const configuredAuthUrl = process.env.EXPO_PUBLIC_AUTH_URL?.trim();
 
-const AuthFailure = Schema.Struct({
-  message: Schema.optional(Schema.String),
-  errors: Schema.optional(Schema.Array(Schema.Struct({ message: Schema.optional(Schema.String) }))),
-});
-
-export const apiOrigin = (configuredApiUrl ?? (__DEV__ ? developmentOrigin : "")).replace(
+export const apiOrigin = (configuredApiUrl || (__DEV__ ? `http://${metroHost}:8787` : "")).replace(
   /\/api\/?$/u,
   "",
 );
+export const authOrigin = (
+  configuredAuthUrl || (__DEV__ ? `http://${metroHost}:8788` : "")
+).replace(/\/+$/u, "");
+export const mobileApplicationId = __DEV__ ? "com.tabaaq.mobile.debug" : "com.tabaaq.mobile";
+export const mobileNativeOrigin = `${mobileApplicationId}://app`;
 
-const ExtraConfig = Schema.Struct({
-  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: Schema.optional(Schema.String),
-});
+const client = makeAuthClient({ baseUrl: authOrigin });
+const native = nativeClient(__DEV__ ? "Tabaaq Dev Mobile" : "Tabaaq Mobile");
 
-const extraPublishableKey = Schema.decodeUnknownOption(ExtraConfig)(
-  Constants.expoConfig?.extra ?? {},
-).pipe(
-  Option.map((extra) => extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? ""),
-  Option.getOrElse(() => ""),
-);
-export const clerkPublishableKey = (
-  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || extraPublishableKey
-).trim();
+let tokens: TokenSetType | null = null;
+let refreshInFlight: Promise<TokenSetType | null> | null = null;
 
-const jwtTemplate = process.env.EXPO_PUBLIC_CLERK_JWT_TEMPLATE?.trim();
-export const mobileClerkTokenOptions = jwtTemplate
-  ? ({ template: jwtTemplate } as const)
-  : undefined;
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
-type AccessTokenProvider = () => Promise<string | null>;
+const persistTokens = async (next: TokenSetType | null) => {
+  tokens = next;
+  if (next) {
+    await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(next));
+    return;
+  }
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
+};
 
-let accessTokenProvider: AccessTokenProvider = async () => null;
+const decodeStoredTokens = (serialized: string | null) => {
+  if (!serialized) return null;
+  try {
+    return Schema.decodeUnknownOption(TokenSet)(JSON.parse(serialized)).pipe(Option.getOrNull);
+  } catch {
+    return null;
+  }
+};
+
+export const restoreTokens = async () => {
+  const serialized = await SecureStore.getItemAsync(TOKEN_KEY);
+  const restored = decodeStoredTokens(serialized);
+  if (!restored && serialized) await SecureStore.deleteItemAsync(TOKEN_KEY);
+  tokens = restored;
+  return restored;
+};
 
 export const isDeviceOffline = async () => {
   const state = await Network.getNetworkStateAsync();
   return state.isConnected === false || state.isInternetReachable === false;
 };
 
-export const setAccessTokenProvider = (provider: AccessTokenProvider) => {
-  accessTokenProvider = provider;
+const refreshTokens = async () => {
+  if (refreshInFlight) return refreshInFlight;
+  const refreshToken = tokens?.refreshToken;
+  if (!refreshToken || (await isDeviceOffline())) return null;
+
+  refreshInFlight = run(client.refresh({ refreshToken }))
+    .then(async (next) => {
+      await persistTokens(next);
+      return next;
+    })
+    .catch(async (cause: unknown) => {
+      if (cause instanceof AuthClientError && (cause.status === 401 || cause.status === 403)) {
+        await persistTokens(null);
+      }
+      if (isOfflineCause(cause)) return null;
+      throw cause;
+    })
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
 };
 
-export const getAccessToken = () => accessTokenProvider();
+export const getAccessToken = async () => {
+  if (!tokens) await restoreTokens();
+  if (!tokens) return null;
+  if (tokens.accessExpiresAt > Date.now() + REFRESH_WINDOW_MS) return tokens.accessToken;
+  const refreshed = await refreshTokens();
+  return refreshed?.accessToken ?? null;
+};
 
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {
   const token = await getAccessToken();
-  const nativeHeaders = {
-    "expo-origin": mobileNativeOrigin,
-  };
+  const nativeHeaders = { "expo-origin": mobileNativeOrigin };
   return token ? { ...nativeHeaders, Authorization: `Bearer ${token}` } : nativeHeaders;
 };
 
@@ -85,9 +140,7 @@ export const fetchWorkspaceSession = async (): Promise<typeof WorkspaceSnapshot.
       .then(Schema.decodeUnknownOption(WorkspaceSnapshot))
       .then(Option.getOrNull)
       .catch(() => null);
-    if (!response.ok || !payload) {
-      return unauthenticatedWorkspace({ isOnline: false });
-    }
+    if (!response.ok || !payload) return unauthenticatedWorkspace({ isOnline: false });
     return payload;
   } catch (cause) {
     if (isOfflineCause(cause)) throw new OfflineError();
@@ -97,11 +150,75 @@ export const fetchWorkspaceSession = async (): Promise<typeof WorkspaceSnapshot.
   }
 };
 
+export const saveWorkspaceSnapshot = async (snapshot: AuthenticatedWorkspaceSnapshot) => {
+  await Storage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+};
+
+export const readWorkspaceSnapshot = async () => {
+  const serialized = await Storage.getItem(SNAPSHOT_KEY);
+  if (!serialized) return null;
+  try {
+    const snapshot = Schema.decodeUnknownOption(WorkspaceSnapshot)(JSON.parse(serialized)).pipe(
+      Option.getOrNull,
+    );
+    return snapshot?.status === "authenticated" ? snapshot : null;
+  } catch {
+    return null;
+  }
+};
+
+export const identifyMobile = async (email: string): Promise<LoginRoute> => {
+  const input = await run(Schema.decodeUnknownEffect(IdentifyInput)({ email }));
+  return run(client.identify(input));
+};
+
+export const authenticateMobile = async (command: LoginCommandType) => {
+  const next = await run(client.authenticate(command));
+  await persistTokens(next);
+  return next;
+};
+
+/**
+ * Mobile signs in through Google's native SDK, so the Worker receives an ID
+ * token instead of walking an authorization code through the browser.
+ */
+export const exchangeGoogleIdTokenMobile = async (idToken: GoogleIdToken) => {
+  const next = await run(
+    client.exchangeGoogleIdToken(ExchangeGoogleIdTokenInput.make({ idToken, client: native })),
+  );
+  await persistTokens(next);
+  return next;
+};
+
+export const signOutMobile = async (everywhere = false) => {
+  if (!tokens) await restoreTokens();
+  await refreshInFlight?.catch(() => null);
+  const refreshToken = tokens?.refreshToken;
+  const input = refreshToken ? { refreshToken, everywhere } : { everywhere };
+  try {
+    await run(client.signOut(input));
+  } catch (cause) {
+    if (!isOfflineCause(cause)) throw cause;
+  } finally {
+    await persistTokens(null);
+  }
+};
+
+const AuthFailure = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  errors: Schema.optional(Schema.Array(Schema.Struct({ message: Schema.optional(Schema.String) }))),
+});
+
 export const authErrorMessage = (cause: unknown) => {
-  if (isOfflineCause(cause)) return "You're offline. Showing the inventory saved on this device.";
+  if (isOfflineCause(cause)) return "You're offline. Your local inventory is still available.";
+  if (cause instanceof AuthClientError) return cause.message;
+  if (cause instanceof Error && cause.message) return cause.message;
   const failure = Schema.decodeUnknownOption(AuthFailure)(cause).pipe(Option.getOrNull);
   if (failure?.message) return failure.message;
   const nested = failure?.errors?.[0]?.message;
   if (nested) return nested;
   return "Something went wrong. Please try again.";
 };
+
+export const refreshMobileSession = refreshTokens;
+export const clearMobileTokens = () => persistTokens(null);

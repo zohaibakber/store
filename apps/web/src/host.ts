@@ -1,3 +1,4 @@
+import { OrganizationCommandResult, OrganizationRoster } from "@store/auth";
 import type { SyncStatus, WorkspaceSnapshot } from "@store/contracts";
 import { localMigrations } from "@store/db/local/migrations";
 import { browserLayer, OfflineStore } from "@store/persistence/browser";
@@ -10,6 +11,7 @@ import {
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import type { AuthSessionBridge } from "@/lib/auth";
@@ -93,10 +95,13 @@ export interface WebWorkspace {
   readonly store: Store;
 }
 
-export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> => {
+export const startWebWorkspace = async (
+  baseUrl: string,
+  authBaseUrl: string,
+): Promise<WebWorkspace> => {
   const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
-  const auth = new WebAuthBroker(baseUrl);
+  const auth = new WebAuthBroker(baseUrl, authBaseUrl);
   const workspace = new AuthenticatedWorkspace({
     auth,
     stores: makeWorkspaceStores({
@@ -119,10 +124,19 @@ export const startWebWorkspace = async (baseUrl: string): Promise<WebWorkspace> 
   return {
     bridge: {
       getSession: async () => workspace.snapshot,
-      adoptSession: (token) => workspace.execute({ _tag: "AdoptSession", token }),
+      adoptSession: (tokens) => workspace.execute({ _tag: "AdoptSession", tokens }),
+      renewSession: () => workspace.execute({ _tag: "RenewSession" }),
       signOut: async () => {
         await workspace.execute({ _tag: "SignOut" });
       },
+      organizationRoster: async () =>
+        Schema.decodeUnknownSync(OrganizationRoster)(
+          await workspace.authRequest("/v1/organization"),
+        ),
+      organize: async (command) =>
+        Schema.decodeUnknownSync(OrganizationCommandResult)(
+          await workspace.authRequest("/v1/organization", { method: "POST", body: command }),
+        ),
       onSessionChange: (listener) => {
         snapshotListeners.add(listener);
         return () => snapshotListeners.delete(listener);

@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tabaaq.mobile"
+      "bundleIdentifier": "com.tabaaq.mobile",
+      "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true
+      }
     },
     "android": {
       "package": "com.tabaaq.mobile",
@@ -22,8 +25,6 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-web-browser",
-      ["@clerk/expo", { "theme": "./clerk-theme.json" }],
       [
         "expo-camera",
         {

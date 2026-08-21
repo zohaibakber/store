@@ -5,17 +5,11 @@ import { AppLoading } from "@/components/app/loading";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
-import { CreateOrganizationPage } from "@/components/auth/create-organization-page";
-import { AuthPage } from "@/components/auth/page";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
-import { useOnline } from "@/hooks/use-online";
-import { AuthProvider, type InitialAuth, useAuth, type WorkspaceSnapshot } from "@/lib/auth";
-import { useAuth as useClerkAuth } from "@/lib/clerk-runtime";
-import { workspaceScreen } from "@/lib/clerk-session-policy";
-import { clerkPublishableKey } from "@/lib/clerk-workspace";
+import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
@@ -43,58 +37,8 @@ export function RootLayout() {
 
 function AuthenticatedLayout() {
   const auth = useAuth();
-  if (auth._tag === "Loading") return <AppLoading />;
-  const snapshot = auth.snapshot;
-  const error = auth._tag === "Error" ? auth.error : null;
-  if (clerkPublishableKey) {
-    return <ClerkSessionGate bridgeError={error} snapshot={snapshot} />;
-  }
-  return (
-    <WorkspaceScreen
-      bridgeError={error}
-      screen={workspaceScreen({
-        snapshot,
-        clerkConfigured: false,
-        clerkLoaded: true,
-        online: true,
-      })}
-    />
-  );
-}
-
-function ClerkSessionGate({
-  bridgeError,
-  snapshot,
-}: {
-  bridgeError: string | null;
-  snapshot: WorkspaceSnapshot | null;
-}) {
-  const { isLoaded } = useClerkAuth();
-  const online = useOnline();
-  return (
-    <WorkspaceScreen
-      bridgeError={bridgeError}
-      screen={workspaceScreen({
-        snapshot,
-        clerkConfigured: true,
-        clerkLoaded: isLoaded,
-        online,
-      })}
-    />
-  );
-}
-
-function WorkspaceScreen({
-  bridgeError,
-  screen,
-}: {
-  bridgeError: string | null;
-  screen: ReturnType<typeof workspaceScreen>;
-}) {
-  if (screen === "loading") return <AppLoading />;
-  if (screen === "shell") return <AppShell />;
-  if (screen === "create-org") return <CreateOrganizationPage />;
-  return <AuthPage bridgeError={bridgeError} />;
+  if (auth._tag === "Loading" && !auth.snapshot) return <AppLoading />;
+  return <AppShell />;
 }
 
 function AppShell() {

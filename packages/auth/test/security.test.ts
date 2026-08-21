@@ -1,21 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clerkFrontendApiHostnameFromPublishableKey,
-  clerkTokenRefreshDelay,
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   isTrustedOrigin,
+  isTrustedRedirect,
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "../src/security";
-
-const encodeBase64 = (value: string) => globalThis.btoa(value);
-const encodeBase64Url = (value: string) =>
-  encodeBase64(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const tokenWithExpiry = (expiresAtSeconds: number) =>
-  `header.${encodeBase64Url(JSON.stringify({ exp: expiresAtSeconds }))}.signature`;
 
 const secureInput = {
   baseURL: "https://api.example.com",
@@ -81,6 +74,15 @@ describe("resolveAuthSecurity", () => {
         "com.tabaaq.desktop://app",
         "com.tabaaq.mobile://",
         "com.tabaaq.mobile.debug://",
+      ],
+      trustedRedirects: [
+        "https://api.example.com",
+        "https://app.example.com",
+        "http://localhost:5173",
+        "com.tabaaq.desktop://app",
+        "com.tabaaq.mobile://",
+        "com.tabaaq.mobile.debug://",
+        "com.tabaaq.desktop://",
       ],
       rejectedSettings: [],
     });
@@ -148,11 +150,6 @@ describe("resolveAuthSecurity", () => {
     expect(production.trustedOrigins).not.toContain("http://localhost:5173");
   });
 
-  it("parses the Frontend API host from a Clerk publishable key", () => {
-    const key = `pk_test_${encodeBase64("clerk.example.com$")}`;
-    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("clerk.example.com");
-  });
-
   it("allows HTTP only for local development origins", () => {
     const resolved = resolveAuthSecurity({
       ...secureInput,
@@ -180,37 +177,6 @@ describe("resolveAuthSecurity", () => {
   });
 });
 
-describe("clerkFrontendApiHostnameFromPublishableKey", () => {
-  it("decodes the Frontend API host after the second underscore", () => {
-    const frontendApi = "foo.clerk.accounts.dev$";
-    const key = `pk_test_${encodeBase64(frontendApi)}`;
-    expect(clerkFrontendApiHostnameFromPublishableKey(key)).toBe("foo.clerk.accounts.dev");
-  });
-
-  it("rejects a key that does not encode a host", () => {
-    expect(() => clerkFrontendApiHostnameFromPublishableKey("pk_test_not-valid")).toThrow(
-      /Frontend API host/,
-    );
-  });
-});
-
-describe("clerkTokenRefreshDelay", () => {
-  const now = 1_800_000_000_000;
-
-  it("refreshes shortly before the token expiry", () => {
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 + 40), now)).toBe(25_000);
-  });
-
-  it("caps long lifetimes and retries expired tokens promptly", () => {
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 + 120), now)).toBe(45_000);
-    expect(clerkTokenRefreshDelay(tokenWithExpiry(now / 1_000 - 1), now)).toBe(5_000);
-  });
-
-  it("uses a safe fallback for malformed tokens", () => {
-    expect(clerkTokenRefreshDelay("not-a-jwt", now)).toBe(30_000);
-  });
-});
-
 describe("matchesTrustedOrigin", () => {
   it.each([
     ["http://api.example.com", "http://*.example.com", true],
@@ -235,5 +201,23 @@ describe("matchesTrustedOrigin", () => {
   it("matches a bare host pattern against the origin host", () => {
     expect(isTrustedOrigin("https://api.example.com", ["*.example.com"])).toBe(true);
     expect(isTrustedOrigin("https://api.example.com", ["*.other.com"])).toBe(false);
+  });
+});
+
+describe("isTrustedRedirect", () => {
+  const redirects = resolveAuthSecurity(secureInput).trustedRedirects;
+
+  it.each([
+    ["https://app.example.com/auth/callback", true],
+    ["https://api.example.com/auth/callback", true],
+    ["https://evil.example.net/auth/callback", false],
+    // The renderer origin is `com.tabaaq.desktop://app`, while the deep link
+    // lands on a path of the same scheme, so the whole target is matched.
+    ["com.tabaaq.desktop://auth/callback", true],
+    ["com.tabaaq.mobile://auth/callback", true],
+    ["com.tabaaq.other://auth/callback", false],
+    ["not a url", false],
+  ])("decides %s", (redirectUri, expected) => {
+    expect(isTrustedRedirect(redirectUri, redirects)).toBe(expected);
   });
 });

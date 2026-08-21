@@ -1,131 +1,119 @@
-import { Icon, ListItem, Text as UiText } from "@expo/ui";
 import { router } from "expo-router";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
-import { AppList } from "@/components/app-list";
-import { Brand } from "@/components/brand";
 import { InventoryFabAnchor } from "@/components/inventory-fab-anchor";
-import { inventoryIconName, warningIcon } from "@/components/list-icons";
 import { ProductAnalytics } from "@/components/product-analytics";
-import { Alert as HeroAlert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Row, RowChevron, RowGroup, RowValue } from "@/components/ui/row";
 import { Spinner } from "@/components/ui/spinner";
+import { SectionTitle, Text } from "@/components/ui/text";
 import {
+  productStatusView,
   useProductActions,
   useProductData,
   useProductStatus,
-  productStatusView,
 } from "@/features/products/products-provider";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { scrollInset } from "@/hooks/use-overlay-insets";
 import { LOW_STOCK_THRESHOLD, needsAttention } from "@/lib/product-catalog";
-import { cssColor } from "@/theme/colors";
+import { useColors } from "@/theme/colors";
 
+/**
+ * The overview. Two groups — what the inventory adds up to, and what needs
+ * restocking — and nothing that repeats a number the other group already shows.
+ */
 export function HomeScreen() {
   const { products } = useProductData();
   const { loading, refreshing, error } = productStatusView(useProductStatus());
   const { refresh } = useProductActions();
-  const [foreground, background, warning, danger, muted] = useThemeColor([
-    "foreground",
-    "background",
-    "warning",
-    "danger",
-    "muted",
-  ]);
+  const colors = useColors();
+  const scrollBottom = scrollInset("nav-and-actions");
   const attention = needsAttention(products);
 
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl
-            colors={[foreground]}
+            colors={[colors.foreground]}
             onRefresh={() => void refresh()}
-            progressBackgroundColor={background}
+            progressBackgroundColor={colors.card}
             refreshing={refreshing}
-            tintColor={foreground}
+            tintColor={colors.mutedForeground}
           />
         }
-        style={{ backgroundColor: background }}
       >
-        <View style={styles.padded}>
-          <Brand />
-        </View>
-
         {error ? (
-          <View style={styles.padded}>
-            <HeroAlert status="danger">
-              <HeroAlert.Indicator />
-              <HeroAlert.Content>
-                <HeroAlert.Title>Inventory is out of date</HeroAlert.Title>
-                <HeroAlert.Description>{error}</HeroAlert.Description>
-              </HeroAlert.Content>
-              <Button size="sm" variant="danger-soft" onPress={() => void refresh()}>
-                Retry
+          <Alert variant="destructive">
+            <AlertTitle>Inventory is out of date</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+            <AlertAction>
+              <Button onPress={() => void refresh()} size="sm" variant="outline">
+                <ButtonIcon name="refresh" />
+                <ButtonText>Retry</ButtonText>
               </Button>
-            </HeroAlert>
-          </View>
+            </AlertAction>
+          </Alert>
         ) : null}
 
         {loading ? (
           <View style={styles.loading}>
-            <Spinner color="default" />
-            <Text style={[styles.bodyText, { color: muted }]}>Syncing your inventory…</Text>
+            <Spinner tone="muted" />
+            <Text tone="muted" variant="caption">
+              Syncing your inventory…
+            </Text>
           </View>
         ) : (
           <ProductAnalytics products={products} />
         )}
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: foreground }]}>Needs attention</Text>
-          <Text style={[styles.caption, { color: muted }]}>
-            Products at or below {LOW_STOCK_THRESHOLD} units
-          </Text>
-        </View>
-
-        <AppList>
-          {attention.length > 0 ? (
-            attention.map((product) => (
-              <ListItem
+        <View style={styles.section}>
+          <SectionTitle>Needs attention</SectionTitle>
+          <RowGroup>
+            {attention.map((product) => (
+              <Row
                 key={product.id}
                 leading={
                   <Icon
-                    color={product.stock === 0 ? danger : warning}
-                    name={product.stock === 0 ? warningIcon : inventoryIconName}
-                    size={24}
+                    name={product.stock === 0 ? "alert" : "box"}
+                    size={18}
+                    tone={product.stock === 0 ? "destructive" : "warning"}
                   />
                 }
-                onPress={() => router.push("/products")}
-                supportingText={product.category}
+                supporting={product.category}
+                title={product.name}
                 trailing={
-                  <UiText
-                    textStyle={{
-                      color: cssColor(product.stock === 0 ? danger : warning),
-                    }}
-                  >
+                  <RowValue tone={product.stock === 0 ? "destructive" : "warning"}>
                     {product.stock === 0 ? "Out" : String(product.stock)}
-                  </UiText>
+                  </RowValue>
                 }
-              >
-                {product.name}
-              </ListItem>
-            ))
-          ) : (
-            <ListItem
-              supportingText={
-                products.length === 0
-                  ? "Use the + button to create a product or scan its label."
-                  : "Nothing is currently low or out of stock."
+              />
+            ))}
+            {attention.length === 0 ? (
+              <Row
+                supporting={
+                  products.length === 0
+                    ? "Create one, or scan a label."
+                    : `Nothing is at or below ${LOW_STOCK_THRESHOLD} units.`
+                }
+                title={products.length === 0 ? "No products yet" : "Stock looks healthy"}
+              />
+            ) : null}
+            <Row
+              onPress={() => router.push("/products")}
+              title="All products"
+              trailing={
+                <>
+                  <RowValue>{String(products.length)}</RowValue>
+                  <RowChevron />
+                </>
               }
-            >
-              {products.length === 0 ? "No products yet" : "Inventory looks healthy"}
-            </ListItem>
-          )}
-          <ListItem onPress={() => router.push("/products")} supportingText="Open the full catalog">
-            View all products
-          </ListItem>
-        </AppList>
+            />
+          </RowGroup>
+        </View>
       </ScrollView>
       <InventoryFabAnchor />
     </View>
@@ -135,12 +123,8 @@ export function HomeScreen() {
 export default HomeScreen;
 
 const styles = StyleSheet.create({
-  bodyText: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  caption: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 18 },
-  content: { gap: 8, paddingBottom: 160, paddingTop: 12 },
+  content: { gap: 24, paddingHorizontal: 16, paddingTop: 8 },
   loading: { alignItems: "center", gap: 12, justifyContent: "center", minHeight: 144 },
-  padded: { paddingHorizontal: 16 },
   root: { flex: 1 },
-  sectionHeader: { gap: 4, paddingHorizontal: 16, paddingTop: 16 },
-  sectionTitle: { fontFamily: "Inter_500Medium", fontSize: 16, lineHeight: 22 },
+  section: { gap: 8 },
 });

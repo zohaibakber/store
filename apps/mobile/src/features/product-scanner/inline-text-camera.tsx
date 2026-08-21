@@ -1,25 +1,30 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
 
-import { Button } from "@/components/ui/button";
+import { Button, ButtonText } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { PressableScale } from "@/components/ui/pressable-scale";
 import { Spinner } from "@/components/ui/spinner";
+import { Text } from "@/components/ui/text";
 import {
   extractTextFromImage,
   isTextRecognitionSupported,
 } from "@/features/product-scanner/text-extractor";
 import type { ProductScanMode } from "@/features/product-scanner/types";
-import { useThemeColor } from "@/hooks/use-theme-color";
 import { hapticError, hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
+import { useColors } from "@/theme/colors";
+import { alpha, radius } from "@/theme/tokens";
+import { typography } from "@/theme/typography";
 
 type InlineTextCameraProps = {
-  mode: ProductScanMode;
-  status: "ready" | "paused" | "syncing" | "analyzing";
-  resetKey: number;
-  onError: (message: string) => void;
-  onCaptureStateChange: (capturing: boolean) => void;
-  onTextDetected: (recognizedText: string) => Promise<void>;
+  readonly mode: ProductScanMode;
+  readonly status: "ready" | "paused" | "syncing" | "analyzing";
+  readonly resetKey: number;
+  readonly onError: (message: string) => void;
+  readonly onCaptureStateChange: (capturing: boolean) => void;
+  readonly onTextDetected: (recognizedText: string) => Promise<void>;
 };
 
 type CaptureState = "ready" | "reading" | "found";
@@ -29,6 +34,11 @@ const promptFor = (mode: ProductScanMode) =>
     ? "Fit the product name and composition inside the frame"
     : "Fit the batch number and expiry date inside the frame";
 
+/**
+ * The viewfinder. Chrome that sits over live video is the one place the palette
+ * does not apply — text has to stay legible against whatever the lens sees — so
+ * it uses the `scrim` and `onScrim` tokens, which exist for exactly this.
+ */
 export function InlineTextCamera({
   mode,
   status,
@@ -43,7 +53,7 @@ export function InlineTextCamera({
   const [captureState, setCaptureState] = useState<CaptureState>("ready");
   const [lineCount, setLineCount] = useState(0);
   const camera = useRef<CameraView>(null);
-  const [surface, foreground, muted] = useThemeColor(["surface-secondary", "foreground", "muted"]);
+  const colors = useColors();
 
   useEffect(() => {
     setCaptureState("ready");
@@ -113,11 +123,13 @@ export function InlineTextCamera({
     }
   };
 
+  const placeholder = { backgroundColor: colors.secondary };
+
   if (status === "paused") {
     return (
-      <View style={[styles.fallback, { backgroundColor: surface }]}>
-        <Text style={[styles.fallbackTitle, { color: foreground }]}>Camera paused</Text>
-        <Text style={[styles.fallbackText, { color: muted }]}>
+      <View style={[styles.placeholder, placeholder]}>
+        <Text variant="bodyMedium">Camera paused</Text>
+        <Text style={styles.centered} tone="muted" variant="caption">
           Return to this screen to continue scanning.
         </Text>
       </View>
@@ -126,55 +138,57 @@ export function InlineTextCamera({
 
   if (!permission) {
     return (
-      <View style={[styles.fallback, { backgroundColor: surface }]}>
-        <Spinner color="default" />
+      <View style={[styles.placeholder, placeholder]}>
+        <Spinner tone="muted" />
       </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={[styles.permission, { backgroundColor: surface }]}>
-        <View style={styles.permissionCopy}>
-          <Text style={[styles.permissionTitle, { color: foreground }]}>
-            Camera access is needed
-          </Text>
-          <Text style={[styles.permissionText, { color: muted }]}>
-            Tabaaq uses the camera only while you scan product-label text.
-          </Text>
+      <View style={[styles.placeholder, placeholder]}>
+        <Text variant="bodyMedium">Camera access is needed</Text>
+        <Text style={styles.centered} tone="muted" variant="caption">
+          The camera is used only while you scan a product label.
+        </Text>
+        <View style={styles.permissionAction}>
+          <Button
+            onPress={() =>
+              permission.canAskAgain ? void requestPermission() : void Linking.openSettings()
+            }
+            size="sm"
+            variant="outline"
+          >
+            <ButtonText>{permission.canAskAgain ? "Allow camera" : "Open settings"}</ButtonText>
+          </Button>
         </View>
-        {permission.canAskAgain ? (
-          <Button onPress={() => void requestPermission()}>Allow camera</Button>
-        ) : (
-          <Button onPress={() => void Linking.openSettings()}>Open settings</Button>
-        )}
       </View>
     );
   }
 
   const busy = captureState === "reading" || status === "analyzing";
   const found = captureState === "found";
-  const feedbackTitle =
+  const title =
     status === "syncing"
       ? "Syncing inventory…"
       : status === "analyzing"
-        ? "Structuring product details…"
+        ? "Reading the label…"
         : captureState === "reading"
-          ? "Reading label on-device…"
+          ? "Reading on this phone…"
           : found
             ? "Text detected"
             : mode === "product"
-              ? "Ready for product label"
+              ? "Ready for the product label"
               : "Ready for batch details";
-  const feedbackDetail =
+  const detail =
     status === "syncing"
-      ? "Scanning unlocks when current products are ready"
+      ? "Scanning unlocks once products are ready"
       : found
         ? `${lineCount} ${lineCount === 1 ? "line" : "lines"} found`
         : promptFor(mode);
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: colors.viewfinder }]}>
       <CameraView
         ref={camera}
         active
@@ -188,222 +202,136 @@ export function InlineTextCamera({
         style={StyleSheet.absoluteFill}
       />
 
-      <View pointerEvents="none" style={styles.scrim} />
-      <View pointerEvents="none" style={[styles.guide, found ? styles.guideFound : null]} />
+      <View
+        pointerEvents="none"
+        style={[styles.guide, { borderColor: found ? colors.success : alpha(colors.onScrim, 0.8) }]}
+      />
 
       <View style={styles.topControls}>
         <View
           accessibilityLiveRegion="polite"
           accessible
-          style={[styles.feedback, found ? styles.feedbackFound : null]}
+          style={[
+            styles.status,
+            { backgroundColor: found ? alpha(colors.success, 0.9) : colors.scrim },
+          ]}
         >
-          {busy ? <Spinner color="#ffffff" size="sm" /> : <View style={styles.feedbackDot} />}
-          <View style={styles.feedbackCopy}>
-            <Text style={styles.feedbackTitle}>{feedbackTitle}</Text>
-            <Text numberOfLines={1} style={styles.feedbackDetail}>
-              {feedbackDetail}
+          {busy ? (
+            <Spinner color={colors.onScrim} />
+          ) : (
+            <Icon
+              color={colors.onScrim}
+              name={found ? "check" : "camera"}
+              size={16}
+              style={styles.statusIcon}
+            />
+          )}
+          <View style={styles.statusCopy}>
+            <Text numberOfLines={1} style={[styles.overlayLabel, { color: colors.onScrim }]}>
+              {title}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={[styles.overlayCaption, { color: alpha(colors.onScrim, 0.76) }]}
+            >
+              {detail}
             </Text>
           </View>
         </View>
-        <Pressable
-          accessibilityLabel={torch ? "Turn torch off" : "Turn torch on"}
-          accessibilityRole="button"
-          disabled={status !== "ready" || busy}
-          hitSlop={10}
+        <PressableScale
+          accessibilityLabel={torch ? "Turn the torch off" : "Turn the torch on"}
+          accessibilityState={{ selected: torch }}
+          isDisabled={status !== "ready" || busy}
           onPress={() => setTorch((current) => !current)}
-          style={[styles.torch, torch ? styles.torchActive : null]}
+          style={[styles.torch, { backgroundColor: torch ? colors.onScrim : colors.scrim }]}
         >
-          <Text style={[styles.torchLabel, torch ? styles.torchLabelActive : null]}>
-            {torch ? "Torch on" : "Torch"}
-          </Text>
-        </Pressable>
+          <Icon color={torch ? colors.foreground : colors.onScrim} name="bolt" size={18} />
+        </PressableScale>
       </View>
 
       <View style={styles.captureRow}>
-        <Pressable
-          accessibilityHint={`Reads ${mode === "product" ? "product" : "batch and expiry"} text from the camera`}
-          accessibilityLabel={busy ? "Reading label" : "Read label"}
-          accessibilityRole="button"
-          disabled={!ready || status !== "ready" || busy}
+        <PressableScale
+          accessibilityHint={`Reads ${mode === "product" ? "the product name" : "the batch and expiry"} from the camera`}
+          accessibilityLabel={busy ? "Reading the label" : "Read the label"}
+          isDisabled={!ready || status !== "ready" || busy}
           onPress={() => void capture()}
-          style={({ pressed }) => [
-            styles.shutterOuter,
-            !ready || status !== "ready" || busy ? styles.shutterDisabled : null,
-            pressed ? styles.shutterPressed : null,
-          ]}
+          style={[styles.shutter, { borderColor: colors.onScrim }]}
         >
-          <View style={styles.shutterInner} />
-        </Pressable>
+          <View style={[styles.shutterCore, { backgroundColor: colors.onScrim }]} />
+        </PressableScale>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fallback: {
+  captureRow: { alignItems: "center", bottom: 18, left: 0, position: "absolute", right: 0 },
+  centered: { textAlign: "center" },
+  guide: {
+    borderCurve: "continuous",
+    borderRadius: radius["2xl"],
+    borderWidth: 2,
+    bottom: 92,
+    left: 28,
+    position: "absolute",
+    right: 28,
+    top: 92,
+  },
+  overlayCaption: typography.caption,
+  overlayLabel: typography.label,
+  permissionAction: { paddingTop: 8 },
+  placeholder: {
     alignItems: "center",
     borderCurve: "continuous",
-    borderRadius: 16,
-    gap: 8,
+    borderRadius: radius["2xl"],
+    gap: 6,
     height: 360,
     justifyContent: "center",
     paddingHorizontal: 32,
-  },
-  fallbackText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  fallbackTitle: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  permission: {
-    alignItems: "center",
-    borderCurve: "continuous",
-    borderRadius: 16,
-    gap: 16,
-    minHeight: 320,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-  },
-  permissionCopy: { gap: 6 },
-  permissionText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  permissionTitle: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 16,
-    lineHeight: 22,
-    textAlign: "center",
   },
   shell: {
+    borderCurve: "continuous",
+    borderRadius: radius["2xl"],
     height: 360,
     overflow: "hidden",
-    borderRadius: 28,
-    borderCurve: "continuous",
-    backgroundColor: "#111111",
   },
-  scrim: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.14)",
-  },
-  guide: {
-    position: "absolute",
-    top: 94,
-    right: 30,
-    bottom: 94,
-    left: 30,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.86)",
-    borderRadius: 22,
-    borderCurve: "continuous",
-  },
-  guideFound: {
-    borderColor: "#34d399",
+  shutter: {
+    alignItems: "center",
+    borderRadius: radius.full,
     borderWidth: 3,
+    height: 66,
+    justifyContent: "center",
+    width: 66,
   },
-  topControls: {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    left: 14,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  feedback: {
-    minWidth: 0,
+  shutterCore: { borderRadius: radius.full, height: 50, width: 50 },
+  status: {
+    alignItems: "center",
+    borderCurve: "continuous",
+    borderRadius: radius.xl,
     flex: 1,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
+    gap: 8,
+    minWidth: 0,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    borderRadius: 16,
-    borderCurve: "continuous",
-    backgroundColor: "rgba(0, 0, 0, 0.68)",
   },
-  feedbackFound: {
-    backgroundColor: "rgba(4, 120, 87, 0.88)",
-  },
-  feedbackDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#ffffff",
-  },
-  feedbackCopy: {
-    minWidth: 0,
-    flex: 1,
-    gap: 1,
-  },
-  feedbackTitle: {
-    color: "#ffffff",
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-  },
-  feedbackDetail: {
-    color: "rgba(255, 255, 255, 0.76)",
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
+  statusCopy: { flex: 1, gap: 1, minWidth: 0 },
+  statusIcon: { marginVertical: 2 },
+  topControls: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    left: 14,
+    position: "absolute",
+    right: 14,
+    top: 14,
   },
   torch: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
+    alignItems: "center",
     borderCurve: "continuous",
-    backgroundColor: "rgba(0, 0, 0, 0.68)",
-  },
-  torchActive: {
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
-  },
-  torchLabel: {
-    color: "#ffffff",
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-  },
-  torchLabelActive: {
-    color: "#111111",
-  },
-  captureRow: {
-    position: "absolute",
-    right: 0,
-    bottom: 18,
-    left: 0,
-    alignItems: "center",
-  },
-  shutterOuter: {
-    width: 68,
-    height: 68,
-    alignItems: "center",
+    borderRadius: radius.xl,
+    height: 40,
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: "#ffffff",
-    borderRadius: 34,
-    backgroundColor: "rgba(0, 0, 0, 0.18)",
-  },
-  shutterInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#ffffff",
-  },
-  shutterDisabled: {
-    opacity: 0.46,
-  },
-  shutterPressed: {
-    transform: [{ scale: 0.94 }],
-    opacity: 0.86,
+    width: 40,
   },
 });
