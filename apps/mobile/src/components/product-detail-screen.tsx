@@ -11,10 +11,12 @@ import { SectionTitle, Text } from "@/components/ui/text";
 import { expiryInputValue } from "@/features/product-scanner/local-parser";
 import { PackQuantitySheet, UnitQuantitySheet } from "@/features/product-scanner/quantity-sheet";
 import { BatchDetailsSheet } from "@/features/products/batch-details-sheet";
-import { useProductActions, useProductData } from "@/features/products/products-provider";
-import { authErrorMessage } from "@/lib/auth-client";
+import { useProductData } from "@/features/products/products-provider";
+import { useBatchWrites } from "@/features/products/use-batch-writes";
 import { hapticSuccess } from "@/lib/haptics";
-import { createInventoryEntityId, formatPrice, type MobileBatch } from "@/lib/products";
+import { createInventoryEntityId } from "@/lib/inventory-session";
+import { formatPrice } from "@/lib/inventory-snapshot";
+import type { MobileBatch } from "@/lib/inventory-types";
 import { useColors } from "@/theme/colors";
 import { radius } from "@/theme/tokens";
 
@@ -32,7 +34,7 @@ const batchExpiryLabel = (batch: MobileBatch) => {
 export function ProductDetailScreen() {
   const { productId } = useLocalSearchParams<{ productId: string }>();
   const { products } = useProductData();
-  const { saveBatchDetails, updateBatchQuantity } = useProductActions();
+  const { pending, writeBatchDetails, writeBatchQuantity } = useBatchWrites();
   const colors = useColors();
   const product = products.find((candidate) => candidate.id === productId) ?? null;
 
@@ -40,13 +42,10 @@ export function ProductDetailScreen() {
   const [newBatchId, setNewBatchId] = useState(createInventoryEntityId);
   const [quantityOpen, setQuantityOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [savingQuantity, setSavingQuantity] = useState(false);
-  const [savingDetails, setSavingDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const selectedBatch = product?.batches.find((batch) => batch.id === selectedBatchId) ?? null;
-  const activeBatchId = selectedBatch?.id ?? null;
 
   const openQuantity = (batchId: string | null) => {
     setError(null);
@@ -66,23 +65,21 @@ export function ProductDetailScreen() {
 
   const confirmQuantity = async (quantities: { packQuantity: number; unitQuantity: number }) => {
     if (!product) return;
-    setSavingQuantity(true);
     setError(null);
-    try {
-      const batch = await updateBatchQuantity({
-        productId: product.id,
-        ...(activeBatchId ? { batchId: activeBatchId } : { batchId: null, newBatchId }),
-        ...quantities,
-      });
-      setSelectedBatchId(batch.id);
-      setQuantityOpen(false);
-      setNotice("Quantity updated.");
-      hapticSuccess();
-    } catch (cause) {
-      setError(authErrorMessage(cause));
-    } finally {
-      setSavingQuantity(false);
+    const result = await writeBatchQuantity({
+      productId: product.id,
+      selectedBatchId,
+      newBatchId,
+      ...quantities,
+    });
+    if (!result.ok) {
+      setError(result.message);
+      return;
     }
+    setSelectedBatchId(result.batch.id);
+    setQuantityOpen(false);
+    setNotice("Quantity updated.");
+    hapticSuccess();
   };
 
   const confirmDetails = async (details: {
@@ -90,24 +87,23 @@ export function ProductDetailScreen() {
     expiresAt: number | null;
   }) => {
     if (!product) return;
-    setSavingDetails(true);
     setError(null);
-    try {
-      const batch = await saveBatchDetails({
-        productId: product.id,
-        ...(activeBatchId ? { batchId: activeBatchId } : { batchId: null, newBatchId }),
-        ...details,
-      });
-      setSelectedBatchId(batch.id);
-      setDetailsOpen(false);
-      setNotice(activeBatchId ? "Batch details saved." : "Batch created. Set the quantity next.");
-      hapticSuccess();
-      if (!activeBatchId) openQuantity(batch.id);
-    } catch (cause) {
-      setError(authErrorMessage(cause));
-    } finally {
-      setSavingDetails(false);
+    const creating = selectedBatchId === null;
+    const result = await writeBatchDetails({
+      productId: product.id,
+      selectedBatchId,
+      newBatchId,
+      ...details,
+    });
+    if (!result.ok) {
+      setError(result.message);
+      return;
     }
+    setSelectedBatchId(result.batch.id);
+    setDetailsOpen(false);
+    setNotice(creating ? "Batch created. Set the quantity next." : "Batch details saved.");
+    hapticSuccess();
+    if (creating) openQuantity(result.batch.id);
   };
 
   if (!product) {
@@ -258,7 +254,7 @@ export function ProductDetailScreen() {
         onSave={confirmDetails}
         productName={product.name}
         saveError={error}
-        saving={savingDetails}
+        saving={pending === "batch"}
         visible={detailsOpen}
       />
 
@@ -271,7 +267,7 @@ export function ProductDetailScreen() {
           onSave={confirmQuantity}
           productName={product.name}
           saveError={error}
-          saving={savingQuantity}
+          saving={pending === "quantity"}
           visible={quantityOpen}
         />
       ) : (
@@ -283,7 +279,7 @@ export function ProductDetailScreen() {
           onSave={confirmQuantity}
           productName={product.name}
           saveError={error}
-          saving={savingQuantity}
+          saving={pending === "quantity"}
           visible={quantityOpen}
         />
       )}

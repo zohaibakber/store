@@ -11,7 +11,7 @@ import { SectionTitle } from "@/components/ui/text";
 import { useProductActions, useProductData } from "@/features/products/products-provider";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
-import { createInventoryEntityId } from "@/lib/products";
+import { createInventoryEntityId } from "@/lib/inventory-session";
 import { useColors } from "@/theme/colors";
 
 const priceInPaisa = (value: string): number | null => {

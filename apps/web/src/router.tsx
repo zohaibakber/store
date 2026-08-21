@@ -1,14 +1,30 @@
+import type { WorkspaceSnapshot } from "@store/contracts";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
+import type { HostAccessPolicy } from "@/host-access";
 import type { InitialAuth } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 import { routeTree } from "@/routeTree.gen";
 
-export const getRouter = (history: RouterHistory, store: Store, initialAuth: InitialAuth) =>
+const sessionSnapshotFromAuth = (initialAuth: InitialAuth): WorkspaceSnapshot | null =>
+  initialAuth._tag === "Session" ? initialAuth.snapshot : null;
+
+export const getRouter = (input: {
+  readonly history: RouterHistory;
+  readonly store: Store;
+  readonly initialAuth: InitialAuth;
+  readonly access: HostAccessPolicy;
+}) =>
   createRouter({
     routeTree,
-    context: { store, initialAuth },
-    history,
+    context: {
+      store: input.store,
+      initialAuth: input.initialAuth,
+      /** Live workspace snapshot; updated on every session publish before invalidate. */
+      sessionSnapshot: sessionSnapshotFromAuth(input.initialAuth),
+      access: input.access,
+    },
+    history: input.history,
     // Route data comes from the local replica. Speculative hover preloads can
     // materialize an entire catalog the user never opens.
     defaultPreload: false,

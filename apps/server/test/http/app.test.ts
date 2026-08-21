@@ -10,7 +10,7 @@ describe("HTTP auth and CORS", () => {
   });
 
   it("returns an unauthenticated workspace snapshot for session lookups", async () => {
-    const response = await appFor(true, false).request("/api/auth/session");
+    const response = await appFor(false).request("/api/auth/session");
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "unauthenticated" });
   });
@@ -24,7 +24,7 @@ describe("HTTP auth and CORS", () => {
   });
 
   it("answers a session preflight for a trusted origin without using *", async () => {
-    const response = await appFor(true, false).request("/api/auth/session", {
+    const response = await appFor(false).request("/api/auth/session", {
       method: "OPTIONS",
       headers: {
         origin: "http://localhost:5173",
@@ -50,7 +50,7 @@ describe("HTTP auth and CORS", () => {
   });
 
   it("allows a CORS origin that a wildcard trusted origin covers", async () => {
-    const app = appFor(true, true, {
+    const app = appFor(true, {
       trustedOrigins: ["https://*.tabaaq.example.com"],
     });
 

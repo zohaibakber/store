@@ -9,7 +9,7 @@ Use Effect HTTP client modules for outgoing HTTP in app/provider code:
 - `effect/unstable/http/HttpClientResponse`
 - `effect/unstable/http/HttpClientError`
 
-Prefer Effect HttpClient in Effect application and provider code when its typed errors, layers, and transforms are useful. Raw `fetch` remains reasonable for browser or edge constraints, small adapters, platform transports, and libraries that intentionally avoid unstable Effect HTTP APIs.
+Prefer Effect HttpClient in Effect application and provider code when its typed errors, layers, and transforms are useful. Raw `fetch` remains reasonable for browser or edge constraints, small adapters, and platform transports. On Effect **`4.0.0-rc.110`**, HttpClient still lives under `effect/unstable/http/*` — that is expected, not deprecated; use it when the app already depends on those modules.
 
 ## Boundary Shape
 

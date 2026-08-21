@@ -1,5 +1,4 @@
 import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
-import { router } from "expo-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
@@ -26,7 +25,8 @@ import {
 } from "@/features/products/products-provider";
 import { scrollInset } from "@/hooks/use-overlay-insets";
 import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
-import { formatPrice, type MobileProduct } from "@/lib/products";
+import { formatPrice } from "@/lib/inventory-snapshot";
+import type { MobileProduct } from "@/lib/inventory-types";
 import { useColors } from "@/theme/colors";
 
 const keyExtractor = (item: MobileProduct) => item.id;
@@ -36,8 +36,8 @@ const renderProduct = ({ item }: ListRenderItemInfo<MobileProduct>) => (
     aisle={item.aisle}
     category={item.category}
     details={item.details}
+    id={item.id}
     name={item.name}
-    onPress={() => router.push(`/products/${item.id}`)}
     stock={item.stock}
     stockLabel={item.stockLabel}
     unitPriceLabel={formatPrice(item.unitPrice)}

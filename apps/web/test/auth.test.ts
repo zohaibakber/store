@@ -42,7 +42,7 @@ describe("WebAuthBroker", () => {
 
     expect(snapshot).toMatchObject({
       status: "unauthenticated",
-      workspaceError: "Your sign-in completed, but the server could not validate the session.",
+      workspaceError: "You signed in, but the server rejected the session.",
     });
   });
 

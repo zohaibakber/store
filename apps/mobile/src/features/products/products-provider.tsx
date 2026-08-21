@@ -13,19 +13,15 @@ import {
 import { AppState } from "react-native";
 
 import { authErrorMessage, isOfflineCause } from "@/lib/auth-client";
-import {
-  inventorySnapshot,
-  type MobileBatch,
-  type MobileCategory,
-  type MobileProduct,
-  readCachedInventorySnapshot,
-  saveBatchDetails as saveBatchDetailsMutation,
-  type SaveBatchDetailsInput,
-  saveScannedProduct as saveScannedProductMutation,
-  type SaveScannedProductInput,
-  updateBatchQuantity as updateBatchQuantityMutation,
-  type UpdateBatchQuantityInput,
-} from "@/lib/products";
+import type {
+  MobileBatch,
+  MobileCategory,
+  MobileProduct,
+  SaveBatchDetailsInput,
+  SaveScannedProductInput,
+  UpdateBatchQuantityInput,
+} from "@/lib/inventory-types";
+import { inventoryWorkspaceFactory, type InventoryWorkspace } from "@/lib/inventory-workspace";
 
 type ProductsData = {
   products: ReadonlyArray<MobileProduct>;
@@ -64,7 +60,16 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const workspaceRef = useRef<InventoryWorkspace | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
+
+  const ensureWorkspace = useCallback(async () => {
+    const existing = workspaceRef.current;
+    if (existing && existing.userId === userId) return existing;
+    const workspace = await inventoryWorkspaceFactory.open(userId);
+    workspaceRef.current = workspace;
+    return workspace;
+  }, [userId]);
 
   const refresh = useCallback(() => {
     if (refreshInFlight.current) return refreshInFlight.current;
@@ -72,12 +77,15 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
       setRefreshing(true);
       setError(null);
       try {
-        const snapshot = await inventorySnapshot();
+        const workspace = await ensureWorkspace();
+        const snapshot = await workspace.synchronize();
         setProducts(snapshot.products);
         setCategories(snapshot.categories);
         setLastUpdatedAt(new Date());
       } catch (cause) {
-        const snapshot = await readCachedInventorySnapshot(userId).catch(() => null);
+        const snapshot = await ensureWorkspace()
+          .then((workspace) => workspace.readSnapshot())
+          .catch(() => null);
         if (snapshot) {
           setProducts(snapshot.products);
           setCategories(snapshot.categories);
@@ -90,20 +98,22 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
     })();
     refreshInFlight.current = task;
     return task;
-  }, [userId]);
+  }, [ensureWorkspace]);
 
   const refreshAfterWrite = useCallback(async () => {
-    const snapshot = await readCachedInventorySnapshot(userId);
+    const workspace = await ensureWorkspace();
+    const snapshot = await workspace.readSnapshot();
     setProducts(snapshot.products);
     setCategories(snapshot.categories);
     return snapshot;
-  }, [userId]);
+  }, [ensureWorkspace]);
 
   const runWrite = useCallback(
-    async <T,>(write: () => Promise<T>) => {
+    async <T,>(write: (workspace: InventoryWorkspace) => Promise<T>) => {
       setError(null);
       try {
-        const result = await write();
+        const workspace = await ensureWorkspace();
+        const result = await write(workspace);
         await refreshAfterWrite();
         const activeRefresh = refreshInFlight.current;
         if (activeRefresh) void activeRefresh.then(() => refresh());
@@ -114,29 +124,37 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
         throw cause;
       }
     },
-    [refresh, refreshAfterWrite],
+    [ensureWorkspace, refresh, refreshAfterWrite],
   );
 
   const saveScannedProduct = useCallback(
-    (input: SaveScannedProductInput) => runWrite(() => saveScannedProductMutation(input)),
+    (input: SaveScannedProductInput) =>
+      runWrite((workspace) => workspace.saveScannedProduct(input)),
     [runWrite],
   );
 
   const saveBatchDetails = useCallback(
-    (input: SaveBatchDetailsInput) => runWrite(() => saveBatchDetailsMutation(input)),
+    (input: SaveBatchDetailsInput) => runWrite((workspace) => workspace.saveBatchDetails(input)),
     [runWrite],
   );
 
   const updateBatchQuantity = useCallback(
-    (input: UpdateBatchQuantityInput) => runWrite(() => updateBatchQuantityMutation(input)),
+    (input: UpdateBatchQuantityInput) =>
+      runWrite((workspace) => workspace.updateBatchQuantity(input)),
     [runWrite],
   );
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void readCachedInventorySnapshot(userId)
-      .then((snapshot) => {
+    workspaceRef.current = null;
+
+    void inventoryWorkspaceFactory
+      .open(userId)
+      .then(async (workspace) => {
+        if (!active) return;
+        workspaceRef.current = workspace;
+        const snapshot = await workspace.readSnapshot();
         if (!active) return;
         setProducts(snapshot.products);
         setCategories(snapshot.categories);
@@ -149,8 +167,11 @@ export function ProductsProvider({ children, userId }: PropsWithChildren<{ userI
         setLoading(false);
         void refresh();
       });
+
     return () => {
       active = false;
+      workspaceRef.current = null;
+      inventoryWorkspaceFactory.close();
     };
   }, [refresh, userId]);
 

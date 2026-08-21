@@ -3,18 +3,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
-  TokenSet,
-} from "@store/auth";
+import { OrganizationCommand, TokenSet } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
 import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
 import {
   AuthenticatedWorkspace,
+  fetchOrganizationRoster,
   invokeStoreHandler,
+  organizeOrganization,
   withStoreEffect,
   type WorkspaceStoreAdapter,
   type WorkspaceTarget,
@@ -303,15 +300,14 @@ function registerAuthIpc() {
   });
   ipcMain.handle("auth:renew-session", () => currentWorkspace().execute({ _tag: "RenewSession" }));
   ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
-  ipcMain.handle("auth:organization", async () =>
-    Schema.decodeUnknownSync(OrganizationRoster)(
-      await currentWorkspace().authRequest("/v1/organization"),
-    ),
+  ipcMain.handle("auth:organization", () =>
+    fetchOrganizationRoster((pathname, init) => currentWorkspace().authRequest(pathname, init)),
   );
   ipcMain.handle("auth:organize", async (_event, input) => {
     const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
-    return Schema.decodeUnknownSync(OrganizationCommandResult)(
-      await currentWorkspace().authRequest("/v1/organization", { method: "POST", body: command }),
+    return organizeOrganization(
+      (pathname, init) => currentWorkspace().authRequest(pathname, init),
+      command,
     );
   });
   ipcMain.handle("auth:open-external", async (_event, input) => {

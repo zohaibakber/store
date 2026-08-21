@@ -206,3 +206,21 @@ test("publishes the authenticated workspace when its initial sync fails", async 
 
   await workspace.dispose();
 });
+
+test("guest Locked refuse stays idle without workspaceError", async () => {
+  const events: string[] = [];
+  const { GuestWorkspaceRefused } = await import("../src/workspace");
+  const stores: WorkspaceStoreAdapter = {
+    open: async () => {
+      events.push("open:locked");
+      throw new GuestWorkspaceRefused({});
+    },
+  };
+  const workspace = makeWorkspace(makeAuth(unauthenticated), stores, events);
+
+  await expect(workspace.initialize()).resolves.toMatchObject({
+    status: "unauthenticated",
+    workspaceError: null,
+  });
+  expect(events).toEqual(["open:locked", "publish:unauthenticated"]);
+});

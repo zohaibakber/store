@@ -8,7 +8,9 @@ import {
   type WorkspaceSnapshot,
 } from "@store/contracts";
 import type { OfflineStore } from "@store/persistence/core";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
 export type JsonApiResponse = string | number | boolean | null | JsonApiObject | JsonApiResponse[];
@@ -63,11 +65,20 @@ export interface WorkspaceEvents {
   readonly publishSyncStatus: (status: SyncStatus) => void;
 }
 
+/** Host policy refused opening a Locked guest store (browser auth wall). */
+export class GuestWorkspaceRefused extends Schema.TaggedError<GuestWorkspaceRefused>()(
+  "Workspace.GuestWorkspaceRefused",
+  {},
+) {}
+
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The local workspace could not be opened.";
+
+const isGuestWorkspaceRefused = (cause: unknown): cause is GuestWorkspaceRefused =>
+  cause instanceof GuestWorkspaceRefused;
 
 export class WorkspaceActivationError extends Error {
   override readonly name = "WorkspaceActivationError";
@@ -84,11 +95,11 @@ export class AuthenticatedWorkspace {
   readonly #stores: WorkspaceStoreAdapter;
   readonly #events: WorkspaceEvents;
   readonly #deviceId: string;
+  readonly #lock = Semaphore.makeUnsafe(1);
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
   #store: WorkspaceStore | undefined;
   #activeOrganizationId: OrganizationId | null = null;
   #stopSyncStatus: (() => void) | undefined;
-  #transition = Promise.resolve();
 
   constructor(input: {
     readonly auth: WorkspaceAuthAdapter;
@@ -195,23 +206,35 @@ export class AuthenticatedWorkspace {
         ),
       );
     } catch (cause) {
-      if (target._tag === "Authenticated") await this.#recoverLocked(snapshot.isOnline);
+      if (isGuestWorkspaceRefused(cause)) {
+        return this.#publish(unauthenticated(snapshot.isOnline, null));
+      }
+      if (target._tag === "Authenticated") {
+        const recovery = await this.#recoverLocked(snapshot.isOnline);
+        if (recovery === "guest-refused") return this.#snapshot;
+      }
       const message = messageOf(cause);
       this.#publish(unauthenticated(snapshot.isOnline, message));
       throw new WorkspaceActivationError(message, cause);
     }
   }
 
-  async #recoverLocked(isOnline: boolean) {
+  async #recoverLocked(isOnline: boolean): Promise<"opened" | "guest-refused" | "failed"> {
     try {
       const store = await this.#stores.open({ _tag: "Locked" });
       this.#store = store;
       this.#activeOrganizationId = null;
       this.#stopSyncStatus = store.onSyncStatusChange(this.#events.publishSyncStatus);
+      return "opened";
     } catch (cause) {
       this.#store = undefined;
       this.#activeOrganizationId = null;
+      if (isGuestWorkspaceRefused(cause)) {
+        this.#publish(unauthenticated(isOnline, null));
+        return "guest-refused";
+      }
       this.#publish(unauthenticated(isOnline, messageOf(cause)));
+      return "failed";
     }
   }
 
@@ -231,11 +254,6 @@ export class AuthenticatedWorkspace {
   }
 
   #serialize<A>(run: () => Promise<A>): Promise<A> {
-    const result = this.#transition.then(run, run);
-    this.#transition = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return Effect.runPromise(this.#lock.withPermit(Effect.promise(() => run())));
   }
 }

@@ -75,13 +75,13 @@ export interface AppOptions {
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
-export const appFor = (member: boolean, authenticated = true, options: AppOptions = {}) => ({
+/** Route test harness. Organization access follows the JWT session: no session means revoked. */
+export const appFor = (authenticated = true, options: AppOptions = {}) => ({
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
     const runtime = {
       electronProtocol: "com.tabaaq.desktop",
       trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
       getSession: () => Effect.succeed(authenticated ? session : null),
-      hasActiveMember: () => Effect.succeed(member),
       loadWorkspace: () =>
         Effect.succeed(
           authenticated

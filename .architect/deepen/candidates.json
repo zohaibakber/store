@@ -1,0 +1,190 @@
+{
+  "generatedAt": "2026-08-21",
+  "vocabulary": [
+    "module",
+    "interface",
+    "depth",
+    "seam",
+    "adapter",
+    "leverage",
+    "locality"
+  ],
+  "domainTerms": {
+    "authenticatedWorkspace": "signed-in user's selected organization + isolated local inventory/sync; at most one active",
+    "updateWorkflow": "main-process updater lifecycle"
+  },
+  "scopeNotes": [
+    "Weighted uncommitted splits: auth service ops, mobile inventory, session-http, openSyncSocket, host-access, product/batch store, scan-phase.",
+    "HostAccessPolicy (apps/web/src/host-access.ts) is already designed in .architect/auth-wall — not re-proposed.",
+    "Update workflow already has a provider seam (updater-workflow) — not a hotspot for deepening."
+  ],
+  "topRecommendation": {
+    "id": "mobile-inventory",
+    "title": "Deepen mobile inventory as one authenticated-workspace module",
+    "why": "The uncommitted products.ts → inventory-* split left module-level session globals, a shallow barrel, and sync/mutation/lock logic spread across files. Callers and tests bounce; bugs hide in how locks, context, and sync interact. One deep interface for load/mutate/sync of the active authenticated workspace restores locality and gives leverage to ProductsProvider and the scanner."
+  },
+  "candidates": [
+    {
+      "id": "mobile-inventory",
+      "title": "Deepen mobile inventory as one authenticated-workspace module",
+      "files": [
+        "/home/madmax/Projects/store/apps/mobile/src/lib/products.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/inventory-session.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/inventory-sync.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/inventory-mutations.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/inventory-snapshot.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/inventory-types.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/features/products/products-provider.tsx",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/sync-socket.ts"
+      ],
+      "problem": "products.ts was carved into five inventory-* modules plus a re-export barrel. Session identity lives as exported mutable module state (activeUserId, organizationIdPromise); locks, snapshot shaping, mutations, and sync still call each other across files. Deleting any one inventory-* file only relocates complexity — deleting the cluster would force one place to own authenticated-workspace inventory again.",
+      "solution": "Collapse the inventory cluster behind one deep module that owns session context, serialization locks, local mutations, cache reads, and sync exchange for the active authenticated workspace. Keep platform sync-socket construction as a thin adapter injected at the seam; stop exporting module-level session globals and the shallow products barrel as the public interface.",
+      "benefits": "Locality: inventory bugs and auth-context resets concentrate in one module. Leverage: ProductsProvider, scanner writes, and detail screens share one load/mutate/sync interface. Tests: exercise observable snapshot and mutation outcomes through that interface with local KV/secure-store stand-ins, instead of unit-testing lock helpers in isolation.",
+      "recommendationStrength": "Strong",
+      "dependencyCategory": "local-substitutable",
+      "beforeAfter": {
+        "before": "ProductsProvider / scanner --> products.ts (barrel) --> inventory-session (globals) + inventory-mutations + inventory-sync + inventory-snapshot; sync opens socket via openMobileSyncSocket",
+        "after": "ProductsProvider / scanner --> MobileInventory (deep) --seam--> storage adapter + sync transport adapter; internal locks/session/maps stay private"
+      }
+    },
+    {
+      "id": "scan-session",
+      "title": "Deepen product scan session; stop testing phase helpers in isolation",
+      "files": [
+        "/home/madmax/Projects/store/apps/mobile/src/features/product-scanner/scan-phase.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/features/product-scanner/use-scan-session.ts",
+        "/home/madmax/Projects/store/apps/mobile/test/scan-phase.test.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/features/product-scanner/scan-review-sheet.tsx",
+        "/home/madmax/Projects/store/apps/mobile/app/(app)/products/scan.tsx",
+        "/home/madmax/Projects/store/apps/mobile/src/features/products/use-batch-writes.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/features/products/batch-mutation-target.ts"
+      ],
+      "problem": "scan-phase.ts is a shallow pure-helper module extracted for tests; real transitions, pending flags, drafts, and camera lifecycle live in use-scan-session. batch-mutation-target is a seven-line pass-through (deletion test: complexity vanishes). Understanding one scan concept requires bouncing across helpers, hook, and write glue.",
+      "solution": "Make a deep scan-session module whose interface is capture → review → save (product/batch/quantity), with phase machine and write orchestration inside. Keep Firebase inference behind an injected vision adapter; fold batchMutationTarget into the session or write path rather than a freestanding module.",
+      "benefits": "Locality: phase bugs and save races live with the transitions that cause them. Leverage: scan screen and review sheet become thin UI over one session interface. Tests: drive the session through outcomes (idle → review → inventoryReady) with a mock vision adapter; delete shallow scan-phase-only tests that survive only as long as the helper file does.",
+      "recommendationStrength": "Strong",
+      "dependencyCategory": "mock",
+      "beforeAfter": {
+        "before": "scan.tsx --> useScanSession --> scan-phase helpers + useBatchWrites --> batchMutationTarget + products mutations; tests target scan-phase only",
+        "after": "scan.tsx --> ScanSession (deep) --seam--> vision adapter + inventory writes; UI cards render session view-model; tests cross ScanSession interface"
+      }
+    },
+    {
+      "id": "auth-ops-locality",
+      "title": "Keep auth ops as private implementation of AuthService",
+      "files": [
+        "/home/madmax/Projects/store/apps/auth/src/service.ts",
+        "/home/madmax/Projects/store/apps/auth/src/login.ts",
+        "/home/madmax/Projects/store/apps/auth/src/session-ops.ts",
+        "/home/madmax/Projects/store/apps/auth/src/organization-ops.ts",
+        "/home/madmax/Projects/store/apps/auth/src/google-identity.ts",
+        "/home/madmax/Projects/store/apps/auth/src/crypto.ts",
+        "/home/madmax/Projects/store/apps/auth/src/errors.ts",
+        "/home/madmax/Projects/store/apps/auth/src/http.ts"
+      ],
+      "problem": "service.ts is now a thin wiring facade over four make*Ops factories that are only imported by service itself. The split improved file size but risks treating each ops module as a public seam: AuthServiceApi is already the deep interface callers need, while ops files invite tests and imports past that seam.",
+      "solution": "Treat login/session/organization/google-identity (and crypto helpers) as internal implementation of AuthService — same package, not separately advertised interfaces. Prefer tests and Effect layers at AuthService; reserve internal seams only where a second adapter (e.g. fake repository) already exists.",
+      "benefits": "Locality: auth worker behavior stays findable under AuthService without learning four factory shapes. Leverage: http routes and future callers keep one AuthServiceApi. Tests: replace-don't-layer — cover identify/authenticate/organize through AuthService with local D1/KV stand-ins; avoid a second tree of ops-level tests.",
+      "recommendationStrength": "Worth exploring",
+      "dependencyCategory": "local-substitutable",
+      "beforeAfter": {
+        "before": "http routes --> AuthService (thin) --> LoginOps | SessionOps | OrganizationOps | GoogleIdentityOps --> repository/ephemeral",
+        "after": "http routes --> AuthService (deep interface) with private ops composition inside the layer; repository/ephemeral remain injected adapters"
+      }
+    },
+    {
+      "id": "workspace-auth-adapter",
+      "title": "Deepen shared authenticated-workspace session broker",
+      "files": [
+        "/home/madmax/Projects/store/packages/workspace/src/session-http.ts",
+        "/home/madmax/Projects/store/packages/workspace/src/workspace.ts",
+        "/home/madmax/Projects/store/apps/web/src/auth.ts",
+        "/home/madmax/Projects/store/apps/desktop/electron/auth.ts",
+        "/home/madmax/Projects/store/packages/workspace/test/session-http.test.ts"
+      ],
+      "problem": "SessionHttpClient correctly pulled bearer/refresh/serialization into one module, but WebAuthBroker and desktop AuthBroker still duplicate snapshot refresh, online/error mapping, and listener publish logic. Host-specific refresh (cookie vs refresh-token body, persistence) leaks beside shared session semantics.",
+      "solution": "Deepen a shared WorkspaceAuthAdapter builder that owns ensure-fresh → GET /api/auth/session → publish/error mapping. Hosts only supply TokenStore, SessionFetch, needsRefresh/refreshSession, and optional persistence hooks as adapters at the seam.",
+      "benefits": "Locality: session snapshot rules change once for web and desktop. Leverage: AuthenticatedWorkspace keeps a smaller, more stable auth adapter interface. Tests: cover session adopt/renew/sign-out through the shared broker with in-memory tokens and a fake fetch; host adapters stay thin.",
+      "recommendationStrength": "Worth exploring",
+      "dependencyCategory": "ports & adapters",
+      "beforeAfter": {
+        "before": "AuthenticatedWorkspace --> WebAuthBroker | Desktop AuthBroker (duplicated refresh/snapshot) --> SessionHttpClient --> fetch",
+        "after": "AuthenticatedWorkspace --> SessionBroker (deep) --adapters--> TokenStore + refresh policy + fetch (+ desktop persist); hosts configure only"
+      }
+    },
+    {
+      "id": "auth-http-transport",
+      "title": "Separate auth HTTP transport concerns from AuthService",
+      "files": [
+        "/home/madmax/Projects/store/apps/auth/src/http.ts",
+        "/home/madmax/Projects/store/apps/auth/src/service.ts"
+      ],
+      "problem": "authRoutes mixes JSON decoding, cookie vs bearer client-kind responses, trusted-origin checks, and AuthService calls in one 350+ line module. Transport policy and domain outcomes share a file, so changing cookie shape risks touching login paths.",
+      "solution": "Deepen an auth HTTP transport module that maps requests to AuthService commands and maps TokenSet/errors to browser-cookie or bearer responses. Keep AuthService free of cookie names and Origin rules; inject secureCookies/trustedOrigins only at the transport seam.",
+      "benefits": "Locality: cookie/__Host- and CORS/origin rules live with HTTP adapters. Leverage: AuthService stays usable from non-HTTP tests unchanged. Tests: transport tested with a fake AuthService adapter; AuthService tested without HTTP.",
+      "recommendationStrength": "Worth exploring",
+      "dependencyCategory": "ports & adapters",
+      "beforeAfter": {
+        "before": "HTTP request --> authRoutes (decode + cookies + origins + AuthService calls interleaved)",
+        "after": "HTTP request --> AuthHttpTransport --> AuthService; cookie/bearer adapters at transport seam only"
+      }
+    },
+    {
+      "id": "authenticated-workspace-naming",
+      "title": "Align dual AuthenticatedWorkspace names with domain language",
+      "files": [
+        "/home/madmax/Projects/store/packages/workspace/src/workspace.ts",
+        "/home/madmax/Projects/store/packages/persistence/src/config.ts",
+        "/home/madmax/Projects/store/packages/persistence/src/core.ts",
+        "/home/madmax/Projects/store/packages/persistence/src/index.ts",
+        "/home/madmax/Projects/store/CONTEXT.md"
+      ],
+      "problem": "CONTEXT.md's authenticated workspace maps to two different modules both named AuthenticatedWorkspace: the workspace package's activation orchestrator and persistence's Effect Context tag for scoped org/user/device. Navigating the seam requires knowing which package you are in; AI and humans mis-wire imports.",
+      "solution": "Rename or alias so domain language has one primary module name for activation (e.g. keep AuthenticatedWorkspace for the orchestrator) and a distinct name for the persistence Context (e.g. WorkspaceScope / InventoryWorkspace) that still means 'at most one active org+device scope'. Update exports and CONTEXT.md in the same change.",
+      "benefits": "Locality: one concept → one name across packages. Leverage: clearer seams between session activation and store scoping. Tests: fewer wrong-import mistakes; existing behaviour unchanged if rename is mechanical.",
+      "recommendationStrength": "Worth exploring",
+      "dependencyCategory": "in-process",
+      "beforeAfter": {
+        "before": "Callers import AuthenticatedWorkspace from @store/workspace OR @store/persistence (same name, different roles)",
+        "after": "Activation module vs persistence scope module have distinct names; CONTEXT.md points to both roles under authenticated workspace"
+      }
+    },
+    {
+      "id": "batch-store-seam",
+      "title": "Revisit BatchStore extraction from ProductStore",
+      "files": [
+        "/home/madmax/Projects/store/packages/persistence/src/inventory/batch-store.ts",
+        "/home/madmax/Projects/store/packages/persistence/src/inventory/product-store.ts",
+        "/home/madmax/Projects/store/packages/persistence/src/service.ts"
+      ],
+      "problem": "makeBatchStore has a single caller (makeProductStore); ProductStore extends BatchStore. Quantity validators are exported from batch-store though nothing outside imports them yet. One-adapter seam (deletion of batch-store mostly moves lines back) — depth may not have increased at the Offline-store interface.",
+      "solution": "Either fold batch operations back into a single inventory store implementation while keeping OfflineStore's public interface unchanged, or justify a real second adapter (e.g. tests that construct BatchStore alone). Avoid exporting pure quantity helpers as a freestanding test surface if OfflineStore already covers them.",
+      "benefits": "Locality: product+batch mutations that share findProduct/hydration stay together if the split is not earning keep. Leverage: callers already see one Offline store — don't multiply internal interfaces without a second adapter. Tests: keep asserting at Offline-store / ProductStore interface; delete helper-only tests if added.",
+      "recommendationStrength": "Speculative",
+      "dependencyCategory": "local-substitutable",
+      "beforeAfter": {
+        "before": "OfflineStore --> ProductStore extends BatchStore; makeProductStore --> makeBatchStore(findProduct)",
+        "after": "OfflineStore --> single InventoryStore implementation (or BatchStore only if a second adapter appears); no hypothetical internal seam"
+      }
+    },
+    {
+      "id": "open-sync-socket",
+      "title": "Leave openSyncSocket as a thin shared helper (do not deepen further)",
+      "files": [
+        "/home/madmax/Projects/store/packages/sync-client/src/open.ts",
+        "/home/madmax/Projects/store/apps/web/src/sync-socket.ts",
+        "/home/madmax/Projects/store/apps/mobile/src/lib/sync-socket.ts",
+        "/home/madmax/Projects/store/apps/desktop/electron/sync-socket.ts"
+      ],
+      "problem": "openSyncSocket only wraps URL construction and SyncTransportError. Platform files remain correct thin adapters (WebSocket headers differ). Deletion test: removing openSyncSocket does not concentrate complexity — it inlines a few lines into three hosts.",
+      "solution": "Do not invent a deeper sync-open module. If anything deepens, fold reconnect/session concerns into existing SyncSocketSession rather than thickening openSyncSocket. Keep host connect callbacks as the real adapters.",
+      "benefits": "Avoids false depth and extra seams. Locality for live sync stays in SyncSocketSession/runtime. Leverage already exists at session level; open remains a shared one-liner helper.",
+      "recommendationStrength": "Speculative",
+      "dependencyCategory": "ports & adapters",
+      "beforeAfter": {
+        "before": "Hosts --> openSyncSocket(connect) --> SyncSocket; session module handles protocol",
+        "after": "Same shape retained; no new module — deepen SyncSocketSession only if reconnect/protocol needs grow"
+      }
+    }
+  ]
+}

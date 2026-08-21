@@ -1,4 +1,10 @@
-import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/react-router";
+import type { WorkspaceSnapshot } from "@store/contracts";
+import {
+  createRootRouteWithContext,
+  Outlet,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { AppLoading } from "@/components/app/loading";
@@ -9,15 +15,28 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 
 export interface RouterContext {
   readonly store: Store;
   readonly initialAuth: InitialAuth;
+  /** Live session truth for beforeLoad admit — must stay in sync with AuthProvider. */
+  readonly sessionSnapshot: WorkspaceSnapshot | null;
+  readonly access: HostAccessPolicy;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+  beforeLoad: ({ context, location }) => {
+    const verdict = context.access.admit({
+      location: { pathname: location.pathname },
+      snapshot: context.sessionSnapshot,
+    });
+    if (verdict._tag === "Redirect") {
+      throw redirect({ to: verdict.to, replace: verdict.replace });
+    }
+  },
   component: RootLayout,
   notFoundComponent: NotFound,
   staticData: { breadcrumb: "Home" },
@@ -47,8 +66,10 @@ function AuthenticatedLayout() {
 }
 
 function AppShell() {
+  const { access } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  if (pathname === "/sign-in") return <Outlet />;
+  const chrome = access.chrome({ pathname });
+  if (chrome._tag === "Bare") return <Outlet />;
   return (
     <TooltipProvider>
       <CommandMenuProvider>

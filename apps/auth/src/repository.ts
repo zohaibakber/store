@@ -915,8 +915,3 @@ export const authRepositoryLayer = (database: D1Database) =>
       AuthRepository.of(makeAuthRepository(drizzle)),
     ),
   ).pipe(Layer.provide(D1Client.layer({ db: database })));
-
-export const decodeSessionId = Schema.decodeUnknownEffect(SessionId);
-export const decodeUserId = Schema.decodeUnknownEffect(UserId);
-export const decodeEmail = Schema.decodeUnknownEffect(EmailAddress);
-export const decodeRole = Schema.decodeUnknownEffect(OrganizationRole);

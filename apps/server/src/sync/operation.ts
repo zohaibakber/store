@@ -16,43 +16,43 @@ import { reconcileBatch } from "./inventory";
 import type { SyncActor } from "./model";
 import { decodeEntityRow } from "./row-validation";
 
-const MOBILE_STOCK_CORRECTION_NOTE = "Stock corrected from mobile scanner";
+/** Optimistic concurrency for stock corrections: every adjustment that ships a
+ * batch upsert must target the next batch version. Notes stay human copy only. */
+const assertStockAdjustmentVersion = Effect.fn("SyncDatabase.assertStockAdjustmentVersion")(
+  function* (tx: SyncTransaction, actor: SyncActor, operation: SyncOperation) {
+    for (const movementChange of operation.changes) {
+      if (movementChange.entity !== "stockMovement" || movementChange.action !== "upsert") continue;
+      const movement = yield* decodeEntityRow("stockMovement", movementChange);
+      if (movement.type !== "adjustment") continue;
 
-const assertMobileStockCorrectionVersion = Effect.fn(
-  "SyncDatabase.assertMobileStockCorrectionVersion",
-)(function* (tx: SyncTransaction, actor: SyncActor, operation: SyncOperation) {
-  for (const movementChange of operation.changes) {
-    if (movementChange.entity !== "stockMovement" || movementChange.action !== "upsert") continue;
-    const movement = yield* decodeEntityRow("stockMovement", movementChange);
-    if (movement.note !== MOBILE_STOCK_CORRECTION_NOTE) continue;
-
-    const batchChange = operation.changes.find(
-      (change) =>
-        change.entity === "batch" &&
-        change.action === "upsert" &&
-        change.entityId === movement.batchId,
-    );
-    if (!batchChange)
-      return yield* Effect.fail(
-        protocolError("INVALID_ENTITY_ROW", "A stock correction must include its batch."),
+      const batchChange = operation.changes.find(
+        (change) =>
+          change.entity === "batch" &&
+          change.action === "upsert" &&
+          change.entityId === movement.batchId,
       );
+      if (!batchChange)
+        return yield* Effect.fail(
+          protocolError("INVALID_ENTITY_ROW", "A stock correction must include its batch."),
+        );
 
-    const [current] = yield* tx
-      .select({ rowVersion: batches.rowVersion })
-      .from(batches)
-      .where(
-        and(eq(batches.organizationId, actor.organizationId), eq(batches.id, movement.batchId)),
-      )
-      .limit(1);
-    if (current && batchChange.rowVersion !== current.rowVersion + 1)
-      return yield* Effect.fail(
-        protocolError(
-          "ENTITY_CONFLICT",
-          "Stock changed on another device. Review the latest count and try again.",
-        ),
-      );
-  }
-});
+      const [current] = yield* tx
+        .select({ rowVersion: batches.rowVersion })
+        .from(batches)
+        .where(
+          and(eq(batches.organizationId, actor.organizationId), eq(batches.id, movement.batchId)),
+        )
+        .limit(1);
+      if (current && batchChange.rowVersion !== current.rowVersion + 1)
+        return yield* Effect.fail(
+          protocolError(
+            "ENTITY_CONFLICT",
+            "Stock changed on another device. Review the latest count and try again.",
+          ),
+        );
+    }
+  },
+);
 
 export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function* (
   tx: SyncTransaction,
@@ -119,7 +119,7 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
     });
   }
 
-  yield* assertMobileStockCorrectionVersion(tx, actor, operation);
+  yield* assertStockAdjustmentVersion(tx, actor, operation);
 
   const canonicalChanges = new Map<string, SyncEntityChange>();
   const affectedBatchIds = new Set<string>();

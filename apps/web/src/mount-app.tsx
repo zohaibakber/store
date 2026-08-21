@@ -3,6 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
+import type { HostAccessPolicy } from "@/host-access";
 import type { InitialAuth } from "@/lib/auth";
 import { StoreProvider, type Store } from "@/lib/store";
 
@@ -12,8 +13,14 @@ export const mountApp = (input: {
   readonly store: Store;
   readonly initialAuth: InitialAuth;
   readonly history: RouterHistory;
+  readonly access: HostAccessPolicy;
 }) => {
-  const router = getRouter(input.history, input.store, input.initialAuth);
+  const router = getRouter({
+    history: input.history,
+    store: input.store,
+    initialAuth: input.initialAuth,
+    access: input.access,
+  });
   const app = (
     <StoreProvider store={input.store}>
       <RouterProvider router={router} />

@@ -26,7 +26,7 @@ export const layer = Layer.effect(
   }),
 );
 
-export class NotFound extends Schema.TaggedErrorClass<NotFound>()("UserRepo.NotFound", {
+export class NotFound extends Schema.TaggedError<NotFound>()("UserRepo.NotFound", {
   id: UserId,
 }) {}
 
@@ -64,6 +64,7 @@ Guidance:
 - Export only intentional surface; keep local schemas, row codecs, helpers, and implementation details unexported.
 - Do not introduce TypeScript `namespace` declarations for organization.
 - Use a named service class such as `class UserRepo extends Context.Service...` when an external library or existing codebase does not use module namespace style.
+- Effect v4 also allows `Context.Service` with a `make` effect and an explicit `static layer = Layer.effect(this, this.make).pipe(Layer.provide(...))`. Prefer that when a service owns its construction; do not expect `make` to auto-create a layer.
 
 ## Layer Constructors
 

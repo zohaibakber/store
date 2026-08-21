@@ -1,4 +1,4 @@
-export { AuthenticatedWorkspace } from "./config";
+export { WorkspaceScope } from "./config";
 export type { PersistenceConfig, SyncTransport, Workspace } from "./config";
 export {
   InvoiceNotFoundError,
@@ -8,4 +8,4 @@ export {
 } from "./errors";
 export { OfflineStore, storeLayer } from "./service";
 export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "@store/sync-client";
-export { makeSyncSocketSession, syncSocketFromHandle } from "@store/sync-client";
+export { makeSyncSocketSession, openSyncSocket, syncSocketFromHandle } from "@store/sync-client";

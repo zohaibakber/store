@@ -1,6 +1,10 @@
-import { liveSocketUrl } from "@store/contracts";
-import { SyncTransportError, syncSocketFromHandle, type SyncSocket } from "@store/persistence";
-import * as Effect from "effect/Effect";
+import {
+  openSyncSocket,
+  syncSocketFromHandle,
+  type SyncSocket,
+  SyncTransportError,
+} from "@store/persistence";
+import type * as Effect from "effect/Effect";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
 const textFromNodeMessage = (data: RawData): string => {
@@ -17,24 +21,21 @@ export const openDesktopSyncSocket = (input: {
   readonly getAccessToken: () => string | null;
   readonly electronOrigin: string;
 }): Effect.Effect<SyncSocket, SyncTransportError> =>
-  Effect.try({
-    try: () => {
+  openSyncSocket({
+    baseUrl: input.baseUrl,
+    organizationId: input.organizationId,
+    deviceId: input.deviceId,
+    failureMessage: "Couldn't connect to live sync.",
+    connect: (url) => {
       const token = input.getAccessToken();
-      const socket = new NodeWebSocket(
-        liveSocketUrl({
-          baseUrl: input.baseUrl,
-          organizationId: input.organizationId,
-          deviceId: input.deviceId,
-        }),
-        {
-          headers: token
-            ? {
-                "electron-origin": input.electronOrigin,
-                authorization: `Bearer ${token}`,
-              }
-            : { "electron-origin": input.electronOrigin },
-        },
-      );
+      const socket = new NodeWebSocket(url, {
+        headers: token
+          ? {
+              "electron-origin": input.electronOrigin,
+              authorization: `Bearer ${token}`,
+            }
+          : { "electron-origin": input.electronOrigin },
+      });
       return syncSocketFromHandle({
         send: (payload) => socket.send(payload),
         close: (code, reason) => socket.close(code, reason),
@@ -53,10 +54,4 @@ export const openDesktopSyncSocket = (input: {
         },
       });
     },
-    catch: (cause) =>
-      SyncTransportError.make({
-        message: cause instanceof Error ? cause.message : "Couldn't connect to live sync.",
-        retryable: true,
-        cause,
-      }),
   });

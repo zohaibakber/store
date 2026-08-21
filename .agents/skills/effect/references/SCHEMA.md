@@ -109,10 +109,10 @@ Guidance:
 
 ## Errors
 
-`Schema.TaggedErrorClass` is the explicit class exception for typed Effect errors.
+`Schema.TaggedError` is the default for typed, schema-backed, yieldable Effect errors in v4.
 
 ```ts
-export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>()(
+export class PersistenceError extends Schema.TaggedError<PersistenceError>()(
   "UserRepo.PersistenceError",
   {
     operation: Schema.String,
@@ -128,3 +128,5 @@ Guidance:
 - Use schema unions for public API or transport error surfaces.
 - Use `Schema.Defect()` for defect-like payloads.
 - Preserve interruption when catching broad causes at ingress, worker, or stream boundaries.
+- Prefer `Data.TaggedError` only for lightweight internal errors that do not need Schema decode/encode.
+- Do not use `Schema.TaggedErrorClass` (removed / never shipped under that name in Effect v4).

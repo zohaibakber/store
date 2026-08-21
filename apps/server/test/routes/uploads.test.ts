@@ -44,7 +44,7 @@ const workingAi = (generate = vi.fn(async () => JSON.stringify(extraction))) => 
 
 describe("invoice upload authorization", () => {
   it("denies unauthenticated upload requests", async () => {
-    const response = await appFor(false, false).request(
+    const response = await appFor(false).request(
       "/api/uploads",
       invoiceForm([pdf()]),
       workingAi().ai,
@@ -52,18 +52,19 @@ describe("invoice upload authorization", () => {
     expect(response.status).toBe(401);
   });
 
-  it("denies uploads after organization access is revoked", async () => {
+  it("denies uploads when the session was revoked with organization access", async () => {
+    // Membership removal invalidates the session; there is no separate member ping.
     const response = await appFor(false).request(
       "/api/uploads",
       invoiceForm([pdf()]),
       workingAi().ai,
     );
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it("never reaches the model when the caller is unauthorized", async () => {
     const { ai, generate } = workingAi();
-    await appFor(false, false).request("/api/uploads", invoiceForm([pdf()]), ai);
+    await appFor(false).request("/api/uploads", invoiceForm([pdf()]), ai);
     expect(generate).not.toHaveBeenCalled();
   });
 });

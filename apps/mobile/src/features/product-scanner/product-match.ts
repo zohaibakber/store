@@ -1,5 +1,5 @@
 import type { ProductScanResult } from "@/features/product-scanner/types";
-import type { MobileProduct } from "@/lib/products";
+import type { MobileProduct } from "@/lib/inventory-types";
 
 const normalized = (value: string | null | undefined) =>
   value

@@ -8,7 +8,7 @@ import { mapPersistenceError } from "./errors";
 import { storeLayer } from "./service";
 
 export type { PersistenceConfig, SyncTransport, Workspace } from "./config";
-export { AuthenticatedWorkspace } from "./config";
+export { WorkspaceScope } from "./config";
 export {
   InvoiceNotFoundError,
   PersistenceError,
@@ -17,7 +17,7 @@ export {
 } from "./errors";
 export { OfflineStore, storeLayer } from "./service";
 export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "@store/sync-client";
-export { makeSyncSocketSession, syncSocketFromHandle } from "@store/sync-client";
+export { makeSyncSocketSession, openSyncSocket, syncSocketFromHandle } from "@store/sync-client";
 
 export const layer = (config: PersistenceConfig) => {
   const migrationsFolder = config.migrationsFolder;

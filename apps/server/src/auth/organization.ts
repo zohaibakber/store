@@ -69,14 +69,6 @@ export const OrganizationAuthLive = Layer.effect(
             forbidden("ORGANIZATION_REQUIRED", "Select an organization first."),
           );
 
-        const hasActiveMember = yield* runtime
-          .hasActiveMember(headers)
-          .pipe(logAuthFailure("Organization membership verification failed"), Effect.orDie);
-        if (!hasActiveMember)
-          return yield* Effect.fail(
-            forbidden("ORGANIZATION_ACCESS_DENIED", "You do not have access to this organization."),
-          );
-
         return yield* httpEffect.pipe(
           Effect.provideService(CurrentOrganization, {
             user: session.user,

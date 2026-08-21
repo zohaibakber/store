@@ -1,4 +1,4 @@
-import type { MobileProduct } from "@/lib/products";
+import type { MobileProduct } from "@/lib/inventory-types";
 
 export type StockFilter = "all" | "low" | "out" | "hidden";
 

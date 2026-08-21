@@ -22,8 +22,8 @@ import {
 } from "@/lib/auth-client";
 import { forgetGoogleAccount, signInWithGoogleAccount } from "@/lib/google-signin";
 import { hapticSuccess } from "@/lib/haptics";
+import { inventoryWorkspaceFactory } from "@/lib/inventory-workspace";
 import { rememberLastUserId } from "@/lib/local-session";
-import { resetProductsSession } from "@/lib/products";
 
 /** Mobile has no guest mode: without a session there is no inventory to open. */
 type SignedOutAuth = {
@@ -120,7 +120,7 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
       await clearMobileTokens();
       throw new Error("The API did not accept the new session.");
     }
-    resetProductsSession();
+    inventoryWorkspaceFactory.close();
     setState(await authenticatedState(workspace));
     hapticSuccess();
     router.replace("/home");
@@ -137,7 +137,7 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
     async (everywhere = false) => {
       await signOutMobile(everywhere);
       await forgetGoogleAccount();
-      resetProductsSession();
+      inventoryWorkspaceFactory.close();
       setState(signedOut);
       router.replace("/auth");
     },

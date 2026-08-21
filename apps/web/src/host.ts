@@ -1,17 +1,18 @@
-import { OrganizationCommandResult, OrganizationRoster } from "@store/auth";
 import type { SyncStatus, WorkspaceSnapshot } from "@store/contracts";
 import { localMigrations } from "@store/db/local/migrations";
 import { browserLayer, OfflineStore } from "@store/persistence/browser";
 import {
   AuthenticatedWorkspace,
+  GuestWorkspaceRefused,
+  fetchOrganizationRoster,
   makeOfflineStoreApi,
+  organizeOrganization,
   withStoreEffect,
   type WorkspaceStoreAdapter,
   type WorkspaceTarget,
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import type { AuthSessionBridge } from "@/lib/auth";
@@ -40,8 +41,12 @@ const withStore = withStoreEffect;
 const makeWorkspaceStores = (input: {
   readonly baseUrl: string;
   readonly getAccessToken: () => string | null;
+  readonly allowsGuestWorkspace: boolean;
 }): WorkspaceStoreAdapter => ({
   open: async (target) => {
+    if (target._tag === "Locked" && !input.allowsGuestWorkspace) {
+      throw new GuestWorkspaceRefused({});
+    }
     const baseConfig = {
       dataDir: dataDirectory(target),
       bundledMigrations: localMigrations,
@@ -98,6 +103,7 @@ export interface WebWorkspace {
 export const startWebWorkspace = async (
   baseUrl: string,
   authBaseUrl: string,
+  options: { readonly allowsGuestWorkspace: boolean } = { allowsGuestWorkspace: false },
 ): Promise<WebWorkspace> => {
   const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
@@ -107,6 +113,7 @@ export const startWebWorkspace = async (
     stores: makeWorkspaceStores({
       baseUrl,
       getAccessToken: () => auth.accessToken,
+      allowsGuestWorkspace: options.allowsGuestWorkspace,
     }),
     deviceId: loadDeviceId(),
     events: {
@@ -129,14 +136,11 @@ export const startWebWorkspace = async (
       signOut: async () => {
         await workspace.execute({ _tag: "SignOut" });
       },
-      organizationRoster: async () =>
-        Schema.decodeUnknownSync(OrganizationRoster)(
-          await workspace.authRequest("/v1/organization"),
-        ),
-      organize: async (command) =>
-        Schema.decodeUnknownSync(OrganizationCommandResult)(
-          await workspace.authRequest("/v1/organization", { method: "POST", body: command }),
-        ),
+      organizationRoster: () =>
+        fetchOrganizationRoster((pathname, init) => workspace.authRequest(pathname, init)),
+      organize: (command) =>
+        organizeOrganization((pathname, init) => workspace.authRequest(pathname, init), command),
+      apiRequest: (pathname, init) => workspace.request(pathname, init),
       onSessionChange: (listener) => {
         snapshotListeners.add(listener);
         return () => snapshotListeners.delete(listener);

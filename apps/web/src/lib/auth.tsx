@@ -5,6 +5,7 @@ import type {
   TokenSet,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
+import type { JsonApiResponse, JsonRequestInit } from "@store/workspace";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -18,6 +19,8 @@ export interface AuthSessionBridge {
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
+  /** Bearer-authenticated store API. Web-only; Electron uses `window.serverApi`. */
+  readonly apiRequest?: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }
 
@@ -100,6 +103,12 @@ export function AuthProvider({
         setSnapshot(next);
         setError(next.workspaceError ?? null);
         setLoading(false);
+        router.update({
+          context: {
+            ...router.options.context,
+            sessionSnapshot: next,
+          },
+        });
         return;
       }
 
@@ -108,6 +117,13 @@ export function AuthProvider({
       pendingScopeRef.current = nextScope;
       setError(next.workspaceError ?? null);
       setLoading(true);
+
+      router.update({
+        context: {
+          ...router.options.context,
+          sessionSnapshot: next,
+        },
+      });
 
       if (nextScope === null) {
         router.clearCache();
@@ -158,4 +174,3 @@ export function useAuth() {
   if (!value) throw new Error("useAuth must be used inside AuthProvider");
   return value;
 }
-export type { WorkspaceSnapshot };

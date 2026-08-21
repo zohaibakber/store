@@ -30,6 +30,10 @@ declare global {
       signOut(): Promise<void>;
       organizationRoster(): Promise<OrganizationRoster>;
       organize(command: OrganizationCommand): Promise<OrganizationCommandResult>;
+      apiRequest?(
+        pathname: string,
+        init?: import("@store/workspace").JsonRequestInit,
+      ): Promise<import("@store/workspace").JsonApiResponse>;
       openExternal(url: string): Promise<void>;
       onOAuthCallback(listener: (url: string) => void): () => void;
       onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;

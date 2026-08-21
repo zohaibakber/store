@@ -5,6 +5,7 @@ import { bootstrapAuth, setAuthSessionBridge } from "@/lib/auth";
 import { authBaseUrl, completeGoogle } from "@/lib/first-party-auth";
 
 import { startWebWorkspace } from "./host";
+import { browserHostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 
 export const startWeb = async () => {
@@ -12,12 +13,16 @@ export const startWeb = async () => {
     configuredApiUrl: import.meta.env.VITE_API_URL ?? "",
     pageOrigin: globalThis.location.origin,
   });
-  const { bridge, store } = await startWebWorkspace(apiBaseUrl, authBaseUrl);
+  const access = browserHostAccess();
+  const { bridge, store } = await startWebWorkspace(apiBaseUrl, authBaseUrl, {
+    allowsGuestWorkspace: access.allowsGuestWorkspace,
+  });
   setAuthSessionBridge(bridge);
   await completeGoogle(globalThis.location.href).catch(() => false);
   mountApp({
     store,
     initialAuth: await bootstrapAuth(),
     history: createBrowserHistory(),
+    access,
   });
 };

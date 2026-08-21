@@ -49,24 +49,25 @@ describe("sync authorization", () => {
   });
 
   it("denies unauthenticated live upgrades", async () => {
-    const response = await appFor(false, false).request(
+    const response = await appFor(false).request(
       "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
       { headers: { Upgrade: "websocket" } },
     );
     expect(response.status).toBe(401);
   });
 
-  it("denies live upgrades after organization access is revoked", async () => {
+  it("denies live upgrades when the session was revoked with organization access", async () => {
+    // Membership removal invalidates the session; there is no separate member ping.
     const response = await appFor(false).request(
       "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
       { headers: { Upgrade: "websocket" } },
     );
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it("authorizes live upgrades and forwards only trusted workspace identity", async () => {
     const connect = vi.fn((_input: SyncLiveInput) => Effect.succeed(HttpServerResponse.empty()));
-    const response = await appFor(true, true, { connectSyncLive: connect }).request(
+    const response = await appFor(true, { connectSyncLive: connect }).request(
       "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
       { headers: { Upgrade: "websocket" } },
     );
@@ -85,7 +86,7 @@ describe("sync authorization", () => {
 
   it("does not attach CORS headers to WebSocket upgrades", async () => {
     const connect = vi.fn((_input: SyncLiveInput) => Effect.succeed(HttpServerResponse.empty()));
-    const response = await appFor(true, true, { connectSyncLive: connect }).request(
+    const response = await appFor(true, { connectSyncLive: connect }).request(
       "/api/sync/live?organizationId=org-1&deviceId=device-1&protocolVersion=2",
       { headers: { Upgrade: "websocket", origin: "http://localhost:5173" } },
     );

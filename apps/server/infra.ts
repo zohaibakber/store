@@ -164,8 +164,6 @@ export const ApiLive = Api.make(
       electronProtocol: security.electronProtocol,
       trustedOrigins: security.trustedOrigins,
       getSession: (headers) => authenticateHeaders(headers, jwtConfig),
-      hasActiveMember: (headers) =>
-        authenticateHeaders(headers, jwtConfig).pipe(Effect.map((session) => session !== null)),
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),

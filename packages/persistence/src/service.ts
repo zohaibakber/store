@@ -7,7 +7,7 @@ import type * as Stream from "effect/Stream";
 import type { AnalyticsStore } from "./analytics/store";
 import { makeAnalyticsStore } from "./analytics/store";
 import type { PersistenceConfig } from "./config";
-import { AuthenticatedWorkspace } from "./config";
+import { WorkspaceScope } from "./config";
 import { initializeDatabase } from "./database/bootstrap";
 import { makeDatabase } from "./database/client";
 import { PersistenceError } from "./errors";
@@ -31,7 +31,7 @@ export class OfflineStore extends Context.Service<
 
 const make = (config: PersistenceConfig) =>
   Effect.gen(function* () {
-    const workspace = yield* AuthenticatedWorkspace;
+    const workspace = yield* WorkspaceScope;
     const database = yield* makeDatabase(config);
     yield* initializeDatabase(database, workspace);
     const syncEngine = yield* makeSyncEngine(database, config, workspace);
@@ -53,5 +53,5 @@ const make = (config: PersistenceConfig) =>
 export const storeLayer = (config: PersistenceConfig) =>
   Layer.effect(OfflineStore, make(config)).pipe(
     Layer.provide(MutationIds.live),
-    Layer.provide(AuthenticatedWorkspace.layer(config.workspace ?? AuthenticatedWorkspace.locked)),
+    Layer.provide(WorkspaceScope.layer(config.workspace ?? WorkspaceScope.locked)),
   );

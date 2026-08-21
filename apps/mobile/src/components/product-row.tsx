@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { radius, size as sizes } from "@/theme/tokens";
 import { typography } from "@/theme/typography";
 
 type ProductRowProps = {
+  readonly id: string;
   readonly aisle: string | null;
   readonly category: string;
   readonly details: string;
@@ -17,10 +19,10 @@ type ProductRowProps = {
   readonly stockLabel: string;
   readonly unitPriceLabel: string;
   readonly visible: boolean;
-  readonly onPress?: () => void;
 };
 
 export function ProductRow({
+  id,
   aisle,
   category,
   details,
@@ -29,7 +31,6 @@ export function ProductRow({
   stockLabel,
   unitPriceLabel,
   visible,
-  onPress,
 }: ProductRowProps) {
   const colors = useColors();
   const supporting = [category, details, aisle ? `Aisle ${aisle}` : null]
@@ -38,8 +39,12 @@ export function ProductRow({
   const stockTone = stock === 0 ? "destructive" : stock <= 10 ? "warning" : "muted";
   const label = `${name}, ${stockLabel}, ${unitPriceLabel}`;
 
-  const body = (
-    <>
+  return (
+    <PressableScale
+      accessibilityHint="Opens product details"
+      accessibilityLabel={label}
+      onPress={() => router.push(`/products/${id}`)}
+    >
       <View style={styles.row}>
         <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
           <Text style={styles.avatarText} tone="muted">
@@ -69,20 +74,6 @@ export function ProductRow({
         </View>
       </View>
       <Separator inset={68} />
-    </>
-  );
-
-  if (!onPress) {
-    return <View accessibilityLabel={label}>{body}</View>;
-  }
-
-  return (
-    <PressableScale
-      accessibilityHint="Opens product details"
-      accessibilityLabel={label}
-      onPress={onPress}
-    >
-      {body}
     </PressableScale>
   );
 }

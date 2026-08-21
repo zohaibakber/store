@@ -3,7 +3,19 @@ import path from "node:path";
 
 import { RefreshInput, SignOutInput, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
-import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
+import {
+  MemoryTokenStore,
+  RequestError,
+  SessionHttpClient,
+  adoptSessionTokens,
+  decodeTokenSet,
+  loadSessionSnapshot,
+  refreshTokenNeedsRefresh,
+  renewSessionSnapshot,
+  type JsonRequestInit,
+  type SessionSnapshotHooks,
+  type WorkspaceAuthAdapter,
+} from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { app, net, safeStorage } from "electron";
@@ -11,45 +23,43 @@ import { app, net, safeStorage } from "electron";
 const PersistedAuth = Schema.Struct({ snapshot: WorkspaceSnapshot, tokens: TokenSet });
 type PersistedAuth = typeof PersistedAuth.Type;
 
-const RequestFailure = Schema.Struct({
-  message: Schema.optional(Schema.String),
-  error: Schema.optional(
-    Schema.Union([
-      Schema.String,
-      Schema.Struct({
-        code: Schema.optional(Schema.String),
-        message: Schema.optional(Schema.String),
-      }),
-    ]),
-  ),
-});
-
-export class RequestError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-  }
-}
-
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
+export { RequestError };
+
 export class AuthBroker implements WorkspaceAuthAdapter {
-  readonly #baseUrl: string;
-  readonly #authBaseUrl: string;
+  readonly #http: SessionHttpClient;
+  readonly #tokens: MemoryTokenStore;
   readonly #electronOrigin: string;
-  readonly #listeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
+  readonly #hooks: SessionSnapshotHooks;
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
-  #tokens: TokenSetType | null = null;
-  #refreshInFlight: Promise<void> | null = null;
 
   constructor(baseUrl: string, authBaseUrl: string, electronOrigin: string) {
-    this.#baseUrl = baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
-    this.#authBaseUrl = authBaseUrl.replace(/\/$/, "");
+    this.#tokens = new MemoryTokenStore();
     this.#electronOrigin = electronOrigin;
+    this.#http = new SessionHttpClient({
+      apiBaseUrl: baseUrl,
+      authBaseUrl,
+      tokens: this.#tokens,
+      fetch: (url, init) => net.fetch(url, init),
+      needsRefresh: refreshTokenNeedsRefresh,
+      refreshSession: () => this.#rotateTokens(),
+      requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
+    });
+    this.#hooks = {
+      http: this.#http,
+      getLocalSnapshot: () => this.#snapshot,
+      publish: (snapshot) => {
+        this.#snapshot = snapshot;
+        return snapshot;
+      },
+      clearAuthenticated: () => this.#clear(),
+      persistAuthenticated: async (snapshot) => {
+        const tokens = this.#tokens.get();
+        if (tokens) await this.#writePersisted({ snapshot, tokens });
+      },
+    };
   }
 
   get snapshot() {
@@ -57,141 +67,61 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   get accessToken() {
-    return this.#tokens?.accessToken ?? null;
-  }
-
-  onChange(listener: (snapshot: WorkspaceSnapshot) => void) {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    return this.#tokens.get()?.accessToken ?? null;
   }
 
   async initialize() {
     const persisted = await this.#readPersisted();
     if (persisted) {
-      this.#tokens = persisted.tokens;
+      this.#tokens.set(persisted.tokens);
       this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
-      await this.#refreshTokens().catch(() => undefined);
+      await this.#http.ensureFreshAccess().catch(() => undefined);
     }
     return this.#snapshot;
   }
 
-  async adoptSession(tokens: TokenSetType | null) {
-    this.#tokens = tokens;
-    if (!tokens) {
-      await this.#clear();
-      return this.#publish(unauthenticated(true));
-    }
-    return this.refresh();
+  adoptSession(tokens: TokenSetType | null) {
+    return adoptSessionTokens(this.#hooks, tokens, {
+      onCleared: () => this.#clear(),
+    });
   }
 
-  async renewSession() {
-    const tokens = this.#tokens;
-    if (tokens?.refreshToken) await this.#rotateTokens(tokens).catch(() => undefined);
-    return this.refresh();
+  renewSession() {
+    return renewSessionSnapshot(this.#hooks);
   }
 
-  async refresh() {
-    if (!this.#tokens) {
-      return this.#publish(
-        withWorkspaceOnline(this.#snapshot, this.#snapshot.status === "authenticated"),
-      );
-    }
-    try {
-      const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
-        await this.#request("/api/auth/session"),
-      );
-      if (snapshot.status !== "authenticated") {
-        await this.#clear();
-        return this.#publish(unauthenticated(true));
-      }
-      return this.#persistAndPublish(withWorkspaceOnline(snapshot, true));
-    } catch (error) {
-      if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
-        await this.#clear();
-        return this.#publish(unauthenticated(true, error.message));
-      }
-      return this.#publish(withWorkspaceOnline(this.#snapshot, false));
-    }
+  refresh() {
+    return loadSessionSnapshot(this.#hooks);
   }
 
   async signOut() {
-    await this.#refreshInFlight?.catch(() => undefined);
-    const refreshToken = this.#tokens?.refreshToken;
-    this.#tokens = null;
+    await this.#http.awaitRefreshInFlight()?.catch(() => undefined);
+    const refreshToken = this.#tokens.get()?.refreshToken;
+    this.#tokens.set(null);
     if (refreshToken) {
       await net
-        .fetch(`${this.#authBaseUrl}/v1/session/logout`, {
+        .fetch(`${this.#http.authBaseUrl}/v1/session/logout`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(SignOutInput.make({ refreshToken })),
         })
         .catch(() => undefined);
     }
-    this.#tokens = null;
+    this.#tokens.set(null);
     await this.#clear();
-    this.#publish(unauthenticated(true));
+    this.#hooks.publish(unauthenticated(true));
   }
 
   apiRequest(pathname: string, init?: JsonRequestInit) {
-    return this.#request(pathname, init);
+    return this.#http.apiRequest(pathname, init);
   }
 
   authRequest(pathname: string, init?: JsonRequestInit) {
-    return this.#request(pathname, init, this.#authBaseUrl);
-  }
-
-  async #request(pathname: string, init?: JsonRequestInit, baseUrl = this.#baseUrl) {
-    await this.#refreshTokens();
-    const headers = new Headers(init?.headers);
-    if (this.#tokens) headers.set("authorization", `Bearer ${this.#tokens.accessToken}`);
-    headers.set("electron-origin", this.#electronOrigin);
-    const requestBody = init?.body;
-    const body =
-      requestBody === undefined || requestBody === null || requestBody instanceof FormData
-        ? requestBody
-        : Schema.is(Schema.String)(requestBody)
-          ? requestBody
-          : JSON.stringify(requestBody);
-    if (body && !(body instanceof FormData) && !Schema.is(Schema.String)(requestBody)) {
-      headers.set("content-type", "application/json");
-    }
-    const response = await net.fetch(`${baseUrl}${pathname}`, {
-      ...init,
-      body,
-      credentials: "omit",
-      headers,
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      const failure = Schema.decodeUnknownOption(RequestFailure)(payload).pipe(Option.getOrNull);
-      const nested = failure?.error;
-      const message =
-        failure?.message ??
-        (Schema.is(Schema.String)(nested) ? nested : nested?.message) ??
-        `Request failed (${response.status})`;
-      throw new RequestError(
-        message,
-        response.status,
-        nested !== undefined && !Schema.is(Schema.String)(nested) ? nested.code : undefined,
-      );
-    }
-    return payload;
-  }
-
-  #publish(snapshot: WorkspaceSnapshot) {
-    this.#snapshot = snapshot;
-    for (const listener of this.#listeners) listener(snapshot);
-    return snapshot;
-  }
-
-  async #persistAndPublish(snapshot: WorkspaceSnapshot) {
-    this.#publish(snapshot);
-    if (this.#tokens) await this.#writePersisted({ snapshot, tokens: this.#tokens });
-    return snapshot;
+    return this.#http.authRequest(pathname, init);
   }
 
   async #clear() {
-    this.#tokens = null;
+    this.#tokens.set(null);
     this.#snapshot = unauthenticated(true);
     await rm(this.#storagePath(), { force: true });
   }
@@ -226,28 +156,22 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     });
   }
 
-  async #refreshTokens() {
-    const tokens = this.#tokens;
-    if (!tokens?.refreshToken || tokens.accessExpiresAt > Date.now() + 30_000) return;
-    if (this.#refreshInFlight) return this.#refreshInFlight;
-    this.#refreshInFlight = this.#rotateTokens(tokens).finally(() => {
-      this.#refreshInFlight = null;
-    });
-    return this.#refreshInFlight;
-  }
-
-  async #rotateTokens(tokens: TokenSetType) {
-    const response = await net.fetch(`${this.#authBaseUrl}/v1/session/refresh`, {
+  /** Returns null on expected refresh failure — never throws for non-OK HTTP. */
+  async #rotateTokens(): Promise<TokenSetType | null> {
+    const tokens = this.#tokens.get();
+    if (!tokens?.refreshToken) return null;
+    const response = await net.fetch(`${this.#http.authBaseUrl}/v1/session/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(RefreshInput.make({ refreshToken: tokens.refreshToken })),
     });
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) await this.#clear();
-      throw new RequestError("Couldn't refresh the session.", response.status);
+      return null;
     }
-    const next = Schema.decodeUnknownSync(TokenSet)(await response.json());
-    this.#tokens = next;
+    const next = decodeTokenSet(await response.json());
+    this.#tokens.set(next);
     await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
+    return next;
   }
 }

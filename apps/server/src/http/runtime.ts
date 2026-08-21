@@ -25,9 +25,6 @@ export interface ServerRuntimeContract {
   readonly getSession: (
     headers: Headers,
   ) => Effect.Effect<AuthSession | null, AuthError, RuntimeContext | Scope.Scope>;
-  readonly hasActiveMember: (
-    headers: Headers,
-  ) => Effect.Effect<boolean, AuthError, RuntimeContext | Scope.Scope>;
   readonly loadWorkspace: (
     headers: Headers,
   ) => Effect.Effect<WorkspaceSnapshot, AuthError, RuntimeContext | Scope.Scope>;

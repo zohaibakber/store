@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { authenticate, beginGoogle, currentAuthClient, identify } from "@/lib/first-party-auth";
 import { cn } from "@/lib/utils";
+import { Route as RootRoute } from "@/routes/__root";
 
 type AuthStep =
   | { readonly _tag: "Identifier" }
@@ -60,9 +61,11 @@ function OrSeparator() {
 
 function IdentifierSignIn({
   busy,
+  allowContinueOffline,
   onContinue,
 }: {
   readonly busy: boolean;
+  readonly allowContinueOffline: boolean;
   readonly onContinue: (email: string) => Promise<void>;
 }) {
   const [email, setEmail] = React.useState("");
@@ -107,12 +110,14 @@ function IdentifierSignIn({
           </Button>
         </Field>
       </form>
-      <p className="px-6 text-center text-xs text-muted-foreground">
-        Your local inventory works without an account.{" "}
-        <Link className="underline underline-offset-4 hover:text-foreground" to="/">
-          Continue offline
-        </Link>
-      </p>
+      {allowContinueOffline ? (
+        <p className="px-6 text-center text-xs text-muted-foreground">
+          Your local inventory works without an account.{" "}
+          <Link className="underline underline-offset-4 hover:text-foreground" to="/">
+            Continue offline
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -302,6 +307,7 @@ function PasswordRegistration({
 
 export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
   const navigate = useNavigate();
+  const { access } = RootRoute.useRouteContext();
   const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -336,6 +342,7 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
       ) : null}
       {step._tag === "Identifier" ? (
         <IdentifierSignIn
+          allowContinueOffline={access.allowsGuestWorkspace}
           busy={busy}
           onContinue={(email) =>
             run(async () => {

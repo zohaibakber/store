@@ -6,6 +6,7 @@ export type {
   SyncAdapter,
   SyncReason,
 } from "./model";
+export { openSyncSocket } from "./open";
 export { makeSyncClientRuntime, type SyncClientRuntime } from "./runtime";
 export type { LiveSocketHandle, SyncSocket, SyncSocketSession } from "./session";
 export {

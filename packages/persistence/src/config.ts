@@ -18,9 +18,9 @@ export interface Workspace {
   readonly deviceId: string;
 }
 
-/** The authenticated workspace every local read, mutation, and sync exchange is scoped to. */
-export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspace, Workspace>()(
-  "@store/persistence/AuthenticatedWorkspace",
+/** The workspace scope every local read, mutation, and sync exchange is bound to. */
+export class WorkspaceScope extends Context.Service<WorkspaceScope, Workspace>()(
+  "@store/persistence/WorkspaceScope",
 ) {
   /** The workspace a locked, signed-out store runs under. */
   static readonly locked: Workspace = {
@@ -30,7 +30,7 @@ export class AuthenticatedWorkspace extends Context.Service<AuthenticatedWorkspa
   };
 
   static readonly layer = (workspace: Workspace) =>
-    Layer.succeed(AuthenticatedWorkspace, AuthenticatedWorkspace.of(workspace));
+    Layer.succeed(WorkspaceScope, WorkspaceScope.of(workspace));
 }
 
 export type SyncTransport =
