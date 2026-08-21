@@ -1,13 +1,16 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
-import { SettingsPage } from "@/components/settings/page";
+import { SettingsLayout } from "@/components/settings/settings-layout";
 
 export const Route = createFileRoute("/settings")({
-  loader: ({ context }) => context.store.listCategories(),
   component: SettingsRoute,
   staticData: { breadcrumb: "Settings" },
 });
 
 function SettingsRoute() {
-  return <SettingsPage categories={Route.useLoaderData()} />;
+  return (
+    <SettingsLayout>
+      <Outlet />
+    </SettingsLayout>
+  );
 }

@@ -49,7 +49,9 @@ export function SiteBreadcrumbs() {
               ? "/products"
               : match.fullPath === "/invoices/"
                 ? "/invoices"
-                : match.fullPath;
+                : match.fullPath === "/settings/"
+                  ? "/settings"
+                  : match.fullPath;
 
           return (
             <Fragment key={match.id}>

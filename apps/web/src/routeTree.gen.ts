@@ -21,6 +21,12 @@ import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as ProductsProductIdRouteImport } from './routes/products/$productId'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsUploadRouteImport } from './routes/products/upload'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SettingsAboutRouteImport } from './routes/settings/about'
+import { Route as SettingsAccountRouteImport } from './routes/settings/account'
+import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
+import { Route as SettingsCategoriesRouteImport } from './routes/settings/categories'
+import { Route as SettingsOrganizationRouteImport } from './routes/settings/organization'
 import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId_.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -83,6 +89,36 @@ const ProductsUploadRoute = ProductsUploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => ProductsRoute,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsCategoriesRoute = SettingsCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
+  id: '/organization',
+  path: '/organization',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const ProductsProductIdEditRoute = ProductsProductIdEditRouteImport.update({
   id: '/$productId_/edit',
   path: '/$productId/edit',
@@ -93,28 +129,39 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/categories': typeof SettingsCategoriesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/categories': typeof SettingsCategoriesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices': typeof InvoicesIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRoutesById {
@@ -122,15 +169,21 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/categories': typeof SettingsCategoriesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/products/$productId_/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRouteTypes {
@@ -146,21 +199,32 @@ export interface FileRouteTypes {
     | '/products/$productId'
     | '/products/new'
     | '/products/upload'
+    | '/settings/about'
+    | '/settings/account'
+    | '/settings/appearance'
+    | '/settings/categories'
+    | '/settings/organization'
     | '/invoices/'
     | '/products/'
+    | '/settings/'
     | '/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/settings'
     | '/sign-in'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
     | '/products/new'
     | '/products/upload'
+    | '/settings/about'
+    | '/settings/account'
+    | '/settings/appearance'
+    | '/settings/categories'
+    | '/settings/organization'
     | '/invoices'
     | '/products'
+    | '/settings'
     | '/products/$productId/edit'
   id:
     | '__root__'
@@ -174,8 +238,14 @@ export interface FileRouteTypes {
     | '/products/$productId'
     | '/products/new'
     | '/products/upload'
+    | '/settings/about'
+    | '/settings/account'
+    | '/settings/appearance'
+    | '/settings/categories'
+    | '/settings/organization'
     | '/invoices/'
     | '/products/'
+    | '/settings/'
     | '/products/$productId_/edit'
   fileRoutesById: FileRoutesById
 }
@@ -183,7 +253,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InvoicesRoute: typeof InvoicesRouteWithChildren
   ProductsRoute: typeof ProductsRouteWithChildren
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   SignInRoute: typeof SignInRoute
 }
 
@@ -273,6 +343,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsUploadRouteImport
       parentRoute: typeof ProductsRoute
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/appearance': {
+      id: '/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/categories': {
+      id: '/settings/categories'
+      path: '/categories'
+      fullPath: '/settings/categories'
+      preLoaderRoute: typeof SettingsCategoriesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/organization': {
+      id: '/settings/organization'
+      path: '/organization'
+      fullPath: '/settings/organization'
+      preLoaderRoute: typeof SettingsOrganizationRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/products/$productId_/edit': {
       id: '/products/$productId_/edit'
       path: '/$productId/edit'
@@ -319,11 +431,33 @@ const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
   ProductsRouteChildren,
 )
 
+interface SettingsRouteChildren {
+  SettingsAboutRoute: typeof SettingsAboutRoute
+  SettingsAccountRoute: typeof SettingsAccountRoute
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsCategoriesRoute: typeof SettingsCategoriesRoute
+  SettingsOrganizationRoute: typeof SettingsOrganizationRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAboutRoute: SettingsAboutRoute,
+  SettingsAccountRoute: SettingsAccountRoute,
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsCategoriesRoute: SettingsCategoriesRoute,
+  SettingsOrganizationRoute: SettingsOrganizationRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InvoicesRoute: InvoicesRouteWithChildren,
   ProductsRoute: ProductsRouteWithChildren,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport

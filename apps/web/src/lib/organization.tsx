@@ -12,21 +12,23 @@ import { authSession } from "@/lib/auth";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
 /**
- * Nothing is emailed yet, so whoever created the invitation delivers it. A
- * browser can hand over a link that opens straight into settings; the desktop
- * build is served from a file URL nobody else can open, so it hands over the
- * bare token and the recipient pastes it.
+ * Invites are not emailed yet. Whoever creates one has to deliver it.
+ * On the web we copy a link that opens organization settings. The desktop app
+ * runs from a file URL outsiders can't open, so we copy the bare token and
+ * the recipient pastes it.
  */
 export const invitationHandoff = (token: string) => {
   const origin = globalThis.location?.origin;
   return origin?.startsWith("http")
-    ? { kind: "link" as const, value: `${origin}/settings?invitation=${encodeURIComponent(token)}` }
+    ? {
+        kind: "link" as const,
+        value: `${origin}/settings/organization?invitation=${encodeURIComponent(token)}`,
+      }
     : { kind: "token" as const, value: token };
 };
 
 const linkedInvitation = z.object({ invitation: z.string().default("") }).catch({ invitation: "" });
 
-/** The token an invite link carries, or an empty string when it carries none. */
 export const useLinkedInvitation = () =>
   linkedInvitation.parse(useSearch({ strict: false })).invitation;
 
@@ -35,7 +37,7 @@ export async function copyInvitation(token: string) {
   try {
     await navigator.clipboard.writeText(handoff.value);
     toastManager.add({
-      description: "Send it to them yourself; it is shown only once.",
+      description: "Send it yourself. It's shown only once.",
       title: handoff.kind === "link" ? "Invite link copied" : "Invite token copied",
       type: "success",
     });
@@ -44,7 +46,6 @@ export async function copyInvitation(token: string) {
   }
 }
 
-/** A roster and an error are both absent until the first read comes back. */
 interface OrganizationState {
   readonly roster: OrganizationRoster | null;
   readonly error: string | null;
@@ -64,10 +65,7 @@ const OrganizationContext = React.createContext<{
   readonly actions: OrganizationActions;
 } | null>(null);
 
-/**
- * A rename or a redeemed invitation changes what the access token says, and
- * the token is what the rest of the app reads the organization from.
- */
+/** Rename and join rewrite the access token; the rest of the app reads org from that. */
 const movesTheSession = (result: OrganizationCommandResult) =>
   result._tag === "Updated" || result._tag === "Joined";
 
@@ -84,8 +82,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
             setRoster(next);
             setError(null);
           },
-          (cause: unknown) =>
-            setError(storeErrorMessage(cause, "The organization could not be loaded.")),
+          (cause: unknown) => setError(storeErrorMessage(cause, "Couldn't load the organization.")),
         ),
     [],
   );

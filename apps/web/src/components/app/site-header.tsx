@@ -15,7 +15,7 @@ export function SiteHeader() {
         <Separator className="mr-2 h-4" orientation="vertical" />
         <SiteBreadcrumbs />
       </div>
-      <div className="ml-auto flex items-center gap-2 px-4">
+      <div className="ml-auto flex items-center gap-2 px-2">
         {authenticated ? <SyncStatusIndicator /> : null}
         <NavUser />
       </div>

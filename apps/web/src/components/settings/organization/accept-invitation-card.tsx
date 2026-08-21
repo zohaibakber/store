@@ -18,7 +18,6 @@ const acceptSchema = z.object({
   token: z.string().trim().min(8, "Paste the invitation you were sent."),
 });
 
-/** People paste whatever they were sent, which is often the whole link. */
 const redeemable = (pasted: string) => {
   const trimmed = pasted.trim();
   const marker = trimmed.indexOf("invitation=");
@@ -29,8 +28,6 @@ const redeemable = (pasted: string) => {
 export function AcceptInvitationCard() {
   const { actions } = useOrganization();
   const navigate = useNavigate();
-  // An invite link lands on `/settings?invitation=…`, so the token arrives
-  // already filled in. Anyone handed a bare token pastes it instead.
   const linked = useLinkedInvitation();
 
   const form = useForm({
@@ -44,7 +41,7 @@ export function AcceptInvitationCard() {
       if (result?._tag !== "Joined") return;
       form.reset({ token: "" });
       toastManager.add({ title: `You joined ${result.organization.name}`, type: "success" });
-      await navigate({ to: "/settings", search: {}, replace: true });
+      await navigate({ to: "/settings/organization", search: {}, replace: true });
     },
   });
 
@@ -54,7 +51,7 @@ export function AcceptInvitationCard() {
 
   return (
     <FrameCard
-      description="Redeeming an invitation moves this device to that store."
+      description="Accepting switches this device to that store."
       title="Join with an invitation"
     >
       <form
