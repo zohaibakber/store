@@ -422,17 +422,46 @@ const loadInventoryState = async (organizationId: string): Promise<InventoryStat
   };
 };
 
-const exchangeInventory = async (organizationId: string): Promise<InventoryState> => {
-  const stableDeviceId = await persistentDeviceId();
-  const userId = await authenticatedUserId();
-  const accessToken = await getAccessToken();
-  const initial = await withInventoryLock(() => loadInventoryState(organizationId));
-  const sessionDeviceId =
-    (initial.mutationState?.pendingOperations.length ?? 0) > 0
-      ? (initial.mutationState?.deviceId ?? stableDeviceId)
-      : stableDeviceId;
+const rotateDeviceAfterSequenceReuse = async (organizationId: string) => {
+  const created = Crypto.randomUUID();
+  await SecureStore.setItemAsync("tabaaq-device-id", created);
+  await withInventoryLock(async () => {
+    const state = await loadInventoryState(organizationId);
+    if (!state.mutationState) return;
+    let nextSequence = 1;
+    const pendingOperations: SyncOperation[] = [];
+    for (const operation of state.mutationState.pendingOperations) {
+      const unhashed = {
+        operationId: operation.operationId,
+        organizationId: operation.organizationId,
+        deviceId: created,
+        actorUserId: operation.actorUserId,
+        clientSequence: nextSequence,
+        occurredAt: operation.occurredAt,
+        changes: operation.changes,
+      } satisfies Omit<SyncOperation, "payloadHash">;
+      nextSequence += 1;
+      pendingOperations.push({ ...unhashed, payloadHash: await payloadHash(unhashed) });
+    }
+    state.mutationState = {
+      version: 1,
+      organizationId,
+      deviceId: created,
+      nextClientSequence: nextSequence,
+      pendingOperations,
+    };
+    await persistMutationState(state.mutationState);
+  });
+  return created;
+};
 
-  return Effect.runPromise(
+const exchangeInventoryOnce = async (
+  organizationId: string,
+  sessionDeviceId: string,
+  userId: string,
+  accessToken: string | null,
+): Promise<InventoryState> =>
+  Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const session = yield* makeSyncSocketSession({
@@ -444,7 +473,7 @@ const exchangeInventory = async (organizationId: string): Promise<InventoryState
           }),
           exchangeTimeoutMillis: REQUEST_TIMEOUT_MS,
         });
-        yield* connectSyncSocketSession(session);
+        yield* connectSyncSocketSession(session, { connectTimeoutMillis: REQUEST_TIMEOUT_MS });
         return yield* Effect.tryPromise({
           try: () => drainInventory(organizationId, userId, sessionDeviceId, session.exchange),
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -452,6 +481,27 @@ const exchangeInventory = async (organizationId: string): Promise<InventoryState
       }),
     ),
   );
+
+const exchangeInventory = async (organizationId: string): Promise<InventoryState> => {
+  const stableDeviceId = await persistentDeviceId();
+  const userId = await authenticatedUserId();
+  const accessToken = await getAccessToken();
+  const initial = await withInventoryLock(() => loadInventoryState(organizationId));
+  const sessionDeviceId =
+    (initial.mutationState?.pendingOperations.length ?? 0) > 0
+      ? (initial.mutationState?.deviceId ?? stableDeviceId)
+      : stableDeviceId;
+
+  try {
+    return await exchangeInventoryOnce(organizationId, sessionDeviceId, userId, accessToken);
+  } catch (cause) {
+    if (!(cause instanceof SyncTransportError) || cause.code !== "CLIENT_SEQUENCE_REUSED")
+      throw cause;
+    // Durable device id survived a wiped sequence counter. Rebind pending work
+    // onto a fresh device identity once, then retry the exchange.
+    const rotatedDeviceId = await rotateDeviceAfterSequenceReuse(organizationId);
+    return exchangeInventoryOnce(organizationId, rotatedDeviceId, userId, accessToken);
+  }
 };
 
 const drainInventory = async (

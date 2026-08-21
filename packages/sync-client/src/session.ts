@@ -270,15 +270,44 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
   return { events, exchange } satisfies SyncSocketSession;
 });
 
+const DEFAULT_CONNECT_TIMEOUT_MILLIS = 15_000;
+
+/**
+ * Opens the live event stream and waits until the first `hello` or
+ * `invalidate`. Socket close/error, an empty stream end, or silence past
+ * `connectTimeoutMillis` fail instead of hanging forever.
+ */
 export const connectSyncSocketSession = Effect.fn("SyncSocketSession.connect")(function* (
   session: SyncSocketSession,
+  options?: { readonly connectTimeoutMillis?: number },
 ) {
-  const ready = yield* Deferred.make<void>();
+  const ready = yield* Deferred.make<void, SyncTransportError>();
   yield* session.events.pipe(
     Stream.tap(() => Deferred.succeed(ready, undefined).pipe(Effect.asVoid)),
     Stream.runDrain,
+    Effect.tapError((error) => Deferred.fail(ready, error).pipe(Effect.ignore)),
+    Effect.tap(() =>
+      Deferred.fail(
+        ready,
+        SyncTransportError.make({
+          message: "Live synchronization closed before it became ready.",
+          retryable: true,
+        }),
+      ).pipe(Effect.ignore),
+    ),
     Effect.forkScoped,
   );
-  yield* Deferred.await(ready);
+  yield* Deferred.await(ready).pipe(
+    Effect.timeoutOrElse({
+      duration: Duration.millis(options?.connectTimeoutMillis ?? DEFAULT_CONNECT_TIMEOUT_MILLIS),
+      orElse: () =>
+        Effect.fail(
+          SyncTransportError.make({
+            message: "Live synchronization timed out waiting to become ready.",
+            retryable: true,
+          }),
+        ),
+    }),
+  );
   return session;
 });

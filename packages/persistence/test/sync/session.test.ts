@@ -1,6 +1,7 @@
 import { SyncClientFrame, SyncLiveEvent, SyncRequest, SyncResponse } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -8,7 +9,11 @@ import * as Stream from "effect/Stream";
 import { expect, test } from "vitest";
 
 import { SyncTransportError } from "../../src/errors";
-import { makeSyncSocketSession, type SyncSocket } from "../../src/sync/session";
+import {
+  connectSyncSocketSession,
+  makeSyncSocketSession,
+  type SyncSocket,
+} from "../../src/sync/session";
 
 const request: SyncRequest = {
   protocolVersion: 2,
@@ -164,4 +169,53 @@ test("hello and invalidate frames still surface as live pull signals", async () 
     { type: "hello", protocolVersion: 2, headCursor: 9 },
     { type: "invalidate", protocolVersion: 2, headCursor: 12 },
   ]);
+});
+
+test("connect succeeds once the first hello arrives", async () => {
+  await Effect.gen(function* () {
+    const messages = yield* Queue.unbounded<string>();
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed(queuedSocket(messages)),
+    });
+    const connecting = yield* connectSyncSocketSession(session).pipe(Effect.forkChild);
+    yield* Queue.offer(messages, helloFrame);
+    yield* Fiber.join(connecting);
+  }).pipe(Effect.scoped, Effect.runPromise);
+});
+
+test("connect fails when the live socket closes before hello", async () => {
+  const error = await Effect.gen(function* () {
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed({
+        send: () => Effect.void,
+        messages: Stream.fail(
+          SyncTransportError.make({
+            message: "Live synchronization closed (1006).",
+            retryable: true,
+          }),
+        ),
+      }),
+    });
+    return yield* connectSyncSocketSession(session, { connectTimeoutMillis: 1_000 }).pipe(
+      Effect.flip,
+    );
+  }).pipe(Effect.scoped, Effect.runPromise);
+
+  expect(error).toBeInstanceOf(SyncTransportError);
+  expect(error.retryable).toBe(true);
+  expect(error.message).toBe("Live synchronization closed (1006).");
+});
+
+test("connect fails when hello never arrives before the timeout", async () => {
+  const error = await Effect.gen(function* () {
+    const messages = yield* Queue.unbounded<string>();
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed(queuedSocket(messages)),
+    });
+    return yield* connectSyncSocketSession(session, { connectTimeoutMillis: 20 }).pipe(Effect.flip);
+  }).pipe(Effect.scoped, Effect.runPromise);
+
+  expect(error).toBeInstanceOf(SyncTransportError);
+  expect(error.retryable).toBe(true);
+  expect(error.message).toBe("Live synchronization timed out waiting to become ready.");
 });
