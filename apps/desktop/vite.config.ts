@@ -12,6 +12,18 @@ import packageJson from "./package.json";
 
 const webRoot = path.resolve(__dirname, "../web");
 
+/**
+ * The shared index.html boots `main.tsx`, which starts the browser SQLite
+ * host. Packaged Electron must not emit that graph: after-pack scans every
+ * renderer chunk for schema SQL, including unused async splits.
+ */
+const desktopRendererEntry = (): Plugin => ({
+  name: "desktop-renderer-entry",
+  transformIndexHtml(html) {
+    return html.replace("/src/main.tsx", "/src/main.electron.tsx");
+  },
+});
+
 /** Swap the boot splash and favicon to the orange mark while `vp dev` is running. */
 const desktopDevSplash = (): Plugin => ({
   name: "desktop-dev-splash",
@@ -61,6 +73,7 @@ export default defineConfig({
     options: { maxWarnings: 0 },
   },
   plugins: lazyPlugins(() => [
+    desktopRendererEntry(),
     desktopDevSplash(),
     tanstackRouter({
       target: "react",
