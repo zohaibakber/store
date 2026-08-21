@@ -1,4 +1,4 @@
-import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { AppLoading } from "@/components/app/loading";
@@ -42,6 +42,8 @@ function AuthenticatedLayout() {
 }
 
 function AppShell() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (pathname === "/sign-in") return <Outlet />;
   return (
     <TooltipProvider>
       <CommandMenuProvider>

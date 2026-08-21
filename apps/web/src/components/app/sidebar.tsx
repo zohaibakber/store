@@ -12,6 +12,7 @@ import { AccountMenu } from "@/components/app/account-menu";
 import { useCommandMenu } from "@/components/app/command-menu";
 import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
+import { SignInCard } from "@/components/app/sign-in-card";
 import { SyncStatusIndicator } from "@/components/app/sync-status";
 import { Kbd } from "@/components/ui/kbd";
 import {
@@ -27,6 +28,7 @@ import {
   SidebarMenuItem,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/lib/auth";
 
 const data = {
   navMain: [
@@ -54,6 +56,8 @@ const data = {
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { open: openCommandMenu } = useCommandMenu();
+  const auth = useAuth();
+  const authenticated = auth.snapshot?.status === "authenticated";
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -87,14 +91,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
+        {authenticated ? null : <SignInCard />}
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center justify-between gap-2 px-1">
-          <SyncStatusIndicator />
-          <div className="group-data-[collapsible=icon]:hidden">
-            <NavHistory />
+        {authenticated ? (
+          <div className="flex items-center justify-between gap-2 px-1">
+            <SyncStatusIndicator />
+            <div className="group-data-[collapsible=icon]:hidden">
+              <NavHistory />
+            </div>
           </div>
-        </div>
+        ) : null}
       </SidebarFooter>
     </Sidebar>
   );
