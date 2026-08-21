@@ -165,13 +165,11 @@ export default function ProductScanScreen() {
         return;
       }
 
-      const match = findProductMatch(products, inference, [
-        inference.name,
-        inference.composition,
-        inference.strength,
-      ]
-        .filter(Boolean)
-        .join("\n"));
+      const match = findProductMatch(
+        products,
+        inference,
+        [inference.name, inference.composition, inference.strength].filter(Boolean).join("\n"),
+      );
       setProductInference(inference);
       setBatchInference(null);
       setMatchedProductId(match?.id ?? null);
@@ -367,7 +365,11 @@ export default function ProductScanScreen() {
           >
             <View style={styles.intro}>
               <Text variant="subheading">
-                {mode === "batch" ? "Review batch" : productInference ? "Review product" : "Inventory"}
+                {mode === "batch"
+                  ? "Review batch"
+                  : productInference
+                    ? "Review product"
+                    : "Inventory"}
               </Text>
               <Text tone="muted" variant="caption">
                 {mode === "batch"
@@ -493,9 +495,7 @@ export default function ProductScanScreen() {
                     onPress={() => void confirmProduct()}
                     style={styles.flex}
                   >
-                    <ButtonText>
-                      {matchedProduct ? "Confirm product" : "Create product"}
-                    </ButtonText>
+                    <ButtonText>{matchedProduct ? "Confirm product" : "Create product"}</ButtonText>
                   </Button>
                   <Button
                     isDisabled={cameraBusy || savingProduct}
@@ -529,7 +529,10 @@ export default function ProductScanScreen() {
                             {batch.batchNumber || `Batch ${index + 1}`}
                           </Chip>
                         ))}
-                        <Chip isSelected={selectedBatchId === null} onPress={() => selectBatch(null)}>
+                        <Chip
+                          isSelected={selectedBatchId === null}
+                          onPress={() => selectBatch(null)}
+                        >
                           New batch
                         </Chip>
                       </View>

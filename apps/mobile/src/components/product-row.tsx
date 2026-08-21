@@ -82,7 +82,11 @@ export function ProductRow({
   }
 
   return (
-    <PressableScale accessibilityHint="Opens product details" accessibilityLabel={label} onPress={onPress}>
+    <PressableScale
+      accessibilityHint="Opens product details"
+      accessibilityLabel={label}
+      onPress={onPress}
+    >
       {body}
     </PressableScale>
   );

@@ -5,21 +5,13 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Row, RowChevron, RowGroup, RowValue } from "@/components/ui/row";
 import { SectionTitle, Text } from "@/components/ui/text";
 import { expiryInputValue } from "@/features/product-scanner/local-parser";
 import { PackQuantitySheet, UnitQuantitySheet } from "@/features/product-scanner/quantity-sheet";
 import { BatchDetailsSheet } from "@/features/products/batch-details-sheet";
-import {
-  useProductActions,
-  useProductData,
-} from "@/features/products/products-provider";
+import { useProductActions, useProductData } from "@/features/products/products-provider";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId, formatPrice, type MobileBatch } from "@/lib/products";
@@ -53,8 +45,7 @@ export function ProductDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const selectedBatch =
-    product?.batches.find((batch) => batch.id === selectedBatchId) ?? null;
+  const selectedBatch = product?.batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const activeBatchId = selectedBatch?.id ?? null;
 
   const openQuantity = (batchId: string | null) => {
@@ -73,19 +64,14 @@ export function ProductDetailScreen() {
     setDetailsOpen(true);
   };
 
-  const confirmQuantity = async (quantities: {
-    packQuantity: number;
-    unitQuantity: number;
-  }) => {
+  const confirmQuantity = async (quantities: { packQuantity: number; unitQuantity: number }) => {
     if (!product) return;
     setSavingQuantity(true);
     setError(null);
     try {
       const batch = await updateBatchQuantity({
         productId: product.id,
-        ...(activeBatchId
-          ? { batchId: activeBatchId }
-          : { batchId: null, newBatchId }),
+        ...(activeBatchId ? { batchId: activeBatchId } : { batchId: null, newBatchId }),
         ...quantities,
       });
       setSelectedBatchId(batch.id);
@@ -109,16 +95,12 @@ export function ProductDetailScreen() {
     try {
       const batch = await saveBatchDetails({
         productId: product.id,
-        ...(activeBatchId
-          ? { batchId: activeBatchId }
-          : { batchId: null, newBatchId }),
+        ...(activeBatchId ? { batchId: activeBatchId } : { batchId: null, newBatchId }),
         ...details,
       });
       setSelectedBatchId(batch.id);
       setDetailsOpen(false);
-      setNotice(
-        activeBatchId ? "Batch details saved." : "Batch created. Set the quantity next.",
-      );
+      setNotice(activeBatchId ? "Batch details saved." : "Batch created. Set the quantity next.");
       hapticSuccess();
       if (!activeBatchId) openQuantity(batch.id);
     } catch (cause) {
@@ -146,19 +128,14 @@ export function ProductDetailScreen() {
     );
   }
 
-  const stockTone =
-    product.stock === 0 ? "destructive" : product.stock <= 10 ? "warning" : "muted";
+  const stockTone = product.stock === 0 ? "destructive" : product.stock <= 10 ? "warning" : "muted";
   const detailRows = [
     { label: "Category", value: product.category },
     { label: "Composition", value: product.composition },
     { label: "Strength", value: product.strength },
     { label: "Aisle", value: product.aisle ? `Aisle ${product.aisle}` : null },
-    product.tracksPacks
-      ? { label: "Units per pack", value: String(product.unitsPerPack) }
-      : null,
-    product.tracksPacks
-      ? { label: "Pack price", value: formatPrice(product.packPrice) }
-      : null,
+    product.tracksPacks ? { label: "Units per pack", value: String(product.unitsPerPack) } : null,
+    product.tracksPacks ? { label: "Pack price", value: formatPrice(product.packPrice) } : null,
     {
       label: product.tracksPacks ? "Unit price" : "Price",
       value: formatPrice(product.unitPrice),
@@ -243,10 +220,7 @@ export function ProductDetailScreen() {
               );
             })}
             {product.batches.length === 0 ? (
-              <Row
-                supporting="Add a batch to track quantity and expiry."
-                title="No batches yet"
-              />
+              <Row supporting="Add a batch to track quantity and expiry." title="No batches yet" />
             ) : null}
             <Row
               accessibilityHint="Create a new batch for this product"
@@ -258,9 +232,7 @@ export function ProductDetailScreen() {
         </View>
 
         <View style={styles.actions}>
-          <Button
-            onPress={() => openQuantity(selectedBatchId ?? product.batches[0]?.id ?? null)}
-          >
+          <Button onPress={() => openQuantity(selectedBatchId ?? product.batches[0]?.id ?? null)}>
             <ButtonText>Set quantity</ButtonText>
           </Button>
           <Button

@@ -251,10 +251,7 @@ export function FullscreenTextCamera({
           accessibilityState={{ selected: torch }}
           isDisabled={status !== "ready" || busy}
           onPress={() => setTorch((current) => !current)}
-          style={[
-            styles.iconButton,
-            { backgroundColor: torch ? colors.onScrim : colors.scrim },
-          ]}
+          style={[styles.iconButton, { backgroundColor: torch ? colors.onScrim : colors.scrim }]}
         >
           <Icon color={torch ? colors.foreground : colors.onScrim} name="bolt" size={18} />
         </PressableScale>

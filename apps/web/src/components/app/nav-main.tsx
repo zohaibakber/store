@@ -1,17 +1,20 @@
-import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
+import { PlusSignCircleIcon, SearchIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
 
+import { useCommandMenu } from "@/components/app/command-menu";
+import { Kbd } from "@/components/ui/kbd";
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
 
-type AppRoute = "/" | "/products" | "/invoices" | "/settings";
+type AppRoute = "/" | "/products" | "/invoices";
 
 export type NavMainItem = {
   title: string;
@@ -21,6 +24,7 @@ export type NavMainItem = {
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
+  const { open: openCommandMenu } = useCommandMenu();
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -42,6 +46,20 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           </SidebarMenuItem>
         </SidebarMenu>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="Search"
+              aria-keyshortcuts="Control+K"
+              aria-haspopup="dialog"
+              onClick={openCommandMenu}
+            >
+              <HugeiconsIcon icon={SearchIcon} />
+              <span>Search</span>
+            </SidebarMenuButton>
+            <SidebarMenuBadge>
+              <Kbd>Ctrl K</Kbd>
+            </SidebarMenuBadge>
+          </SidebarMenuItem>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton

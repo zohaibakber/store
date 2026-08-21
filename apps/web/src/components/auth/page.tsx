@@ -1,13 +1,17 @@
 import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from "@store/auth";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
-import { AuthScreen } from "@/components/auth/brand";
+import { PasswordInput } from "@/components/auth/password-input";
+import { BrandMark } from "@/components/brand-mark";
+import { GoogleIcon } from "@/components/icons/google";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { authenticate, beginGoogle, currentAuthClient, identify } from "@/lib/first-party-auth";
+import { cn } from "@/lib/utils";
 
 type AuthStep =
   | { readonly _tag: "Identifier" }
@@ -23,6 +27,37 @@ type AuthStep =
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "Sign-in could not be completed.";
 
+function AuthHeader({
+  description,
+  title,
+}: {
+  readonly description?: React.ReactNode;
+  readonly title: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 text-center">
+      <Link className="flex flex-col items-center gap-2 font-medium" to="/">
+        <div className="flex size-8 items-center justify-center rounded-md">
+          <BrandMark alt="" className="size-8 rounded-md" />
+        </div>
+        <span className="sr-only">Tabaaq</span>
+      </Link>
+      <h1 className="text-lg font-medium">{title}</h1>
+      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+    </div>
+  );
+}
+
+function OrSeparator() {
+  return (
+    <div className="flex items-center gap-3">
+      <Separator className="flex-1" />
+      <span className="text-xs text-muted-foreground">Or</span>
+      <Separator className="flex-1" />
+    </div>
+  );
+}
+
 function IdentifierSignIn({
   busy,
   onContinue,
@@ -32,31 +67,53 @@ function IdentifierSignIn({
 }) {
   const [email, setEmail] = React.useState("");
   return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void onContinue(email);
-      }}
-    >
-      <Field>
-        <FieldLabel htmlFor="auth-email">Email</FieldLabel>
-        <Input
-          autoComplete="email"
-          autoFocus
-          id="auth-email"
-          onChange={(event) => setEmail(event.currentTarget.value)}
-          type="email"
-          value={email}
-        />
-      </Field>
-      <Button loading={busy} type="submit">
-        Continue
-      </Button>
-      <Button disabled={busy} onClick={() => void beginGoogle()} type="button" variant="outline">
-        Continue with Google
-      </Button>
-    </form>
+    <div className="flex flex-col gap-6">
+      <form
+        className="flex flex-col gap-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onContinue(email);
+        }}
+      >
+        <AuthHeader title="Sign in to Tabaaq" />
+        <Field>
+          <FieldLabel htmlFor="auth-email">Email</FieldLabel>
+          <Input
+            autoComplete="email"
+            autoFocus
+            id="auth-email"
+            onChange={(event) => setEmail(event.currentTarget.value)}
+            placeholder="m@example.com"
+            type="email"
+            value={email}
+          />
+        </Field>
+        <Field>
+          <Button className="w-full" loading={busy} type="submit">
+            Continue
+          </Button>
+        </Field>
+        <OrSeparator />
+        <Field>
+          <Button
+            className="w-full"
+            disabled={busy}
+            onClick={() => void beginGoogle()}
+            type="button"
+            variant="outline"
+          >
+            <GoogleIcon aria-hidden="true" className="size-4" />
+            Continue with Google
+          </Button>
+        </Field>
+      </form>
+      <p className="px-6 text-center text-xs text-muted-foreground">
+        Your local inventory works without an account.{" "}
+        <Link className="underline underline-offset-4 hover:text-foreground" to="/">
+          Continue offline
+        </Link>
+      </p>
+    </div>
   );
 }
 
@@ -74,30 +131,43 @@ function PasswordSignIn({
   const [password, setPassword] = React.useState("");
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         void onSubmit(password);
       }}
     >
+      <AuthHeader
+        description={
+          <>
+            Signing in as {email}.{" "}
+            <button
+              className="underline underline-offset-4 hover:text-foreground"
+              disabled={busy}
+              onClick={onBack}
+              type="button"
+            >
+              Use another email
+            </button>
+          </>
+        }
+        title="Enter your password"
+      />
       <Field>
         <FieldLabel htmlFor="auth-password">Password</FieldLabel>
-        <Input
+        <PasswordInput
           autoComplete="current-password"
           autoFocus
           id="auth-password"
           onChange={(event) => setPassword(event.currentTarget.value)}
-          type="password"
           value={password}
         />
-        <FieldDescription>{email}</FieldDescription>
       </Field>
-      <Button loading={busy} type="submit">
-        Sign in
-      </Button>
-      <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
-        Use another email
-      </Button>
+      <Field>
+        <Button className="w-full" loading={busy} type="submit">
+          Sign in
+        </Button>
+      </Field>
     </form>
   );
 }
@@ -118,12 +188,29 @@ function OtpSignIn({
   const [code, setCode] = React.useState("");
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         void onSubmit(code);
       }}
     >
+      <AuthHeader
+        description={
+          <>
+            Email delivery is not enabled yet for {email}.
+            {developmentCode ? ` Development code: ${developmentCode}` : ""}{" "}
+            <button
+              className="underline underline-offset-4 hover:text-foreground"
+              disabled={busy}
+              onClick={onBack}
+              type="button"
+            >
+              Use another email
+            </button>
+          </>
+        }
+        title="Enter your code"
+      />
       <Field>
         <FieldLabel htmlFor="auth-code">One-time code</FieldLabel>
         <Input
@@ -135,17 +222,12 @@ function OtpSignIn({
           onChange={(event) => setCode(event.currentTarget.value)}
           value={code}
         />
-        <FieldDescription>
-          Email delivery is not enabled yet for {email}.
-          {developmentCode ? ` Development code: ${developmentCode}` : ""}
-        </FieldDescription>
       </Field>
-      <Button loading={busy} type="submit">
-        Verify
-      </Button>
-      <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
-        Use another email
-      </Button>
+      <Field>
+        <Button className="w-full" loading={busy} type="submit">
+          Verify
+        </Button>
+      </Field>
     </form>
   );
 }
@@ -165,12 +247,28 @@ function PasswordRegistration({
   const [password, setPassword] = React.useState("");
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         void onSubmit({ name, password });
       }}
     >
+      <AuthHeader
+        description={
+          <>
+            Create an account for {email}.{" "}
+            <button
+              className="underline underline-offset-4 hover:text-foreground"
+              disabled={busy}
+              onClick={onBack}
+              type="button"
+            >
+              Use another email
+            </button>
+          </>
+        }
+        title="Create your account"
+      />
       <Field>
         <FieldLabel htmlFor="auth-name">Name</FieldLabel>
         <Input
@@ -180,32 +278,29 @@ function PasswordRegistration({
           onChange={(event) => setName(event.currentTarget.value)}
           value={name}
         />
-        <FieldDescription>This account will use {email}.</FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor="auth-new-password">Password</FieldLabel>
-        <Input
+        <PasswordInput
           autoComplete="new-password"
           id="auth-new-password"
           onChange={(event) => setPassword(event.currentTarget.value)}
-          type="password"
           value={password}
         />
         <FieldDescription>
           Use 10 to 100 characters. Spaces at the edges are rejected.
         </FieldDescription>
       </Field>
-      <Button loading={busy} type="submit">
-        Create account
-      </Button>
-      <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
-        Use another email
-      </Button>
+      <Field>
+        <Button className="w-full" loading={busy} type="submit">
+          Create account
+        </Button>
+      </Field>
     </form>
   );
 }
 
-export function AuthForm() {
+export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
   const navigate = useNavigate();
   const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
   const [busy, setBusy] = React.useState(false);
@@ -232,13 +327,7 @@ export function AuthForm() {
   };
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-5">
-      <div className="space-y-1">
-        <h2 className="text-lg font-medium">Sign in to sync</h2>
-        <p className="text-sm text-muted-foreground">
-          Your local inventory works without an account. Sign in to sync it across devices.
-        </p>
-      </div>
+    <div className={cn("flex flex-col gap-6", className)} {...props}>
       {error ? (
         <Alert variant="error">
           <AlertTitle>Could not continue</AlertTitle>
@@ -313,13 +402,5 @@ export function AuthForm() {
         />
       ) : null}
     </div>
-  );
-}
-
-export function AuthPage() {
-  return (
-    <AuthScreen>
-      <AuthForm />
-    </AuthScreen>
   );
 }

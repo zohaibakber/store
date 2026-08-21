@@ -1,5 +1,5 @@
-import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAI, GoogleAIBackend, type AI } from "firebase/ai";
+import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 
 import firebaseConfig from "../../firebase-config.json";
 
@@ -24,5 +24,4 @@ export const getFirebaseApp = (): FirebaseApp => {
   });
 };
 
-export const getFirebaseAi = (): AI =>
-  getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
+export const getFirebaseAi = (): AI => getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });

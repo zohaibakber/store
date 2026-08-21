@@ -1,5 +1,5 @@
-import { getGenerativeModel, Schema } from "firebase/ai";
 import { File } from "expo-file-system";
+import { getGenerativeModel, Schema } from "firebase/ai";
 
 import {
   decodeProductScanResult,

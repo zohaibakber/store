@@ -1,8 +1,4 @@
-import {
-  CellularNetworkIcon,
-  CellularNetworkOfflineIcon,
-  ReloadIcon,
-} from "@hugeicons/core-free-icons";
+import { ReloadIcon, Wifi01Icon, WifiOff01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { syncConfigured, type SyncStatus } from "@store/contracts/sync.schema";
 import { useCallback, useEffect, useState } from "react";
@@ -76,17 +72,14 @@ export function SyncStatusIndicator() {
             onClick={() => void sync()}
             size="icon-xs"
             type="button"
-            variant="ghost"
+            variant="outline"
           />
         }
       >
         {isSyncing ? (
           <HugeiconsIcon aria-hidden="true" className="animate-spin" icon={ReloadIcon} />
         ) : (
-          <HugeiconsIcon
-            aria-hidden="true"
-            icon={isOnline ? CellularNetworkIcon : CellularNetworkOfflineIcon}
-          />
+          <HugeiconsIcon aria-hidden="true" icon={isOnline ? Wifi01Icon : WifiOff01Icon} />
         )}
       </TooltipTrigger>
       <TooltipPopup side="top">
