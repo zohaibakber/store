@@ -1,4 +1,5 @@
 import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from "@store/auth";
+import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
 import { AuthScreen } from "@/components/auth/brand";
@@ -205,9 +206,14 @@ function PasswordRegistration({
 }
 
 export function AuthForm() {
+  const navigate = useNavigate();
   const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const finishSignedIn = async () => {
+    await navigate({ to: "/" });
+  };
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -263,6 +269,7 @@ export function AuthForm() {
                 password: Password.make(password),
                 client: currentAuthClient(),
               });
+              await finishSignedIn();
             })
           }
         />
@@ -281,6 +288,7 @@ export function AuthForm() {
                 code: OtpCode.make(code),
                 client: currentAuthClient(),
               });
+              await finishSignedIn();
             })
           }
         />
@@ -299,6 +307,7 @@ export function AuthForm() {
                 password: Password.make(input.password),
                 client: currentAuthClient(),
               });
+              await finishSignedIn();
             })
           }
         />
