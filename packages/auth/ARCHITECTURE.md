@@ -305,9 +305,10 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
   detection, and logout.
 - We accept identifier enumeration in exchange for the required password versus
   OTP route. Per-identifier and per-challenge rate limits constrain abuse.
-- We accept PBKDF2-HMAC-SHA-256 in the first Worker implementation because Web
-  Crypto supports it without native modules. The password module isolates a
-  future Argon2id service.
+- We accept PBKDF2-HMAC-SHA-256 at 100,000 iterations in the first Worker
+  implementation because Web Crypto supports it without native modules and
+  workerd rejects higher counts. The password module isolates a future Argon2id
+  service.
 - We accept a development-only OTP return value while email delivery is absent.
   Production must not enable `AUTH_DEV_OTP`.
 

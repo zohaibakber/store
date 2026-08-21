@@ -19,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { ephemeralStoreLayer } from "./src/ephemeral";
@@ -197,6 +198,17 @@ export const AuthLive = Auth.make(
     }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
 
     const handler = Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(RoutesLive))).pipe(
+      Effect.catchIf(
+        (error) =>
+          HttpServerError.isHttpServerError(error) && error.reason._tag === "RouteNotFound",
+        () =>
+          Effect.succeed(
+            HttpServerResponse.jsonUnsafe(
+              { error: { code: "NOT_FOUND", message: "No such authentication route." } },
+              { status: 404 },
+            ),
+          ),
+      ),
       Effect.catchCause((cause) =>
         Effect.logError("auth.request_failed").pipe(
           Effect.annotateLogs({ cause: String(cause) }),

@@ -6,7 +6,12 @@ import * as Schema from "effect/Schema";
 import type { Password } from "./model";
 
 const textEncoder = new TextEncoder();
-const ITERATIONS = 310_000;
+/**
+ * workerd rejects PBKDF2 above 100,000 iterations. The verifier also refuses
+ * counts below that, so this is the only value that both hashes and verifies
+ * on Cloudflare Workers.
+ */
+const ITERATIONS = 100_000;
 const HASH_BYTES = 32;
 const SALT_BYTES = 16;
 
