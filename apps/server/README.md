@@ -67,11 +67,10 @@ bun alchemy login
 
 ## CI/CD
 
-GitHub Actions uses the same remote state store as local deploys. A push to
-`main` deploys `prod`. Same-repository pull requests deploy isolated
-`pr-<number>` stages and receive an updating preview comment. Closing a pull
-request destroys its preview resources. Fork pull requests still run all checks
-but do not receive deployment credentials.
+GitHub Actions uses the same remote state store as local deploys. Pull requests
+run checks and tests only; they do not create Cloudflare stages. A push to
+`main` deploys `prod`. Fork pull requests still run all checks but do not
+receive deployment credentials.
 
 Bootstrap the CI token and GitHub environments once from an admin profile:
 

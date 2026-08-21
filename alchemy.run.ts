@@ -1,8 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
-import * as GitHub from "alchemy/GitHub";
-import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -21,12 +19,13 @@ import { Website } from "./apps/web/infra";
  *   bun run deploy:prod
  *
  * Running `alchemy deploy` bare would silently create a `dev_$USER` stage, so
- * the package scripts always pass `--stage`.
+ * the package scripts always pass `--stage`. CI deploys `prod` from `main`
+ * only; pull requests do not create Cloudflare stages.
  */
 export default Alchemy.Stack(
   "Tabaaq",
   {
-    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers(), GitHub.providers()),
+    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers()),
     // Remote state, so local deploys and CI converge on the same history.
     state: Cloudflare.state(),
   },
@@ -35,29 +34,6 @@ export default Alchemy.Stack(
     const auth = yield* Auth;
     const api = yield* Api;
     const website = yield* Website;
-
-    if (process.env.PULL_REQUEST) {
-      yield* GitHub.Comment("PreviewComment", {
-        owner: "zohaibakber",
-        repository: "store",
-        issueNumber: Number(process.env.PULL_REQUEST),
-        body: Output.interpolate`
-          ## Preview is up
-
-          App: ${website.url}
-          Auth: ${auth.url} (health at \`/health\`)
-          API: ${api.url} (health at \`/api/health\`)
-
-          Preview stages share the Website origin: the React SPA is deployed
-          with \`Cloudflare.Website.Vite\`, and \`/api/*\` is proxied to the API
-          Worker. Production splits the apex (SPA) from \`api.<domain>\`.
-          Built from commit ${process.env.GITHUB_SHA?.slice(0, 7) ?? "unknown"}.
-
-          ---
-          This comment updates on each push.
-        `,
-      });
-    }
 
     // Non-secret outputs only. Authentication secrets stay in Worker bindings.
     return {

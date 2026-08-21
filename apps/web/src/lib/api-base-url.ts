@@ -6,7 +6,7 @@ const loopbackHost = (hostname: string) => {
 };
 
 /**
- * Production browsers call `api.<site>` (`VITE_API_URL`). Preview stages and
+ * Production browsers call `api.<site>` (`VITE_API_URL`). Non-prod stages and
  * local Vite serve `/api` on the page origin through the Website Worker (or
  * the Vite proxy), so a baked production API URL CORS-fails from `*.workers.dev`.
  */

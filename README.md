@@ -72,11 +72,10 @@ Create gitignored `.env.dev` and `.env.prod` at the repository root. Give each
 stage its own ES256 key pair, refresh and ephemeral peppers, and Google OAuth
 credentials. Worker setup and stage details live in `apps/server/README.md`.
 
-GitHub Actions verifies every change, deploys each same-repository pull request
-to an isolated `pr-<number>` stage, comments its Website URL on the pull request,
-removes that stage when the pull request closes, and deploys `main` to `prod`.
-`alchemy deploy` builds the SPA. CI does not run a separate Vite build. Bootstrap
-its least-privilege Cloudflare credentials once:
+GitHub Actions verifies every change. Pull requests do not create Cloudflare
+resources. A push to `main` deploys `prod`. `alchemy deploy` builds the SPA.
+CI does not run a separate Vite build. Bootstrap its least-privilege Cloudflare
+credentials once:
 
 ```sh
 bun alchemy login --profile admin

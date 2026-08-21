@@ -4,30 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, reopened, synchronize, closed]
 
 concurrency:
-  group: >-
-    deploy-${{ github.event_name == 'pull_request'
-      && format('pr-{0}', github.event.number)
-      || 'prod' }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'prod' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
 
 env:
-  STAGE: >-
-    ${{ github.event_name == 'pull_request'
-      && format('pr-{0}', github.event.number)
-      || 'prod' }}
   # `vp config` (prepare) writes `core.hooksPath`. Skip that in CI so install
   # cannot race two git-config locks. Hooks are not used in Actions.
   VITE_GIT_HOOKS: "0"
 
 jobs:
   verify:
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -50,14 +41,11 @@ jobs:
 
   deploy:
     needs: verify
-    if: >-
-      github.event_name == 'push'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'Production' || 'Development' }}
-    permissions:
-      contents: read
-      pull-requests: write
+    environment: Production
+    env:
+      STAGE: prod
     steps:
       - uses: actions/checkout@v7
 
@@ -83,7 +71,7 @@ jobs:
           echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
           echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
           echo "VITE_AUTH_URL=${VITE_AUTH_URL:-<unset>}"
-          if [ "${STAGE}" = "prod" ] && [ -z "${PRODUCTION_DOMAIN}" ]; then
+          if [ -z "${PRODUCTION_DOMAIN}" ]; then
             echo "::error::PRODUCTION_DOMAIN is empty." \
                  "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
             exit 1
@@ -101,8 +89,8 @@ jobs:
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
-          VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
-          VITE_AUTH_URL: ${{ github.event_name == 'push' && vars.VITE_AUTH_URL || '' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
 
       - name: Deploy ${{ env.STAGE }}
         run: bun alchemy deploy --stage "${STAGE}" --yes
@@ -123,44 +111,6 @@ jobs:
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
-          VITE_API_URL: ${{ github.event_name == 'push' && vars.VITE_API_URL || '' }}
-          VITE_AUTH_URL: ${{ github.event_name == 'push' && vars.VITE_AUTH_URL || '' }}
-          PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.number || '' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           GITHUB_SHA: ${{ github.sha }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cleanup:
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.action == 'closed'
-      && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    environment: Development
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Refuse to destroy production
-        run: |
-          if [ "${STAGE}" = "prod" ]; then
-            echo "::error::Refusing to destroy the production stage."
-            exit 1
-          fi
-
-      - name: Destroy preview
-        run: bun alchemy destroy --stage "${STAGE}" --yes
-        env:
-          CI: "1"
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PULL_REQUEST: ${{ github.event.number }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

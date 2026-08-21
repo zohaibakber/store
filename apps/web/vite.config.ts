@@ -7,9 +7,8 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import packageJson from "./package.json";
 import { oxcReactCompiler } from "./vite-plugin-oxc-react-compiler";
 
-// CI deploys `pr-*` with the Development GitHub Environment, which also holds
-// production `VITE_API_URL`. Preview stages proxy `/api` on the Website origin,
-// so that value would CORS-fail from `*.workers.dev`.
+// Non-prod stages (local `dev`) proxy `/api` on the Website origin. A baked
+// production `VITE_API_URL` would CORS-fail from `*.workers.dev`.
 if (process.env.STAGE && process.env.STAGE !== "prod") {
   process.env.VITE_API_URL = "";
 }
