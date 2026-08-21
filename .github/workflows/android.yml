@@ -33,13 +33,27 @@ jobs:
         with:
           node-version: 22
 
+      - name: Skip EAS CLI when GitHub is not given a token
+        id: expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "EXPO_TOKEN is unset. Builds from the Expo GitHub app do not need it."
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "run=true" >> "${GITHUB_OUTPUT}"
+
       - uses: expo/expo-github-action@v8
+        if: steps.expo.outputs.run == 'true'
         with:
           eas-version: latest
           packager: bun
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build Android on EAS
+        if: steps.expo.outputs.run == 'true'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
