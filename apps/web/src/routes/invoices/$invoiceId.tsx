@@ -1,4 +1,4 @@
-import { InvoiceId } from "@store/contracts";
+import { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";

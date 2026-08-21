@@ -1,4 +1,4 @@
-import { liveSocketUrl } from "@store/contracts";
+import { liveSocketUrl } from "@store/contracts/sync-session";
 import {
   SyncTransportError,
   syncSocketFromWebSocket,

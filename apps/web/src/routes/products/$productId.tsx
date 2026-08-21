@@ -6,7 +6,7 @@ import {
   Trash2,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ProductId } from "@store/contracts";
+import { ProductId } from "@store/contracts/ids";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 

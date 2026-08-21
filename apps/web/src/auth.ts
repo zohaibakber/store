@@ -4,7 +4,7 @@ import {
   withWorkspaceError,
   withWorkspaceOnline,
   WorkspaceSnapshot,
-} from "@store/contracts";
+} from "@store/contracts/workspace";
 import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";

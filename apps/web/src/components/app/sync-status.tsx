@@ -4,7 +4,7 @@ import {
   ReloadIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { syncConfigured, type SyncStatus } from "@store/contracts";
+import { syncConfigured, type SyncStatus } from "@store/contracts/sync.schema";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";

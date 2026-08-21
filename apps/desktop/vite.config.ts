@@ -19,8 +19,14 @@ const webRoot = path.resolve(__dirname, "../web");
  */
 const desktopRendererEntry = (): Plugin => ({
   name: "desktop-renderer-entry",
-  transformIndexHtml(html) {
-    return html.replace("/src/main.tsx", "/src/main.electron.tsx");
+  // Must run before Vite collects HTML module entries; a default-order
+  // transform leaves `/src/main.tsx` as the build input and packs the
+  // browser SQLite host + migration SQL into the renderer.
+  transformIndexHtml: {
+    order: "pre",
+    handler(html) {
+      return html.replace("/src/main.tsx", "/src/main.electron.tsx");
+    },
   },
 });
 
