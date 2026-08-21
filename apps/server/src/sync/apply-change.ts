@@ -20,17 +20,11 @@ const entityLabels = {
 } as const satisfies Record<SyncEntity, string>;
 
 const writeFailed = (entity: SyncEntity) =>
-  Effect.fail(protocolError("ENTITY_WRITE_FAILED", `${entityLabels[entity]} could not be saved.`));
+  Effect.fail(protocolError("ENTITY_WRITE_FAILED", `Could not save ${entityLabels[entity]}.`));
 
 type VersionedEntity = Exclude<SyncEntity, "stockMovement">;
 type VersionedPushRow = (typeof syncEntityPushRows)[VersionedEntity]["Type"];
 
-/**
- * Upsert for the version-tracked entities, which all share one shape: read the
- * current row, overlay the server-owned columns, then write keyed on
- * `(organizationId, id)`. The table comes from the entity registry so adding an
- * entity does not mean adding another copy of this block.
- */
 const upsertVersionedEntity = Effect.fn("SyncDatabase.upsertVersionedEntity")(function* (
   tx: SyncTransaction,
   actor: SyncActor,
@@ -38,8 +32,6 @@ const upsertVersionedEntity = Effect.fn("SyncDatabase.upsertVersionedEntity")(fu
   change: SyncEntityChange,
   row: VersionedPushRow,
 ) {
-  // `local/schema` and `do/schema` both re-export `shared/store.schema`, so the
-  // registry's table is this table; drizzle just cannot narrow the union.
   // SAFETY: Every versioned registry table has the managed category column shape;
   // entity-specific insert fields flow through Drizzle's values object below.
   const table = syncEntityRows[change.entity].table as typeof categories;
@@ -80,7 +72,6 @@ export const applyChange = Effect.fn("SyncDatabase.applyChange")(function* (
   switch (change.entity) {
     case "category":
     case "product": {
-      // The only entities with a user-facing name to normalize.
       const row = yield* decodeEntityRow(change.entity, change);
       const saved = yield* upsertVersionedEntity(tx, actor, operation, change, {
         ...row,

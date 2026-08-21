@@ -47,7 +47,7 @@ const startDownload = (version: string) => {
     .catch((error) => {
       toastManager.add({
         data: {},
-        description: error instanceof Error ? error.message : "Please try again.",
+        description: error instanceof Error ? error.message : "Try again.",
         id: UPDATE_DOWNLOAD_TOAST_ID,
         priority: "high",
         title: "Update failed",
@@ -57,10 +57,8 @@ const startDownload = (version: string) => {
     });
 };
 
-/** True when this build can ask the desktop updater for a newer package. */
 export const canCheckForAppUpdate = () => Boolean(window.updater);
 
-/** Ask the desktop updater for a newer package and surface the result in a toast. */
 export const checkForAppUpdate = () => {
   const updater = window.updater;
   if (!updater) return;
@@ -74,7 +72,7 @@ export const checkForAppUpdate = () => {
   void updater.check().catch((error) => {
     manualCheck = false;
     toastManager.add({
-      description: error instanceof Error ? error.message : "Please try again.",
+      description: error instanceof Error ? error.message : "Try again.",
       id: UPDATE_CHECK_TOAST_ID,
       priority: "high",
       title: "Update check failed",
@@ -119,7 +117,7 @@ export function useAppUpdater() {
           }
           break;
         case "progress":
-          showDownloadProgress(event.percent, "The update will be ready to install shortly.");
+          showDownloadProgress(event.percent, "Almost ready to install.");
           break;
         case "error":
           if (manualCheck || !event.retrying) {

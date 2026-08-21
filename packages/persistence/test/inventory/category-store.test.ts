@@ -29,8 +29,6 @@ test("categories are created from a name, slugged and deduplicated", async () =>
         runtime.runPromise(store((s) => s.createCategory({ name: "   " }))),
       ).rejects.toThrow();
 
-      // The same database, opened as a different organization: categories are
-      // scoped to the workspace, so the slug is free to be reused there.
       const otherOrganization = makeRuntime({ workspace: workspaceFor("org-b") });
       const other = await otherOrganization.runPromise(store((s) => s.listCategories));
       expect(other.some((category) => category.id === "cough-syrups")).toBe(false);

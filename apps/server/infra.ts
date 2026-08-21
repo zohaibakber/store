@@ -45,21 +45,9 @@ export {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 
-/**
- * Production attaches two hostnames on the zone inferred from
- * `PRODUCTION_DOMAIN`: the Website Worker on the apex, the API Worker on
- * `api.<domain>` (or `PRODUCTION_API_DOMAIN` / `VITE_API_URL`). Cloudflare
- * provisions DNS and certificates. Neither hostname is baked into source.
- * Other stages stay on generated `workers.dev` URLs. Locally, the Website
- * Worker still proxies `/api/*` so `vp run dev` stays same-origin.
- */
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
 /**
- * The API Worker, authentication, bindings, routes, and Durable Object clients
- * all stay in one Effect runtime. No framework or Promise adapter sits between
- * Alchemy and the HTTP API.
- *
  * `ORGANIZATION_STORE` Durable Object names are first-party organization ids.
  * Do not rename the class or change the key without a data migration. Existing
  * sqlite databases are addressed by that name.
@@ -92,8 +80,6 @@ export const ApiLive = Api.make(
       // the local dev port rather than taking alchemy's default of 1337.
       dev: { port: 8787 },
     };
-    // Apex stays on the Website Worker. This Worker claims `api.<domain>` in
-    // prod; omitting `domain` on other stages leaves workers.dev in place.
     return apiHostname ? { ...worker, domain: apiHostname } : worker;
   }),
   Effect.gen(function* () {

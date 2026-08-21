@@ -13,7 +13,7 @@ from `Authorization: Bearer` and trusts the organization membership in the
 signed claims. Auth users, organizations, memberships, and refresh sessions live
 in D1. Each organization's inventory and sync log live in its own SQLite-backed
 Durable Object through `ORGANIZATION_STORE`.
-The desktop communicates through authenticated HTTP and a hibernated WebSocket.
+The desktop talks over authenticated HTTP and a hibernated WebSocket.
 Foreground clients exchange on the live socket. The Durable Object `exchange`
 is the same transaction the socket frames call.
 
@@ -26,14 +26,13 @@ in a `wrangler.jsonc`. The Worker, its bindings, and the local dev port live in
 composes them into one stack.
 
 `infra.ts` attaches D1, Workers AI, rate limiting, and the organization Durable
-Object through Alchemy's Effect-native binding services. HTTP handlers consume a
-small typed runtime service, so route code never reaches into a raw Worker `env`
-object.
+Object through Alchemy's Effect-native binding services. HTTP handlers take a
+typed runtime service. Route code does not read Worker `env` directly.
 
 ## Stages
 
-Two stages, fully isolated from each other. Separate Worker, D1 database,
-Durable Object namespace, and state. Run these from the repository root:
+Two stages, isolated from each other. Separate Worker, D1 database, Durable
+Object namespace, and state. Run these from the repository root:
 
 ```sh
 bun run plan:dev      # preview changes without applying
@@ -68,7 +67,7 @@ bun alchemy login
 ## CI/CD
 
 GitHub Actions uses the same remote state store as local deploys. Pull requests
-run checks and tests only; they do not create Cloudflare stages. A push to
+run checks and tests only. They do not create Cloudflare stages. A push to
 `main` deploys `prod`. Fork pull requests still run all checks but do not
 receive deployment credentials.
 
@@ -139,9 +138,8 @@ desktop builds and production web. The web SPA on `:5174` leaves `VITE_API_URL`
 empty and talks to `/api` through the Website Worker (or Vite's proxy in
 standalone `vp dev`).
 
-`alchemy dev` runs your code locally but uses real cloud D1 and Durable Objects
-from the `dev` stage. There is no local emulation, so this loop needs network
-access.
+`alchemy dev` runs your code locally against real cloud D1 and Durable Objects
+from the `dev` stage. There is no local emulation. You need network access.
 
 The Worker's compatibility date is capped by the workerd binary that
 `alchemy dev` runs locally, which is pinned exactly by alchemy's dev runtime and
@@ -165,19 +163,18 @@ the SQL inside each object.
 
 ## Sync model
 
-The authenticated session supplies the authoritative organization and user. The
-sync module validates operation identity and payload hashes before committing a
-request in one Durable Object SQLite transaction.
+The session carries the organization and user the Worker trusts. The sync module
+checks operation identity and payload hashes, then commits the request in one
+Durable Object SQLite transaction.
 
 `sync_inbox` makes retries idempotent. `sync_change_log` stores accepted
-snapshots and tombstones, and protocol-v2 responses return byte-limited
-organization pages with `nextCursor`, `headCursor`, and `hasMore`.
-`sync_devices` records authenticated device checkpoints used for diagnostics and
-future retention decisions.
+snapshots and tombstones. Protocol-v2 responses return byte-limited organization
+pages with `nextCursor`, `headCursor`, and `hasMore`. `sync_devices` records
+authenticated device checkpoints used for diagnostics and later retention work.
 
 The live route uses the same first-party session and membership middleware as
 HTTP sync. Browsers pass `access_token` on the upgrade query because they cannot
-set WebSocket headers; Electron sends `Authorization` and `electron-origin`.
+set WebSocket headers. Electron sends `Authorization` and `electron-origin`.
 After authorization, the Worker forwards only trusted organization, user, device,
 and session expiry metadata to the organization's Durable Object. The object
 accepts the socket through the hibernation API, serializes that metadata as a
@@ -185,9 +182,8 @@ socket attachment, and immediately sends a `hello` cursor.
 
 Client frames on that socket are `exchange` (protocol-v2 `SyncRequest`) and
 sparse `ping`. Server frames are `hello`, `invalidate`, `exchange-result`,
-`exchange-error`, and `pong`. A successful sync transaction that applied new
-operations broadcasts an `invalidate` cursor after commit, skipping the
-originating connection. Failed and duplicate-only transactions broadcast
-nothing. Clients reconnect with capped jittered backoff. A hello always pulls.
-Inbox idempotency makes a timed-out socket exchange followed by a retry
-safe.
+`exchange-error`, and `pong`. A successful sync that applied new operations
+broadcasts an `invalidate` cursor after commit, skipping the originating
+connection. Failed and duplicate-only transactions broadcast nothing. Clients
+reconnect with capped jittered backoff. A hello always pulls. Inbox idempotency
+makes a timed-out socket exchange followed by a retry safe.

@@ -19,10 +19,6 @@ import { scrollInset } from "@/hooks/use-overlay-insets";
 import { LOW_STOCK_THRESHOLD, needsAttention } from "@/lib/product-catalog";
 import { useColors } from "@/theme/colors";
 
-/**
- * The overview. Two groups — what the inventory adds up to, and what needs
- * restocking — and nothing that repeats a number the other group already shows.
- */
 export function HomeScreen() {
   const { products } = useProductData();
   const { loading, refreshing, error } = productStatusView(useProductStatus());

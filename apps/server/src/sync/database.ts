@@ -45,12 +45,12 @@ const constraintProtocolError = (cause: unknown) => {
   if (cause.cause.reason instanceof UniqueViolation)
     return SyncProtocolError.make({
       code: "ENTITY_CONFLICT",
-      message: "A synced entity conflicts with an existing unique value.",
+      message: "This entity conflicts with an existing unique value.",
     });
   if (cause.cause.reason instanceof ConstraintError)
     return SyncProtocolError.make({
       code: "ENTITY_RELATION_INVALID",
-      message: "A synced entity refers to a related entity that does not exist.",
+      message: "This entity refers to a related entity that does not exist.",
     });
   return undefined;
 };

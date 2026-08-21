@@ -1,9 +1,8 @@
 # Store
 
-Bun workspace for an offline-first inventory stack: a TanStack web app, an
-Electron desktop app, and a Cloudflare Worker API. Inventory written in the
-browser, on desktop, or on mobile syncs through the same authenticated
-live socket at `/api/sync/live`.
+Bun workspace for offline-first inventory: TanStack web app, Electron desktop
+app, and Cloudflare Worker API. Writes from browser, desktop, or mobile sync
+through the same authenticated live socket at `/api/sync/live`.
 
 ## Workspace boundaries
 
@@ -32,19 +31,19 @@ live socket at `/api/sync/live`.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
-Reusable test fixtures and harnesses live under `test/lib`.
+Reusable fixtures and harnesses live under `test/lib`.
 
 Web components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Local business transactions commit an outbox operation alongside their data. A
-shared single-flight sync runtime pushes those operations through an
+Local business transactions write an outbox row in the same commit as the data
+change. A single-flight sync runtime pushes those operations through an
 authenticated Worker and pulls the organization's ordered change feed in the same
 Durable Object transaction. Foreground web and desktop clients keep a hibernated
 WebSocket at `/api/sync/live` for correlated exchanges and invalidation. Network
-failures leave local writes pending in FIFO order; retryable
-transport errors do not burn the outbox toward quarantine.
+failures leave local writes pending in FIFO order. Retryable transport errors do
+not burn the outbox toward quarantine.
 
 ## Run locally
 

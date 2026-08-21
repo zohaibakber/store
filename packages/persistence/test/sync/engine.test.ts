@@ -232,7 +232,6 @@ test("each business mutation commits one durable sync operation", async () => {
 
     const queued = await readOutbox(dataDir);
     expect(queued).toHaveLength(3);
-    // The fixture's category is an ordinary mutation now that nothing is seeded.
     expect(queued[0]?.payload.map((change) => change.entity)).toEqual(["category"]);
     expect(queued[1]?.payload).toEqual([
       expect.objectContaining({ entity: "product", action: "upsert" }),
@@ -521,9 +520,6 @@ test("a newer remote product change replaces the local row", async () => {
   });
 });
 
-// The local invoice already created the counter row, so the remote invoice
-// takes the conflict branch, the path where a Postgres `greatest` would have
-// thrown "no such function" against SQLite.
 test("a remote invoice advances the local invoice counter past its own number", async () => {
   await withTestStore(async ({ dataDir, runtime: seedRuntime, makeRuntime }) => {
     const product = await seedRuntime.runPromise(
@@ -579,7 +575,6 @@ test("a remote invoice advances the local invoice counter past its own number", 
       phase: "idle",
     });
 
-    // The counter is only observable through the number it hands out next.
     const next = await runtime.runPromise(store((store) => store.createInvoice(sale)));
     expect(next.invoiceNumber).toBe(8);
   });

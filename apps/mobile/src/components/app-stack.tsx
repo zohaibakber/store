@@ -5,13 +5,7 @@ import { useColors } from "@/theme/colors";
 import { typography } from "@/theme/typography";
 
 /**
- * Native navigation chrome, painted from the palette: `background` content and
- * header, no shadow, `foreground` titles and back button. The back arrow is
- * deliberately not a platform accent.
- *
- * One file for both platforms. `headerLargeTitle` is an iOS-only prop that
- * Android ignores, which is the whole difference between the two headers — not
- * enough to justify a split.
+ * One file for both platforms. `headerLargeTitle` is iOS-only; Android ignores it.
  */
 export function AppStack({ title, children }: { title: string; children?: ReactNode }) {
   const colors = useColors();

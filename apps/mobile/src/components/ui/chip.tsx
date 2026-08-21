@@ -5,10 +5,6 @@ import { useColors } from "@/theme/colors";
 import { radius } from "@/theme/tokens";
 import { typography } from "@/theme/typography";
 
-/**
- * A single-select filter pill. Selection is the only state that changes colour:
- * `secondary` at rest, `primary` when chosen.
- */
 export function Chip({
   children,
   isSelected,

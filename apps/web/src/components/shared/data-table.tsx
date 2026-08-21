@@ -65,7 +65,6 @@ interface DataTableSortableColumn {
 }
 
 interface DataTableColumn extends DataTableSortableColumn {
-  // Optional because tables whose search lives elsewhere omit column filtering.
   getFilterValue?(): DataTableFilterValue;
   setFilterValue?(value: DataTableFilterValue): void;
 }

@@ -15,7 +15,6 @@ import { hapticSelection } from "@/lib/haptics";
 import { useColors } from "@/theme/colors";
 import { motion } from "@/theme/tokens";
 
-/** Each step arrives from just below, once, when it replaces the previous one. */
 const STEP_IN = FadeInDown.duration(motion.enterMs).reduceMotion(ReduceMotion.System);
 
 const stepKey = (route: LoginRoute | null) => route?._tag ?? "Identifier";
@@ -28,7 +27,6 @@ export function AuthScreen() {
   if (state._tag === "Loading") return <LoadingScreen />;
   if (state._tag === "Authenticated") return <Redirect href="/home" />;
 
-  /** The tap hands straight over to Google's picker. Nothing in between. */
   const continueWithGoogle = () => {
     hapticSelection();
     void flow.startGoogle();

@@ -28,8 +28,6 @@ const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
 
 const AuthRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
-    // Route handlers run after this registration layer has finished. Capture
-    // the runtime now instead of requiring it from the later request context.
     const runtime = yield* ServerRuntime;
     const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -83,7 +81,7 @@ export const recoverUnexpected = <E, R>(
       return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
         Effect.as(
           HttpServerResponse.jsonUnsafe(
-            publicError("INTERNAL_SERVER_ERROR", "The request could not be handled."),
+            publicError("INTERNAL_SERVER_ERROR", "Something went wrong."),
             { status: 500 },
           ),
         ),

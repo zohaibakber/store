@@ -41,7 +41,6 @@ const hostnameFrom = (value: string | undefined): string | undefined => {
   }
 };
 
-/** `api.example.com` → `example.com`. Leaves other hosts alone. */
 const siteFromApiHostname = (hostname: string | undefined): string | undefined => {
   if (!hostname?.startsWith("api.")) return undefined;
   const parent = hostname.slice("api.".length);

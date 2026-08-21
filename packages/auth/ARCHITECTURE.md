@@ -340,8 +340,8 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 - The auth database keeps the old organization-binding table until production
   account linking is complete. No runtime code reads it. A dedicated cutover
   migration can remove it after existing organizations have first-party owners.
-- The first release creates one owner organization during registration and
-  Google sign-up. Organization creation, invitations, and membership management
-  endpoints remain separate product work.
+- Registration and Google sign-up still create one owner organization. That
+  store can invite members and manage roles through `/v1/organization`. Creating
+  additional organizations, or switching among them, is intentionally absent.
 - The repository pins an Effect prerelease where schema-backed errors are named
   `Schema.TaggedError`. The design's error model is unchanged.

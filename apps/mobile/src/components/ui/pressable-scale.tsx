@@ -23,19 +23,15 @@ type PressableScaleProps = {
   readonly accessibilityState?: { readonly selected?: boolean };
   readonly children: ReactNode;
   readonly isDisabled?: boolean;
-  /** Layout for the touch target itself, e.g. `flex: 1` inside a row. */
   readonly layoutStyle?: StyleProp<ViewStyle>;
   readonly onPress?: () => void;
-  /** The visual box that scales on press. */
   readonly style?: StyleProp<ViewStyle>;
   readonly testID?: string;
 };
 
 /**
- * Press feedback for anything tappable. The shared value holds the *state*
- * (pressed: 0 → 1) and the scale is interpolated from it, so a press never
- * crosses to the JS thread or triggers a render. Reduced motion dims instead of
- * scaling. See `design-system.md` §4.
+ * Press state lives in a Reanimated shared value (0→1); scale is interpolated
+ * on the UI thread. Reduced motion dims instead of scaling.
  */
 export function PressableScale({
   accessibilityHint,

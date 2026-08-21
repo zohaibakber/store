@@ -3,7 +3,6 @@ import { StyleSheet, View } from "react-native";
 import { Spinner } from "@/components/ui/spinner";
 import { useColors } from "@/theme/colors";
 
-/** The gap between launch and a resolved session. Nothing but the indicator. */
 export function LoadingScreen() {
   const colors = useColors();
   return (

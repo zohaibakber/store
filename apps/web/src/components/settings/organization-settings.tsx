@@ -12,7 +12,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
 import { OrganizationProvider, useOrganization } from "@/lib/organization";
 
-/** Inviting and managing people is the owner's and admins' business. */
 const manages = (role: string) => role === "owner" || role === "admin";
 
 function OrganizationPanel({ userId }: { userId: string }) {
@@ -22,7 +21,7 @@ function OrganizationPanel({ userId }: { userId: string }) {
     return (
       <Alert variant="error">
         <HugeiconsIcon aria-hidden="true" icon={AlertCircleIcon} />
-        <AlertTitle>The organization could not be loaded</AlertTitle>
+        <AlertTitle>Could not load the organization</AlertTitle>
         <AlertDescription>
           {state.error}
           <Button

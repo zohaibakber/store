@@ -2,7 +2,6 @@ import { StyleSheet, View } from "react-native";
 
 import { useColors } from "@/theme/colors";
 
-/** A hairline in `border`. `inset` clears a leading slot, e.g. a row avatar. */
 export function Separator({
   inset = 0,
   orientation = "horizontal",

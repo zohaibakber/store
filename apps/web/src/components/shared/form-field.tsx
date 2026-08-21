@@ -16,7 +16,6 @@ interface FormFieldApi {
   };
 }
 
-/** Spreadable onto a DOM input. No stray non-DOM attributes. */
 export interface FormControlProps {
   readonly id: string;
   readonly name: string;

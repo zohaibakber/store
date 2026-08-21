@@ -59,18 +59,12 @@ const skin = (colors: Palette, variant: ButtonVariant): ButtonSkin => {
 };
 
 type ButtonLabel = {
-  /** The variant's text colour, so the label never re-derives it. */
   readonly foreground: Hex;
   readonly underline: boolean;
 };
 
 const ButtonContext = createContext<ButtonLabel | null>(null);
 
-/**
- * A tappable box, not a text node, so the label is an explicit `ButtonText`
- * child rather than a string prop. Variants follow the coss Button recipe in
- * `design-system.md` §5.
- */
 export function Button({
   accessibilityLabel,
   children,
@@ -111,7 +105,6 @@ export function Button({
         ]}
         testID={testID}
       >
-        {/* The label keeps its slot while loading so the button never resizes. */}
         <View style={[styles.row, loading && styles.hidden]}>{children}</View>
         {loading ? (
           <ActivityIndicator color={foreground} size="small" style={styles.spinner} />
@@ -121,7 +114,6 @@ export function Button({
   );
 }
 
-/** The variant's own text colour, or the plain one outside a `Button`. */
 const useLabel = (): ButtonLabel => {
   const colors = useColors();
   return use(ButtonContext) ?? { foreground: colors.foreground, underline: false };

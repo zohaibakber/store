@@ -101,8 +101,8 @@ export function LowStock({
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
             </EmptyMedia>
-            <EmptyTitle>Stock looks healthy</EmptyTitle>
-            <EmptyDescription>No visible product is running low.</EmptyDescription>
+            <EmptyTitle>Nothing at or below the threshold</EmptyTitle>
+            <EmptyDescription>No visible product has {threshold} units or fewer.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (

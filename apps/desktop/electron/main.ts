@@ -66,11 +66,10 @@ let workspace: AuthenticatedWorkspace | undefined;
 let disposeUpdater: (() => Promise<void>) | undefined;
 
 function appIconPath() {
-  // nativeImage (which BrowserWindow's `icon` option uses under the hood)
-  // reads the real filesystem and can't see into app.asar, so packaged
-  // builds must load the icon from extraResources instead of the bundled
-  // renderer assets. Unpackaged/dev uses the orange mark; packaged/prod
-  // uses the monochrome mark.
+  // BrowserWindow's `icon` option goes through nativeImage, which reads the
+  // real filesystem and can't see into app.asar. Packaged builds load the
+  // icon from extraResources, not from renderer assets. Unpackaged/dev uses
+  // the orange mark; packaged/prod uses the monochrome mark.
   return app.isPackaged
     ? path.join(process.resourcesPath, "logo.png")
     : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
@@ -94,8 +93,8 @@ const AUTH_BASE_URL = fallbackIfBlank(
   "http://localhost:8788",
 );
 
-// Local commits signal the sync engine immediately. The live socket is the
-// happy path; this slower safety poll is only a fallback for a missed wakeup.
+// Local commits wake the sync engine right away. The live socket usually
+// carries that signal; this poll only covers a missed wakeup.
 const DESKTOP_SYNC_POLL_INTERVAL_MS = 300_000;
 const TITLE_BAR_HEIGHT = 40;
 const TITLE_BAR_COLOR = "#01000000";
@@ -155,7 +154,7 @@ const runStore = async <A, E>(
       error: encodeStoreError(
         PersistenceError.make({
           operation: "run store",
-          message: "The local store is not ready",
+          message: "Local store isn't ready yet",
         }),
       ),
     };
@@ -269,7 +268,7 @@ const makeWorkspace = (deviceId: string) =>
   });
 
 const currentWorkspace = () => {
-  if (!workspace) throw new Error("The authenticated workspace is not ready.");
+  if (!workspace) throw new Error("Workspace isn't ready yet.");
   return workspace;
 };
 
@@ -339,7 +338,7 @@ function registerServerIpc() {
     return await Effect.runPromise(
       Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
         Effect.mapError(
-          () => new Error("The invoice analysis response was not in the expected format."),
+          () => new Error("Invoice analysis returned an unexpected response."),
         ),
       ),
     );

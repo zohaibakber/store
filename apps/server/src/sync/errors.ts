@@ -6,12 +6,11 @@ export class SyncDatabaseError extends Schema.TaggedError<SyncDatabaseError>()(
 ) {}
 
 /**
- * Every protocol failure the sync endpoint can report. Keeping this closed is
- * what lets the HTTP status mapping be checked for exhaustiveness. An added
- * code fails to compile until it is given a status.
+ * Closed set of protocol failures the sync endpoint can report. The HTTP status
+ * map is exhaustive against this list, so a new code fails to compile until it
+ * gets a status.
  */
 export const SyncProtocolCode = Schema.Literals([
-  // Malformed or oversized request
   "INVALID_JSON",
   "INVALID_SYNC_REQUEST",
   "INVALID_DEVICE",
@@ -25,11 +24,9 @@ export const SyncProtocolCode = Schema.Literals([
   "EMPTY_OPERATION",
   "TOO_MANY_OPERATIONS",
   "TOO_MANY_CHANGES",
-  // Identity the caller is not allowed to act for
   "ORGANIZATION_MISMATCH",
   "ACTOR_MISMATCH",
   "DEVICE_MISMATCH",
-  // Conflicts with state the server already holds
   "CLIENT_SEQUENCE_REUSED",
   "OPERATION_COLLISION",
   "OPERATION_ID_REUSED",
@@ -37,13 +34,11 @@ export const SyncProtocolCode = Schema.Literals([
   "IMMUTABLE_ENTITY",
   "IMMUTABLE_ENTITY_REUSED",
   "ENTITY_CONFLICT",
-  // Well-formed but not applicable
   "ENTITY_RELATION_INVALID",
   "ENTITY_ID_MISMATCH",
   "INVALID_ENTITY_ROW",
   "BATCH_NOT_FOUND",
   "PAYLOAD_HASH_MISMATCH",
-  // Server-side faults
   "ENTITY_WRITE_FAILED",
   "CHANGE_LOG_FAILED",
 ]);

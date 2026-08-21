@@ -54,10 +54,6 @@ const productScanResponseSchema = Schema.object({
   ],
 });
 
-/**
- * Multimodal label extraction via Firebase AI Logic (Gemini Developer API).
- * Replaces on-device OCR + `/api/product-scans` for the mobile scanner.
- */
 export const inferProductFromImage = async (
   imageUri: string,
   mode: ProductScanMode,

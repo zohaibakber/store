@@ -61,9 +61,7 @@ export const OrganizationAuthLive = Layer.effect(
           .getSession(headers)
           .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
         if (!session)
-          return yield* Effect.fail(
-            unauthenticated("UNAUTHENTICATED", "Authentication is required."),
-          );
+          return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
 
         const organizationId = session.session.activeOrganizationId;
         if (!organizationId)
@@ -76,7 +74,7 @@ export const OrganizationAuthLive = Layer.effect(
           .pipe(logAuthFailure("Organization membership verification failed"), Effect.orDie);
         if (!hasActiveMember)
           return yield* Effect.fail(
-            forbidden("ORGANIZATION_ACCESS_DENIED", "Organization access is denied."),
+            forbidden("ORGANIZATION_ACCESS_DENIED", "You do not have access to this organization."),
           );
 
         return yield* httpEffect.pipe(

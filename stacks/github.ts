@@ -11,13 +11,6 @@ const repository = {
   name: "store",
 } as const;
 
-/**
- * One-shot bootstrap stack for GitHub Actions.
- *
- * Deploy this locally with the elevated `admin` profile. It mints a scoped,
- * account-owned Cloudflare token and writes it directly to GitHub, so the
- * plaintext token never needs to be copied through a terminal or dashboard.
- */
 export default Alchemy.Stack(
   "TabaaqGitHub",
   {

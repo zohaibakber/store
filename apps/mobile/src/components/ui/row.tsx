@@ -8,11 +8,6 @@ import { Text } from "@/components/ui/text";
 import { useColors } from "@/theme/colors";
 import { radius, size as sizes } from "@/theme/tokens";
 
-/**
- * A grouped list, the way `apps/web` builds a settings group: one bordered
- * surface, hairline separators between rows, no per-row card. Rows are `Row`
- * children; the group inserts the separators so rows never restate them.
- */
 export function RowGroup({ children }: { readonly children: ReactNode }) {
   const colors = useColors();
   const rows = Children.toArray(children).filter(Boolean);
@@ -20,8 +15,6 @@ export function RowGroup({ children }: { readonly children: ReactNode }) {
   return (
     <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {rows.map((row, index) => (
-        // The index is the key because a separator has no identity of its own;
-        // the row inside carries whatever key its caller gave it.
         <Fragment key={index}>
           {index > 0 ? <Separator /> : null}
           {row}
@@ -41,7 +34,6 @@ export function Row({
   tone = "default",
   trailing,
 }: {
-  /** What the tap does, when the title alone doesn't say. */
   readonly accessibilityHint?: string;
   readonly isDisabled?: boolean;
   readonly leading?: ReactNode;
@@ -82,23 +74,16 @@ export function Row({
   );
 }
 
-/**
- * The "this pushes a route" affordance. It is explicit rather than inferred from
- * `onPress`, because plenty of rows are tappable without navigating anywhere —
- * a row that reveals a hidden value should not promise a screen.
- */
 export function RowChevron() {
   return <Icon name="chevron" size={16} tone="muted" />;
 }
 
-/** Right-aligned value for a row: muted, tabular, never wrapping. */
 export function RowValue({
   children,
   label,
   tone = "muted",
 }: {
   readonly children: string;
-  /** Spoken instead of the glyphs, for values rendered as a mask. */
   readonly label?: string;
   readonly tone?: "muted" | "default" | "destructive" | "warning" | "success";
 }) {

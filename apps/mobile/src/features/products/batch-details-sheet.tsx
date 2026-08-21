@@ -24,10 +24,6 @@ type BatchDetailsSheetProps = {
   }) => Promise<void>;
 };
 
-/**
- * Native form sheet for batch number and expiry — quantity stays on the
- * quantity sheets so each modal has one job.
- */
 export function BatchDetailsSheet({
   visible,
   productName,

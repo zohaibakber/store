@@ -3,7 +3,6 @@ import { StyleSheet, View } from "react-native";
 
 import { Button, ButtonText } from "@/components/ui/button";
 
-/** Row of low-emphasis actions. Keeps every step down to one filled button. */
 export function QuietActions({ children }: { readonly children: ReactNode }) {
   return <View style={styles.row}>{children}</View>;
 }

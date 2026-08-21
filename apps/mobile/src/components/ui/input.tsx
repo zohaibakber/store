@@ -21,7 +21,6 @@ type InputProps = {
   readonly editable?: boolean;
   readonly invalid?: boolean;
   readonly keyboardType?: KeyboardTypeOptions;
-  /** Leading affordance, e.g. the magnifier in a search field. */
   readonly leadingIcon?: IconName;
   readonly maxLength?: number;
   readonly mono?: boolean;
@@ -39,11 +38,6 @@ type InputProps = {
   readonly value?: string;
 };
 
-/**
- * A single-line (or short multiline) text control. Border, not fill, carries
- * state: `input` at rest, `ring` on focus, tinted `destructive` when invalid.
- * The caret and selection are `foreground`, never a platform accent.
- */
 export function Input({
   accessibilityLabel,
   autoCapitalize,

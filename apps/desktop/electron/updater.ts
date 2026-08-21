@@ -35,7 +35,7 @@ const versionFromPendingFileName = (fileName: string) => {
 
 const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
 
-/** Drop leftover pending packages that are not newer than the running build. */
+/** Remove pending packages that are not newer than the running build. */
 export const clearStalePendingUpdate = async (currentVersion: string) => {
   const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
   try {
@@ -44,8 +44,8 @@ export const clearStalePendingUpdate = async (currentVersion: string) => {
     );
     const pendingVersion = info.fileName ? versionFromPendingFileName(info.fileName) : undefined;
     if (!pendingVersion) return;
-    // Equal or older leftovers make the next launch look like there is nothing
-    // newer to install after GitHub has already moved past that build.
+    // Equal or older leftovers make the next launch report no update even after
+    // GitHub has published a newer build.
     const newer =
       pendingVersion.localeCompare(currentVersion, undefined, {
         numeric: true,
@@ -128,8 +128,8 @@ export async function setupUpdater(getWindow: () => BrowserWindow | null) {
     ),
   );
 
-  // Renderer "Check for updates" and focus checks must bypass the throttle;
-  // otherwise a stale not-available right after publish sticks for minutes.
+  // Manual "Check for updates" and focus checks must skip the throttle, or a
+  // stale not-available right after publish sticks for minutes.
   ipcMain.handle("updater:check", () => Effect.runPromise(workflow.check(true)));
   ipcMain.handle("updater:download", () => Effect.runPromise(workflow.download));
   const install = () => {

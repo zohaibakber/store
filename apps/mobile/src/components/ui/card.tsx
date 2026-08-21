@@ -5,7 +5,6 @@ import { Text } from "@/components/ui/text";
 import { useColors } from "@/theme/colors";
 import { radius } from "@/theme/tokens";
 
-/** A grouped content surface: `card` fill, hairline border, no shadow. */
 export function Card({ style, ...props }: ComponentProps<typeof View>) {
   const colors = useColors();
   return (

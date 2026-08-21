@@ -10,9 +10,9 @@ import {
 } from "@/components/ui/autocomplete";
 
 /**
- * Free text, with what the catalog already uses offered as you type. The
- * suggestions are whole values typed before, a product name, an aisle, a
- * composition, so the same thing does not end up spelled three ways.
+ * Free text, with catalog values offered as you type. Suggestions are whole
+ * values already used, a product name, an aisle, a composition, so the same
+ * thing does not end up spelled three ways.
  */
 export function SuggestField({
   autoFocus,

@@ -1,14 +1,11 @@
 /**
- * The palette, resolved. See `design-system.md` §2.
- *
  * `apps/web/src/styles.css` is the source of truth, but it is written in
- * Tailwind v4 terms — `oklch()` swatches, `color-mix()` and `--alpha()` — none
- * of which React Native can parse. So the same values live here already
+ * Tailwind v4 terms: `oklch()` swatches, `color-mix()`, and `--alpha()`.
+ * React Native cannot parse those, so the same values live here already
  * converted to sRGB hex, with the web expression they came from noted beside
  * them. Change `styles.css` and this file changes with it, never one alone.
  */
 
-/** Tailwind v4 swatches used by the web theme, converted from oklch to sRGB. */
 const swatch = {
   amber400: "#ffb900",
   amber500: "#fe9a00",
@@ -31,14 +28,10 @@ const swatch = {
   white: "#ffffff",
 } as const;
 
-/** `--alpha(var(--color-black) / n%)` and friends, as 8-digit hex. */
 const blackAlpha = { 4: "#0000000a", 8: "#00000014", 10: "#0000001a" } as const;
 const whiteAlpha = { 4: "#ffffff0a", 6: "#ffffff0f", 8: "#ffffff14" } as const;
 
-/**
- * Every token is an `#RRGGBB` or `#RRGGBBAA` string, which is the one format
- * React Native styles, SwiftUI props and Compose props all accept.
- */
+/** `#RRGGBB` / `#RRGGBBAA` — the format RN, SwiftUI, and Compose all accept. */
 export type Hex = `#${string}`;
 
 export type ColorToken = keyof typeof light;
@@ -72,7 +65,6 @@ const light = {
   secondaryForeground: swatch.neutral800,
   success: swatch.emerald500,
   successForeground: swatch.emerald700,
-  /** Letterbox behind a live camera feed, which is black in every appearance. */
   viewfinder: swatch.black,
   warning: swatch.amber500,
   warningForeground: swatch.amber700,
@@ -119,17 +111,15 @@ export type Palette = Readonly<Record<ColorToken, Hex>>;
 
 export const palettes = { dark, light } as const satisfies Record<ColorScheme, Palette>;
 
-/** Tailwind's `/nn` opacity suffix. Tokens that already carry alpha pass through. */
 export const alpha = (color: Hex, fraction: number): Hex => {
   if (color.length === 9) return color;
   const clamped = Math.round(Math.min(1, Math.max(0, fraction)) * 255);
-  // SAFETY: `color` is `#RRGGBB` here (the 9-char case returned above) and
+  // SAFETY: `color` is `#RRGGBB` here. The 9-char case returned above. And
   // `clamped` is a byte, so `toString(16).padStart(2, "0")` is exactly two hex
-  // digits — the result is a `#RRGGBBAA` string.
+  // digits. The result is a `#RRGGBBAA` string.
   return `${color}${clamped.toString(16).padStart(2, "0")}` as Hex;
 };
 
-/** `--radius: 0.625rem` and the multiplicative scale from `styles.css`. */
 const radiusBase = 10;
 export const radius = {
   "2xl": radiusBase * 1.8,
@@ -154,7 +144,6 @@ export const space = {
   12: 48,
 } as const;
 
-/** Heights from `design-system.md` §4. */
 export const size = {
   buttonSm: 40,
   control: 48,

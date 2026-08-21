@@ -126,10 +126,6 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
     router.replace("/home");
   }, [router]);
 
-  /**
-   * Google's own account picker, presented by its SDK. There is no Tabaaq sheet
-   * in front of it and no browser: the picker is the whole interaction.
-   */
   const signInWithGoogle = useCallback(async () => {
     const result = await signInWithGoogleAccount();
     if (result._tag === "Cancelled") return;

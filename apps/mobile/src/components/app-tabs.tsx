@@ -6,21 +6,14 @@ import { typography } from "@/theme/typography";
 const isIOS = process.env.EXPO_OS === "ios";
 
 /**
- * The bottom navigation: a real `UITabBar` on iOS and a Material navigation bar
- * on Android, both from `expo-router`'s native tabs. Native structure, our
- * paint — see `design-system.md` §5.
- *
- * One file for both platforms. The tab bar is the platform's, so the only
- * per-platform values are the ones the two toolkits genuinely do differently:
- * iOS gets a blur material and a hairline, Android gets an opaque fill, a
- * selection indicator and a ripple.
+ * Native tabs from `expo-router`. One file for both platforms; only toolkit
+ * differences diverge: iOS blur + hairline, Android opaque fill + indicator +
+ * ripple.
  */
 export function AppTabs() {
   const colors = useColors();
 
-  // `caption` and `label` are the same 12px, differing only in weight, which is
-  // exactly the unselected/selected pair a tab bar wants. `lineHeight` is left
-  // off: the native bar lays the label out itself.
+  // `lineHeight` is left off: the native bar lays the label out itself.
   const label = {
     color: colors.mutedForeground,
     fontFamily: typography.caption.fontFamily,
@@ -35,33 +28,27 @@ export function AppTabs() {
   return (
     <NativeTabs
       backBehavior="history"
-      // Left unset on iOS: an opaque fill would paint over the blur below and
-      // content would stop showing through the bar. Android has no blur
-      // material, so there the `card` fill is the equivalent.
+      // Left unset on iOS: an opaque fill would paint over the blur below.
+      // Android has no blur material, so `card` fill is the equivalent.
       backgroundColor={isIOS ? undefined : colors.card}
-      // A translucency rather than a hue, so it adds no colour the palette
-      // didn't choose — and it is what lets a list scroll visibly under the bar.
+      // Lets list content scroll visibly under the translucent bar.
       blurEffect="systemChromeMaterial"
       iconColor={{ default: colors.mutedForeground, selected: colors.foreground }}
       indicatorColor={colors.accent}
       labelStyle={{ default: label, selected: selectedLabel }}
       labelVisibilityMode="labeled"
-      // The bar's height has to stay put: the inventory actions float at a
-      // fixed offset above it, and a bar that shrinks mid-scroll would leave
-      // them hanging. See `use-overlay-insets`.
+      // Inventory FABs float at a fixed offset; a shrinking bar would strand them.
       minimizeBehavior="never"
       rippleColor={colors.accent}
-      // The line between bar and content is a border, not an elevation shadow.
       shadowColor={colors.border}
       tintColor={colors.foreground}
     >
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         {/*
-         * Each platform signals selection its own way. iOS swaps the outline
-         * symbol for its filled twin; Material has no filled twin for two of
-         * these three glyphs, so Android carries selection in the indicator and
-         * the icon colour, which is how Material says it anyway.
+         * iOS swaps outline SF Symbol for filled twin; Material lacks filled
+         * twins for two of these glyphs, so Android carries selection in the
+         * indicator and icon colour.
          */}
         <NativeTabs.Trigger.Icon md="home" sf={{ default: "house", selected: "house.fill" }} />
       </NativeTabs.Trigger>

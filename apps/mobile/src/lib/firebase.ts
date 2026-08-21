@@ -5,8 +5,8 @@ import firebaseConfig from "../../firebase-config.json";
 
 /**
  * Firebase web config for Expo. AI Logic is called through the JS SDK with the
- * Gemini Developer API backend — no native google-services file required for
- * this path.
+ * Gemini Developer API backend. This path does not need a native google-services
+ * file.
  *
  * TODO(production): enable App Check (reCAPTCHA Enterprise / DeviceCheck) so
  * client quota cannot be abused from unsigned builds.

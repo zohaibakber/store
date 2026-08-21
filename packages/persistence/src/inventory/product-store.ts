@@ -332,9 +332,6 @@ export const makeProductStore = (
       (a, b) => a.localeCompare(b),
     );
 
-  // Everything already typed into this workspace's product form, offered back so
-  // the same name, aisle or ingredient does not end up spelled three ways. The
-  // catalog is local, so this is a query, not a network call.
   const listProductSuggestions = database
     .selectDistinct({
       name: products.name,

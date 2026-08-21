@@ -3,7 +3,6 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
 const isProductionBuild =
   process.env.EAS_BUILD_PROFILE === "production" || process.env.APP_VARIANT === "production";
 
-/** Runtime origins read from `extra`. Omit blanks so null does not become {}. */
 const extraFromEnv = Object.fromEntries(
   Object.entries({
     EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,

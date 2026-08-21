@@ -42,9 +42,7 @@ export const analyseInvoices = async (
   }
   return Effect.runPromise(
     Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
-      Effect.mapError(
-        () => new Error("The invoice analysis response was not in the expected format."),
-      ),
+      Effect.mapError(() => new Error("Unexpected response from invoice analysis.")),
     ),
   );
 };

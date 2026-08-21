@@ -77,7 +77,7 @@ export function CategoryField({
           : [...current, { id: category.id, name: category.name }],
       );
       onChange(category.id);
-      toastManager.add({ title: `Category “${category.name}” added`, type: "success" });
+      toastManager.add({ title: `Category "${category.name}" added`, type: "success" });
     } catch (error) {
       toastStoreError(error);
     }
@@ -132,7 +132,7 @@ export function CategoryField({
                     icon={PlusSignCircleIcon}
                   />
                   <span className="truncate">
-                    {canCreate ? `Add “${option.name}”` : "Type a name to add a category"}
+                    {canCreate ? `Add "${option.name}"` : "Type a name to add a category"}
                   </span>
                 </span>
               </ComboboxItem>

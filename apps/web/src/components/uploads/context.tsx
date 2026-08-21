@@ -91,7 +91,7 @@ function UploadProvider({
   const analyse = async () => {
     if (!isOnline) {
       toastManager.add({
-        title: "You’re offline. Connect to the internet before analysing invoices.",
+        title: "You're offline. Connect before analysing invoices.",
         type: "error",
       });
       return;
@@ -121,7 +121,7 @@ function UploadProvider({
       );
       setPhase("ready");
       toastManager.add({
-        title: "Invoice analysis complete. Review the proposed changes.",
+        title: "Analysis done. Review the proposed changes.",
         type: "success",
       });
     } catch (error) {
@@ -136,7 +136,7 @@ function UploadProvider({
   const applyChanges = async () => {
     if (!isOnline) {
       toastManager.add({
-        title: "You’re offline. Changes remain ready to apply when you reconnect.",
+        title: "You're offline. Reconnect, then apply the changes.",
         type: "error",
       });
       return;
@@ -171,14 +171,14 @@ function UploadProvider({
     setChanges([]);
     setFiles([]);
     toastManager.add({
-      title: `${changes.length} inventory changes applied locally.`,
+      title: `Applied ${changes.length} inventory changes on this device.`,
       type: "success",
     });
     try {
       await router.invalidate();
     } catch {
       toastManager.add({
-        title: "Inventory imported, but the current view could not be refreshed.",
+        title: "Imported, but this page didn't refresh.",
         type: "warning",
       });
     }
@@ -186,12 +186,12 @@ function UploadProvider({
       const syncStatus = await store.sync();
       if (syncStatus.phase === "error")
         toastManager.add({
-          title: "Inventory imported locally; synchronization will retry automatically.",
+          title: "Saved on this device. Sync will retry on its own.",
           type: "warning",
         });
     } catch {
       toastManager.add({
-        title: "Inventory imported locally; synchronization will retry automatically.",
+        title: "Saved on this device. Sync will retry on its own.",
         type: "warning",
       });
     }

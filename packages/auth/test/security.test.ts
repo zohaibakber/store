@@ -211,8 +211,6 @@ describe("isTrustedRedirect", () => {
     ["https://app.example.com/auth/callback", true],
     ["https://api.example.com/auth/callback", true],
     ["https://evil.example.net/auth/callback", false],
-    // The renderer origin is `com.tabaaq.desktop://app`, while the deep link
-    // lands on a path of the same scheme, so the whole target is matched.
     ["com.tabaaq.desktop://auth/callback", true],
     ["com.tabaaq.mobile://auth/callback", true],
     ["com.tabaaq.other://auth/callback", false],

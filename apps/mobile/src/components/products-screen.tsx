@@ -45,11 +45,6 @@ const renderProduct = ({ item }: ListRenderItemInfo<MobileProduct>) => (
   />
 );
 
-/**
- * The catalog. A virtualized list on both platforms: a long product list is
- * exactly where a native list container earns nothing and recycling earns
- * everything. See `design-system.md` §5.
- */
 export function ProductsScreen() {
   const { products } = useProductData();
   const { loading, refreshing, error } = productStatusView(useProductStatus());

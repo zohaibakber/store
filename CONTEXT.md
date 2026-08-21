@@ -1,13 +1,16 @@
 # Store
 
-The shared language for inventory, sales, and organization-scoped desktop operation.
+Shared vocabulary for inventory, sales, and how the desktop scopes work to an
+organization.
 
 ## Language
 
 **Authenticated workspace.**
-The signed-in user's selected organization together with its isolated local inventory and synchronization state. At most one authenticated workspace is active.
+The signed-in user's selected organization, plus its isolated local inventory
+and sync state. At most one authenticated workspace is active.
 _Avoid_: Session, active organization
 
 **Update workflow.**
-The main-process lifecycle that checks for application releases, coordinates a user-requested download, publishes progress, and installs a downloaded release.
+Main-process lifecycle that checks for releases, runs a user-requested download,
+publishes progress, and installs the downloaded build.
 _Avoid_: Updater timer, update hook

@@ -162,8 +162,8 @@ function InviteForm({ organizationId }: { organizationId: AuthOrganizationMember
               <p className="truncate font-medium">Invitation for {issued.email}</p>
               <p className="text-sm text-muted-foreground">
                 {invitationHandoff(issued.token).kind === "link"
-                  ? "Send them this link yourself. It is shown once."
-                  : "Send them this token yourself. It is shown once."}
+                  ? "Send them this link yourself. You'll only see it once."
+                  : "Send them this token yourself. You'll only see it once."}
               </p>
             </div>
             <Button

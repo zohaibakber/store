@@ -15,10 +15,10 @@ Transport is what changes.
 Zero keeps a local store, pushes mutations, and pulls patches after a poke,
 resuming by version. PowerSync splits a crash-safe upload queue from a
 checkpointed download stream and will use HTTP when a socket cannot connect.
-This app already has the Zero/PowerSync grain that matters: the whole
+This app already has the Zero/PowerSync pieces that matter: the whole
 organization replica, an outbox, and an ordered log. It does not need
 query-shaped CVRs. It needs the socket back, with those engines' network
-habits, without pretending 3-second HTTP is live sync.
+habits, without treating 3-second HTTP as live sync.
 
 ## Usage (caller's view)
 
@@ -94,9 +94,9 @@ Rejected query/shape subscriptions (D): every device already holds the
 organization catalog. A CVR would add per-device server state without changing
 what screens read.
 
-Rejected restore-only invalidation as the end state: it leaves the data path
-on a poll. The socket would be a wakeup pager. Fine as a subset, not as the
-architecture we are moving to.
+Rejected restore-only invalidation as the lasting design: it leaves the data
+path on a poll. The socket would be a wakeup pager. Fine as a subset, not as
+the architecture we are moving to.
 
 Arena runners were launched on four models with those assigned shapes. Their
 write-ups did not land in time; the lead synthesis above is the contract.
@@ -116,7 +116,7 @@ write-ups did not land in time; the lead synthesis above is the contract.
 
 Invalidate-only WebSocket, HTTP for all bytes. Smallest diff, restores PR #5's
 victim. Callers still wait on poll cadence whenever the wakeup is missed, and
-"shift to WebSockets" would be a lie in the data path.
+"shift to WebSockets" would still leave the data path on HTTP.
 
 Split upload and download into two sockets. Matches PowerSync's planes, and
 would let a large catch-up run while the outbox drains. Two hibernated

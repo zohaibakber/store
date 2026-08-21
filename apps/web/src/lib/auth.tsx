@@ -47,7 +47,7 @@ export const authSession = (): AuthSessionBridge => {
   return bridge;
 };
 
-/** The session read once at startup, handed to {@link AuthProvider} as props. */
+/** Session snapshot from startup, handed to {@link AuthProvider} as props. */
 export type InitialAuth =
   | { readonly _tag: "Session"; readonly snapshot: WorkspaceSnapshot }
   | { readonly _tag: "Failed"; readonly error: string };

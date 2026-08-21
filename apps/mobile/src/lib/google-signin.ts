@@ -29,7 +29,6 @@ const loadModule = async () => {
     /** The web client ID is what makes Google mint the ID token we verify. */
     webClientId,
     iosClientId,
-    /** Email and profile only. Tabaaq never calls Google APIs for the user. */
     offlineAccess: false,
   });
   configuredModule = module;
@@ -61,7 +60,6 @@ export const signInWithGoogleAccount = async (): Promise<GoogleSignInResult> => 
   }
 };
 
-/** Forget the account so the next sign-in shows the picker again. */
 export const forgetGoogleAccount = async () => {
   if (!configuredModule) return;
   await configuredModule.GoogleSignin.signOut().catch(() => null);

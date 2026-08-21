@@ -128,7 +128,7 @@ const verifyDesktopAsar = (archivePath) => {
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));
   if (missingEntries.length > 0) {
-    fail("required local-first runtime files are missing", missingEntries);
+    fail("required runtime files are missing", missingEntries);
   }
 
   const rendererEntries = entries.filter(

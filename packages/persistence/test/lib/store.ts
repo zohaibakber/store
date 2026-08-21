@@ -39,8 +39,6 @@ type TestStoreConfig = Partial<Omit<PersistenceConfig, "dataDir">>;
 const DEFAULT_TEST_CATEGORIES = ["General"];
 
 const makeStoreRuntime = (dataDir: string, config: TestStoreConfig = {}) =>
-  // Retry backoff is collapsed by default so failure paths do not spend
-  // seconds on a real clock; a test can still opt back in via `config`.
   ManagedRuntime.make(layer({ dataDir, migrationsFolder, exchangeRetryBaseMillis: 1, ...config }));
 
 export type TestStoreRuntime = ReturnType<typeof makeStoreRuntime>;

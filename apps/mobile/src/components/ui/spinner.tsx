@@ -3,7 +3,6 @@ import { ActivityIndicator } from "react-native";
 import { useColors } from "@/theme/colors";
 import type { Hex } from "@/theme/tokens";
 
-/** The platform indicator, tinted from the palette. There is no branded loader. */
 export function Spinner({
   size = "small",
   tone = "default",

@@ -32,7 +32,7 @@ export const authenticateHeaders = (
           Effect.annotateLogs({ cause: error.message }),
         ),
       ),
-      Effect.mapError(() => new AuthError({ message: "The access token is invalid." })),
+      Effect.mapError(() => new AuthError({ message: "Invalid access token." })),
       Effect.option,
     );
     if (claims._tag === "None") return null;

@@ -33,9 +33,7 @@ const messageOf = (cause: unknown): string => {
     try {
       const serialized = JSON.stringify(cause);
       if (serialized !== undefined && serialized !== "{}") return serialized;
-    } catch {
-      // Circular or non-serializable. Fall through to String().
-    }
+    } catch {}
   }
   return String(cause);
 };

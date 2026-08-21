@@ -7,13 +7,6 @@ import { Text } from "@/components/ui/text";
 import { useColors } from "@/theme/colors";
 import { radius } from "@/theme/tokens";
 
-/**
- * The two ways to add stock. Only one is filled: creating a product is the
- * primary action, scanning a label is the quiet alternative beside it.
- *
- * The FAB is one of the two places the design system allows a shadow, because
- * it floats over content that scrolls underneath it.
- */
 export function InventoryFabs() {
   const colors = useColors();
 

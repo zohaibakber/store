@@ -309,7 +309,6 @@ export function Sidebar({
       data-state={state}
       data-variant={variant}
     >
-      {/* This is what handles the sidebar gap on desktop */}
       <div
         className={cn(
           "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",

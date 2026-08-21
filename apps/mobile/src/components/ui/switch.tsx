@@ -2,10 +2,7 @@ import { Switch as RNSwitch } from "react-native";
 
 import { useColors } from "@/theme/colors";
 
-/**
- * The platform switch — native gesture, size and animation — with the coss
- * colours: `primary` track when on, `input` when off, `background` thumb.
- */
+/** Platform switch (native gesture/size/animation) with palette track/thumb colors. */
 export function Switch({
   accessibilityLabel,
   isDisabled,

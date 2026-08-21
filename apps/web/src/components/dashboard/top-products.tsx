@@ -41,7 +41,7 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
               <HugeiconsIcon aria-hidden="true" icon={ChartBarLineIcon} />
             </EmptyMedia>
             <EmptyTitle>No sales yet</EmptyTitle>
-            <EmptyDescription>Create an invoice to see your best sellers here.</EmptyDescription>
+            <EmptyDescription>Create an invoice and the leaders show up here.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (

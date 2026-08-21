@@ -6,10 +6,6 @@ import { Text } from "@/components/ui/text";
 import { useColors } from "@/theme/colors";
 import { radius } from "@/theme/tokens";
 
-/**
- * The coss Empty anatomy: a small media square, a title, a line of explanation
- * and at most one action. No illustration, no marketing copy.
- */
 export function Empty({ children }: { readonly children: ReactNode }) {
   return <View style={styles.empty}>{children}</View>;
 }

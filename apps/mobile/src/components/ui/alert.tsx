@@ -18,11 +18,6 @@ const iconFor = {
 
 const AlertContext = createContext<AlertVariant>("default");
 
-/**
- * Inline, persistent status. The coss Alert recipe: a 6% wash of the status
- * colour inside a 32% border, icon in the status colour, title in `foreground`,
- * body in `mutedForeground`. `default` is untinted.
- */
 export function Alert({
   children,
   variant = "default",
@@ -64,7 +59,6 @@ export function AlertDescription({ children }: { readonly children: string }) {
   );
 }
 
-/** Trailing action, at most one, always `ghost` or `outline`. */
 export function AlertAction({ children }: { readonly children: ReactNode }) {
   return <View style={styles.action}>{children}</View>;
 }

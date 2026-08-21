@@ -11,9 +11,9 @@ export const reportError = (event: string, cause: unknown) => {
 };
 
 /**
- * An unusable auth variable is ignored rather than thrown, which keeps sign-in
- * working everywhere the rest of the configuration allows. Name the setting, the
- * value, and the reason: this log is the only trace it leaves.
+ * Bad auth settings are ignored, not thrown, so sign-in still works for the
+ * origins that remain valid. Log the setting, value, and reason. This is the
+ * only trace.
  */
 export const reportRejectedAuthSettings = (rejected: ReadonlyArray<RejectedAuthSetting>) => {
   for (const setting of rejected)

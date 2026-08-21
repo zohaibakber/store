@@ -11,11 +11,6 @@ export type TextProps = ComponentProps<typeof RNText> & {
   readonly tone?: Tone;
 };
 
-/**
- * The only place font family, size and weight are chosen. Everything else in
- * the app picks a variant from `design-system.md` §3 rather than restating
- * `fontFamily: "Inter_500Medium", fontSize: 14`.
- */
 export function Text({ variant = "body", tone = "default", style, ...props }: TextProps) {
   const colors = useColors();
   const color = {
@@ -31,7 +26,6 @@ export function Text({ variant = "body", tone = "default", style, ...props }: Te
   return <RNText style={[typography[variant], { color }, style]} {...props} />;
 }
 
-/** Section heading above a list or card group. */
 export function SectionTitle({ style, ...props }: ComponentProps<typeof Text>) {
   return <Text style={[styles.section, style]} tone="muted" variant="label" {...props} />;
 }

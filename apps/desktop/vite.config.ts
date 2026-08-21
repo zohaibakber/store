@@ -13,15 +13,15 @@ import packageJson from "./package.json";
 const webRoot = path.resolve(__dirname, "../web");
 
 /**
- * The shared index.html boots `main.tsx`, which starts the browser SQLite
- * host. Packaged Electron must not emit that graph: after-pack scans every
- * renderer chunk for schema SQL, including unused async splits.
+ * Shared index.html boots `main.tsx` (browser SQLite). Packaged Electron must
+ * not emit that graph. After-pack scans every renderer chunk for schema SQL,
+ * including unused async splits.
  */
 const desktopRendererEntry = (): Plugin => ({
   name: "desktop-renderer-entry",
-  // Must run before Vite collects HTML module entries; a default-order
-  // transform leaves `/src/main.tsx` as the build input and packs the
-  // browser SQLite host + migration SQL into the renderer.
+  // Run before Vite collects HTML module entries. A default-order transform
+  // leaves `/src/main.tsx` as the build input and packs the browser SQLite
+  // host plus migration SQL into the renderer.
   transformIndexHtml: {
     order: "pre",
     handler(html) {
@@ -30,7 +30,7 @@ const desktopRendererEntry = (): Plugin => ({
   },
 });
 
-/** Swap the boot splash and favicon to the orange mark while `vp dev` is running. */
+/** Use the orange mark for the boot splash and favicon during `vp dev`. */
 const desktopDevSplash = (): Plugin => ({
   name: "desktop-dev-splash",
   transformIndexHtml(html) {

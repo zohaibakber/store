@@ -205,8 +205,6 @@ test("dashboard analytics aggregates revenue, stock health, and recent activity"
       ]);
       expect(analytics.recentInvoices[0]?.createdAt).toBe(NOW);
 
-      // The same database, opened as a different organization: none of the
-      // seeded activity belongs to it.
       const otherOrganization = makeRuntime({ workspace: workspaceFor("org-b") });
       const other = await otherOrganization.runPromise(store((s) => s.getDashboardAnalytics));
       expect(other.totals).toEqual({

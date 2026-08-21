@@ -4,10 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 /** Height of the floating action stack in `inventory-fabs`: 44 + 12 + 52. */
 const ACTIONS_HEIGHT = 108;
 
-/** Breathing room between the last row and whatever floats over it. */
 const CLEARANCE = 24;
 
-/** Gap between the bottom navigation and the actions floating above it. */
 const MARGIN = 16;
 
 /**
@@ -33,17 +31,17 @@ export const useActionsInset = (): number => {
   return Platform.OS === "android" ? MARGIN : IOS_TAB_BAR + insets.bottom + MARGIN;
 };
 
-/** What floats over a scroller and therefore has to be scrolled clear of. */
 export type Overlays = "nav" | "nav-and-actions";
 
 /**
- * Bottom padding so a scroller's last row is not stranded underneath something.
+ * Bottom padding so a scroller's last row is not covered by something floating
+ * over it.
  *
- * Not a hook, and deliberately so: the tab bar never appears in this sum. iOS
+ * Not a hook, and deliberately so. The tab bar never appears in this sum. iOS
  * gives its first scroll view automatic content insets and Android sits the
  * content above the bar, so on both platforms the navigation is already paid
  * for by the platform. Only the actions we draw ourselves need budgeting, which
- * is why `"nav"` costs nothing but breathing room.
+ * is why `"nav"` only adds that clearance.
  */
 export const scrollInset = (overlays: Overlays): number =>
   (overlays === "nav-and-actions" ? ACTIONS_HEIGHT + MARGIN : 0) + CLEARANCE;

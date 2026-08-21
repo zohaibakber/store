@@ -17,10 +17,8 @@ type IconGlyph = {
 };
 
 /**
- * A stroke icon set on a 24 grid at 1.5 weight, drawn once so iOS and Android
- * are identical and match the Hugeicons weight the web app uses. Platform
- * symbols stay where the platform owns the chrome — tab bars, FABs — and this
- * covers every surface React Native draws itself.
+ * Stroke icons on a 24 grid at 1.5 weight so RN-drawn surfaces match web
+ * Hugeicons. Platform symbols stay on platform chrome (tabs, FABs).
  */
 const icons = {
   alert: {

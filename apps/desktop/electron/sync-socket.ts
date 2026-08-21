@@ -55,7 +55,7 @@ export const openDesktopSyncSocket = (input: {
     },
     catch: (cause) =>
       SyncTransportError.make({
-        message: cause instanceof Error ? cause.message : "Live synchronization could not connect.",
+        message: cause instanceof Error ? cause.message : "Couldn't connect to live sync.",
         retryable: true,
         cause,
       }),

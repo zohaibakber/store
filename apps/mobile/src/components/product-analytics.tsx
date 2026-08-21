@@ -4,13 +4,6 @@ import { Row, RowGroup, RowValue } from "@/components/ui/row";
 import { inventoryOverview, LOW_STOCK_THRESHOLD } from "@/lib/product-catalog";
 import { formatPrice, type MobileProduct } from "@/lib/products";
 
-/**
- * What the inventory adds up to. Four rows in one group rather than four cards:
- * these are values to read down a column, not things to tap.
- *
- * Stock value starts hidden — it is the number you would not want a customer
- * reading over your shoulder.
- */
 export function ProductAnalytics({
   products,
 }: {

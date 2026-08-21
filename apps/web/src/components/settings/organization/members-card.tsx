@@ -35,7 +35,7 @@ const roles = [
   { value: "member", label: "Member" },
 ] as const;
 
-/** An admin manages the people below them; owners and admins are the owner's business. */
+/** Admins can remove members. Owners can remove anyone. */
 const canRemove = (caller: OrganizationRole, target: OrganizationRole) =>
   caller === "owner" || (caller === "admin" && target === "member");
 

@@ -12,10 +12,6 @@ const googleProfile = {
   image: null,
 };
 
-/**
- * One password account and one Google account, each with the organization
- * registration would have created.
- */
 const withAccounts = () => {
   const instance = harness({ googleProfile });
   const passwordUser = seedUser(instance.store, {
@@ -257,8 +253,6 @@ describe("Google account linking", () => {
       members: [{ userId: second.id, role: "owner" }],
     });
 
-    // The identity resolves to whoever holds it, and the address on the second
-    // account is never consulted.
     await run(instance, (auth) =>
       auth.exchangeGoogleIdToken({
         idToken: GoogleIdToken.make("valid-id-token"),

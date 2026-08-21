@@ -20,11 +20,6 @@ type ProductRowProps = {
   readonly onPress?: () => void;
 };
 
-/**
- * One catalog row. It takes primitives only — no product object, no context, no
- * queries — so `FlashList` can recycle it without re-rendering the whole page
- * as the user types. See `design-system.md` §6.
- */
 export function ProductRow({
   aisle,
   category,

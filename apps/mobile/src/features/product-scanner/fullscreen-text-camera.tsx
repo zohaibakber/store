@@ -32,10 +32,6 @@ const promptFor = (mode: ProductScanMode) =>
     ? "Fit the product name and composition inside the frame"
     : "Fit the batch number and expiry date inside the frame";
 
-/**
- * Edge-to-edge viewfinder. Overlay chrome uses `scrim` / `onScrim` so labels
- * stay readable against whatever the lens sees.
- */
 export function FullscreenTextCamera({
   mode,
   status,
@@ -173,7 +169,7 @@ export function FullscreenTextCamera({
               : "Ready for batch details";
   const detail =
     status === "syncing"
-      ? "Scanning unlocks once products are ready"
+      ? "Scanning waits until products are ready"
       : status === "analyzing"
         ? "Extracting fields with AI"
         : found

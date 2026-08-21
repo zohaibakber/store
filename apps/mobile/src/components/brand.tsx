@@ -7,11 +7,6 @@ import { radius } from "@/theme/tokens";
 
 const name = __DEV__ ? "Tabaaq Dev" : "Tabaaq";
 
-/**
- * The wordmark. The mark is `foreground` with `background` cut out of it, so it
- * inverts with the appearance and never introduces a brand hue — the product's
- * colour is neutral. See `design-system.md` §1.
- */
 export function Brand() {
   const colors = useColors();
 
@@ -35,7 +30,6 @@ export function Brand() {
   );
 }
 
-/** The mark on its own, for a row's leading slot. */
 export function BrandMark({ size = 32 }: { readonly size?: number }) {
   const colors = useColors();
 

@@ -36,7 +36,6 @@ import { AuthService, authServiceLayer } from "../src/service";
 
 const textEncoder = new TextEncoder();
 
-/** The same digest the service uses, so a seeded session can be refreshed. */
 export const refreshTokenHash = async (secret: string) => {
   const buffer = await crypto.subtle.digest(
     "SHA-256",
@@ -47,11 +46,6 @@ export const refreshTokenHash = async (secret: string) => {
   return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
 };
 
-/**
- * An in-memory stand-in for D1. Organization rules are guards over stored
- * rows, so verifying them needs storage that actually changes rather than
- * canned answers.
- */
 export interface Store {
   readonly users: Array<UserRecord>;
   readonly organizations: Array<{ id: OrganizationId; name: string; slug: string | null }>;
@@ -480,10 +474,6 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
     }),
 });
 
-/**
- * A token is its own claims here. The signature is the JWT layer's concern and
- * is tested there; what the service needs is a token it can read back.
- */
 export const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
   AccessToken.make(
     btoa(

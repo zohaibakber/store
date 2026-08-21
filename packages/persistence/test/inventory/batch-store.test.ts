@@ -45,7 +45,6 @@ test("updateBatch corrects the batch number and expiry without touching stock", 
     expect(updated.rowVersion).toBe(created.rowVersion + 1);
     expect(updated.updatedAt).toBeGreaterThanOrEqual(created.updatedAt);
 
-    // The edit is metadata only: no stock movement beyond the initial receipt.
     const movements = await runtime.runPromise(
       store((store) => store.listStockMovements(product.id)),
     );
@@ -140,7 +139,6 @@ test("updateBatch records an adjustment when the count is corrected", async () =
       store((store) => store.listStockMovements(product.id)),
     );
     expect(movements).toHaveLength(2);
-    // Newest first: the correction, then the receipt it corrects.
     expect(movements[0]).toMatchObject({
       type: "adjustment",
       batchId: created.id,
@@ -148,7 +146,6 @@ test("updateBatch records an adjustment when the count is corrected", async () =
       unitDelta: -3,
     });
 
-    // The correction syncs as both the new count and the movement explaining it.
     await runtime.dispose();
     const queued = await readOutbox(dataDir);
     expect(queued.at(-1)?.payload).toEqual([

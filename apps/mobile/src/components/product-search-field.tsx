@@ -4,10 +4,6 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { PressableScale } from "@/components/ui/pressable-scale";
 
-/**
- * The catalog search box: one `Input` with the magnifier in its leading slot and
- * a clear button that only exists while there is something to clear.
- */
 export function ProductSearchField({
   onChangeText,
   query,

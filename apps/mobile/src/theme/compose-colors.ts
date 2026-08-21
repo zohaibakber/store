@@ -4,18 +4,15 @@ import { useTheme } from "@/theme/colors";
 import { alpha, type ColorScheme, type Hex, type Palette } from "@/theme/tokens";
 
 /**
- * Our tokens, wearing Material 3's role names.
+ * Tokens mapped onto Material 3 role names.
  *
- * `useMaterialColors()` returns the *device* palette: Material You derives it
- * from the user's wallpaper, so the same build looked lilac on one phone and
- * olive on the next while the web app stayed neutral. Compose components accept
- * explicit colors, so Android keeps Material structure — list items, chips,
- * floating toolbars, pull-to-refresh — and takes its paint from
- * `design-system.md` §2 instead.
+ * `useMaterialColors()` returns the device palette derived from the wallpaper
+ * (Material You), so the same build tinted differently per phone while web
+ * stayed neutral. Compose accepts explicit colors; Android keeps Material
+ * structure and takes paint from our palette instead.
  *
- * Roles that Material treats as accent hues carry meaning here: `tertiary` is
- * warning, `error` is destructive. Nothing maps to a decorative brand color,
- * because there isn't one.
+ * `tertiary` is warning, `error` is destructive — Material accent roles remapped
+ * to meaning, not brand hue.
  */
 export const composeColors = (colors: Palette): MaterialColors => ({
   background: colors.background,
@@ -68,14 +65,11 @@ export const composeColors = (colors: Palette): MaterialColors => ({
   tertiaryFixedDim: alpha(colors.warning, 0.12),
 });
 
-/** What a Compose `Host` needs to stop deriving its own colors. */
 export type ComposeTheme = {
-  /** Every Material 3 role, repainted from our palette. */
   readonly colors: MaterialColors;
   readonly scheme: ColorScheme;
-  /** `Host seedColor`, so implicit tints come from our neutral primary. */
+  /** `Host seedColor` so implicit tints use our neutral primary. */
   readonly seedColor: Hex;
-  /** The palette itself, for props that take a color directly. */
   readonly tokens: Palette;
 };
 

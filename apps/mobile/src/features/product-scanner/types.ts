@@ -16,7 +16,6 @@ export const ProductScanResult = Schema.Struct({
     ),
   ),
   batchNumber: nullableText,
-  /** A calendar date, normalized to YYYY-MM-DD whenever it can be read. */
   expiresAt: nullableText,
   confidence: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
 });

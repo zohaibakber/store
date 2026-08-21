@@ -14,11 +14,8 @@ import { useComposeTheme } from "@/theme/compose-colors";
 import { typography } from "@/theme/typography";
 
 /**
- * Android keeps Material's FABs — the ripple, the elevation and the extended
- * shape are the platform's, and they earn it — but the containers are
- * `card`/`primary` from our palette rather than Material You's primary
- * container. Same hierarchy as iOS: the quiet scan button, the filled create
- * button.
+ * Material FABs (ripple, elevation, extended shape) with our `card`/`primary`
+ * containers instead of Material You's primary container.
  */
 export function InventoryFabs() {
   const { scheme, seedColor, tokens } = useComposeTheme();

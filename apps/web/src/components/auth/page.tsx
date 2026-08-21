@@ -25,7 +25,7 @@ type AuthStep =
   | { readonly _tag: "Registration"; readonly email: typeof EmailAddress.Type };
 
 const messageOf = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Sign-in could not be completed.";
+  cause instanceof Error ? cause.message : "Could not sign in.";
 
 function AuthHeader({
   description,
@@ -288,7 +288,7 @@ function PasswordRegistration({
           value={password}
         />
         <FieldDescription>
-          Use 10 to 100 characters. Spaces at the edges are rejected.
+          Use 10 to 100 characters. No leading or trailing spaces.
         </FieldDescription>
       </Field>
       <Field>

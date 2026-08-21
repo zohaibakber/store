@@ -218,7 +218,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
         await rm(this.#storagePath(), { force: true });
         return;
       }
-      throw new Error("Secure credential storage is unavailable on this system.");
+      throw new Error("This system can't store credentials securely.");
     }
     await mkdir(path.dirname(this.#storagePath()), { recursive: true });
     await writeFile(this.#storagePath(), safeStorage.encryptString(JSON.stringify(value)), {
@@ -244,7 +244,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     });
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) await this.#clear();
-      throw new RequestError("The session could not be refreshed.", response.status);
+      throw new RequestError("Couldn't refresh the session.", response.status);
     }
     const next = Schema.decodeUnknownSync(TokenSet)(await response.json());
     this.#tokens = next;

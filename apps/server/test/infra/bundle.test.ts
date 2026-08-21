@@ -6,12 +6,6 @@ import { describe, expect, it } from "vitest";
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
 const authDatabaseSource = `${repoRoot}packages/db/src/auth/infra.ts`;
 
-/**
- * Bundles the API Worker the way a deploy does: `__ALCHEMY_RUNTIME__` folded to
- * `true` so plan-only branches become dead code, then DCE. The Cloudflare
- * plugin is left out. Nothing here depends on its rewrites, and the runtime
- * modules are external.
- */
 const bundleWorker = async () => {
   const bundle = await rolldown({
     input: `${repoRoot}apps/server/infra.ts`,

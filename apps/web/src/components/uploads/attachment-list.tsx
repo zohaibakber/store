@@ -58,8 +58,8 @@ function UploadAttachmentList() {
             </p>
             <p className="text-xs text-muted-foreground">
               {phase === "syncing"
-                ? "Writing the approved stock into the local database."
-                : "Extracting products and quantities from the attached files."}
+                ? "Writing approved stock to the local database."
+                : "Pulling products and quantities from the attached files."}
             </p>
           </div>
         </div>

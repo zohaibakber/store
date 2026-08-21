@@ -38,7 +38,7 @@ export function SyncStatusIndicator() {
         ? {
             ...current,
             phase: "syncing",
-            message: "Synchronizing local and cloud changes…",
+            message: "Syncing local and cloud changes…",
           }
         : current,
     );

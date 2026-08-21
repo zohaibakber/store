@@ -5,20 +5,19 @@
   executableName: "tabaaq",
   asar: true,
   // libSQL ships a prebuilt N-API binary that cannot be read from inside the
-  // asar archive, so it must stay unpacked. Being N-API, it needs no rebuild
-  // per Electron version.
+  // asar archive, so it must stay unpacked. N-API means no rebuild per
+  // Electron version.
   //
-  // It is published as one optional dependency per platform
-  // (@libsql/linux-x64-gnu, @libsql/darwin-arm64, @libsql/win32-x64-msvc, ...)
-  // and a package manager installs only the one matching the current machine.
-  // So each target below must be built on its own platform, or force-install
-  // the matching optional dependency first — otherwise the artifact ships
-  // without a loadable index.node. electron-builder reports the absent ones as
-  // "missing optional dependencies"; on a single-platform build that warning is
-  // expected, not a fault.
+  // Each platform is a separate optional dependency
+  // (@libsql/linux-x64-gnu, @libsql/darwin-arm64, @libsql/win32-x64-msvc, ...).
+  // The package manager installs only the one for this machine. Build each
+  // target on its own platform, or force-install the matching optional
+  // dependency first. Otherwise the artifact ships without a loadable
+  // index.node. electron-builder reports the absent ones as "missing optional
+  // dependencies"; on a single-platform build that warning is expected.
   asarUnpack: ["**/*.node"],
   // Fail before signing or publishing if monorepo/server sources, credentials,
-  // or database schema code cross into the packaged desktop boundaries.
+  // or database schema code land in the packaged app.
   afterPack: "./scripts/verify-after-pack.cjs",
   productName: "Tabaaq",
   protocols: [
@@ -30,8 +29,8 @@
   directories: {
     output: "release/${version}",
   },
-  // The source repo is public, so releases and auto-update checks are
-  // published directly here rather than to a separate releases-only repo.
+  // The source repo is public, so releases and auto-update checks publish
+  // here, not to a separate releases-only repo.
   publish: [
     {
       provider: "github",
@@ -53,8 +52,8 @@
     },
     {
       // BrowserWindow's `icon` option loads through nativeImage, which reads
-      // the real filesystem and can't see into app.asar — so the icon must
-      // live outside the archive to show up at runtime in production.
+      // the real filesystem and can't see into app.asar. The icon must live
+      // outside the archive to show up at runtime in production.
       from: "assets/prod/icon.png",
       to: "logo.png",
     },
@@ -88,8 +87,8 @@
     // launcher/app-search icon fails to resolve even though it's present.
     // A pre-sized icon set directory forces it to ship all standard sizes.
     // Named after executableName (`tabaaq`), not the old `store-electron`
-    // template key — Linux icon themes cache by that name, so a leftover
-    // teal store-electron.png would otherwise keep showing after updates.
+    // template key. Linux icon themes cache by that name, so a leftover teal
+    // store-electron.png would otherwise keep showing after updates.
     icon: "assets/prod/icons",
     desktop: {
       entry: {
@@ -100,10 +99,10 @@
     // package.json's "name" is the scoped npm name "@store/desktop", which is
     // invalid as a WM_CLASS/app_id. syncDesktopName (paired with
     // package.json's "desktopName") makes the installed .desktop filename
-    // match StartupWMClass and Electron's app_id, so desktop environments can
-    // link the running window back to the installed .desktop entry —
-    // otherwise launcher/search icons don't resolve even though the window's
-    // own icon (taskbar) shows fine.
+    // match StartupWMClass and Electron's app_id. Desktop environments can
+    // then link the running window to the installed .desktop entry. Without
+    // that match, launcher and search icons fail even when the taskbar icon
+    // looks fine.
     syncDesktopName: true,
   },
 }

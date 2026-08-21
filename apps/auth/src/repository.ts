@@ -252,17 +252,14 @@ const millis = (value: Date | null) => (value === null ? null : value.getTime())
 
 type AuthDrizzle = Effect.Success<ReturnType<typeof D1Drizzle.makeWithDefaults>>;
 
-/** Any Drizzle query builder, which is also the SQL it would send. */
 interface Compilable {
   readonly toSQL: () => { readonly sql: string; readonly params: ReadonlyArray<unknown> };
 }
 
-/** Every guarded statement in a batch returns the id of the row it matched. */
 interface ReturnedId {
   readonly id: string;
 }
 
-/** The slug column is uniquely indexed, so the database decides who gets one. */
 const isHandleTaken = (cause: unknown) =>
   cause instanceof EffectDrizzleQueryError &&
   cause.cause instanceof SqlError &&
@@ -334,7 +331,6 @@ const sessionColumns = {
   replacedBySessionId: session.replacedBySessionId,
 };
 
-/** Parses a driver row, whatever shape the query asked for, into a record. */
 const decode =
   <A>(schema: Schema.ConstraintDecoder<A>, operation: string) =>
   <Row>(row: Row) =>
@@ -369,7 +365,6 @@ const asInvitation = (row: InvitationColumns, operation: string) =>
     createdAt: row.createdAt.getTime(),
   });
 
-/** A live invitation: not spent, not withdrawn, not stale. */
 const stillPending = (now: number) =>
   and(
     isNull(organizationInvitation.acceptedAt),

@@ -10,7 +10,6 @@ import { motion } from "@/theme/tokens";
 const ERROR_IN = FadeIn.duration(motion.enterMs - 20).reduceMotion(ReduceMotion.System);
 const ERROR_OUT = FadeOut.duration(motion.pressMs + 20).reduceMotion(ReduceMotion.System);
 
-/** The one auth surface. Every step composes into it; nothing else pushes a route. */
 export function AuthShell({ children }: { readonly children: ReactNode }) {
   const colors = useColors();
 

@@ -87,7 +87,7 @@ export const UploadHandlers = HttpApiBuilder.group(
           return yield* Effect.fail(
             unsupportedMediaType(
               "UNSUPPORTED_ATTACHMENT",
-              "Only PDF and CSV invoices can be analysed.",
+              "Only PDF and CSV invoices are accepted.",
             ),
           );
         if (files.reduce((total, file) => total + file.size, 0) > MAX_UPLOAD_BYTES)
@@ -105,7 +105,7 @@ export const UploadHandlers = HttpApiBuilder.group(
             ),
           ),
           Effect.mapError(() =>
-            badGateway("EXTRACTION_FAILED", "The invoices could not be analysed. Try again."),
+            badGateway("EXTRACTION_FAILED", "Invoice analysis failed. Try again."),
           ),
         );
       }),

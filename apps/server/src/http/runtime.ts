@@ -19,7 +19,6 @@ export interface SyncLiveInput {
   readonly authenticationExpiresAt: number;
 }
 
-/** Explicit boundary between HTTP handlers and the Cloudflare runtime. */
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;

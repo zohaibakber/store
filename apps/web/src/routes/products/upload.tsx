@@ -60,7 +60,7 @@ function UploadPage() {
         {!isOnline && (
           <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>You’re offline</AlertTitle>
+            <AlertTitle>You're offline</AlertTitle>
             <AlertDescription>
               Invoice uploads need a connection. Your selected files and review stay on this screen.
             </AlertDescription>

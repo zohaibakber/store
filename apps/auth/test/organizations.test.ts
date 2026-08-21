@@ -28,7 +28,6 @@ const command = (instance: Harness, accessToken: string, input: OrganizationComm
 const failing = (instance: Harness, accessToken: string, input: OrganizationCommand) =>
   run(instance, (auth) => Effect.flip(auth.organize({ accessToken, command: input })));
 
-/** The claims a session carries, in the shape the harness reads back. */
 const accessTokenFor = (input: {
   readonly userId: string;
   readonly sessionId: string;
@@ -52,7 +51,6 @@ const accessTokenFor = (input: {
     }),
   );
 
-/** A signed-in owner with one organization. */
 const withOwner = () => {
   const instance = harness();
   const owner = seedUser(instance.store, { id: "owner", email: "owner@example.com" });
@@ -105,7 +103,6 @@ describe("organization invitations", () => {
     });
     expect(invited).toMatchObject({ _tag: "Invited" });
     if (invited._tag !== "Invited") throw new Error("expected an invitation");
-    // Nothing was mailed: the token is the delivery mechanism for now.
     expect(instance.store.sentInvitations).toHaveLength(1);
 
     const accepted = await command(
@@ -132,8 +129,6 @@ describe("organization invitations", () => {
     expect(
       instance.store.memberships.filter((entry) => entry.organizationId === organizationId),
     ).toHaveLength(2);
-    // Redeeming the link is the only thing that moves a session, so the store
-    // it was for is where the next refresh lands.
     expect(
       instance.store.sessions.find((entry) => entry.id === inviteeSession.id)?.activeOrganizationId,
     ).toBe(organizationId);

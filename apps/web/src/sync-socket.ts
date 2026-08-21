@@ -28,7 +28,7 @@ export const openBrowserSyncSocket = (input: {
     },
     catch: (cause) =>
       SyncTransportError.make({
-        message: cause instanceof Error ? cause.message : "Live synchronization could not connect.",
+        message: cause instanceof Error ? cause.message : "Live sync could not connect.",
         retryable: true,
         cause,
       }),

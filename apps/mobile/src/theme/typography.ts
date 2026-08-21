@@ -1,9 +1,6 @@
 import type { TextStyle } from "react-native";
 
 /**
- * The whole type system: Inter at 400/500, five sizes, plus Geist Mono for
- * anything that has to line up in a column. See `design-system.md` §3.
- *
  * Fonts are embedded at build time by the `expo-font` config plugin, so there
  * is no loading state to guard against.
  */

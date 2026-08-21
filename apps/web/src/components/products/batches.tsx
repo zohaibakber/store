@@ -518,7 +518,7 @@ export function ProductStockMovementsCard({
               <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
             </EmptyMedia>
             <EmptyTitle>No movements yet</EmptyTitle>
-            <EmptyDescription>Stock receipts and sales will appear here.</EmptyDescription>
+            <EmptyDescription>Receipts and sales show up here.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (

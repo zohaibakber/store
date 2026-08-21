@@ -128,8 +128,6 @@ const classifyTrustedOrigin = (
 
   if (protocol !== undefined && !isWeb) {
     if (unusableSchemes.has(protocol)) return { reason: "is not an app origin" };
-    // A native scheme (`com.tabaaq.desktop:/`, `myapp://`, `exp://…`) is matched
-    // by glob or prefix, so it is trusted as written.
     return { origins: [value] };
   }
 
@@ -191,9 +189,6 @@ export const resolveTrustedOrigins = (
 export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig => {
   const rejectedSettings: Array<RejectedAuthSetting> = [];
 
-  // A deployment variable nobody can validate before it ships falls back to the
-  // code default rather than failing: the native clients lose their deep link,
-  // while web and mobile sign-in keep working.
   const protocol = (value: string, setting: string, fallback: string) => {
     const normalized = value.replace(/:\/?$/, "");
     if (/^[a-z][a-z0-9+.-]*$/.test(normalized)) return normalized;

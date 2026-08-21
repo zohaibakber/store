@@ -1,6 +1,5 @@
 import Svg, { Path } from "react-native-svg";
 
-/** Google's brand mark, at the sizes the brand guidelines allow it to be drawn. */
 export function GoogleMark({ size = 18 }: { readonly size?: number }) {
   return (
     <Svg height={size} viewBox="0 0 18 18" width={size}>

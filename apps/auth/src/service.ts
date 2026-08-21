@@ -57,7 +57,6 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const OTP_TTL_MS = 10 * 60 * 1_000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
 const AUTHORIZATION_TTL_MS = 5 * 60 * 1_000;
-/** Long enough to reach someone who reads mail once a week. */
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export class AuthError extends Schema.TaggedError<AuthError>()("Auth.AuthError", {
@@ -85,7 +84,6 @@ export interface AuthServiceApi {
   ) => Effect.Effect<TokenSetType, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
-  /** The organization this session is signed in to, with its people. */
   readonly roster: (accessToken: string) => Effect.Effect<OrganizationRosterType, AuthError>;
   readonly organize: (input: {
     readonly accessToken: string;
@@ -558,7 +556,6 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         return { session: current, user };
       });
 
-      /** One refresh token becomes the next, carrying the family forward. */
       const rotateInto = Effect.fn("AuthService.rotateInto")(function* (input: {
         readonly session: SessionRecord;
         readonly user: UserRecord;
@@ -687,11 +684,6 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
           createdAt: invitation.createdAt,
         });
 
-      /**
-       * The session's own organization. There is nowhere else to look: the
-       * access token names one organization, and that is the store this
-       * device is signed in to.
-       */
       const roster = Effect.fn("AuthService.roster")(function* (accessToken: string) {
         const claims = yield* authorize(accessToken);
         const membership = yield* membershipOf(claims.subject, claims.activeOrganizationId);

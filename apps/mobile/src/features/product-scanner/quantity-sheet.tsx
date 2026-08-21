@@ -29,11 +29,7 @@ const wholeNumber = (value: string): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
-/**
- * A native form sheet, not a JS bottom sheet: the drag-to-dismiss, the keyboard
- * avoidance and the detents are the platform's. Surface `popover`, one primary
- * action, one `ghost` dismiss. See `design-system.md` §5.
- */
+/** Native `Modal` formSheet — platform drag-to-dismiss, keyboard avoidance, detents. */
 function QuantitySheet({
   mode,
   visible,

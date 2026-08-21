@@ -69,8 +69,6 @@ export const UpdateBatchInput = Schema.Struct({
 });
 export type UpdateBatchInput = typeof UpdateBatchInput.Type;
 
-// What the product form offers back as you type: the names, aisles and
-// compositions this workspace already uses.
 export const ProductSuggestions = Schema.Struct({
   names: Schema.Array(Schema.String),
   aisles: Schema.Array(Schema.String),

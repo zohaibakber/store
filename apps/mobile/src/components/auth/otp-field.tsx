@@ -8,9 +8,8 @@ const SLOTS = [0, 1, 2, 3, 4, 5];
 const digitsOnly = (value: string) => value.replace(/\D/gu, "").slice(0, SLOTS.length);
 
 /**
- * Six slots for the eye, one real field for the system: autofill, paste and
- * VoiceOver all talk to the transparent input layered over the slots. The slot
- * awaiting a digit carries the `ring` border, the same focus signal `Input` uses.
+ * Visual slots over one real TextInput so autofill, paste, and VoiceOver hit
+ * the transparent field; the active slot uses the `ring` border.
  */
 export function OtpField({
   code,

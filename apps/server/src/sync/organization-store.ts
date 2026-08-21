@@ -134,7 +134,7 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
           !Number.isSafeInteger(authenticationExpiresAt) ||
           authenticationExpiresAt <= Date.now()
         )
-          return HttpServerResponse.text("Invalid live synchronization context", { status: 400 });
+          return HttpServerResponse.text("Invalid live sync context", { status: 400 });
 
         const [response, socket] = yield* Cloudflare.upgrade();
         socket.serializeAttachment(
@@ -151,7 +151,7 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
         yield* socket.send(
           JSON.stringify(encodeLiveEvent({ type: "hello", protocolVersion: 2, headCursor })),
         );
-        yield* Effect.logInfo("Live synchronization connected").pipe(
+        yield* Effect.logInfo("Live sync connected").pipe(
           Effect.annotateLogs({
             event: "sync.live_connected",
             organizationId,
@@ -224,8 +224,7 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
                   requestId: frame.value.requestId,
                   code: protocol?.code ?? "SYNC_UNAVAILABLE",
                   message:
-                    protocol?.message ??
-                    (error instanceof Error ? error.message : "Synchronization failed."),
+                    protocol?.message ?? (error instanceof Error ? error.message : "Sync failed."),
                   retryable: protocol === undefined,
                 }),
               ),

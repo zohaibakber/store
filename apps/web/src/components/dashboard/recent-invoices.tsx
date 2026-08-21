@@ -35,7 +35,7 @@ export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["rec
               <HugeiconsIcon aria-hidden="true" icon={Invoice01Icon} />
             </EmptyMedia>
             <EmptyTitle>No invoices yet</EmptyTitle>
-            <EmptyDescription>Completed sales will appear here.</EmptyDescription>
+            <EmptyDescription>Completed sales show up here.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (

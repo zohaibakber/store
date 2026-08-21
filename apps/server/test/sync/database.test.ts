@@ -362,9 +362,6 @@ describe("SyncDatabase with libSQL", () => {
     ),
   );
 
-  // The counter row exists after the first invoice, so every later invoice
-  // takes the conflict branch, the path where a Postgres `greatest` would
-  // have thrown "no such function" against SQLite.
   it.effect("advances the invoice counter to the highest invoice number applied", () =>
     withDatabase(({ database, exchange }) =>
       Effect.gen(function* () {
@@ -382,7 +379,6 @@ describe("SyncDatabase with libSQL", () => {
           occurredAt: 1_750_000_000_100,
           changes: [invoiceChange("invoice-2", 7, 700)],
         });
-        // Arrives last but must not pull the counter back down.
         const lower = operationFor({
           operationId: "operation-invoice-3",
           deviceId: "device-2",
@@ -464,8 +460,6 @@ describe("stock movement immutability", () => {
     ],
   });
 
-  // The comparison covers the operation-owned columns too, so an identical
-  // payload arriving under a different operation still counts as a rewrite.
   it.effect("reusing a movement id from another operation is rejected", () =>
     withDatabase(({ exchange }) =>
       Effect.gen(function* () {
@@ -494,7 +488,6 @@ describe("stock movement immutability", () => {
           deviceId: "device-1",
           clientSequence: 2,
           occurredAt: 1_750_000_000_001,
-          // Same id, different quantities.
           changes: [movementChange("movement-1", "product-1", "batch-1", 99, 5)],
         });
 

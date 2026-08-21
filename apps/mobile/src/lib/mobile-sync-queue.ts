@@ -13,7 +13,6 @@ type OperationHasher<Change> = (
   operation: Omit<MobileSyncOperation<Change>, "payloadHash">,
 ) => Promise<string>;
 
-/** Reattribute local mutations when the inventory adopts an authenticated owner. */
 export const reattributePendingOperations = async <Change>(
   operations: ReadonlyArray<MobileSyncOperation<Change>>,
   actorUserId: string,

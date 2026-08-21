@@ -80,7 +80,7 @@ export const ProductScanHandlers = HttpApiBuilder.group(
           .pipe(Effect.orDie);
         if (!rateLimit.success)
           return yield* Effect.fail(
-            tooManyRequests("PRODUCT_SCAN_RATE_LIMITED", "Too many scans. Please wait a moment."),
+            tooManyRequests("PRODUCT_SCAN_RATE_LIMITED", "Too many scans. Try again in a minute."),
           );
 
         const ai = yield* runtime.productScanAi;
@@ -93,10 +93,7 @@ export const ProductScanHandlers = HttpApiBuilder.group(
             ),
           ),
           Effect.mapError(() =>
-            badGateway(
-              "PRODUCT_SCAN_FAILED",
-              "The recognized text could not be analysed. Try again.",
-            ),
+            badGateway("PRODUCT_SCAN_FAILED", "Could not parse the scan text. Try again."),
           ),
         );
       }),

@@ -94,10 +94,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       );
       if (snapshot.status !== "authenticated")
         return this.#publish(
-          unauthenticated(
-            true,
-            "Your sign-in completed, but the server could not validate the session.",
-          ),
+          unauthenticated(true, "You signed in, but the server rejected the session."),
         );
       return this.#publish(withWorkspaceOnline(snapshot, true));
     } catch (error) {
@@ -106,7 +103,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       return this.#publish(
         withWorkspaceError(
           withWorkspaceOnline(this.#snapshot, false),
-          error instanceof Error ? error.message : "The session server could not be reached.",
+          error instanceof Error ? error.message : "Could not reach the session server.",
         ),
       );
     }

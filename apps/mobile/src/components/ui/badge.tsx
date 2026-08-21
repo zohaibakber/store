@@ -6,11 +6,6 @@ import { typography } from "@/theme/typography";
 
 export type BadgeVariant = "default" | "secondary" | "outline" | "error" | "warning" | "success";
 
-/**
- * A short status label. It *is* a text node, so it takes a string child and
- * renders as styled `Text` rather than a View wrapper. Badges label; they do not
- * shout — no pill radius, no uppercase. See `design-system.md` §5.
- */
 export function Badge({
   children,
   variant = "secondary",

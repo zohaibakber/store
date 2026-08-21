@@ -37,7 +37,7 @@ export async function copyInvitation(token: string) {
   try {
     await navigator.clipboard.writeText(handoff.value);
     toastManager.add({
-      description: "Send it yourself. It's shown only once.",
+      description: "Send it yourself. You'll only see it once.",
       title: handoff.kind === "link" ? "Invite link copied" : "Invite token copied",
       type: "success",
     });

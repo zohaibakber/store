@@ -20,9 +20,7 @@ export function NotFound() {
           <HugeiconsIcon aria-hidden="true" icon={RouteBlockIcon} />
         </EmptyMedia>
         <EmptyTitle>Page not found</EmptyTitle>
-        <EmptyDescription>
-          The page you’re looking for doesn’t exist or may have been moved.
-        </EmptyDescription>
+        <EmptyDescription>No page at this address.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <Button render={<Link to="/" />} size="sm">
