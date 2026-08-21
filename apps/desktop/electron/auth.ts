@@ -70,6 +70,10 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     return this.#tokens.get()?.accessToken ?? null;
   }
 
+  ensureFreshAccess(force = false) {
+    return this.#http.ensureFreshAccess(force);
+  }
+
   async initialize() {
     const persisted = await this.#readPersisted();
     if (persisted) {

@@ -14,6 +14,7 @@ export const getRouter = (input: {
   readonly store: Store;
   readonly initialAuth: InitialAuth;
   readonly access: HostAccessPolicy;
+  readonly sessionPending?: boolean;
 }) =>
   createRouter({
     routeTree,
@@ -22,6 +23,7 @@ export const getRouter = (input: {
       initialAuth: input.initialAuth,
       /** Live workspace snapshot; updated on every session publish before invalidate. */
       sessionSnapshot: sessionSnapshotFromAuth(input.initialAuth),
+      sessionPending: input.sessionPending ?? false,
       access: input.access,
     },
     history: input.history,

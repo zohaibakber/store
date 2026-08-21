@@ -14,12 +14,15 @@ export const mountApp = (input: {
   readonly initialAuth: InitialAuth;
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
+  /** When true, beforeLoad skips admit redirects until AuthProvider clears it. */
+  readonly sessionPending?: boolean;
 }) => {
   const router = getRouter({
     history: input.history,
     store: input.store,
     initialAuth: input.initialAuth,
     access: input.access,
+    sessionPending: input.sessionPending ?? false,
   });
   const app = (
     <StoreProvider store={input.store}>

@@ -53,4 +53,25 @@ describe("live sessionSnapshot admit", () => {
       }),
     ).toEqual({ _tag: "Allow" });
   });
+
+  it("sessionPending keeps cold-start admit from bouncing to sign-in", () => {
+    const access = browserHostAccess();
+    const router = getRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      store: unusedStore,
+      initialAuth: { _tag: "Loading" },
+      access,
+      sessionPending: true,
+    });
+
+    expect(router.options.context.sessionPending).toBe(true);
+    expect(router.options.context.sessionSnapshot).toBeNull();
+    // beforeLoad short-circuits when sessionPending; admit itself would redirect.
+    expect(
+      access.admit({
+        location: { pathname: "/" },
+        snapshot: router.options.context.sessionSnapshot,
+      }),
+    ).toEqual({ _tag: "Redirect", to: "/sign-in", replace: true });
+  });
 });

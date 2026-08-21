@@ -117,7 +117,7 @@ test("publishes an authenticated workspace only after its store is ready", async
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
-  expect(events).toEqual(["open:a", "subscribe:a", "sync:a", "publish:a"]);
+  expect(events).toEqual(["open:a", "subscribe:a", "publish:a", "sync:a"]);
 
   await workspace.dispose();
 });
@@ -202,7 +202,7 @@ test("publishes the authenticated workspace when its initial sync fails", async 
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
-  expect(events).toEqual(["sync", "publish:a"]);
+  expect(events).toEqual(["publish:a", "sync"]);
 
   await workspace.dispose();
 });
@@ -223,4 +223,86 @@ test("guest Locked refuse stays idle without workspaceError", async () => {
     workspaceError: null,
   });
   expect(events).toEqual(["open:locked", "publish:unauthenticated"]);
+});
+
+test("guest-refusing host skips Locked open entirely", async () => {
+  const events: string[] = [];
+  const workspace = new AuthenticatedWorkspace({
+    auth: makeAuth(unauthenticated),
+    stores: makeStores(events),
+    deviceId: "device-1",
+    allowsGuestWorkspace: false,
+    events: {
+      publishSnapshot: (snapshot) =>
+        events.push(
+          `publish:${snapshot.status === "authenticated" ? (snapshot.activeOrganization?.id ?? snapshot.status) : snapshot.status}`,
+        ),
+      publishSyncStatus: () => undefined,
+    },
+  });
+
+  await expect(workspace.initialize()).resolves.toMatchObject({
+    status: "unauthenticated",
+    workspaceError: null,
+  });
+  expect(events).toEqual(["publish:unauthenticated"]);
+  expect(workspace.hasStore).toBe(false);
+});
+
+test("resolveAuth defers store open for authenticated sessions", async () => {
+  const events: string[] = [];
+  const workspace = new AuthenticatedWorkspace({
+    auth: makeAuth(authenticated("a")),
+    stores: makeStores(events),
+    deviceId: "device-1",
+    allowsGuestWorkspace: false,
+    events: {
+      publishSnapshot: (snapshot) =>
+        events.push(
+          `publish:${snapshot.status === "authenticated" ? (snapshot.activeOrganization?.id ?? snapshot.status) : snapshot.status}`,
+        ),
+      publishSyncStatus: () => undefined,
+    },
+  });
+
+  await expect(workspace.resolveAuth()).resolves.toMatchObject({
+    status: "authenticated",
+    activeOrganization: { id: "a" },
+  });
+  expect(events).toEqual([]);
+  expect(workspace.snapshot.status).toBe("unauthenticated");
+  expect(workspace.hasStore).toBe(false);
+
+  await expect(workspace.activateResolved()).resolves.toMatchObject({
+    status: "authenticated",
+    activeOrganization: { id: "a" },
+  });
+  expect(events).toEqual(["open:a", "subscribe:a", "publish:a", "sync:a"]);
+  expect(workspace.hasStore).toBe(true);
+
+  await workspace.dispose();
+});
+
+test("resolveAuth publishes unsigned sessions without a store", async () => {
+  const events: string[] = [];
+  const workspace = new AuthenticatedWorkspace({
+    auth: makeAuth(unauthenticated),
+    stores: makeStores(events),
+    deviceId: "device-1",
+    allowsGuestWorkspace: false,
+    events: {
+      publishSnapshot: (snapshot) =>
+        events.push(
+          `publish:${snapshot.status === "authenticated" ? (snapshot.activeOrganization?.id ?? snapshot.status) : snapshot.status}`,
+        ),
+      publishSyncStatus: () => undefined,
+    },
+  });
+
+  await expect(workspace.resolveAuth()).resolves.toMatchObject({
+    status: "unauthenticated",
+    workspaceError: null,
+  });
+  expect(events).toEqual(["publish:unauthenticated"]);
+  expect(workspace.hasStore).toBe(false);
 });

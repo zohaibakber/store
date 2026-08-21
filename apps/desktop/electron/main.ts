@@ -219,6 +219,7 @@ const workspaceStores: WorkspaceStoreAdapter = {
                 organizationId: target.organizationId,
                 deviceId: target.deviceId,
                 getAccessToken: () => authBroker.accessToken,
+                ensureFreshAccess: () => authBroker.ensureFreshAccess().then(() => undefined),
                 electronOrigin: `${ELECTRON_PROTOCOL}://app`,
               }),
             },

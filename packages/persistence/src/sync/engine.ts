@@ -6,9 +6,10 @@ import {
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { categories, invoiceCounters, stockMovements, syncState } from "@store/db/local/schema";
-import { makeSyncClientRuntime } from "@store/sync-client";
+import { makeSyncClientRuntime, type SyncReason } from "@store/sync-client";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -191,9 +192,14 @@ export const makeSyncEngine = (
     const exchange =
       session?.exchange ?? (transport && "exchange" in transport ? transport.exchange : undefined);
 
-    const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* () {
+    const lastFailureRetryMillis = yield* Ref.make<number | null>(null);
+
+    const exchangeOnce = Effect.fn("OfflineStore.exchangeOnce")(function* (reason: SyncReason) {
       if (!exchange)
         return { cursor: initialState?.cursor ?? 0, hasMore: false, moreLocalWork: false };
+      // Local writes and live reconnect/invalidate should push immediately; do
+      // not wait out a prior transport backoff (safety-poll / manual still honor it).
+      if (reason === "local-commit" || reason === "live") yield* outbox.clearBackoff;
       const localState = yield* database.query.syncState
         .findFirst({ where: { organizationId: workspace.organizationId } })
         .pipe(mapPersistenceError("load sync state"));
@@ -332,23 +338,19 @@ export const makeSyncEngine = (
       error: PersistenceError,
     ) {
       const recorded = yield* Effect.gen(function* () {
-        yield* Effect.all(
-          [
-            database
-              .update(syncState)
-              .set({ lastAttemptAt: Date.now(), lastError: error.message })
-              .where(eq(syncState.organizationId, workspace.organizationId)),
-            outbox.markFailure(error.message, {
-              incrementAttempts: !(
-                error.cause instanceof SyncTransportError && error.cause.retryable
-              ),
-            }),
-          ],
-          { concurrency: 1, discard: true },
-        );
+        yield* database
+          .update(syncState)
+          .set({ lastAttemptAt: Date.now(), lastError: error.message })
+          .where(eq(syncState.organizationId, workspace.organizationId));
+        const delayMillis = yield* outbox.markFailure(error.message, {
+          incrementAttempts: !(error.cause instanceof SyncTransportError && error.cause.retryable),
+        });
+        yield* Ref.set(lastFailureRetryMillis, delayMillis);
       }).pipe(mapPersistenceError("record sync failure"), Effect.result);
-      if (recorded._tag === "Failure")
+      if (recorded._tag === "Failure") {
+        yield* Ref.set(lastFailureRetryMillis, null);
         yield* Effect.logWarning("Could not persist sync failure status", recorded.failure);
+      }
       const health = yield* Effect.result(outbox.health);
       const currentHealth = health._tag === "Success" ? health.success : initialHealth;
       return {
@@ -362,7 +364,7 @@ export const makeSyncEngine = (
     const runtime = yield* makeSyncClientRuntime({
       initialStatus,
       adapter: {
-        exchangeOnce: exchangeOnce(),
+        exchangeOnce,
         completedStatus,
         failureStatus,
         retryable: (error) => error.cause instanceof SyncTransportError && error.cause.retryable,
@@ -371,6 +373,7 @@ export const makeSyncEngine = (
             operation: "sync",
             message: `Synchronization did not drain after ${maximumRounds} exchanges`,
           }),
+        retryAfterFailureMillis: () => Ref.getAndSet(lastFailureRetryMillis, null),
       },
       live: session ? { events: session.events } : undefined,
       safetyPollIntervalMillis: config.resyncIntervalMillis ?? (session ? 300_000 : 3_000),

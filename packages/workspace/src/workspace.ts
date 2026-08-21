@@ -90,31 +90,48 @@ export class WorkspaceActivationError extends Error {
   }
 }
 
+const hasActiveOrganization = (snapshot: WorkspaceSnapshot): boolean =>
+  snapshot.status === "authenticated" && snapshot.activeOrganization != null;
+
 export class AuthenticatedWorkspace {
   readonly #auth: WorkspaceAuthAdapter;
   readonly #stores: WorkspaceStoreAdapter;
   readonly #events: WorkspaceEvents;
   readonly #deviceId: string;
+  readonly #allowsGuestWorkspace: boolean;
   readonly #lock = Semaphore.makeUnsafe(1);
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
   #store: WorkspaceStore | undefined;
   #activeOrganizationId: OrganizationId | null = null;
   #stopSyncStatus: (() => void) | undefined;
+  /** Auth snapshot waiting for {@link activateResolved} (web cold-start). */
+  #resolvedAuth: WorkspaceSnapshot | undefined;
 
   constructor(input: {
     readonly auth: WorkspaceAuthAdapter;
     readonly stores: WorkspaceStoreAdapter;
     readonly events: WorkspaceEvents;
     readonly deviceId: string;
+    /**
+     * When false (browser), unsigned bootstrap skips opening a Locked store.
+     * Desktop keeps true so offline/guest inventory remains available.
+     */
+    readonly allowsGuestWorkspace?: boolean;
   }) {
     this.#auth = input.auth;
     this.#stores = input.stores;
     this.#events = input.events;
     this.#deviceId = input.deviceId;
+    this.#allowsGuestWorkspace = input.allowsGuestWorkspace ?? true;
   }
 
   get snapshot(): WorkspaceSnapshot {
     return this.#snapshot;
+  }
+
+  /** True once an OfflineStore handle is open (Authenticated or Locked). */
+  get hasStore(): boolean {
+    return this.#store !== undefined;
   }
 
   initialize(): Promise<WorkspaceSnapshot> {
@@ -128,8 +145,44 @@ export class AuthenticatedWorkspace {
     });
   }
 
+  /**
+   * Auth only. Unsigned / guest-refused hosts publish immediately without a
+   * store. Authenticated sessions are returned but not published until
+   * {@link activateResolved} opens OfflineStore — so admit never sees an
+   * authenticated snapshot before `runStore` works.
+   */
+  resolveAuth(): Promise<WorkspaceSnapshot> {
+    return this.#serialize(async () => {
+      const snapshot = await this.#auth.initialize();
+      if (!hasActiveOrganization(snapshot)) {
+        this.#resolvedAuth = undefined;
+        try {
+          return await this.#activate(snapshot);
+        } catch {
+          return this.#snapshot;
+        }
+      }
+      this.#resolvedAuth = snapshot;
+      return snapshot;
+    });
+  }
+
+  /** Opens the store for a session previously returned by {@link resolveAuth}. */
+  activateResolved(): Promise<WorkspaceSnapshot> {
+    return this.#serialize(async () => {
+      const snapshot = this.#resolvedAuth ?? this.#auth.snapshot;
+      this.#resolvedAuth = undefined;
+      try {
+        return await this.#activate(snapshot);
+      } catch {
+        return this.#snapshot;
+      }
+    });
+  }
+
   execute(command: WorkspaceCommand): Promise<WorkspaceSnapshot> {
     return this.#serialize(async () => {
+      this.#resolvedAuth = undefined;
       const snapshot = await this.#runCommand(command);
       return this.#activate(snapshot);
     });
@@ -189,22 +242,29 @@ export class AuthenticatedWorkspace {
           }
         : { _tag: "Locked" };
 
+    if (target._tag === "Locked" && !this.#allowsGuestWorkspace) {
+      return this.#publish(unauthenticated(snapshot.isOnline, null));
+    }
+
     try {
       const store = await this.#stores.open(target);
       this.#store = store;
       this.#activeOrganizationId = target._tag === "Authenticated" ? target.organizationId : null;
       this.#stopSyncStatus = store.onSyncStatusChange(this.#events.publishSyncStatus);
-      if (target._tag === "Authenticated" && snapshot.isOnline) {
-        // Route loaders run as soon as the authenticated snapshot is published.
-        // Finish the first pull so they cannot cache an empty pre-sync database.
-        await store.sync().catch(() => undefined);
-      }
-      return this.#publish(
+      // Publish before first sync so web `#boot-shell` / React mount are not blocked on
+      // WS handshake + pull drain. Tradeoff: route loaders can briefly see an empty local
+      // DB; they should soft-block on sync status (or revalidate) rather than boot awaiting
+      // drain. Sync status still flows via onSyncStatusChange.
+      const published = this.#publish(
         withWorkspaceError(
           snapshot,
           target._tag === "Authenticated" ? null : (snapshot.workspaceError ?? null),
         ),
       );
+      if (target._tag === "Authenticated" && snapshot.isOnline) {
+        void store.sync().catch(() => undefined);
+      }
+      return published;
     } catch (cause) {
       if (isGuestWorkspaceRefused(cause)) {
         return this.#publish(unauthenticated(snapshot.isOnline, null));

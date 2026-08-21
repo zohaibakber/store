@@ -24,11 +24,17 @@ export interface RouterContext {
   readonly initialAuth: InitialAuth;
   /** Live session truth for beforeLoad admit — must stay in sync with AuthProvider. */
   readonly sessionSnapshot: WorkspaceSnapshot | null;
+  /**
+   * Cold-start: OfflineStore still opening. Skip admit redirects so a signed-in
+   * cookie session is not bounced to /sign-in before the snapshot publishes.
+   */
+  readonly sessionPending: boolean;
   readonly access: HostAccessPolicy;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: ({ context, location }) => {
+    if (context.sessionPending) return;
     const verdict = context.access.admit({
       location: { pathname: location.pathname },
       snapshot: context.sessionSnapshot,

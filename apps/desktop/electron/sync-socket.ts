@@ -4,7 +4,7 @@ import {
   type SyncSocket,
   SyncTransportError,
 } from "@store/persistence";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 
 const textFromNodeMessage = (data: RawData): string => {
@@ -20,12 +20,30 @@ export const openDesktopSyncSocket = (input: {
   readonly deviceId: string;
   readonly getAccessToken: () => string | null;
   readonly electronOrigin: string;
+  /** Refresh near-expiry access before each connect/reconnect. */
+  readonly ensureFreshAccess?: () => Promise<void>;
 }): Effect.Effect<SyncSocket, SyncTransportError> =>
   openSyncSocket({
     baseUrl: input.baseUrl,
     organizationId: input.organizationId,
     deviceId: input.deviceId,
     failureMessage: "Couldn't connect to live sync.",
+    prepare: input.ensureFreshAccess
+      ? Effect.tryPromise({
+          try: async () => {
+            await input.ensureFreshAccess!();
+          },
+          catch: (cause) =>
+            SyncTransportError.make({
+              message:
+                cause instanceof Error
+                  ? cause.message
+                  : "Couldn't refresh authentication for live sync.",
+              retryable: true,
+              cause,
+            }),
+        })
+      : undefined,
     connect: (url) => {
       const token = input.getAccessToken();
       const socket = new NodeWebSocket(url, {

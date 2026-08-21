@@ -328,7 +328,7 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
   const markFailure = Effect.fn("Outbox.markFailure")(function* (
     message: string,
     options: { readonly incrementAttempts?: boolean } = {},
-  ) {
+  ): Effect.fn.Return<number | null, PersistenceError> {
     const [head] = yield* database
       .select({ attemptCount: syncOutbox.attemptCount })
       .from(syncOutbox)
@@ -341,9 +341,10 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(1)
       .pipe(mapPersistenceError("read outbox head for backoff"));
-    if (head === undefined) return;
+    if (head === undefined) return null;
     const attemptCount = options.incrementAttempts ? head.attemptCount + 1 : head.attemptCount;
-    const nextAttemptAt = Date.now() + retryDelayMillis(attemptCount);
+    const delayMillis = retryDelayMillis(attemptCount);
+    const nextAttemptAt = Date.now() + delayMillis;
     yield* database
       .update(syncOutbox)
       .set({
@@ -366,13 +367,30 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
         ),
       )
       .pipe(mapPersistenceError("record outbox failure"));
+    return attemptCount >= QUARANTINE_ATTEMPTS ? null : delayMillis;
   });
+
+  /**
+   * Drop FIFO head delay so a local write or live reconnect can push immediately
+   * instead of waiting out a prior transport backoff.
+   */
+  const clearBackoff = database
+    .update(syncOutbox)
+    .set({ nextAttemptAt: null })
+    .where(
+      and(
+        eq(syncOutbox.organizationId, workspace.organizationId),
+        isNull(syncOutbox.acknowledgedAt),
+      ),
+    )
+    .pipe(mapPersistenceError("clear outbox backoff"), Effect.asVoid);
 
   return {
     health: health(),
     nextBatch: nextBatch(),
     acknowledge,
     markFailure,
+    clearBackoff,
     migratePendingActor,
     recoverAuthenticationFailures,
   };

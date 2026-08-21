@@ -53,6 +53,7 @@ export const authSession = (): AuthSessionBridge => {
 /** Session snapshot from startup, handed to {@link AuthProvider} as props. */
 export type InitialAuth =
   | { readonly _tag: "Session"; readonly snapshot: WorkspaceSnapshot }
+  | { readonly _tag: "Loading" }
   | { readonly _tag: "Failed"; readonly error: string };
 
 /** Ends the session; the host broadcasts the resulting snapshot. */
@@ -75,8 +76,11 @@ export async function bootstrapAuth(): Promise<InitialAuth> {
 const initialSnapshot = (initial: InitialAuth): WorkspaceSnapshot | null =>
   initial._tag === "Session" ? initial.snapshot : null;
 
-const initialError = (initial: InitialAuth): string | null =>
-  initial._tag === "Failed" ? initial.error : (initial.snapshot.workspaceError ?? null);
+const initialError = (initial: InitialAuth): string | null => {
+  if (initial._tag === "Failed") return initial.error;
+  if (initial._tag === "Session") return initial.snapshot.workspaceError ?? null;
+  return null;
+};
 
 export function AuthProvider({
   children,
@@ -89,7 +93,7 @@ export function AuthProvider({
   const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(
     initialSnapshot(initial),
   );
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(initial._tag === "Loading");
   const [error, setError] = React.useState<string | null>(initialError(initial));
   const currentScopeRef = React.useRef(authScope(snapshot));
   const pendingScopeRef = React.useRef<string | null | undefined>(undefined);
@@ -107,6 +111,7 @@ export function AuthProvider({
           context: {
             ...router.options.context,
             sessionSnapshot: next,
+            sessionPending: false,
           },
         });
         return;
@@ -122,6 +127,7 @@ export function AuthProvider({
         context: {
           ...router.options.context,
           sessionSnapshot: next,
+          sessionPending: false,
         },
       });
 

@@ -16,10 +16,36 @@ import {
 
 export { RequestError };
 
+const SESSION_EXPECTED_KEY = "tabaaq-web-session-expected";
+
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
 const navigatorOnline = () => globalThis.navigator?.onLine ?? true;
+
+const hasExpectedSession = () => {
+  try {
+    return globalThis.localStorage?.getItem(SESSION_EXPECTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const markSessionExpected = () => {
+  try {
+    globalThis.localStorage?.setItem(SESSION_EXPECTED_KEY, "1");
+  } catch {
+    /* private mode / blocked storage */
+  }
+};
+
+const clearSessionExpected = () => {
+  try {
+    globalThis.localStorage?.removeItem(SESSION_EXPECTED_KEY);
+  } catch {
+    /* private mode / blocked storage */
+  }
+};
 
 export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #http: SessionHttpClient;
@@ -55,15 +81,31 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.#tokens.get()?.accessToken ?? null;
   }
 
+  /** Refresh near-expiry access (live sync reconnect). */
+  ensureFreshAccess(force = false) {
+    return this.#http.ensureFreshAccess(force);
+  }
+
   async initialize() {
+    // Unsigned cold start: no prior sign-in on this origin → skip forced cookie refresh.
+    // HttpOnly refresh cookies are invisible to JS; localStorage is the session expectation.
+    if (!hasExpectedSession()) {
+      return this.#hooks.publish(unauthenticated(navigatorOnline()));
+    }
     try {
       const tokens = await this.#http.ensureFreshAccess(true);
-      if (tokens) return loadSessionSnapshot(this.#hooks);
+      if (tokens) {
+        markSessionExpected();
+        return loadSessionSnapshot(this.#hooks);
+      }
     } catch {}
-    return this.#snapshot;
+    clearSessionExpected();
+    return this.#hooks.publish(unauthenticated(navigatorOnline()));
   }
 
   adoptSession(tokens: TokenSetType | null) {
+    if (tokens) markSessionExpected();
+    else clearSessionExpected();
     return adoptSessionTokens(this.#hooks, tokens);
   }
 
@@ -78,6 +120,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   async signOut() {
     await this.#http.awaitRefreshInFlight()?.catch(() => null);
     this.#tokens.set(null);
+    clearSessionExpected();
     await fetch(`${this.#http.authBaseUrl}/v1/session/logout`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -103,11 +146,15 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       body: "{}",
     });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) this.#tokens.set(null);
+      if (response.status === 401 || response.status === 403) {
+        this.#tokens.set(null);
+        clearSessionExpected();
+      }
       return null;
     }
     const next = decodeTokenSet(await response.json());
     this.#tokens.set(next);
+    markSessionExpected();
     return next;
   }
 }

@@ -722,6 +722,62 @@ test("an operation that is not yet due is not resent", async () => {
   );
 });
 
+test("a local commit clears outbox backoff so pending ops push immediately", async () => {
+  const requests: Array<SyncRequest> = [];
+  let offline = true;
+  const transport = {
+    exchange: (request: SyncRequest) => {
+      requests.push(request);
+      return offline
+        ? Effect.fail(SyncTransportError.make({ message: "network unavailable", retryable: true }))
+        : Effect.succeed(responseFor(request));
+    },
+  };
+  await withTestStore(
+    async ({ dataDir, runtime }) => {
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Held back",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+      await expect(runtime.runPromise(store((store) => store.sync))).rejects.toMatchObject({
+        _tag: "PersistenceError",
+      });
+      await setOutboxNextAttemptAt(dataDir, Date.now() + 60_000);
+      offline = false;
+
+      await runtime.runPromise(
+        store((store) =>
+          store.createProduct({
+            name: "Unblocks queue",
+            aisle: null,
+            composition: null,
+            strength: null,
+            packPrice: null,
+            unitPrice: null,
+          }),
+        ),
+      );
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const pending = await readOutbox(dataDir);
+        if (pending.length === 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(await readOutbox(dataDir)).toEqual([]);
+      expect(requests.some((request) => request.operations.length > 0)).toBe(true);
+    },
+    { syncTransport: transport },
+  );
+});
+
 test("status reports the stuck queue after a failure", async () => {
   const transport = {
     exchange: () =>

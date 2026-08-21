@@ -41,6 +41,7 @@ const withStore = withStoreEffect;
 const makeWorkspaceStores = (input: {
   readonly baseUrl: string;
   readonly getAccessToken: () => string | null;
+  readonly ensureFreshAccess: () => Promise<void>;
   readonly allowsGuestWorkspace: boolean;
 }): WorkspaceStoreAdapter => ({
   open: async (target) => {
@@ -63,6 +64,7 @@ const makeWorkspaceStores = (input: {
                 organizationId: target.organizationId,
                 deviceId: target.deviceId,
                 getAccessToken: input.getAccessToken,
+                ensureFreshAccess: input.ensureFreshAccess,
               }),
             },
             workspace: {
@@ -98,13 +100,23 @@ const makeWorkspaceStores = (input: {
 export interface WebWorkspace {
   readonly bridge: AuthSessionBridge;
   readonly store: Store;
+  /**
+   * Auth-only bootstrap. Unsigned sessions are published immediately (no Locked
+   * store on the browser). Authenticated sessions are held until
+   * {@link activateWorkspace}.
+   */
+  readonly resolveAuth: () => Promise<WorkspaceSnapshot>;
+  /** Opens OfflineStore for a session returned by {@link resolveAuth}. */
+  readonly activateWorkspace: () => Promise<WorkspaceSnapshot>;
+  /** True once OfflineStore is open (e.g. after OAuth AdoptSession). */
+  readonly hasStore: () => boolean;
 }
 
-export const startWebWorkspace = async (
+export const startWebWorkspace = (
   baseUrl: string,
   authBaseUrl: string,
   options: { readonly allowsGuestWorkspace: boolean } = { allowsGuestWorkspace: false },
-): Promise<WebWorkspace> => {
+): WebWorkspace => {
   const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
   const auth = new WebAuthBroker(baseUrl, authBaseUrl);
@@ -113,9 +125,13 @@ export const startWebWorkspace = async (
     stores: makeWorkspaceStores({
       baseUrl,
       getAccessToken: () => auth.accessToken,
+      ensureFreshAccess: async () => {
+        await auth.ensureFreshAccess();
+      },
       allowsGuestWorkspace: options.allowsGuestWorkspace,
     }),
     deviceId: loadDeviceId(),
+    allowsGuestWorkspace: options.allowsGuestWorkspace,
     events: {
       publishSnapshot: (snapshot) => {
         for (const listener of snapshotListeners) listener(snapshot);
@@ -125,8 +141,6 @@ export const startWebWorkspace = async (
       },
     },
   });
-
-  await workspace.initialize();
 
   return {
     bridge: {
@@ -153,5 +167,14 @@ export const startWebWorkspace = async (
         return () => syncListeners.delete(listener);
       },
     }),
+    resolveAuth: () => workspace.resolveAuth(),
+    activateWorkspace: async () => {
+      const snapshot = await workspace.activateResolved();
+      // React may subscribe onSessionChange after the first publish (useEffect).
+      // Re-deliver so a Loading AuthProvider never stays stuck on #boot-shell→AppLoading.
+      for (const listener of snapshotListeners) listener(workspace.snapshot);
+      return snapshot;
+    },
+    hasStore: () => workspace.hasStore,
   };
 };

@@ -8,6 +8,7 @@ import { expect, test } from "vitest";
 import {
   exchangeOutcome,
   QUARANTINE_ATTEMPTS,
+  retryDelayMillis,
   selectBatch,
   sendableDuePrefix,
   sendableUntilQuarantined,
@@ -128,4 +129,10 @@ test("exchangeOutcome distinguishes why an exchange stopped", () => {
     reason: "held-back",
   });
   expect(exchangeOutcome({ hasMore: true, moreDue: true })._tag).toBe("MorePending");
+});
+
+test("retryDelayMillis starts at one second and doubles", () => {
+  expect(retryDelayMillis(0)).toBe(1_000);
+  expect(retryDelayMillis(1)).toBe(1_000);
+  expect(retryDelayMillis(2)).toBe(2_000);
 });
