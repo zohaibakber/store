@@ -25,14 +25,19 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 export function RootLayout() {
   const { initialAuth } = Route.useRouteContext();
-  useAppUpdater();
   return (
     <AuthProvider initial={initialAuth}>
       <ToastProvider>
+        <AppUpdater />
         <AuthenticatedLayout />
       </ToastProvider>
     </AuthProvider>
   );
+}
+
+function AppUpdater() {
+  useAppUpdater();
+  return null;
 }
 
 function AuthenticatedLayout() {

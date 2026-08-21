@@ -1,4 +1,9 @@
+import { readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { app, ipcMain, type BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
 
@@ -16,8 +21,41 @@ const RETRY_CHECK_DELAY_MS = 30_000;
 const INITIAL_CHECK_DELAY_MS = 5_000;
 const PROGRESS_EVENT_INTERVAL_MS = 250;
 
+const PendingUpdateInfo = Schema.Struct({
+  fileName: Schema.optional(Schema.String),
+});
+
 const providerError = (cause: unknown) =>
   cause instanceof Error ? cause : new Error(String(cause));
+
+const versionFromPendingFileName = (fileName: string) => {
+  const match = /(?:^|-)(\d+\.\d+\.\d+)(?:\.AppImage)?$/u.exec(fileName);
+  return match?.[1];
+};
+
+const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
+
+/** Drop leftover pending packages that are not newer than the running build. */
+export const clearStalePendingUpdate = async (currentVersion: string) => {
+  const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
+  try {
+    const info = Schema.decodeUnknownSync(PendingUpdateInfo)(
+      JSON.parse(await readFile(path.join(pendingDirectory, "update-info.json"), "utf8")),
+    );
+    const pendingVersion = info.fileName ? versionFromPendingFileName(info.fileName) : undefined;
+    if (!pendingVersion) return;
+    // Equal or older leftovers make the next launch look like there is nothing
+    // newer to install after GitHub has already moved past that build.
+    const newer =
+      pendingVersion.localeCompare(currentVersion, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) > 0;
+    if (!newer) await rm(pendingDirectory, { force: true, recursive: true });
+  } catch {
+    // Missing cache is the common case.
+  }
+};
 
 const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
   let lastProgressAt = 0;
@@ -62,6 +100,7 @@ const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
 export async function setupUpdater(getWindow: () => BrowserWindow | null) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  await clearStalePendingUpdate(app.getVersion());
 
   const provider: UpdaterProvider = {
     checkForUpdates: Effect.tryPromise({
@@ -89,7 +128,9 @@ export async function setupUpdater(getWindow: () => BrowserWindow | null) {
     ),
   );
 
-  ipcMain.handle("updater:check", () => Effect.runPromise(workflow.check()));
+  // Renderer "Check for updates" and focus checks must bypass the throttle;
+  // otherwise a stale not-available right after publish sticks for minutes.
+  ipcMain.handle("updater:check", () => Effect.runPromise(workflow.check(true)));
   ipcMain.handle("updater:download", () => Effect.runPromise(workflow.download));
   const install = () => {
     Effect.runSync(workflow.install);

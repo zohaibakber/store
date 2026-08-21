@@ -143,6 +143,10 @@ export function useAppUpdater() {
       }
     });
 
+    // Main-process startup checks can hit a stale GitHub /releases/latest right
+    // after a tag is published. Ask again once the UI is up, and always force
+    // through the workflow throttle when the user focuses the window.
+    const startupCheck = window.setTimeout(() => void updater.check(), 8_000);
     const requestCheck = () => void updater.check();
     const checkWhenVisible = () => {
       if (document.visibilityState === "visible") requestCheck();
@@ -153,6 +157,7 @@ export function useAppUpdater() {
     document.addEventListener("visibilitychange", checkWhenVisible);
 
     return () => {
+      window.clearTimeout(startupCheck);
       unsubscribe();
       window.removeEventListener("focus", requestCheck);
       window.removeEventListener("online", requestCheck);
