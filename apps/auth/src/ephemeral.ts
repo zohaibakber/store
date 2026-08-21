@@ -107,6 +107,15 @@ export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralSto
 const error = (operation: string, cause: unknown) =>
   new EphemeralStoreError({ operation, message: String(cause) });
 
+/**
+ * Cloudflare KV refuses `expiration`/`expirationTtl` under 60 seconds. Identify
+ * and native Google rate-limit with a 60-second window, so flooring that window
+ * to an absolute timestamp often lands at 59s remaining and the put throws.
+ * KV TTL is only garbage collection: the JSON `expiresAt` is the real window.
+ */
+export const kvExpirationTtlSeconds = (expiresAtMs: number, nowMs: number) =>
+  Math.max(Math.ceil((expiresAtMs - nowMs) / 1_000), 60) + 1;
+
 const digest = (value: string) =>
   Effect.tryPromise({
     try: async () => {
@@ -138,7 +147,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
                 codeHash,
                 expiresAt: input.expiresAt,
               } satisfies typeof OtpRecord.Type),
-              { expiration: Math.floor(input.expiresAt / 1_000) },
+              { expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()) },
             ),
           catch: (cause) => error("createOtp", cause),
         });
@@ -166,7 +175,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         yield* Effect.tryPromise({
           try: () =>
             namespace.put(`oauth-state:${state}`, JSON.stringify(input), {
-              expiration: Math.floor(input.expiresAt / 1_000),
+              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()),
             }),
           catch: (cause) => error("createOAuthState", cause),
         });
@@ -194,7 +203,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
           yield* Effect.tryPromise({
             try: () =>
               namespace.put(`authorization:${code}`, JSON.stringify(input), {
-                expiration: Math.floor(input.expiresAt / 1_000),
+                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()),
               }),
             catch: (cause) => error("createAuthorizationGrant", cause),
           });
@@ -242,7 +251,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         yield* Effect.tryPromise({
           try: () =>
             namespace.put(key, JSON.stringify({ count, expiresAt }), {
-              expiration: Math.floor(expiresAt / 1_000),
+              expirationTtl: kvExpirationTtlSeconds(expiresAt, input.now),
             }),
           catch: (cause) => error("allow.put", cause),
         });

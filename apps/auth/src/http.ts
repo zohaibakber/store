@@ -140,6 +140,11 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
 
         yield* router.add(
           "GET",
+          "/",
+          Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })),
+        );
+        yield* router.add(
+          "GET",
           "/health",
           Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })),
         );

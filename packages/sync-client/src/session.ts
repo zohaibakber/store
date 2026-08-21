@@ -148,6 +148,11 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
   const pendingRef = yield* Ref.make(
     HashMap.empty<string, Deferred.Deferred<SyncResponse, SyncTransportError>>(),
   );
+  // Correlation tokens for in-flight frames. Unique among this session's
+  // requests; the server echoes them and keys nothing by them. A counter
+  // stays valid on Hermes, which has no Web Crypto global.
+  let issued = 0;
+  const nextRequestId = () => String((issued += 1));
 
   const failPending = (error: SyncTransportError) =>
     Ref.get(pendingRef).pipe(
@@ -218,7 +223,7 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
         const current = yield* Ref.get(socketRef);
         if (!current) return;
         yield* current
-          .send(JSON.stringify(encodeClientFrame({ type: "ping", requestId: crypto.randomUUID() })))
+          .send(JSON.stringify(encodeClientFrame({ type: "ping", requestId: nextRequestId() })))
           .pipe(Effect.ignore);
       });
       yield* ping.pipe(
@@ -238,7 +243,7 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
   const exchange = Effect.fn("SyncSocketSession.exchange")(function* (request: SyncRequest) {
     const socket = yield* Ref.get(socketRef);
     if (!socket) return yield* Effect.fail(disconnected());
-    const requestId = crypto.randomUUID();
+    const requestId = nextRequestId();
     const deferred = yield* Deferred.make<SyncResponse, SyncTransportError>();
     yield* Ref.update(pendingRef, (pending) => HashMap.set(pending, requestId, deferred));
     yield* socket

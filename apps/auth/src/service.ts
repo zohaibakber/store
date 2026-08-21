@@ -3,12 +3,14 @@ import {
   AuthOrganizationMembership,
   AuthorizationCode,
   EmailAddress,
+  EmailDeliveryError,
   EmailProvider,
   InvitationToken,
   LoginRoute,
   OrganizationInvitation,
   OrganizationRoster,
   OtpCode,
+  PasswordHashError,
   PasswordHasher,
   RefreshToken,
   SessionId,
@@ -39,10 +41,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { EphemeralStore } from "./ephemeral";
+import { EphemeralStore, EphemeralStoreError } from "./ephemeral";
 import { GoogleOAuth, type GoogleProfile } from "./google";
 import {
   AuthRepository,
+  RepositoryError,
   type InvitationRecord,
   type MembershipRecord,
   type SessionRecord,
@@ -107,6 +110,30 @@ const infrastructureError = (cause: unknown) =>
   cause instanceof AuthError
     ? cause
     : authError(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable.");
+
+const infrastructureLog = (cause: unknown) => {
+  if (cause instanceof AuthError) return Effect.void;
+  if (cause instanceof RepositoryError || cause instanceof EphemeralStoreError) {
+    return Effect.logError("auth.infrastructure").pipe(
+      Effect.annotateLogs({
+        tag: cause._tag,
+        operation: cause.operation,
+        message: cause.message,
+      }),
+    );
+  }
+  if (cause instanceof EmailDeliveryError || cause instanceof PasswordHashError) {
+    return Effect.logError("auth.infrastructure").pipe(
+      Effect.annotateLogs({ tag: cause._tag, message: cause.message }),
+    );
+  }
+  return Effect.logError("auth.infrastructure").pipe(
+    Effect.annotateLogs({
+      tag: cause instanceof Error ? cause.name : "Unknown",
+      message: cause instanceof Error ? cause.message : String(cause),
+    }),
+  );
+};
 
 const randomSecret = (bytes: number) => {
   const value = crypto.getRandomValues(new Uint8Array(bytes));
@@ -939,7 +966,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
       });
 
       const handle = <A, E>(effect: Effect.Effect<A, E>) =>
-        effect.pipe(Effect.mapError(infrastructureError));
+        effect.pipe(Effect.tapError(infrastructureLog), Effect.mapError(infrastructureError));
 
       return AuthService.of({
         identify: (input) => handle(identify(input)),

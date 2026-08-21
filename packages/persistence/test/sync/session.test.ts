@@ -112,6 +112,35 @@ test("fails when a live exchange times out", async () => {
   expect(error.message).toBe("Live synchronization timed out.");
 });
 
+test("mints a fresh correlation token per exchange", async () => {
+  const requestIds: string[] = [];
+  await Effect.gen(function* () {
+    const messages = yield* Queue.unbounded<string>();
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed(
+        queuedSocket(messages, (payload) => {
+          const frame = Schema.decodeUnknownOption(SyncClientFrame)(JSON.parse(payload));
+          if (Option.isNone(frame) || frame.value.type !== "exchange") return Effect.void;
+          requestIds.push(frame.value.requestId);
+          return Queue.offer(
+            messages,
+            JSON.stringify({
+              type: "exchange-result",
+              requestId: frame.value.requestId,
+              response: responseFor(frame.value.request),
+            }),
+          );
+        }),
+      ),
+    });
+    yield* waitForLive(session, messages);
+    yield* session.exchange(request);
+    yield* session.exchange(request);
+  }).pipe(Effect.scoped, Effect.runPromise);
+
+  expect(requestIds).toEqual(["1", "2"]);
+});
+
 test("hello and invalidate frames still surface as live pull signals", async () => {
   const events = await Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();

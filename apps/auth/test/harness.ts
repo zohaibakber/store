@@ -77,7 +77,7 @@ export const emptyStore = (): Store => ({
   sentInvitations: [],
 });
 
-export const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$310000$c2FsdA$aGFzaA");
+export const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
 
 export const seedUser = (
   store: Store,
