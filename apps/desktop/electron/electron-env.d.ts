@@ -30,6 +30,7 @@ declare global {
       organizationRoster: () => Promise<OrganizationRoster>;
       organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
       openExternal: (url: string) => Promise<void>;
+      getOAuthRedirectUri: () => Promise<string>;
       onOAuthCallback: (callback: (url: string) => void) => () => void;
       onSessionChange: (callback: (snapshot: WorkspaceSnapshot) => void) => () => void;
     };

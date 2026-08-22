@@ -45,8 +45,18 @@ export const loadSessionSnapshot = async (
       );
     }
     const online = withWorkspaceOnline(snapshot, true);
-    await hooks.persistAuthenticated?.(online);
-    return hooks.publish(online);
+    hooks.publish(online);
+    try {
+      await hooks.persistAuthenticated?.(online);
+      return online;
+    } catch (error) {
+      return hooks.publish(
+        withWorkspaceError(
+          online,
+          error instanceof Error ? error.message : "Could not persist the authenticated session.",
+        ),
+      );
+    }
   } catch (error) {
     if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
       await hooks.clearAuthenticated?.();

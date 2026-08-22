@@ -149,11 +149,11 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   async #writePersisted(value: PersistedAuth) {
     if (!safeStorage.isEncryptionAvailable()) {
-      if (!app.isPackaged) {
-        await rm(this.#storagePath(), { force: true });
-        return;
-      }
-      throw new Error("This system can't store credentials securely.");
+      // A missing or locked Linux secret store must not turn a valid online
+      // session into a failed sign-in. Keep tokens in memory for this process
+      // and never fall back to writing the refresh token as plaintext.
+      await rm(this.#storagePath(), { force: true });
+      return;
     }
     await mkdir(path.dirname(this.#storagePath()), { recursive: true });
     await writeFile(this.#storagePath(), safeStorage.encryptString(JSON.stringify(value)), {

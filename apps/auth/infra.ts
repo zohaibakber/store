@@ -189,7 +189,7 @@ export const AuthLive = Auth.make(
     );
     const ServiceLive = authServiceLayer({
       developmentOtp,
-      trustedRedirects: security.trustedOrigins,
+      trustedRedirects: security.trustedRedirects,
       refreshTokenPepper,
     }).pipe(Layer.provide(DependenciesLive));
     const RoutesLive = authRoutes({

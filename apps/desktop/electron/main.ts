@@ -23,6 +23,7 @@ import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
+import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
 import {
   desktopRendererOrigin,
   desktopRendererUrl,
@@ -91,6 +92,19 @@ const AUTH_BASE_URL = fallbackIfBlank(
   "http://localhost:8788",
 );
 
+// Chromium's experimental Wayland color-management path logs errors on
+// compositors that advertise the protocol without supporting its sRGB image
+// description. Tabaaq is SDR-only, so use Chromium's established SDR path.
+if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
+  const disabled = app.commandLine.getSwitchValue("disable-features").split(",").filter(Boolean);
+  if (!disabled.includes("WaylandWpColorManagerV1")) {
+    app.commandLine.appendSwitch(
+      "disable-features",
+      [...disabled, "WaylandWpColorManagerV1"].join(","),
+    );
+  }
+}
+
 // Local commits wake the sync engine right away. The live socket usually
 // carries that signal; this poll only covers a missed wakeup.
 const DESKTOP_SYNC_POLL_INTERVAL_MS = 300_000;
@@ -101,6 +115,9 @@ const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
+const oauthCallbacks = makeOAuthCallbackMailbox(ELECTRON_PROTOCOL, () => {
+  win?.webContents.send("auth:oauth-callback-available");
+});
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
@@ -296,6 +313,8 @@ const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
   ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
+  ipcMain.handle("auth:get-oauth-redirect-uri", () => `${ELECTRON_PROTOCOL}://auth/callback`);
+  ipcMain.handle("auth:take-oauth-callback", () => oauthCallbacks.take());
   ipcMain.handle("auth:adopt-session", async (_event, input) => {
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
     return currentWorkspace().execute({ _tag: "AdoptSession", tokens });
@@ -448,9 +467,7 @@ const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 
 const publishOAuthCallback = (url: string) => {
-  if (url.startsWith(`${ELECTRON_PROTOCOL}://auth/callback`)) {
-    win?.webContents.send("auth:oauth-callback", url);
-  }
+  oauthCallbacks.offer(url);
 };
 
 app.on("open-url", (event, url) => {
@@ -465,6 +482,11 @@ app.on("second-instance", (_event, argv) => {
     win.focus();
   }
 });
+
+const initialOAuthCallback = process.argv.find((value) =>
+  value.startsWith(`${ELECTRON_PROTOCOL}://`),
+);
+if (initialOAuthCallback) publishOAuthCallback(initialOAuthCallback);
 
 void app.whenReady().then(async () => {
   if (!primaryInstance) return;
@@ -481,6 +503,6 @@ void app.whenReady().then(async () => {
   registerStoreIpc();
   registerAuthIpc();
   registerServerIpc();
-  disposeUpdater = await setupUpdater(() => win);
+  if (app.isPackaged) disposeUpdater = await setupUpdater(() => win);
   createWindow();
 });

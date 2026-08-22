@@ -10,7 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { authenticate, beginGoogle, currentAuthClient, identify } from "@/lib/first-party-auth";
+import {
+  authenticate,
+  beginGoogle,
+  currentAuthClient,
+  GOOGLE_AUTH_ERROR_EVENT,
+  identify,
+} from "@/lib/first-party-auth";
 import { cn } from "@/lib/utils";
 import { Route as RootRoute } from "@/routes/__root";
 
@@ -63,10 +69,12 @@ function IdentifierSignIn({
   busy,
   allowContinueOffline,
   onContinue,
+  onGoogle,
 }: {
   readonly busy: boolean;
   readonly allowContinueOffline: boolean;
   readonly onContinue: (email: string) => Promise<void>;
+  readonly onGoogle: () => Promise<void>;
 }) {
   const [email, setEmail] = React.useState("");
   return (
@@ -101,7 +109,7 @@ function IdentifierSignIn({
           <Button
             className="w-full"
             disabled={busy}
-            onClick={() => void beginGoogle()}
+            onClick={() => void onGoogle()}
             type="button"
             variant="outline"
           >
@@ -312,6 +320,15 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    const receiveGoogleError = (event: WindowEventMap[typeof GOOGLE_AUTH_ERROR_EVENT]) => {
+      setError(event.detail);
+      setBusy(false);
+    };
+    window.addEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
+    return () => window.removeEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
+  }, []);
+
   const finishSignedIn = async () => {
     await navigate({ to: "/" });
   };
@@ -323,9 +340,8 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
       await operation();
     } catch (cause) {
       setError(messageOf(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const startOver = () => {
     setError(null);
@@ -350,6 +366,7 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
               setStep(route);
             })
           }
+          onGoogle={() => run(beginGoogle)}
         />
       ) : null}
       {step._tag === "Password" ? (

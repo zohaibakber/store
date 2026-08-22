@@ -1,7 +1,7 @@
 import { createHashHistory } from "@tanstack/react-router";
 
 import { bootstrapAuth } from "@/lib/auth";
-import { completeGoogle } from "@/lib/first-party-auth";
+import { completeGoogle, reportGoogleAuthError } from "@/lib/first-party-auth";
 import { electronStore } from "@/lib/store";
 
 import { desktopHostAccess } from "./host-access";
@@ -16,6 +16,9 @@ export const startElectron = async () => {
     access: desktopHostAccess(),
   });
   window.auth?.onOAuthCallback((url) => {
-    void completeGoogle(url);
+    void completeGoogle(url).catch((cause) => {
+      console.error("Google sign-in callback failed", cause);
+      reportGoogleAuthError(cause);
+    });
   });
 };

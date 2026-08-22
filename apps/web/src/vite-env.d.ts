@@ -22,6 +22,10 @@ interface ImportMeta {
 declare global {
   const __APP_VERSION__: string;
 
+  interface WindowEventMap {
+    "tabaaq:google-auth-error": CustomEvent<string>;
+  }
+
   interface Window {
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;
@@ -35,6 +39,7 @@ declare global {
         init?: import("@store/workspace").JsonRequestInit,
       ): Promise<import("@store/workspace").JsonApiResponse>;
       openExternal(url: string): Promise<void>;
+      getOAuthRedirectUri(): Promise<string>;
       onOAuthCallback(listener: (url: string) => void): () => void;
       onSessionChange(listener: (snapshot: WorkspaceSnapshot) => void): () => void;
     };

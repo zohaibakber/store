@@ -1,6 +1,5 @@
 import {
   AuthorizationCode,
-  DEFAULT_ELECTRON_PROTOCOL,
   makeAuthClient,
   nativeClient,
   browserClient,
@@ -16,6 +15,7 @@ import * as Schema from "effect/Schema";
 import { authSession } from "@/lib/auth";
 
 const PKCE_KEY = "tabaaq-oauth-pkce";
+export const GOOGLE_AUTH_ERROR_EVENT = "tabaaq:google-auth-error";
 const configuredAuthUrl = import.meta.env.VITE_AUTH_URL?.trim();
 
 export const authBaseUrl = (configuredAuthUrl || "http://localhost:8788").replace(/\/+$/u, "");
@@ -53,8 +53,8 @@ export const beginGoogle = async () => {
   const { verifier, challenge } = await pkce();
   sessionStorage.setItem(PKCE_KEY, verifier);
   const native = Boolean(window.auth);
-  const redirectUri = native
-    ? `${DEFAULT_ELECTRON_PROTOCOL}://auth/callback`
+  const redirectUri = window.auth
+    ? await window.auth.getOAuthRedirectUri()
     : `${window.location.origin}/`;
   const authorization = await run(
     client.beginGoogle({
@@ -89,6 +89,11 @@ export const completeGoogle = async (callbackUrl: string) => {
     window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
   }
   return true;
+};
+
+export const reportGoogleAuthError = (cause: unknown) => {
+  const message = cause instanceof Error ? cause.message : "Google sign-in could not be completed.";
+  window.dispatchEvent(new CustomEvent(GOOGLE_AUTH_ERROR_EVENT, { detail: message }));
 };
 
 export const currentAuthClient = currentClient;

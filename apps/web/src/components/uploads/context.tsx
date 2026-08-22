@@ -141,11 +141,17 @@ function UploadProvider({
       });
       return;
     }
+    const generalCategory =
+      categories.find((category) => category.id === "general") ?? categories[0];
+    if (!generalCategory) {
+      toastManager.add({
+        title: "Create a category before importing inventory.",
+        type: "error",
+      });
+      return;
+    }
     setPhase("syncing");
     try {
-      const generalCategory =
-        categories.find((category) => category.id === "general") ?? categories[0];
-      if (!generalCategory) throw new Error("Create a category before importing inventory.");
       await store.importInventory({
         categoryId: generalCategory.id,
         lines: changes.map((change) => ({
