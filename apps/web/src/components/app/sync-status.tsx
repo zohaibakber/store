@@ -47,7 +47,6 @@ export function SyncStatusIndicator() {
     } catch {
       await refresh().catch(() => undefined);
     }
-    window.dispatchEvent(new Event("offline-store:sync"));
   };
 
   const connectionLabel = isSyncing ? "Syncing…" : isOnline ? "Online" : "Offline";

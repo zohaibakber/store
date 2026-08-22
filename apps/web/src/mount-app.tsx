@@ -8,6 +8,7 @@ import type { InitialAuth } from "@/lib/auth";
 import { StoreProvider, type Store } from "@/lib/store";
 
 import { getRouter } from "./router";
+import { SyncDataRefresh } from "./sync-data-refresh";
 
 export const mountApp = (input: {
   readonly store: Store;
@@ -26,6 +27,7 @@ export const mountApp = (input: {
   });
   const app = (
     <StoreProvider store={input.store}>
+      <SyncDataRefresh refreshRoutes={() => router.invalidate()} store={input.store} />
       <RouterProvider router={router} />
     </StoreProvider>
   );
