@@ -8,6 +8,7 @@ import { authBaseUrl, completeGoogle } from "@/lib/first-party-auth";
 import { startWebWorkspace } from "./host";
 import { browserHostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
+import { withSessionBackgroundSync } from "./session-background-sync";
 
 const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot): boolean =>
   snapshot.status === "authenticated" && snapshot.activeOrganization != null;
@@ -27,7 +28,13 @@ export const startWeb = async () => {
     allowsGuestWorkspace: access.allowsGuestWorkspace,
   });
   if (import.meta.hot) import.meta.hot.dispose(() => void workspace.dispose());
-  setAuthSessionBridge(workspace.bridge);
+  setAuthSessionBridge(
+    withSessionBackgroundSync({
+      bridge: workspace.bridge,
+      schedule: afterFirstPaint,
+      startSync: workspace.startBackgroundSync,
+    }),
+  );
 
   const authSnapshot = await workspace.resolveAuth();
   await completeGoogle(globalThis.location.href).catch(() => false);
@@ -43,9 +50,6 @@ export const startWeb = async () => {
       history,
       access,
     });
-    if (workspace.hasStore()) {
-      afterFirstPaint(() => void workspace.startBackgroundSync().catch(() => undefined));
-    }
     return;
   }
 
