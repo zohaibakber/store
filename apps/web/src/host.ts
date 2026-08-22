@@ -19,6 +19,7 @@ import type { AuthSessionBridge } from "@/lib/auth";
 import type { Store } from "@/lib/store";
 
 import { WebAuthBroker } from "./auth";
+import { makeReplayChannel } from "./replay-channel";
 import { openBrowserSyncSocket } from "./sync-socket";
 
 const DEVICE_ID_KEY = "tabaaq-web-device-id";
@@ -119,7 +120,7 @@ export const startWebWorkspace = (
   authBaseUrl: string,
   options: { readonly allowsGuestWorkspace: boolean } = { allowsGuestWorkspace: false },
 ): WebWorkspace => {
-  const snapshotListeners = new Set<(snapshot: WorkspaceSnapshot) => void>();
+  const snapshots = makeReplayChannel<WorkspaceSnapshot>();
   const syncListeners = new Set<(status: SyncStatus) => void>();
   const auth = new WebAuthBroker(baseUrl, authBaseUrl);
   const workspace = new AuthenticatedWorkspace({
@@ -135,9 +136,7 @@ export const startWebWorkspace = (
     deviceId: loadDeviceId(),
     allowsGuestWorkspace: options.allowsGuestWorkspace,
     events: {
-      publishSnapshot: (snapshot) => {
-        for (const listener of snapshotListeners) listener(snapshot);
-      },
+      publishSnapshot: snapshots.publish,
       publishSyncStatus: (status) => {
         for (const listener of syncListeners) listener(status);
       },
@@ -157,10 +156,7 @@ export const startWebWorkspace = (
       organize: (command) =>
         organizeOrganization((pathname, init) => workspace.authRequest(pathname, init), command),
       apiRequest: (pathname, init) => workspace.request(pathname, init),
-      onSessionChange: (listener) => {
-        snapshotListeners.add(listener);
-        return () => snapshotListeners.delete(listener);
-      },
+      onSessionChange: snapshots.subscribe,
     },
     store: makeOfflineStoreApi({
       run: (effect) => workspace.runStore(effect),
@@ -170,13 +166,7 @@ export const startWebWorkspace = (
       },
     }),
     resolveAuth: () => workspace.resolveAuth(),
-    activateWorkspace: async () => {
-      const snapshot = await workspace.activateResolved();
-      // React may subscribe onSessionChange after the first publish (useEffect).
-      // Re-deliver so a Loading AuthProvider never stays stuck on #boot-shell→AppLoading.
-      for (const listener of snapshotListeners) listener(workspace.snapshot);
-      return snapshot;
-    },
+    activateWorkspace: () => workspace.activateResolved(),
     hasStore: () => workspace.hasStore,
     startBackgroundSync: () => workspace.startSync(),
     dispose: () => workspace.dispose(),

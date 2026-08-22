@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
 const authDatabaseSource = `${repoRoot}packages/db/src/auth/infra.ts`;
+const organizationStoreSource = `${repoRoot}apps/server/src/sync/organization-store.ts`;
 
 const bundleWorker = async () => {
   const bundle = await rolldown({
@@ -48,6 +49,14 @@ describe("API Worker bundle", () => {
     expect(source).not.toMatch(/clerk/iu);
     expect(source).toContain("AUTH_JWT_PUBLIC_JWK");
     expect(source).toContain("AuthVerificationConfig");
+  });
+
+  it("keeps the sync runtime alive for the Durable Object activation", () => {
+    // Alchemy closes the Effect scope used to construct the object before its
+    // first request. A finalizer in that scope disposes the runtime immediately.
+    const source = readFileSync(organizationStoreSource, "utf8");
+    expect(source).not.toMatch(/makeSyncRuntime[\s\S]{0,200}Effect\.addFinalizer/u);
+    expect(source).not.toContain("disposeSyncRuntime");
   });
 
   it("does not require process.env production hostnames at Worker runtime", async () => {

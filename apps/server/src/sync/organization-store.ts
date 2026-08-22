@@ -18,12 +18,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
-import {
-  disposeSyncRuntime,
-  makeSyncRuntime,
-  syncRuntimeExchange,
-  syncRuntimeHeadCursor,
-} from "./runtime";
+import { makeSyncRuntime, syncRuntimeExchange, syncRuntimeHeadCursor } from "./runtime";
 
 const decodeAttachment = Schema.decodeUnknownOption(SyncLiveAttachment);
 const encodeLiveEvent = Schema.encodeSync(SyncLiveEvent);
@@ -79,7 +74,6 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
     return Effect.gen(function* () {
       yield* Effect.void;
       const runtime = makeSyncRuntime(state.raw.storage);
-      yield* Effect.addFinalizer(() => disposeSyncRuntime(runtime));
 
       const broadcast = Effect.fn("OrganizationStore.broadcast")(function* (
         headCursor: number,

@@ -10,7 +10,6 @@ import { syncHeadProgram, syncProgram, syncServiceLayer, type SyncActor } from "
 export interface SyncRuntime {
   readonly runSync: (actor: SyncActor, request: SyncRequest) => Promise<SyncResponse>;
   readonly headCursor: (organizationId: string) => Promise<number>;
-  readonly dispose: () => Promise<void>;
 }
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -40,15 +39,7 @@ export const syncRuntimeExchange = (
     },
   });
 
-export const disposeSyncRuntime = (runtime: Pick<SyncRuntime, "dispose">): Effect.Effect<void> =>
-  Effect.tryPromise({
-    try: () => runtime.dispose(),
-    catch: (cause) => cause,
-  }).pipe(
-    Effect.tapError((cause) => Effect.logError("Sync runtime disposal failed", cause)),
-    Effect.ignore,
-  );
-
+/** One runtime per Durable Object activation. Cloudflare owns that activation's lifetime. */
 export const makeSyncRuntime = (storage: DurableObjectStorage): SyncRuntime => {
   const runtime = ManagedRuntime.make(
     syncServiceLayer.pipe(Layer.provide(syncDatabaseLayer(storage))),
@@ -57,6 +48,5 @@ export const makeSyncRuntime = (storage: DurableObjectStorage): SyncRuntime => {
   return {
     runSync: (actor, request) => runtime.runPromise(syncProgram(actor, request)),
     headCursor: (organizationId) => runtime.runPromise(syncHeadProgram(organizationId)),
-    dispose: () => runtime.dispose(),
   };
 };
