@@ -118,6 +118,42 @@ it.effect("retries pending release metadata once and keeps network failures quie
   }),
 );
 
+it.effect("interrupts scheduled retries and racing provider events on disposal", () =>
+  Effect.gen(function* () {
+    const scheduled = fixture();
+    const scheduledWorkflow = yield* makeUpdaterWorkflow(
+      scheduled.provider,
+      (event) => scheduled.events.push(event),
+      config,
+    );
+
+    scheduled.emit({
+      type: "error",
+      error: new Error("HttpError: 404 cannot find latest-linux.yml"),
+    });
+    yield* Effect.yieldNow;
+    assert.strictEqual(scheduled.events.length, 1);
+    yield* scheduledWorkflow.dispose;
+    yield* TestClock.adjust(config.pendingReleaseRetryDelay);
+    assert.strictEqual(scheduled.counts().checks, 0);
+
+    const racing = fixture();
+    const racingWorkflow = yield* makeUpdaterWorkflow(
+      racing.provider,
+      (event) => racing.events.push(event),
+      config,
+    );
+    racing.emit({
+      type: "error",
+      error: new Error("HttpError: 404 cannot find latest-linux.yml"),
+    });
+    yield* racingWorkflow.dispose;
+    yield* TestClock.adjust(config.pendingReleaseRetryDelay);
+    assert.strictEqual(racing.counts().checks, 0);
+    assert.strictEqual(racing.isUnsubscribed(), true);
+  }),
+);
+
 it.effect("serializes downloads and releases provider resources on disposal", () =>
   Effect.gen(function* () {
     let finishDownload: (() => void) | undefined;

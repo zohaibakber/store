@@ -7,6 +7,7 @@ import {
 } from "@store/contracts";
 import { batches, syncChangeLog, syncInbox } from "@store/db/do/schema";
 import { and, eq } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { applyChange } from "./apply-change";
@@ -59,6 +60,7 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
   actor: SyncActor,
   operation: SyncOperation,
 ) {
+  const now = yield* Clock.currentTimeMillis;
   const [sequenceReceipt] = yield* tx
     .select({ operationId: syncInbox.operationId })
     .from(syncInbox)
@@ -88,7 +90,7 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
       clientSequence: operation.clientSequence,
       payloadHash: operation.payloadHash,
       appliedCursor: 0,
-      receivedAt: Date.now(),
+      receivedAt: now,
     })
     .onConflictDoNothing({ target: [syncInbox.organizationId, syncInbox.operationId] })
     .returning({ operationId: syncInbox.operationId });
@@ -152,7 +154,7 @@ export const applyOperation = Effect.fn("SyncDatabase.applyOperation")(function*
         entityId: canonicalChange.entityId,
         rowVersion: canonicalChange.rowVersion,
         payload: canonicalChange,
-        changedAt: Date.now(),
+        changedAt: now,
       })
       .returning({ cursor: syncChangeLog.cursor });
     if (!logged)

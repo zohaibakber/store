@@ -74,7 +74,19 @@ const JwtHeader = Schema.Struct({
 export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
   reason: Schema.Literals(["Malformed", "InvalidSignature", "Expired", "InvalidClaims", "NoKey"]),
   message: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
 }) {}
+
+const decodeBase64Url = (value: string) =>
+  Effect.try({
+    try: () => base64UrlDecode(value),
+    catch: (cause) =>
+      new JwtError({
+        reason: "Malformed",
+        message: "The access token is malformed.",
+        cause,
+      }),
+  });
 
 const decodeJson = <A>(schema: Schema.ConstraintDecoder<A>, bytes: Uint8Array) =>
   Effect.try({
@@ -99,6 +111,7 @@ const importSigningKey = (jwk: JsonWebKey) =>
       new JwtError({
         reason: "NoKey",
         message: `The JWT signing key could not be imported: ${String(cause)}`,
+        cause,
       }),
   });
 
@@ -112,6 +125,7 @@ const importVerificationKey = (jwk: JsonWebKey) =>
       new JwtError({
         reason: "NoKey",
         message: `The JWT verification key could not be imported: ${String(cause)}`,
+        cause,
       }),
   });
 
@@ -136,6 +150,7 @@ export interface IssuedAccessToken {
 export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   input: IssueAccessTokenInput,
   configuration: JwtConfiguration,
+  importedKey?: CryptoKey,
 ) {
   if (!configuration.privateJwk) {
     return yield* new JwtError({
@@ -165,7 +180,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   const encodedHeader = base64UrlEncode(textEncoder.encode(JSON.stringify(header)));
   const encodedPayload = base64UrlEncode(textEncoder.encode(JSON.stringify(payload)));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const key = yield* importSigningKey(configuration.privateJwk);
+  const key = importedKey ?? (yield* importSigningKey(configuration.privateJwk));
   const signature = yield* Effect.tryPromise({
     try: () =>
       crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, textEncoder.encode(signingInput)),
@@ -173,6 +188,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
       new JwtError({
         reason: "NoKey",
         message: `The access token could not be signed: ${String(cause)}`,
+        cause,
       }),
   });
   return {
@@ -185,6 +201,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   token: string,
   configuration: JwtConfiguration,
   now = Date.now(),
+  importedKey?: CryptoKey,
 ) {
   const segments = token.split(".");
   if (segments.length !== 3 || !segments[0] || !segments[1] || !segments[2]) {
@@ -194,26 +211,28 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
     });
   }
   const [encodedHeader, encodedPayload, encodedSignature] = segments;
-  const header = yield* decodeJson(JwtHeader, base64UrlDecode(encodedHeader));
+  const header = yield* decodeJson(JwtHeader, yield* decodeBase64Url(encodedHeader));
   if (header.alg !== "ES256") {
     return yield* new JwtError({
       reason: "Malformed",
       message: "The access token algorithm is not accepted.",
     });
   }
-  const key = yield* importVerificationKey(configuration.publicJwk);
+  const key = importedKey ?? (yield* importVerificationKey(configuration.publicJwk));
+  const signature = yield* decodeBase64Url(encodedSignature);
   const valid = yield* Effect.tryPromise({
     try: () =>
       crypto.subtle.verify(
         { name: "ECDSA", hash: "SHA-256" },
         key,
-        base64UrlDecode(encodedSignature),
+        signature,
         textEncoder.encode(`${encodedHeader}.${encodedPayload}`),
       ),
-    catch: () =>
+    catch: (cause) =>
       new JwtError({
         reason: "InvalidSignature",
         message: "The access token signature is invalid.",
+        cause,
       }),
   });
   if (!valid) {
@@ -222,7 +241,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
       message: "The access token signature is invalid.",
     });
   }
-  const payload = yield* decodeJson(JwtPayload, base64UrlDecode(encodedPayload));
+  const payload = yield* decodeJson(JwtPayload, yield* decodeBase64Url(encodedPayload));
   if (payload.iss !== configuration.issuer || payload.aud !== configuration.audience) {
     return yield* new JwtError({
       reason: "InvalidClaims",
@@ -260,11 +279,17 @@ export class AccessTokenService extends Context.Service<
 >()("@store/auth/AccessToken") {}
 
 export const accessTokenLayer = (configuration: JwtConfiguration) =>
-  Layer.succeed(
+  Layer.effect(
     AccessTokenService,
-    AccessTokenService.of({
-      issue: (input) => issueAccessToken(input, configuration),
-      verify: (token, now) => verifyAccessToken(token, configuration, now),
+    Effect.gen(function* () {
+      const verificationKey = yield* importVerificationKey(configuration.publicJwk);
+      const signingKey = configuration.privateJwk
+        ? yield* importSigningKey(configuration.privateJwk)
+        : undefined;
+      return AccessTokenService.of({
+        issue: (input) => issueAccessToken(input, configuration, signingKey),
+        verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKey),
+      });
     }),
   );
 

@@ -117,6 +117,8 @@ test("publishes an authenticated workspace only after its store is ready", async
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
+  expect(events).toEqual(["open:a", "subscribe:a", "publish:a"]);
+  await workspace.startSync();
   expect(events).toEqual(["open:a", "subscribe:a", "publish:a", "sync:a"]);
 
   await workspace.dispose();
@@ -183,7 +185,7 @@ test("falls back to the locked workspace when organization activation fails", as
   await workspace.dispose();
 });
 
-test("publishes the authenticated workspace when its initial sync fails", async () => {
+test("publishes the authenticated workspace before a host-started sync fails", async () => {
   const events: string[] = [];
   const stores: WorkspaceStoreAdapter = {
     open: async () => ({
@@ -202,6 +204,8 @@ test("publishes the authenticated workspace when its initial sync fails", async 
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
+  expect(events).toEqual(["publish:a"]);
+  await expect(workspace.startSync()).rejects.toThrow("Network unavailable");
   expect(events).toEqual(["publish:a", "sync"]);
 
   await workspace.dispose();
@@ -277,7 +281,7 @@ test("resolveAuth defers store open for authenticated sessions", async () => {
     status: "authenticated",
     activeOrganization: { id: "a" },
   });
-  expect(events).toEqual(["open:a", "subscribe:a", "publish:a", "sync:a"]);
+  expect(events).toEqual(["open:a", "subscribe:a", "publish:a"]);
   expect(workspace.hasStore).toBe(true);
 
   await workspace.dispose();

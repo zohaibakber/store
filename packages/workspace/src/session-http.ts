@@ -2,7 +2,7 @@ import { TokenSet, type TokenSet as TokenSetType } from "@store/auth";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { JsonApiResponse, JsonRequestInit } from "./workspace";
+import type { JsonApiResponse, JsonRequestInit, JsonRequestPayload } from "./workspace";
 
 /** Refresh when the access token is within this many ms of expiry. */
 export const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
@@ -41,9 +41,9 @@ export interface SessionHttpClientOptions {
   readonly fetch: SessionFetch;
   /**
    * Platform refresh (cookie credentials vs refresh-token body). Must update
-   * `tokens` on success and return `null` on expected refresh failure (do not
-   * throw for HTTP 401/403/non-OK — callers share one failure model). Concurrent
-   * callers share one in-flight refresh.
+   * `tokens` on success and return `null` on explicit authentication rejection.
+   * Transient/network/server failures must throw so callers preserve credentials.
+   * Concurrent callers share one in-flight refresh.
    */
   readonly refreshSession: () => Promise<TokenSetType | null>;
   /** Decide whether `refreshSession` should run for the current tokens. */
@@ -74,14 +74,16 @@ export const cookieSessionNeedsRefresh = (tokens: TokenSetType | null, force: bo
 export const refreshTokenNeedsRefresh = (tokens: TokenSetType | null, force = false) =>
   !!tokens?.refreshToken && (force || !isAccessTokenFresh(tokens));
 
-export const serializeRequestBody = (
-  requestBody: unknown,
-): {
+export interface SerializedRequestBody {
   readonly body: BodyInit | null | undefined;
   readonly setJsonContentType: boolean;
-} => {
+}
+
+export const serializeRequestBody = (
+  requestBody: JsonRequestPayload | undefined,
+): SerializedRequestBody => {
   if (requestBody === undefined || requestBody === null || requestBody instanceof FormData) {
-    return { body: requestBody as BodyInit | null | undefined, setJsonContentType: false };
+    return { body: requestBody, setJsonContentType: false };
   }
   if (Schema.is(Schema.String)(requestBody)) {
     return { body: requestBody, setJsonContentType: false };
@@ -89,15 +91,17 @@ export const serializeRequestBody = (
   return { body: JSON.stringify(requestBody), setJsonContentType: true };
 };
 
-export const requestErrorFromPayload = (payload: unknown, status: number): RequestError => {
+export const requestErrorFromPayload = (
+  payload: JsonApiResponse | null,
+  status: number,
+): RequestError => {
   const failure = Schema.decodeUnknownOption(RequestFailure)(payload).pipe(Option.getOrNull);
   const nested = failure?.error;
   const message =
     failure?.message ??
     (Schema.is(Schema.String)(nested) ? nested : nested?.message) ??
     `Request failed (${status})`;
-  const code =
-    nested !== undefined && !Schema.is(Schema.String)(nested) ? nested.code : undefined;
+  const code = nested !== undefined && !Schema.is(Schema.String)(nested) ? nested.code : undefined;
   if (code !== undefined) return new RequestError({ message, status, code });
   return new RequestError({ message, status });
 };
@@ -180,6 +184,30 @@ export class SessionHttpClient {
     init?: JsonRequestInit,
   ): Promise<JsonApiResponse> {
     await this.ensureFreshAccess();
+    let response = await this.#send(baseUrl, pathname, init);
+    if (response.status === 401) {
+      const refreshed = await this.ensureFreshAccess(true);
+      if (refreshed) response = await this.#send(baseUrl, pathname, init);
+    }
+
+    const parsed = await response
+      .json()
+      .then(Schema.decodeUnknownOption(Schema.Json))
+      .catch(() => Option.none<typeof Schema.Json.Type>());
+    if (!response.ok) {
+      throw requestErrorFromPayload(Option.getOrNull(parsed), response.status);
+    }
+    if (Option.isNone(parsed)) {
+      throw new RequestError({
+        message: "The server returned an invalid JSON response.",
+        status: response.status,
+        code: "INVALID_JSON_RESPONSE",
+      });
+    }
+    return parsed.value;
+  }
+
+  async #send(baseUrl: string, pathname: string, init?: JsonRequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
     const extra = this.#requestHeaders?.();
     if (extra) {
@@ -191,17 +219,13 @@ export class SessionHttpClient {
     if (tokens) headers.set("authorization", `Bearer ${tokens.accessToken}`);
     const { body, setJsonContentType } = serializeRequestBody(init?.body);
     if (setJsonContentType) headers.set("content-type", "application/json");
-    const response = await this.#fetch(`${baseUrl}${pathname}`, {
+    return this.#fetch(`${baseUrl}${pathname}`, {
       ...init,
       body,
       credentials: "omit",
       headers,
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) throw requestErrorFromPayload(payload, response.status);
-    return payload as JsonApiResponse;
   }
 }
 
-export const decodeTokenSet = (payload: unknown): TokenSetType =>
-  Schema.decodeUnknownSync(TokenSet)(payload);
+export const decodeTokenSet = Schema.decodeUnknownSync(TokenSet);

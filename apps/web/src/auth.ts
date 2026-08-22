@@ -1,18 +1,22 @@
 import type { TokenSet as TokenSetType } from "@store/auth";
 import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
+  adoptSessionTokens,
+  loadSessionSnapshot,
+  renewSessionSnapshot,
+  type SessionSnapshotHooks,
+} from "@store/workspace/session-broker";
+import {
   MemoryTokenStore,
   RequestError,
   SessionHttpClient,
-  adoptSessionTokens,
   cookieSessionNeedsRefresh,
   decodeTokenSet,
-  loadSessionSnapshot,
-  renewSessionSnapshot,
-  type JsonRequestInit,
-  type SessionSnapshotHooks,
-  type WorkspaceAuthAdapter,
-} from "@store/workspace";
+  requestErrorFromPayload,
+} from "@store/workspace/session-http";
+import type { JsonRequestInit, WorkspaceAuthAdapter } from "@store/workspace/workspace";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 export { RequestError };
 
@@ -98,7 +102,14 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
         markSessionExpected();
         return loadSessionSnapshot(this.#hooks);
       }
-    } catch {}
+    } catch (cause) {
+      return this.#hooks.publish(
+        unauthenticated(
+          navigatorOnline(),
+          cause instanceof Error ? cause.message : "Could not refresh the session.",
+        ),
+      );
+    }
     clearSessionExpected();
     return this.#hooks.publish(unauthenticated(navigatorOnline()));
   }
@@ -149,8 +160,14 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       if (response.status === 401 || response.status === 403) {
         this.#tokens.set(null);
         clearSessionExpected();
+        return null;
       }
-      return null;
+      const payload = await response
+        .json()
+        .then(Schema.decodeUnknownOption(Schema.Json))
+        .then(Option.getOrNull)
+        .catch(() => null);
+      throw requestErrorFromPayload(payload, response.status);
     }
     const next = decodeTokenSet(await response.json());
     this.#tokens.set(next);

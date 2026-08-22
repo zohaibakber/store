@@ -56,7 +56,12 @@ export const scanCameraStatus = (
   return "ready";
 };
 
-export const scanSheetTitle = (phase: ScanPhase): { title: string; subtitle: string } => {
+export interface ScanSheetCopy {
+  readonly title: string;
+  readonly subtitle: string;
+}
+
+export const scanSheetTitle = (phase: ScanPhase): ScanSheetCopy => {
   if (phase.type === "reviewProduct") {
     return {
       title: "Review product",

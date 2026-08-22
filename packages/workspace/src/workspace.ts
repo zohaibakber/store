@@ -12,8 +12,29 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
-export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: unknown };
-export type JsonApiResponse = string | number | boolean | null | JsonApiObject | JsonApiResponse[];
+/** JSON-serializable values accepted at the HTTP boundary. */
+export type JsonSerializable =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonSerializable[]
+  | { readonly [key: string]: JsonSerializable };
+
+/**
+ * Bodies session HTTP clients accept: JSON-serializable payloads (stringified
+ * before send) plus platform bodies passed through verbatim.
+ */
+export type JsonRequestPayload = JsonSerializable | FormData;
+
+export type JsonRequestInit = Omit<RequestInit, "body"> & { body?: JsonRequestPayload };
+export type JsonApiResponse =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonApiObject
+  | readonly JsonApiResponse[];
 export interface JsonApiObject {
   readonly [key: string]: JsonApiResponse;
 }
@@ -201,6 +222,13 @@ export class AuthenticatedWorkspace {
     return this.#auth.authRequest(pathname, init);
   }
 
+  /** Host-owned background start; call only after the first UI frame is visible. */
+  async startSync(): Promise<void> {
+    const store = this.#store;
+    if (!store || this.#snapshot.status !== "authenticated" || !this.#snapshot.isOnline) return;
+    await store.sync();
+  }
+
   dispose(): Promise<void> {
     return this.#serialize(() => this.#disposeStore());
   }
@@ -261,9 +289,6 @@ export class AuthenticatedWorkspace {
           target._tag === "Authenticated" ? null : (snapshot.workspaceError ?? null),
         ),
       );
-      if (target._tag === "Authenticated" && snapshot.isOnline) {
-        void store.sync().catch(() => undefined);
-      }
       return published;
     } catch (cause) {
       if (isGuestWorkspaceRefused(cause)) {
@@ -314,6 +339,8 @@ export class AuthenticatedWorkspace {
   }
 
   #serialize<A>(run: () => Promise<A>): Promise<A> {
-    return Effect.runPromise(this.#lock.withPermit(Effect.promise(() => run())));
+    return Effect.runPromise(
+      this.#lock.withPermit(Effect.tryPromise({ try: run, catch: (cause) => cause })),
+    );
   }
 }

@@ -1,4 +1,4 @@
-import { SyncRequest, SyncResponse } from "@store/contracts";
+import { exactAcknowledgedOperationIds, SyncRequest, SyncResponse } from "@store/contracts";
 import {
   connectSyncSocketSession,
   makeSyncSocketSession,
@@ -241,10 +241,7 @@ const exchangeInventoryOnce = async (
           exchangeTimeoutMillis: REQUEST_TIMEOUT_MS,
         });
         yield* connectSyncSocketSession(session, { connectTimeoutMillis: REQUEST_TIMEOUT_MS });
-        return yield* Effect.tryPromise({
-          try: () => drainInventory(access, sessionDeviceId, session.exchange),
-          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-        });
+        return yield* drainInventory(access, sessionDeviceId, session.exchange);
       }),
     ),
   );
@@ -270,41 +267,54 @@ const exchangeInventory = async (access: InventoryAccess): Promise<InventoryStat
   }
 };
 
-const drainInventory = async (
+const inventoryPromise = <A>(operation: string, run: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) =>
+      cause instanceof Error ? cause : new Error(`${operation} failed: ${String(cause)}`),
+  });
+
+const drainInventory = Effect.fn("MobileInventory.drain")(function* (
   access: InventoryAccess,
   sessionDeviceId: string,
   exchange: (request: SyncRequest) => Effect.Effect<SyncResponse, SyncTransportError>,
-): Promise<InventoryState> => {
+): Effect.fn.Return<InventoryState, Error | SyncTransportError> {
   let hasMore = true;
   let pageCount = 0;
   let conflictMessage: string | null = null;
   const { organizationId, userId, withLock } = access;
 
   while (hasMore) {
-    if (pageCount >= MAX_SYNC_PAGES) throw new Error("Inventory sync returned too many pages.");
-    const prepared = await withLock(async () => {
-      const state = await loadInventoryState(organizationId);
-      if (state.mutationState) {
-        const migrated = await reattributePendingOperations(
-          state.mutationState.pendingOperations,
-          userId,
-          payloadHash,
-        );
-        if (migrated.changed) {
-          state.mutationState.pendingOperations = migrated.operations;
-          await persistMutationState(state.mutationState);
+    if (pageCount >= MAX_SYNC_PAGES)
+      return yield* Effect.fail(new Error("Inventory sync returned too many pages."));
+    const prepared = yield* inventoryPromise("prepare inventory sync page", () =>
+      withLock(async () => {
+        const state = await loadInventoryState(organizationId);
+        if (state.mutationState) {
+          const migrated = await reattributePendingOperations(
+            state.mutationState.pendingOperations,
+            userId,
+            payloadHash,
+          );
+          if (migrated.changed) {
+            state.mutationState.pendingOperations = migrated.operations;
+            await persistMutationState(state.mutationState);
+          }
         }
-      }
-      const outgoing = selectPendingOperations(state.mutationState?.pendingOperations ?? []);
-      return { cursor: state.cursor, outgoing };
-    });
+        const outgoing = selectPendingOperations(state.mutationState?.pendingOperations ?? []);
+        return { cursor: state.cursor, outgoing };
+      }),
+    );
     const { cursor, outgoing } = prepared;
-    let page: SyncResponse;
-    try {
-      page = await Effect.runPromise(
-        requestPage(exchange, organizationId, sessionDeviceId, cursor, outgoing),
-      );
-    } catch (cause) {
+    const result = yield* requestPage(
+      exchange,
+      organizationId,
+      sessionDeviceId,
+      cursor,
+      outgoing,
+    ).pipe(Effect.result);
+    if (result._tag === "Failure") {
+      const cause = result.failure;
       const conflictedOperation = outgoing[0];
       if (
         cause instanceof SyncTransportError &&
@@ -312,49 +322,59 @@ const drainInventory = async (
         conflictedOperation &&
         isStockAdjustment(conflictedOperation)
       ) {
-        await withLock(async () => {
-          const state = await loadInventoryState(organizationId);
-          if (!state.mutationState) return;
-          state.mutationState.pendingOperations = state.mutationState.pendingOperations.filter(
-            (operation) => operation.operationId !== conflictedOperation.operationId,
-          );
-          await persistMutationState(state.mutationState);
-        });
+        yield* inventoryPromise("resolve inventory conflict", () =>
+          withLock(async () => {
+            const state = await loadInventoryState(organizationId);
+            if (!state.mutationState) return;
+            state.mutationState.pendingOperations = state.mutationState.pendingOperations.filter(
+              (operation) => operation.operationId !== conflictedOperation.operationId,
+            );
+            await persistMutationState(state.mutationState);
+          }),
+        );
         conflictMessage = "Stock changed on another device. Review the count and update it again.";
         pageCount += 1;
         hasMore = true;
         continue;
       }
-      throw cause;
+      return yield* Effect.fail(cause);
     }
-    assertSyncProgress(cursor, page.nextCursor, page.hasMore);
+    const page = result.success;
+    yield* Effect.try(() => assertSyncProgress(cursor, page.nextCursor, page.hasMore));
 
-    const acknowledged = new Set(page.acknowledgements.map((entry) => entry.operationId));
-    if (outgoing.some((operation) => !acknowledged.has(operation.operationId)))
-      throw new Error("The inventory server did not acknowledge a submitted change.");
+    const acknowledgedOperationIds = exactAcknowledgedOperationIds(outgoing, page.acknowledgements);
+    if (!acknowledgedOperationIds)
+      return yield* Effect.fail(
+        new Error("The inventory server acknowledgements did not match submitted changes."),
+      );
+    const acknowledged = new Set(acknowledgedOperationIds);
 
-    hasMore = await withLock(async () => {
-      const state = await loadInventoryState(organizationId);
-      if (state.mutationState && acknowledged.size > 0) {
-        state.mutationState.pendingOperations = state.mutationState.pendingOperations.filter(
-          (operation) => !acknowledged.has(operation.operationId),
-        );
-        await persistMutationState(state.mutationState);
-      }
-      applyProductSyncChanges(state.maps, page.changes);
-      state.cursor = Math.max(state.cursor, page.nextCursor);
-      for (const operation of state.mutationState?.pendingOperations ?? [])
-        applyLocalChanges(state, operation.changes, operation.occurredAt);
-      await persistInventoryCache(state);
-      return page.hasMore || (state.mutationState?.pendingOperations.length ?? 0) > 0;
-    });
+    hasMore = yield* inventoryPromise("apply inventory sync page", () =>
+      withLock(async () => {
+        const state = await loadInventoryState(organizationId);
+        if (state.mutationState && acknowledged.size > 0) {
+          state.mutationState.pendingOperations = state.mutationState.pendingOperations.filter(
+            (operation) => !acknowledged.has(operation.operationId),
+          );
+          await persistMutationState(state.mutationState);
+        }
+        applyProductSyncChanges(state.maps, page.changes);
+        state.cursor = Math.max(state.cursor, page.nextCursor);
+        for (const operation of state.mutationState?.pendingOperations ?? [])
+          applyLocalChanges(state, operation.changes, operation.occurredAt);
+        await persistInventoryCache(state);
+        return page.hasMore || (state.mutationState?.pendingOperations.length ?? 0) > 0;
+      }),
+    );
     pageCount += 1;
   }
 
-  const state = await withLock(() => loadInventoryState(organizationId));
-  if (conflictMessage) throw new Error(conflictMessage);
+  const state = yield* inventoryPromise("load synchronized inventory", () =>
+    withLock(() => loadInventoryState(organizationId)),
+  );
+  if (conflictMessage) return yield* Effect.fail(new Error(conflictMessage));
   return state;
-};
+});
 
 const persistInventoryCache = (state: InventoryState) =>
   Storage.setItem(

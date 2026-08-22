@@ -2,7 +2,7 @@ import {
   InvoiceExtraction,
   type InvoiceExtractionLine,
   invoiceExtractionJsonSchema,
-} from "@store/contracts";
+} from "@store/contracts/server-api.schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,6 +60,7 @@ export interface InvoiceAiClient {
       readonly content: string;
     }>;
     readonly jsonSchema: object;
+    readonly signal: AbortSignal;
   }) => Promise<InvoiceModelOutput>;
 }
 
@@ -151,14 +152,8 @@ const isSuccess = (
 ): document is { readonly kind: "ok"; readonly name: string; readonly data: string } =>
   document.kind === "ok";
 
-const documentsToMarkdown = async (ai: InvoiceAiClient, files: ReadonlyArray<File>) => {
-  const converted = await ai.toMarkdown(files.map((file) => ({ name: file.name, blob: file })));
+const documentsToMarkdown = (converted: ReadonlyArray<ConvertedDocument>) => {
   const failures = converted.filter(isFailure);
-  for (const failure of failures)
-    console.error("Invoice extraction: attachment could not be converted", {
-      name: failure.name,
-      error: failure.error,
-    });
   if (failures.length === converted.length) {
     const [failure] = failures;
     throw new Error(
@@ -207,21 +202,30 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
             lines: csvLines,
           });
 
-        const documents = yield* Effect.tryPromise(() => documentsToMarkdown(config.ai, aiFiles));
+        const converted = yield* Effect.tryPromise(() =>
+          config.ai.toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file }))),
+        ).pipe(Effect.timeout("15 seconds"));
+        for (const failure of converted.filter(isFailure)) {
+          yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
+            Effect.annotateLogs({ name: failure.name, error: failure.error }),
+          );
+        }
+        const documents = yield* Effect.try(() => documentsToMarkdown(converted));
         if (!documents.length)
           return yield* Effect.fail(
             new Error("No readable text could be extracted from the attachments."),
           );
 
-        const raw = yield* Effect.tryPromise(() =>
+        const raw = yield* Effect.tryPromise((signal) =>
           config.ai.generate({
             messages: [
               { role: "system", content: instructions },
               { role: "user", content: documents.join("\n\n") },
             ],
             jsonSchema: invoiceExtractionJsonSchema,
+            signal,
           }),
-        );
+        ).pipe(Effect.timeout("30 seconds"));
         const output = yield* Effect.try(() => parseModelOutput(raw));
         const extracted = yield* Schema.decodeUnknownEffect(InvoiceExtraction)(
           normalizeExtraction(output),

@@ -24,9 +24,9 @@ import {
   useProductStatus,
 } from "@/features/products/products-provider";
 import { scrollInset } from "@/hooks/use-overlay-insets";
-import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
 import { formatPrice } from "@/lib/inventory-snapshot";
 import type { MobileProduct } from "@/lib/inventory-types";
+import { filterCatalog, STOCK_FILTERS, type StockFilter } from "@/lib/product-catalog";
 import { useColors } from "@/theme/colors";
 
 const keyExtractor = (item: MobileProduct) => item.id;

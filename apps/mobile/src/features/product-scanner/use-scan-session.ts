@@ -1,6 +1,6 @@
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type ScrollView } from "react-native";
-import { useFocusEffect } from "expo-router";
 
 import { inferProductFromImage } from "@/features/product-scanner/firebase-scan";
 import { expiryInputValue, expiryTimestamp } from "@/features/product-scanner/local-parser";
@@ -24,7 +24,7 @@ import {
   useProductData,
   useProductStatus,
 } from "@/features/products/products-provider";
-import { useBatchWrites } from "@/features/products/use-batch-writes";
+import { useBatchWrites, type QuantityInput } from "@/features/products/use-batch-writes";
 import { authErrorMessage } from "@/lib/auth-client";
 import { hapticSuccess } from "@/lib/haptics";
 import { createInventoryEntityId } from "@/lib/inventory-session";
@@ -319,15 +319,17 @@ export function useScanSession() {
     }
     setError(null);
     setNotice(null);
-    const result = await writeBatchQuantity({
+    const quantityInput: QuantityInput = {
       productId: activeProduct.id,
       selectedBatchId,
       newBatchId,
       ...quantities,
-      ...(isNewBatch
-        ? { batchNumber: batchNumber.trim() || null, expiresAt: expiry }
-        : {}),
-    });
+    };
+    if (isNewBatch) {
+      quantityInput.batchNumber = batchNumber.trim() || null;
+      quantityInput.expiresAt = expiry;
+    }
+    const result = await writeBatchQuantity(quantityInput);
     if (!result.ok) {
       setError(result.message);
       return;

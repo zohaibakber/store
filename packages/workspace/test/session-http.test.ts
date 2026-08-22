@@ -84,9 +84,11 @@ describe("SessionHttpClient", () => {
   it("injects the bearer token and parses JSON failures", async () => {
     const store = new MemoryTokenStore();
     store.set(tokens(Date.now() + 60_000));
-    const fetch = vi.fn().mockResolvedValue(
-      Response.json({ message: "This session is not authorized." }, { status: 403 }),
-    );
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ message: "This session is not authorized." }, { status: 403 }),
+      );
     const client = new SessionHttpClient({
       apiBaseUrl: "http://localhost:8787",
       authBaseUrl: "http://localhost:8788",
@@ -148,5 +150,74 @@ describe("SessionHttpClient", () => {
     await client.apiRequest("/api/auth/session");
     const [, init] = fetch.mock.calls[0]!;
     expect(new Headers(init.headers).get("electron-origin")).toBe("app://app");
+  });
+
+  it("forces one coalesced refresh and replays once after a 401", async () => {
+    const store = new MemoryTokenStore();
+    store.set(tokens(Date.now() + 60_000));
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ message: "Expired" }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    let refreshes = 0;
+    const client = new SessionHttpClient({
+      apiBaseUrl: "http://localhost:8787",
+      authBaseUrl: "http://localhost:8788",
+      tokens: store,
+      fetch,
+      refreshSession: async () => {
+        refreshes += 1;
+        const refreshed = TokenSet.make({
+          ...tokens(Date.now() + 120_000),
+          accessToken: AccessToken.make("refreshed"),
+        });
+        store.set(refreshed);
+        return refreshed;
+      },
+      needsRefresh: refreshTokenNeedsRefresh,
+    });
+
+    await expect(client.apiRequest("/api/auth/session")).resolves.toEqual({ ok: true });
+
+    expect(refreshes).toBe(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetch.mock.calls[1]![1].headers).get("authorization")).toBe(
+      "Bearer refreshed",
+    );
+  });
+
+  it("does not recursively replay when refresh is explicitly rejected", async () => {
+    const store = new MemoryTokenStore();
+    store.set(tokens(Date.now() + 60_000));
+    const fetch = vi.fn().mockResolvedValue(Response.json({ message: "Expired" }, { status: 401 }));
+    const client = new SessionHttpClient({
+      apiBaseUrl: "http://localhost:8787",
+      authBaseUrl: "http://localhost:8788",
+      tokens: store,
+      fetch,
+      refreshSession: async () => null,
+      needsRefresh: refreshTokenNeedsRefresh,
+    });
+
+    await expect(client.apiRequest("/api/auth/session")).rejects.toMatchObject({ status: 401 });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed successful JSON at the HTTP boundary", async () => {
+    const store = new MemoryTokenStore();
+    store.set(tokens(Date.now() + 60_000));
+    const client = new SessionHttpClient({
+      apiBaseUrl: "http://localhost:8787",
+      authBaseUrl: "http://localhost:8788",
+      tokens: store,
+      fetch: vi.fn().mockResolvedValue(new Response("not-json", { status: 200 })),
+      refreshSession: async () => store.get(),
+      needsRefresh: refreshTokenNeedsRefresh,
+    });
+
+    await expect(client.apiRequest("/api/auth/session")).rejects.toMatchObject({
+      status: 200,
+      code: "INVALID_JSON_RESPONSE",
+    });
   });
 });

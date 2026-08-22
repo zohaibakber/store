@@ -5,6 +5,7 @@ import {
   type ExchangeGoogleIdTokenInput,
   type ExchangeGoogleInput,
 } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { AUTHORIZATION_TTL_MS, OAUTH_STATE_TTL_MS, safeEqual, sha256 } from "./crypto";
@@ -44,6 +45,7 @@ export const makeGoogleIdentityOps = (
   const linkGoogleUser = Effect.fn("Auth.Google.linkGoogleUser")(function* (
     profile: GoogleProfile,
   ) {
+    const now = yield* Clock.currentTimeMillis;
     const linked = yield* repository.findUserByGoogleId(profile.providerAccountId);
     if (linked) return linked;
     const existing = yield* repository.findUserByEmail(profile.email);
@@ -60,7 +62,7 @@ export const makeGoogleIdentityOps = (
           userId: existing.id,
           providerAccountId: profile.providerAccountId,
           image: profile.image,
-          now: Date.now(),
+          now,
         })
       : yield* repository.attachGoogleAccount({
           userId: existing.id,
@@ -77,6 +79,7 @@ export const makeGoogleIdentityOps = (
   });
 
   const beginGoogle = Effect.fn("Auth.Google.beginGoogle")(function* (input: BeginGoogleInput) {
+    const now = yield* Clock.currentTimeMillis;
     if (!isTrustedRedirect(input.redirectUri, configuration.trustedRedirects)) {
       return yield* authError(400, "INVALID_REDIRECT", "The OAuth redirect is not allowed.");
     }
@@ -84,7 +87,7 @@ export const makeGoogleIdentityOps = (
       redirectUri: input.redirectUri,
       codeChallenge: input.codeChallenge,
       client: input.client,
-      expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+      expiresAt: now + OAUTH_STATE_TTL_MS,
     });
     return google.authorizationUrl(state);
   });
@@ -93,7 +96,8 @@ export const makeGoogleIdentityOps = (
     readonly code: string;
     readonly state: string;
   }) {
-    const state = yield* ephemeral.consumeOAuthState(input.state, Date.now());
+    const now = yield* Clock.currentTimeMillis;
+    const state = yield* ephemeral.consumeOAuthState(input.state, now);
     if (!state) {
       return yield* authError(
         400,
@@ -107,7 +111,7 @@ export const makeGoogleIdentityOps = (
       userId: user.id,
       codeChallenge: state.codeChallenge,
       client: state.client,
-      expiresAt: Date.now() + AUTHORIZATION_TTL_MS,
+      expiresAt: now + AUTHORIZATION_TTL_MS,
     });
     return { redirectUri: state.redirectUri, code };
   });
@@ -115,7 +119,8 @@ export const makeGoogleIdentityOps = (
   const exchangeGoogle = Effect.fn("Auth.Google.exchangeGoogle")(function* (
     input: ExchangeGoogleInput,
   ) {
-    const grant = yield* ephemeral.consumeAuthorizationGrant(input.code, Date.now());
+    const now = yield* Clock.currentTimeMillis;
+    const grant = yield* ephemeral.consumeAuthorizationGrant(input.code, now);
     if (!grant) {
       return yield* authError(
         401,
@@ -152,6 +157,7 @@ export const makeGoogleIdentityOps = (
   const exchangeGoogleIdToken = Effect.fn("Auth.Google.exchangeGoogleIdToken")(function* (
     input: ExchangeGoogleIdTokenInput,
   ) {
+    const now = yield* Clock.currentTimeMillis;
     const profile = yield* google
       .verifyIdToken(input.idToken)
       .pipe(
@@ -163,7 +169,7 @@ export const makeGoogleIdentityOps = (
       key: `google-identity:${profile.providerAccountId}`,
       limit: 10,
       windowSeconds: 60,
-      now: Date.now(),
+      now,
     });
     if (!allowed) {
       return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");

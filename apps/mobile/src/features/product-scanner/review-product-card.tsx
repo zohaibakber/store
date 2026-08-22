@@ -160,7 +160,12 @@ export function ReviewProductCard({
         >
           <ButtonText>{matchedProduct ? "Confirm product" : "Create product"}</ButtonText>
         </Button>
-        <Button isDisabled={busy || saving} onPress={onScanAgain} style={styles.flex} variant="ghost">
+        <Button
+          isDisabled={busy || saving}
+          onPress={onScanAgain}
+          style={styles.flex}
+          variant="ghost"
+        >
           <ButtonText>Scan again</ButtonText>
         </Button>
       </CardFooter>

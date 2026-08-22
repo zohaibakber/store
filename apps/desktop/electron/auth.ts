@@ -12,6 +12,7 @@ import {
   loadSessionSnapshot,
   refreshTokenNeedsRefresh,
   renewSessionSnapshot,
+  requestErrorFromPayload,
   type JsonRequestInit,
   type SessionSnapshotHooks,
   type WorkspaceAuthAdapter,
@@ -160,7 +161,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     });
   }
 
-  /** Returns null on expected refresh failure — never throws for non-OK HTTP. */
+  /** Returns null only on explicit auth rejection; transient failures preserve credentials. */
   async #rotateTokens(): Promise<TokenSetType | null> {
     const tokens = this.#tokens.get();
     if (!tokens?.refreshToken) return null;
@@ -170,8 +171,16 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       body: JSON.stringify(RefreshInput.make({ refreshToken: tokens.refreshToken })),
     });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) await this.#clear();
-      return null;
+      if (response.status === 401 || response.status === 403) {
+        await this.#clear();
+        return null;
+      }
+      const payload = await response
+        .json()
+        .then(Schema.decodeUnknownOption(Schema.Json))
+        .then(Option.getOrNull)
+        .catch(() => null);
+      throw requestErrorFromPayload(payload, response.status);
     }
     const next = decodeTokenSet(await response.json());
     this.#tokens.set(next);

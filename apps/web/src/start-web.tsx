@@ -12,6 +12,10 @@ import { mountApp } from "./mount-app";
 const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot): boolean =>
   snapshot.status === "authenticated" && snapshot.activeOrganization != null;
 
+const afterFirstPaint = (work: () => void) => {
+  requestAnimationFrame(() => requestAnimationFrame(work));
+};
+
 export const startWeb = async () => {
   const apiBaseUrl = resolveBrowserApiBaseUrl({
     configuredApiUrl: import.meta.env.VITE_API_URL ?? "",
@@ -22,6 +26,7 @@ export const startWeb = async () => {
   const workspace = startWebWorkspace(apiBaseUrl, authBaseUrl, {
     allowsGuestWorkspace: access.allowsGuestWorkspace,
   });
+  if (import.meta.hot) import.meta.hot.dispose(() => void workspace.dispose());
   setAuthSessionBridge(workspace.bridge);
 
   const authSnapshot = await workspace.resolveAuth();
@@ -38,6 +43,9 @@ export const startWeb = async () => {
       history,
       access,
     });
+    if (workspace.hasStore()) {
+      afterFirstPaint(() => void workspace.startBackgroundSync().catch(() => undefined));
+    }
     return;
   }
 
@@ -52,4 +60,5 @@ export const startWeb = async () => {
     sessionPending: true,
   });
   await workspace.activateWorkspace();
+  afterFirstPaint(() => void workspace.startBackgroundSync().catch(() => undefined));
 };

@@ -30,6 +30,7 @@ import {
 import { and, asc, count, desc, eq, exists, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -91,6 +92,7 @@ export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> 
 export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth.RepositoryError", {
   operation: Schema.String,
   message: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
 }) {}
 
 export interface NewSession {
@@ -242,7 +244,7 @@ export class AuthRepository extends Context.Service<AuthRepository, AuthReposito
 ) {}
 
 const repositoryError = (operation: string, cause: unknown) =>
-  new RepositoryError({ operation, message: String(cause) });
+  new RepositoryError({ operation, message: String(cause), cause });
 
 const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
   Schema.decodeUnknownSync(schema)(crypto.randomUUID());
@@ -494,6 +496,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
       });
     }),
     createGoogleUser: Effect.fn("AuthRepository.createGoogleUser")(function* (input) {
+      const now = yield* Clock.currentTimeMillis;
       const userId = makeId(UserId);
       const name = input.name.trim();
       const store = startingOrganization(name);
@@ -504,7 +507,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
           name,
           image: input.image,
           passwordHash: null,
-          emailVerifiedAt: at(Date.now()),
+          emailVerifiedAt: at(now),
         }),
         database.insert(organization).values({ id: store.id, name: store.name, slug: null }),
         database.insert(organizationMembership).values(ownerMembership(store.id, userId)),
@@ -690,6 +693,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
       return changed.length === 1;
     }),
     removeMember: Effect.fn("AuthRepository.removeMember")(function* (input) {
+      const now = yield* Clock.currentTimeMillis;
       const results = yield* batch("removeMember", [
         database
           .delete(organizationMembership)
@@ -704,7 +708,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         // into a store they can no longer read.
         database
           .update(session)
-          .set({ revokedAt: at(Date.now()) })
+          .set({ revokedAt: at(now) })
           .where(
             and(
               eq(session.userId, input.userId),

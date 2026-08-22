@@ -77,6 +77,35 @@ describe("WebAuthBroker", () => {
     expect(localStorage.getItem(SESSION_EXPECTED_KEY)).toBeNull();
   });
 
+  it("preserves the session expectation after a transient refresh failure", async () => {
+    localStorage.setItem(SESSION_EXPECTED_KEY, "1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ message: "Unavailable" }, { status: 503 })),
+    );
+    const auth = new WebAuthBroker("http://localhost:8787", "http://localhost:8788");
+
+    const snapshot = await auth.initialize();
+
+    expect(localStorage.getItem(SESSION_EXPECTED_KEY)).toBe("1");
+    expect(snapshot).toMatchObject({
+      status: "unauthenticated",
+      workspaceError: "Unavailable",
+    });
+  });
+
+  it("preserves the session expectation after a malformed refresh response", async () => {
+    localStorage.setItem(SESSION_EXPECTED_KEY, "1");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ accessToken: 1 })));
+    const auth = new WebAuthBroker("http://localhost:8787", "http://localhost:8788");
+
+    const snapshot = await auth.initialize();
+
+    expect(localStorage.getItem(SESSION_EXPECTED_KEY)).toBe("1");
+    expect(snapshot).toMatchObject({ status: "unauthenticated" });
+    expect(snapshot.workspaceError).toBeTruthy();
+  });
+
   it("marks a session expected after adoptSession receives tokens", async () => {
     vi.stubGlobal(
       "fetch",

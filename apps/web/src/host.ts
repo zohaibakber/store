@@ -110,6 +110,8 @@ export interface WebWorkspace {
   readonly activateWorkspace: () => Promise<WorkspaceSnapshot>;
   /** True once OfflineStore is open (e.g. after OAuth AdoptSession). */
   readonly hasStore: () => boolean;
+  readonly startBackgroundSync: () => Promise<void>;
+  readonly dispose: () => Promise<void>;
 }
 
 export const startWebWorkspace = (
@@ -176,5 +178,7 @@ export const startWebWorkspace = (
       return snapshot;
     },
     hasStore: () => workspace.hasStore,
+    startBackgroundSync: () => workspace.startSync(),
+    dispose: () => workspace.dispose(),
   };
 };

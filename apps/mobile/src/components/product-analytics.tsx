@@ -1,9 +1,9 @@
 import { useState } from "react";
 
 import { Row, RowGroup, RowValue } from "@/components/ui/row";
-import { inventoryOverview, LOW_STOCK_THRESHOLD } from "@/lib/product-catalog";
 import { formatPrice } from "@/lib/inventory-snapshot";
 import type { MobileProduct } from "@/lib/inventory-types";
+import { inventoryOverview, LOW_STOCK_THRESHOLD } from "@/lib/product-catalog";
 
 export function ProductAnalytics({
   products,

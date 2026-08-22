@@ -8,6 +8,8 @@ import {
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -16,7 +18,12 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { SyncDatabaseError, SyncProtocolError } from "./errors";
 import type { SyncActor } from "./model";
-import { makeSyncRuntime } from "./runtime";
+import {
+  disposeSyncRuntime,
+  makeSyncRuntime,
+  syncRuntimeExchange,
+  syncRuntimeHeadCursor,
+} from "./runtime";
 
 const decodeAttachment = Schema.decodeUnknownOption(SyncLiveAttachment);
 const encodeLiveEvent = Schema.encodeSync(SyncLiveEvent);
@@ -53,6 +60,18 @@ export class OrganizationStore extends Cloudflare.DurableObject<
 const socketText = (message: string | ArrayBuffer) =>
   message instanceof ArrayBuffer ? new TextDecoder().decode(message) : message;
 
+const ignoreNonInterruptCause =
+  (message?: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A | void, E, R> =>
+    effect.pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
+        return message
+          ? Effect.logError(message).pipe(Effect.annotateLogs({ cause: Cause.pretty(cause) }))
+          : Effect.void;
+      }),
+    );
+
 export const OrganizationStoreLive = OrganizationStore.make<never>(
   Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState;
@@ -60,32 +79,37 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
     return Effect.gen(function* () {
       yield* Effect.void;
       const runtime = makeSyncRuntime(state.raw.storage);
+      yield* Effect.addFinalizer(() => disposeSyncRuntime(runtime));
 
       const broadcast = Effect.fn("OrganizationStore.broadcast")(function* (
         headCursor: number,
         exceptConnectionId?: string,
       ) {
+        const now = yield* Clock.currentTimeMillis;
         const encoded = JSON.stringify(
           encodeLiveEvent({ type: "invalidate", protocolVersion: 2, headCursor }),
         );
         for (const socket of state.raw.getWebSockets().map(Cloudflare.fromWebSocket)) {
           const attachment = decodeAttachment(socket.deserializeAttachment());
           if (Option.isNone(attachment)) {
-            yield* socket.close(1008, "Invalid connection metadata").pipe(Effect.ignoreCause);
+            yield* socket
+              .close(1008, "Invalid connection metadata")
+              .pipe(ignoreNonInterruptCause());
             continue;
           }
           if (exceptConnectionId && attachment.value.connectionId === exceptConnectionId) continue;
-          if (attachment.value.authenticationExpiresAt <= Date.now()) {
-            yield* socket.close(1008, "Authentication expired").pipe(Effect.ignoreCause);
+          if (attachment.value.authenticationExpiresAt <= now) {
+            yield* socket.close(1008, "Authentication expired").pipe(ignoreNonInterruptCause());
             continue;
           }
-          yield* socket
-            .send(encoded)
-            .pipe(
-              Effect.catchCause(() =>
-                socket.close(1011, "Invalidation delivery failed").pipe(Effect.ignoreCause),
-              ),
-            );
+          yield* socket.send(encoded).pipe(
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
+              return socket
+                .close(1011, "Invalidation delivery failed")
+                .pipe(ignoreNonInterruptCause());
+            }),
+          );
         }
       });
 
@@ -94,23 +118,12 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
         request: SyncRequest,
         exceptConnectionId?: string,
       ) {
-        const response = yield* Effect.tryPromise({
-          try: () => runtime.runSync(actor, request),
-          catch: (cause) =>
-            cause instanceof SyncProtocolError
-              ? cause
-              : SyncDatabaseError.make({
-                  message: cause instanceof Error ? cause.message : String(cause),
-                }),
-        });
+        const response = yield* syncRuntimeExchange(runtime, actor, request);
         if (
           response.acknowledgements.some((acknowledgement) => acknowledgement.status === "applied")
         )
           yield* broadcast(response.headCursor, exceptConnectionId).pipe(
-            Effect.ignoreCause({
-              log: true,
-              message: "Sync invalidation broadcast failed",
-            }),
+            ignoreNonInterruptCause("Sync invalidation broadcast failed"),
           );
         return response;
       });
@@ -123,6 +136,7 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
       });
 
       const acceptLive = Effect.fn("OrganizationStore.acceptLive")(function* (request: Request) {
+        const now = yield* Clock.currentTimeMillis;
         const organizationId = request.headers.get(LIVE_ORGANIZATION_HEADER);
         const userId = request.headers.get(LIVE_USER_HEADER);
         const deviceId = request.headers.get(LIVE_DEVICE_HEADER);
@@ -132,10 +146,11 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
           !userId ||
           !deviceId ||
           !Number.isSafeInteger(authenticationExpiresAt) ||
-          authenticationExpiresAt <= Date.now()
+          authenticationExpiresAt <= now
         )
           return HttpServerResponse.text("Invalid live sync context", { status: 400 });
 
+        const headCursor = yield* syncRuntimeHeadCursor(runtime, organizationId);
         const [response, socket] = yield* Cloudflare.upgrade();
         socket.serializeAttachment(
           SyncLiveAttachment.make({
@@ -147,7 +162,6 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
             authenticationExpiresAt,
           }),
         );
-        const headCursor = yield* Effect.promise(() => runtime.headCursor(organizationId));
         yield* socket.send(
           JSON.stringify(encodeLiveEvent({ type: "hello", protocolVersion: 2, headCursor })),
         );
@@ -170,14 +184,23 @@ export const OrganizationStoreLive = OrganizationStore.make<never>(
           return webRequest.headers.get("Upgrade")?.toLowerCase() === "websocket"
             ? yield* acceptLive(webRequest)
             : HttpServerResponse.text("Not found", { status: 404 });
-        }),
+        }).pipe(
+          Effect.catchTag("SyncDatabaseError", (error) =>
+            Effect.logError("Live sync connection failed", error).pipe(
+              Effect.as(
+                HttpServerResponse.text("Live sync is temporarily unavailable", { status: 503 }),
+              ),
+            ),
+          ),
+        ),
         exchange,
         webSocketMessage: (socket: Cloudflare.WebSocket, message: string | ArrayBuffer) =>
           Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
             const attachment = decodeAttachment(socket.deserializeAttachment());
             if (Option.isNone(attachment))
               return yield* socket.close(1008, "Invalid connection metadata");
-            if (attachment.value.authenticationExpiresAt <= Date.now())
+            if (attachment.value.authenticationExpiresAt <= now)
               return yield* socket.close(1008, "Authentication expired");
 
             let parsed: unknown;

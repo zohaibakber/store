@@ -67,12 +67,12 @@ const decodeBody = (request: HttpServerRequest.HttpServerRequest) =>
 export const ProductScanHandlers = HttpApiBuilder.group(
   StoreApi,
   "productScans",
-  Effect.fn(function* (handlers) {
+  Effect.fn("ProductScanHandlers.make")(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
     return handlers.handleRaw(
       "parse",
-      Effect.fn(function* ({ request }) {
+      Effect.fn("ProductScanHandlers.parse")(function* ({ request }) {
         const identity = yield* CurrentOrganization;
         const input = yield* decodeBody(request);
         const rateLimit = yield* runtime

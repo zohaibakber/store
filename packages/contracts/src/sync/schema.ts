@@ -1,5 +1,15 @@
 import * as Schema from "effect/Schema";
 
+export const SyncNonNegativeInteger = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(0),
+);
+export const SyncPositiveInteger = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(1),
+);
+export const SyncCursor = SyncNonNegativeInteger;
+
 export const SyncEntity = Schema.Literals([
   "category",
   "product",
@@ -17,7 +27,7 @@ export const SyncEntityChange = Schema.Struct({
   entity: SyncEntity,
   action: SyncAction,
   entityId: Schema.String,
-  rowVersion: Schema.Number,
+  rowVersion: SyncPositiveInteger,
   row: Schema.Unknown,
 });
 export interface SyncEntityChange extends Schema.Schema.Type<typeof SyncEntityChange> {}
@@ -32,8 +42,8 @@ export const SyncOperation = Schema.Struct({
   organizationId: Schema.String,
   deviceId: Schema.String,
   actorUserId: Schema.String,
-  clientSequence: Schema.Number,
-  occurredAt: Schema.Number,
+  clientSequence: SyncPositiveInteger,
+  occurredAt: SyncPositiveInteger,
   payloadHash: Schema.String,
   changes: Schema.Array(SyncEntityChange).check(Schema.isMaxLength(MAX_SYNC_CHANGES_PER_OPERATION)),
 });
@@ -47,7 +57,7 @@ export const SyncRequest = Schema.Struct({
   deviceId: Schema.String,
   clientPlatform: Schema.optionalKey(Schema.String),
   clientVersion: Schema.optionalKey(Schema.String),
-  cursor: Schema.Number,
+  cursor: SyncCursor,
   operations: Schema.Array(SyncOperation).check(
     Schema.isMaxLength(MAX_SYNC_OPERATIONS_PER_REQUEST),
   ),
@@ -57,14 +67,14 @@ export interface SyncRequest extends Schema.Schema.Type<typeof SyncRequest> {}
 export const SyncAck = Schema.Struct({
   operationId: Schema.String,
   status: Schema.Literals(["applied", "duplicate"]),
-  cursor: Schema.Number,
+  cursor: SyncCursor,
 });
 export interface SyncAck extends Schema.Schema.Type<typeof SyncAck> {}
 
 export const SyncServerChange = Schema.Struct({
-  cursor: Schema.Number,
+  cursor: SyncCursor,
   operationId: Schema.String,
-  changedAt: Schema.Number,
+  changedAt: SyncNonNegativeInteger,
   change: SyncEntityChange,
 });
 export interface SyncServerChange extends Schema.Schema.Type<typeof SyncServerChange> {}
@@ -73,14 +83,31 @@ export const SyncResponse = Schema.Struct({
   protocolVersion: Schema.Literal(SYNC_PROTOCOL_VERSION),
   organizationId: Schema.String,
   /** Compatibility alias for nextCursor used by protocol-v1 clients. */
-  cursor: Schema.Number,
-  nextCursor: Schema.Number,
-  headCursor: Schema.Number,
+  cursor: SyncCursor,
+  nextCursor: SyncCursor,
+  headCursor: SyncCursor,
   hasMore: Schema.Boolean,
   acknowledgements: Schema.Array(SyncAck),
   changes: Schema.Array(SyncServerChange),
 });
 export interface SyncResponse extends Schema.Schema.Type<typeof SyncResponse> {}
+
+export const exactAcknowledgedOperationIds = (
+  operations: ReadonlyArray<Pick<SyncOperation, "operationId">>,
+  acknowledgements: ReadonlyArray<Pick<SyncAck, "operationId">>,
+): ReadonlyArray<string> | undefined => {
+  if (acknowledgements.length !== operations.length) return undefined;
+  const submittedIds = operations.map((operation) => operation.operationId);
+  const submitted = new Set(submittedIds);
+  const acknowledged = new Set(acknowledgements.map((entry) => entry.operationId));
+  if (
+    submitted.size !== submittedIds.length ||
+    acknowledged.size !== acknowledgements.length ||
+    acknowledgements.some((entry) => !submitted.has(entry.operationId))
+  )
+    return undefined;
+  return submittedIds;
+};
 
 export type SyncPhase =
   | "local-only"

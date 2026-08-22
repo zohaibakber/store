@@ -30,6 +30,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { makeShutdownCoordinator } from "./shutdown";
 import { STORE_CHANNEL_ENTRIES, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
 import { openDesktopSyncSocket } from "./sync-socket";
 import { setupUpdater } from "./updater";
@@ -376,7 +377,10 @@ function createWindow() {
   win.setIcon(appIconPath());
   app.dock?.setIcon(appIconPath());
 
-  win.once("ready-to-show", () => win?.show());
+  win.once("ready-to-show", () => {
+    win?.show();
+    void workspace?.startSync().catch(() => undefined);
+  });
 
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
@@ -426,10 +430,19 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
-  void disposeWorkspace();
-  void disposeUpdater?.();
+const shutdown = makeShutdownCoordinator({
+  dispose: async () => {
+    const results = await Promise.allSettled([disposeWorkspace(), disposeUpdater?.()]);
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures[0]) throw failures[0].reason;
+  },
+  quit: () => app.quit(),
+  reportError: (cause) => console.error("Desktop shutdown cleanup failed", cause),
 });
+
+app.on("before-quit", shutdown);
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();

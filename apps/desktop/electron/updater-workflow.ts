@@ -8,9 +8,11 @@ import {
 } from "@store/contracts/updater";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
+import * as Exit from "effect/Exit";
+import * as FiberSet from "effect/FiberSet";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
+import * as Scope from "effect/Scope";
 
 export type UpdaterProviderEvent =
   | { readonly type: "checking" }
@@ -46,6 +48,7 @@ interface WorkflowState {
   readonly phase: UpdatePhase;
   readonly checkInFlight: boolean;
   readonly lastCheckStartedAt: number | undefined;
+  readonly retryScheduled: boolean;
   readonly stopped: boolean;
 }
 
@@ -59,17 +62,23 @@ export const makeUpdaterWorkflow = (
       phase: "idle",
       checkInFlight: false,
       lastCheckStartedAt: undefined,
+      retryScheduled: false,
       stopped: false,
     });
-    const retryFiber = yield* Ref.make<Fiber.Fiber<unknown, unknown> | undefined>(undefined);
-    const periodicFiber = yield* Ref.make<Fiber.Fiber<unknown, unknown> | undefined>(undefined);
-    const context = yield* Effect.context<never>();
+    const ownerScope = yield* Scope.make("parallel");
+    const runOwned = yield* FiberSet.makeRuntime<never, unknown, never>().pipe(
+      Scope.provide(ownerScope),
+    );
 
     const transition = (event: UpdaterEvent, forward = true) =>
-      Ref.modify(state, (current) => [
-        forward && forwardsToRenderer(current.phase, event),
-        { ...current, phase: nextUpdatePhase(current.phase, event) },
-      ]).pipe(
+      Ref.modify(state, (current) =>
+        current.stopped
+          ? ([false, current] as const)
+          : ([
+              forward && forwardsToRenderer(current.phase, event),
+              { ...current, phase: nextUpdatePhase(current.phase, event) },
+            ] as const),
+      ).pipe(
         Effect.tap((shouldPublish) =>
           shouldPublish ? Effect.sync(() => publish(event)) : Effect.void,
         ),
@@ -99,15 +108,23 @@ export const makeUpdaterWorkflow = (
         );
       }).pipe(Effect.withSpan("UpdaterWorkflow.check"));
 
-    const schedulePendingReleaseRetry = Ref.get(retryFiber).pipe(
-      Effect.flatMap((current) => {
-        if (current) return Effect.void;
-        return Effect.sleep(config.pendingReleaseRetryDelay).pipe(
-          Effect.andThen(check(true)),
-          Effect.ensuring(Ref.set(retryFiber, undefined)),
-          Effect.forkDetach({ startImmediately: true }),
-          Effect.flatMap((fiber) => Ref.set(retryFiber, fiber)),
-        );
+    const schedulePendingReleaseRetry = Ref.modify(state, (current) =>
+      current.stopped || current.retryScheduled
+        ? ([false, current] as const)
+        : ([true, { ...current, retryScheduled: true }] as const),
+    ).pipe(
+      Effect.flatMap((claimed) => {
+        if (!claimed) return Effect.void;
+        return Effect.sync(() => {
+          runOwned(
+            Effect.sleep(config.pendingReleaseRetryDelay).pipe(
+              Effect.andThen(check(true)),
+              Effect.ensuring(
+                Ref.update(state, (current) => ({ ...current, retryScheduled: false })),
+              ),
+            ),
+          );
+        });
       }),
     );
 
@@ -126,16 +143,16 @@ export const makeUpdaterWorkflow = (
         : transition(event);
 
     const unsubscribe = provider.subscribe((event) => {
-      Effect.runForkWith(context)(handleProviderEvent(event));
+      runOwned(handleProviderEvent(event));
     });
 
     if (config.periodicChecks) {
-      const fiber = yield* check(true).pipe(
-        Effect.repeat(Schedule.spaced(config.checkInterval)),
-        Effect.delay(config.initialCheckDelay),
-        Effect.forkDetach({ startImmediately: true }),
+      runOwned(
+        check(true).pipe(
+          Effect.repeat(Schedule.spaced(config.checkInterval)),
+          Effect.delay(config.initialCheckDelay),
+        ),
       );
-      yield* Ref.set(periodicFiber, fiber);
     }
 
     const download = Effect.gen(function* () {
@@ -165,13 +182,7 @@ export const makeUpdaterWorkflow = (
     ]).pipe(
       Effect.flatMap((shouldDispose) => {
         if (!shouldDispose) return Effect.void;
-        return Effect.gen(function* () {
-          unsubscribe();
-          const retry = yield* Ref.get(retryFiber);
-          const periodic = yield* Ref.get(periodicFiber);
-          if (retry) yield* Fiber.interrupt(retry);
-          if (periodic) yield* Fiber.interrupt(periodic);
-        });
+        return Effect.sync(unsubscribe).pipe(Effect.andThen(Scope.close(ownerScope, Exit.void)));
       }),
     );
 

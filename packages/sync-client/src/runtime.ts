@@ -23,11 +23,25 @@ export interface SyncClientRuntime<E> {
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
+const syncReasonPriority = {
+  "safety-poll": 0,
+  startup: 1,
+  manual: 2,
+  live: 3,
+  "local-commit": 4,
+} as const satisfies Record<SyncReason, number>;
+
+const coalesceSyncReason = (current: SyncReason | null, incoming: SyncReason): SyncReason =>
+  current === null || syncReasonPriority[incoming] > syncReasonPriority[current]
+    ? incoming
+    : current;
+
 export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE>) =>
   Effect.gen(function* () {
     const scope = yield* Scope.Scope;
     const status = yield* SubscriptionRef.make(options.initialStatus);
-    const signals = yield* Queue.sliding<SyncReason>(1);
+    const signals = yield* Queue.sliding<void>(1);
+    const pendingReason = yield* Ref.make<SyncReason | null>(null);
     const lock = yield* Semaphore.make(1);
     const started = yield* Ref.make(false);
     const liveStarted = yield* Ref.make(false);
@@ -41,9 +55,10 @@ export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE
     const publishPhase = (phase: SyncStatus["phase"], message: string) =>
       SubscriptionRef.update(status, (current) => ({ ...current, phase, message }));
 
-    const signal = Effect.fn("SyncClientRuntime.signal")((reason: SyncReason) =>
-      Queue.offer(signals, reason).pipe(Effect.asVoid),
-    );
+    const signal = Effect.fn("SyncClientRuntime.signal")(function* (reason: SyncReason) {
+      yield* Ref.update(pendingReason, (current) => coalesceSyncReason(current, reason));
+      yield* Queue.offer(signals, undefined);
+    });
 
     const scheduleFailureWake = (delayMillis: number) =>
       Effect.gen(function* () {
@@ -145,6 +160,7 @@ export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE
               (progress.hasMore || progress.moreLocalWork || progress.cursor < target) &&
               rounds < maximumRounds
             ) {
+              yield* Effect.yieldNow;
               progress = yield* exchangePass(reason);
               rounds += 1;
               target = yield* Ref.get(observedHead);
@@ -184,18 +200,20 @@ export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE
         );
     });
 
-    const signalConsumer = Stream.fromQueue(signals).pipe(
-      Stream.runForEach((reason) =>
-        requestSync(reason).pipe(
-          Effect.tapError((error) =>
-            Effect.logWarning("SyncClientRuntime.background_sync_failed").pipe(
-              Effect.annotateLogs({ reason, error: messageOf(error) }),
-            ),
+    const consumeSignal = Effect.gen(function* () {
+      const reason = yield* Ref.getAndSet(pendingReason, null);
+      if (reason === null) return;
+      yield* requestSync(reason).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("SyncClientRuntime.background_sync_failed").pipe(
+            Effect.annotateLogs({ reason, error: messageOf(error) }),
           ),
-          Effect.ignore,
         ),
-      ),
-    );
+        Effect.ignore,
+      );
+    });
+
+    const signalConsumer = Stream.fromQueue(signals).pipe(Stream.runForEach(() => consumeSignal));
 
     const start = Effect.fn("SyncClientRuntime.start")(function* () {
       if (yield* Ref.getAndSet(started, true)) return;
@@ -205,8 +223,8 @@ export const makeSyncClientRuntime = <E, LiveE>(options: RuntimeOptions<E, LiveE
       if (!live) yield* requestSync("startup").pipe(Effect.ignore);
       const interval = options.safetyPollIntervalMillis ?? 3_000;
       yield* signal("safety-poll").pipe(
-        Effect.delay(interval),
         Effect.repeat(Schedule.spaced(interval)),
+        Effect.delay(interval),
         Effect.forkIn(scope),
       );
     });

@@ -7,6 +7,7 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as DoDrizzle from "drizzle-orm/effect-sqlite-do";
 import { migrate } from "drizzle-orm/effect-sqlite-do/migrator";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -58,6 +59,7 @@ const constraintProtocolError = (cause: unknown) => {
 export const makeDatabase = (db: SyncDatabaseClient) => {
   const exchange = Effect.fn("SyncDatabase.exchange")(
     function* (actor: SyncActor, request: SyncRequest) {
+      const now = yield* Clock.currentTimeMillis;
       return yield* db.transaction((tx) =>
         Effect.gen(function* () {
           const acknowledgements: SyncAck[] = [];
@@ -72,7 +74,7 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
               userId: actor.userId,
               protocolVersion: request.protocolVersion ?? 1,
               lastAppliedCursor: request.cursor,
-              lastSeenAt: Date.now(),
+              lastSeenAt: now,
               clientPlatform: request.clientPlatform ?? "unknown",
               clientVersion: request.clientVersion ?? "unknown",
             })
@@ -82,7 +84,7 @@ export const makeDatabase = (db: SyncDatabaseClient) => {
                 userId: actor.userId,
                 protocolVersion: request.protocolVersion ?? 1,
                 lastAppliedCursor: request.cursor,
-                lastSeenAt: Date.now(),
+                lastSeenAt: now,
                 clientPlatform: request.clientPlatform ?? "unknown",
                 clientVersion: request.clientVersion ?? "unknown",
               },

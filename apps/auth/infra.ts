@@ -13,6 +13,7 @@ import {
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -209,9 +210,10 @@ export const AuthLive = Auth.make(
             ),
           ),
       ),
-      Effect.catchCause((cause) =>
-        Effect.logError("auth.request_failed").pipe(
-          Effect.annotateLogs({ cause: String(cause) }),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
+        return Effect.logError("auth.request_failed").pipe(
+          Effect.annotateLogs({ cause: Cause.pretty(cause) }),
           Effect.as(
             HttpServerResponse.jsonUnsafe(
               {
@@ -223,8 +225,8 @@ export const AuthLive = Auth.make(
               { status: 500 },
             ),
           ),
-        ),
-      ),
+        );
+      }),
     );
 
     return { fetch: handler };

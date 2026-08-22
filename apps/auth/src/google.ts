@@ -1,4 +1,5 @@
 import { EmailAddress, type EmailAddress as EmailAddressType } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -47,6 +48,7 @@ export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()(
   {
     operation: Schema.String,
     message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {}
 
@@ -70,7 +72,7 @@ export interface GoogleOAuthConfiguration {
 }
 
 const oauthError = (operation: string, cause: unknown) =>
-  new GoogleOAuthError({ operation, message: String(cause) });
+  new GoogleOAuthError({ operation, message: String(cause), cause });
 
 export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
   const fetch = configuration.fetch ?? globalThis.fetch;
@@ -162,6 +164,7 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
        * for any other app would be accepted here.
        */
       verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
+        const now = yield* Clock.currentTimeMillis;
         const response = yield* Effect.tryPromise({
           try: (signal) =>
             fetch(
@@ -195,7 +198,7 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
             "The identity token was issued for another application.",
           );
         }
-        if (info.exp * 1_000 <= Date.now()) {
+        if (info.exp * 1_000 <= now) {
           return yield* oauthError("verifyIdToken.expiry", "The identity token has expired.");
         }
         if (!isTrue(info.email_verified)) {

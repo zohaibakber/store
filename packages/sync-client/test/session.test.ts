@@ -1,3 +1,4 @@
+import { assert, it } from "@effect/vitest";
 import { SyncClientFrame, SyncLiveEvent, SyncRequest, SyncResponse } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -6,14 +7,10 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { expect, test } from "vitest";
+import { TestClock } from "effect/testing";
 
-import { SyncTransportError } from "../../src/errors";
-import {
-  connectSyncSocketSession,
-  makeSyncSocketSession,
-  type SyncSocket,
-} from "../../src/sync/session";
+import { SyncTransportError } from "../src/errors";
+import { connectSyncSocketSession, makeSyncSocketSession, type SyncSocket } from "../src/session";
 
 const request: SyncRequest = {
   protocolVersion: 2,
@@ -61,22 +58,21 @@ const waitForLive = (
     yield* Deferred.await(ready);
   });
 
-test("fails when the live socket is not connected", async () => {
-  const error = await Effect.gen(function* () {
+it.effect("fails when the live socket is not connected", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
     });
-    return yield* session.exchange(request).pipe(Effect.flip);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    const error = yield* session.exchange(request).pipe(Effect.flip);
+    assert.instanceOf(error, SyncTransportError);
+    assert.strictEqual(error.retryable, true);
+    assert.strictEqual(error.message, "Live synchronization disconnected.");
+  }),
+);
 
-  expect(error).toBeInstanceOf(SyncTransportError);
-  expect(error.retryable).toBe(true);
-  expect(error.message).toBe("Live synchronization disconnected.");
-});
-
-test("correlates an exchange-result frame on the live socket", async () => {
-  const response = await Effect.gen(function* () {
+it.effect("correlates an exchange-result frame on the live socket", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(
@@ -95,31 +91,32 @@ test("correlates an exchange-result frame on the live socket", async () => {
       ),
     });
     yield* waitForLive(session, messages);
-    return yield* session.exchange(request);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    const response = yield* session.exchange(request);
+    assert.strictEqual(response.nextCursor, 0);
+  }),
+);
 
-  expect(response.nextCursor).toBe(0);
-});
-
-test("fails when a live exchange times out", async () => {
-  const error = await Effect.gen(function* () {
+it.effect("fails when a live exchange times out", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
-      exchangeTimeoutMillis: 10,
+      exchangeTimeoutMillis: 1_000,
     });
     yield* waitForLive(session, messages);
-    return yield* session.exchange(request).pipe(Effect.flip);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    const fiber = yield* session.exchange(request).pipe(Effect.flip, Effect.forkChild);
+    yield* Effect.yieldNow;
+    yield* TestClock.adjust("1 second");
+    const error = yield* Fiber.join(fiber);
+    assert.instanceOf(error, SyncTransportError);
+    assert.strictEqual(error.retryable, true);
+    assert.strictEqual(error.message, "Live synchronization timed out.");
+  }),
+);
 
-  expect(error).toBeInstanceOf(SyncTransportError);
-  expect(error.retryable).toBe(true);
-  expect(error.message).toBe("Live synchronization timed out.");
-});
-
-test("mints a fresh correlation token per exchange", async () => {
-  const requestIds: string[] = [];
-  await Effect.gen(function* () {
+it.effect("mints a fresh correlation token per exchange", () =>
+  Effect.gen(function* () {
+    const requestIds: string[] = [];
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(
@@ -141,13 +138,12 @@ test("mints a fresh correlation token per exchange", async () => {
     yield* waitForLive(session, messages);
     yield* session.exchange(request);
     yield* session.exchange(request);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    assert.deepStrictEqual(requestIds, ["1", "2"]);
+  }),
+);
 
-  expect(requestIds).toEqual(["1", "2"]);
-});
-
-test("hello and invalidate frames still surface as live pull signals", async () => {
-  const events = await Effect.gen(function* () {
+it.effect("hello and invalidate frames still surface as live pull signals", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
@@ -162,17 +158,16 @@ test("hello and invalidate frames still surface as live pull signals", async () 
         SyncLiveEvent.make({ type: "invalidate", protocolVersion: 2, headCursor: 12 }),
       ),
     );
-    return yield* session.events.pipe(Stream.take(2), Stream.runCollect);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    const events = yield* session.events.pipe(Stream.take(2), Stream.runCollect);
+    assert.deepStrictEqual(Array.from(events), [
+      { type: "hello", protocolVersion: 2, headCursor: 9 },
+      { type: "invalidate", protocolVersion: 2, headCursor: 12 },
+    ]);
+  }),
+);
 
-  expect(events).toEqual([
-    { type: "hello", protocolVersion: 2, headCursor: 9 },
-    { type: "invalidate", protocolVersion: 2, headCursor: 12 },
-  ]);
-});
-
-test("connect succeeds once the first hello arrives", async () => {
-  await Effect.gen(function* () {
+it.effect("connect succeeds once the first hello arrives", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
@@ -180,11 +175,11 @@ test("connect succeeds once the first hello arrives", async () => {
     const connecting = yield* connectSyncSocketSession(session).pipe(Effect.forkChild);
     yield* Queue.offer(messages, helloFrame);
     yield* Fiber.join(connecting);
-  }).pipe(Effect.scoped, Effect.runPromise);
-});
+  }),
+);
 
-test("connect fails when the live socket closes before hello", async () => {
-  const error = await Effect.gen(function* () {
+it.effect("connect fails when the live socket closes before hello", () =>
+  Effect.gen(function* () {
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed({
         send: () => Effect.void,
@@ -196,26 +191,78 @@ test("connect fails when the live socket closes before hello", async () => {
         ),
       }),
     });
-    return yield* connectSyncSocketSession(session, { connectTimeoutMillis: 1_000 }).pipe(
+    const error = yield* connectSyncSocketSession(session, { connectTimeoutMillis: 1_000 }).pipe(
       Effect.flip,
     );
-  }).pipe(Effect.scoped, Effect.runPromise);
+    assert.instanceOf(error, SyncTransportError);
+    assert.strictEqual(error.retryable, true);
+    assert.strictEqual(error.message, "Live synchronization closed (1006).");
+  }),
+);
 
-  expect(error).toBeInstanceOf(SyncTransportError);
-  expect(error.retryable).toBe(true);
-  expect(error.message).toBe("Live synchronization closed (1006).");
-});
-
-test("connect fails when hello never arrives before the timeout", async () => {
-  const error = await Effect.gen(function* () {
+it.effect("connect fails when hello never arrives before the timeout", () =>
+  Effect.gen(function* () {
     const messages = yield* Queue.unbounded<string>();
     const session = yield* makeSyncSocketSession({
       open: Effect.succeed(queuedSocket(messages)),
     });
-    return yield* connectSyncSocketSession(session, { connectTimeoutMillis: 20 }).pipe(Effect.flip);
-  }).pipe(Effect.scoped, Effect.runPromise);
+    const fiber = yield* connectSyncSocketSession(session, { connectTimeoutMillis: 1_000 }).pipe(
+      Effect.flip,
+      Effect.forkChild,
+    );
+    yield* Effect.yieldNow;
+    yield* TestClock.adjust("1 second");
+    const error = yield* Fiber.join(fiber);
+    assert.instanceOf(error, SyncTransportError);
+    assert.strictEqual(error.retryable, true);
+    assert.strictEqual(error.message, "Live synchronization timed out waiting to become ready.");
+  }),
+);
 
-  expect(error).toBeInstanceOf(SyncTransportError);
-  expect(error.retryable).toBe(true);
-  expect(error.message).toBe("Live synchronization timed out waiting to become ready.");
-});
+it.effect("removes a pending exchange when sending fails", () =>
+  Effect.gen(function* () {
+    const messages = yield* Queue.unbounded<string>();
+    const sendError = SyncTransportError.make({ message: "send failed", retryable: true });
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed(
+        queuedSocket(messages, (payload) => {
+          const frame = Schema.decodeUnknownOption(SyncClientFrame)(JSON.parse(payload));
+          return Option.isSome(frame) && frame.value.type === "exchange"
+            ? Effect.fail(sendError)
+            : Effect.void;
+        }),
+      ),
+    });
+    yield* waitForLive(session, messages);
+
+    const error = yield* session.exchange(request).pipe(Effect.flip);
+
+    assert.strictEqual(error, sendError);
+  }),
+);
+
+it.effect("sends pings at one interval rather than double-spacing them", () =>
+  Effect.gen(function* () {
+    const messages = yield* Queue.unbounded<string>();
+    const pings = yield* Queue.unbounded<void>();
+    const session = yield* makeSyncSocketSession({
+      open: Effect.succeed(
+        queuedSocket(messages, (payload) => {
+          const frame = Schema.decodeUnknownOption(SyncClientFrame)(JSON.parse(payload));
+          return Option.isSome(frame) && frame.value.type === "ping"
+            ? Queue.offer(pings, undefined)
+            : Effect.void;
+        }),
+      ),
+      pingIntervalMillis: 1_000,
+    });
+    yield* waitForLive(session, messages);
+
+    yield* TestClock.adjust("1 second");
+    yield* Queue.take(pings);
+    yield* TestClock.adjust("1 second");
+    yield* Queue.take(pings);
+    yield* TestClock.adjust("1 second");
+    yield* Queue.take(pings);
+  }),
+);

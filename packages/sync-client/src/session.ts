@@ -155,13 +155,12 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
   const nextRequestId = () => String((issued += 1));
 
   const failPending = (error: SyncTransportError) =>
-    Ref.get(pendingRef).pipe(
+    Ref.getAndSet(pendingRef, HashMap.empty()).pipe(
       Effect.flatMap((pending) =>
         Effect.forEach(HashMap.values(pending), (deferred) => Deferred.fail(deferred, error), {
           discard: true,
         }),
       ),
-      Effect.andThen(Ref.set(pendingRef, HashMap.empty())),
     );
 
   const dropPending = (requestId: string) =>
@@ -227,8 +226,8 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
           .pipe(Effect.ignore);
       });
       yield* ping.pipe(
-        Effect.delay(Duration.millis(pingInterval)),
         Effect.repeat(Schedule.spaced(Duration.millis(pingInterval))),
+        Effect.delay(Duration.millis(pingInterval)),
         Effect.forkScoped,
       );
       return socket.messages.pipe(
@@ -246,25 +245,25 @@ export const makeSyncSocketSession = Effect.fn("SyncSocketSession.make")(functio
     const requestId = nextRequestId();
     const deferred = yield* Deferred.make<SyncResponse, SyncTransportError>();
     yield* Ref.update(pendingRef, (pending) => HashMap.set(pending, requestId, deferred));
-    yield* socket
+    return yield* socket
       .send(JSON.stringify(encodeClientFrame({ type: "exchange", requestId, request })))
-      .pipe(Effect.tapError(() => dropPending(requestId)));
-    return yield* Deferred.await(deferred).pipe(
-      Effect.timeoutOrElse({
-        duration: Duration.millis(input.exchangeTimeoutMillis ?? 45_000),
-        orElse: () =>
-          dropPending(requestId).pipe(
-            Effect.andThen(
-              Effect.fail(
-                SyncTransportError.make({
-                  message: "Live synchronization timed out.",
-                  retryable: true,
-                }),
-              ),
-            ),
+      .pipe(
+        Effect.andThen(
+          Deferred.await(deferred).pipe(
+            Effect.timeoutOrElse({
+              duration: Duration.millis(input.exchangeTimeoutMillis ?? 45_000),
+              orElse: () =>
+                Effect.fail(
+                  SyncTransportError.make({
+                    message: "Live synchronization timed out.",
+                    retryable: true,
+                  }),
+                ),
+            }),
           ),
-      }),
-    );
+        ),
+        Effect.ensuring(dropPending(requestId)),
+      );
   });
 
   return { events, exchange } satisfies SyncSocketSession;

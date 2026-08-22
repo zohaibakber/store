@@ -216,3 +216,103 @@ it.effect("schedules a failure wake instead of waiting for the safety poll", () 
     assert.strictEqual(yield* Ref.get(calls), 2);
   }),
 );
+
+it.effect("runs safety polls at every configured interval", () =>
+  Effect.gen(function* () {
+    const calls = yield* Ref.make(0);
+    const runtime = yield* makeSyncClientRuntime<TestSyncError, never>({
+      initialStatus: status,
+      adapter: {
+        exchangeOnce: () =>
+          Ref.updateAndGet(calls, (count) => count + 1).pipe(
+            Effect.map((cursor) => ({ cursor, hasMore: false, moreLocalWork: false })),
+          ),
+        completedStatus: Effect.succeed({ ...status, phase: "idle", message: "Synced" }),
+        failureStatus: (error) =>
+          Effect.succeed({ ...status, phase: "error", message: error.message }),
+        retryable: (error) => error.retryable,
+        tooManyRounds: () => TestSyncError.make({ message: "too many rounds", retryable: false }),
+      },
+      safetyPollIntervalMillis: 1_000,
+    });
+
+    yield* runtime.start;
+    assert.strictEqual(yield* Ref.get(calls), 1);
+    yield* TestClock.adjust("1 second");
+    yield* Effect.yieldNow;
+    assert.strictEqual(yield* Ref.get(calls), 2);
+    yield* TestClock.adjust("1 second");
+    yield* Effect.yieldNow;
+    assert.strictEqual(yield* Ref.get(calls), 3);
+  }),
+);
+
+it.effect("preserves an urgent local commit when a safety poll arrives later", () =>
+  Effect.gen(function* () {
+    const reasons = yield* Ref.make<string[]>([]);
+    const active = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const rerun = yield* Deferred.make<void>();
+    const runtime = yield* makeSyncClientRuntime<TestSyncError, never>({
+      initialStatus: status,
+      adapter: {
+        exchangeOnce: (reason) =>
+          Effect.gen(function* () {
+            const seen = yield* Ref.get(reasons);
+            yield* Ref.set(reasons, [...seen, reason]);
+            if (seen.length === 1) {
+              yield* Deferred.succeed(active, undefined);
+              yield* Deferred.await(release);
+            }
+            if (seen.length === 2) yield* Deferred.succeed(rerun, undefined);
+            return { cursor: 0, hasMore: false, moreLocalWork: false };
+          }),
+        completedStatus: Effect.succeed({ ...status, phase: "idle", message: "Synced" }),
+        failureStatus: (error) =>
+          Effect.succeed({ ...status, phase: "error", message: error.message }),
+        retryable: (error) => error.retryable,
+        tooManyRounds: () => TestSyncError.make({ message: "too many rounds", retryable: false }),
+      },
+      safetyPollIntervalMillis: 60_000,
+    });
+
+    yield* runtime.start;
+    yield* runtime.requestSync("manual").pipe(Effect.forkChild);
+    yield* Deferred.await(active);
+    yield* runtime.signal("local-commit");
+    yield* runtime.signal("safety-poll");
+    yield* Deferred.succeed(release, undefined);
+    yield* Deferred.await(rerun);
+    assert.deepStrictEqual(yield* Ref.get(reasons), ["startup", "manual", "local-commit"]);
+  }),
+);
+
+it.effect("caps exchange rounds and yields between continuation rounds", () =>
+  Effect.gen(function* () {
+    const calls = yield* Ref.make(0);
+    const yielded = yield* Ref.make(false);
+    const runtime = yield* makeSyncClientRuntime<TestSyncError, never>({
+      initialStatus: status,
+      adapter: {
+        exchangeOnce: () =>
+          Ref.updateAndGet(calls, (count) => count + 1).pipe(
+            Effect.map((cursor) => ({ cursor, hasMore: true, moreLocalWork: false })),
+          ),
+        completedStatus: Effect.succeed({ ...status, phase: "idle", message: "Synced" }),
+        failureStatus: (error) =>
+          Effect.succeed({ ...status, phase: "error", message: error.message }),
+        retryable: (error) => error.retryable,
+        tooManyRounds: () => TestSyncError.make({ message: "too many rounds", retryable: false }),
+      },
+      maximumExchangeRounds: 3,
+      safetyPollIntervalMillis: 60_000,
+    });
+    yield* Effect.yieldNow.pipe(Effect.andThen(Ref.set(yielded, true)), Effect.forkChild);
+
+    const error = yield* runtime.requestSync("manual").pipe(Effect.flip);
+
+    assert.strictEqual(error.message, "too many rounds");
+    assert.strictEqual(yield* Ref.get(calls), 3);
+    assert.strictEqual(yield* Ref.get(yielded), true);
+  }),
+);

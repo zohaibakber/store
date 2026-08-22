@@ -54,6 +54,15 @@ const native = nativeClient(__DEV__ ? "Tabaaq Dev Mobile" : "Tabaaq Mobile");
 let tokens: TokenSetType | null = null;
 let refreshInFlight: Promise<TokenSetType | null> | null = null;
 
+export class WorkspaceSessionError extends Schema.TaggedError<WorkspaceSessionError>()(
+  "Mobile.WorkspaceSessionError",
+  {
+    message: Schema.String,
+    status: Schema.optionalKey(Schema.Number),
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {}
+
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 const persistTokens = async (next: TokenSetType | null) => {
@@ -135,12 +144,29 @@ export const fetchWorkspaceSession = async (): Promise<typeof WorkspaceSnapshot.
       headers: await nativeAuthHeaders(),
       signal: controller.signal,
     });
-    const payload = await response
-      .json()
-      .then(Schema.decodeUnknownOption(WorkspaceSnapshot))
-      .then(Option.getOrNull)
-      .catch(() => null);
-    if (!response.ok || !payload) return unauthenticatedWorkspace({ isOnline: false });
+    if (response.status === 401 || response.status === 403) {
+      return unauthenticatedWorkspace({ isOnline: true });
+    }
+    if (!response.ok) {
+      throw new WorkspaceSessionError({
+        message: `The session server is unavailable (HTTP ${response.status}).`,
+        status: response.status,
+      });
+    }
+    const raw: unknown = await response.json().catch((cause) => {
+      throw new WorkspaceSessionError({
+        message: "The session server returned an invalid response.",
+        status: response.status,
+        cause,
+      });
+    });
+    const payload = Schema.decodeUnknownOption(WorkspaceSnapshot)(raw).pipe(Option.getOrNull);
+    if (!payload) {
+      throw new WorkspaceSessionError({
+        message: "The session server returned an invalid response.",
+        status: response.status,
+      });
+    }
     return payload;
   } catch (cause) {
     if (isOfflineCause(cause)) throw new OfflineError();

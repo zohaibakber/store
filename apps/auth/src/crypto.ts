@@ -6,6 +6,11 @@ import { authError } from "./errors";
 
 const textEncoder = new TextEncoder();
 
+export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("Auth.CryptoError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 export const OTP_TTL_MS = 10 * 60 * 1_000;
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
@@ -20,8 +25,11 @@ export const randomSecret = (bytes: number) => {
 };
 
 export const sha256 = (value: string) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", textEncoder.encode(value)).then((buffer) => {
+  Effect.tryPromise({
+    try: () => crypto.subtle.digest("SHA-256", textEncoder.encode(value)),
+    catch: (cause) => new AuthCryptoError({ operation: "sha256", cause }),
+  }).pipe(
+    Effect.map((buffer) => {
       let binary = "";
       for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
       return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");

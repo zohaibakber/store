@@ -7,6 +7,7 @@ import {
   type LoginCommand,
   type PasswordHasherApi,
 } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -29,6 +30,7 @@ export const makeLoginOps = (
   configuration: LoginOpsConfiguration,
 ) => {
   const identify = Effect.fn("Auth.Login.identify")(function* (input: IdentifyInput) {
+    const now = yield* Clock.currentTimeMillis;
     const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
       normalizeEmail(input.email),
     ).pipe(Effect.mapError(() => authError(400, "INVALID_EMAIL", "Enter a valid email.")));
@@ -36,7 +38,7 @@ export const makeLoginOps = (
       key: `identify:${normalized}`,
       limit: 10,
       windowSeconds: 60,
-      now: Date.now(),
+      now,
     });
     if (!allowed) {
       return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
@@ -45,7 +47,7 @@ export const makeLoginOps = (
     if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
     if (user.passwordHash) return LoginRoute.make({ _tag: "Password", email: normalized });
     const code = generateOtp();
-    const expiresAt = Date.now() + OTP_TTL_MS;
+    const expiresAt = now + OTP_TTL_MS;
     const challengeId = yield* ephemeral.createOtp({
       email: normalized,
       code,
@@ -64,6 +66,7 @@ export const makeLoginOps = (
   });
 
   const authenticate = Effect.fn("Auth.Login.authenticate")(function* (command: LoginCommand) {
+    const now = yield* Clock.currentTimeMillis;
     switch (command._tag) {
       case "Password": {
         const emailAddress = EmailAddress.make(normalizeEmail(command.email));
@@ -71,7 +74,7 @@ export const makeLoginOps = (
           key: `password:${emailAddress}`,
           limit: 5,
           windowSeconds: 300,
-          now: Date.now(),
+          now,
         });
         if (!allowed) {
           return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
@@ -99,7 +102,7 @@ export const makeLoginOps = (
           key: `otp-attempt:${command.challengeId}`,
           limit: 5,
           windowSeconds: OTP_TTL_MS / 1_000,
-          now: Date.now(),
+          now,
         });
         if (!allowed) {
           return yield* authError(429, "RATE_LIMITED", "Wait before trying another code.");
@@ -107,7 +110,7 @@ export const makeLoginOps = (
         const emailAddress = yield* ephemeral.consumeOtp({
           challengeId: command.challengeId,
           code: command.code,
-          now: Date.now(),
+          now,
         });
         if (!emailAddress) {
           return yield* authError(401, "INVALID_OTP", "The code is invalid or has expired.");
@@ -124,7 +127,7 @@ export const makeLoginOps = (
           key: `register:${emailAddress}`,
           limit: 5,
           windowSeconds: 3_600,
-          now: Date.now(),
+          now,
         });
         if (!allowed) {
           return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");

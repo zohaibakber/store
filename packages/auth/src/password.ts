@@ -36,6 +36,7 @@ export class PasswordHashError extends Schema.TaggedError<PasswordHashError>()(
   "Auth.PasswordHashError",
   {
     message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {}
 
@@ -65,6 +66,7 @@ const derive = (password: Password, salt: Uint8Array<ArrayBuffer>, iterations: n
     catch: (cause) =>
       new PasswordHashError({
         message: `Password hashing failed: ${String(cause)}`,
+        cause,
       }),
   });
 

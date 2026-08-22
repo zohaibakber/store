@@ -81,7 +81,12 @@ export function ReviewBatchCard({
         >
           <ButtonText>Save batch</ButtonText>
         </Button>
-        <Button isDisabled={busy || saving} onPress={onScanAgain} style={styles.flex} variant="ghost">
+        <Button
+          isDisabled={busy || saving}
+          onPress={onScanAgain}
+          style={styles.flex}
+          variant="ghost"
+        >
           <ButtonText>Scan again</ButtonText>
         </Button>
       </CardFooter>

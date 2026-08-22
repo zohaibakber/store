@@ -13,6 +13,7 @@ import {
   type OrganizationSlug,
   type UserId,
 } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { INVITATION_TTL_MS, randomSecret, sha256 } from "./crypto";
@@ -83,6 +84,7 @@ export const makeOrganizationOps = (
     });
 
   const roster = Effect.fn("Auth.Organization.roster")(function* (accessToken: string) {
+    const now = yield* Clock.currentTimeMillis;
     const claims = yield* sessions.authorize(accessToken);
     const membership = yield* membershipOf(claims.subject, claims.activeOrganizationId);
     const members = yield* repository.listMembers(claims.activeOrganizationId);
@@ -92,7 +94,7 @@ export const makeOrganizationOps = (
         ? []
         : yield* repository.pendingInvitationsForOrganization({
             organizationId: claims.activeOrganizationId,
-            now: Date.now(),
+            now,
           });
     return OrganizationRoster.make({
       organization: membershipView(membership),
@@ -130,6 +132,7 @@ export const makeOrganizationOps = (
       readonly role: OrganizationRole;
     },
   ) {
+    const now = yield* Clock.currentTimeMillis;
     yield* requireRole(claims.subject, input.organizationId, ["owner", "admin"]);
     const address = EmailAddress.make(normalizeEmail(input.email));
     const members = yield* repository.listMembers(input.organizationId);
@@ -142,7 +145,7 @@ export const makeOrganizationOps = (
     }
     const secret = randomSecret(32);
     const tokenHash = yield* sha256(`${configuration.refreshTokenPepper}:invite:${secret}`);
-    const expiresAt = Date.now() + INVITATION_TTL_MS;
+    const expiresAt = now + INVITATION_TTL_MS;
     const invitation = yield* repository.createInvitation({
       organizationId: input.organizationId,
       email: address,
@@ -150,7 +153,7 @@ export const makeOrganizationOps = (
       tokenHash,
       invitedByUserId: claims.subject,
       expiresAt,
-      now: Date.now(),
+      now,
     });
     yield* email
       .sendInvitation({
@@ -181,18 +184,19 @@ export const makeOrganizationOps = (
     claims: AccessClaims,
     token: string,
   ) {
+    const now = yield* Clock.currentTimeMillis;
     const allowed = yield* ephemeral.allow({
       key: `accept-invitation:${claims.subject}`,
       limit: 10,
       windowSeconds: 600,
-      now: Date.now(),
+      now,
     });
     if (!allowed) {
       return yield* authError(429, "RATE_LIMITED", "Wait before trying another invitation.");
     }
     const tokenHash = yield* sha256(`${configuration.refreshTokenPepper}:invite:${token}`);
     const invitation = yield* repository.findInvitationByTokenHash(tokenHash);
-    const expired = invitation !== null && invitation.expiresAt <= Date.now();
+    const expired = invitation !== null && invitation.expiresAt <= now;
     const spent =
       invitation !== null && (invitation.acceptedAt !== null || invitation.revokedAt !== null);
     if (!invitation || expired || spent) {
@@ -214,7 +218,7 @@ export const makeOrganizationOps = (
     const accepted = yield* repository.acceptInvitation({
       invitation,
       userId: claims.subject,
-      now: Date.now(),
+      now,
     });
     if (!accepted) {
       return yield* authError(
@@ -316,6 +320,7 @@ export const makeOrganizationOps = (
     readonly accessToken: string;
     readonly command: OrganizationCommand;
   }) {
+    const now = yield* Clock.currentTimeMillis;
     const claims = yield* sessions.authorize(input.accessToken);
     const command = input.command;
     switch (command._tag) {
@@ -328,7 +333,7 @@ export const makeOrganizationOps = (
         const revoked = yield* repository.revokeInvitation({
           organizationId: command.organizationId,
           invitationId: command.invitationId,
-          now: Date.now(),
+          now,
         });
         if (!revoked) {
           return yield* authError(

@@ -5,7 +5,7 @@ import {
   withWorkspaceOnline,
   WorkspaceSnapshot,
   type WorkspaceSnapshot as WorkspaceSnapshotType,
-} from "@store/contracts";
+} from "@store/contracts/workspace";
 import * as Schema from "effect/Schema";
 
 import { RequestError, type SessionHttpClient } from "./session-http";

@@ -9,6 +9,7 @@ import {
   type SignOutInput,
   type UserId,
 } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { parseRefreshToken, randomSecret, REFRESH_TTL_MS, safeEqual, sha256 } from "./crypto";
@@ -48,7 +49,12 @@ export const makeSessionOps = (
     return yield* repository.membershipForUser(userId);
   });
 
-  const issueAccess = (user: UserRecord, sessionId: SessionId, membership: MembershipRecord) =>
+  const issueAccess = (
+    user: UserRecord,
+    sessionId: SessionId,
+    membership: MembershipRecord,
+    now: number,
+  ) =>
     accessTokens.issue({
       subject: user.id,
       sessionId,
@@ -59,6 +65,7 @@ export const makeSessionOps = (
       email: user.email,
       name: user.name,
       image: user.image,
+      now,
     });
 
   const issueSession = Effect.fn("Auth.Session.issueSession")(function* (
@@ -66,12 +73,13 @@ export const makeSessionOps = (
     client: AuthClientKind,
     replayKey?: string,
   ) {
+    const now = yield* Clock.currentTimeMillis;
     const membership = yield* resolveMembership(user.id);
     const sessionId = SessionId.make(replayKey ?? crypto.randomUUID());
     const familyId = crypto.randomUUID();
     const refreshSecret = randomSecret(32);
     const refreshTokenHash = yield* sha256(`${configuration.refreshTokenPepper}:${refreshSecret}`);
-    const refreshExpiresAt = Date.now() + REFRESH_TTL_MS;
+    const refreshExpiresAt = now + REFRESH_TTL_MS;
     yield* repository.createSession({
       id: sessionId,
       familyId,
@@ -81,7 +89,7 @@ export const makeSessionOps = (
       client,
       expiresAt: refreshExpiresAt,
     });
-    const access = yield* issueAccess(user, sessionId, membership);
+    const access = yield* issueAccess(user, sessionId, membership, now);
     return TokenSet.make({
       accessToken: access.token,
       accessExpiresAt: access.expiresAt,
@@ -98,6 +106,7 @@ export const makeSessionOps = (
   const openRefresh = Effect.fn("Auth.Session.openRefresh")(function* (
     refreshToken: string | undefined,
   ) {
+    const now = yield* Clock.currentTimeMillis;
     if (!refreshToken) {
       return yield* authError(401, "REFRESH_REQUIRED", "The session has expired.");
     }
@@ -111,14 +120,14 @@ export const makeSessionOps = (
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
     if (current.revokedAt !== null) {
-      yield* repository.revokeFamily(current.familyId, Date.now());
+      yield* repository.revokeFamily(current.familyId, now);
       return yield* authError(
         401,
         "REFRESH_REUSE_DETECTED",
         "This session was revoked. Sign in again.",
       );
     }
-    if (current.expiresAt <= Date.now()) {
+    if (current.expiresAt <= now) {
       return yield* authError(401, "REFRESH_EXPIRED", "The session has expired.");
     }
     const user = yield* repository.findUserById(current.userId);
@@ -133,13 +142,14 @@ export const makeSessionOps = (
     readonly user: UserRecord;
     readonly membership: MembershipRecord;
   }) {
+    const now = yield* Clock.currentTimeMillis;
     const nextId = SessionId.make(crypto.randomUUID());
     const nextSecret = randomSecret(32);
     const nextHash = yield* sha256(`${configuration.refreshTokenPepper}:${nextSecret}`);
-    const refreshExpiresAt = Date.now() + REFRESH_TTL_MS;
+    const refreshExpiresAt = now + REFRESH_TTL_MS;
     const rotated = yield* repository.rotateSession({
       currentId: input.session.id,
-      now: Date.now(),
+      now,
       replacement: {
         id: nextId,
         familyId: input.session.familyId,
@@ -154,14 +164,14 @@ export const makeSessionOps = (
       },
     });
     if (!rotated) {
-      yield* repository.revokeFamily(input.session.familyId, Date.now());
+      yield* repository.revokeFamily(input.session.familyId, now);
       return yield* authError(
         401,
         "REFRESH_REUSE_DETECTED",
         "This session was revoked. Sign in again.",
       );
     }
-    const access = yield* issueAccess(input.user, nextId, input.membership);
+    const access = yield* issueAccess(input.user, nextId, input.membership, now);
     return TokenSet.make({
       accessToken: access.token,
       accessExpiresAt: access.expiresAt,
@@ -177,14 +187,15 @@ export const makeSessionOps = (
   });
 
   const signOut = Effect.fn("Auth.Session.signOut")(function* (input: SignOutInput) {
+    const now = yield* Clock.currentTimeMillis;
     if (!input.refreshToken) return;
     const parsed = yield* parseRefreshToken(input.refreshToken);
     const session = yield* repository.findSession(parsed.sessionId);
     if (!session) return;
     const actualHash = yield* sha256(`${configuration.refreshTokenPepper}:${parsed.secret}`);
     if (!safeEqual(actualHash, session.refreshTokenHash)) return;
-    if (input.everywhere) yield* repository.revokeUser(session.userId, Date.now());
-    else yield* repository.revokeSession(session.id, Date.now());
+    if (input.everywhere) yield* repository.revokeUser(session.userId, now);
+    else yield* repository.revokeSession(session.id, now);
   });
 
   /**
@@ -193,11 +204,12 @@ export const makeSessionOps = (
    * change or a sign-out everywhere must take effect before it expires.
    */
   const authorize = Effect.fn("Auth.Session.authorize")(function* (accessToken: string) {
+    const now = yield* Clock.currentTimeMillis;
     const claims = yield* accessTokens
-      .verify(accessToken)
+      .verify(accessToken, now)
       .pipe(Effect.mapError(() => authError(401, "UNAUTHENTICATED", "Sign in to continue.")));
     const session = yield* repository.findSession(claims.sessionId);
-    if (!session || session.revokedAt !== null || session.expiresAt <= Date.now()) {
+    if (!session || session.revokedAt !== null || session.expiresAt <= now) {
       return yield* authError(401, "SESSION_REVOKED", "This session has ended. Sign in again.");
     }
     return claims;

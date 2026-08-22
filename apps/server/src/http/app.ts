@@ -77,7 +77,7 @@ export const recoverUnexpected = <E, R>(
 ) =>
   effect.pipe(
     Effect.catchCause((cause) => {
-      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+      if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
       return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
         Effect.as(
           HttpServerResponse.jsonUnsafe(

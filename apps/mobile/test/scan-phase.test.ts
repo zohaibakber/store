@@ -88,8 +88,9 @@ describe("scan phase helpers", () => {
   });
 
   it("titles the sheet from the active review step", () => {
-    expect(scanSheetTitle({ type: "reviewProduct", inference: inference(), matchedProductId: null }))
-      .toMatchObject({ title: "Review product" });
+    expect(
+      scanSheetTitle({ type: "reviewProduct", inference: inference(), matchedProductId: null }),
+    ).toMatchObject({ title: "Review product" });
     expect(
       scanSheetTitle({
         type: "inventoryReady",

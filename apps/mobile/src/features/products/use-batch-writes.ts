@@ -11,9 +11,7 @@ import type {
 
 export type BatchWritePending = null | "batch" | "quantity";
 
-export type BatchWriteResult =
-  | { ok: true; batch: MobileBatch }
-  | { ok: false; message: string };
+export type BatchWriteResult = { ok: true; batch: MobileBatch } | { ok: false; message: string };
 
 type DetailsInput = {
   productId: string;
@@ -23,7 +21,7 @@ type DetailsInput = {
   expiresAt: number | null;
 };
 
-type QuantityInput = {
+export type QuantityInput = {
   productId: string;
   selectedBatchId: string | null;
   newBatchId: string;
@@ -63,9 +61,9 @@ export function useBatchWrites() {
         ...batchMutationTarget(input.selectedBatchId, input.newBatchId),
         packQuantity: input.packQuantity,
         unitQuantity: input.unitQuantity,
-        ...(input.batchNumber !== undefined ? { batchNumber: input.batchNumber } : {}),
-        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       };
+      if (input.batchNumber !== undefined) payload.batchNumber = input.batchNumber;
+      if (input.expiresAt !== undefined) payload.expiresAt = input.expiresAt;
       const batch = await updateBatchQuantity(payload);
       return { ok: true, batch };
     } catch (cause) {

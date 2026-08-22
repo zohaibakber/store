@@ -1,22 +1,20 @@
 import * as Schema from "effect/Schema";
 
-import { SYNC_PROTOCOL_VERSION } from "./schema";
+import { SYNC_PROTOCOL_VERSION, SyncCursor, SyncPositiveInteger } from "./schema";
 
 export const MAX_LIVE_IDENTIFIER_LENGTH = 200;
-
-const Cursor = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
 export const SyncLiveHello = Schema.Struct({
   type: Schema.Literal("hello"),
   protocolVersion: Schema.Literal(SYNC_PROTOCOL_VERSION),
-  headCursor: Cursor,
+  headCursor: SyncCursor,
 });
 export interface SyncLiveHello extends Schema.Schema.Type<typeof SyncLiveHello> {}
 
 export const SyncLiveInvalidate = Schema.Struct({
   type: Schema.Literal("invalidate"),
   protocolVersion: Schema.Literal(SYNC_PROTOCOL_VERSION),
-  headCursor: Cursor,
+  headCursor: SyncCursor,
 });
 export interface SyncLiveInvalidate extends Schema.Schema.Type<typeof SyncLiveInvalidate> {}
 
@@ -29,6 +27,6 @@ export const SyncLiveAttachment = Schema.Struct({
   deviceId: Schema.String,
   connectionId: Schema.String,
   protocolVersion: Schema.Literal(SYNC_PROTOCOL_VERSION),
-  authenticationExpiresAt: Schema.Number,
+  authenticationExpiresAt: SyncPositiveInteger,
 });
 export interface SyncLiveAttachment extends Schema.Schema.Type<typeof SyncLiveAttachment> {}

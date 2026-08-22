@@ -10,12 +10,12 @@ import { ServerRuntime } from "../http/runtime";
 export const SyncHandlers = HttpApiBuilder.group(
   StoreApi,
   "sync",
-  Effect.fn(function* (handlers) {
+  Effect.fn("SyncHandlers.make")(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
     return handlers.handle(
       "live",
-      Effect.fn(function* ({ query, request }) {
+      Effect.fn("SyncHandlers.live")(function* ({ query, request }) {
         const identity = yield* CurrentOrganization;
         if (request.headers.upgrade?.toLowerCase() !== "websocket")
           return yield* Effect.fail(

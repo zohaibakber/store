@@ -1,4 +1,5 @@
 import {
+  exactAcknowledgedOperationIds,
   type SyncEntityChange,
   type SyncOperation,
   type SyncRequest,
@@ -8,6 +9,7 @@ import { syncEntityRows } from "@store/contracts/entity-rows";
 import { categories, invoiceCounters, stockMovements, syncState } from "@store/db/local/schema";
 import { makeSyncClientRuntime, type SyncReason } from "@store/sync-client";
 import { and, eq, sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -30,6 +32,11 @@ export interface SyncEngine {
 
 const invalidResponse = (message: string) =>
   PersistenceError.make({ operation: "apply sync response", message });
+
+class SyncDrainLimitReached extends Schema.TaggedError<SyncDrainLimitReached>()(
+  "SyncDrainLimitReached",
+  { maximumRounds: Schema.Number },
+) {}
 
 const ensureIdentity = (
   row: { readonly organizationId: string; readonly id: string },
@@ -235,7 +242,7 @@ export const makeSyncEngine = (
       const request: SyncRequest = config.clientVersion
         ? { ...platformRequest, clientVersion: config.clientVersion }
         : platformRequest;
-      const attemptedAt = Date.now();
+      const attemptedAt = yield* Clock.currentTimeMillis;
       yield* database
         .update(syncState)
         .set({ lastAttemptAt: attemptedAt })
@@ -274,10 +281,13 @@ export const makeSyncEngine = (
         response.headCursor < response.nextCursor
       )
         return yield* invalidResponse("The sync response has an invalid organization or cursor");
-      const acknowledgementIds = new Set(response.acknowledgements.map((ack) => ack.operationId));
-      if (operations.some((operation) => !acknowledgementIds.has(operation.operationId)))
+      const acknowledgedOperationIds = exactAcknowledgedOperationIds(
+        operations,
+        response.acknowledgements,
+      );
+      if (!acknowledgedOperationIds)
         return yield* invalidResponse(
-          "The sync response did not acknowledge every submitted operation",
+          "The sync response acknowledgements did not exactly match the submitted operations",
         );
 
       yield* database
@@ -293,12 +303,8 @@ export const makeSyncEngine = (
               previousCursor = serverChange.cursor;
               yield* upsertRemoteChange(transaction, workspace, serverChange.change);
             }
-            const completedAt = Date.now();
-            yield* outbox.acknowledge(
-              transaction,
-              response.acknowledgements.map((acknowledgement) => acknowledgement.operationId),
-              completedAt,
-            );
+            const completedAt = yield* Clock.currentTimeMillis;
+            yield* outbox.acknowledge(transaction, acknowledgedOperationIds, completedAt);
             yield* transaction
               .update(syncState)
               .set({
@@ -320,13 +326,14 @@ export const makeSyncEngine = (
 
     const completedStatus = Effect.gen(function* () {
       if (!configured) return initialStatus;
+      const now = yield* Clock.currentTimeMillis;
       const state = yield* database.query.syncState
         .findFirst({ where: { organizationId: workspace.organizationId } })
         .pipe(mapPersistenceError("load completed sync state"));
       const health = yield* outbox.health;
       return {
         phase: health.quarantined ? "blocked" : "idle",
-        lastSyncedAt: state?.lastSuccessAt ?? Date.now(),
+        lastSyncedAt: state?.lastSuccessAt ?? now,
         message: health.quarantined
           ? "Synchronization is blocked by a quarantined operation"
           : "Local and cloud data are in sync",
@@ -338,13 +345,19 @@ export const makeSyncEngine = (
       error: PersistenceError,
     ) {
       const recorded = yield* Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
         yield* database
           .update(syncState)
-          .set({ lastAttemptAt: Date.now(), lastError: error.message })
+          .set({ lastAttemptAt: now, lastError: error.message })
           .where(eq(syncState.organizationId, workspace.organizationId));
-        const delayMillis = yield* outbox.markFailure(error.message, {
-          incrementAttempts: !(error.cause instanceof SyncTransportError && error.cause.retryable),
-        });
+        const delayMillis =
+          error.cause instanceof SyncDrainLimitReached
+            ? null
+            : yield* outbox.markFailure(error.message, {
+                incrementAttempts: !(
+                  error.cause instanceof SyncTransportError && error.cause.retryable
+                ),
+              });
         yield* Ref.set(lastFailureRetryMillis, delayMillis);
       }).pipe(mapPersistenceError("record sync failure"), Effect.result);
       if (recorded._tag === "Failure") {
@@ -372,6 +385,7 @@ export const makeSyncEngine = (
           PersistenceError.make({
             operation: "sync",
             message: `Synchronization did not drain after ${maximumRounds} exchanges`,
+            cause: new SyncDrainLimitReached({ maximumRounds }),
           }),
         retryAfterFailureMillis: () => Ref.getAndSet(lastFailureRetryMillis, null),
       },

@@ -65,12 +65,12 @@ const collectFiles = (parts: Stream.Stream<Multipart.Part, Multipart.MultipartEr
 export const UploadHandlers = HttpApiBuilder.group(
   StoreApi,
   "uploads",
-  Effect.fn(function* (handlers) {
+  Effect.fn("UploadHandlers.make")(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
     return handlers.handle(
       "extract",
-      Effect.fn(function* ({ payload }) {
+      Effect.fn("UploadHandlers.extract")(function* ({ payload }) {
         const files = yield* collectFiles(payload);
         if (files.length === 0)
           return yield* Effect.fail(

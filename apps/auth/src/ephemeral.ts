@@ -11,6 +11,7 @@ import {
   type OtpCode,
   type UserId as UserIdType,
 } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -58,6 +59,7 @@ export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>
   {
     operation: Schema.String,
     message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {}
 
@@ -105,7 +107,7 @@ export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralSto
 ) {}
 
 const error = (operation: string, cause: unknown) =>
-  new EphemeralStoreError({ operation, message: String(cause) });
+  new EphemeralStoreError({ operation, message: String(cause), cause });
 
 /**
  * Cloudflare KV refuses `expiration`/`expirationTtl` under 60 seconds. Identify
@@ -136,6 +138,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
     EphemeralStore,
     EphemeralStore.of({
       createOtp: Effect.fn("EphemeralStore.createOtp")(function* (input) {
+        const now = yield* Clock.currentTimeMillis;
         const challengeId = OtpChallengeId.make(keyId());
         const codeHash = yield* digest(`${pepper}:${challengeId}:${input.code}`);
         yield* Effect.tryPromise({
@@ -147,7 +150,7 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
                 codeHash,
                 expiresAt: input.expiresAt,
               } satisfies typeof OtpRecord.Type),
-              { expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()) },
+              { expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now) },
             ),
           catch: (cause) => error("createOtp", cause),
         });
@@ -171,11 +174,12 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         return record.email;
       }),
       createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
+        const now = yield* Clock.currentTimeMillis;
         const state = keyId();
         yield* Effect.tryPromise({
           try: () =>
             namespace.put(`oauth-state:${state}`, JSON.stringify(input), {
-              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()),
+              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
             }),
           catch: (cause) => error("createOAuthState", cause),
         });
@@ -199,11 +203,12 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
       }),
       createAuthorizationGrant: Effect.fn("EphemeralStore.createAuthorizationGrant")(
         function* (input) {
+          const now = yield* Clock.currentTimeMillis;
           const code = AuthorizationCode.make(keyId());
           yield* Effect.tryPromise({
             try: () =>
               namespace.put(`authorization:${code}`, JSON.stringify(input), {
-                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, Date.now()),
+                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
               }),
             catch: (cause) => error("createAuthorizationGrant", cause),
           });

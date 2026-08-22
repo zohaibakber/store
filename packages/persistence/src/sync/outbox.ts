@@ -8,6 +8,7 @@ import {
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import { syncDeviceState, syncOutbox } from "@store/db/local/schema";
 import { and, asc, eq, inArray, isNull, like, ne, sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import type { Workspace } from "../config";
@@ -294,6 +295,7 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
   });
 
   const nextBatch = Effect.fn("Outbox.nextBatch")(function* () {
+    const now = yield* Clock.currentTimeMillis;
     const pending = yield* database
       .select()
       .from(syncOutbox)
@@ -306,7 +308,7 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .orderBy(asc(syncOutbox.clientSequence))
       .limit(MAX_SYNC_OPERATIONS_PER_REQUEST + 1)
       .pipe(mapPersistenceError("load pending sync operations"));
-    return selectBatch(sendableDuePrefix(pending, Date.now()));
+    return selectBatch(sendableDuePrefix(pending, now));
   });
 
   const acknowledge = Effect.fn("Outbox.acknowledge")(function* (
@@ -342,9 +344,10 @@ export const makeOutbox = (database: StoreDatabase, workspace: Workspace) => {
       .limit(1)
       .pipe(mapPersistenceError("read outbox head for backoff"));
     if (head === undefined) return null;
+    const now = yield* Clock.currentTimeMillis;
     const attemptCount = options.incrementAttempts ? head.attemptCount + 1 : head.attemptCount;
     const delayMillis = retryDelayMillis(attemptCount);
-    const nextAttemptAt = Date.now() + delayMillis;
+    const nextAttemptAt = now + delayMillis;
     yield* database
       .update(syncOutbox)
       .set({
