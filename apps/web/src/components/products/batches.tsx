@@ -7,7 +7,6 @@ import {
   productStock,
 } from "@store/contracts/store-helpers";
 import { useForm } from "@tanstack/react-form";
-import { useRouter } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
 import * as z from "zod";
@@ -46,8 +45,8 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
+import { useInventoryActions } from "@/lib/inventory-db";
 import { isNumber, isString } from "@/lib/predicates";
-import { useStore } from "@/lib/store";
 
 const parseISODate = (value: string): Date | undefined => {
   const [year, month, day] = value.split("-").map(Number);
@@ -173,8 +172,7 @@ function QuantityField({ field, label }: { field: BatchTextField; label: string 
 }
 
 function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksPacks: boolean }) {
-  const router = useRouter();
-  const store = useStore();
+  const { createBatch } = useInventoryActions();
   const [open, setOpen] = useState(false);
   const form = useForm({
     defaultValues: {
@@ -186,7 +184,7 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
     validators: { onSubmit: batchFormSchema },
     onSubmit: async ({ value }) => {
       try {
-        await store.createBatch({
+        await createBatch({
           productId,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: expiryTimestamp(value.expiresAt),
@@ -196,7 +194,6 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
         toastManager.add({ title: tracksPacks ? "Batch added" : "Stock added", type: "success" });
         setOpen(false);
         form.reset();
-        await router.invalidate();
       } catch (error) {
         toastStoreError(error, "Could not add the batch.");
       }
@@ -279,8 +276,7 @@ const batchToFormValues = (batch: Batch) => ({
 });
 
 function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: boolean }) {
-  const router = useRouter();
-  const store = useStore();
+  const { updateBatch } = useInventoryActions();
   const [open, setOpen] = useState(false);
   const formId = `edit-batch-form-${batch.id}`;
   const form = useForm({
@@ -288,7 +284,7 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
     validators: { onSubmit: batchEditSchema },
     onSubmit: async ({ value }) => {
       try {
-        await store.updateBatch({
+        await updateBatch({
           id: batch.id,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: expiryTimestamp(value.expiresAt),
@@ -300,7 +296,6 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
           type: "success",
         });
         setOpen(false);
-        await router.invalidate();
       } catch (error) {
         toastStoreError(error, "Could not update the batch.");
       }

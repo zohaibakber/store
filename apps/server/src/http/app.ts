@@ -8,7 +8,9 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { OrganizationAuthLive } from "../auth/organization";
+import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
+import { ELECTRIC_REPLICA_TABLES } from "../electric/proxy";
+import { ElectricMutationHandlers } from "../routes/electric-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
@@ -18,15 +20,18 @@ import { publicError } from "./errors";
 import { ServerRuntime } from "./runtime";
 import { SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(SyncHandlers, UploadHandlers, ProductScanHandlers).pipe(
-  Layer.provide(OrganizationAuthLive),
-);
+const ProtectedHandlers = Layer.mergeAll(
+  UploadHandlers,
+  ProductScanHandlers,
+  ElectricMutationHandlers,
+  SyncHandlers,
+).pipe(Layer.provide(OrganizationAuthLive));
 
 const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
 );
 
-const AuthRoutes = HttpRouter.use((router) =>
+const RawRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
     const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
@@ -39,6 +44,33 @@ const AuthRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", "/api/auth/session", handleSessionRequest);
     yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
+    for (const table of ELECTRIC_REPLICA_TABLES) {
+      yield* router.add(
+        "GET",
+        `/api/electric/${table}`,
+        Effect.fn(`ElectricRoutes.${table}`)(function* () {
+          const identity = yield* authenticateCurrentOrganization(runtime);
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
+          return yield* runtime.proxyElectric({
+            table,
+            organizationId: identity.organizationId,
+            request: webRequest,
+          });
+        })().pipe(
+          Effect.catchTags({
+            Unauthenticated: (error) =>
+              Effect.succeed(
+                HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 }),
+              ),
+            Forbidden: (error) =>
+              Effect.succeed(
+                HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 }),
+              ),
+          }),
+        ),
+      );
+    }
   }),
 );
 
@@ -51,7 +83,14 @@ const Cors = HttpRouter.middleware(
       allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
       allowedHeaders: ["Content-Type", "Authorization", "Electron-Origin", "Expo-Origin"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
-      exposedHeaders: ["Content-Length"],
+      exposedHeaders: [
+        "Content-Length",
+        "electric-cursor",
+        "electric-handle",
+        "electric-offset",
+        "electric-schema",
+        "electric-up-to-date",
+      ],
       maxAge: 600,
       credentials: true,
     });
@@ -70,7 +109,7 @@ const Cors = HttpRouter.middleware(
   { global: true },
 );
 
-export const ServerRoutes = Layer.mergeAll(ApiRoutes, AuthRoutes, Cors);
+export const ServerRoutes = Layer.mergeAll(ApiRoutes, RawRoutes, Cors);
 
 export const recoverUnexpected = <E, R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,

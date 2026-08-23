@@ -22,9 +22,11 @@ export const AuthDatabase = Effect.gen(function* () {
   });
 
   return yield* Cloudflare.D1.Database("AuthDatabase", {
-    migrationsDir: schema.out,
-    // drizzle-kit's own tracking table name, so a migration applied by
-    // `drizzle-kit migrate` and one applied by a deploy are the same row.
-    migrationsTable: "drizzle_migrations",
+    migrations: {
+      out: schema.out,
+      // drizzle-kit's own tracking table name, so a migration applied by
+      // `drizzle-kit migrate` and one applied by a deploy are the same row.
+      table: "drizzle_migrations",
+    },
   });
 });

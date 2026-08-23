@@ -52,7 +52,7 @@ export const Website = Cloudflare.Website.Vite(
       observability: { enabled: true },
       // Standalone `vp dev` also uses 5174 with a `/api` proxy; alchemy's
       // Cloudflare Vite plugin owns that port when this resource is in the
-      // stack (`bun alchemy dev`).
+      // stack (`pnpm exec alchemy dev`).
       dev: { port: 5174 },
       memo: {
         include: ["**/*", "../../packages/*/src/**"],

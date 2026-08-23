@@ -9,9 +9,11 @@ export default function AppLayout() {
   const { state } = useMobileAuth();
   if (state._tag === "Loading") return <LoadingScreen />;
   if (state._tag !== "Authenticated") return <Redirect href="/auth" />;
+  const organizationId =
+    state.workspace.activeOrganization?.id ?? state.workspace.organizations[0]?.id ?? "unassigned";
 
   return (
-    <ProductsProvider userId={state.inventoryUserId}>
+    <ProductsProvider organizationId={organizationId} userId={state.inventoryUserId}>
       <AppTabs />
     </ProductsProvider>
   );

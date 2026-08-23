@@ -4,8 +4,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { decodeStoreError, storeErrorMessage } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { storeErrorMessage } from "@/lib/errors";
+import { useInventoryActions } from "@/lib/inventory-db";
 
 const AUTO_BATCH = "auto";
 
@@ -132,7 +132,7 @@ function InvoiceCreateProvider({
   products: readonly Product[];
 }) {
   const navigate = useNavigate();
-  const store = useStore();
+  const { issueInvoice } = useInventoryActions();
   const [customerName, setCustomerName] = useState("");
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
@@ -219,7 +219,7 @@ function InvoiceCreateProvider({
       });
     }
     try {
-      const invoice = await store.createInvoice({
+      const invoice = await issueInvoice({
         customerName: customerName.trim() || null,
         items,
       });
@@ -227,14 +227,13 @@ function InvoiceCreateProvider({
         title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,
         type: "success",
       });
-      await navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
+      await navigate({
+        to: "/invoices/$invoiceId",
+        params: { invoiceId: invoice.invoiceId },
+      });
     } catch (error) {
-      const storeError = decodeStoreError(error);
       toastManager.add({
-        title:
-          storeError?._tag === "PersistenceError"
-            ? "Saving failed locally. Your data is safe, try again."
-            : storeErrorMessage(error),
+        title: storeErrorMessage(error, "Could not create the invoice."),
         type: "error",
       });
     }

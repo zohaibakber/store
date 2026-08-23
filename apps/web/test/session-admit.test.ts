@@ -1,5 +1,4 @@
 import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/contracts";
-import type { OfflineStoreApi } from "@store/contracts";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 
@@ -15,15 +14,11 @@ const authenticated = decodeAuthenticatedWorkspace({
   organizations: [{ id: "o1", name: "Org", slug: "org", role: "owner" }],
 });
 
-// SAFETY: admit regression only needs a typed Store slot; no methods are invoked.
-const unusedStore = {} as OfflineStoreApi;
-
 describe("live sessionSnapshot admit", () => {
   it("beforeLoad truth follows router.update, not frozen initialAuth", () => {
     const access = browserHostAccess();
     const router = getRouter({
       history: createMemoryHistory({ initialEntries: ["/"] }),
-      store: unusedStore,
       initialAuth: { _tag: "Session", snapshot: unauthenticated },
       access,
     });
@@ -58,7 +53,6 @@ describe("live sessionSnapshot admit", () => {
     const access = browserHostAccess();
     const router = getRouter({
       history: createMemoryHistory({ initialEntries: ["/"] }),
-      store: unusedStore,
       initialAuth: { _tag: "Loading" },
       access,
       sessionPending: true,

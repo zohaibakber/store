@@ -6,9 +6,8 @@ import {
   Trash2,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ProductId } from "@store/contracts/ids";
-import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
+import type { Product, StockMovement } from "@store/contracts";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
 import { ProductVisibilityCard } from "@/components/products/visibility";
@@ -35,23 +34,17 @@ import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate, formatPrice } from "@/lib/format";
-import { useStore } from "@/lib/store";
+import {
+  useCatalogProduct,
+  useCatalogStockMovements,
+  useInventoryActions,
+  useInventoryState,
+} from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/products/$productId")({
-  loader: async ({ context, params }) => {
-    const input = { id: Schema.decodeUnknownSync(ProductId)(params.productId) };
-    const [product, movements] = await Promise.all([
-      context.store.getProduct(input),
-      context.store.listStockMovements(input),
-    ]);
-    return { product, movements };
-  },
   component: ProductDetailPage,
   errorComponent: ProductDetailError,
-  staticData: {
-    breadcrumb: (loaderData) =>
-      (loaderData && "product" in loaderData ? loaderData.product?.name : undefined) ?? "Product",
-  },
+  staticData: { breadcrumb: "Product" },
 });
 
 function ProductDetailError({ error }: { error: Error }) {
@@ -80,22 +73,82 @@ function BackToProducts() {
 }
 
 function ProductDetailPage() {
-  const { product, movements } = Route.useLoaderData();
-  const navigate = useNavigate();
-  const router = useRouter();
-  const store = useStore();
+  const { productId } = Route.useParams();
+  const state = useInventoryState();
+  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
+  return <LiveProductDetailPage inventory={state.inventory} productId={productId} />;
+}
 
-  const deleteProduct = async () => {
+function LiveProductDetailPage({
+  inventory,
+  productId,
+}: {
+  readonly inventory: Extract<
+    NonNullable<ReturnType<typeof useInventoryState>>,
+    { _tag: "Ready" }
+  >["inventory"];
+  readonly productId: string;
+}) {
+  const product = useCatalogProduct(inventory, productId);
+  const movements = useCatalogStockMovements(inventory, productId);
+  const { deleteProduct } = useInventoryActions();
+  const navigate = useNavigate();
+
+  const catalogProduct = product.data;
+  if (!catalogProduct) {
+    if (product.isError || movements.isError) {
+      return <ProductDetailError error={new Error("The product data could not be loaded.")} />;
+    }
+    if (product.isReady) {
+      return <ProductDetailError error={new Error(`Product ${productId} was not found.`)} />;
+    }
+    return <ProductDetailLoading />;
+  }
+  if (!movements.isReady && !movements.isError && movements.data.length === 0) {
+    return <ProductDetailLoading />;
+  }
+
+  const removeProduct = async () => {
     try {
-      await store.deleteProduct({ id: product.id });
-      toastManager.add({ title: `${product.name} deleted`, type: "success" });
+      await deleteProduct(catalogProduct.id);
+      toastManager.add({ title: `${catalogProduct.name} deleted`, type: "success" });
       await navigate({ to: "/products" });
-      await router.invalidate();
     } catch (error) {
       toastStoreError(error, "Could not delete the product.");
     }
   };
 
+  return (
+    <ProductDetailContent
+      movements={movements.data}
+      onDelete={removeProduct}
+      product={catalogProduct}
+    />
+  );
+}
+
+function ProductDetailLoading() {
+  return (
+    <PageLayout contentClassName="max-w-3xl">
+      <PageHeader>
+        <BackToProducts />
+      </PageHeader>
+      <PageContent>
+        <p className="text-sm text-muted-foreground">Loading product…</p>
+      </PageContent>
+    </PageLayout>
+  );
+}
+
+function ProductDetailContent({
+  movements,
+  onDelete,
+  product,
+}: {
+  readonly movements: ReadonlyArray<StockMovement>;
+  readonly onDelete: () => Promise<void>;
+  readonly product: Product;
+}) {
   // Pack size and pack price are meaningless for a category sold one at a time.
   const packDetails: Array<{ label: string; value: React.ReactNode }> = product.category.tracksPacks
     ? [
@@ -153,7 +206,7 @@ function ProductDetailPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
-                <AlertDialogClose onClick={deleteProduct} render={<Button variant="destructive" />}>
+                <AlertDialogClose onClick={onDelete} render={<Button variant="destructive" />}>
                   Delete
                 </AlertDialogClose>
               </AlertDialogFooter>

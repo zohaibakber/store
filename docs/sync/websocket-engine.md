@@ -1,141 +1,65 @@
 # WebSocket sync engine
 
-## Problem
+## Status
 
-Foreground clients treat `POST /api/sync` as both the transaction and the live
-channel. They poll every few seconds. That was an emergency substitute after
-PR #5 dropped the hibernated invalidation socket so a Better Auth Electron
-plugin would stop throwing on Cloudflare's immutable `Request.headers`. The
-poll is still the happy path.
+The Cloudflare Durable Object and `/api/sync/live` WebSocket engine is a
+preserved compatibility implementation. Postgres, Electric, and TanStack DB are
+the active inventory architecture for migrated clients.
 
-The local replica, FIFO outbox, Durable Object inbox, changelog cursor, and
-last-writer-wins `rowVersion` rules are the correctness model. They stay.
-Transport is what changes.
+Keep the WebSocket engine, its Durable Object schema and migrations, and its
+shared sync contracts until an explicit retirement confirms that production no
+longer needs migration or rollback compatibility. Do not treat unused imports
+from a migrated client as proof that the server-side source is safe to delete.
 
-Zero keeps a local store, pushes mutations, and pulls patches after a poke,
-resuming by version. PowerSync splits a crash-safe upload queue from a
-checkpointed download stream and will use HTTP when a socket cannot connect.
-This app already has the Zero/PowerSync pieces that matter: the whole
-organization replica, an outbox, and an ordered log. It does not need
-query-shaped CVRs. It needs the socket back, with those engines' network
-habits, without treating 3-second HTTP as live sync.
+## Active inventory data flow
 
-## Usage (caller's view)
+Postgres is the authoritative inventory database. The active path has four
+parts:
 
-Live hosts give the engine a way to open a socket. Persistence never sees frames.
-Tests that only care about apply/LWW pass a fake `exchange` instead.
+1. Web, Electron, and Expo read inventory through TanStack DB live queries.
+2. Host-specific SQLite adapters persist the TanStack DB collections. The web
+   app uses WASQLite, Electron uses SQLite in the main process, and Expo uses
+   `expo-sqlite`.
+3. Authenticated `/api/inventory/*` commands write to Postgres through the
+   Cloudflare Worker and Hyperdrive. Mutation receipts make replayed commands
+   idempotent after a lost HTTP response.
+4. Electric reads the committed Postgres rows. The Worker proxies
+   `/api/electric/*` and applies the authenticated organization filter before a
+   client receives a shape.
 
-```ts
-const store = await openStore({
-  workspace: { organizationId, userId, deviceId },
-  syncTransport: {
-    openLive: openLiveSocket({
-      baseUrl: apiOrigin,
-      organizationId,
-      deviceId,
-      getAccessToken: () => auth.token,
-      headers: nativeHeaders, // Electron: Authorization + electron-origin
-    }),
-  },
-});
-```
+TanStack DB combines the Electric collection configuration with local
+persistence, optimistic mutations, and reactive queries. Clients no longer
+maintain a separate handwritten outbox, pull cursor, or last-writer-wins apply
+loop for the migrated inventory path.
 
-A local write still commits to SQLite and the outbox in one transaction, then
-signals sync. The coordinator drains the outbox as a correlated `exchange` frame
-on the live socket. If the socket is down, the exchange fails retryably and the
-coordinator retries after reconnect. `hello` is the first pull. Inbox
-idempotency makes a timeout-then-retry on the same socket safe.
+## Preserved compatibility implementation
 
-## Shape
+The original engine stored each organization's inventory in a Cloudflare
+Durable Object. A local SQLite transaction wrote both the business change and a
+FIFO outbox entry. The client sent the outbox through a hibernated WebSocket at
+`/api/sync/live`, and the Durable Object committed an inbox receipt and an
+ordered changelog entry in the same transaction.
 
-One hibernated WebSocket per device against `/api/sync/live`. JWT verification
-finishes at the Worker. The object receives `organizationId`, `userId`, `deviceId`, and
-`authenticationExpiresAt` as a socket attachment. No JWT is stored in the
-object.
+The protocol supported correlated `exchange`, `exchange-result`, and
+`exchange-error` frames. `hello` and `invalidate` frames prompted clients to
+pull from their changelog cursor. Retryable transport failures preserved the
+outbox head, while non-retryable failures could quarantine a poison operation.
 
-Frames on the socket:
+That design remains useful for three bounded purposes:
 
-- Server `hello` / `invalidate` with `headCursor` (existing live events).
-- Client `exchange` with `requestId` + protocol-v2 `SyncRequest`.
-- Server `exchange-result` / `exchange-error` with that `requestId`.
-- Client `ping` / server `pong` for application liveness. Cloudflare already
-  answers protocol pings without waking the object, so these are sparse.
+- serving any production client that has not completed migration;
+- supplying source data or behavior during migration reconciliation;
+- supporting rollback while the Postgres and Electric path is being adopted.
 
-The coordinator in `@store/sync-client` still single-flights, drains
-`hasMore`, and coalesces invalidations. `hello` always pulls. Reconnect is
-jittered exponential backoff, capped at 30s. Safety poll stays as a backstop
-and defaults to 5 minutes when a live socket is configured, 3 seconds when it
-is not.
+Compatibility does not make the Durable Object the authority for newly
+migrated writes. New inventory work must use Postgres mutation commands,
+Electric shapes, and TanStack DB collections.
 
-Outbox `attemptCount` counts poison operations, not dropped packets. Retryable
-transport errors set `nextAttemptAt` and leave the attempt count alone.
-Quarantine still stops the FIFO head after repeated non-retryable failures.
+## Retirement condition
 
-Token refresh reconnects through the Worker with a new Bearer or
-`access_token`. The object does not verify access tokens. An in-band auth frame would
-leak that job into the wrong process.
-
-## Synthesis decision
-
-Base: bidirectional session (design A). Live hosts pass `openLive`. Tests that
-do not open a socket pass `exchange`. Complexity lives in the session:
-reconnect, correlation ids, hibernation.
-
-Grafted from invalidate-and-pull (B): keep the Durable Object `exchange` as
-the one transaction; keep `hello`/`invalidate`; Worker-terminates-auth;
-identity headers into the object; browser cannot set WebSocket headers so the
-upgrade accepts `access_token`.
-
-Grafted from split planes (C): do not burn `attemptCount` on retryable
-failures; treat a socket timeout as "retry the same operation", not "the
-operation is bad".
-
-Rejected query/shape subscriptions (D): every device already holds the
-organization catalog. A CVR would add per-device server state without changing
-what screens read.
-
-Rejected restore-only invalidation as the lasting design: it leaves the data
-path on a poll. The socket would be a wakeup pager. Fine as a subset, not as
-the architecture we are moving to.
-
-Arena runners were launched on four models with those assigned shapes. Their
-write-ups did not land in time; the lead synthesis above is the contract.
-
-## Tradeoffs accepted
-
-- We accept a dead socket as a retryable transport error, not a second HTTP
-  data path. Apply/LWW tests still inject a fake `exchange`.
-- We accept whole-org changelog paging instead of Zero-style query shapes,
-  because that is the product replica.
-- We accept reconnect-for-token-refresh instead of refreshing auth inside the
-  Durable Object.
-- We accept a 5 minute safety poll while live, so a missed invalidate cannot
-  freeze a replica forever.
-
-## Alternatives considered
-
-Invalidate-only WebSocket, HTTP for all bytes. Smallest diff, restores PR #5's
-victim. Callers still wait on poll cadence whenever the wakeup is missed, and
-"shift to WebSockets" would still leave the data path on HTTP.
-
-Split upload and download into two sockets. Matches PowerSync's planes, and
-would let a large catch-up run while the outbox drains. Two hibernated
-connections per device on a per-org Durable Object is more moving parts than
-this replica size needs. Correlation on one socket is enough.
-
-Named mutators and client rebase (Zero). Would replace the outbox payload of
-row changes. Every inventory write path would grow a second implementation.
-Not the transport change we were asked for.
-
-## Open questions and risks
-
-- Should Electron keep using the `ws` package for Authorization headers, or
-  put the JWT in the query like the browser? Headers stay off the query log.
-- How hard do corporate TLS middleboxes make WebSocket upgrade on desktop in
-  practice? Live hosts no longer silently POST when upgrade fails.
-
-## Next implementation step
-
-Filled in against this contract: frames, Durable Object hibernation handlers,
-socket-only live exchange, outbox attempt-count semantics, and web, desktop,
-and mobile live openers.
+Remove the preserved engine only through an explicit retirement change. That
+change must first establish that no deployed client calls `/api/sync/live`, no
+production inventory remains only in Durable Object storage, and no rollback
+plan depends on the old protocol. The retirement must remove the implementation,
+schema, migrations, contracts, bindings, and deployment configuration as one
+reviewed migration.

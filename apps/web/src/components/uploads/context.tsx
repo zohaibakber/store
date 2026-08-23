@@ -1,12 +1,11 @@
 import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
-import { useRouter } from "@tanstack/react-router";
 import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
+import { useInventoryActions } from "@/lib/inventory-db";
 import { analyseInvoices } from "@/lib/server-api";
-import { useStore } from "@/lib/store";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
@@ -60,8 +59,7 @@ function UploadProvider({
   products: readonly Product[];
   categories: readonly Category[];
 }) {
-  const router = useRouter();
-  const store = useStore();
+  const inventory = useInventoryActions();
   const isOnline = useOnline();
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
@@ -152,7 +150,7 @@ function UploadProvider({
     }
     setPhase("syncing");
     try {
-      await store.importInventory({
+      const result = await inventory.importInventory({
         categoryId: generalCategory.id,
         lines: changes.map((change) => ({
           name: change.name,
@@ -165,43 +163,20 @@ function UploadProvider({
           productId: change.productId ?? null,
         })),
       });
+      setChanges([]);
+      setFiles([]);
+      toastManager.add({
+        title: `Created ${result.createdProducts} products and ${result.createdBatches} batches.`,
+        type: "success",
+      });
+      setPhase("idle");
     } catch (error) {
       toastManager.add({
         title: error instanceof Error ? error.message : "Could not apply changes.",
         type: "error",
       });
       setPhase("ready");
-      return;
     }
-
-    setChanges([]);
-    setFiles([]);
-    toastManager.add({
-      title: `Applied ${changes.length} inventory changes on this device.`,
-      type: "success",
-    });
-    try {
-      await router.invalidate();
-    } catch {
-      toastManager.add({
-        title: "Imported, but this page didn't refresh.",
-        type: "warning",
-      });
-    }
-    try {
-      const syncStatus = await store.sync();
-      if (syncStatus.phase === "error")
-        toastManager.add({
-          title: "Saved on this device. Sync will retry on its own.",
-          type: "warning",
-        });
-    } catch {
-      toastManager.add({
-        title: "Saved on this device. Sync will retry on its own.",
-        type: "warning",
-      });
-    }
-    setPhase("idle");
   };
 
   const processing = phase === "processing" || phase === "syncing";

@@ -9,5 +9,5 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "drizzle.auth.config.ts", "drizzle.do.config.ts", "drizzle.local.config.ts"]
+  "include": ["src", "drizzle.auth.config.ts", "drizzle.do.config.ts", "drizzle.postgres.config.ts"]
 }

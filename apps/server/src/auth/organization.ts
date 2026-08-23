@@ -6,7 +6,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
 import { Forbidden, Unauthenticated, forbidden, unauthenticated } from "../http/errors";
-import { ServerRuntime } from "../http/runtime";
+import { ServerRuntime, type ServerRuntimeContract } from "../http/runtime";
 
 export interface CurrentOrganizationContext {
   readonly user: AuthSession["user"];
@@ -45,37 +45,38 @@ const logAuthFailure = (message: string) =>
     ),
   );
 
+export const authenticateCurrentOrganization = Effect.fn(
+  "OrganizationAuth.authenticateCurrentOrganization",
+)(function* (runtime: ServerRuntimeContract) {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const headers = headersWithAccessToken(
+    authHeadersForRequest(new Headers(request.headers)),
+    request.url,
+  );
+  const session = yield* runtime
+    .getSession(headers)
+    .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
+  if (!session) return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
+
+  const organizationId = session.session.activeOrganizationId;
+  if (!organizationId)
+    return yield* Effect.fail(forbidden("ORGANIZATION_REQUIRED", "Select an organization first."));
+
+  return {
+    user: session.user,
+    session: session.session,
+    organizationId,
+  } satisfies CurrentOrganizationContext;
+});
+
 export const OrganizationAuthLive = Layer.effect(
   OrganizationAuth,
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
-
     return (httpEffect) =>
       Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const headers = headersWithAccessToken(
-          authHeadersForRequest(new Headers(request.headers)),
-          request.url,
-        );
-        const session = yield* runtime
-          .getSession(headers)
-          .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
-        if (!session)
-          return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
-
-        const organizationId = session.session.activeOrganizationId;
-        if (!organizationId)
-          return yield* Effect.fail(
-            forbidden("ORGANIZATION_REQUIRED", "Select an organization first."),
-          );
-
-        return yield* httpEffect.pipe(
-          Effect.provideService(CurrentOrganization, {
-            user: session.user,
-            session: session.session,
-            organizationId,
-          }),
-        );
+        const identity = yield* authenticateCurrentOrganization(runtime);
+        return yield* httpEffect.pipe(Effect.provideService(CurrentOrganization, identity));
       });
   }),
 );

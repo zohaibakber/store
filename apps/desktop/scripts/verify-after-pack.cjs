@@ -2,14 +2,15 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-const MAX_RUNTIME_PACKAGES = 40;
+// better-sqlite3 ships its native binary plus the installer dependency graph.
+// The TanStack persistence packages themselves are bundled into main.js.
+const MAX_RUNTIME_PACKAGES = 56;
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
   "@store/auth",
   "@store/contracts",
   "@store/db",
-  "@store/persistence",
   "@store/services",
   "better-auth",
   "drizzle-orm",
@@ -98,6 +99,13 @@ const verifyDesktopAsar = (archivePath) => {
     fail("environment files were packaged", environmentFiles);
   }
 
+  const browserPersistenceAssets = entries.filter((entry) =>
+    /\/dist\/assets\/opfs-worker-[^/]+\.js$/u.test(entry),
+  );
+  if (browserPersistenceAssets.length > 0) {
+    fail("browser OPFS persistence reached the desktop artifact", browserPersistenceAssets);
+  }
+
   const forbiddenPackages = [...packageRoots].filter(
     (root) =>
       root.startsWith("@store/") ||
@@ -122,8 +130,9 @@ const verifyDesktopAsar = (archivePath) => {
   const requiredEntries = [
     "/dist/index.html",
     "/dist-electron/main.js",
-    "/dist-electron/preload.mjs",
-    "/node_modules/@libsql/client/package.json",
+    "/dist-electron/preload.cjs",
+    "/node_modules/better-sqlite3/package.json",
+    "/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));

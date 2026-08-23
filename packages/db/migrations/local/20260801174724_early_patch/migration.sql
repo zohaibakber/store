@@ -1,1 +1,0 @@
-ALTER TABLE `categories` ADD `tracksPacks` integer DEFAULT true NOT NULL;

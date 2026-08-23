@@ -1,28 +1,24 @@
-import {
-  batches,
-  categories,
-  invoiceItems,
-  invoices,
-  products,
-  stockMovements,
-} from "@store/db/store.schema";
-import { createInsertSchema, createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Schema from "effect/Schema";
 
 import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
-import { omitManaged } from "../sync/managed-columns";
 
-const productRow = createSelectSchema(products, {
-  id: ProductId,
-  categoryId: CategoryId,
-});
-const productInsert = createInsertSchema(products, {
-  id: ProductId,
-});
-const categoryRow = createSelectSchema(categories, { id: CategoryId });
+const mutableEntityFields = {
+  organizationId: Schema.String,
+  createdByUserId: Schema.String,
+  updatedByUserId: Schema.String,
+  deviceId: Schema.String,
+  operationId: Schema.String,
+  rowVersion: Schema.Number,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+};
 
-const { deletedAt: _categoryDeletedAt, ...categoryFields } = categoryRow.fields;
-export const Category = Schema.Struct(categoryFields);
+export const Category = Schema.Struct({
+  id: CategoryId,
+  name: Schema.String,
+  tracksPacks: Schema.Boolean,
+  ...mutableEntityFields,
+});
 export type Category = typeof Category.Type;
 
 export const CreateCategoryInput = Schema.Struct({
@@ -41,19 +37,24 @@ export type UpdateCategoryInput = typeof UpdateCategoryInput.Type;
 export const CategoryIdInput = Schema.Struct({ id: CategoryId });
 export type CategoryIdInput = typeof CategoryIdInput.Type;
 
-const batchRow = createSelectSchema(batches, {
+export const Batch = Schema.Struct({
   id: BatchId,
   productId: ProductId,
+  batchNumber: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(Schema.Number),
+  packQuantity: Schema.Number,
+  unitQuantity: Schema.Number,
+  ...mutableEntityFields,
 });
-const batchInsert = createInsertSchema(batches, {
-  id: BatchId,
-});
-
-const { deletedAt: _batchDeletedAt, ...batchFields } = batchRow.fields;
-export const Batch = Schema.Struct(batchFields);
 export type Batch = typeof Batch.Type;
 
-const createBatchFields = omitManaged(batchInsert.fields);
+const createBatchFields = {
+  productId: Schema.String,
+  batchNumber: Schema.optional(Schema.NullOr(Schema.String)),
+  expiresAt: Schema.optional(Schema.NullOr(Schema.Number)),
+  packQuantity: Schema.optional(Schema.Number),
+  unitQuantity: Schema.optional(Schema.Number),
+};
 export const CreateBatchInput = Schema.Struct(createBatchFields);
 export type CreateBatchInput = typeof CreateBatchInput.Type;
 
@@ -76,15 +77,34 @@ export const ProductSuggestions = Schema.Struct({
 });
 export type ProductSuggestions = typeof ProductSuggestions.Type;
 
-const { deletedAt: _productDeletedAt, ...productFields } = productRow.fields;
 export const Product = Schema.Struct({
-  ...productFields,
+  id: ProductId,
+  name: Schema.String,
+  categoryId: CategoryId,
+  aisle: Schema.NullOr(Schema.String),
+  composition: Schema.NullOr(Schema.String),
+  strength: Schema.NullOr(Schema.String),
+  unitsPerPack: Schema.Number,
+  packPrice: Schema.NullOr(Schema.Number),
+  unitPrice: Schema.NullOr(Schema.Number),
+  visible: Schema.Boolean,
+  ...mutableEntityFields,
   category: Category,
   batches: Schema.Array(Batch),
 });
 export type Product = typeof Product.Type;
 
-const createProductFields = omitManaged(productInsert.fields);
+const createProductFields = {
+  name: Schema.String,
+  categoryId: Schema.optional(Schema.String),
+  aisle: Schema.optional(Schema.NullOr(Schema.String)),
+  composition: Schema.optional(Schema.NullOr(Schema.String)),
+  strength: Schema.optional(Schema.NullOr(Schema.String)),
+  unitsPerPack: Schema.optional(Schema.Number),
+  packPrice: Schema.optional(Schema.NullOr(Schema.Number)),
+  unitPrice: Schema.optional(Schema.NullOr(Schema.Number)),
+  visible: Schema.optional(Schema.Boolean),
+};
 export const CreateProductInput = Schema.Struct(createProductFields);
 export type CreateProductInput = typeof CreateProductInput.Type;
 
@@ -111,8 +131,8 @@ export const ImportInventoryInput = Schema.Struct({
 export type ImportInventoryInput = typeof ImportInventoryInput.Type;
 
 export const ImportInventoryResult = Schema.Struct({
-  createdProducts: Schema.Number,
-  createdBatches: Schema.Number,
+  createdProducts: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  createdBatches: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
 });
 export type ImportInventoryResult = typeof ImportInventoryResult.Type;
 
@@ -125,20 +145,31 @@ export const SearchProductsInput = Schema.Struct({
 });
 export type SearchProductsInput = typeof SearchProductsInput.Type;
 
-const invoiceRow = createSelectSchema(invoices, { id: InvoiceId });
-const invoiceItemRow = createSelectSchema(invoiceItems, {
+const InvoiceItemRow = Schema.Struct({
   id: InvoiceItemId,
   invoiceId: InvoiceId,
   productId: ProductId,
   batchId: BatchId,
+  productName: Schema.String,
+  batchNumber: Schema.NullOr(Schema.String),
+  quantity: Schema.Number,
+  quantityType: Schema.Literals(["unit", "pack"]),
+  baseUnitQuantity: Schema.Number,
+  salePrice: Schema.Number,
+  ...mutableEntityFields,
 });
 
-const { deletedAt: _invoiceItemDeletedAt, ...invoiceItemFields } = invoiceItemRow.fields;
-export const InvoiceItem = Schema.Struct(invoiceItemFields);
+export const InvoiceItem = InvoiceItemRow;
 export type InvoiceItem = typeof InvoiceItem.Type;
 
-const { deletedAt: _invoiceDeletedAt, ...invoiceFields } = invoiceRow.fields;
-export const Invoice = Schema.Struct({ ...invoiceFields, items: Schema.Array(InvoiceItem) });
+export const Invoice = Schema.Struct({
+  id: InvoiceId,
+  invoiceNumber: Schema.Number,
+  customerName: Schema.NullOr(Schema.String),
+  total: Schema.Number,
+  ...mutableEntityFields,
+  items: Schema.Array(InvoiceItem),
+});
 export type Invoice = typeof Invoice.Type;
 
 export const CreateInvoiceLineInput = Schema.Struct({
@@ -156,14 +187,56 @@ export const CreateInvoiceInput = Schema.Struct({
 });
 export type CreateInvoiceInput = typeof CreateInvoiceInput.Type;
 
+const CommandIdentifier = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
+const PositiveTimestamp = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
+
+export const ImportInventoryCommand = Schema.Struct({
+  commandId: CommandIdentifier,
+  deviceId: CommandIdentifier,
+  occurredAt: PositiveTimestamp,
+  input: ImportInventoryInput,
+});
+export type ImportInventoryCommand = typeof ImportInventoryCommand.Type;
+
+export const ImportInventoryCommandResult = Schema.Struct({
+  ...ImportInventoryResult.fields,
+  txid: PositiveTimestamp,
+});
+export type ImportInventoryCommandResult = typeof ImportInventoryCommandResult.Type;
+
+export const IssueInvoiceCommand = Schema.Struct({
+  commandId: CommandIdentifier,
+  deviceId: CommandIdentifier,
+  occurredAt: PositiveTimestamp,
+  input: CreateInvoiceInput,
+});
+export type IssueInvoiceCommand = typeof IssueInvoiceCommand.Type;
+
+export const IssueInvoiceResult = Schema.Struct({
+  invoiceId: InvoiceId,
+  invoiceNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  txid: PositiveTimestamp,
+});
+export type IssueInvoiceResult = typeof IssueInvoiceResult.Type;
+
 export const InvoiceIdInput = Schema.Struct({ id: InvoiceId });
 export type InvoiceIdInput = typeof InvoiceIdInput.Type;
 
-const stockMovementRow = createSelectSchema(stockMovements, {
+export const StockMovement = Schema.Struct({
+  id: Schema.String,
   productId: ProductId,
   batchId: BatchId,
+  invoiceId: Schema.NullOr(InvoiceId),
+  type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
+  packDelta: Schema.Number,
+  unitDelta: Schema.Number,
+  note: Schema.NullOr(Schema.String),
+  organizationId: Schema.String,
+  actorUserId: Schema.String,
+  deviceId: Schema.String,
+  operationId: Schema.String,
+  createdAt: Schema.Number,
 });
-export const StockMovement = Schema.Struct(stockMovementRow.fields);
 export type StockMovement = typeof StockMovement.Type;
 
 export const DashboardAnalytics = Schema.Struct({

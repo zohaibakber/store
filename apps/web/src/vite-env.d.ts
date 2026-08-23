@@ -6,8 +6,14 @@ import type {
   OrganizationRoster,
   TokenSet,
 } from "@store/auth";
-import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
+import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import type { JsonApiResponse } from "@store/workspace";
+import type { ElectronSQLitePersistenceOptions } from "@tanstack/electron-db-sqlite-persistence";
+
+type ElectronPersistenceInvoke = NonNullable<ElectronSQLitePersistenceOptions["invoke"]>;
+type ElectronPersistenceRequest = Parameters<ElectronPersistenceInvoke>[1];
+type ElectronPersistenceResponse = Awaited<ReturnType<ElectronPersistenceInvoke>>;
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
@@ -27,6 +33,28 @@ declare global {
   }
 
   interface Window {
+    inventoryHttp?: {
+      getConfig(): Promise<{ apiBaseUrl: string; deviceId: string }>;
+      request(input: {
+        requestId: string;
+        url: string;
+        method: "GET" | "POST";
+        headers: ReadonlyArray<readonly [string, string]>;
+        body: ArrayBuffer | null;
+      }): Promise<{
+        status: number;
+        statusText: string;
+        headers: ReadonlyArray<readonly [string, string]>;
+        body: ArrayBuffer;
+      }>;
+      abort(requestId: string): void;
+    };
+    tanstackDbPersistence?: {
+      invoke(request: ElectronPersistenceRequest): Promise<ElectronPersistenceResponse>;
+    };
+    legacyLocalInventory?: {
+      load(): Promise<JsonApiResponse>;
+    };
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;
       adoptSession(tokens: TokenSet | null): Promise<WorkspaceSnapshot>;
@@ -51,7 +79,6 @@ declare global {
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };
-    offlineStore?: OfflineStoreApi;
     updater?: {
       check: () => Promise<void>;
       download: () => Promise<void>;

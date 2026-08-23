@@ -3,7 +3,7 @@ import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
 import type { HostAccessPolicy } from "@/host-access";
 import type { InitialAuth } from "@/lib/auth";
-import type { Store } from "@/lib/store";
+import type { InventoryHost } from "@/lib/inventory-host";
 import { routeTree } from "@/routeTree.gen";
 
 const sessionSnapshotFromAuth = (initialAuth: InitialAuth): WorkspaceSnapshot | null =>
@@ -11,20 +11,20 @@ const sessionSnapshotFromAuth = (initialAuth: InitialAuth): WorkspaceSnapshot | 
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
-  readonly store: Store;
   readonly initialAuth: InitialAuth;
   readonly access: HostAccessPolicy;
   readonly sessionPending?: boolean;
+  readonly inventory?: InventoryHost;
 }) =>
   createRouter({
     routeTree,
     context: {
-      store: input.store,
       initialAuth: input.initialAuth,
       /** Live workspace snapshot; updated on every session publish before invalidate. */
       sessionSnapshot: sessionSnapshotFromAuth(input.initialAuth),
       sessionPending: input.sessionPending ?? false,
       access: input.access,
+      inventory: input.inventory ?? null,
     },
     history: input.history,
     // Route data comes from the local replica. Speculative hover preloads can

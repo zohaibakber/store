@@ -2,7 +2,6 @@ import { Add01Icon, Delete02Icon, PencilEdit02Icon, TagIcon } from "@hugeicons/c
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
 import { useForm } from "@tanstack/react-form";
-import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import * as z from "zod";
 
@@ -45,7 +44,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { useInventoryActions } from "@/lib/inventory-db";
 
 const categoryFormSchema = z.object({
   name: z.string().trim().min(1, "Category name is required.").max(64),
@@ -53,6 +52,17 @@ const categoryFormSchema = z.object({
 });
 
 type CategoryFormValues = z.infer<typeof categoryFormSchema>;
+
+type InventoryActions = ReturnType<typeof useInventoryActions>;
+type CategoryCommands = {
+  readonly createCategory: (
+    input: Parameters<InventoryActions["createCategory"]>[0],
+  ) => Promise<Category>;
+  readonly deleteCategory: (id: Parameters<InventoryActions["deleteCategory"]>[0]) => Promise<void>;
+  readonly updateCategory: (
+    input: Parameters<InventoryActions["updateCategory"]>[0],
+  ) => Promise<Category>;
+};
 
 function PackTrackingField({
   checked,
@@ -79,14 +89,17 @@ function PackTrackingField({
 
 function CategorySheet({
   category,
+  createCategory,
   onSaved,
   trigger,
+  updateCategory,
 }: {
   category?: Category;
+  createCategory: CategoryCommands["createCategory"];
   onSaved: () => Promise<void>;
   trigger: React.ReactElement;
+  updateCategory: CategoryCommands["updateCategory"];
 }) {
-  const store = useStore();
   const [open, setOpen] = useState(false);
   const formId = `category-form-${category?.id ?? "new"}`;
   const defaults: CategoryFormValues = {
@@ -99,8 +112,8 @@ function CategorySheet({
     validators: { onSubmit: categoryFormSchema },
     onSubmit: async ({ value }) => {
       try {
-        if (category) await store.updateCategory({ id: category.id, ...value });
-        else await store.createCategory(value);
+        if (category) await updateCategory({ id: category.id, ...value });
+        else await createCategory(value);
         toastManager.add({
           title: category ? "Category updated" : "Category added",
           type: "success",
@@ -185,16 +198,16 @@ function CategorySheet({
 
 function DeleteCategoryDialog({
   category,
+  deleteCategory,
   onDeleted,
 }: {
   category: Category;
+  deleteCategory: CategoryCommands["deleteCategory"];
   onDeleted: () => Promise<void>;
 }) {
-  const store = useStore();
-
   const remove = async () => {
     try {
-      await store.deleteCategory({ id: category.id });
+      await deleteCategory(category.id);
       toastManager.add({ title: `${category.name} deleted`, type: "success" });
       await onDeleted();
     } catch (error) {
@@ -227,14 +240,20 @@ function DeleteCategoryDialog({
   );
 }
 
-export function CategorySettings({ categories }: { categories: ReadonlyArray<Category> }) {
-  const router = useRouter();
-  const refresh = () => router.invalidate();
-
+function CategorySettingsContent({
+  categories,
+  commands,
+  refresh,
+}: {
+  readonly categories: ReadonlyArray<Category>;
+  readonly commands: CategoryCommands;
+  readonly refresh: () => Promise<void>;
+}) {
   return (
     <FrameCard
       action={
         <CategorySheet
+          createCategory={commands.createCategory}
           onSaved={refresh}
           trigger={
             <Button size="sm" variant="outline">
@@ -242,6 +261,7 @@ export function CategorySettings({ categories }: { categories: ReadonlyArray<Cat
               Add category
             </Button>
           }
+          updateCategory={commands.updateCategory}
         />
       }
       description="A category decides which fields its products need."
@@ -270,19 +290,36 @@ export function CategorySettings({ categories }: { categories: ReadonlyArray<Cat
                 </Badge>
                 <CategorySheet
                   category={category}
+                  createCategory={commands.createCategory}
                   onSaved={refresh}
                   trigger={
                     <Button aria-label={`Edit ${category.name}`} size="icon-sm" variant="ghost">
                       <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
                     </Button>
                   }
+                  updateCategory={commands.updateCategory}
                 />
-                <DeleteCategoryDialog category={category} onDeleted={refresh} />
+                <DeleteCategoryDialog
+                  category={category}
+                  deleteCategory={commands.deleteCategory}
+                  onDeleted={refresh}
+                />
               </FrameHeader>
             </Frame>
           ))}
         </div>
       )}
     </FrameCard>
+  );
+}
+
+export function CategorySettings({ categories }: { categories: ReadonlyArray<Category> }) {
+  const actions = useInventoryActions();
+  return (
+    <CategorySettingsContent
+      categories={categories}
+      commands={actions}
+      refresh={() => Promise.resolve()}
+    />
   );
 }

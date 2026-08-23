@@ -2,65 +2,44 @@
   "name": "store-electron",
   "version": "0.0.0",
   "private": true,
-  "workspaces": {
-    "packages": [
-      "apps/*",
-      "packages/*"
-    ],
-    "catalog": {
-      "@effect/sql-d1": "4.0.0-rc.110",
-      "@effect/sql-libsql": "4.0.0-rc.110",
-      "@effect/sql-sqlite-do": "4.0.0-rc.110",
-      "@effect/vitest": "4.0.0-rc.110",
-      "alchemy": "2.0.0-beta.72",
-      "drizzle-kit": "1.0.0-rc.5-ab785fc",
-      "drizzle-orm": "1.0.0-rc.5-ab785fc",
-      "effect": "4.0.0-rc.110",
-      "typescript": "7.0.2",
-      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
-      "vite-plus": "0.2.9"
-    }
-  },
   "scripts": {
-    "dev": "turbo run dev --filter=!@store/web --filter=!@store/mobile",
+    "dev": "vp run --filter @store/server dev",
+    "dev:web": "vp run --filter @store/server dev",
+    "dev:desktop": "cross-env STORE_DESKTOP_RENDERER=1 VITE_DEV_SERVER_URL=http://127.0.0.1:5174 vp run --filter @store/server --filter @store/desktop dev",
+    "build:web": "vp run --filter @store/web build",
+    "build:desktop": "vp run --filter @store/desktop build",
     "build": "turbo run build",
     "check": "turbo run check",
     "test": "turbo run test",
-    "plan:dev": "bun alchemy plan --stage dev --env-file .env.dev",
-    "deploy:dev": "bun alchemy deploy --stage dev --env-file .env.dev",
-    "plan:prod": "bun alchemy plan --stage prod --env-file .env.prod",
-    "deploy:prod": "bun alchemy deploy --stage prod --env-file .env.prod",
-    "destroy:dev": "bun alchemy destroy --stage dev --env-file .env.dev",
-    "setup:ci": "bun alchemy deploy stacks/github.ts --stage prod --profile admin",
+    "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
+    "deploy:dev": "pnpm exec alchemy deploy --stage dev --env-file .env.dev",
+    "plan:prod": "pnpm exec alchemy plan --stage prod --env-file .env.prod",
+    "deploy:prod": "pnpm exec alchemy deploy --stage prod --env-file .env.prod",
+    "destroy:dev": "pnpm exec alchemy destroy --stage dev --env-file .env.dev",
+    "setup:ci": "pnpm exec alchemy deploy stacks/github.ts --stage prod --profile admin",
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260819.1",
-    "@effect/platform-bun": "4.0.0-rc.110",
-    "@effect/platform-node": "4.0.0-rc.110",
-    "@oxlint/plugins": "1.78.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "@effect/platform-node": "4.0.0-rc.111",
+    "@oxlint/plugins": "1.79.0",
     "@types/node": "^26.2.0",
     "alchemy": "catalog:",
-    "effect": "4.0.0-rc.110",
-    "oxlint": "1.78.0",
+    "cross-env": "^10.1.0",
+    "effect": "4.0.0-rc.111",
+    "oxlint": "1.79.0",
+    "tsx": "^4.23.12",
     "turbo": "^2.10.11",
-    "vite": "^0.2.9",
-    "vite-plus": "^0.2.9",
-    "wrangler": "^4.124.0"
-  },
-  "overrides": {
-    "@effect/platform-node-shared": "4.0.0-rc.110",
-    "@effect/sql-d1": "4.0.0-rc.110",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
-    "vitest": "4.1.10"
+    "vite-plus": "^0.2.9",
+    "wrangler": "^4.125.0"
   },
   "devEngines": {
     "packageManager": {
-      "name": "bun",
-      "version": "1.3.14",
+      "name": "pnpm",
+      "version": "11.22.0",
       "onFail": "download"
     }
   },
-  "packageManager": "bun@1.3.14"
+  "packageManager": "pnpm@11.22.0"
 }

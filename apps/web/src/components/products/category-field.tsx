@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { useInventoryActions } from "@/lib/inventory-db";
 
 interface CategoryOption {
   readonly id: string;
@@ -37,7 +37,7 @@ export function CategoryField({
   seed: ReadonlyArray<Category>;
   value: string;
 }) {
-  const store = useStore();
+  const { createCategory } = useInventoryActions();
   // Categories created here are merged over the loader-provided seed rather
   // than copied into state, so route invalidation stays reflected.
   const [created, setCreated] = useState<ReadonlyArray<CategoryOption>>([]);
@@ -70,7 +70,7 @@ export function CategoryField({
 
     setPending(true);
     try {
-      const category = await store.createCategory({ name: option.name });
+      const category = await createCategory({ name: option.name });
       setCreated((current) =>
         current.some((existing) => existing.id === category.id)
           ? current

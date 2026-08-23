@@ -4,27 +4,29 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cd ../.. && bun alchemy dev --stage dev --env-file .env.dev",
+    "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev",
     "check": "tsc --noEmit",
     "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
-    "@effect/sql-sqlite-do": "catalog:",
+    "@effect/sql-pg": "4.0.0-rc.111",
+    "@effect/sql-sqlite-do": "4.0.0-rc.111",
+    "@electric-sql/client": "1.5.26",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "@store/services": "workspace:*",
-    "drizzle-orm": "catalog:",
-    "effect": "catalog:"
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "catalog:",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@effect/sql-libsql": "catalog:",
+    "@effect/sql-libsql": "4.0.0-rc.111",
     "@effect/vitest": "catalog:",
-    "@libsql/client": "^0.17.4",
     "@types/node": "^26.2.0",
     "alchemy": "catalog:",
     "rolldown": "1.2.4",
     "typescript": "catalog:",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

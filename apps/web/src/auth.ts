@@ -145,6 +145,10 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.#http.apiRequest(pathname, init);
   }
 
+  apiFetch(input: RequestInfo | URL, init?: RequestInit) {
+    return this.#http.apiFetch(input, init);
+  }
+
   authRequest(pathname: string, init?: JsonRequestInit) {
     return this.#http.authRequest(pathname, init);
   }

@@ -4,16 +4,46 @@ import type {
   OrganizationRoster,
   TokenSet,
 } from "@store/auth";
-import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
+import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import type { JsonApiResponse } from "@store/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
-import { STORE_CHANNELS, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
+import {
+  INVENTORY_HTTP_ABORT_CHANNEL,
+  INVENTORY_HTTP_CONFIG_CHANNEL,
+  INVENTORY_HTTP_REQUEST_CHANNEL,
+  type InventoryHttpBridge,
+} from "./inventory-http-channels";
+import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
+import {
+  TANSTACK_DB_PERSISTENCE_CHANNEL,
+  type TanStackDbPersistenceBridge,
+} from "./tanstack-db-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
   ...args: Arguments
 ): Promise<Result> => ipcRenderer.invoke(channel, ...args);
+
+const tanstackDbPersistence: TanStackDbPersistenceBridge = {
+  invoke: (request) => ipcRenderer.invoke(TANSTACK_DB_PERSISTENCE_CHANNEL, request),
+};
+
+contextBridge.exposeInMainWorld("tanstackDbPersistence", tanstackDbPersistence);
+
+contextBridge.exposeInMainWorld("legacyLocalInventory", {
+  load: (): Promise<JsonApiResponse> => ipcRenderer.invoke(LEGACY_LOCAL_INVENTORY_CHANNEL),
+});
+
+const inventoryHttp: InventoryHttpBridge = {
+  getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),
+  request: (request) => ipcRenderer.invoke(INVENTORY_HTTP_REQUEST_CHANNEL, request),
+  abort: (requestId) => ipcRenderer.send(INVENTORY_HTTP_ABORT_CHANNEL, requestId),
+};
+
+contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
 contextBridge.exposeInMainWorld("auth", {
   getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
@@ -92,37 +122,3 @@ if (import.meta.env.PROD) {
     },
   });
 }
-
-type StoreIpcResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | {
-      readonly ok: false;
-      readonly error: unknown;
-    };
-
-const invokeStore = async <A, Input>(channel: string, input?: Input): Promise<A> => {
-  const result: StoreIpcResult<A> = await ipcRenderer.invoke(channel, input);
-  if (result.ok) return result.value;
-  throw result.error;
-};
-
-const requestMethods = Object.fromEntries(
-  Object.entries(STORE_CHANNELS).map(([method, channel]) => [
-    method,
-    <Input>(input?: Input) => invokeStore(channel, input),
-  ]),
-);
-// SAFETY: STORE_CHANNELS is exhaustive for every request method in OfflineStoreApi.
-const typedRequestMethods = requestMethods as Omit<OfflineStoreApi, "onSyncStatusChange">;
-
-const offlineStore: OfflineStoreApi = {
-  ...typedRequestMethods,
-  onSyncStatusChange(callback) {
-    const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
-      callback(status);
-    ipcRenderer.on(STORE_SYNC_STATUS_CHANNEL, listener);
-    return () => ipcRenderer.off(STORE_SYNC_STATUS_CHANNEL, listener);
-  },
-};
-
-contextBridge.exposeInMainWorld("offlineStore", offlineStore);
