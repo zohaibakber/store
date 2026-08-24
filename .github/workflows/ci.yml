@@ -135,3 +135,11 @@ jobs:
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
           GITHUB_SHA: ${{ github.sha }}
+
+  desktop:
+    needs: [verify, deploy]
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    secrets: inherit
+    uses: ./.github/workflows/release.yml

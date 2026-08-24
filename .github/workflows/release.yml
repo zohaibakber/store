@@ -1,9 +1,16 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    outputs:
+      version:
+        description: Desktop version published by this run
+        value: ${{ jobs.version.outputs.version }}
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -12,7 +19,35 @@ env:
   VITE_GIT_HOOKS: "0"
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Next desktop version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          latest="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          if [[ "$latest" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+          else
+            version="$(node -p "require('./apps/desktop/package.json').version")"
+          fi
+          while gh release view "v${version}" >/dev/null 2>&1; do
+            IFS=. read -r major minor patch <<< "$version"
+            version="${major}.${minor}.$((patch + 1))"
+          done
+          echo "Releasing desktop ${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -58,17 +93,15 @@ jobs:
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
-      - name: Set desktop app version from tag
-        shell: bash
+      - name: Set desktop app version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           node -e '
             const fs = require("node:fs");
             const path = "apps/desktop/package.json";
             const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
             pkg.version = process.argv[1];
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
-          ' "$VERSION"
+          ' "${{ needs.version.outputs.version }}"
 
       - name: Build and publish
         working-directory: apps/desktop
@@ -86,11 +119,11 @@ jobs:
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
   publish:
-    needs: release
+    needs: [version, release]
     runs-on: ubuntu-latest
     steps:
       - name: Publish complete release
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+        run: gh release edit "v${{ needs.version.outputs.version }}" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
