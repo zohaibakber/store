@@ -20,4 +20,14 @@ describe("desktop content security policy", () => {
     expect(scriptSources).toContain("'wasm-unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-eval'");
   });
+
+  it("permits production PowerSync Cloud connections", () => {
+    const connectSources = productionPolicy()
+      .split("; ")
+      .find((directive) => directive.startsWith("connect-src "))
+      ?.split(" ");
+
+    expect(connectSources).toContain("https://*.powersync.journeyapps.com");
+    expect(connectSources).not.toContain("https:");
+  });
 });
