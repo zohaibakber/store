@@ -43,10 +43,7 @@ function LiveEditProductPage({
       <EditProductForm categories={categories.data} product={product} suggestions={suggestions} />
     );
   }
-  if (
-    (categories.isError && categories.data.length === 0) ||
-    (products.isError && !product)
-  ) {
+  if ((categories.isError && categories.data.length === 0) || (products.isError && !product)) {
     throw new Error("The product form data could not be loaded.");
   }
   if (!product) {

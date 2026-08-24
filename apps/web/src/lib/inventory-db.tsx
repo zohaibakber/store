@@ -59,10 +59,7 @@ import {
 import * as React from "react";
 
 import type { HostInventoryScope } from "@/host-access";
-import {
-  legacyCatalogMigrated,
-  markLegacyCatalogMigrated,
-} from "@/lib/catalog-migration";
+import { legacyCatalogMigrated, markLegacyCatalogMigrated } from "@/lib/catalog-migration";
 import type { InventoryHost } from "@/lib/inventory-host";
 
 type InventoryCollection<Row extends object> = Collection<Row, string>;
