@@ -90,7 +90,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
   if (!legacy) return;
   const occurredAt = Date.now();
   for (const [index, rows] of chunksOf(legacy.migrationCatalog.categories).entries()) {
-    await submitLegacyCatalogMigration({
+    const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
       command: {
@@ -101,9 +101,12 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
         rows,
       },
     });
+    if (result.imported + result.skipped !== rows.length) {
+      throw new Error("The local category backup was not fully acknowledged by the server.");
+    }
   }
   for (const [index, rows] of chunksOf(legacy.migrationCatalog.products).entries()) {
-    await submitLegacyCatalogMigration({
+    const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
       command: {
@@ -114,9 +117,12 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
         rows,
       },
     });
+    if (result.imported + result.skipped !== rows.length) {
+      throw new Error("The local product backup was not fully acknowledged by the server.");
+    }
   }
   for (const [index, rows] of chunksOf(legacy.migrationCatalog.batches).entries()) {
-    await submitLegacyCatalogMigration({
+    const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
       command: {
@@ -127,6 +133,9 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
         rows,
       },
     });
+    if (result.imported + result.skipped !== rows.length) {
+      throw new Error("The local batch backup was not fully acknowledged by the server.");
+    }
   }
 };
 

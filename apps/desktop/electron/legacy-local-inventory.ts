@@ -177,12 +177,15 @@ const loadMigrationCatalog = (databasePath: string) => {
   }
 };
 
-const migrationDatabasePaths = (userDataPath: string) => {
+export const migrationDatabasePaths = (userDataPath: string) => {
   const organizationsPath = path.join(userDataPath, "organizations");
   const organizationDatabases = existsSync(organizationsPath)
     ? readdirSync(organizationsPath, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
-        .map((entry) => path.join(organizationsPath, entry.name, "store.db"))
+        .flatMap((entry) => [
+          path.join(organizationsPath, entry.name, "data", "store.db"),
+          path.join(organizationsPath, entry.name, "store.db"),
+        ])
     : [];
   return [
     path.join(userDataPath, "locked", "data", "store.db"),
