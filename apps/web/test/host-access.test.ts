@@ -39,6 +39,11 @@ describe("browserHostAccess", () => {
       _tag: "Allow",
     });
   });
+
+  it("keeps sign-in chrome-free and the rest of the app in the shell", () => {
+    expect(access.chrome({ pathname: "/sign-in" })).toEqual({ _tag: "Bare" });
+    expect(access.chrome({ pathname: "/products" })).toEqual({ _tag: "Shell" });
+  });
 });
 
 describe("desktopHostAccess", () => {

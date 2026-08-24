@@ -22,12 +22,8 @@ function LiveInvoices({
   >["inventory"];
 }) {
   const invoices = useInventoryInvoices(inventory);
-  if (invoices.data.length > 0) return <InvoicesPage invoices={invoices.data} />;
-  if (invoices.isError) {
+  if (invoices.isError && invoices.data.length === 0) {
     return <p className="p-6 text-sm text-destructive">Could not load invoices.</p>;
-  }
-  if (!invoices.isReady && invoices.data.length === 0) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading invoices…</p>;
   }
   return <InvoicesPage invoices={invoices.data} />;
 }

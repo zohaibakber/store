@@ -41,9 +41,6 @@ function LiveUploadInvoices({
   if (categories.isError && categories.data.length === 0) {
     return <p className="p-6 text-sm text-destructive">Could not load inventory.</p>;
   }
-  if ((!products.isReady || !categories.isReady) && categories.data.length === 0) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading inventory…</p>;
-  }
   return (
     <UploadProvider products={products.data} categories={categories.data}>
       <UploadPage />

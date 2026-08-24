@@ -43,16 +43,16 @@ function LiveEditProductPage({
       <EditProductForm categories={categories.data} product={product} suggestions={suggestions} />
     );
   }
-  if ((categories.isError && categories.data.length === 0) || (products.isError && !product)) {
+  if (
+    (categories.isError && categories.data.length === 0) ||
+    (products.isError && !product)
+  ) {
     throw new Error("The product form data could not be loaded.");
   }
-  if (
-    (!categories.isReady && categories.data.length === 0) ||
-    (!products.isReady && products.data.length === 0)
-  ) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading your catalog…</p>;
+  if (!product) {
+    if (!categories.isReady || !products.isReady) return null;
+    throw new Error(`Product ${productId} was not found in this catalog.`);
   }
-  if (!product) throw new Error(`Product ${productId} was not found in this catalog.`);
   return (
     <EditProductForm categories={categories.data} product={product} suggestions={suggestions} />
   );

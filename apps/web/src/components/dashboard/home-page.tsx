@@ -4,26 +4,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-health";
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
-import { StatTiles, StatTilesSkeleton } from "@/components/dashboard/stat-tiles";
+import { StatTiles } from "@/components/dashboard/stat-tiles";
 import { TopProducts } from "@/components/dashboard/top-products";
-import { FrameCard } from "@/components/shared/frame-card";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useInventoryDashboardAnalytics, useInventoryState } from "@/lib/inventory-db";
 
 const LOW_STOCK_THRESHOLD = 10;
-
-function ChartSkeleton() {
-  return (
-    <FrameCard
-      description={<Skeleton className="h-3 w-48" />}
-      title={<Skeleton className="h-4 w-28" />}
-    >
-      <Skeleton className="h-56 w-full" />
-    </FrameCard>
-  );
-}
 
 export function HomePage() {
   const state = useInventoryState();
@@ -60,12 +47,7 @@ function LiveDashboard({
           </Alert>
         )}
 
-        {analytics.isLoading ? (
-          <>
-            <StatTilesSkeleton />
-            <ChartSkeleton />
-          </>
-        ) : analytics.isError && !analytics.hasCachedData ? null : (
+        {analytics.isError && !analytics.hasCachedData ? null : (
           <>
             <StatTiles totals={analytics.data.totals} />
             <RevenueChart data={analytics.data.revenueByDay} />

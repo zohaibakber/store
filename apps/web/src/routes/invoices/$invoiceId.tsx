@@ -31,8 +31,6 @@ function LiveInvoiceDetail({
   if (invoice.isError) {
     return <InvoiceDetailError error={new Error("The invoice could not be loaded.")} />;
   }
-  if (!invoice.isReady && !invoice.data) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading invoice…</p>;
-  }
+  if (!invoice.isReady && !invoice.data) return null;
   return <InvoiceDetailError error={new Error(`Invoice ${invoiceId} was not found.`)} />;
 }

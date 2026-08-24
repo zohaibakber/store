@@ -102,10 +102,7 @@ function LiveProductDetailPage({
     if (product.isReady) {
       return <ProductDetailError error={new Error(`Product ${productId} was not found.`)} />;
     }
-    return <ProductDetailLoading />;
-  }
-  if (!movements.isReady && !movements.isError && movements.data.length === 0) {
-    return <ProductDetailLoading />;
+    return null;
   }
 
   const removeProduct = async () => {
@@ -124,19 +121,6 @@ function LiveProductDetailPage({
       onDelete={removeProduct}
       product={catalogProduct}
     />
-  );
-}
-
-function ProductDetailLoading() {
-  return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <BackToProducts />
-      </PageHeader>
-      <PageContent>
-        <p className="text-sm text-muted-foreground">Loading product…</p>
-      </PageContent>
-    </PageLayout>
   );
 }
 

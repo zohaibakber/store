@@ -133,11 +133,18 @@ const loadMigrationHistory = (database: Database.Database) => {
     invoiceItems: readInvoiceItems(
       database.prepare(`SELECT id, invoiceId, productId, batchId,
     productName, batchNumber, quantity, quantityType, baseUnitQuantity, salePrice,
-    createdAt, updatedAt FROM invoice_items WHERE deletedAt IS NULL`),
+    createdAt, updatedAt FROM invoice_items
+    WHERE deletedAt IS NULL
+      AND invoiceId IN (SELECT id FROM invoices WHERE deletedAt IS NULL)
+      AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)
+      AND batchId IN (SELECT id FROM batches WHERE deletedAt IS NULL)`),
     ),
     stockMovements: readStockMovements(
       database.prepare(`SELECT id, productId, batchId, invoiceId,
-    type, packDelta, unitDelta, note, createdAt FROM stock_movements`),
+    type, packDelta, unitDelta, note, createdAt FROM stock_movements
+    WHERE productId IN (SELECT id FROM products WHERE deletedAt IS NULL)
+      AND batchId IN (SELECT id FROM batches WHERE deletedAt IS NULL)
+      AND (invoiceId IS NULL OR invoiceId IN (SELECT id FROM invoices WHERE deletedAt IS NULL))`),
     ),
   };
 };
@@ -178,7 +185,9 @@ const readMigrationCatalog = (databasePath: string) => {
           database.prepare(
             `SELECT id, productId, batchNumber, expiresAt, packQuantity, unitQuantity,
                     createdAt, updatedAt
-               FROM batches WHERE deletedAt IS NULL`,
+               FROM batches
+              WHERE deletedAt IS NULL
+                AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)`,
           ),
         ),
       };
@@ -204,7 +213,9 @@ const readMigrationCatalog = (databasePath: string) => {
           database.prepare(
             `SELECT id, productId, batchNumber, expiresAt, packQuantity, unitQuantity,
                     createdAt, updatedAt
-               FROM batches WHERE deletedAt IS NULL`,
+               FROM batches
+              WHERE deletedAt IS NULL
+                AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)`,
           ),
         ),
       };
@@ -233,7 +244,9 @@ const readMigrationCatalog = (databasePath: string) => {
             `SELECT id, product_id AS productId, batch_number AS batchNumber,
                     expires_at AS expiresAt, 0 AS packQuantity, quantity AS unitQuantity,
                     created_at AS createdAt, updated_at AS updatedAt
-               FROM batches WHERE deleted_at IS NULL`,
+               FROM batches
+              WHERE deleted_at IS NULL
+                AND product_id IN (SELECT id FROM products WHERE deleted_at IS NULL)`,
           ),
         ),
       };

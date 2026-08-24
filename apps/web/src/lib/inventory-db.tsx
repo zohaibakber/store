@@ -59,6 +59,10 @@ import {
 import * as React from "react";
 
 import type { HostInventoryScope } from "@/host-access";
+import {
+  legacyCatalogMigrated,
+  markLegacyCatalogMigrated,
+} from "@/lib/catalog-migration";
 import type { InventoryHost } from "@/lib/inventory-host";
 
 type InventoryCollection<Row extends object> = Collection<Row, string>;
@@ -72,7 +76,60 @@ const seedMissingRows = async <Row extends { readonly id: string }>(
   }
 };
 
-const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
+const seedLegacySnapshot = async (
+  host: InventoryHost,
+  collections: {
+    readonly batches: InventoryCollection<BatchRow>;
+    readonly categories: InventoryCollection<CategoryRow>;
+    readonly invoiceItems: InventoryCollection<InvoiceItemRow>;
+    readonly invoices: InventoryCollection<InvoiceRow>;
+    readonly products: InventoryCollection<ProductRow>;
+    readonly stockMovements: InventoryCollection<StockMovementRow>;
+  },
+) => {
+  const legacy = await host.loadLegacyLocalSnapshot?.();
+  if (!legacy) return;
+  await seedMissingRows(collections.categories, legacy.categories);
+  await seedMissingRows(collections.products, legacy.products);
+  await seedMissingRows(collections.batches, legacy.batches);
+  await seedMissingRows(collections.invoices, legacy.invoices);
+  await seedMissingRows(collections.invoiceItems, legacy.invoiceItems);
+  await seedMissingRows(collections.stockMovements, legacy.stockMovements);
+};
+
+const replicateRemoteCatalog = (
+  host: InventoryHost,
+  scopeId: string,
+  powerSync: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
+) => {
+  void (async () => {
+    try {
+      if (!legacyCatalogMigrated(scopeId)) {
+        const legacy = await host.loadLegacyLocalSnapshot?.();
+        if (legacy) {
+          await migrateLegacyCatalog({
+            apiBaseUrl: host.apiBaseUrl,
+            authenticatedFetch: host.authenticatedFetch,
+            deviceId: host.deviceId,
+            catalog: legacy.migrationCatalog,
+          });
+        }
+        markLegacyCatalogMigrated(scopeId);
+      }
+      void powerSync.connect(
+        makeInventoryPowerSyncConnector({
+          apiBaseUrl: host.apiBaseUrl,
+          authenticatedFetch: host.authenticatedFetch,
+        }),
+      );
+      await waitForInventoryFirstSync(powerSync);
+    } catch {
+      // Local rows stay on screen. The next launch retries the server copy.
+    }
+  })();
+};
+
+export const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
   scope._tag === "Local"
     ? "desktop-local:locked"
     : inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
@@ -136,24 +193,6 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
   const dbClient = new DbClient();
   const powerSync = await host.openPowerSyncDatabase(inventoryPowerSyncDatabaseName(scopeId));
   try {
-    if (scope._tag === "Remote") {
-      const legacy = await host.loadLegacyLocalSnapshot?.();
-      if (legacy) {
-        await migrateLegacyCatalog({
-          apiBaseUrl: host.apiBaseUrl,
-          authenticatedFetch: host.authenticatedFetch,
-          deviceId: host.deviceId,
-          catalog: legacy.migrationCatalog,
-        });
-      }
-      void powerSync.connect(
-        makeInventoryPowerSyncConnector({
-          apiBaseUrl: host.apiBaseUrl,
-          authenticatedFetch: host.authenticatedFetch,
-        }),
-      );
-      await waitForInventoryFirstSync(powerSync);
-    }
     const configs = powerSyncConfigs(powerSync, scopeId);
     const categories = dbClient.collection(collectionOptions(configs.categories));
     const products = dbClient.collection(collectionOptions(configs.products));
@@ -170,17 +209,15 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       products.preload(),
       stockMovements.preload(),
     ]);
-    if (scope._tag === "Local") {
-      const legacy = await host.loadLegacyLocalSnapshot?.();
-      if (legacy) {
-        await seedMissingRows(categories, legacy.categories);
-        await seedMissingRows(products, legacy.products);
-        await seedMissingRows(batches, legacy.batches);
-        await seedMissingRows(invoices, legacy.invoices);
-        await seedMissingRows(invoiceItems, legacy.invoiceItems);
-        await seedMissingRows(stockMovements, legacy.stockMovements);
-      }
-    }
+    await seedLegacySnapshot(host, {
+      batches,
+      categories,
+      invoiceItems,
+      invoices,
+      products,
+      stockMovements,
+    });
+    if (scope._tag === "Remote") replicateRemoteCatalog(host, scopeId, powerSync);
 
     return {
       batches,
@@ -802,11 +839,20 @@ const acquireInventory = (key: string, open: () => Promise<Inventory>): Inventor
       if (resource.references !== 0) return;
       resource.disposeTimer = window.setTimeout(() => {
         if (resource.references !== 0) return;
-        resources.delete(key);
+        if (resources.get(key) === resource) resources.delete(key);
         void resource.promise.then((inventory) => inventory.dispose()).catch(() => undefined);
       }, 0);
     },
   };
+};
+
+/** Drops a failed open so the next mount runs it again from the start. */
+const forgetInventory = (key: string) => {
+  const resource = resources.get(key);
+  if (!resource) return;
+  resources.delete(key);
+  if (resource.disposeTimer !== null) clearTimeout(resource.disposeTimer);
+  void resource.promise.then((inventory) => inventory.dispose()).catch(() => undefined);
 };
 
 export function InventoryProvider({
@@ -823,6 +869,7 @@ export function InventoryProvider({
   const organizationId = scope.organizationId;
   const userId = scope.userId;
   const [state, setState] = React.useState<InventoryState>({ _tag: "Opening" });
+  const [attempt, setAttempt] = React.useState(0);
 
   React.useEffect(() => {
     let active = true;
@@ -846,31 +893,35 @@ export function InventoryProvider({
         }
       },
       (cause: unknown) => {
-        if (active) {
-          setState({
-            _tag: "Error",
-            error: cause instanceof Error ? cause.message : "Catalog storage is unavailable.",
-          });
-        }
+        const message = cause instanceof Error ? cause.message : "Catalog storage is unavailable.";
+        if (active) setState({ _tag: "Error", error: message });
       },
     );
     return () => {
       active = false;
       lease.release();
     };
-  }, [host, organizationId, resourceKey, scopeTag, userId]);
+  }, [attempt, host, organizationId, resourceKey, scopeTag, userId]);
 
-  if (state._tag === "Opening") {
+  if (state._tag === "Error") {
     return (
-      <div className="space-y-1 p-6 text-sm text-muted-foreground" role="status">
-        <p>Backing up and syncing your catalog…</p>
-        <p className="text-xs">Keep Tabaaq open. The first sync can take a few minutes.</p>
+      <div className="flex flex-col items-start gap-3 p-6">
+        <p className="text-sm text-destructive">{state.error}</p>
+        <button
+          className="text-sm underline"
+          onClick={() => {
+            forgetInventory(resourceKey);
+            setState({ _tag: "Opening" });
+            setAttempt((value) => value + 1);
+          }}
+          type="button"
+        >
+          Try again
+        </button>
       </div>
     );
   }
-  if (state._tag === "Error") {
-    return <p className="p-6 text-sm text-destructive">{state.error}</p>;
-  }
+  if (state._tag !== "Ready") return null;
   return (
     <InventoryContext.Provider value={state}>
       <DbProvider client={state.inventory.dbClient}>{children}</DbProvider>
@@ -1192,12 +1243,7 @@ export const useInventoryDashboardAnalytics = (inventory: Inventory) => {
     data,
     isError: invoices.isError || products.isError,
     hasCachedData: invoices.data.length > 0 || products.data.length > 0,
-    isLoading:
-      invoices.data.length === 0 &&
-      products.data.length === 0 &&
-      !invoices.isError &&
-      !products.isError &&
-      (!invoices.isReady || !products.isReady),
+    isLoading: false,
   };
 };
 

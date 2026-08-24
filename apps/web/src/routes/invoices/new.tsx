@@ -23,12 +23,8 @@ function LiveInvoiceCreate({
   >["inventory"];
 }) {
   const products = useCatalogProducts(inventory);
-  if (products.data.length > 0) return <InvoiceCreatePage products={products.data} />;
-  if (products.isError) {
+  if (products.isError && products.data.length === 0) {
     return <p className="p-6 text-sm text-destructive">Could not load products.</p>;
-  }
-  if (!products.isReady && products.data.length === 0) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading products…</p>;
   }
   return <InvoiceCreatePage products={products.data} />;
 }

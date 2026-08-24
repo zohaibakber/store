@@ -114,6 +114,8 @@ export const partitionLegacyMigrationRows = <Row extends { readonly id: string }
   rows: ReadonlyArray<Row>,
   existingOperationIds: ReadonlySet<string>,
 ) => {
+  // Client-side helper only. The API must still upsert rows when a receipt
+  // exists: receipts can survive a rolled-back catalog write.
   const pending: Row[] = [];
   let skipped = 0;
   for (const row of rows) {

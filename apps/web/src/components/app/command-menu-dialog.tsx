@@ -187,11 +187,9 @@ function ProductCommandMenu({
   const emptyMessage =
     products.isError && products.data.length === 0
       ? "Product search could not be loaded."
-      : !products.isReady && products.data.length === 0
-        ? "Loading products…"
-        : products.data.length === 0
-          ? "No products yet."
-          : "No products found.";
+      : products.data.length === 0
+        ? "No products yet."
+        : "No products found.";
 
   return (
     <Command

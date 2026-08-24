@@ -125,7 +125,6 @@ export function AuthProvider({
       transitionRef.current = transition;
       pendingScopeRef.current = nextScope;
       setError(next.workspaceError ?? null);
-      setLoading(true);
 
       router.update({
         context: {
@@ -151,7 +150,7 @@ export function AuthProvider({
   );
 
   const refresh = React.useCallback(async () => {
-    setLoading(true);
+    if (!snapshot) setLoading(true);
     setError(null);
     try {
       await apply(await authSession().getSession());
@@ -159,7 +158,7 @@ export function AuthProvider({
       setError(storeErrorMessage(cause));
       setLoading(false);
     }
-  }, [apply]);
+  }, [apply, snapshot]);
 
   React.useEffect(() => {
     const bridge = sessionBridge ?? window.auth;

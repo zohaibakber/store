@@ -72,7 +72,7 @@ function AuthenticatedLayout() {
   // already-mounted route while the live auth snapshot changes underneath it.
   // Hide every scope transition so local or previous-organization rows cannot
   // remain visible while router invalidation is in flight.
-  if (auth._tag === "Loading") return <AppLoading />;
+  if (auth._tag === "Loading" && !auth.snapshot) return <AppLoading />;
 
   const verdict = access.admit({ location: { pathname }, snapshot: auth.snapshot });
   if (verdict._tag === "Redirect") {

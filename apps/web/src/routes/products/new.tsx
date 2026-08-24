@@ -28,9 +28,6 @@ function LiveNewProductPage({
   if (categories.isError && categories.data.length === 0) {
     throw new Error("The catalog categories could not be loaded.");
   }
-  if (!categories.isReady && categories.data.length === 0) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading your catalog…</p>;
-  }
   return <NewProductForm categories={categories.data} suggestions={suggestions} />;
 }
 

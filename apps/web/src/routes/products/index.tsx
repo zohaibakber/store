@@ -42,10 +42,8 @@ function LiveProductsPage({
   >["inventory"];
 }) {
   const live = useCatalogProducts(inventory);
-  if (live.data.length > 0) return <ProductsContent products={live.data} />;
-  if (live.isError) return <ProductsStatus error message="The catalog could not be loaded." />;
-  if (!live.isReady && live.data.length === 0) {
-    return <ProductsStatus message="Loading your catalog…" />;
+  if (live.isError && live.data.length === 0) {
+    return <ProductsStatus error message="The catalog could not be loaded." />;
   }
   return <ProductsContent products={live.data} />;
 }

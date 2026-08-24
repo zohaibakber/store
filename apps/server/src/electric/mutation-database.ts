@@ -14,7 +14,6 @@ import {
   type SyncEntityChange,
   type SyncOperation,
   legacyCatalogRowOperationId,
-  partitionLegacyMigrationRows,
 } from "@store/contracts";
 import { syncEntityChangeKey } from "@store/contracts";
 import { canonicalPayloadHash, operationPayloadHash } from "@store/contracts/operation-hash";
@@ -518,6 +517,21 @@ const recordLegacyMigrationReceipts = (
     )
     .onConflictDoNothing();
 
+const existingRowIds = (
+  tx: PostgresTransaction,
+  table: typeof categories | typeof products | typeof batches | typeof invoices,
+  organizationId: string,
+  ids: ReadonlyArray<string>,
+) => {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return Effect.succeed(new Set<string>());
+  return tx
+    .select({ id: table.id })
+    .from(table)
+    .where(and(eq(table.organizationId, organizationId), inArray(table.id, uniqueIds)))
+    .pipe(Effect.map((rows) => new Set(rows.map((row) => row.id))));
+};
+
 const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCatalog")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
@@ -528,19 +542,10 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   if (command.rows.length === 0)
     return { imported: 0, skipped: 0, txid } satisfies LegacyCatalogMigrationResult;
 
-  const existingReceipts = yield* tx
-    .select({ operationId: electricMutationReceipts.operationId })
-    .from(electricMutationReceipts)
-    .where(
-      and(
-        eq(electricMutationReceipts.organizationId, actor.organizationId),
-        inArray(
-          electricMutationReceipts.operationId,
-          command.rows.map((row) => legacyCatalogRowOperationId(command.kind, row.id)),
-        ),
-      ),
-    );
-  const existingIds = new Set(existingReceipts.map((receipt) => receipt.operationId));
+  // Receipts must not skip upserts. A previous CPU timeout can persist a
+  // receipt after the catalog row was rolled back, and later invoice lines
+  // then fail foreign keys against missing products or batches. Rows whose
+  // parent is absent are reported as skipped instead of failing the chunk.
   const metadata = {
     organizationId: actor.organizationId,
     createdByUserId: actor.userId,
@@ -552,17 +557,10 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
 
   switch (command.kind) {
     case "categories": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "categories",
-        command.rows,
-        existingIds,
-      );
-      if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(categories)
         .values(
-          pending.map((category) => ({
+          command.rows.map((category) => ({
             ...category,
             ...metadata,
             operationId: legacyCatalogRowOperationId("categories", category.id),
@@ -578,17 +576,28 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
             rowVersion: sql`${categories.rowVersion} + 1`,
           },
         });
-      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, command.rows);
+      return {
+        imported: command.rows.length,
+        skipped: 0,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
     case "products": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "products",
-        command.rows,
-        existingIds,
+      const existingCategoryIds = yield* existingRowIds(
+        tx,
+        categories,
+        actor.organizationId,
+        command.rows.map((row) => row.categoryId),
       );
+      const pending = command.rows.filter((row) => existingCategoryIds.has(row.categoryId));
+      const skippedMissingParents = command.rows.length - pending.length;
       if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+        return {
+          imported: 0,
+          skipped: skippedMissingParents,
+          txid,
+        } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(products)
         .values(
@@ -616,16 +625,27 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           },
         });
       yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      return {
+        imported: pending.length,
+        skipped: skippedMissingParents,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
     case "batches": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "batches",
-        command.rows,
-        existingIds,
+      const existingProductIds = yield* existingRowIds(
+        tx,
+        products,
+        actor.organizationId,
+        command.rows.map((row) => row.productId),
       );
+      const pending = command.rows.filter((row) => existingProductIds.has(row.productId));
+      const skippedMissingParents = command.rows.length - pending.length;
       if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+        return {
+          imported: 0,
+          skipped: skippedMissingParents,
+          txid,
+        } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(batches)
         .values(
@@ -649,20 +669,17 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           },
         });
       yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      return {
+        imported: pending.length,
+        skipped: skippedMissingParents,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
     case "invoices": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "invoices",
-        command.rows,
-        existingIds,
-      );
-      if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(invoices)
         .values(
-          pending.map((invoice) => ({
+          command.rows.map((invoice) => ({
             ...invoice,
             ...metadata,
             operationId: legacyCatalogRowOperationId("invoices", invoice.id),
@@ -679,7 +696,7 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
             rowVersion: sql`${invoices.rowVersion} + 1`,
           },
         });
-      const lastInvoiceNumber = pending.reduce(
+      const lastInvoiceNumber = command.rows.reduce(
         (max, invoice) => Math.max(max, invoice.invoiceNumber),
         0,
       );
@@ -695,17 +712,45 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
             lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${lastInvoiceNumber})`,
           },
         });
-      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, command.rows);
+      return {
+        imported: command.rows.length,
+        skipped: 0,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
     case "invoice-items": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "invoice-items",
-        command.rows,
-        existingIds,
+      const existingInvoiceIds = yield* existingRowIds(
+        tx,
+        invoices,
+        actor.organizationId,
+        command.rows.map((row) => row.invoiceId),
       );
+      const existingProductIds = yield* existingRowIds(
+        tx,
+        products,
+        actor.organizationId,
+        command.rows.map((row) => row.productId),
+      );
+      const existingBatchIds = yield* existingRowIds(
+        tx,
+        batches,
+        actor.organizationId,
+        command.rows.map((row) => row.batchId),
+      );
+      const pending = command.rows.filter(
+        (row) =>
+          existingInvoiceIds.has(row.invoiceId) &&
+          existingProductIds.has(row.productId) &&
+          existingBatchIds.has(row.batchId),
+      );
+      const skippedMissingParents = command.rows.length - pending.length;
       if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+        return {
+          imported: 0,
+          skipped: skippedMissingParents,
+          txid,
+        } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(invoiceItems)
         .values(
@@ -733,16 +778,44 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           },
         });
       yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      return {
+        imported: pending.length,
+        skipped: skippedMissingParents,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
     case "stock-movements": {
-      const { pending, skipped } = partitionLegacyMigrationRows(
-        "stock-movements",
-        command.rows,
-        existingIds,
+      const existingProductIds = yield* existingRowIds(
+        tx,
+        products,
+        actor.organizationId,
+        command.rows.map((row) => row.productId),
       );
+      const existingBatchIds = yield* existingRowIds(
+        tx,
+        batches,
+        actor.organizationId,
+        command.rows.map((row) => row.batchId),
+      );
+      const existingInvoiceIds = yield* existingRowIds(
+        tx,
+        invoices,
+        actor.organizationId,
+        command.rows.flatMap((row) => (row.invoiceId ? [row.invoiceId] : [])),
+      );
+      const pending = command.rows.filter(
+        (row) =>
+          existingProductIds.has(row.productId) &&
+          existingBatchIds.has(row.batchId) &&
+          (row.invoiceId === null || existingInvoiceIds.has(row.invoiceId)),
+      );
+      const skippedMissingParents = command.rows.length - pending.length;
       if (pending.length === 0)
-        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+        return {
+          imported: 0,
+          skipped: skippedMissingParents,
+          txid,
+        } satisfies LegacyCatalogMigrationResult;
       yield* tx
         .insert(stockMovements)
         .values(
@@ -771,7 +844,11 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           },
         });
       yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
-      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      return {
+        imported: pending.length,
+        skipped: skippedMissingParents,
+        txid,
+      } satisfies LegacyCatalogMigrationResult;
     }
   }
 });

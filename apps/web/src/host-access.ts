@@ -63,6 +63,8 @@ export interface HostAccessPolicy {
 
 const PUBLIC_PATHS = new Set(["/sign-in"]);
 
+const BARE_PATHS = PUBLIC_PATHS;
+
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.has(pathname);
 
 const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
@@ -84,7 +86,7 @@ const localInventoryScope: HostInventoryScope = {
 };
 
 const bareChrome = (input: AccessLocation): AppChrome =>
-  isPublicPath(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
+  BARE_PATHS.has(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
 
 /** Browser: app routes require an authenticated workspace. */
 export const browserHostAccess = (): HostAccessPolicy => ({
