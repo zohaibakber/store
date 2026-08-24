@@ -17,6 +17,7 @@ import {
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+export const AUTH_JWT_KEY_ID = "tabaaq-auth-v1";
 
 const base64UrlEncode = (bytes: Uint8Array) => {
   let binary = "";
@@ -69,6 +70,7 @@ const JwtPayload = Schema.Struct({
 const JwtHeader = Schema.Struct({
   alg: Schema.Literal("ES256"),
   typ: Schema.Literal("JWT"),
+  kid: Schema.optionalKey(Schema.Literal(AUTH_JWT_KEY_ID)),
 });
 
 export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
@@ -176,7 +178,11 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     exp: expiresAt,
     jti: crypto.randomUUID(),
   } satisfies typeof JwtPayload.Type;
-  const header = { alg: "ES256", typ: "JWT" } satisfies typeof JwtHeader.Type;
+  const header = {
+    alg: "ES256",
+    typ: "JWT",
+    kid: AUTH_JWT_KEY_ID,
+  } satisfies typeof JwtHeader.Type;
   const encodedHeader = base64UrlEncode(textEncoder.encode(JSON.stringify(header)));
   const encodedPayload = base64UrlEncode(textEncoder.encode(JSON.stringify(payload)));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
@@ -294,3 +300,14 @@ export const accessTokenLayer = (configuration: JwtConfiguration) =>
   );
 
 export const decodeJsonWebKey = Schema.decodeUnknownEffect(JsonWebKeySchema);
+
+export const powerSyncPublicJwks = (publicJwk: JsonWebKey) => ({
+  keys: [
+    {
+      ...publicJwk,
+      alg: "ES256",
+      use: "sig",
+      kid: AUTH_JWT_KEY_ID,
+    },
+  ],
+});

@@ -1,4 +1,4 @@
-import { isTrustedOrigin } from "@store/auth/security";
+import { bearerToken, isTrustedOrigin } from "@store/auth";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,7 +9,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
-import { ELECTRIC_REPLICA_TABLES } from "../electric/proxy";
 import { ElectricMutationHandlers } from "../routes/electric-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
@@ -44,33 +43,39 @@ const RawRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", "/api/auth/session", handleSessionRequest);
     yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
-    for (const table of ELECTRIC_REPLICA_TABLES) {
-      yield* router.add(
-        "GET",
-        `/api/electric/${table}`,
-        Effect.fn(`ElectricRoutes.${table}`)(function* () {
-          const identity = yield* authenticateCurrentOrganization(runtime);
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          const webRequest = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
-          return yield* runtime.proxyElectric({
-            table,
-            organizationId: identity.organizationId,
-            request: webRequest,
-          });
-        })().pipe(
-          Effect.catchTags({
-            Unauthenticated: (error) =>
-              Effect.succeed(
-                HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 }),
-              ),
-            Forbidden: (error) =>
-              Effect.succeed(
-                HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 }),
-              ),
-          }),
-        ),
-      );
-    }
+    yield* router.add(
+      "GET",
+      "/api/powersync/credentials",
+      Effect.fn("PowerSync.credentials")(function* () {
+        const identity = yield* authenticateCurrentOrganization(runtime);
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const token = bearerToken(request.headers.authorization);
+        if (!token) {
+          return HttpServerResponse.jsonUnsafe(
+            publicError("UNAUTHENTICATED", "Sign in required."),
+            { status: 401 },
+          );
+        }
+        if (!runtime.powerSyncUrl) {
+          return HttpServerResponse.jsonUnsafe(
+            publicError("POWERSYNC_NOT_CONFIGURED", "PowerSync is not configured."),
+            { status: 503 },
+          );
+        }
+        return HttpServerResponse.jsonUnsafe({
+          endpoint: runtime.powerSyncUrl,
+          token,
+          expiresAt: identity.session.expiresAt,
+        });
+      })().pipe(
+        Effect.catchTags({
+          Unauthenticated: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
+          Forbidden: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
+        }),
+      ),
+    );
   }),
 );
 
@@ -83,14 +88,7 @@ const Cors = HttpRouter.middleware(
       allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
       allowedHeaders: ["Content-Type", "Authorization", "Electron-Origin", "Expo-Origin"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
-      exposedHeaders: [
-        "Content-Length",
-        "electric-cursor",
-        "electric-handle",
-        "electric-offset",
-        "electric-schema",
-        "electric-up-to-date",
-      ],
+      exposedHeaders: ["Content-Length"],
       maxAge: 600,
       credentials: true,
     });

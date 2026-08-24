@@ -17,7 +17,6 @@ import type * as HttpServerResponse from "effect/unstable/http/HttpServerRespons
 
 import type { AuthError } from "../auth/session";
 import type { ElectricMutationResult } from "../electric/mutation-database";
-import type { ElectricReplicaTable } from "../electric/proxy";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
 
@@ -30,6 +29,7 @@ export interface SyncLiveInput {
 
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
+  readonly powerSyncUrl: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
     headers: Headers,
@@ -42,11 +42,6 @@ export interface ServerRuntimeContract {
   readonly limitProductScan: (
     key: string,
   ) => Effect.Effect<{ readonly success: boolean }, RateLimitError, RuntimeContext>;
-  readonly proxyElectric: (input: {
-    readonly table: ElectricReplicaTable;
-    readonly organizationId: string;
-    readonly request: Request;
-  }) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
   /** Compatibility bridge for deployed clients still backed by OrganizationStore. */
   readonly connectSyncLive: (
     input: SyncLiveInput,

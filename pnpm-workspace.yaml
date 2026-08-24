@@ -38,3 +38,8 @@ allowBuilds:
   msgpackr-extract: true
   protobufjs: false
   workerd: true
+
+minimumReleaseAgeExclude:
+  - "@tanstack/db@0.8.3"
+  - "@tanstack/powersync-db-collection@0.1.62"
+  - "@tanstack/react-db@0.3.3"

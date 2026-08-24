@@ -11,7 +11,7 @@ export const SystemHandlers = HttpApiBuilder.group(StoreApi, "system", (handlers
         endpoints: [
           "/api/health",
           "/api/auth/*",
-          "/api/electric/*",
+          "/api/powersync/credentials",
           "/api/inventory/*",
           "/api/sync/live",
           "/api/uploads",

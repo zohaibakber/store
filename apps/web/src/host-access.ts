@@ -21,7 +21,7 @@ export type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
 /**
  * Inventory identity selected by the host. The tag is part of the contract:
- * local desktop workspaces must never be passed to Electric or server mutations.
+ * local desktop workspaces must never be passed to PowerSync or server mutations.
  */
 export type HostInventoryScope =
   | {

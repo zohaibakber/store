@@ -1,10 +1,13 @@
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
+  AUTH_JWT_KEY_ID,
   EmailAddress,
   issueAccessToken,
   OrganizationId,
+  powerSyncPublicJwks,
   SessionId,
   UserId,
   verifyAccessToken,
@@ -57,6 +60,21 @@ describe("ES256 access tokens", () => {
       name: "Owner",
       image: null,
       expiresAt: input.now + 300_000,
+    });
+  });
+
+  it("publishes the same key id in access tokens and the PowerSync JWKS", async () => {
+    const config = await configuration();
+    const issued = await Effect.runPromise(issueAccessToken(input, config));
+    const encodedHeader = issued.token.split(".")[0];
+    if (!encodedHeader) throw new Error("The access token header is missing.");
+    const header = Schema.decodeUnknownSync(Schema.Struct({ kid: Schema.String }))(
+      JSON.parse(atob(encodedHeader.replace(/-/gu, "+").replace(/_/gu, "/"))),
+    );
+
+    expect(header.kid).toBe(AUTH_JWT_KEY_ID);
+    expect(powerSyncPublicJwks(config.publicJwk)).toEqual({
+      keys: [expect.objectContaining({ kid: AUTH_JWT_KEY_ID, alg: "ES256", use: "sig" })],
     });
   });
 

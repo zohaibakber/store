@@ -5,11 +5,13 @@ import {
   type InvoiceRow,
   type ProductRow,
   type StockMovementRow,
-  createInventoryCollectionConfigs,
-  INVENTORY_REPLICA_SCHEMA_VERSION,
-  inventoryReplicaDatabaseName,
+  inventoryPowerSyncSchema,
+  inventoryPowerSyncDatabaseName,
   inventoryReplicaScope,
-  submitCatalogRows,
+  makeInventoryPowerSyncConnector,
+  powerSyncCollectionSchemas,
+  powerSyncDeserializationSchemas,
+  powerSyncDeserializationFailure,
   submitImportInventory,
   submitIssueInvoice,
 } from "@store/client-db";
@@ -40,11 +42,7 @@ import {
   decodeInvoiceItemId,
   decodeProductId,
 } from "@store/contracts/ids";
-import { persistedCollectionOptions } from "@tanstack/db-sqlite-persistence-core";
-import {
-  electricCollectionOptions,
-  type ElectricCollectionUtils,
-} from "@tanstack/electric-db-collection";
+import { powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
 import {
   type Collection,
   DbClient,
@@ -61,46 +59,9 @@ import * as React from "react";
 import type { HostInventoryScope } from "@/host-access";
 import type { InventoryHost } from "@/lib/inventory-host";
 
-const persistRows = (
-  host: InventoryHost,
-  entity: "category" | "product" | "batch",
-  rows: ReadonlyArray<CategoryRow | ProductRow | BatchRow>,
-) =>
-  submitCatalogRows({
-    apiBaseUrl: host.apiBaseUrl,
-    authenticatedFetch: host.authenticatedFetch,
-    entity,
-    rows,
-  });
+type InventoryCollection<Row extends object> = Collection<Row, string>;
 
-type InventoryCollectionUtils = Pick<ElectricCollectionUtils<CategoryRow>, "awaitTxId">;
-type InventoryCollection<Row extends object> = Collection<
-  Row,
-  string | number,
-  InventoryCollectionUtils
->;
-
-const localCollection = <Row extends object>(
-  dbClient: DbClient,
-  input: {
-    readonly id: string;
-    readonly getKey: (row: Row) => string | number;
-    readonly persistence: Awaited<ReturnType<InventoryHost["openPersistence"]>>["persistence"];
-  },
-): InventoryCollection<Row> =>
-  dbClient.collection(
-    collectionOptions(
-      persistedCollectionOptions<Row, string | number, never, InventoryCollectionUtils>({
-        id: input.id,
-        getKey: input.getKey,
-        persistence: input.persistence,
-        schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        utils: { awaitTxId: async () => true },
-      }),
-    ),
-  );
-
-const seedMissingRows = async <Row extends { readonly id: string | number }>(
+const seedMissingRows = async <Row extends { readonly id: string }>(
   collection: InventoryCollection<Row>,
   rows: ReadonlyArray<Row>,
 ) => {
@@ -114,57 +75,90 @@ const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
     ? "desktop-local:locked"
     : inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
 
+const powerSyncConfigs = (
+  database: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
+  scopeId: string,
+) => ({
+  categories: powerSyncCollectionOptions({
+    id: `${scopeId}:categories`,
+    database,
+    table: inventoryPowerSyncSchema.props.categories,
+    schema: powerSyncCollectionSchemas.categories,
+    deserializationSchema: powerSyncDeserializationSchemas.categories,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+  products: powerSyncCollectionOptions({
+    id: `${scopeId}:products`,
+    database,
+    table: inventoryPowerSyncSchema.props.products,
+    schema: powerSyncCollectionSchemas.products,
+    deserializationSchema: powerSyncDeserializationSchemas.products,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+  batches: powerSyncCollectionOptions({
+    id: `${scopeId}:batches`,
+    database,
+    table: inventoryPowerSyncSchema.props.batches,
+    schema: powerSyncCollectionSchemas.batches,
+    deserializationSchema: powerSyncDeserializationSchemas.batches,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+  invoices: powerSyncCollectionOptions({
+    id: `${scopeId}:invoices`,
+    database,
+    table: inventoryPowerSyncSchema.props.invoices,
+    schema: powerSyncCollectionSchemas.invoices,
+    deserializationSchema: powerSyncDeserializationSchemas.invoices,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+  invoiceItems: powerSyncCollectionOptions({
+    id: `${scopeId}:invoice-items`,
+    database,
+    table: inventoryPowerSyncSchema.props.invoice_items,
+    schema: powerSyncCollectionSchemas.invoiceItems,
+    deserializationSchema: powerSyncDeserializationSchemas.invoiceItems,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+  stockMovements: powerSyncCollectionOptions({
+    id: `${scopeId}:stock-movements`,
+    database,
+    table: inventoryPowerSyncSchema.props.stock_movements,
+    schema: powerSyncCollectionSchemas.stockMovements,
+    deserializationSchema: powerSyncDeserializationSchemas.stockMovements,
+    onDeserializationError: powerSyncDeserializationFailure,
+  }),
+});
+
 const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => {
   const scopeId = inventoryScopeId(host, scope);
-  const databaseName = inventoryReplicaDatabaseName(scopeId);
-  const hostPersistence = await host.openPersistence(databaseName);
-
+  const dbClient = new DbClient();
+  const powerSync = await host.openPowerSyncDatabase(inventoryPowerSyncDatabaseName(scopeId));
   try {
-    const configs = createInventoryCollectionConfigs({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      scopeId,
-    });
-    const dbClient = new DbClient();
+    if (scope._tag === "Remote") {
+      await powerSync.connect(
+        makeInventoryPowerSyncConnector({
+          apiBaseUrl: host.apiBaseUrl,
+          authenticatedFetch: host.authenticatedFetch,
+        }),
+      );
+    }
+    const configs = powerSyncConfigs(powerSync, scopeId);
+    const categories = dbClient.collection(collectionOptions(configs.categories));
+    const products = dbClient.collection(collectionOptions(configs.products));
+    const batches = dbClient.collection(collectionOptions(configs.batches));
+    const stockMovements = dbClient.collection(collectionOptions(configs.stockMovements));
+    const invoices = dbClient.collection(collectionOptions(configs.invoices));
+    const invoiceItems = dbClient.collection(collectionOptions(configs.invoiceItems));
+
+    await Promise.all([
+      batches.preload(),
+      categories.preload(),
+      invoiceItems.preload(),
+      invoices.preload(),
+      products.preload(),
+      stockMovements.preload(),
+    ]);
     if (scope._tag === "Local") {
-      const batches = localCollection<BatchRow>(dbClient, {
-        id: configs.batches.id,
-        getKey: configs.batches.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      const categories = localCollection<CategoryRow>(dbClient, {
-        id: configs.categories.id,
-        getKey: configs.categories.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      const invoiceItems = localCollection<InvoiceItemRow>(dbClient, {
-        id: configs.invoiceItems.id,
-        getKey: configs.invoiceItems.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      const invoices = localCollection<InvoiceRow>(dbClient, {
-        id: configs.invoices.id,
-        getKey: configs.invoices.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      const products = localCollection<ProductRow>(dbClient, {
-        id: configs.products.id,
-        getKey: configs.products.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      const stockMovements = localCollection<StockMovementRow>(dbClient, {
-        id: configs.stockMovements.id,
-        getKey: configs.stockMovements.getKey,
-        persistence: hostPersistence.persistence,
-      });
-      await Promise.all([
-        batches.preload(),
-        categories.preload(),
-        invoiceItems.preload(),
-        invoices.preload(),
-        products.preload(),
-        stockMovements.preload(),
-      ]);
       const legacy = await host.loadLegacyLocalSnapshot?.();
       if (legacy) {
         await seedMissingRows(categories, legacy.categories);
@@ -174,153 +168,7 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
         await seedMissingRows(invoiceItems, legacy.invoiceItems);
         await seedMissingRows(stockMovements, legacy.stockMovements);
       }
-      return {
-        batches,
-        categories,
-        dbClient,
-        invoiceItems,
-        invoices,
-        products,
-        stockMovements,
-        mode: "Local" as const,
-        dispose: async () => {
-          await dbClient.cleanup();
-          await hostPersistence.dispose();
-        },
-      };
     }
-    const categorySync = electricCollectionOptions<CategoryRow>({
-      ...configs.categories,
-      onInsert: ({ transaction }) =>
-        persistRows(
-          host,
-          "category",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-      onUpdate: ({ transaction }) =>
-        persistRows(
-          host,
-          "category",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-    });
-    const productSync = electricCollectionOptions<ProductRow>({
-      ...configs.products,
-      onInsert: ({ transaction }) =>
-        persistRows(
-          host,
-          "product",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-      onUpdate: ({ transaction }) =>
-        persistRows(
-          host,
-          "product",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-    });
-    const batchSync = electricCollectionOptions<BatchRow>({
-      ...configs.batches,
-      onInsert: ({ transaction }) =>
-        persistRows(
-          host,
-          "batch",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-      onUpdate: ({ transaction }) =>
-        persistRows(
-          host,
-          "batch",
-          transaction.mutations.map((mutation) => mutation.modified),
-        ),
-    });
-    const stockMovementSync = electricCollectionOptions<StockMovementRow>(configs.stockMovements);
-    const invoiceSync = electricCollectionOptions<InvoiceRow>(configs.invoices);
-    const invoiceItemSync = electricCollectionOptions<InvoiceItemRow>(configs.invoiceItems);
-    const categories: InventoryCollection<CategoryRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          CategoryRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<CategoryRow>
-        >({
-          ...categorySync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
-    const products: InventoryCollection<ProductRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          ProductRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<ProductRow>
-        >({
-          ...productSync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
-    const batches: InventoryCollection<BatchRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          BatchRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<BatchRow>
-        >({
-          ...batchSync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
-    const stockMovements: InventoryCollection<StockMovementRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          StockMovementRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<StockMovementRow>
-        >({
-          ...stockMovementSync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
-    const invoices: InventoryCollection<InvoiceRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          InvoiceRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<InvoiceRow>
-        >({
-          ...invoiceSync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
-    const invoiceItems: InventoryCollection<InvoiceItemRow> = dbClient.collection(
-      collectionOptions(
-        persistedCollectionOptions<
-          InvoiceItemRow,
-          string | number,
-          never,
-          ElectricCollectionUtils<InvoiceItemRow>
-        >({
-          ...invoiceItemSync,
-          persistence: hostPersistence.persistence,
-          schemaVersion: INVENTORY_REPLICA_SCHEMA_VERSION,
-        }),
-      ),
-    );
 
     return {
       batches,
@@ -330,14 +178,14 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       invoices,
       products,
       stockMovements,
-      mode: "Remote" as const,
+      mode: scope._tag,
       dispose: async () => {
         await dbClient.cleanup();
-        await hostPersistence.dispose();
+        await powerSync.close();
       },
     };
   } catch (cause) {
-    await hostPersistence.dispose();
+    await powerSync.close();
     throw cause;
   }
 };
@@ -883,10 +731,6 @@ const makeInventoryActions = (
       authenticatedFetch: host.authenticatedFetch,
       command,
     });
-    const waits: Array<Promise<unknown>> = [];
-    if (result.createdProducts > 0) waits.push(inventory.products.utils.awaitTxId(result.txid));
-    if (result.createdBatches > 0) waits.push(inventory.batches.utils.awaitTxId(result.txid));
-    await Promise.all(waits);
     return result;
   },
   issueInvoice: async (input) => {
@@ -902,10 +746,6 @@ const makeInventoryActions = (
       authenticatedFetch: host.authenticatedFetch,
       command,
     });
-    await Promise.all([
-      inventory.invoices.utils.awaitTxId(result.txid),
-      inventory.invoiceItems.utils.awaitTxId(result.txid),
-    ]);
     return result;
   },
 });

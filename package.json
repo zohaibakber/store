@@ -9,7 +9,8 @@
     "build:web": "vp run --filter @store/web build",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "turbo run build",
-    "check": "turbo run check",
+    "check": "node scripts/check-powersync-migration.mjs && turbo run check",
+    "check:powersync-migration": "node scripts/check-powersync-migration.mjs",
     "test": "turbo run test",
     "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "pnpm exec alchemy deploy --stage dev --env-file .env.dev",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260822.1",
+    "@effect/platform-bun": "4.0.0-rc.111",
     "@effect/platform-node": "4.0.0-rc.111",
     "@oxlint/plugins": "1.79.0",
     "@types/node": "^26.2.0",

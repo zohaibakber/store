@@ -3,7 +3,7 @@
 ## Status
 
 The Cloudflare Durable Object and `/api/sync/live` WebSocket engine is a
-preserved compatibility implementation. Postgres, Electric, and TanStack DB are
+preserved compatibility implementation. Postgres, PowerSync, and TanStack DB are
 the active inventory architecture for migrated clients.
 
 Keep the WebSocket engine, its Durable Object schema and migrations, and its
@@ -17,18 +17,16 @@ Postgres is the authoritative inventory database. The active path has four
 parts:
 
 1. Web, Electron, and Expo read inventory through TanStack DB live queries.
-2. Host-specific SQLite adapters persist the TanStack DB collections. The web
-   app uses WASQLite, Electron uses SQLite in the main process, and Expo uses
-   `expo-sqlite`.
+2. PowerSync SQLite durably persists TanStack DB collections on web, Electron,
+   and Expo.
 3. Authenticated `/api/inventory/*` commands write to Postgres through the
    Cloudflare Worker and Hyperdrive. Mutation receipts make replayed commands
    idempotent after a lost HTTP response.
-4. Electric reads the committed Postgres rows. The Worker proxies
-   `/api/electric/*` and applies the authenticated organization filter before a
-   client receives a shape.
+4. PowerSync reads committed Postgres rows and applies the organization filter
+   from the verified JWT before a client receives a stream.
 
-TanStack DB combines the Electric collection configuration with local
-persistence, optimistic mutations, and reactive queries. Clients no longer
+TanStack DB combines PowerSync collections with durable local writes and
+reactive queries. Clients no longer
 maintain a separate handwritten outbox, pull cursor, or last-writer-wins apply
 loop for the migrated inventory path.
 
@@ -49,11 +47,11 @@ That design remains useful for three bounded purposes:
 
 - serving any production client that has not completed migration;
 - supplying source data or behavior during migration reconciliation;
-- supporting rollback while the Postgres and Electric path is being adopted.
+- supporting rollback while the Postgres and PowerSync path is being adopted.
 
 Compatibility does not make the Durable Object the authority for newly
 migrated writes. New inventory work must use Postgres mutation commands,
-Electric shapes, and TanStack DB collections.
+PowerSync streams, and TanStack DB collections.
 
 ## Retirement condition
 

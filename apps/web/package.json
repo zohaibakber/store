@@ -12,12 +12,11 @@
   },
   "dependencies": {
     "@journeyapps/wa-sqlite": "^1.7.2",
+    "@powersync/common": "1.57.3",
+    "@powersync/web": "1.39.1",
     "@store/client-db": "workspace:*",
-    "@tanstack/browser-db-sqlite-persistence": "0.2.15",
-    "@tanstack/db-sqlite-persistence-core": "0.2.15",
-    "@tanstack/electric-db-collection": "0.4.2",
-    "@tanstack/electron-db-sqlite-persistence": "0.1.27",
-    "@tanstack/react-db": "0.3.2",
+    "@tanstack/powersync-db-collection": "0.1.62",
+    "@tanstack/react-db": "0.3.3",
     "thinking-orbs": "^0.3.1"
   },
   "devDependencies": {

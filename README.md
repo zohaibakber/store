@@ -2,8 +2,8 @@
 
 Bun workspace for offline-first inventory: a TanStack web app, an Electron
 desktop app, an Expo mobile app, and a Cloudflare Worker API. Postgres is the
-authoritative inventory database. Electric streams organization-scoped shapes
-into persisted TanStack DB collections on each client.
+authoritative inventory database. PowerSync streams organization-scoped rows
+into durable SQLite-backed TanStack DB collections on each client.
 
 ## Workspace boundaries
 
@@ -18,9 +18,9 @@ into persisted TanStack DB collections on each client.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres
-  through Hyperdrive and proxies authenticated Electric shape requests.
+  through Hyperdrive and issues authenticated PowerSync connection credentials.
 - `packages/contracts` owns shared store, server, and compatibility sync contracts.
-- `packages/client-db` owns the shared Electric collection configuration, row
+- `packages/client-db` owns the shared PowerSync schema and connector, row
   models, and Postgres mutation clients.
 - `packages/db` owns the authentication and Postgres schemas. Its Durable Object
   schema is preserved for compatibility and migration work.
@@ -37,11 +37,10 @@ shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
 Inventory reads come from TanStack DB live queries. Browser clients persist
-collections with WASQLite, Electron uses its SQLite persistence adapter, and
-Expo uses its SQLite persistence adapter. Mutations go through authenticated
-`/api/inventory/*` commands, commit in Postgres, and return through Electric
-shapes. The Worker proxies `/api/electric/*` so the organization in the access
-token defines every shape.
+collections in PowerSync SQLite on every platform. Category, product, and batch
+mutations are durably queued offline, uploaded through authenticated
+`/api/inventory/*` commands, committed in Postgres, and streamed back by
+PowerSync. The signed organization claim defines every sync stream.
 
 The original Cloudflare Durable Object, outbox, and `/api/sync/live` WebSocket
 implementation remains in the repository as production compatibility and
@@ -98,6 +97,7 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
+- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.

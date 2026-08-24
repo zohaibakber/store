@@ -4,7 +4,7 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 
 - `GET /api/health`
 - `GET /api/auth/session` and `GET /api/auth/get-session`
-- `GET /api/electric/:table`
+- `GET /api/powersync/credentials`
 - `GET /api/sync/live` (legacy WebSocket compatibility)
 - `POST /api/inventory/mutations`
 - `POST /api/inventory/imports`
@@ -19,13 +19,13 @@ live in D1.
 
 Inventory is authoritative in Neon Postgres. The Worker authenticates and
 validates commands, commits each command in one Postgres transaction, and
-returns that transaction ID. Electric publishes organization-scoped table
+returns that transaction ID. PowerSync publishes organization-scoped table
 changes to TanStack DB clients.
 
 The existing `ORGANIZATION_STORE` Durable Object class, binding, schema, and
 `/api/sync/live` WebSocket route remain in place for deployed clients whose
 local outboxes still synchronize with the legacy inventory database. This is a
-compatibility path, not a dual-write path: new clients use Postgres/Electric,
+compatibility path, not a dual-write path: new clients use Postgres/PowerSync,
 while legacy clients continue to use their existing Durable Object. Do not
 rename or remove the class or binding until production data has been exported,
 backfilled, and verified and the legacy clients have completed cutover.
@@ -39,7 +39,7 @@ Postgres project into one stack.
 
 Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,
 and product-scan rate limiter, and preserves the existing
-`ORGANIZATION_STORE` binding. Electric receives the direct Neon connection;
+`ORGANIZATION_STORE` binding. PowerSync receives the direct Neon connection;
 Worker commands use Hyperdrive for pooled Postgres access.
 
 Run deployments from the repository root and always pass a stage:
@@ -52,8 +52,9 @@ pnpm run deploy:prod
 ```
 
 Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
-JWT keys and peppers for each stage. Electric configuration uses
-`ELECTRIC_URL`, `ELECTRIC_SOURCE_ID`, and `ELECTRIC_SOURCE_SECRET`.
+JWT keys and peppers for each stage. Set `POWERSYNC_URL` to that stage's
+PowerSync endpoint; configure its source with the direct Neon connection, the
+auth Worker's JWKS URL, and audience `tabaaq-api`.
 
 ## Local development
 
@@ -76,11 +77,12 @@ they must remain available while the compatibility binding exists.
 
 ## Data flow
 
-Electric proxy routes choose an allowlisted table and inject the authenticated
-organization filter. Clients cannot supply the source credentials or replace
-the tenant filter.
+PowerSync credentials reuse the short-lived access token. The checked-in sync
+config filters every query by its signed `org` claim; clients cannot supply the
+source credentials or replace the tenant filter.
 
 Inventory writes go through typed commands. The server derives organization and
 actor metadata from the session, records an idempotency receipt, and obtains
 `pg_current_xact_id()` inside the same transaction as the domain writes.
-TanStack DB keeps optimistic state until Electric reports that transaction ID.
+PowerSync durably queues simple catalog changes and streams canonical Postgres
+rows back into TanStack DB.

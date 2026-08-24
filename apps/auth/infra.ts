@@ -194,6 +194,7 @@ export const AuthLive = Auth.make(
     }).pipe(Layer.provide(DependenciesLive));
     const RoutesLive = authRoutes({
       baseUrl: security.baseURL,
+      publicJwk,
       secureCookies: security.secureCookies,
       trustedOrigins: security.trustedOrigins,
     }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));

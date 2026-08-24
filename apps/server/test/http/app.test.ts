@@ -15,6 +15,31 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toMatchObject({ status: "unauthenticated" });
   });
 
+  it("passes the current access token to PowerSync", async () => {
+    const response = await appFor(true).request("/api/powersync/credentials", {
+      headers: { authorization: "Bearer access-token" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      endpoint: "https://powersync.example",
+      token: "access-token",
+    });
+  });
+
+  it("does not mint PowerSync credentials without a bearer token", async () => {
+    const response = await appFor(true).request("/api/powersync/credentials");
+    expect(response.status).toBe(401);
+  });
+
+  it("fails closed when a stage has no PowerSync endpoint", async () => {
+    const response = await appFor(true, { powerSyncUrl: "" }).request(
+      "/api/powersync/credentials",
+      { headers: { authorization: "Bearer access-token" } },
+    );
+    expect(response.status).toBe(503);
+  });
+
   it("adds CORS headers on API routes for a trusted origin", async () => {
     const response = await appFor(true).request("/api/health", {
       headers: { origin: "http://localhost:5173" },

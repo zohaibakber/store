@@ -1,3 +1,4 @@
+import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import type {
   BatchRow,
   CategoryRow,
@@ -6,7 +7,6 @@ import type {
   ProductRow,
   StockMovementRow,
 } from "@store/client-db";
-import type { PersistedCollectionPersistence } from "@tanstack/db-sqlite-persistence-core";
 
 export interface LegacyLocalInventorySnapshot {
   readonly categories: ReadonlyArray<CategoryRow>;
@@ -17,16 +17,11 @@ export interface LegacyLocalInventorySnapshot {
   readonly stockMovements: ReadonlyArray<StockMovementRow>;
 }
 
-export interface InventoryPersistenceLease {
-  readonly persistence: PersistedCollectionPersistence;
-  readonly dispose: () => Promise<void>;
-}
-
 export interface InventoryHost {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly deviceId: string;
-  readonly openPersistence: (databaseName: string) => Promise<InventoryPersistenceLease>;
+  readonly openPowerSyncDatabase: (databaseName: string) => Promise<AbstractPowerSyncDatabase>;
   /** One-time source for the pre-TanStack signed-out Electron database. */
   readonly loadLegacyLocalSnapshot?: () => Promise<LegacyLocalInventorySnapshot>;
 }

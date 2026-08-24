@@ -21,7 +21,7 @@ export interface AuthSessionBridge {
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
   /** Bearer-authenticated store API. Web-only; Electron uses `window.serverApi`. */
   readonly apiRequest?: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
-  /** Raw bearer-authenticated fetch for streaming clients such as Electric. */
+  /** Raw bearer-authenticated fetch for streaming clients such as PowerSync. */
   readonly apiFetch?: typeof fetch;
   /** Stable host device namespace for idempotent mutations. */
   readonly deviceId?: string;

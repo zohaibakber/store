@@ -63,10 +63,10 @@ const testRuntimeContext = Context.make(RuntimeContext, {
 });
 
 export interface AppOptions {
+  readonly powerSyncUrl?: string;
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
-  readonly proxyElectric?: ServerRuntimeContract["proxyElectric"];
   readonly connectSyncLive?: ServerRuntimeContract["connectSyncLive"];
   readonly writeElectricMutation?: ServerRuntimeContract["writeElectricMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
@@ -105,9 +105,9 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
             : unauthenticated,
         ),
       invoiceAi: Effect.succeed(invoiceAi),
+      powerSyncUrl: options.powerSyncUrl ?? "https://powersync.example",
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-      proxyElectric: options.proxyElectric ?? (() => Effect.succeed(HttpServerResponse.empty())),
       connectSyncLive:
         options.connectSyncLive ??
         (() => Effect.succeed(HttpServerResponse.empty({ status: 101 }))),

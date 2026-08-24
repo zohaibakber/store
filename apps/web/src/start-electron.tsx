@@ -114,17 +114,15 @@ const electronAuthenticatedFetch =
 
 const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
   const http = window.inventoryHttp;
-  const persistence = window.tanstackDbPersistence;
-  if (!http || !persistence) return undefined;
+  if (!http) return undefined;
   const config = await http.getConfig();
   return {
     apiBaseUrl: config.apiBaseUrl,
     authenticatedFetch: electronAuthenticatedFetch(http),
     deviceId: config.deviceId,
-    openPersistence: async () => {
-      const { openElectronInventoryPersistence } =
-        await import("@/lib/inventory-persistence.electron");
-      return openElectronInventoryPersistence();
+    openPowerSyncDatabase: async (databaseName: string) => {
+      const { openWebInventoryPowerSync } = await import("@/lib/inventory-powersync.web");
+      return openWebInventoryPowerSync(databaseName);
     },
     loadLegacyLocalSnapshot: loadLegacyLocalInventory,
   };

@@ -9,11 +9,6 @@ import type {
 import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { JsonApiResponse } from "@store/workspace";
-import type { ElectronSQLitePersistenceOptions } from "@tanstack/electron-db-sqlite-persistence";
-
-type ElectronPersistenceInvoke = NonNullable<ElectronSQLitePersistenceOptions["invoke"]>;
-type ElectronPersistenceRequest = Parameters<ElectronPersistenceInvoke>[1];
-type ElectronPersistenceResponse = Awaited<ReturnType<ElectronPersistenceInvoke>>;
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
@@ -48,9 +43,6 @@ declare global {
         body: ArrayBuffer;
       }>;
       abort(requestId: string): void;
-    };
-    tanstackDbPersistence?: {
-      invoke(request: ElectronPersistenceRequest): Promise<ElectronPersistenceResponse>;
     };
     legacyLocalInventory?: {
       load(): Promise<JsonApiResponse>;

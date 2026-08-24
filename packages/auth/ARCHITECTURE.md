@@ -7,7 +7,7 @@ token refresh to Clerk. That choice made the first release smaller, but it also
 spread Clerk-specific IDs and lifecycle rules through the API, Electron main
 process, React renderer, Expo app, synchronization, deployment config, and CSP.
 The replacement must preserve the useful invariant: an authenticated
-organization ID scopes the same Postgres rows, Electric shapes, and local
+organization ID scopes the same Postgres rows, PowerSync streams, and local
 replica on every client. During migration, that ID also remains the key of the
 legacy `ORGANIZATION_STORE` Durable Object so its production data can be found
 for export and backfill.
@@ -106,7 +106,7 @@ const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk })
 The host owns secure token storage. Electron uses `safeStorage`, Expo uses
 SecureStore, and the browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
-scope for Postgres mutations and Electric shapes. TanStack DB owns each
+scope for Postgres mutations and PowerSync streams. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.
 
 ## Shape
@@ -222,12 +222,12 @@ encode.
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
 - A new user gets one organization in the same D1 batch. The organization ID
-  directly scopes inventory rows and Electric shapes. It also remains the
+  directly scopes inventory rows and PowerSync streams. It also remains the
   legacy Durable Object lookup key during migration, so no separate mapping is
   needed for export or backfill.
 - Postgres is the authoritative inventory database. Authenticated
-  `/api/inventory/*` requests write to Postgres, and authenticated
-  `/api/electric/*` requests stream that organization's shapes into TanStack DB.
+  `/api/inventory/*` requests write to Postgres. PowerSync validates the same
+  JWT and filters every TanStack DB stream by its signed organization claim.
 - The Cloudflare Durable Object and `/api/sync/live` WebSocket path is preserved
   as production compatibility and migration source. Do not delete its schema,
   contracts, or implementation until an explicit retirement confirms that no

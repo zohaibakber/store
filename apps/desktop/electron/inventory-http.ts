@@ -25,7 +25,6 @@ const ALLOWED_REQUEST_HEADERS = new Set([
   "content-type",
   "if-modified-since",
   "if-none-match",
-  "x-electric-client",
 ]);
 
 const inventoryApiPath = (apiBaseUrl: string) => {
@@ -43,10 +42,10 @@ const validatedInventoryUrl = (
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
   const apiPath = inventoryApiPath(apiBaseUrl);
-  const electricPath = `${apiPath}/electric/`;
+  const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
   const routeAllowed =
-    (request.method === "GET" && requested.pathname.startsWith(electricPath)) ||
+    (request.method === "GET" && requested.pathname === credentialsPath) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname));
   if (
     requested.username ||

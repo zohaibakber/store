@@ -10,11 +10,12 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@electric-sql/client": "^1.5.26",
+    "@powersync/common": "1.57.3",
     "@store/contracts": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
   }
 }
