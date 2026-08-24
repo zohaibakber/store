@@ -256,3 +256,34 @@
     font-family: var(--font-mono);
   }
 }
+
+@layer components {
+  [data-slot="chart"] .ts-chart {
+    color: var(--muted-foreground);
+  }
+
+  [data-slot="chart"] .ts-chart__grid line,
+  [data-slot="chart"] .ts-chart__polar-grid path,
+  [data-slot="chart"] .ts-chart__polar-grid line {
+    stroke: color-mix(in srgb, var(--border) 50%, transparent);
+  }
+
+  [data-slot="chart"] .ts-chart__axes text,
+  [data-slot="chart"] .ts-chart__polar-grid text {
+    fill: var(--muted-foreground);
+    font-size: 12px;
+  }
+
+  /* Portaled tooltips leave the chart host, so tokens live on the tooltip class. */
+  .ts-chart-tooltip {
+    --ts-chart-tooltip-background: var(--background);
+    --ts-chart-tooltip-color: var(--foreground);
+    --ts-chart-tooltip-border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+    --ts-chart-tooltip-border-radius: 0.5rem;
+    --ts-chart-tooltip-shadow: 0 20px 25px -5px rgb(0 0 0 / 10%);
+    --ts-chart-tooltip-padding: 0.375rem 0.625rem;
+    --ts-chart-tooltip-font: 12px / 1.5 var(--font-sans);
+    --ts-chart-tooltip-max-width: 16rem;
+    min-width: 8rem;
+  }
+}

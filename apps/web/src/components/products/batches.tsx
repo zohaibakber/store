@@ -6,9 +6,11 @@ import {
   productPackStock,
   productStock,
 } from "@store/contracts/store-helpers";
+import { barY, defineChart, type ChartPoint } from "@tanstack/charts";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { useForm } from "@tanstack/react-form";
-import { type ReactNode, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, XAxis } from "recharts";
+import { useMemo, useState } from "react";
 import * as z from "zod";
 
 import { ExpiryPicker } from "@/components/shared/expiry-picker";
@@ -16,10 +18,11 @@ import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import {
-  type ChartConfig,
+  Chart,
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
+  CHART_HEIGHT,
+  chartTheme,
+  chartTooltip,
 } from "@/components/ui/chart";
 import {
   Empty,
@@ -46,7 +49,6 @@ import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory-db";
-import { isNumber, isString } from "@/lib/predicates";
 
 const parseISODate = (value: string): Date | undefined => {
   const [year, month, day] = value.split("-").map(Number);
@@ -460,10 +462,6 @@ export function ProductBatchesCard({ product }: { product: Product }) {
   );
 }
 
-const movementsChartConfig = {
-  net: { label: "Net units" },
-} satisfies ChartConfig;
-
 const stockInColor = "var(--chart-2)";
 const stockOutColor = "var(--chart-4)";
 
@@ -471,11 +469,85 @@ type DayTotal = { date: string; net: number };
 
 const dayKey = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
-const formatDayTick = (value: ReactNode) =>
-  new Date(isString(value) || isNumber(value) ? String(value) : "").toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+const dayTick = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
+
+const formatDayTick = (value: string) => dayTick.format(new Date(value));
+
+const movementsTooltip = (points: readonly ChartPoint<DayTotal>[]) => {
+  const point = points[0];
+  if (!point) return { rows: [] };
+  return {
+    title: formatDayTick(String(point.xValue ?? "")),
+    rows: [
+      {
+        color: point.color,
+        label: point.datum.net >= 0 ? "Stock in" : "Stock out",
+        value: String(point.yValue ?? 0),
+      },
+    ],
+  };
+};
+
+export function createStockMovementsChart(rows: readonly DayTotal[]) {
+  return defineChart(
+    {
+      marks: [
+        barY(rows, {
+          id: "movement-bars",
+          x: "date",
+          y: "net",
+          key: "date",
+          fill: (row) => (row.net >= 0 ? stockInColor : stockOutColor),
+          radius: 4,
+        }),
+      ],
+      x: {
+        scale: () => scaleBand<string>().paddingInner(0.2).paddingOuter(0.1),
+        axis: {
+          line: false,
+          ticks: {
+            size: 0,
+            padding: 8,
+            format: (value: string) => formatDayTick(value),
+          },
+          tickLabels: {
+            thin: { minGap: 24, priority: "ends" },
+          },
+        },
+      },
+      y: {
+        scale: scaleLinear,
+        nice: true,
+        grid: true,
+        axis: false,
+      },
+      theme: chartTheme,
+    },
+    {
+      svgAnimation: false,
+      focus: "group-x",
+      tooltip: chartTooltip(movementsTooltip),
+    },
+  );
+}
+
+function StockMovementsChart({ data }: { data: readonly DayTotal[] }) {
+  const definition = useMemo(() => createStockMovementsChart(data), [data]);
+
+  return (
+    <ChartContainer className="aspect-auto h-56 w-full">
+      <Chart
+        ariaLabel="Stock movements by day"
+        className="w-full"
+        definition={definition}
+        height={CHART_HEIGHT}
+      />
+    </ChartContainer>
+  );
+}
 
 function stockMovementsByDay(
   movements: readonly StockMovement[],
@@ -518,27 +590,7 @@ export function ProductStockMovementsCard({
         </Empty>
       ) : (
         <>
-          <ChartContainer className="aspect-auto h-56 w-full" config={movementsChartConfig}>
-            <BarChart data={data}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                axisLine={false}
-                dataKey="date"
-                tickFormatter={formatDayTick}
-                tickLine={false}
-                tickMargin={8}
-              />
-              <ChartTooltip
-                content={<ChartTooltipContent labelFormatter={formatDayTick} />}
-                cursor={false}
-              />
-              <Bar dataKey="net" radius={4}>
-                {data.map((entry) => (
-                  <Cell fill={entry.net >= 0 ? stockInColor : stockOutColor} key={entry.date} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
+          <StockMovementsChart data={data} />
           <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="size-2 rounded-xs" style={{ backgroundColor: stockInColor }} />

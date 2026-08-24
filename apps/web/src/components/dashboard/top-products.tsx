@@ -1,14 +1,19 @@
 import { ChartBarLineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DashboardAnalytics } from "@store/contracts";
-import { Bar, BarChart, Cell, LabelList, XAxis, YAxis } from "recharts";
+import { barX, defineChart, text, type ChartPoint } from "@tanstack/charts";
+import { decorative } from "@tanstack/charts/mark/decorative";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { useMemo } from "react";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import {
-  type ChartConfig,
+  Chart,
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
+  CHART_HEIGHT,
+  chartTheme,
+  chartTooltip,
 } from "@/components/ui/chart";
 import {
   Empty,
@@ -19,9 +24,7 @@ import {
 } from "@/components/ui/empty";
 import { formatPrice } from "@/lib/format";
 
-const topProductsConfig = {
-  revenue: { label: "Revenue", color: "var(--chart-1)" },
-} satisfies ChartConfig;
+type TopProduct = DashboardAnalytics["topProducts"][number];
 
 const topProductColors = [
   "var(--chart-1)",
@@ -31,7 +34,78 @@ const topProductColors = [
   "var(--chart-5)",
 ];
 
+const truncateName = (value: string) => (value.length > 18 ? `${value.slice(0, 17)}…` : value);
+
+const topProductsTooltip = (points: readonly ChartPoint<TopProduct>[]) => {
+  const point = points[0];
+  if (!point) return { rows: [] };
+  const units = point.datum.unitsSold;
+  return {
+    title: point.datum.productName,
+    rows: [
+      {
+        color: point.color,
+        label: "Revenue",
+        value: `${formatPrice(Number(point.xValue ?? 0))} · ${units} units`,
+      },
+    ],
+  };
+};
+
+export function createTopProductsChart(rows: readonly TopProduct[]) {
+  return defineChart(
+    {
+      marks: [
+        barX(rows, {
+          id: "product-bars",
+          x: "revenue",
+          y: "productName",
+          key: (row) => row.productId,
+          fill: (_row, context) => topProductColors[context.index % topProductColors.length],
+          maxThickness: 24,
+          radius: 4,
+        }),
+        decorative(
+          text(rows, {
+            id: "product-labels",
+            x: "revenue",
+            y: "productName",
+            key: (row) => row.productId,
+            text: (row) => formatPrice(row.revenue),
+            dx: 8,
+            anchor: "start",
+            fill: "var(--foreground)",
+            fontSize: 12,
+            fontWeight: 500,
+          }),
+        ),
+      ],
+      x: { scale: scaleLinear, axis: false },
+      y: {
+        scale: () => scaleBand<string>().paddingInner(0.18).paddingOuter(0.08),
+        axis: {
+          line: false,
+          ticks: {
+            size: 0,
+            padding: 8,
+            format: (value: string) => truncateName(value),
+          },
+        },
+      },
+      margin: { right: 72 },
+      theme: chartTheme,
+    },
+    {
+      svgAnimation: false,
+      focus: "group-y",
+      tooltip: chartTooltip(topProductsTooltip),
+    },
+  );
+}
+
 export function TopProducts({ products }: { products: DashboardAnalytics["topProducts"] }) {
+  const definition = useMemo(() => createTopProductsChart(products), [products]);
+
   return (
     <FrameCard description="Highest revenue over the last 30 days." title="Top products">
       {products.length === 0 ? (
@@ -45,44 +119,13 @@ export function TopProducts({ products }: { products: DashboardAnalytics["topPro
           </EmptyHeader>
         </Empty>
       ) : (
-        <ChartContainer className="aspect-auto h-56 w-full" config={topProductsConfig}>
-          <BarChart data={[...products]} layout="vertical" margin={{ right: 72 }}>
-            <XAxis dataKey="revenue" hide type="number" />
-            <YAxis
-              axisLine={false}
-              dataKey="productName"
-              tickLine={false}
-              tickMargin={8}
-              type="category"
-              width={120}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value, _name, item) => {
-                    const units: number | undefined = item?.payload?.unitsSold;
-                    return `${formatPrice(Number(value))} · ${units ?? 0} units`;
-                  }}
-                />
-              }
-              cursor={false}
-            />
-            <Bar barSize={24} dataKey="revenue" fill="var(--color-revenue)" radius={4}>
-              {products.map((product, index) => (
-                <Cell
-                  fill={topProductColors[index % topProductColors.length]}
-                  key={product.productId}
-                />
-              ))}
-              <LabelList
-                className="fill-foreground font-mono tabular-nums"
-                dataKey="revenue"
-                formatter={(value) => formatPrice(Number(value))}
-                offset={8}
-                position="right"
-              />
-            </Bar>
-          </BarChart>
+        <ChartContainer className="aspect-auto h-56 w-full">
+          <Chart
+            ariaLabel="Top products by revenue over the last 30 days"
+            className="w-full"
+            definition={definition}
+            height={CHART_HEIGHT}
+          />
         </ChartContainer>
       )}
     </FrameCard>

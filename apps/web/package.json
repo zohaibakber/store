@@ -15,8 +15,10 @@
     "@powersync/common": "1.57.3",
     "@powersync/web": "1.39.1",
     "@store/client-db": "workspace:*",
+    "@tanstack/charts": "^0.14.0",
     "@tanstack/powersync-db-collection": "0.1.62",
     "@tanstack/react-db": "0.3.3",
+    "d3-shape": "^3.2.0",
     "thinking-orbs": "^0.3.1"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@tanstack/react-table": "^9.1.2",
     "@tanstack/router-plugin": "^1.168.34",
     "@testing-library/react": "^16.3.2",
+    "@types/d3-shape": "^3.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
@@ -48,7 +51,6 @@
     "react": "^19.2.8",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.8",
-    "recharts": "^3.10.1",
     "shadcn": "^4.19.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
