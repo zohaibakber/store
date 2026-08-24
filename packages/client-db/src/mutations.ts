@@ -23,6 +23,22 @@ const InventoryMutationResult = Schema.Struct({
   txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 });
 
+const InventoryErrorBody = Schema.Struct({
+  error: Schema.Struct({
+    code: Schema.String,
+  }),
+});
+
+export const isIgnorableCatalogUploadError = (cause: unknown) => {
+  const text = cause instanceof Error ? cause.message : String(cause);
+  try {
+    const body = Schema.decodeUnknownSync(InventoryErrorBody)(JSON.parse(text));
+    return body.error.code === "OPERATION_ID_REUSED";
+  } catch {
+    return false;
+  }
+};
+
 const apiRoot = (baseUrl: string) => {
   const normalized = baseUrl.replace(/\/+$/u, "");
   return normalized.endsWith("/api") ? normalized : `${normalized}/api`;

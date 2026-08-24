@@ -89,8 +89,19 @@ const chunksOf = <Value,>(rows: ReadonlyArray<Value>) => {
 const migrateLegacyCatalog = async (host: InventoryHost) => {
   const legacy = await host.loadLegacyLocalSnapshot?.();
   if (!legacy) return;
+  const catalog = legacy.migrationCatalog;
+  if (
+    catalog.categories.length +
+      catalog.products.length +
+      catalog.batches.length +
+      catalog.invoices.length +
+      catalog.invoiceItems.length +
+      catalog.stockMovements.length ===
+    0
+  )
+    return;
   const occurredAt = Date.now();
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.categories).entries()) {
+  for (const [index, rows] of chunksOf(catalog.categories).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -106,7 +117,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
       throw new Error("The local category backup was not fully acknowledged by the server.");
     }
   }
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.products).entries()) {
+  for (const [index, rows] of chunksOf(catalog.products).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -122,7 +133,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
       throw new Error("The local product backup was not fully acknowledged by the server.");
     }
   }
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.batches).entries()) {
+  for (const [index, rows] of chunksOf(catalog.batches).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -138,7 +149,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
       throw new Error("The local batch backup was not fully acknowledged by the server.");
     }
   }
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.invoices).entries()) {
+  for (const [index, rows] of chunksOf(catalog.invoices).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -153,7 +164,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
     if (result.imported + result.skipped !== rows.length)
       throw new Error("The local invoice backup was not fully acknowledged by the server.");
   }
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.invoiceItems).entries()) {
+  for (const [index, rows] of chunksOf(catalog.invoiceItems).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -168,7 +179,7 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
     if (result.imported + result.skipped !== rows.length)
       throw new Error("The local invoice item backup was not fully acknowledged by the server.");
   }
-  for (const [index, rows] of chunksOf(legacy.migrationCatalog.stockMovements).entries()) {
+  for (const [index, rows] of chunksOf(catalog.stockMovements).entries()) {
     const result = await submitLegacyCatalogMigration({
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -189,12 +200,12 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
     command: {
       deviceId: host.deviceId,
       occurredAt,
-      categoryIds: legacy.migrationCatalog.categories.map((row) => row.id),
-      productIds: legacy.migrationCatalog.products.map((row) => row.id),
-      batchIds: legacy.migrationCatalog.batches.map((row) => row.id),
-      invoiceIds: legacy.migrationCatalog.invoices.map((row) => row.id),
-      invoiceItemIds: legacy.migrationCatalog.invoiceItems.map((row) => row.id),
-      stockMovementIds: legacy.migrationCatalog.stockMovements.map((row) => row.id),
+      categoryIds: catalog.categories.map((row) => row.id),
+      productIds: catalog.products.map((row) => row.id),
+      batchIds: catalog.batches.map((row) => row.id),
+      invoiceIds: catalog.invoices.map((row) => row.id),
+      invoiceItemIds: catalog.invoiceItems.map((row) => row.id),
+      stockMovementIds: catalog.stockMovements.map((row) => row.id),
     },
   });
 };

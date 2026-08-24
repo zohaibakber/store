@@ -10,7 +10,7 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
-import { submitCatalogRows } from "./mutations";
+import { submitCatalogRows, isIgnorableCatalogUploadError } from "./mutations";
 import {
   BatchRow,
   CategoryRow,
@@ -281,6 +281,17 @@ const catalogNulls = (table: "categories" | "products" | "batches") => {
 
 type InventoryCrudEntry = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues">;
 
+export const catalogCrudMutationId = (entry: { readonly clientId: number }) =>
+  `ps-crud:${entry.clientId}`;
+
+export const stampCatalogUploadRow = <Row extends { readonly operationId: string }>(
+  row: Row,
+  entry: { readonly clientId: number },
+): Row => ({
+  ...row,
+  operationId: catalogCrudMutationId(entry),
+});
+
 export const decodePowerSyncCatalogCrudEntry = (
   table: "categories" | "products" | "batches",
   entry: InventoryCrudEntry,
@@ -311,17 +322,21 @@ export const makeInventoryPowerSyncConnector = (input: {
 
     for (const entry of transaction.crud) {
       const table = catalogTable(entry.table);
-      const row = decodePowerSyncCatalogCrudEntry(table, entry);
-      switch (table) {
-        case "categories":
-          await submitCatalogRows({ ...input, entity: "category", rows: [row] });
-          break;
-        case "products":
-          await submitCatalogRows({ ...input, entity: "product", rows: [row] });
-          break;
-        case "batches":
-          await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
-          break;
+      const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry), entry);
+      try {
+        switch (table) {
+          case "categories":
+            await submitCatalogRows({ ...input, entity: "category", rows: [row] });
+            break;
+          case "products":
+            await submitCatalogRows({ ...input, entity: "product", rows: [row] });
+            break;
+          case "batches":
+            await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
+            break;
+        }
+      } catch (cause) {
+        if (!isIgnorableCatalogUploadError(cause)) throw cause;
       }
     }
 

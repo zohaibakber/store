@@ -16,6 +16,24 @@ import type { IpcMain } from "electron";
 import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
 import { latestMigrationRows } from "./legacy-migration-catalog";
 
+type LegacyMigrationCatalog = {
+  readonly categories: ReadonlyArray<LegacyCategoryMigrationRow>;
+  readonly products: ReadonlyArray<LegacyProductMigrationRow>;
+  readonly batches: ReadonlyArray<LegacyBatchMigrationRow>;
+  readonly invoices: ReadonlyArray<LegacyInvoiceMigrationRow>;
+  readonly invoiceItems: ReadonlyArray<LegacyInvoiceItemMigrationRow>;
+  readonly stockMovements: ReadonlyArray<LegacyStockMovementMigrationRow>;
+};
+
+const emptyMigrationCatalog = (): LegacyMigrationCatalog => ({
+  categories: [],
+  products: [],
+  batches: [],
+  invoices: [],
+  invoiceItems: [],
+  stockMovements: [],
+});
+
 const emptySnapshot = () => ({
   categories: [],
   products: [],
@@ -23,14 +41,12 @@ const emptySnapshot = () => ({
   invoices: [],
   invoiceItems: [],
   stockMovements: [],
-  migrationCatalog: {
-    categories: [],
-    products: [],
-    batches: [],
-    invoices: [],
-    invoiceItems: [],
-    stockMovements: [],
-  },
+  migrationCatalog: emptyMigrationCatalog(),
+});
+
+export const snapshotWithoutReadableLockedReplica = (migrationCatalog: LegacyMigrationCatalog) => ({
+  ...emptySnapshot(),
+  migrationCatalog,
 });
 
 const requiredTables = [
@@ -126,7 +142,7 @@ const loadMigrationHistory = (database: Database.Database) => {
   };
 };
 
-const loadMigrationCatalog = (databasePath: string) => {
+const readMigrationCatalog = (databasePath: string) => {
   if (!existsSync(databasePath)) return emptySnapshot().migrationCatalog;
   const database = new Database(databasePath, { fileMustExist: true, readonly: true });
   try {
@@ -229,6 +245,14 @@ const loadMigrationCatalog = (databasePath: string) => {
   }
 };
 
+const loadMigrationCatalog = (databasePath: string) => {
+  try {
+    return readMigrationCatalog(databasePath);
+  } catch {
+    return emptySnapshot().migrationCatalog;
+  }
+};
+
 export const migrationDatabasePaths = (userDataPath: string) => {
   const organizationsPath = path.join(userDataPath, "organizations");
   const organizationDatabases = existsSync(organizationsPath)
@@ -282,12 +306,12 @@ export const loadLegacyLocalSnapshot = (userDataPath: string) => {
   // when fileMustExist points into a missing directory. Treat that normal
   // first-run state as an empty legacy source before opening SQLite.
   const migrationCatalog = combinedMigrationCatalog(userDataPath);
-  if (!existsSync(databasePath)) return { ...emptySnapshot(), migrationCatalog };
+  if (!existsSync(databasePath)) return snapshotWithoutReadableLockedReplica(migrationCatalog);
   let database: Database.Database;
   try {
     database = new Database(databasePath, { fileMustExist: true, readonly: true });
   } catch (cause) {
-    if (isMissingDatabase(cause)) return { ...emptySnapshot(), migrationCatalog };
+    if (isMissingDatabase(cause)) return snapshotWithoutReadableLockedReplica(migrationCatalog);
     throw cause;
   }
 
@@ -298,7 +322,8 @@ export const loadLegacyLocalSnapshot = (userDataPath: string) => {
       )
       .pluck()
       .get(...requiredTables);
-    if (tableCount !== requiredTables.length) return emptySnapshot();
+    if (tableCount !== requiredTables.length)
+      return snapshotWithoutReadableLockedReplica(migrationCatalog);
 
     return {
       categories: database

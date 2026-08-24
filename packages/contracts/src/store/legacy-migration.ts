@@ -91,6 +91,11 @@ export type LegacyStockMovementMigrationRow = typeof LegacyStockMovementMigratio
 
 export const MAX_LEGACY_MIGRATION_ROWS = 250;
 
+export const legacyCatalogRowOperationId = (
+  kind: LegacyCatalogMigrationCommand["kind"],
+  rowId: string,
+) => `legacy-row:v1:${kind}:${rowId}`;
+
 export const LegacyCatalogMigrationCommand = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("categories"),

@@ -10,12 +10,16 @@ import {
   type LegacyCatalogMigrationResult,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
+  LegacyBatchMigrationRow,
+  LegacyCategoryMigrationRow,
   LegacyInvoiceItemMigrationRow,
   LegacyInvoiceMigrationRow,
+  LegacyProductMigrationRow,
   LegacyStockMovementMigrationRow,
   MAX_SYNC_CHANGES_PER_OPERATION,
   type SyncEntityChange,
   type SyncOperation,
+  legacyCatalogRowOperationId,
 } from "@store/contracts";
 import { syncEntityChangeKey } from "@store/contracts";
 import { canonicalPayloadHash, operationPayloadHash } from "@store/contracts/operation-hash";
@@ -488,15 +492,8 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
 
 const legacyMigrationOperationId = (
   command: LegacyCatalogMigrationCommand,
-  row: { readonly id: string; readonly createdAt: number; readonly updatedAt?: number },
-) =>
-  `legacy:${canonicalPayloadHash({
-    commandId: command.commandId,
-    deviceId: command.deviceId,
-    kind: command.kind,
-    id: row.id,
-    updatedAt: row.updatedAt ?? row.createdAt,
-  })}`;
+  row: { readonly id: string },
+) => legacyCatalogRowOperationId(command.kind, row.id);
 
 const recordLegacyMigrationReceipt = (
   tx: PostgresTransaction,
@@ -544,114 +541,167 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
       skipped += 1;
       continue;
     }
-    const rowTimestamp = "updatedAt" in row ? row.updatedAt : row.createdAt;
-    const occurredAt = Math.max(rowTimestamp, command.occurredAt, 1);
-    let current:
-      | {
-          readonly createdAt: number;
-          readonly createdByUserId: string;
-          readonly deletedAt: number | null;
-          readonly rowVersion: number;
-          readonly updatedAt: number;
-        }
-      | undefined;
-    let change: SyncEntityChange;
-
     switch (command.kind) {
       case "categories": {
-        [current] = yield* tx
+        const category = Schema.decodeUnknownSync(LegacyCategoryMigrationRow)(row);
+        const [current] = yield* tx
           .select({
             createdAt: categories.createdAt,
             createdByUserId: categories.createdByUserId,
-            deletedAt: categories.deletedAt,
-            rowVersion: categories.rowVersion,
-            updatedAt: categories.updatedAt,
           })
           .from(categories)
           .where(
-            and(eq(categories.organizationId, actor.organizationId), eq(categories.id, row.id)),
+            and(
+              eq(categories.organizationId, actor.organizationId),
+              eq(categories.id, category.id),
+            ),
           )
           .limit(1);
-        const rowVersion = (current?.rowVersion ?? 0) + 1;
-        change = {
-          entity: "category",
-          action: "upsert",
-          entityId: row.id,
-          rowVersion,
-          row: {
-            ...row,
+        yield* tx
+          .insert(categories)
+          .values({
+            ...category,
             organizationId: actor.organizationId,
             createdByUserId: current?.createdByUserId ?? actor.userId,
             updatedByUserId: actor.userId,
             deviceId: command.deviceId,
             operationId,
-            rowVersion,
+            rowVersion: 1,
             deletedAt: null,
-          },
-        };
-        break;
+            createdAt: current?.createdAt ?? category.createdAt,
+          })
+          .onConflictDoUpdate({
+            target: [categories.organizationId, categories.id],
+            set: {
+              name: category.name,
+              tracksPacks: category.tracksPacks,
+              updatedAt: category.updatedAt,
+              deletedAt: null,
+              updatedByUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+              rowVersion: sql`${categories.rowVersion} + 1`,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          category,
+        );
+        imported += 1;
+        continue;
       }
       case "products": {
-        [current] = yield* tx
+        const product = Schema.decodeUnknownSync(LegacyProductMigrationRow)(row);
+        const [current] = yield* tx
           .select({
             createdAt: products.createdAt,
             createdByUserId: products.createdByUserId,
-            deletedAt: products.deletedAt,
-            rowVersion: products.rowVersion,
-            updatedAt: products.updatedAt,
           })
           .from(products)
-          .where(and(eq(products.organizationId, actor.organizationId), eq(products.id, row.id)))
+          .where(
+            and(eq(products.organizationId, actor.organizationId), eq(products.id, product.id)),
+          )
           .limit(1);
-        const rowVersion = (current?.rowVersion ?? 0) + 1;
-        change = {
-          entity: "product",
-          action: "upsert",
-          entityId: row.id,
-          rowVersion,
-          row: {
-            ...row,
+        yield* tx
+          .insert(products)
+          .values({
+            ...product,
             organizationId: actor.organizationId,
             createdByUserId: current?.createdByUserId ?? actor.userId,
             updatedByUserId: actor.userId,
             deviceId: command.deviceId,
             operationId,
-            rowVersion,
+            rowVersion: 1,
             deletedAt: null,
-          },
-        };
-        break;
+            createdAt: current?.createdAt ?? product.createdAt,
+          })
+          .onConflictDoUpdate({
+            target: [products.organizationId, products.id],
+            set: {
+              name: product.name,
+              categoryId: product.categoryId,
+              aisle: product.aisle,
+              composition: product.composition,
+              strength: product.strength,
+              unitsPerPack: product.unitsPerPack,
+              packPrice: product.packPrice,
+              unitPrice: product.unitPrice,
+              visible: product.visible,
+              updatedAt: product.updatedAt,
+              deletedAt: null,
+              updatedByUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+              rowVersion: sql`${products.rowVersion} + 1`,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          product,
+        );
+        imported += 1;
+        continue;
       }
       case "batches": {
-        [current] = yield* tx
+        const batch = Schema.decodeUnknownSync(LegacyBatchMigrationRow)(row);
+        const [current] = yield* tx
           .select({
             createdAt: batches.createdAt,
             createdByUserId: batches.createdByUserId,
-            deletedAt: batches.deletedAt,
-            rowVersion: batches.rowVersion,
-            updatedAt: batches.updatedAt,
           })
           .from(batches)
-          .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, row.id)))
+          .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)))
           .limit(1);
-        const rowVersion = (current?.rowVersion ?? 0) + 1;
-        change = {
-          entity: "batch",
-          action: "upsert",
-          entityId: row.id,
-          rowVersion,
-          row: {
-            ...row,
+        yield* tx
+          .insert(batches)
+          .values({
+            ...batch,
             organizationId: actor.organizationId,
             createdByUserId: current?.createdByUserId ?? actor.userId,
             updatedByUserId: actor.userId,
             deviceId: command.deviceId,
             operationId,
-            rowVersion,
+            rowVersion: 1,
             deletedAt: null,
-          },
-        };
-        break;
+            createdAt: current?.createdAt ?? batch.createdAt,
+          })
+          .onConflictDoUpdate({
+            target: [batches.organizationId, batches.id],
+            set: {
+              productId: batch.productId,
+              batchNumber: batch.batchNumber,
+              expiresAt: batch.expiresAt,
+              packQuantity: batch.packQuantity,
+              unitQuantity: batch.unitQuantity,
+              updatedAt: batch.updatedAt,
+              deletedAt: null,
+              updatedByUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+              rowVersion: sql`${batches.rowVersion} + 1`,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          batch,
+        );
+        imported += 1;
+        continue;
       }
       case "invoices": {
         const invoice = Schema.decodeUnknownSync(LegacyInvoiceMigrationRow)(row);
@@ -775,23 +825,6 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
         continue;
       }
     }
-
-    const unhashed = {
-      operationId,
-      organizationId: actor.organizationId,
-      deviceId: command.deviceId,
-      actorUserId: actor.userId,
-      clientSequence: occurredAt,
-      occurredAt,
-      changes: [change],
-    } satisfies Omit<SyncOperation, "payloadHash">;
-    yield* applyOperation(
-      tx,
-      actor,
-      { ...unhashed, payloadHash: operationPayloadHash(unhashed) },
-      receivedAt,
-    );
-    imported += 1;
   }
 
   return { imported, skipped, txid } satisfies LegacyCatalogMigrationResult;
@@ -803,7 +836,24 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
   command: LegacyCatalogReconciliationCommand,
 ) {
   const txid = yield* currentTransactionId(tx);
-  const operationId = `legacy-reconcile:${command.deviceId}:v2`;
+  const catalogSize =
+    command.categoryIds.length +
+    command.productIds.length +
+    command.batchIds.length +
+    command.invoiceIds.length +
+    command.invoiceItemIds.length +
+    command.stockMovementIds.length;
+  if (catalogSize === 0)
+    return {
+      deletedCategories: 0,
+      deletedProducts: 0,
+      deletedBatches: 0,
+      deletedInvoices: 0,
+      deletedInvoiceItems: 0,
+      deletedStockMovements: 0,
+      txid,
+    } satisfies LegacyCatalogReconciliationResult;
+  const operationId = `legacy-reconcile:${command.deviceId}:v3`;
   const [receipt] = yield* tx
     .select({ operationId: electricMutationReceipts.operationId })
     .from(electricMutationReceipts)
@@ -825,115 +875,123 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
       txid,
     } satisfies LegacyCatalogReconciliationResult;
   const deletedAt = command.occurredAt;
-  const deletedStockMovements = yield* tx
-    .delete(stockMovements)
-    .where(
-      and(
-        eq(stockMovements.organizationId, actor.organizationId),
-        command.stockMovementIds.length > 0
-          ? notInArray(stockMovements.id, [...command.stockMovementIds])
-          : undefined,
-      ),
-    )
-    .returning({ id: stockMovements.id });
-  const deletedInvoiceItems = yield* tx
-    .update(invoiceItems)
-    .set({
-      deletedAt,
-      updatedAt: deletedAt,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId,
-      rowVersion: sql`${invoiceItems.rowVersion} + 1`,
-    })
-    .where(
-      and(
-        eq(invoiceItems.organizationId, actor.organizationId),
-        isNull(invoiceItems.deletedAt),
-        command.invoiceItemIds.length > 0
-          ? notInArray(invoiceItems.id, [...command.invoiceItemIds])
-          : undefined,
-      ),
-    )
-    .returning({ id: invoiceItems.id });
-  const deletedInvoices = yield* tx
-    .update(invoices)
-    .set({
-      deletedAt,
-      updatedAt: deletedAt,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId,
-      rowVersion: sql`${invoices.rowVersion} + 1`,
-    })
-    .where(
-      and(
-        eq(invoices.organizationId, actor.organizationId),
-        isNull(invoices.deletedAt),
-        command.invoiceIds.length > 0
-          ? notInArray(invoices.id, [...command.invoiceIds])
-          : undefined,
-      ),
-    )
-    .returning({ id: invoices.id });
-  const deletedBatches = yield* tx
-    .update(batches)
-    .set({
-      deletedAt,
-      updatedAt: deletedAt,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId,
-      rowVersion: sql`${batches.rowVersion} + 1`,
-    })
-    .where(
-      and(
-        eq(batches.organizationId, actor.organizationId),
-        isNull(batches.deletedAt),
-        command.batchIds.length > 0 ? notInArray(batches.id, [...command.batchIds]) : undefined,
-      ),
-    )
-    .returning({ id: batches.id });
-  const deletedProducts = yield* tx
-    .update(products)
-    .set({
-      deletedAt,
-      updatedAt: deletedAt,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId,
-      rowVersion: sql`${products.rowVersion} + 1`,
-    })
-    .where(
-      and(
-        eq(products.organizationId, actor.organizationId),
-        isNull(products.deletedAt),
-        command.productIds.length > 0
-          ? notInArray(products.id, [...command.productIds])
-          : undefined,
-      ),
-    )
-    .returning({ id: products.id });
-  const deletedCategories = yield* tx
-    .update(categories)
-    .set({
-      deletedAt,
-      updatedAt: deletedAt,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId,
-      rowVersion: sql`${categories.rowVersion} + 1`,
-    })
-    .where(
-      and(
-        eq(categories.organizationId, actor.organizationId),
-        isNull(categories.deletedAt),
-        command.categoryIds.length > 0
-          ? notInArray(categories.id, [...command.categoryIds])
-          : undefined,
-      ),
-    )
-    .returning({ id: categories.id });
+  const deletedStockMovements =
+    command.stockMovementIds.length === 0
+      ? []
+      : yield* tx
+          .delete(stockMovements)
+          .where(
+            and(
+              eq(stockMovements.organizationId, actor.organizationId),
+              notInArray(stockMovements.id, [...command.stockMovementIds]),
+            ),
+          )
+          .returning({ id: stockMovements.id });
+  const deletedInvoiceItems =
+    command.invoiceItemIds.length === 0
+      ? []
+      : yield* tx
+          .update(invoiceItems)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: sql`${invoiceItems.rowVersion} + 1`,
+          })
+          .where(
+            and(
+              eq(invoiceItems.organizationId, actor.organizationId),
+              isNull(invoiceItems.deletedAt),
+              notInArray(invoiceItems.id, [...command.invoiceItemIds]),
+            ),
+          )
+          .returning({ id: invoiceItems.id });
+  const deletedInvoices =
+    command.invoiceIds.length === 0
+      ? []
+      : yield* tx
+          .update(invoices)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: sql`${invoices.rowVersion} + 1`,
+          })
+          .where(
+            and(
+              eq(invoices.organizationId, actor.organizationId),
+              isNull(invoices.deletedAt),
+              notInArray(invoices.id, [...command.invoiceIds]),
+            ),
+          )
+          .returning({ id: invoices.id });
+  const deletedBatches =
+    command.batchIds.length === 0
+      ? []
+      : yield* tx
+          .update(batches)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: sql`${batches.rowVersion} + 1`,
+          })
+          .where(
+            and(
+              eq(batches.organizationId, actor.organizationId),
+              isNull(batches.deletedAt),
+              notInArray(batches.id, [...command.batchIds]),
+            ),
+          )
+          .returning({ id: batches.id });
+  const deletedProducts =
+    command.productIds.length === 0
+      ? []
+      : yield* tx
+          .update(products)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: sql`${products.rowVersion} + 1`,
+          })
+          .where(
+            and(
+              eq(products.organizationId, actor.organizationId),
+              isNull(products.deletedAt),
+              notInArray(products.id, [...command.productIds]),
+            ),
+          )
+          .returning({ id: products.id });
+  const deletedCategories =
+    command.categoryIds.length === 0
+      ? []
+      : yield* tx
+          .update(categories)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: sql`${categories.rowVersion} + 1`,
+          })
+          .where(
+            and(
+              eq(categories.organizationId, actor.organizationId),
+              isNull(categories.deletedAt),
+              notInArray(categories.id, [...command.categoryIds]),
+            ),
+          )
+          .returning({ id: categories.id });
   yield* tx.insert(electricMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId,
