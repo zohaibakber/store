@@ -915,7 +915,12 @@ export function InventoryProvider({
   }, [host, organizationId, resourceKey, scopeTag, userId]);
 
   if (state._tag === "Opening") {
-    return <p className="p-6 text-sm text-muted-foreground">Loading your catalog…</p>;
+    return (
+      <div className="space-y-1 p-6 text-sm text-muted-foreground" role="status">
+        <p>Backing up and syncing your catalog…</p>
+        <p className="text-xs">Keep Tabaaq open. The first sync can take a few minutes.</p>
+      </div>
+    );
   }
   if (state._tag === "Error") {
     return <p className="p-6 text-sm text-destructive">{state.error}</p>;
