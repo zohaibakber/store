@@ -56,8 +56,13 @@ requireText(
 );
 requireText(
   read("apps/web/src/lib/inventory-db.tsx"),
-  "await migrateLegacyCatalog(host)",
+  "await migrateLegacyCatalog({",
   "desktop migration gate",
+);
+requireText(
+  read("packages/client-db/src/legacy-catalog.ts"),
+  "export const migrateLegacyCatalog",
+  "legacy catalog migration helper",
 );
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
 requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
