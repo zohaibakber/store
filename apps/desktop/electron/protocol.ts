@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 import { ELECTRON_RENDERER_HOST } from "@store/auth/security";
 import { net, protocol } from "electron";
 
+export { makeDesktopContentSecurityPolicy } from "./content-security-policy";
+
 export const desktopRendererOrigin = (scheme: string) => `${scheme}://${ELECTRON_RENDERER_HOST}`;
 
 export const desktopRendererUrl = (scheme: string) => `${desktopRendererOrigin(scheme)}/`;
@@ -21,41 +23,6 @@ export const registerDesktopSchemePrivileges = (scheme: string) => {
       },
     },
   ]);
-};
-
-export const makeDesktopContentSecurityPolicy = (input: {
-  readonly scheme: string;
-  readonly apiOrigin: string;
-  readonly authOrigin: string;
-  readonly development: boolean;
-}) => {
-  const scriptSources = [
-    "'self'",
-    "'unsafe-inline'",
-    ...(input.development ? ["'unsafe-eval'"] : []),
-    "https://challenges.cloudflare.com",
-  ];
-  const connectSources = [
-    "'self'",
-    input.apiOrigin,
-    input.authOrigin,
-    ...(input.development ? ["ws:", "http://localhost:*"] : []),
-  ];
-
-  return [
-    "default-src 'self'",
-    `script-src ${scriptSources.join(" ")}`,
-    `connect-src ${connectSources.join(" ")}`,
-    `img-src 'self' ${input.scheme}: data: blob: https:`,
-    "style-src 'self' 'unsafe-inline'",
-    `font-src 'self' ${input.scheme}: data:`,
-    "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
-    "form-action 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "frame-ancestors 'none'",
-  ].join("; ");
 };
 
 const withContentSecurityPolicy = (response: Response, policy: string) => {
