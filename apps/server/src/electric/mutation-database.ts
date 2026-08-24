@@ -8,6 +8,11 @@ import {
   type IssueInvoiceResult,
   type LegacyCatalogMigrationCommand,
   type LegacyCatalogMigrationResult,
+  type LegacyCatalogReconciliationCommand,
+  type LegacyCatalogReconciliationResult,
+  LegacyInvoiceItemMigrationRow,
+  LegacyInvoiceMigrationRow,
+  LegacyStockMovementMigrationRow,
   MAX_SYNC_CHANGES_PER_OPERATION,
   type SyncEntityChange,
   type SyncOperation,
@@ -27,7 +32,7 @@ import {
 } from "@store/db/postgres/schema";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Postgres from "alchemy/SQL/Postgres";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Clock from "effect/Clock";
@@ -483,15 +488,35 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
 
 const legacyMigrationOperationId = (
   command: LegacyCatalogMigrationCommand,
-  row: { readonly id: string; readonly updatedAt: number },
+  row: { readonly id: string; readonly createdAt: number; readonly updatedAt?: number },
 ) =>
   `legacy:${canonicalPayloadHash({
     commandId: command.commandId,
     deviceId: command.deviceId,
     kind: command.kind,
     id: row.id,
-    updatedAt: row.updatedAt,
+    updatedAt: row.updatedAt ?? row.createdAt,
   })}`;
+
+const recordLegacyMigrationReceipt = (
+  tx: PostgresTransaction,
+  actor: InventoryActor,
+  command: LegacyCatalogMigrationCommand,
+  operationId: string,
+  txid: number,
+  receivedAt: number,
+  row: { readonly id: string },
+) =>
+  tx.insert(electricMutationReceipts).values({
+    organizationId: actor.organizationId,
+    operationId,
+    deviceId: command.deviceId,
+    actorUserId: actor.userId,
+    clientSequence: command.occurredAt,
+    payloadHash: canonicalPayloadHash({ kind: command.kind, row }),
+    transactionId: txid,
+    receivedAt,
+  });
 
 const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCatalog")(function* (
   tx: PostgresTransaction,
@@ -505,7 +530,22 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
 
   for (const row of command.rows) {
     const operationId = legacyMigrationOperationId(command, row);
-    const occurredAt = Math.max(row.updatedAt, command.occurredAt, 1);
+    const [receipt] = yield* tx
+      .select({ operationId: electricMutationReceipts.operationId })
+      .from(electricMutationReceipts)
+      .where(
+        and(
+          eq(electricMutationReceipts.organizationId, actor.organizationId),
+          eq(electricMutationReceipts.operationId, operationId),
+        ),
+      )
+      .limit(1);
+    if (receipt) {
+      skipped += 1;
+      continue;
+    }
+    const rowTimestamp = "updatedAt" in row ? row.updatedAt : row.createdAt;
+    const occurredAt = Math.max(rowTimestamp, command.occurredAt, 1);
     let current:
       | {
           readonly createdAt: number;
@@ -532,10 +572,6 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
             and(eq(categories.organizationId, actor.organizationId), eq(categories.id, row.id)),
           )
           .limit(1);
-        if (current && current.updatedAt >= row.updatedAt) {
-          skipped += 1;
-          continue;
-        }
         const rowVersion = (current?.rowVersion ?? 0) + 1;
         change = {
           entity: "category",
@@ -567,10 +603,6 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           .from(products)
           .where(and(eq(products.organizationId, actor.organizationId), eq(products.id, row.id)))
           .limit(1);
-        if (current && current.updatedAt >= row.updatedAt) {
-          skipped += 1;
-          continue;
-        }
         const rowVersion = (current?.rowVersion ?? 0) + 1;
         change = {
           entity: "product",
@@ -602,10 +634,6 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           .from(batches)
           .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, row.id)))
           .limit(1);
-        if (current && current.updatedAt >= row.updatedAt) {
-          skipped += 1;
-          continue;
-        }
         const rowVersion = (current?.rowVersion ?? 0) + 1;
         change = {
           entity: "batch",
@@ -624,6 +652,127 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
           },
         };
         break;
+      }
+      case "invoices": {
+        const invoice = Schema.decodeUnknownSync(LegacyInvoiceMigrationRow)(row);
+        yield* tx
+          .insert(invoices)
+          .values({
+            ...invoice,
+            organizationId: actor.organizationId,
+            createdByUserId: actor.userId,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: 1,
+            deletedAt: null,
+          })
+          .onConflictDoUpdate({
+            target: [invoices.organizationId, invoices.id],
+            set: {
+              invoiceNumber: invoice.invoiceNumber,
+              customerName: invoice.customerName,
+              total: invoice.total,
+              updatedAt: invoice.updatedAt,
+              deletedAt: null,
+              updatedByUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+              rowVersion: sql`${invoices.rowVersion} + 1`,
+            },
+          });
+        yield* tx
+          .insert(invoiceCounters)
+          .values({
+            organizationId: actor.organizationId,
+            lastInvoiceNumber: invoice.invoiceNumber,
+          })
+          .onConflictDoUpdate({
+            target: invoiceCounters.organizationId,
+            set: {
+              lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${invoice.invoiceNumber})`,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          invoice,
+        );
+        imported += 1;
+        continue;
+      }
+      case "invoice-items": {
+        const invoiceItem = Schema.decodeUnknownSync(LegacyInvoiceItemMigrationRow)(row);
+        yield* tx
+          .insert(invoiceItems)
+          .values({
+            ...invoiceItem,
+            organizationId: actor.organizationId,
+            createdByUserId: actor.userId,
+            updatedByUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+            rowVersion: 1,
+            deletedAt: null,
+          })
+          .onConflictDoUpdate({
+            target: [invoiceItems.organizationId, invoiceItems.id],
+            set: {
+              ...invoiceItem,
+              updatedByUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+              rowVersion: sql`${invoiceItems.rowVersion} + 1`,
+              deletedAt: null,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          invoiceItem,
+        );
+        imported += 1;
+        continue;
+      }
+      case "stock-movements": {
+        const stockMovement = Schema.decodeUnknownSync(LegacyStockMovementMigrationRow)(row);
+        yield* tx
+          .insert(stockMovements)
+          .values({
+            ...stockMovement,
+            organizationId: actor.organizationId,
+            actorUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId,
+          })
+          .onConflictDoUpdate({
+            target: [stockMovements.organizationId, stockMovements.id],
+            set: {
+              ...stockMovement,
+              actorUserId: actor.userId,
+              deviceId: command.deviceId,
+              operationId,
+            },
+          });
+        yield* recordLegacyMigrationReceipt(
+          tx,
+          actor,
+          command,
+          operationId,
+          txid,
+          receivedAt,
+          stockMovement,
+        );
+        imported += 1;
+        continue;
       }
     }
 
@@ -646,6 +795,164 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   }
 
   return { imported, skipped, txid } satisfies LegacyCatalogMigrationResult;
+});
+
+const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalog")(function* (
+  tx: PostgresTransaction,
+  actor: InventoryActor,
+  command: LegacyCatalogReconciliationCommand,
+) {
+  const txid = yield* currentTransactionId(tx);
+  const operationId = `legacy-reconcile:${command.deviceId}:v2`;
+  const [receipt] = yield* tx
+    .select({ operationId: electricMutationReceipts.operationId })
+    .from(electricMutationReceipts)
+    .where(
+      and(
+        eq(electricMutationReceipts.organizationId, actor.organizationId),
+        eq(electricMutationReceipts.operationId, operationId),
+      ),
+    )
+    .limit(1);
+  if (receipt)
+    return {
+      deletedCategories: 0,
+      deletedProducts: 0,
+      deletedBatches: 0,
+      deletedInvoices: 0,
+      deletedInvoiceItems: 0,
+      deletedStockMovements: 0,
+      txid,
+    } satisfies LegacyCatalogReconciliationResult;
+  const deletedAt = command.occurredAt;
+  const deletedStockMovements = yield* tx
+    .delete(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, actor.organizationId),
+        command.stockMovementIds.length > 0
+          ? notInArray(stockMovements.id, [...command.stockMovementIds])
+          : undefined,
+      ),
+    )
+    .returning({ id: stockMovements.id });
+  const deletedInvoiceItems = yield* tx
+    .update(invoiceItems)
+    .set({
+      deletedAt,
+      updatedAt: deletedAt,
+      updatedByUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId,
+      rowVersion: sql`${invoiceItems.rowVersion} + 1`,
+    })
+    .where(
+      and(
+        eq(invoiceItems.organizationId, actor.organizationId),
+        isNull(invoiceItems.deletedAt),
+        command.invoiceItemIds.length > 0
+          ? notInArray(invoiceItems.id, [...command.invoiceItemIds])
+          : undefined,
+      ),
+    )
+    .returning({ id: invoiceItems.id });
+  const deletedInvoices = yield* tx
+    .update(invoices)
+    .set({
+      deletedAt,
+      updatedAt: deletedAt,
+      updatedByUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId,
+      rowVersion: sql`${invoices.rowVersion} + 1`,
+    })
+    .where(
+      and(
+        eq(invoices.organizationId, actor.organizationId),
+        isNull(invoices.deletedAt),
+        command.invoiceIds.length > 0
+          ? notInArray(invoices.id, [...command.invoiceIds])
+          : undefined,
+      ),
+    )
+    .returning({ id: invoices.id });
+  const deletedBatches = yield* tx
+    .update(batches)
+    .set({
+      deletedAt,
+      updatedAt: deletedAt,
+      updatedByUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId,
+      rowVersion: sql`${batches.rowVersion} + 1`,
+    })
+    .where(
+      and(
+        eq(batches.organizationId, actor.organizationId),
+        isNull(batches.deletedAt),
+        command.batchIds.length > 0 ? notInArray(batches.id, [...command.batchIds]) : undefined,
+      ),
+    )
+    .returning({ id: batches.id });
+  const deletedProducts = yield* tx
+    .update(products)
+    .set({
+      deletedAt,
+      updatedAt: deletedAt,
+      updatedByUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId,
+      rowVersion: sql`${products.rowVersion} + 1`,
+    })
+    .where(
+      and(
+        eq(products.organizationId, actor.organizationId),
+        isNull(products.deletedAt),
+        command.productIds.length > 0
+          ? notInArray(products.id, [...command.productIds])
+          : undefined,
+      ),
+    )
+    .returning({ id: products.id });
+  const deletedCategories = yield* tx
+    .update(categories)
+    .set({
+      deletedAt,
+      updatedAt: deletedAt,
+      updatedByUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId,
+      rowVersion: sql`${categories.rowVersion} + 1`,
+    })
+    .where(
+      and(
+        eq(categories.organizationId, actor.organizationId),
+        isNull(categories.deletedAt),
+        command.categoryIds.length > 0
+          ? notInArray(categories.id, [...command.categoryIds])
+          : undefined,
+      ),
+    )
+    .returning({ id: categories.id });
+  yield* tx.insert(electricMutationReceipts).values({
+    organizationId: actor.organizationId,
+    operationId,
+    deviceId: command.deviceId,
+    actorUserId: actor.userId,
+    clientSequence: command.occurredAt,
+    payloadHash: canonicalPayloadHash(command),
+    transactionId: txid,
+    receivedAt: command.occurredAt,
+  });
+  return {
+    deletedCategories: deletedCategories.length,
+    deletedProducts: deletedProducts.length,
+    deletedBatches: deletedBatches.length,
+    deletedInvoices: deletedInvoices.length,
+    deletedInvoiceItems: deletedInvoiceItems.length,
+    deletedStockMovements: deletedStockMovements.length,
+    txid,
+  } satisfies LegacyCatalogReconciliationResult;
 });
 
 const invoiceError = (message: string) => protocolError("ENTITY_CONFLICT", message);
@@ -1330,6 +1637,18 @@ export const makeLegacyCatalogMigrationDatabase = (db: PostgresDrizzle) =>
     ),
   );
 
+export const makeLegacyCatalogReconciliationDatabase = (db: PostgresDrizzle) =>
+  Effect.fn("InventoryCommandDatabase.reconcileLegacyCatalog")(
+    function* (actor: InventoryActor, command: LegacyCatalogReconciliationCommand) {
+      return yield* db.transaction((tx) => reconcileLegacyCatalog(tx, actor, command));
+    },
+    Effect.mapError((cause) =>
+      cause instanceof InventoryProtocolError || cause instanceof InventoryDatabaseError
+        ? cause
+        : databaseError(cause),
+    ),
+  );
+
 export type ElectricMutationWriter = ReturnType<typeof makeElectricMutationDatabase>;
 
 export class ElectricMutationDatabase extends Context.Service<
@@ -1338,6 +1657,7 @@ export class ElectricMutationDatabase extends Context.Service<
     readonly write: ElectricMutationWriter;
     readonly importInventory: ReturnType<typeof makeInventoryImportCommandDatabase>;
     readonly migrateLegacyCatalog: ReturnType<typeof makeLegacyCatalogMigrationDatabase>;
+    readonly reconcileLegacyCatalog: ReturnType<typeof makeLegacyCatalogReconciliationDatabase>;
     readonly issueInvoice: ReturnType<typeof makeInvoiceCommandDatabase>;
   }
 >()("@store/server/ElectricMutationDatabase") {}
@@ -1357,6 +1677,7 @@ export const ElectricMutationDatabaseLive = Layer.effect(
       write: makeElectricMutationDatabase(db),
       importInventory: makeInventoryImportCommandDatabase(db),
       migrateLegacyCatalog: makeLegacyCatalogMigrationDatabase(db),
+      reconcileLegacyCatalog: makeLegacyCatalogReconciliationDatabase(db),
       issueInvoice: makeInvoiceCommandDatabase(db),
     });
   }),

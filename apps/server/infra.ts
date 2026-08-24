@@ -181,6 +181,7 @@ export const ApiLive = Api.make(
       importInventory: electricMutations.importInventory,
       issueInvoice: electricMutations.issueInvoice,
       migrateLegacyCatalog: electricMutations.migrateLegacyCatalog,
+      reconcileLegacyCatalog: electricMutations.reconcileLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),

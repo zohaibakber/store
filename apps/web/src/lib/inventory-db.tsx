@@ -15,6 +15,7 @@ import {
   submitImportInventory,
   submitIssueInvoice,
   submitLegacyCatalogMigration,
+  submitLegacyCatalogReconciliation,
 } from "@store/client-db";
 import type {
   Category,
@@ -137,6 +138,65 @@ const migrateLegacyCatalog = async (host: InventoryHost) => {
       throw new Error("The local batch backup was not fully acknowledged by the server.");
     }
   }
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.invoices).entries()) {
+    const result = await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "invoices",
+        commandId: `legacy-v1:${host.deviceId}:invoices:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+    if (result.imported + result.skipped !== rows.length)
+      throw new Error("The local invoice backup was not fully acknowledged by the server.");
+  }
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.invoiceItems).entries()) {
+    const result = await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "invoice-items",
+        commandId: `legacy-v1:${host.deviceId}:invoice-items:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+    if (result.imported + result.skipped !== rows.length)
+      throw new Error("The local invoice item backup was not fully acknowledged by the server.");
+  }
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.stockMovements).entries()) {
+    const result = await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "stock-movements",
+        commandId: `legacy-v1:${host.deviceId}:stock-movements:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+    if (result.imported + result.skipped !== rows.length)
+      throw new Error("The local stock history backup was not fully acknowledged by the server.");
+  }
+  await submitLegacyCatalogReconciliation({
+    apiBaseUrl: host.apiBaseUrl,
+    authenticatedFetch: host.authenticatedFetch,
+    command: {
+      deviceId: host.deviceId,
+      occurredAt,
+      categoryIds: legacy.migrationCatalog.categories.map((row) => row.id),
+      productIds: legacy.migrationCatalog.products.map((row) => row.id),
+      batchIds: legacy.migrationCatalog.batches.map((row) => row.id),
+      invoiceIds: legacy.migrationCatalog.invoices.map((row) => row.id),
+      invoiceItemIds: legacy.migrationCatalog.invoiceItems.map((row) => row.id),
+      stockMovementIds: legacy.migrationCatalog.stockMovements.map((row) => row.id),
+    },
+  });
 };
 
 const powerSyncConfigs = (

@@ -4,7 +4,10 @@ import path from "node:path";
 import {
   LegacyBatchMigrationRow,
   LegacyCategoryMigrationRow,
+  LegacyInvoiceItemMigrationRow,
+  LegacyInvoiceMigrationRow,
   LegacyProductMigrationRow,
+  LegacyStockMovementMigrationRow,
 } from "@store/contracts";
 import Database from "better-sqlite3";
 import * as Schema from "effect/Schema";
@@ -20,7 +23,14 @@ const emptySnapshot = () => ({
   invoices: [],
   invoiceItems: [],
   stockMovements: [],
-  migrationCatalog: { categories: [], products: [], batches: [] },
+  migrationCatalog: {
+    categories: [],
+    products: [],
+    batches: [],
+    invoices: [],
+    invoiceItems: [],
+    stockMovements: [],
+  },
 });
 
 const requiredTables = [
@@ -63,6 +73,12 @@ const readProducts = (statement: Database.Statement) =>
   );
 const readBatches = (statement: Database.Statement) =>
   Schema.decodeUnknownSync(Schema.Array(LegacyBatchMigrationRow))(statement.all());
+const readInvoices = (statement: Database.Statement) =>
+  Schema.decodeUnknownSync(Schema.Array(LegacyInvoiceMigrationRow))(statement.all());
+const readInvoiceItems = (statement: Database.Statement) =>
+  Schema.decodeUnknownSync(Schema.Array(LegacyInvoiceItemMigrationRow))(statement.all());
+const readStockMovements = (statement: Database.Statement) =>
+  Schema.decodeUnknownSync(Schema.Array(LegacyStockMovementMigrationRow))(statement.all());
 
 const hasColumns = (
   database: Database.Database,
@@ -75,6 +91,39 @@ const hasColumns = (
     ).map((column) => column.name),
   );
   return required.every((column) => columns.has(column));
+};
+
+const emptyMigrationHistory = () => ({ invoices: [], invoiceItems: [], stockMovements: [] });
+
+const loadMigrationHistory = (database: Database.Database) => {
+  if (
+    !requiredTables
+      .slice(3)
+      .every((table) =>
+        database
+          .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .pluck()
+          .get(table),
+      ) ||
+    !hasColumns(database, "invoice_items", ["quantityType", "baseUnitQuantity"]) ||
+    !hasColumns(database, "stock_movements", ["packDelta", "unitDelta"])
+  )
+    return emptyMigrationHistory();
+  return {
+    invoices: readInvoices(
+      database.prepare(`SELECT id, invoiceNumber, customerName, total,
+    createdAt, updatedAt FROM invoices WHERE deletedAt IS NULL`),
+    ),
+    invoiceItems: readInvoiceItems(
+      database.prepare(`SELECT id, invoiceId, productId, batchId,
+    productName, batchNumber, quantity, quantityType, baseUnitQuantity, salePrice,
+    createdAt, updatedAt FROM invoice_items WHERE deletedAt IS NULL`),
+    ),
+    stockMovements: readStockMovements(
+      database.prepare(`SELECT id, productId, batchId, invoiceId,
+    type, packDelta, unitDelta, note, createdAt FROM stock_movements`),
+    ),
+  };
 };
 
 const loadMigrationCatalog = (databasePath: string) => {
@@ -95,6 +144,7 @@ const loadMigrationCatalog = (databasePath: string) => {
 
     if (hasColumns(database, "categories", ["createdAt", "tracksPacks"])) {
       return {
+        ...loadMigrationHistory(database),
         categories: readCategories(
           database.prepare(
             `SELECT id, name, tracksPacks, createdAt, updatedAt
@@ -120,6 +170,7 @@ const loadMigrationCatalog = (databasePath: string) => {
 
     if (hasColumns(database, "categories", ["createdAt"])) {
       return {
+        ...loadMigrationHistory(database),
         categories: readCategories(
           database.prepare(
             `SELECT id, name, 1 AS tracksPacks, createdAt, updatedAt
@@ -145,6 +196,7 @@ const loadMigrationCatalog = (databasePath: string) => {
 
     if (hasColumns(database, "categories", ["created_at"])) {
       return {
+        ...loadMigrationHistory(database),
         categories: readCategories(
           database.prepare(
             `SELECT id, name, 1 AS tracksPacks, created_at AS createdAt, updated_at AS updatedAt
@@ -198,10 +250,29 @@ export const migrationDatabasePaths = (userDataPath: string) => {
 
 const combinedMigrationCatalog = (userDataPath: string) => {
   const catalogs = migrationDatabasePaths(userDataPath).map(loadMigrationCatalog);
+  const catalog =
+    [...catalogs].sort(
+      (left, right) =>
+        right.categories.length +
+        right.products.length +
+        right.batches.length +
+        right.invoices.length +
+        right.invoiceItems.length +
+        right.stockMovements.length -
+        (left.categories.length +
+          left.products.length +
+          left.batches.length +
+          left.invoices.length +
+          left.invoiceItems.length +
+          left.stockMovements.length),
+    )[0] ?? emptySnapshot().migrationCatalog;
   return {
-    categories: latestMigrationRows(catalogs.flatMap((catalog) => catalog.categories)),
-    products: latestMigrationRows(catalogs.flatMap((catalog) => catalog.products)),
-    batches: latestMigrationRows(catalogs.flatMap((catalog) => catalog.batches)),
+    categories: latestMigrationRows(catalog.categories),
+    products: latestMigrationRows(catalog.products),
+    batches: latestMigrationRows(catalog.batches),
+    invoices: latestMigrationRows(catalog.invoices),
+    invoiceItems: latestMigrationRows(catalog.invoiceItems),
+    stockMovements: catalog.stockMovements,
   };
 };
 

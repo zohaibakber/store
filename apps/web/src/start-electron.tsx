@@ -9,7 +9,10 @@ import {
 import {
   LegacyBatchMigrationRow,
   LegacyCategoryMigrationRow,
+  LegacyInvoiceItemMigrationRow,
+  LegacyInvoiceMigrationRow,
   LegacyProductMigrationRow,
+  LegacyStockMovementMigrationRow,
 } from "@store/contracts";
 import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -43,6 +46,9 @@ const LegacyLocalInventorySnapshotWire = Schema.Struct({
     categories: Schema.Array(LegacyCategoryMigrationRow),
     products: Schema.Array(LegacyProductMigrationRow),
     batches: Schema.Array(LegacyBatchMigrationRow),
+    invoices: Schema.Array(LegacyInvoiceMigrationRow),
+    invoiceItems: Schema.Array(LegacyInvoiceItemMigrationRow),
+    stockMovements: Schema.Array(LegacyStockMovementMigrationRow),
   }),
 });
 
@@ -58,7 +64,14 @@ const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot>
       invoices: [],
       invoiceItems: [],
       stockMovements: [],
-      migrationCatalog: { categories: [], products: [], batches: [] },
+      migrationCatalog: {
+        categories: [],
+        products: [],
+        batches: [],
+        invoices: [],
+        invoiceItems: [],
+        stockMovements: [],
+      },
     };
   }
   const raw = Schema.decodeUnknownSync(LegacyLocalInventorySnapshotWire)(await bridge.load());
