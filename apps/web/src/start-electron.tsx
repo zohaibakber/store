@@ -6,6 +6,11 @@ import {
   ProductRow,
   StockMovementRow,
 } from "@store/client-db";
+import {
+  LegacyBatchMigrationRow,
+  LegacyCategoryMigrationRow,
+  LegacyProductMigrationRow,
+} from "@store/contracts";
 import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
@@ -34,6 +39,11 @@ const LegacyLocalInventorySnapshotWire = Schema.Struct({
   invoices: Schema.Array(InvoiceRow),
   invoiceItems: Schema.Array(InvoiceItemRow),
   stockMovements: Schema.Array(StockMovementRow),
+  migrationCatalog: Schema.Struct({
+    categories: Schema.Array(LegacyCategoryMigrationRow),
+    products: Schema.Array(LegacyProductMigrationRow),
+    batches: Schema.Array(LegacyBatchMigrationRow),
+  }),
 });
 
 const decodeSQLiteBoolean = (value: boolean | 0 | 1) => value === true || value === 1;
@@ -48,6 +58,7 @@ const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot>
       invoices: [],
       invoiceItems: [],
       stockMovements: [],
+      migrationCatalog: { categories: [], products: [], batches: [] },
     };
   }
   const raw = Schema.decodeUnknownSync(LegacyLocalInventorySnapshotWire)(await bridge.load());
@@ -70,6 +81,7 @@ const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot>
     stockMovements: raw.stockMovements.map((row) =>
       Schema.decodeUnknownSync(StockMovementRow)(row),
     ),
+    migrationCatalog: raw.migrationCatalog,
   };
 };
 

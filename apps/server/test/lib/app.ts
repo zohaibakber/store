@@ -71,6 +71,7 @@ export interface AppOptions {
   readonly writeElectricMutation?: ServerRuntimeContract["writeElectricMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
   readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
+  readonly migrateLegacyCatalog?: ServerRuntimeContract["migrateLegacyCatalog"];
 }
 
 /** Route test harness. Organization access follows the JWT session: no session means revoked. */
@@ -116,6 +117,9 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
       issueInvoice:
         options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
+      migrateLegacyCatalog:
+        options.migrateLegacyCatalog ??
+        (() => Effect.die("Legacy catalog migration is not configured.")),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

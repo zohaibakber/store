@@ -4,6 +4,8 @@ import {
   IssueInvoiceCommand,
   IssueInvoiceResult,
   InvoiceExtraction,
+  LegacyCatalogMigrationCommand,
+  LegacyCatalogMigrationResult,
   ProductScanInput,
   ProductScanResult,
   SyncOperation,
@@ -104,6 +106,13 @@ const electricMutations = HttpApiGroup.make("electricMutations")
     HttpApiEndpoint.post("issueInvoice", "/api/inventory/invoices", {
       payload: IssueInvoiceCommand,
       success: IssueInvoiceResult,
+      error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("migrateLegacyCatalog", "/api/inventory/legacy-migrations", {
+      payload: LegacyCatalogMigrationCommand,
+      success: LegacyCatalogMigrationResult,
       error: [BadRequest, Forbidden, Conflict],
     }).middleware(OrganizationAuth),
   );

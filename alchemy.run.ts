@@ -5,10 +5,10 @@ import * as Neon from "alchemy/Neon";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { Auth, AuthLive } from "./apps/auth/infra";
-import { Api, ApiLive } from "./apps/server/infra";
-import { Website } from "./apps/web/infra";
-import { InventoryPostgres } from "./packages/db/src/postgres/infra";
+import { Auth, AuthLive } from "./apps/auth/infra.ts";
+import { Api, ApiLive } from "./apps/server/infra.ts";
+import { Website } from "./apps/web/infra.ts";
+import { InventoryPostgres } from "./packages/db/src/postgres/infra.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",

@@ -1,3 +1,4 @@
+import { LegacyCatalogMigrationResult, type LegacyCatalogMigrationCommand } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import {
   ImportInventoryCommandResult,
@@ -63,6 +64,26 @@ export const submitInventoryOperation = async (input: {
     throw new Error(detail || `Inventory mutation failed (${response.status}).`);
   }
   return Schema.decodeUnknownSync(InventoryMutationResult)(await response.json());
+};
+
+export const submitLegacyCatalogMigration = async (input: {
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+  readonly command: LegacyCatalogMigrationCommand;
+}) => {
+  const response = await input.authenticatedFetch(
+    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migrations`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input.command),
+    },
+  );
+  if (!response.ok) {
+    const detail = (await response.text()).trim();
+    throw new Error(detail || `Legacy inventory migration failed (${response.status}).`);
+  }
+  return Schema.decodeUnknownSync(LegacyCatalogMigrationResult)(await response.json());
 };
 
 export const submitCatalogRows = (input: {

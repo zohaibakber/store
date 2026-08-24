@@ -14,6 +14,7 @@ import {
   powerSyncDeserializationFailure,
   submitImportInventory,
   submitIssueInvoice,
+  submitLegacyCatalogMigration,
 } from "@store/client-db";
 import type {
   Category,
@@ -35,6 +36,7 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
+import { MAX_LEGACY_MIGRATION_ROWS } from "@store/contracts";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -74,6 +76,59 @@ const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
   scope._tag === "Local"
     ? "desktop-local:locked"
     : inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
+
+const chunksOf = <Value,>(rows: ReadonlyArray<Value>) => {
+  const chunks: Array<ReadonlyArray<Value>> = [];
+  for (let index = 0; index < rows.length; index += MAX_LEGACY_MIGRATION_ROWS) {
+    chunks.push(rows.slice(index, index + MAX_LEGACY_MIGRATION_ROWS));
+  }
+  return chunks;
+};
+
+const migrateLegacyCatalog = async (host: InventoryHost) => {
+  const legacy = await host.loadLegacyLocalSnapshot?.();
+  if (!legacy) return;
+  const occurredAt = Date.now();
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.categories).entries()) {
+    await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "categories",
+        commandId: `legacy-v1:${host.deviceId}:categories:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+  }
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.products).entries()) {
+    await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "products",
+        commandId: `legacy-v1:${host.deviceId}:products:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+  }
+  for (const [index, rows] of chunksOf(legacy.migrationCatalog.batches).entries()) {
+    await submitLegacyCatalogMigration({
+      apiBaseUrl: host.apiBaseUrl,
+      authenticatedFetch: host.authenticatedFetch,
+      command: {
+        kind: "batches",
+        commandId: `legacy-v1:${host.deviceId}:batches:${index}`,
+        deviceId: host.deviceId,
+        occurredAt,
+        rows,
+      },
+    });
+  }
+};
 
 const powerSyncConfigs = (
   database: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
@@ -135,12 +190,14 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
   const powerSync = await host.openPowerSyncDatabase(inventoryPowerSyncDatabaseName(scopeId));
   try {
     if (scope._tag === "Remote") {
-      await powerSync.connect(
+      await migrateLegacyCatalog(host);
+      void powerSync.connect(
         makeInventoryPowerSyncConnector({
           apiBaseUrl: host.apiBaseUrl,
           authenticatedFetch: host.authenticatedFetch,
         }),
       );
+      await powerSync.waitForFirstSync();
     }
     const configs = powerSyncConfigs(powerSync, scopeId);
     const categories = dbClient.collection(collectionOptions(configs.categories));

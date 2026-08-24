@@ -4,6 +4,8 @@ import type {
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
   IssueInvoiceResult,
+  LegacyCatalogMigrationCommand,
+  LegacyCatalogMigrationResult,
   SyncOperation,
   WorkspaceSnapshot,
 } from "@store/contracts";
@@ -67,6 +69,14 @@ export interface ServerRuntimeContract {
     command: ImportInventoryCommand,
   ) => Effect.Effect<
     ImportInventoryCommandResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly migrateLegacyCatalog: (
+    actor: InventoryActor,
+    command: LegacyCatalogMigrationCommand,
+  ) => Effect.Effect<
+    LegacyCatalogMigrationResult,
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;

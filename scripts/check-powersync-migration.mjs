@@ -44,6 +44,21 @@ requireText(syncConfig, "auth.parameter('org')", "PowerSync organization isolati
 
 const server = read("apps/server/src/http/app.ts");
 requireText(server, '"/api/powersync/credentials"', "server credential route");
+requireText(
+  read("apps/server/src/http/api.ts"),
+  '"/api/inventory/legacy-migrations"',
+  "legacy desktop migration route",
+);
+requireText(
+  read("apps/desktop/electron/legacy-local-inventory.ts"),
+  'path.join(userDataPath, "organizations")',
+  "legacy signed-in database discovery",
+);
+requireText(
+  read("apps/web/src/lib/inventory-db.tsx"),
+  "await migrateLegacyCatalog(host)",
+  "desktop migration gate",
+);
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
 requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
 

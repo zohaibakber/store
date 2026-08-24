@@ -180,6 +180,7 @@ export const ApiLive = Api.make(
       writeElectricMutation: electricMutations.write,
       importInventory: electricMutations.importInventory,
       issueInvoice: electricMutations.issueInvoice,
+      migrateLegacyCatalog: electricMutations.migrateLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),

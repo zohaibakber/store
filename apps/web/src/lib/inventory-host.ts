@@ -7,6 +7,11 @@ import type {
   ProductRow,
   StockMovementRow,
 } from "@store/client-db";
+import type {
+  LegacyBatchMigrationRow,
+  LegacyCategoryMigrationRow,
+  LegacyProductMigrationRow,
+} from "@store/contracts";
 
 export interface LegacyLocalInventorySnapshot {
   readonly categories: ReadonlyArray<CategoryRow>;
@@ -15,6 +20,11 @@ export interface LegacyLocalInventorySnapshot {
   readonly invoices: ReadonlyArray<InvoiceRow>;
   readonly invoiceItems: ReadonlyArray<InvoiceItemRow>;
   readonly stockMovements: ReadonlyArray<StockMovementRow>;
+  readonly migrationCatalog: {
+    readonly categories: ReadonlyArray<LegacyCategoryMigrationRow>;
+    readonly products: ReadonlyArray<LegacyProductMigrationRow>;
+    readonly batches: ReadonlyArray<LegacyBatchMigrationRow>;
+  };
 }
 
 export interface InventoryHost {

@@ -79,6 +79,23 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
               Effect.catchTag("InventoryDatabaseError", Effect.die),
             );
         }),
+      )
+      .handle(
+        "migrateLegacyCatalog",
+        Effect.fn("ElectricMutationHandlers.migrateLegacyCatalog")(function* ({ payload }) {
+          const identity = yield* CurrentOrganization;
+          return yield* runtime
+            .migrateLegacyCatalog(
+              { organizationId: identity.organizationId, userId: identity.user.id },
+              payload,
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                error._tag === "InventoryProtocolError" ? mutationProtocolError(error) : error,
+              ),
+              Effect.catchTag("InventoryDatabaseError", Effect.die),
+            );
+        }),
       );
   }),
 );
