@@ -61,6 +61,10 @@ jobs:
               exit 1
             fi
           done
+          if [ "${{ inputs.stage }}" = "dev" ] && [ -z "${AUTH_BASE_URL}" ]; then
+            echo "::error::AUTH_BASE_URL is empty for the deployed Development auth Worker."
+            exit 1
+          fi
           echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
           echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
@@ -75,6 +79,7 @@ jobs:
         env:
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
           AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_BASE_URL: ${{ vars.AUTH_BASE_URL }}
           AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
           AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
@@ -95,6 +100,7 @@ jobs:
           CI: "1"
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
           AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_BASE_URL: ${{ vars.AUTH_BASE_URL }}
           AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
           AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
           AUTH_DEV_OTP: ${{ vars.AUTH_DEV_OTP }}
