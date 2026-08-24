@@ -16,6 +16,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
     input.apiOrigin,
     input.authOrigin,
     "https://*.powersync.journeyapps.com",
+    "wss://*.powersync.journeyapps.com",
     ...(input.development ? ["ws:", "http://localhost:*"] : []),
   ];
 

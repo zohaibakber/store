@@ -28,6 +28,8 @@ describe("desktop content security policy", () => {
       ?.split(" ");
 
     expect(connectSources).toContain("https://*.powersync.journeyapps.com");
+    expect(connectSources).toContain("wss://*.powersync.journeyapps.com");
     expect(connectSources).not.toContain("https:");
+    expect(connectSources).not.toContain("wss:");
   });
 });
