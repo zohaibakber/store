@@ -12,10 +12,10 @@ import {
   powerSyncCollectionSchemas,
   powerSyncDeserializationSchemas,
   powerSyncDeserializationFailure,
+  migrateLegacyCatalog,
   submitImportInventory,
   submitIssueInvoice,
-  submitLegacyCatalogMigration,
-  submitLegacyCatalogReconciliation,
+  waitForInventoryFirstSync,
 } from "@store/client-db";
 import type {
   Category,
@@ -37,7 +37,6 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
-import { MAX_LEGACY_MIGRATION_ROWS } from "@store/contracts";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -77,138 +76,6 @@ const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
   scope._tag === "Local"
     ? "desktop-local:locked"
     : inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
-
-const chunksOf = <Value,>(rows: ReadonlyArray<Value>) => {
-  const chunks: Array<ReadonlyArray<Value>> = [];
-  for (let index = 0; index < rows.length; index += MAX_LEGACY_MIGRATION_ROWS) {
-    chunks.push(rows.slice(index, index + MAX_LEGACY_MIGRATION_ROWS));
-  }
-  return chunks;
-};
-
-const migrateLegacyCatalog = async (host: InventoryHost) => {
-  const legacy = await host.loadLegacyLocalSnapshot?.();
-  if (!legacy) return;
-  const catalog = legacy.migrationCatalog;
-  if (
-    catalog.categories.length +
-      catalog.products.length +
-      catalog.batches.length +
-      catalog.invoices.length +
-      catalog.invoiceItems.length +
-      catalog.stockMovements.length ===
-    0
-  )
-    return;
-  const occurredAt = Date.now();
-  for (const [index, rows] of chunksOf(catalog.categories).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "categories",
-        commandId: `legacy-v1:${host.deviceId}:categories:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length) {
-      throw new Error("The local category backup was not fully acknowledged by the server.");
-    }
-  }
-  for (const [index, rows] of chunksOf(catalog.products).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "products",
-        commandId: `legacy-v1:${host.deviceId}:products:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length) {
-      throw new Error("The local product backup was not fully acknowledged by the server.");
-    }
-  }
-  for (const [index, rows] of chunksOf(catalog.batches).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "batches",
-        commandId: `legacy-v1:${host.deviceId}:batches:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length) {
-      throw new Error("The local batch backup was not fully acknowledged by the server.");
-    }
-  }
-  for (const [index, rows] of chunksOf(catalog.invoices).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "invoices",
-        commandId: `legacy-v1:${host.deviceId}:invoices:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length)
-      throw new Error("The local invoice backup was not fully acknowledged by the server.");
-  }
-  for (const [index, rows] of chunksOf(catalog.invoiceItems).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "invoice-items",
-        commandId: `legacy-v1:${host.deviceId}:invoice-items:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length)
-      throw new Error("The local invoice item backup was not fully acknowledged by the server.");
-  }
-  for (const [index, rows] of chunksOf(catalog.stockMovements).entries()) {
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      command: {
-        kind: "stock-movements",
-        commandId: `legacy-v1:${host.deviceId}:stock-movements:${index}`,
-        deviceId: host.deviceId,
-        occurredAt,
-        rows,
-      },
-    });
-    if (result.imported + result.skipped !== rows.length)
-      throw new Error("The local stock history backup was not fully acknowledged by the server.");
-  }
-  await submitLegacyCatalogReconciliation({
-    apiBaseUrl: host.apiBaseUrl,
-    authenticatedFetch: host.authenticatedFetch,
-    command: {
-      deviceId: host.deviceId,
-      occurredAt,
-      categoryIds: catalog.categories.map((row) => row.id),
-      productIds: catalog.products.map((row) => row.id),
-      batchIds: catalog.batches.map((row) => row.id),
-      invoiceIds: catalog.invoices.map((row) => row.id),
-      invoiceItemIds: catalog.invoiceItems.map((row) => row.id),
-      stockMovementIds: catalog.stockMovements.map((row) => row.id),
-    },
-  });
-};
 
 const powerSyncConfigs = (
   database: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
@@ -270,14 +137,22 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
   const powerSync = await host.openPowerSyncDatabase(inventoryPowerSyncDatabaseName(scopeId));
   try {
     if (scope._tag === "Remote") {
-      await migrateLegacyCatalog(host);
+      const legacy = await host.loadLegacyLocalSnapshot?.();
+      if (legacy) {
+        await migrateLegacyCatalog({
+          apiBaseUrl: host.apiBaseUrl,
+          authenticatedFetch: host.authenticatedFetch,
+          deviceId: host.deviceId,
+          catalog: legacy.migrationCatalog,
+        });
+      }
       void powerSync.connect(
         makeInventoryPowerSyncConnector({
           apiBaseUrl: host.apiBaseUrl,
           authenticatedFetch: host.authenticatedFetch,
         }),
       );
-      await powerSync.waitForFirstSync();
+      await waitForInventoryFirstSync(powerSync);
     }
     const configs = powerSyncConfigs(powerSync, scopeId);
     const categories = dbClient.collection(collectionOptions(configs.categories));

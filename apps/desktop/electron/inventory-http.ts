@@ -33,9 +33,15 @@ const inventoryApiPath = (apiBaseUrl: string) => {
   return (basePath.endsWith("/api") ? basePath : `${basePath}/api`).replace(/^\/\//u, "/");
 };
 
-const INVENTORY_COMMAND_PATHS = ["mutations", "invoices", "imports", "legacy-migrations"] as const;
+export const INVENTORY_COMMAND_PATHS = [
+  "mutations",
+  "invoices",
+  "imports",
+  "legacy-migrations",
+  "legacy-reconciliations",
+] as const;
 
-const validatedInventoryUrl = (
+export const validatedInventoryUrl = (
   apiBaseUrl: string,
   request: Pick<InventoryHttpRequest, "method" | "url">,
 ) => {

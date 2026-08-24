@@ -90,11 +90,38 @@ export const LegacyStockMovementMigrationRow = Schema.Struct({
 export type LegacyStockMovementMigrationRow = typeof LegacyStockMovementMigrationRow.Type;
 
 export const MAX_LEGACY_MIGRATION_ROWS = 250;
+/** Client POST size. 35 category rows already survive Worker CPU; products are heavier. */
+export const LEGACY_MIGRATION_CHUNK_ROWS = 25;
 
 export const legacyCatalogRowOperationId = (
   kind: LegacyCatalogMigrationCommand["kind"],
   rowId: string,
 ) => `legacy-row:v1:${kind}:${rowId}`;
+
+export const chunkLegacyMigrationRows = <Value>(
+  rows: ReadonlyArray<Value>,
+  size: number = LEGACY_MIGRATION_CHUNK_ROWS,
+): ReadonlyArray<ReadonlyArray<Value>> => {
+  const chunks: Array<ReadonlyArray<Value>> = [];
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+  return chunks;
+};
+
+export const partitionLegacyMigrationRows = <Row extends { readonly id: string }>(
+  kind: LegacyCatalogMigrationCommand["kind"],
+  rows: ReadonlyArray<Row>,
+  existingOperationIds: ReadonlySet<string>,
+) => {
+  const pending: Row[] = [];
+  let skipped = 0;
+  for (const row of rows) {
+    if (existingOperationIds.has(legacyCatalogRowOperationId(kind, row.id))) skipped += 1;
+    else pending.push(row);
+  }
+  return { pending, skipped };
+};
 
 export const LegacyCatalogMigrationCommand = Schema.Union([
   Schema.Struct({

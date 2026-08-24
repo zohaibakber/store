@@ -10,16 +10,11 @@ import {
   type LegacyCatalogMigrationResult,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
-  LegacyBatchMigrationRow,
-  LegacyCategoryMigrationRow,
-  LegacyInvoiceItemMigrationRow,
-  LegacyInvoiceMigrationRow,
-  LegacyProductMigrationRow,
-  LegacyStockMovementMigrationRow,
   MAX_SYNC_CHANGES_PER_OPERATION,
   type SyncEntityChange,
   type SyncOperation,
   legacyCatalogRowOperationId,
+  partitionLegacyMigrationRows,
 } from "@store/contracts";
 import { syncEntityChangeKey } from "@store/contracts";
 import { canonicalPayloadHash, operationPayloadHash } from "@store/contracts/operation-hash";
@@ -490,30 +485,38 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
   return { txid } satisfies ElectricMutationResult;
 });
 
-const legacyMigrationOperationId = (
-  command: LegacyCatalogMigrationCommand,
-  row: { readonly id: string },
-) => legacyCatalogRowOperationId(command.kind, row.id);
+const excluded = (column: string) => sql.raw(`excluded.${column}`);
 
-const recordLegacyMigrationReceipt = (
+const versionedUpsertSet = {
+  updatedByUserId: excluded("updated_by_user_id"),
+  deviceId: excluded("device_id"),
+  operationId: excluded("operation_id"),
+  deletedAt: null,
+};
+
+const recordLegacyMigrationReceipts = (
   tx: PostgresTransaction,
   actor: InventoryActor,
   command: LegacyCatalogMigrationCommand,
-  operationId: string,
   txid: number,
   receivedAt: number,
-  row: { readonly id: string },
+  rows: ReadonlyArray<{ readonly id: string }>,
 ) =>
-  tx.insert(electricMutationReceipts).values({
-    organizationId: actor.organizationId,
-    operationId,
-    deviceId: command.deviceId,
-    actorUserId: actor.userId,
-    clientSequence: command.occurredAt,
-    payloadHash: canonicalPayloadHash({ kind: command.kind, row }),
-    transactionId: txid,
-    receivedAt,
-  });
+  tx
+    .insert(electricMutationReceipts)
+    .values(
+      rows.map((row) => ({
+        organizationId: actor.organizationId,
+        operationId: legacyCatalogRowOperationId(command.kind, row.id),
+        deviceId: command.deviceId,
+        actorUserId: actor.userId,
+        clientSequence: command.occurredAt,
+        payloadHash: canonicalPayloadHash({ kind: command.kind, row }),
+        transactionId: txid,
+        receivedAt,
+      })),
+    )
+    .onConflictDoNothing();
 
 const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCatalog")(function* (
   tx: PostgresTransaction,
@@ -521,313 +524,256 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   command: LegacyCatalogMigrationCommand,
   receivedAt: number,
 ) {
-  let imported = 0;
-  let skipped = 0;
   const txid = yield* currentTransactionId(tx);
+  if (command.rows.length === 0)
+    return { imported: 0, skipped: 0, txid } satisfies LegacyCatalogMigrationResult;
 
-  for (const row of command.rows) {
-    const operationId = legacyMigrationOperationId(command, row);
-    const [receipt] = yield* tx
-      .select({ operationId: electricMutationReceipts.operationId })
-      .from(electricMutationReceipts)
-      .where(
-        and(
-          eq(electricMutationReceipts.organizationId, actor.organizationId),
-          eq(electricMutationReceipts.operationId, operationId),
+  const existingReceipts = yield* tx
+    .select({ operationId: electricMutationReceipts.operationId })
+    .from(electricMutationReceipts)
+    .where(
+      and(
+        eq(electricMutationReceipts.organizationId, actor.organizationId),
+        inArray(
+          electricMutationReceipts.operationId,
+          command.rows.map((row) => legacyCatalogRowOperationId(command.kind, row.id)),
         ),
-      )
-      .limit(1);
-    if (receipt) {
-      skipped += 1;
-      continue;
-    }
-    switch (command.kind) {
-      case "categories": {
-        const category = Schema.decodeUnknownSync(LegacyCategoryMigrationRow)(row);
-        const [current] = yield* tx
-          .select({
-            createdAt: categories.createdAt,
-            createdByUserId: categories.createdByUserId,
-          })
-          .from(categories)
-          .where(
-            and(
-              eq(categories.organizationId, actor.organizationId),
-              eq(categories.id, category.id),
-            ),
-          )
-          .limit(1);
-        yield* tx
-          .insert(categories)
-          .values({
+      ),
+    );
+  const existingIds = new Set(existingReceipts.map((receipt) => receipt.operationId));
+  const metadata = {
+    organizationId: actor.organizationId,
+    createdByUserId: actor.userId,
+    updatedByUserId: actor.userId,
+    deviceId: command.deviceId,
+    rowVersion: 1,
+    deletedAt: null,
+  } as const;
+
+  switch (command.kind) {
+    case "categories": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "categories",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(categories)
+        .values(
+          pending.map((category) => ({
             ...category,
-            organizationId: actor.organizationId,
-            createdByUserId: current?.createdByUserId ?? actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: command.deviceId,
-            operationId,
-            rowVersion: 1,
-            deletedAt: null,
-            createdAt: current?.createdAt ?? category.createdAt,
-          })
-          .onConflictDoUpdate({
-            target: [categories.organizationId, categories.id],
-            set: {
-              name: category.name,
-              tracksPacks: category.tracksPacks,
-              updatedAt: category.updatedAt,
-              deletedAt: null,
-              updatedByUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-              rowVersion: sql`${categories.rowVersion} + 1`,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          category,
-        );
-        imported += 1;
-        continue;
-      }
-      case "products": {
-        const product = Schema.decodeUnknownSync(LegacyProductMigrationRow)(row);
-        const [current] = yield* tx
-          .select({
-            createdAt: products.createdAt,
-            createdByUserId: products.createdByUserId,
-          })
-          .from(products)
-          .where(
-            and(eq(products.organizationId, actor.organizationId), eq(products.id, product.id)),
-          )
-          .limit(1);
-        yield* tx
-          .insert(products)
-          .values({
+            ...metadata,
+            operationId: legacyCatalogRowOperationId("categories", category.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [categories.organizationId, categories.id],
+          set: {
+            name: excluded("name"),
+            tracksPacks: excluded("tracks_packs"),
+            updatedAt: excluded("updated_at"),
+            ...versionedUpsertSet,
+            rowVersion: sql`${categories.rowVersion} + 1`,
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+    }
+    case "products": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "products",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(products)
+        .values(
+          pending.map((product) => ({
             ...product,
-            organizationId: actor.organizationId,
-            createdByUserId: current?.createdByUserId ?? actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: command.deviceId,
-            operationId,
-            rowVersion: 1,
-            deletedAt: null,
-            createdAt: current?.createdAt ?? product.createdAt,
-          })
-          .onConflictDoUpdate({
-            target: [products.organizationId, products.id],
-            set: {
-              name: product.name,
-              categoryId: product.categoryId,
-              aisle: product.aisle,
-              composition: product.composition,
-              strength: product.strength,
-              unitsPerPack: product.unitsPerPack,
-              packPrice: product.packPrice,
-              unitPrice: product.unitPrice,
-              visible: product.visible,
-              updatedAt: product.updatedAt,
-              deletedAt: null,
-              updatedByUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-              rowVersion: sql`${products.rowVersion} + 1`,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          product,
-        );
-        imported += 1;
-        continue;
-      }
-      case "batches": {
-        const batch = Schema.decodeUnknownSync(LegacyBatchMigrationRow)(row);
-        const [current] = yield* tx
-          .select({
-            createdAt: batches.createdAt,
-            createdByUserId: batches.createdByUserId,
-          })
-          .from(batches)
-          .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)))
-          .limit(1);
-        yield* tx
-          .insert(batches)
-          .values({
+            ...metadata,
+            operationId: legacyCatalogRowOperationId("products", product.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [products.organizationId, products.id],
+          set: {
+            name: excluded("name"),
+            categoryId: excluded("category_id"),
+            aisle: excluded("aisle"),
+            composition: excluded("composition"),
+            strength: excluded("strength"),
+            unitsPerPack: excluded("units_per_pack"),
+            packPrice: excluded("pack_price"),
+            unitPrice: excluded("unit_price"),
+            visible: excluded("visible"),
+            updatedAt: excluded("updated_at"),
+            ...versionedUpsertSet,
+            rowVersion: sql`${products.rowVersion} + 1`,
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+    }
+    case "batches": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "batches",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(batches)
+        .values(
+          pending.map((batch) => ({
             ...batch,
-            organizationId: actor.organizationId,
-            createdByUserId: current?.createdByUserId ?? actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: command.deviceId,
-            operationId,
-            rowVersion: 1,
-            deletedAt: null,
-            createdAt: current?.createdAt ?? batch.createdAt,
-          })
-          .onConflictDoUpdate({
-            target: [batches.organizationId, batches.id],
-            set: {
-              productId: batch.productId,
-              batchNumber: batch.batchNumber,
-              expiresAt: batch.expiresAt,
-              packQuantity: batch.packQuantity,
-              unitQuantity: batch.unitQuantity,
-              updatedAt: batch.updatedAt,
-              deletedAt: null,
-              updatedByUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-              rowVersion: sql`${batches.rowVersion} + 1`,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          batch,
-        );
-        imported += 1;
-        continue;
-      }
-      case "invoices": {
-        const invoice = Schema.decodeUnknownSync(LegacyInvoiceMigrationRow)(row);
-        yield* tx
-          .insert(invoices)
-          .values({
+            ...metadata,
+            operationId: legacyCatalogRowOperationId("batches", batch.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [batches.organizationId, batches.id],
+          set: {
+            productId: excluded("product_id"),
+            batchNumber: excluded("batch_number"),
+            expiresAt: excluded("expires_at"),
+            packQuantity: excluded("pack_quantity"),
+            unitQuantity: excluded("unit_quantity"),
+            updatedAt: excluded("updated_at"),
+            ...versionedUpsertSet,
+            rowVersion: sql`${batches.rowVersion} + 1`,
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+    }
+    case "invoices": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "invoices",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(invoices)
+        .values(
+          pending.map((invoice) => ({
             ...invoice,
-            organizationId: actor.organizationId,
-            createdByUserId: actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: command.deviceId,
-            operationId,
-            rowVersion: 1,
-            deletedAt: null,
-          })
-          .onConflictDoUpdate({
-            target: [invoices.organizationId, invoices.id],
-            set: {
-              invoiceNumber: invoice.invoiceNumber,
-              customerName: invoice.customerName,
-              total: invoice.total,
-              updatedAt: invoice.updatedAt,
-              deletedAt: null,
-              updatedByUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-              rowVersion: sql`${invoices.rowVersion} + 1`,
-            },
-          });
-        yield* tx
-          .insert(invoiceCounters)
-          .values({
-            organizationId: actor.organizationId,
-            lastInvoiceNumber: invoice.invoiceNumber,
-          })
-          .onConflictDoUpdate({
-            target: invoiceCounters.organizationId,
-            set: {
-              lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${invoice.invoiceNumber})`,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          invoice,
-        );
-        imported += 1;
-        continue;
-      }
-      case "invoice-items": {
-        const invoiceItem = Schema.decodeUnknownSync(LegacyInvoiceItemMigrationRow)(row);
-        yield* tx
-          .insert(invoiceItems)
-          .values({
+            ...metadata,
+            operationId: legacyCatalogRowOperationId("invoices", invoice.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [invoices.organizationId, invoices.id],
+          set: {
+            invoiceNumber: excluded("invoice_number"),
+            customerName: excluded("customer_name"),
+            total: excluded("total"),
+            updatedAt: excluded("updated_at"),
+            ...versionedUpsertSet,
+            rowVersion: sql`${invoices.rowVersion} + 1`,
+          },
+        });
+      const lastInvoiceNumber = pending.reduce(
+        (max, invoice) => Math.max(max, invoice.invoiceNumber),
+        0,
+      );
+      yield* tx
+        .insert(invoiceCounters)
+        .values({
+          organizationId: actor.organizationId,
+          lastInvoiceNumber,
+        })
+        .onConflictDoUpdate({
+          target: invoiceCounters.organizationId,
+          set: {
+            lastInvoiceNumber: sql`greatest(${invoiceCounters.lastInvoiceNumber}, ${lastInvoiceNumber})`,
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+    }
+    case "invoice-items": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "invoice-items",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(invoiceItems)
+        .values(
+          pending.map((invoiceItem) => ({
             ...invoiceItem,
-            organizationId: actor.organizationId,
-            createdByUserId: actor.userId,
-            updatedByUserId: actor.userId,
-            deviceId: command.deviceId,
-            operationId,
-            rowVersion: 1,
-            deletedAt: null,
-          })
-          .onConflictDoUpdate({
-            target: [invoiceItems.organizationId, invoiceItems.id],
-            set: {
-              ...invoiceItem,
-              updatedByUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-              rowVersion: sql`${invoiceItems.rowVersion} + 1`,
-              deletedAt: null,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          invoiceItem,
-        );
-        imported += 1;
-        continue;
-      }
-      case "stock-movements": {
-        const stockMovement = Schema.decodeUnknownSync(LegacyStockMovementMigrationRow)(row);
-        yield* tx
-          .insert(stockMovements)
-          .values({
+            ...metadata,
+            operationId: legacyCatalogRowOperationId("invoice-items", invoiceItem.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [invoiceItems.organizationId, invoiceItems.id],
+          set: {
+            invoiceId: excluded("invoice_id"),
+            productId: excluded("product_id"),
+            batchId: excluded("batch_id"),
+            productName: excluded("product_name"),
+            batchNumber: excluded("batch_number"),
+            quantity: excluded("quantity"),
+            quantityType: excluded("quantity_type"),
+            baseUnitQuantity: excluded("base_unit_quantity"),
+            salePrice: excluded("sale_price"),
+            updatedAt: excluded("updated_at"),
+            ...versionedUpsertSet,
+            rowVersion: sql`${invoiceItems.rowVersion} + 1`,
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
+    }
+    case "stock-movements": {
+      const { pending, skipped } = partitionLegacyMigrationRows(
+        "stock-movements",
+        command.rows,
+        existingIds,
+      );
+      if (pending.length === 0)
+        return { imported: 0, skipped, txid } satisfies LegacyCatalogMigrationResult;
+      yield* tx
+        .insert(stockMovements)
+        .values(
+          pending.map((stockMovement) => ({
             ...stockMovement,
             organizationId: actor.organizationId,
             actorUserId: actor.userId,
             deviceId: command.deviceId,
-            operationId,
-          })
-          .onConflictDoUpdate({
-            target: [stockMovements.organizationId, stockMovements.id],
-            set: {
-              ...stockMovement,
-              actorUserId: actor.userId,
-              deviceId: command.deviceId,
-              operationId,
-            },
-          });
-        yield* recordLegacyMigrationReceipt(
-          tx,
-          actor,
-          command,
-          operationId,
-          txid,
-          receivedAt,
-          stockMovement,
-        );
-        imported += 1;
-        continue;
-      }
+            operationId: legacyCatalogRowOperationId("stock-movements", stockMovement.id),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [stockMovements.organizationId, stockMovements.id],
+          set: {
+            productId: excluded("product_id"),
+            batchId: excluded("batch_id"),
+            invoiceId: excluded("invoice_id"),
+            type: excluded("type"),
+            packDelta: excluded("pack_delta"),
+            unitDelta: excluded("unit_delta"),
+            note: excluded("note"),
+            createdAt: excluded("created_at"),
+            actorUserId: excluded("actor_user_id"),
+            deviceId: excluded("device_id"),
+            operationId: excluded("operation_id"),
+          },
+        });
+      yield* recordLegacyMigrationReceipts(tx, actor, command, txid, receivedAt, pending);
+      return { imported: pending.length, skipped, txid } satisfies LegacyCatalogMigrationResult;
     }
   }
-
-  return { imported, skipped, txid } satisfies LegacyCatalogMigrationResult;
 });
 
 const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalog")(function* (
