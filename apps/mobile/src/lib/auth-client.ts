@@ -23,7 +23,10 @@ import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
+import { usableAccessToken } from "@/lib/auth-tokens";
 import { isOfflineCause, OfflineError } from "@/lib/offline";
+
+export { usableAccessToken } from "@/lib/auth-tokens";
 
 export { isOfflineCause, OfflineError } from "@/lib/offline";
 
@@ -72,6 +75,7 @@ const persistTokens = async (next: TokenSetType | null) => {
     return;
   }
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await Storage.removeItem(SNAPSHOT_KEY);
 };
 
 const decodeStoredTokens = (serialized: string | null) => {
@@ -124,7 +128,7 @@ export const getAccessToken = async () => {
   if (!tokens) return null;
   if (tokens.accessExpiresAt > Date.now() + REFRESH_WINDOW_MS) return tokens.accessToken;
   const refreshed = await refreshTokens();
-  return refreshed?.accessToken ?? null;
+  return usableAccessToken(tokens, refreshed, Date.now());
 };
 
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {

@@ -76,6 +76,9 @@ describe("ES256 access tokens", () => {
     expect(powerSyncPublicJwks(config.publicJwk)).toEqual({
       keys: [expect.objectContaining({ kid: AUTH_JWT_KEY_ID, alg: "ES256", use: "sig" })],
     });
+    expect(powerSyncPublicJwks({ ...config.publicJwk, d: "must-not-publish" }).keys[0]).not.toHaveProperty(
+      "d",
+    );
   });
 
   it("rejects a token after its access lifetime", async () => {

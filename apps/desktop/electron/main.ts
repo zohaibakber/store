@@ -22,6 +22,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { isAllowedRendererNavigation } from "./renderer-navigation";
 import { makeShutdownCoordinator } from "./shutdown";
 import {
   openDesktopTanStackDbPersistence,
@@ -268,7 +269,7 @@ function createWindow() {
     const allowed = [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
       (value): value is string => Boolean(value),
     );
-    if (!allowed.some((origin) => url.startsWith(origin))) event.preventDefault();
+    if (!isAllowedRendererNavigation(url, allowed)) event.preventDefault();
   });
 
   win.on("closed", () => {

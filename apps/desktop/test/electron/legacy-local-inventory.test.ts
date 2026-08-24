@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { decodeCategoryId } from "@store/contracts/ids";
+import { decodeCategoryId, decodeInvoiceId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
 import {
+  mergeMigrationCatalogs,
   migrationDatabasePaths,
   snapshotWithoutReadableLockedReplica,
 } from "../../electron/legacy-local-inventory";
@@ -46,5 +47,46 @@ describe("legacy local inventory discovery", () => {
 
     expect(snapshotWithoutReadableLockedReplica(catalog).migrationCatalog).toEqual(catalog);
     expect(snapshotWithoutReadableLockedReplica(catalog).categories).toEqual([]);
+  });
+
+  it("merges disjoint catalogs instead of keeping only the largest one", () => {
+    const merged = mergeMigrationCatalogs([
+      {
+        categories: [
+          {
+            id: decodeCategoryId("medicine"),
+            name: "Medicine",
+            tracksPacks: true,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+        products: [],
+        batches: [],
+        invoices: [],
+        invoiceItems: [],
+        stockMovements: [],
+      },
+      {
+        categories: [],
+        products: [],
+        batches: [],
+        invoices: [
+          {
+            id: decodeInvoiceId("invoice-1"),
+            invoiceNumber: 1,
+            customerName: "Walk-in",
+            total: 100,
+            createdAt: 3,
+            updatedAt: 3,
+          },
+        ],
+        invoiceItems: [],
+        stockMovements: [],
+      },
+    ]);
+
+    expect(merged.categories).toHaveLength(1);
+    expect(merged.invoices).toHaveLength(1);
   });
 });

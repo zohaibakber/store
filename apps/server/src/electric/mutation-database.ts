@@ -10,6 +10,7 @@ import {
   type LegacyCatalogMigrationResult,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
+  LEGACY_ROW_OPERATION_PREFIX,
   MAX_SYNC_CHANGES_PER_OPERATION,
   type SyncEntityChange,
   type SyncOperation,
@@ -30,7 +31,7 @@ import {
 } from "@store/db/postgres/schema";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Postgres from "alchemy/SQL/Postgres";
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, notInArray, or, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Clock from "effect/Clock";
@@ -486,11 +487,11 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
 
 const excluded = (column: string) => sql.raw(`excluded.${column}`);
 
+// Re-uploading a stale snapshot must not revive rows the organization already deleted.
 const versionedUpsertSet = {
   updatedByUserId: excluded("updated_by_user_id"),
   deviceId: excluded("device_id"),
   operationId: excluded("operation_id"),
-  deletedAt: null,
 };
 
 const recordLegacyMigrationReceipts = (
@@ -853,6 +854,9 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   }
 });
 
+const importedByLegacyMigration = (operationId: typeof categories.operationId) =>
+  like(operationId, `${LEGACY_ROW_OPERATION_PREFIX}%`);
+
 const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalog")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
@@ -876,7 +880,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
       deletedStockMovements: 0,
       txid,
     } satisfies LegacyCatalogReconciliationResult;
-  const operationId = `legacy-reconcile:${command.deviceId}:v3`;
+  const operationId = `legacy-reconcile:${command.deviceId}:v4`;
   const [receipt] = yield* tx
     .select({ operationId: electricMutationReceipts.operationId })
     .from(electricMutationReceipts)
@@ -906,6 +910,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
           .where(
             and(
               eq(stockMovements.organizationId, actor.organizationId),
+              importedByLegacyMigration(stockMovements.operationId),
               notInArray(stockMovements.id, [...command.stockMovementIds]),
             ),
           )
@@ -927,6 +932,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(invoiceItems.organizationId, actor.organizationId),
               isNull(invoiceItems.deletedAt),
+              importedByLegacyMigration(invoiceItems.operationId),
               notInArray(invoiceItems.id, [...command.invoiceItemIds]),
             ),
           )
@@ -948,6 +954,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(invoices.organizationId, actor.organizationId),
               isNull(invoices.deletedAt),
+              importedByLegacyMigration(invoices.operationId),
               notInArray(invoices.id, [...command.invoiceIds]),
             ),
           )
@@ -969,6 +976,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(batches.organizationId, actor.organizationId),
               isNull(batches.deletedAt),
+              importedByLegacyMigration(batches.operationId),
               notInArray(batches.id, [...command.batchIds]),
             ),
           )
@@ -990,6 +998,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(products.organizationId, actor.organizationId),
               isNull(products.deletedAt),
+              importedByLegacyMigration(products.operationId),
               notInArray(products.id, [...command.productIds]),
             ),
           )
@@ -1011,6 +1020,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(categories.organizationId, actor.organizationId),
               isNull(categories.deletedAt),
+              importedByLegacyMigration(categories.operationId),
               notInArray(categories.id, [...command.categoryIds]),
             ),
           )

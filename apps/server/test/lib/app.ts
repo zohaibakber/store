@@ -12,28 +12,29 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 
-const session = AuthSession.make({
-  user: {
-    id: UserId.make("user-1"),
-    name: "Member",
-    email: EmailAddress.make("member@example.com"),
-    image: null,
-  },
-  session: {
-    id: SessionId.make("session-1"),
-    userId: UserId.make("user-1"),
-    activeOrganizationId: OrganizationId.make("org-1"),
-    expiresAt: Date.now() + 60_000,
-  },
-  organizations: [
-    {
-      id: OrganizationId.make("org-1"),
-      name: "Tabaaq",
-      slug: "tabaaq",
-      role: "owner",
+const sessionFor = (role: "owner" | "admin" | "member") =>
+  AuthSession.make({
+    user: {
+      id: UserId.make("user-1"),
+      name: "Member",
+      email: EmailAddress.make("member@example.com"),
+      image: null,
     },
-  ],
-});
+    session: {
+      id: SessionId.make("session-1"),
+      userId: UserId.make("user-1"),
+      activeOrganizationId: OrganizationId.make("org-1"),
+      expiresAt: Date.now() + 60_000,
+    },
+    organizations: [
+      {
+        id: OrganizationId.make("org-1"),
+        name: "Tabaaq",
+        slug: "tabaaq",
+        role,
+      },
+    ],
+  });
 
 const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
 
@@ -63,6 +64,7 @@ const testRuntimeContext = Context.make(RuntimeContext, {
 });
 
 export interface AppOptions {
+  readonly role?: "owner" | "admin" | "member";
   readonly powerSyncUrl?: string;
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
@@ -78,6 +80,8 @@ export interface AppOptions {
 /** Route test harness. Organization access follows the JWT session: no session means revoked. */
 export const appFor = (authenticated = true, options: AppOptions = {}) => ({
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
+    const session = sessionFor(options.role ?? "owner");
+    const role = options.role ?? "owner";
     const runtime = {
       electronProtocol: "com.tabaaq.desktop",
       trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
@@ -92,14 +96,14 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
                   id: "org-1",
                   name: "Tabaaq",
                   slug: "tabaaq",
-                  role: "owner",
+                  role,
                 },
                 organizations: [
                   {
                     id: "org-1",
                     name: "Tabaaq",
                     slug: "tabaaq",
-                    role: "owner",
+                    role,
                   },
                 ],
                 isOnline: true,

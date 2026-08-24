@@ -93,10 +93,12 @@ export const MAX_LEGACY_MIGRATION_ROWS = 250;
 /** Client POST size. 35 category rows already survive Worker CPU; products are heavier. */
 export const LEGACY_MIGRATION_CHUNK_ROWS = 25;
 
+export const LEGACY_ROW_OPERATION_PREFIX = "legacy-row:v1:";
+
 export const legacyCatalogRowOperationId = (
   kind: LegacyCatalogMigrationCommand["kind"],
   rowId: string,
-) => `legacy-row:v1:${kind}:${rowId}`;
+) => `${LEGACY_ROW_OPERATION_PREFIX}${kind}:${rowId}`;
 
 export const chunkLegacyMigrationRows = <Value>(
   rows: ReadonlyArray<Value>,

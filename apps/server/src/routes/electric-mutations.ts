@@ -1,11 +1,21 @@
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { CurrentOrganization } from "../auth/organization";
+import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/organization";
 import { StoreApi } from "../http/api";
 import { badRequest, conflict, forbidden } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 import type { InventoryProtocolError } from "../inventory/errors";
+
+const requireLegacyCatalogAdmin = (identity: CurrentOrganizationContext) => {
+  if (identity.role === "owner" || identity.role === "admin") return Effect.void;
+  return Effect.fail(
+    forbidden(
+      "LEGACY_CATALOG_FORBIDDEN",
+      "Only owners and admins can upload or reconcile a legacy catalog.",
+    ),
+  );
+};
 
 const mutationProtocolError = (error: InventoryProtocolError) => {
   switch (error.code) {
@@ -84,6 +94,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
         "migrateLegacyCatalog",
         Effect.fn("ElectricMutationHandlers.migrateLegacyCatalog")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
+          yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime
             .migrateLegacyCatalog(
               { organizationId: identity.organizationId, userId: identity.user.id },
@@ -101,6 +112,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
         "reconcileLegacyCatalog",
         Effect.fn("ElectricMutationHandlers.reconcileLegacyCatalog")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
+          yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime
             .reconcileLegacyCatalog(
               { organizationId: identity.organizationId, userId: identity.user.id },

@@ -100,28 +100,32 @@ const replicateRemoteCatalog = (
   powerSync: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
 ) => {
   void (async () => {
+    void powerSync.connect(
+      makeInventoryPowerSyncConnector({
+        apiBaseUrl: host.apiBaseUrl,
+        authenticatedFetch: host.authenticatedFetch,
+      }),
+    );
     try {
       if (!legacyCatalogMigrated(scopeId)) {
-        const legacy = await host.loadLegacyLocalSnapshot?.();
-        if (legacy) {
-          await migrateLegacyCatalog({
-            apiBaseUrl: host.apiBaseUrl,
-            authenticatedFetch: host.authenticatedFetch,
-            deviceId: host.deviceId,
-            catalog: legacy.migrationCatalog,
-          });
+        try {
+          const legacy = await host.loadLegacyLocalSnapshot?.();
+          if (legacy) {
+            await migrateLegacyCatalog({
+              apiBaseUrl: host.apiBaseUrl,
+              authenticatedFetch: host.authenticatedFetch,
+              deviceId: host.deviceId,
+              catalog: legacy.migrationCatalog,
+            });
+          }
+          markLegacyCatalogMigrated(scopeId);
+        } catch {
+          // Retry the server copy on the next launch. Sync still runs.
         }
-        markLegacyCatalogMigrated(scopeId);
       }
-      void powerSync.connect(
-        makeInventoryPowerSyncConnector({
-          apiBaseUrl: host.apiBaseUrl,
-          authenticatedFetch: host.authenticatedFetch,
-        }),
-      );
       await waitForInventoryFirstSync(powerSync);
     } catch {
-      // Local rows stay on screen. The next launch retries the server copy.
+      // Local rows stay on screen.
     }
   })();
 };
@@ -206,14 +210,16 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       products.preload(),
       stockMovements.preload(),
     ]);
-    await seedLegacySnapshot(host, {
-      batches,
-      categories,
-      invoiceItems,
-      invoices,
-      products,
-      stockMovements,
-    });
+    if (scope._tag === "Local") {
+      await seedLegacySnapshot(host, {
+        batches,
+        categories,
+        invoiceItems,
+        invoices,
+        products,
+        stockMovements,
+      });
+    }
     if (scope._tag === "Remote") replicateRemoteCatalog(host, scopeId, powerSync);
 
     return {
@@ -665,6 +671,16 @@ const makeInventoryActions = (
     const category = inventory.categories.state.get(categoryId);
     if (!category || category.deletedAt !== null) throw new Error("Select an active category.");
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });
+    const unitsPerPack = input.unitsPerPack ?? 1;
+    if (unitsPerPack !== current.unitsPerPack) {
+      const remainingStock = activeRows(inventory.batches.state.values()).some(
+        (batch) =>
+          batch.productId === current.id && (batch.packQuantity > 0 || batch.unitQuantity > 0),
+      );
+      if (remainingStock) {
+        throw new Error("Change units per pack only after the product has no remaining stock.");
+      }
+    }
     const next = {
       ...current,
       ...input,
@@ -673,7 +689,7 @@ const makeInventoryActions = (
       aisle: input.aisle ?? null,
       composition: input.composition ?? null,
       strength: input.strength ?? null,
-      unitsPerPack: input.unitsPerPack ?? 1,
+      unitsPerPack,
       packPrice: input.packPrice ?? null,
       unitPrice: input.unitPrice ?? null,
       visible: input.visible ?? true,

@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   LEGACY_MIGRATION_CHUNK_ROWS,
+  LEGACY_ROW_OPERATION_PREFIX,
   MAX_LEGACY_MIGRATION_ROWS,
   chunkLegacyMigrationRows,
   legacyCatalogRowOperationId,
@@ -13,6 +14,7 @@ test("legacy catalog rows get a stable id per entity, not the original mutation 
   const sibling = legacyCatalogRowOperationId("products", "product-2");
 
   expect(first).toBe("legacy-row:v1:products:product-1");
+  expect(first.startsWith(LEGACY_ROW_OPERATION_PREFIX)).toBe(true);
   expect(sibling).not.toBe(first);
   expect(legacyCatalogRowOperationId("products", "product-1")).toBe(first);
 });

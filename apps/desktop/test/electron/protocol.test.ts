@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
+import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
 
 const productionPolicy = () =>
   makeDesktopContentSecurityPolicy({
@@ -31,5 +32,28 @@ describe("desktop content security policy", () => {
     expect(connectSources).toContain("wss://*.powersync.journeyapps.com");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
+  });
+});
+
+describe("desktop renderer navigation allowlist", () => {
+  it("rejects origins that only share a string prefix", () => {
+    expect(
+      isAllowedRendererNavigation("http://127.0.0.1:5173.attacker.example/", [
+        "http://127.0.0.1:5173",
+      ]),
+    ).toBe(false);
+    expect(
+      isAllowedRendererNavigation("com.tabaaq.desktop://app.attacker.example/", [
+        "com.tabaaq.desktop://app",
+      ]),
+    ).toBe(false);
+    expect(
+      isAllowedRendererNavigation("http://127.0.0.1:5173/settings", ["http://127.0.0.1:5173"]),
+    ).toBe(true);
+    expect(
+      isAllowedRendererNavigation("com.tabaaq.desktop://app/inventory", [
+        "com.tabaaq.desktop://app",
+      ]),
+    ).toBe(true);
   });
 });

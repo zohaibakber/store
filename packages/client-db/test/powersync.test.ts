@@ -1,12 +1,7 @@
 import { UpdateType } from "@powersync/common";
 import { describe, expect, it } from "vitest";
 
-import { isIgnorableCatalogUploadError } from "../src/mutations";
-import {
-  catalogCrudMutationId,
-  decodePowerSyncCatalogCrudEntry,
-  stampCatalogUploadRow,
-} from "../src/powersync";
+import { decodePowerSyncCatalogCrudEntry, stampCatalogUploadRow } from "../src/powersync";
 
 const category = {
   id: "category-1",
@@ -64,40 +59,11 @@ describe("PowerSync catalog upload snapshots", () => {
     ).toMatchObject({ id: category.id, deletedAt: null, tracksPacks: true });
   });
 
-  it("gives each queued write its own mutation id even when rows share one", () => {
-    const first = catalogCrudMutationId({ clientId: 11 });
-    const second = catalogCrudMutationId({ clientId: 12 });
-
-    expect(first).not.toBe(second);
-    expect(catalogCrudMutationId({ clientId: 11 })).toBe(first);
-    expect(stampCatalogUploadRow(category, { clientId: 11 }).operationId).toBe(first);
+  it("keeps the row mutation id instead of a replica-local CRUD sequence", () => {
+    expect(stampCatalogUploadRow(category).operationId).toBe("operation-1");
     expect(
-      stampCatalogUploadRow(
-        { ...category, id: "category-2", operationId: "operation-1" },
-        {
-          clientId: 12,
-        },
-      ).operationId,
-    ).toBe(second);
-  });
-});
-
-describe("catalog upload conflicts", () => {
-  it("treats a reused mutation id as already acknowledged", () => {
-    expect(
-      isIgnorableCatalogUploadError(
-        new Error(
-          '{"error":{"code":"OPERATION_ID_REUSED","message":"The mutation id was reused with different content."}}',
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      isIgnorableCatalogUploadError(
-        new Error(
-          '{"error":{"code":"ENTITY_CONFLICT","message":"The entity changed before this mutation was saved."}}',
-        ),
-      ),
-    ).toBe(false);
-    expect(isIgnorableCatalogUploadError(new Error("network down"))).toBe(false);
+      stampCatalogUploadRow({ ...category, id: "category-2", operationId: "operation-2" })
+        .operationId,
+    ).toBe("operation-2");
   });
 });

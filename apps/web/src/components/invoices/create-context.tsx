@@ -1,7 +1,7 @@
 import type { BatchId, Product } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { createContext, use, useState, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { storeErrorMessage } from "@/lib/errors";
@@ -45,6 +45,7 @@ interface InvoiceCreateMeta {
   total: number;
   validBulkDiscount: boolean;
   canSubmit: boolean;
+  isSubmitting: boolean;
 }
 
 interface InvoiceCreateContextValue {
@@ -137,6 +138,8 @@ function InvoiceCreateProvider({
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
   const [pickerKey, setPickerKey] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const addProduct = (product: Product) => {
     setPickerKey((key) => key + 1);
@@ -203,13 +206,19 @@ function InvoiceCreateProvider({
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
   const completeSale = async () => {
-    if (!canSubmit || bulkDiscount == null) return;
+    if (submittingRef.current || !canSubmit || bulkDiscount == null) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
     const discount = bulkDiscount;
     const items = [];
     for (const line of lines) {
       const quantity = line.quantity;
       const salePrice = discountedSalePrice(line, discount);
-      if (quantity == null || salePrice == null) return;
+      if (quantity == null || salePrice == null) {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+        return;
+      }
       items.push({
         productId: line.product.id,
         batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
@@ -236,6 +245,9 @@ function InvoiceCreateProvider({
         title: storeErrorMessage(error, "Could not create the invoice."),
         type: "error",
       });
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -260,6 +272,7 @@ function InvoiceCreateProvider({
           total,
           validBulkDiscount,
           canSubmit,
+          isSubmitting,
         },
       }}
     >

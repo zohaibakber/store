@@ -94,7 +94,8 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
       await clearMobileTokens();
       setState(signedOut);
     } catch {
-      const cached = await readWorkspaceSnapshot();
+      const stillHaveTokens = (await restoreTokens()) !== null;
+      const cached = stillHaveTokens ? await readWorkspaceSnapshot() : null;
       if (cached) {
         setState(
           await authenticatedState({

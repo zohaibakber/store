@@ -99,10 +99,13 @@ export const makeSessionOps = (
   });
 
   /**
-   * Resolves a refresh credential to the live session it names, applying
-   * the reuse rule: presenting a revoked token kills the whole family,
-   * because either the token or the session was stolen.
+   * Two tabs often refresh the same live token at once. The loser sees a
+   * just-revoked row. Treat that as a lost race for a short window instead of
+   * killing the winner's new session. Presenting the same revoked token after
+   * the window still burns the family, which is the stolen-token rule.
    */
+  const REFRESH_REUSE_GRACE_MS = 30_000;
+
   const openRefresh = Effect.fn("Auth.Session.openRefresh")(function* (
     refreshToken: string | undefined,
   ) {
@@ -120,6 +123,9 @@ export const makeSessionOps = (
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
     if (current.revokedAt !== null) {
+      if (current.revokedAt + REFRESH_REUSE_GRACE_MS > now) {
+        return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
+      }
       yield* repository.revokeFamily(current.familyId, now);
       return yield* authError(
         401,
@@ -164,12 +170,7 @@ export const makeSessionOps = (
       },
     });
     if (!rotated) {
-      yield* repository.revokeFamily(input.session.familyId, now);
-      return yield* authError(
-        401,
-        "REFRESH_REUSE_DETECTED",
-        "This session was revoked. Sign in again.",
-      );
+      return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
     const access = yield* issueAccess(input.user, nextId, input.membership, now);
     return TokenSet.make({

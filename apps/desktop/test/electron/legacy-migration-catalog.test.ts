@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { latestMigrationRows } from "../../electron/legacy-migration-catalog";
+import { latestCreatedRows, latestMigrationRows } from "../../electron/legacy-migration-catalog";
 
 describe("legacy migration catalog", () => {
   it("keeps the newest copy of each row and sorts the result", () => {
@@ -23,5 +23,18 @@ describe("legacy migration catalog", () => {
     ]);
 
     expect(latestMigrationRows([...once, ...once])).toEqual(once);
+  });
+
+  it("keeps the newest created copy of each stock movement", () => {
+    expect(
+      latestCreatedRows([
+        { id: "move-b", createdAt: 200 },
+        { id: "move-a", createdAt: 300 },
+        { id: "move-b", createdAt: 400 },
+      ]),
+    ).toEqual([
+      { id: "move-a", createdAt: 300 },
+      { id: "move-b", createdAt: 400 },
+    ]);
   });
 });

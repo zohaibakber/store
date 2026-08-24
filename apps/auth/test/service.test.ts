@@ -1,4 +1,4 @@
-import { EmailAddress, GoogleIdToken, IdentifyInput, Password } from "@store/auth";
+import { EmailAddress, GoogleIdToken, IdentifyInput, Password, RefreshInput } from "@store/auth";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -154,6 +154,63 @@ describe("AuthService", () => {
     );
 
     expect(url.searchParams.get("state")).toBe("oauth-state");
+  });
+});
+
+describe("refresh rotation", () => {
+  it("does not kill the rotated session when the previous token is presented immediately", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const first = await run(instance, (auth) =>
+      auth.authenticate({
+        _tag: "Password",
+        email: passwordUser.email,
+        password: Password.make("valid-password"),
+        client: { _tag: "Native", deviceName: "Test device" },
+      }),
+    );
+    const second = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
+    );
+
+    const replay = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
+    );
+    expect(replay).toMatchObject({ status: 401, code: "INVALID_REFRESH_TOKEN" });
+
+    const third = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken })),
+    );
+    expect(third.refreshToken).toBeDefined();
+    expect(instance.store.sessions.filter((session) => session.revokedAt === null)).toHaveLength(1);
+  });
+
+  it("burns the family when a revoked token is presented after the grace window", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const first = await run(instance, (auth) =>
+      auth.authenticate({
+        _tag: "Password",
+        email: passwordUser.email,
+        password: Password.make("valid-password"),
+        client: { _tag: "Native", deviceName: "Test device" },
+      }),
+    );
+    const second = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
+    );
+    const previous = instance.store.sessions.find((session) => session.replacedBySessionId !== null);
+    expect(previous?.revokedAt).not.toBeNull();
+    if (previous) previous.revokedAt = Date.now() - 60_000;
+
+    const replay = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
+    );
+    expect(replay).toMatchObject({ status: 401, code: "REFRESH_REUSE_DETECTED" });
+
+    const live = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken }))),
+    );
+    expect(live).toMatchObject({ status: 401 });
+    expect(instance.store.sessions.every((session) => session.revokedAt !== null)).toBe(true);
   });
 });
 
