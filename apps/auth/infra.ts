@@ -61,6 +61,10 @@ export const AuthLive = Auth.make(
     const { stage } = yield* Alchemy.Stack;
     const productionDomain = process.env.PRODUCTION_DOMAIN ?? "";
     const productionAuthDomain = process.env.PRODUCTION_AUTH_DOMAIN ?? "";
+    const authBaseUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
+    const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+      Config.withDefault(""),
+    );
     const authHostname =
       !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod"
         ? resolveProductionAuthHostname({ productionDomain, productionAuthDomain })
@@ -84,6 +88,8 @@ export const AuthLive = Auth.make(
       env: {
         AUTH_DB: database,
         AUTH_EPHEMERAL: ephemeral,
+        AUTH_BASE_URL: authBaseUrl,
+        AUTH_TRUSTED_ORIGINS: trustedOrigins,
       },
     };
     return authHostname ? { ...worker, domain: authHostname } : worker;
