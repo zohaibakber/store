@@ -1,5 +1,4 @@
 import type { Product } from "@store/contracts";
-import { useRouter } from "@tanstack/react-router";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import {
@@ -12,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { useInventoryActions } from "@/lib/inventory-db";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible" },
@@ -20,26 +19,27 @@ const visibilityOptions = [
 ] as const;
 
 export function ProductVisibilityCard({ product }: { product: Product }) {
-  const store = useStore();
-  const router = useRouter();
+  const { updateProduct } = useInventoryActions();
 
   const setVisible = async (next: boolean) => {
     if (next === product.visible) return;
     try {
-      const {
-        id,
-        createdAt: _createdAt,
-        updatedAt: _updatedAt,
-        category: _category,
-        batches: _batches,
-        ...rest
-      } = product;
-      await store.updateProduct({ id, ...rest, visible: next });
+      await updateProduct({
+        id: product.id,
+        name: product.name,
+        categoryId: product.categoryId,
+        aisle: product.aisle,
+        composition: product.composition,
+        strength: product.strength,
+        unitsPerPack: product.unitsPerPack,
+        packPrice: product.packPrice,
+        unitPrice: product.unitPrice,
+        visible: next,
+      });
       toastManager.add({
         title: next ? "Product is visible to customers" : "Product hidden from customers",
         type: "success",
       });
-      await router.invalidate();
     } catch (error) {
       toastStoreError(error, "Could not update visibility.");
     }

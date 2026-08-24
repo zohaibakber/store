@@ -1,0 +1,78 @@
+# Postgres, PowerSync, and TanStack DB
+
+## Decision
+
+Neon Postgres remains the only inventory authority. PowerSync replaces Electric
+Cloud as the Postgres-to-client replication service. TanStack DB remains the
+application query and mutation layer, backed by PowerSync SQLite on browser,
+Electron, and Expo.
+
+Categories, products, and batches now have a durable local write queue. Imports
+and invoice issuance remain online commands because they span multiple tables;
+invoice data still syncs down for existing screens, but invoices are not a
+migration priority.
+
+## Data flow
+
+1. The auth Worker issues ES256 access tokens with the stable key ID
+   `tabaaq-auth-v1` and publishes `/.well-known/jwks.json`.
+2. The API returns the current access token and stage-specific PowerSync
+   endpoint from `GET /api/powersync/credentials`.
+3. PowerSync validates audience `tabaaq-api` and uses the signed `org` claim in
+   `powersync/sync-config.yaml` to isolate every stream.
+4. TanStack DB writes to PowerSync SQLite immediately. PowerSync durably queues
+   changes and the connector uploads full category, product, or batch rows to
+   the existing idempotent `/api/inventory/mutations` endpoint.
+5. The Worker validates row versions and commits to Postgres. PowerSync then
+   streams the canonical row back to every device in the organization.
+
+The Worker never gives clients a Postgres credential. The PowerSync service,
+not the browser, receives the logical-replication connection.
+
+## Preview rollout
+
+Do not point preview at production Postgres or the production Durable Object.
+Use a separate preview Neon database, PowerSync project, auth keys, and
+`POWERSYNC_URL`.
+
+Before testing:
+
+1. Export the production Durable Object inventory and import it into preview
+   Postgres using the existing organization IDs. Treat this as a one-way seed,
+   not continuous replication.
+2. Compare per-table and per-organization counts for categories, products,
+   batches, invoices, invoice items, and stock movements.
+3. Configure the preview PowerSync source with the preview Postgres direct
+   connection and apply `powersync/sync-config.yaml`.
+4. Configure PowerSync JWT validation with the preview auth Worker's JWKS URL
+   and audience `tabaaq-api`.
+5. Set the Development GitHub Environment variable `POWERSYNC_URL` to the
+   preview PowerSync endpoint, then deploy only the `dev` stage.
+
+The repository does not automate the production-Durable-Object export yet.
+That export is a separate safety gate: do not deploy this branch to production
+until an idempotent exporter/importer and count reconciliation have run against
+a preview copy.
+
+## Existing local data
+
+The previous Electric client persisted a read replica but had no durable
+offline upload queue. Authenticated offline mutations failed and rolled back,
+so there is no hidden authenticated queue for this migration to replay.
+
+The signed-out Electron inventory is different: it is an authoritative local
+workspace. On first launch, the app reads that legacy SQLite snapshot and
+copies missing rows into the new local PowerSync database. It is never uploaded
+to an organization merely by deploying this code.
+
+## Compatibility and retirement
+
+Keep the `ORGANIZATION_STORE` Durable Object binding, class, migrations, and
+legacy `/api/sync/live` route until production data is exported, reconciled,
+and the rollback window closes. The retained route is compatibility code, not
+a dual-write system. Do not delete production data as part of the PowerSync
+cutover.
+
+Run `vp run check:powersync-migration` to verify the runtime has no Electric
+client dependency and that tenant filtering, JWKS, endpoint, and workflow
+configuration remain wired.

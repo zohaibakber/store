@@ -30,55 +30,81 @@ const contentSecurityPolicyPlugin = (): Plugin => ({
   },
 });
 
-export default defineConfig({
-  define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version),
-    "import.meta.env.VITE_ELECTRON": false,
-  },
-  resolve: {
-    tsconfigPaths: true,
-    alias: {
-      "@libsql/client": "@libsql/client-wasm",
+/** Electron uses the same renderer with a different host entry and history. */
+const desktopRendererEntry = (): Plugin => ({
+  name: "desktop-renderer-entry",
+  transformIndexHtml: {
+    order: "pre",
+    handler(html) {
+      return html.replace("/src/main.tsx", "/src/main.electron.tsx");
     },
   },
-  server: {
-    host: "127.0.0.1",
-    port: 5174,
-    strictPort: true,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8787",
-        changeOrigin: true,
+});
+
+/** Use the development mark for Electron's boot splash and favicon. */
+const desktopDevSplash = (): Plugin => ({
+  name: "desktop-dev-splash",
+  apply: "serve",
+  transformIndexHtml(html) {
+    return html
+      .replaceAll("/logo-light.svg", "/logo-dev.svg")
+      .replaceAll("/logo-dark.svg", "/logo-dev.svg")
+      .replaceAll('href="/logo.svg"', 'href="/logo-dev.svg"');
+  },
+});
+
+export default defineConfig(({ mode }) => {
+  const isDesktopRenderer = mode === "desktop" || process.env["STORE_DESKTOP_RENDERER"] === "1";
+
+  return {
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version),
+      "import.meta.env.VITE_ELECTRON": isDesktopRenderer,
+    },
+    resolve: {
+      tsconfigPaths: true,
+    },
+    server: {
+      host: "127.0.0.1",
+      port: 5174,
+      strictPort: true,
+      proxy: {
+        "/api": {
+          target: "http://localhost:8787",
+          changeOrigin: true,
+        },
       },
     },
-  },
-  staged: {
-    "*": "vp check --fix",
-  },
-  fmt: {
-    ignorePatterns: ["dist/**", "src/routeTree.gen.ts"],
-  },
-  lint: {
-    env: { browser: true, es2020: true },
-    ignorePatterns: ["dist/**", "infra.ts", "src/routeTree.gen.ts"],
-    plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
-    jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
-    rules: {
-      "react/exhaustive-deps": "warn",
-      "react/only-export-components": [
-        "warn",
-        { allowConstantExport: true, allowExportNames: ["Route"] },
-      ],
-      "react/rules-of-hooks": "error",
-      "vite-plus/prefer-vite-plus-imports": "error",
+    staged: {
+      "*": "vp check --fix",
     },
-    options: { maxWarnings: 0 },
-  },
-  plugins: lazyPlugins(() => [
-    contentSecurityPolicyPlugin(),
-    tanstackRouter({ target: "react", autoCodeSplitting: true }),
-    tailwindcss(),
-    react(),
-    oxcReactCompiler(),
-  ]),
+    fmt: {
+      ignorePatterns: ["dist/**", "src/routeTree.gen.ts"],
+    },
+    lint: {
+      env: { browser: true, es2020: true },
+      ignorePatterns: ["dist/**", "infra.ts", "src/routeTree.gen.ts"],
+      plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
+      jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
+      rules: {
+        "react/exhaustive-deps": "warn",
+        "react/only-export-components": [
+          "warn",
+          { allowConstantExport: true, allowExportNames: ["Route"] },
+        ],
+        "react/rules-of-hooks": "error",
+        "vite-plus/prefer-vite-plus-imports": "error",
+      },
+      options: { maxWarnings: 0 },
+    },
+    plugins: lazyPlugins(() => [
+      ...(isDesktopRenderer
+        ? [desktopRendererEntry(), desktopDevSplash()]
+        : [contentSecurityPolicyPlugin()]),
+      tanstackRouter({ target: "react", autoCodeSplitting: true }),
+      tailwindcss(),
+      react(),
+      oxcReactCompiler(),
+    ]),
+  };
 });

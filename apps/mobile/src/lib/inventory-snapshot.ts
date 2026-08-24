@@ -1,10 +1,11 @@
+import type { BatchRow, CategoryRow, ProductRow } from "@store/client-db";
+
 import type {
   InventorySnapshot,
   MobileBatch,
   MobileCategory,
   MobileProduct,
 } from "@/lib/inventory-types";
-import type { BatchRow, ProductSyncMaps } from "@/lib/product-sync-state";
 
 export const formatPrice = (paisa: number | null) => {
   if (paisa === null) return "—";
@@ -27,8 +28,13 @@ const mobileBatch = (batch: BatchRow): MobileBatch => ({
   updatedAt: batch.updatedAt,
 });
 
-export const snapshotFromMaps = (maps: ProductSyncMaps): InventorySnapshot => {
-  const categories = [...maps.categories.values()]
+export const snapshotFromRows = (rows: {
+  readonly batches: ReadonlyArray<BatchRow>;
+  readonly categories: ReadonlyArray<CategoryRow>;
+  readonly products: ReadonlyArray<ProductRow>;
+}): InventorySnapshot => {
+  const categoriesById = new Map(rows.categories.map((category) => [category.id, category]));
+  const categories = rows.categories
     .map((category): MobileCategory => ({
       id: category.id,
       name: category.name,
@@ -39,7 +45,7 @@ export const snapshotFromMaps = (maps: ProductSyncMaps): InventorySnapshot => {
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
   const batchesByProduct = new Map<string, Array<MobileBatch>>();
-  for (const batch of maps.batches.values()) {
+  for (const batch of rows.batches) {
     const rows = batchesByProduct.get(batch.productId) ?? [];
     rows.push(mobileBatch(batch));
     batchesByProduct.set(batch.productId, rows);
@@ -51,9 +57,9 @@ export const snapshotFromMaps = (maps: ProductSyncMaps): InventorySnapshot => {
           (right.expiresAt ?? Number.POSITIVE_INFINITY) || left.createdAt - right.createdAt,
     );
 
-  const products = [...maps.products.values()]
+  const products = rows.products
     .map((product): MobileProduct => {
-      const category = maps.categories.get(product.categoryId);
+      const category = categoriesById.get(product.categoryId);
       const batches = batchesByProduct.get(product.id) ?? [];
       const stock = batches.reduce(
         (total, batch) => total + batch.packQuantity * product.unitsPerPack + batch.unitQuantity,
@@ -85,8 +91,6 @@ export const snapshotFromMaps = (maps: ProductSyncMaps): InventorySnapshot => {
 
   return { products, categories };
 };
-
-export const emptySnapshot = (): InventorySnapshot => ({ products: [], categories: [] });
 
 export const mobileProductById = (snapshot: InventorySnapshot, productId: string) => {
   const product = snapshot.products.find((candidate) => candidate.id === productId);

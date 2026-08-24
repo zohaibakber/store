@@ -1,4 +1,4 @@
-import { isTrustedOrigin } from "@store/auth/security";
+import { bearerToken, isTrustedOrigin } from "@store/auth";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,7 +8,8 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { OrganizationAuthLive } from "../auth/organization";
+import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
+import { ElectricMutationHandlers } from "../routes/electric-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
@@ -18,15 +19,18 @@ import { publicError } from "./errors";
 import { ServerRuntime } from "./runtime";
 import { SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(SyncHandlers, UploadHandlers, ProductScanHandlers).pipe(
-  Layer.provide(OrganizationAuthLive),
-);
+const ProtectedHandlers = Layer.mergeAll(
+  UploadHandlers,
+  ProductScanHandlers,
+  ElectricMutationHandlers,
+  SyncHandlers,
+).pipe(Layer.provide(OrganizationAuthLive));
 
 const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
 );
 
-const AuthRoutes = HttpRouter.use((router) =>
+const RawRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
     const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
@@ -39,6 +43,39 @@ const AuthRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", "/api/auth/session", handleSessionRequest);
     yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
+    yield* router.add(
+      "GET",
+      "/api/powersync/credentials",
+      Effect.fn("PowerSync.credentials")(function* () {
+        const identity = yield* authenticateCurrentOrganization(runtime);
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const token = bearerToken(request.headers.authorization);
+        if (!token) {
+          return HttpServerResponse.jsonUnsafe(
+            publicError("UNAUTHENTICATED", "Sign in required."),
+            { status: 401 },
+          );
+        }
+        if (!runtime.powerSyncUrl) {
+          return HttpServerResponse.jsonUnsafe(
+            publicError("POWERSYNC_NOT_CONFIGURED", "PowerSync is not configured."),
+            { status: 503 },
+          );
+        }
+        return HttpServerResponse.jsonUnsafe({
+          endpoint: runtime.powerSyncUrl,
+          token,
+          expiresAt: identity.session.expiresAt,
+        });
+      })().pipe(
+        Effect.catchTags({
+          Unauthenticated: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
+          Forbidden: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
+        }),
+      ),
+    );
   }),
 );
 
@@ -70,7 +107,7 @@ const Cors = HttpRouter.middleware(
   { global: true },
 );
 
-export const ServerRoutes = Layer.mergeAll(ApiRoutes, AuthRoutes, Cors);
+export const ServerRoutes = Layer.mergeAll(ApiRoutes, RawRoutes, Cors);
 
 export const recoverUnexpected = <E, R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,

@@ -9,10 +9,6 @@ import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach } from "vitest";
 
-import { StoreProvider, type Store } from "@/lib/store";
-
-import { storeStub } from "./store-stub";
-
 afterEach(cleanup);
 
 export const renderWithRouter = (ui: ReactNode) => {
@@ -35,6 +31,3 @@ export const renderWithRouter = (ui: ReactNode) => {
   });
   return { ...render(<RouterContextProvider router={router}>{ui}</RouterContextProvider>), router };
 };
-
-export const renderWithStore = (ui: ReactNode, store: Store = storeStub()) =>
-  renderWithRouter(<StoreProvider store={store}>{ui}</StoreProvider>);

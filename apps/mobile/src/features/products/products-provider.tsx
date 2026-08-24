@@ -1,4 +1,4 @@
-import * as Network from "expo-network";
+import { useLiveQuery } from "@tanstack/react-db";
 import {
   createContext,
   type Context,
@@ -7,12 +7,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import { AppState } from "react-native";
 
-import { authErrorMessage, isOfflineCause } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-client";
+import { createMobileInventoryCollections } from "@/lib/inventory-collections";
+import { persistentDeviceId } from "@/lib/inventory-session";
+import { snapshotFromRows } from "@/lib/inventory-snapshot";
 import type {
   MobileBatch,
   MobileCategory,
@@ -21,7 +22,7 @@ import type {
   SaveScannedProductInput,
   UpdateBatchQuantityInput,
 } from "@/lib/inventory-types";
-import { inventoryWorkspaceFactory, type InventoryWorkspace } from "@/lib/inventory-workspace";
+import { createMobileCatalogActions } from "@/lib/mobile-catalog-actions";
 
 type ProductsData = {
   products: ReadonlyArray<MobileProduct>;
@@ -53,152 +54,149 @@ const ProductsDataContext = createContext<ProductsData | null>(null);
 const ProductsStatusContext = createContext<ProductsStatus | null>(null);
 const ProductsActionsContext = createContext<ProductsActions | null>(null);
 
-export function ProductsProvider({ children, userId }: PropsWithChildren<{ userId: string }>) {
-  const [products, setProducts] = useState<ReadonlyArray<MobileProduct>>([]);
-  const [categories, setCategories] = useState<ReadonlyArray<MobileCategory>>([]);
-  const [loading, setLoading] = useState(true);
+type ProductsProviderProps = PropsWithChildren<{
+  userId: string;
+  organizationId: string;
+}>;
+
+export function ProductsProvider(props: ProductsProviderProps) {
+  return <ScopedProductsProvider key={props.organizationId} {...props} />;
+}
+
+function ScopedProductsProvider({ children, organizationId, userId }: ProductsProviderProps) {
+  const [collections] = useState(() => createMobileInventoryCollections(organizationId));
+  const categoriesQuery = useLiveQuery(collections.categories);
+  const productsQuery = useLiveQuery(collections.products);
+  const batchesQuery = useLiveQuery(collections.batches);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const workspaceRef = useRef<InventoryWorkspace | null>(null);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
 
-  const ensureWorkspace = useCallback(async () => {
-    const existing = workspaceRef.current;
-    if (existing && existing.userId === userId) return existing;
-    const workspace = await inventoryWorkspaceFactory.open(userId);
-    workspaceRef.current = workspace;
-    return workspace;
-  }, [userId]);
+  const snapshot = useMemo(
+    () =>
+      snapshotFromRows({
+        batches: batchesQuery.data.filter((batch) => batch.deletedAt === null),
+        categories: categoriesQuery.data.filter((category) => category.deletedAt === null),
+        products: productsQuery.data.filter((product) => product.deletedAt === null),
+      }),
+    [batchesQuery.data, categoriesQuery.data, productsQuery.data],
+  );
+  const hasCatalogRows = snapshot.categories.length > 0 || snapshot.products.length > 0;
 
-  const refresh = useCallback(() => {
-    if (refreshInFlight.current) return refreshInFlight.current;
-    const task = (async () => {
-      setRefreshing(true);
-      setError(null);
-      try {
-        const workspace = await ensureWorkspace();
-        const snapshot = await workspace.synchronize();
-        setProducts(snapshot.products);
-        setCategories(snapshot.categories);
-        setLastUpdatedAt(new Date());
-      } catch (cause) {
-        const snapshot = await ensureWorkspace()
-          .then((workspace) => workspace.readSnapshot())
-          .catch(() => null);
-        if (snapshot) {
-          setProducts(snapshot.products);
-          setCategories(snapshot.categories);
-        }
-        if (!isOfflineCause(cause) || !snapshot) setError(authErrorMessage(cause));
-      } finally {
-        setRefreshing(false);
-        refreshInFlight.current = null;
-      }
-    })();
-    refreshInFlight.current = task;
-    return task;
-  }, [ensureWorkspace]);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      await collections.preload();
+      setLastUpdatedAt(new Date());
+    } catch (cause) {
+      if (!hasCatalogRows) setError(authErrorMessage(cause));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [collections, hasCatalogRows]);
 
-  const refreshAfterWrite = useCallback(async () => {
-    const workspace = await ensureWorkspace();
-    const snapshot = await workspace.readSnapshot();
-    setProducts(snapshot.products);
-    setCategories(snapshot.categories);
-    return snapshot;
-  }, [ensureWorkspace]);
+  const catalogActions = useMemo(
+    () =>
+      deviceId
+        ? createMobileCatalogActions(collections, { organizationId, userId, deviceId })
+        : null,
+    [collections, deviceId, organizationId, userId],
+  );
 
   const runWrite = useCallback(
-    async <T,>(write: (workspace: InventoryWorkspace) => Promise<T>) => {
+    async <T,>(write: (actions: NonNullable<typeof catalogActions>) => Promise<T>) => {
       setError(null);
       try {
-        const workspace = await ensureWorkspace();
-        const result = await write(workspace);
-        await refreshAfterWrite();
-        const activeRefresh = refreshInFlight.current;
-        if (activeRefresh) void activeRefresh.then(() => refresh());
-        else void refresh();
+        if (!catalogActions) throw new Error("This device is still opening its inventory.");
+        const result = await write(catalogActions);
+        setLastUpdatedAt(new Date());
         return result;
       } catch (cause) {
         setError(authErrorMessage(cause));
         throw cause;
       }
     },
-    [ensureWorkspace, refresh, refreshAfterWrite],
+    [catalogActions],
   );
 
   const saveScannedProduct = useCallback(
-    (input: SaveScannedProductInput) =>
-      runWrite((workspace) => workspace.saveScannedProduct(input)),
+    (input: SaveScannedProductInput) => runWrite((actions) => actions.saveScannedProduct(input)),
     [runWrite],
   );
 
   const saveBatchDetails = useCallback(
-    (input: SaveBatchDetailsInput) => runWrite((workspace) => workspace.saveBatchDetails(input)),
+    (input: SaveBatchDetailsInput) => runWrite((actions) => actions.saveBatchDetails(input)),
     [runWrite],
   );
 
   const updateBatchQuantity = useCallback(
-    (input: UpdateBatchQuantityInput) =>
-      runWrite((workspace) => workspace.updateBatchQuantity(input)),
+    (input: UpdateBatchQuantityInput) => runWrite((actions) => actions.updateBatchQuantity(input)),
     [runWrite],
   );
 
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    workspaceRef.current = null;
-
-    void inventoryWorkspaceFactory
-      .open(userId)
-      .then(async (workspace) => {
-        if (!active) return;
-        workspaceRef.current = workspace;
-        const snapshot = await workspace.readSnapshot();
-        if (!active) return;
-        setProducts(snapshot.products);
-        setCategories(snapshot.categories);
-      })
+    void persistentDeviceId()
+      .then(setDeviceId)
       .catch((cause: unknown) => {
-        if (active) setError(authErrorMessage(cause));
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
-        void refresh();
+        setError(authErrorMessage(cause));
       });
-
+    void collections.preload().catch((cause: unknown) => {
+      setError(authErrorMessage(cause));
+    });
     return () => {
-      active = false;
-      workspaceRef.current = null;
-      inventoryWorkspaceFactory.close();
+      void collections.dispose();
     };
-  }, [refresh, userId]);
+  }, [collections]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh();
-    });
-    return () => subscription.remove();
-  }, [refresh]);
+    const loading = categoriesQuery.isLoading || productsQuery.isLoading || batchesQuery.isLoading;
+    if (!loading) setLastUpdatedAt(new Date());
+  }, [
+    batchesQuery.data,
+    batchesQuery.isLoading,
+    categoriesQuery.data,
+    categoriesQuery.isLoading,
+    productsQuery.data,
+    productsQuery.isLoading,
+  ]);
 
-  useEffect(() => {
-    let wasOnline: boolean | undefined;
-    const subscription = Network.addNetworkStateListener((state) => {
-      const isOnline = state.isConnected !== false && state.isInternetReachable !== false;
-      const reconnected = wasOnline === false && isOnline;
-      wasOnline = isOnline;
-      if (reconnected) void refresh();
-    });
-    return () => subscription.remove();
-  }, [refresh]);
-
-  const data = useMemo(() => ({ products, categories }), [categories, products]);
+  const data = useMemo(
+    () => ({ products: snapshot.products, categories: snapshot.categories }),
+    [snapshot],
+  );
   const status = useMemo((): ProductsStatus => {
-    if (loading) return { _tag: "Loading" };
-    if (error) return { _tag: "Error", error, lastUpdatedAt, refreshing };
+    const loading =
+      deviceId === null ||
+      categoriesQuery.isLoading ||
+      productsQuery.isLoading ||
+      batchesQuery.isLoading;
+    if (loading && !hasCatalogRows) return { _tag: "Loading" };
+    const collectionFailed =
+      categoriesQuery.isError || productsQuery.isError || batchesQuery.isError;
+    if (error || collectionFailed) {
+      return {
+        _tag: "Error",
+        error: error ?? "Inventory sync could not connect.",
+        lastUpdatedAt,
+        refreshing,
+      };
+    }
     return { _tag: "Ready", lastUpdatedAt, refreshing };
-  }, [error, lastUpdatedAt, loading, refreshing]);
+  }, [
+    batchesQuery.isError,
+    batchesQuery.isLoading,
+    categoriesQuery.isError,
+    categoriesQuery.isLoading,
+    deviceId,
+    error,
+    hasCatalogRows,
+    lastUpdatedAt,
+    productsQuery.isError,
+    productsQuery.isLoading,
+    refreshing,
+  ]);
   const actions = useMemo(
     () => ({ refresh, saveScannedProduct, saveBatchDetails, updateBatchQuantity }),
     [refresh, saveBatchDetails, saveScannedProduct, updateBatchQuantity],

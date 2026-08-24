@@ -1,38 +1,3 @@
-import type { MobileSyncOperation } from "@/lib/mobile-sync-queue";
-
-export type SyncEntity = "category" | "product" | "batch" | "stockMovement";
-
-export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
-export interface JsonObject {
-  [key: string]: JsonValue;
-}
-
-export type SyncEntityChange = {
-  entity: SyncEntity;
-  action: "upsert";
-  entityId: string;
-  rowVersion: number;
-  row: object;
-};
-
-export type SyncOperation = MobileSyncOperation<SyncEntityChange>;
-
-export type StoredMutationState = {
-  version: 1;
-  organizationId: string;
-  deviceId: string;
-  nextClientSequence: number;
-  pendingOperations: Array<SyncOperation>;
-};
-
-export type InventoryState = {
-  organizationId: string;
-  cacheKey: string;
-  cursor: number;
-  maps: import("@/lib/product-sync-state").ProductSyncMaps;
-  mutationState: StoredMutationState | null;
-};
-
 export type StoredInventoryContext = {
   version: 1;
   userId: string;

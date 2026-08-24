@@ -1,5 +1,14 @@
 import type { AuthSession } from "@store/auth";
-import type { SyncRequest, SyncResponse, WorkspaceSnapshot } from "@store/contracts";
+import type {
+  ImportInventoryCommand,
+  ImportInventoryCommandResult,
+  IssueInvoiceCommand,
+  IssueInvoiceResult,
+  LegacyCatalogMigrationCommand,
+  LegacyCatalogMigrationResult,
+  SyncOperation,
+  WorkspaceSnapshot,
+} from "@store/contracts";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import type { RuntimeContext } from "alchemy";
 import type { RateLimitError } from "alchemy/Cloudflare";
@@ -9,8 +18,9 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { SyncDatabaseError, SyncProtocolError } from "../sync/errors";
-import type { SyncActor } from "../sync/model";
+import type { ElectricMutationResult } from "../electric/mutation-database";
+import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
+import type { InventoryActor } from "../inventory/model";
 
 export interface SyncLiveInput {
   readonly organizationId: string;
@@ -21,6 +31,7 @@ export interface SyncLiveInput {
 
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
+  readonly powerSyncUrl: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
     headers: Headers,
@@ -33,13 +44,42 @@ export interface ServerRuntimeContract {
   readonly limitProductScan: (
     key: string,
   ) => Effect.Effect<{ readonly success: boolean }, RateLimitError, RuntimeContext>;
-  readonly runSync: (
-    actor: SyncActor,
-    request: SyncRequest,
-  ) => Effect.Effect<SyncResponse, SyncProtocolError | SyncDatabaseError, RuntimeContext>;
+  /** Compatibility bridge for deployed clients still backed by OrganizationStore. */
   readonly connectSyncLive: (
     input: SyncLiveInput,
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
+  readonly writeElectricMutation: (
+    actor: InventoryActor,
+    operation: SyncOperation,
+  ) => Effect.Effect<
+    ElectricMutationResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly issueInvoice: (
+    actor: InventoryActor,
+    command: IssueInvoiceCommand,
+  ) => Effect.Effect<
+    IssueInvoiceResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly importInventory: (
+    actor: InventoryActor,
+    command: ImportInventoryCommand,
+  ) => Effect.Effect<
+    ImportInventoryCommandResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly migrateLegacyCatalog: (
+    actor: InventoryActor,
+    command: LegacyCatalogMigrationCommand,
+  ) => Effect.Effect<
+    LegacyCatalogMigrationResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
 }
 
 export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeContract>()(

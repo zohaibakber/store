@@ -1,0 +1,1 @@
+ALTER TABLE "electric_mutation_receipts" ADD COLUMN "command_result" text;

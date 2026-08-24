@@ -5,32 +5,26 @@ import ReactDOM from "react-dom/client";
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import type { InitialAuth } from "@/lib/auth";
-import { StoreProvider, type Store } from "@/lib/store";
+import type { InventoryHost } from "@/lib/inventory-host";
 
 import { getRouter } from "./router";
-import { SyncDataRefresh } from "./sync-data-refresh";
 
 export const mountApp = (input: {
-  readonly store: Store;
   readonly initialAuth: InitialAuth;
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
   /** When true, beforeLoad skips admit redirects until AuthProvider clears it. */
   readonly sessionPending?: boolean;
+  readonly inventory?: InventoryHost;
 }) => {
   const router = getRouter({
     history: input.history,
-    store: input.store,
     initialAuth: input.initialAuth,
     access: input.access,
     sessionPending: input.sessionPending ?? false,
+    inventory: input.inventory,
   });
-  const app = (
-    <StoreProvider store={input.store}>
-      <SyncDataRefresh refreshRoutes={() => router.invalidate()} store={input.store} />
-      <RouterProvider router={router} />
-    </StoreProvider>
-  );
+  const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <ThemeProvider>{app}</ThemeProvider>

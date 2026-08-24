@@ -1,7 +1,5 @@
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { DashboardAnalytics } from "@store/contracts";
-import { useCallback, useEffect, useState } from "react";
 
 import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-health";
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
@@ -12,8 +10,7 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { storeErrorMessage } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { useInventoryDashboardAnalytics, useInventoryState } from "@/lib/inventory-db";
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -29,59 +26,56 @@ function ChartSkeleton() {
 }
 
 export function HomePage() {
-  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
-  const store = useStore();
-  const [error, setError] = useState<string | null>(null);
+  const state = useInventoryState();
+  if (!state || state._tag !== "Ready") throw new Error("Dashboard storage is not ready.");
+  return <LiveDashboard inventory={state.inventory} />;
+}
 
-  const refresh = useCallback(
-    () =>
-      store.getDashboardAnalytics().then((nextAnalytics) => {
-        setAnalytics(nextAnalytics);
-        setError(null);
-      }),
-    [store],
-  );
-
-  useEffect(() => {
-    refresh().catch((cause: unknown) => setError(storeErrorMessage(cause)));
-  }, [refresh]);
-
-  useEffect(() => {
-    const handleSync = () => {
-      void refresh().catch((cause: unknown) => setError(storeErrorMessage(cause)));
-    };
-
-    window.addEventListener("offline-store:sync", handleSync);
-    return () => window.removeEventListener("offline-store:sync", handleSync);
-  }, [refresh]);
+function LiveDashboard({
+  inventory,
+}: {
+  readonly inventory: Extract<
+    NonNullable<ReturnType<typeof useInventoryState>>,
+    { _tag: "Ready" }
+  >["inventory"];
+}) {
+  const analytics = useInventoryDashboardAnalytics(inventory);
 
   return (
     <PageLayout>
       <PageContent>
-        {error && (
+        {analytics.isError && (
           <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>Could not load the dashboard</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertTitle>
+              {analytics.hasCachedData
+                ? "Showing saved inventory"
+                : "Could not refresh the dashboard"}
+            </AlertTitle>
+            <AlertDescription>
+              {analytics.hasCachedData
+                ? "The server is unavailable. This dashboard uses data saved on this device."
+                : "Inventory data is unavailable. Check your connection and try again."}
+            </AlertDescription>
           </Alert>
         )}
 
-        {analytics === null ? (
+        {analytics.isLoading ? (
           <>
             <StatTilesSkeleton />
             <ChartSkeleton />
           </>
-        ) : (
+        ) : analytics.isError && !analytics.hasCachedData ? null : (
           <>
-            <StatTiles totals={analytics.totals} />
-            <RevenueChart data={analytics.revenueByDay} />
+            <StatTiles totals={analytics.data.totals} />
+            <RevenueChart data={analytics.data.revenueByDay} />
             <div className="grid gap-4 lg:grid-cols-2">
-              <TopProducts products={analytics.topProducts} />
-              <RecentInvoices invoices={analytics.recentInvoices} />
+              <TopProducts products={analytics.data.topProducts} />
+              <RecentInvoices invoices={analytics.data.recentInvoices} />
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
-              <ExpiringBatches batches={analytics.expiringBatches} />
-              <LowStock products={analytics.lowStock} threshold={LOW_STOCK_THRESHOLD} />
+              <ExpiringBatches batches={analytics.data.expiringBatches} />
+              <LowStock products={analytics.data.lowStock} threshold={LOW_STOCK_THRESHOLD} />
             </div>
           </>
         )}

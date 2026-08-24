@@ -6,8 +6,13 @@ import type {
   OrganizationRoster,
   TokenSet,
 } from "@store/auth";
-import type { InvoiceExtraction, OfflineStoreApi, WorkspaceSnapshot } from "@store/contracts";
+import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import type { JsonApiResponse } from "@store/workspace";
+
+import type { InventoryHttpBridge } from "./inventory-http-channels";
+import type { TanStackDbPersistenceBridge } from "./tanstack-db-channels";
 
 declare global {
   namespace NodeJS {
@@ -18,7 +23,11 @@ declare global {
   }
 
   interface Window {
-    offlineStore?: OfflineStoreApi;
+    inventoryHttp?: InventoryHttpBridge;
+    tanstackDbPersistence?: TanStackDbPersistenceBridge;
+    legacyLocalInventory?: {
+      load: () => Promise<JsonApiResponse>;
+    };
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };

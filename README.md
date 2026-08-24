@@ -1,8 +1,9 @@
 # Store
 
-Bun workspace for offline-first inventory: TanStack web app, Electron desktop
-app, and Cloudflare Worker API. Writes from browser, desktop, or mobile sync
-through the same authenticated live socket at `/api/sync/live`.
+Bun workspace for offline-first inventory: a TanStack web app, an Electron
+desktop app, an Expo mobile app, and a Cloudflare Worker API. Postgres is the
+authoritative inventory database. PowerSync streams organization-scoped rows
+into durable SQLite-backed TanStack DB collections on each client.
 
 ## Workspace boundaries
 
@@ -11,21 +12,19 @@ through the same authenticated live socket at `/api/sync/live`.
   serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
   on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
-  preload. It loads the web renderer with hash history and keeps native libSQL
-  plus encrypted refresh credentials in the main process.
+  preload. It loads the web renderer with hash history, persists TanStack DB
+  collections in SQLite, and keeps encrypted refresh credentials in the main
+  process.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
-- `apps/server/src` is the Worker API and the per-organization Durable Object
-  sync service.
-- `packages/contracts` owns shared store, server, and sync contracts.
-- `packages/db` owns local, Durable Object, and authentication database schemas.
-- `packages/persistence` owns local libSQL access, inventory stores, analytics,
-  and sync. The browser replica lives at `@store/persistence/browser` (WASM/OPFS).
-  Node and Electron import the package root.
-- `packages/workspace` owns the authenticated workspace runtime shared by desktop
-  and web.
-- `packages/sync-client` owns the Effect coordinator, retries, page draining, and
-  sync status state machine used by local replica adapters.
+- `apps/server/src` is the Worker API. It writes inventory commands to Postgres
+  through Hyperdrive and issues authenticated PowerSync connection credentials.
+- `packages/contracts` owns shared store, server, and compatibility sync contracts.
+- `packages/client-db` owns the shared PowerSync schema and connector, row
+  models, and Postgres mutation clients.
+- `packages/db` owns the authentication and Postgres schemas. Its Durable Object
+  schema is preserved for compatibility and migration work.
+- `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
 - `packages/services` owns shared application services such as invoice extraction.
@@ -37,34 +36,39 @@ Web components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Local business transactions write an outbox row in the same commit as the data
-change. A single-flight sync runtime pushes those operations through an
-authenticated Worker and pulls the organization's ordered change feed in the same
-Durable Object transaction. Foreground web and desktop clients keep a hibernated
-WebSocket at `/api/sync/live` for correlated exchanges and invalidation. Network
-failures leave local writes pending in FIFO order. Retryable transport errors do
-not burn the outbox toward quarantine.
+Inventory reads come from TanStack DB live queries. Browser clients persist
+collections in PowerSync SQLite on every platform. Category, product, and batch
+mutations are durably queued offline, uploaded through authenticated
+`/api/inventory/*` commands, committed in Postgres, and streamed back by
+PowerSync. The signed organization claim defines every sync stream.
+
+The original Cloudflare Durable Object, outbox, and `/api/sync/live` WebSocket
+implementation remains in the repository as production compatibility and
+migration source. It is not the active persistence path for migrated clients.
+Do not delete that implementation, its schema, or its contracts until an
+explicit retirement removes the remaining production dependency.
 
 ## Run locally
 
 ```sh
 vp install
-vp run dev
+vp run dev:web
 ```
 
-That starts the API Worker (`:8787`), auth Worker (`:8788`), desktop
-Vite/Electron renderer (`:5173`), and web SPA (`:5174`). Sign-in is optional.
-Local inventory works without an account; authenticated writes sync through
-`/api/sync/live`.
+That starts the API Worker (`:8787`), auth Worker (`:8788`), and browser app
+(`:5174`). Use `vp run dev:desktop` instead to run the same backend stack and
+web renderer inside the Electron shell. The two commands are separate on
+purpose: `apps/web` owns the renderer, while `apps/desktop` owns only Electron's
+main process, preload bridge, packaging, and native integrations.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
 resource. There are two isolated cloud stages, `dev` and `prod`:
 
 ```sh
-bun run plan:dev      # preview
-bun run deploy:dev
-bun run deploy:prod
+pnpm run plan:dev      # preview
+pnpm run deploy:dev
+pnpm run deploy:prod
 ```
 
 Create gitignored `.env.dev` and `.env.prod` at the repository root. Give each
@@ -77,8 +81,8 @@ CI does not run a separate Vite build. Bootstrap its least-privilege Cloudflare
 credentials once:
 
 ```sh
-bun alchemy login --profile admin
-CLOUDFLARE_ACCOUNT_ID=<account-id> bun run setup:ci
+pnpm exec alchemy login --profile admin
+CLOUDFLARE_ACCOUNT_ID=<account-id> pnpm run setup:ci
 ```
 
 The bootstrap stack creates the `Development` and `Production` GitHub
@@ -93,6 +97,7 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
+- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.
@@ -145,7 +150,7 @@ Google Play. GitHub Actions `eas` still needs repository secret `EXPO_TOKEN`;
 builds started by the Expo GitHub app do not.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
-desktop app with `vp run build`. Production deploys run `bun alchemy deploy`,
+desktop app with `vp run build`. Production deploys run `pnpm exec alchemy deploy`,
 which serves the SPA from `PRODUCTION_DOMAIN` and the API from
 `api.<PRODUCTION_DOMAIN>`, with auth at `auth.<PRODUCTION_DOMAIN>`.
 

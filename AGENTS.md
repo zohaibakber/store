@@ -56,23 +56,22 @@ not dead code, so don't delete them for being unused.
 
 ## Cursor Cloud instructions
 
-Toolchain (Bun `1.3.14` + the Vite+ `vp` CLI) is preinstalled in the VM and on
+Toolchain (pnpm `11.22.0` + Node.js 24 + the Vite+ `vp` CLI) is installed in the VM and on
 `PATH` in login shells. The startup update script runs `vp install` and fetches
 the Electron binary. From the repo root: `vp install`, `vp check`, `vp test`,
 and `vp build` (Turborepo fans them out per package).
 
-- **Electron binary.** Bun does not run Electron's `postinstall`, so
-  `bun install`/`vp install` alone leave `apps/desktop/node_modules/electron`
-  without its `dist/` binary. Fetch it via that package's `install.js` (the
-  update script does this with `bun`). If `vp dev` for the desktop errors that
+- **Electron binary.** If installation leaves `apps/desktop/node_modules/electron`
+  without its `dist/` binary, fetch it via that package's `install.js`. If
+  `vp dev` for the desktop errors that
   Electron is missing, run
-  `bun apps/desktop/node_modules/electron/install.js`.
+  `node apps/desktop/node_modules/electron/install.js`.
 - **Desktop app.** `cd apps/desktop && vp dev` starts the Vite dev server
   (`:5173`) and launches Electron. In the headless VM you must set
   `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
   `DISPLAY=:1`. `ERROR:dbus/...` lines in the log are harmless.
 - **Backend.** `apps/server` runs via
-  `bun alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
+  `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
   stores state remotely and binds real dev-stage D1 + Durable Objects. There is
   no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,

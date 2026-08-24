@@ -1,4 +1,15 @@
-import { InvoiceExtraction, ProductScanInput, ProductScanResult } from "@store/contracts";
+import {
+  ImportInventoryCommand,
+  ImportInventoryCommandResult,
+  IssueInvoiceCommand,
+  IssueInvoiceResult,
+  InvoiceExtraction,
+  LegacyCatalogMigrationCommand,
+  LegacyCatalogMigrationResult,
+  ProductScanInput,
+  ProductScanResult,
+  SyncOperation,
+} from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
@@ -9,6 +20,7 @@ import { OrganizationAuth } from "../auth/organization";
 import {
   BadGateway,
   BadRequest,
+  Conflict,
   Forbidden,
   PayloadTooLarge,
   TooManyRequests,
@@ -36,7 +48,7 @@ const system = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
   .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
 
-const sync = HttpApiGroup.make("sync").add(
+const legacySync = HttpApiGroup.make("sync").add(
   HttpApiEndpoint.get("live", "/api/sync/live", {
     query: {
       organizationId: Schema.optionalKey(Schema.String),
@@ -71,4 +83,44 @@ const productScans = HttpApiGroup.make("productScans").add(
   }).middleware(OrganizationAuth),
 );
 
-export const StoreApi = HttpApi.make("StoreApi").add(system, sync, uploads, productScans);
+const ElectricMutationResult = Schema.Struct({
+  txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+});
+
+const electricMutations = HttpApiGroup.make("electricMutations")
+  .add(
+    HttpApiEndpoint.post("write", "/api/inventory/mutations", {
+      payload: Schema.Struct({ operation: SyncOperation }),
+      success: ElectricMutationResult,
+      error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("importInventory", "/api/inventory/imports", {
+      payload: ImportInventoryCommand,
+      success: ImportInventoryCommandResult,
+      error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("issueInvoice", "/api/inventory/invoices", {
+      payload: IssueInvoiceCommand,
+      success: IssueInvoiceResult,
+      error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("migrateLegacyCatalog", "/api/inventory/legacy-migrations", {
+      payload: LegacyCatalogMigrationCommand,
+      success: LegacyCatalogMigrationResult,
+      error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  );
+
+export const StoreApi = HttpApi.make("StoreApi").add(
+  system,
+  legacySync,
+  uploads,
+  productScans,
+  electricMutations,
+);

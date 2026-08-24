@@ -1,6 +1,7 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 import {
   createRootRouteWithContext,
+  Navigate,
   Outlet,
   redirect,
   useRouterState,
@@ -17,19 +18,16 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
-import type { Store } from "@/lib/store";
+import type { InventoryHost } from "@/lib/inventory-host";
 
 export interface RouterContext {
-  readonly store: Store;
   readonly initialAuth: InitialAuth;
   /** Live session truth for beforeLoad admit — must stay in sync with AuthProvider. */
   readonly sessionSnapshot: WorkspaceSnapshot | null;
-  /**
-   * Cold-start: OfflineStore still opening. Skip admit redirects so a signed-in
-   * cookie session is not bounced to /sign-in before the snapshot publishes.
-   */
+  /** Skip redirects while an authentication transition is being published. */
   readonly sessionPending: boolean;
   readonly access: HostAccessPolicy;
+  readonly inventory: InventoryHost | null;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -67,7 +65,19 @@ function AppUpdater() {
 
 function AuthenticatedLayout() {
   const auth = useAuth();
-  if (auth._tag === "Loading" && !auth.snapshot) return <AppLoading />;
+  const { access } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  // beforeLoad protects navigation. This render-time check also protects an
+  // already-mounted route while the live auth snapshot changes underneath it.
+  // Hide every scope transition so local or previous-organization rows cannot
+  // remain visible while router invalidation is in flight.
+  if (auth._tag === "Loading") return <AppLoading />;
+
+  const verdict = access.admit({ location: { pathname }, snapshot: auth.snapshot });
+  if (verdict._tag === "Redirect") {
+    return <Navigate replace={verdict.replace} to={verdict.to} />;
+  }
   return <AppShell />;
 }
 

@@ -2,7 +2,11 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { RefreshInput, SignOutInput, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
-import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
+import {
+  unauthenticatedWorkspace,
+  withWorkspaceOnline,
+  WorkspaceSnapshot,
+} from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
   RequestError,
@@ -43,7 +47,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       apiBaseUrl: baseUrl,
       authBaseUrl,
       tokens: this.#tokens,
-      fetch: (url, init) => net.fetch(url, init),
+      fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
       needsRefresh: refreshTokenNeedsRefresh,
       refreshSession: () => this.#rotateTokens(),
       requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
@@ -119,6 +123,10 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   apiRequest(pathname: string, init?: JsonRequestInit) {
     return this.#http.apiRequest(pathname, init);
+  }
+
+  apiFetch(input: RequestInfo | URL, init?: RequestInit) {
+    return this.#http.apiFetch(input, init);
   }
 
   authRequest(pathname: string, init?: JsonRequestInit) {

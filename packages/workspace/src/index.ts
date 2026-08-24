@@ -24,24 +24,8 @@ export {
   type SessionSnapshotHooks,
 } from "./session-broker";
 export {
-  AuthenticatedWorkspace,
-  GuestWorkspaceRefused,
-  WorkspaceActivationError,
   type JsonApiResponse,
   type JsonRequestInit,
   type JsonRequestPayload,
   type WorkspaceAuthAdapter,
-  type WorkspaceCommand,
-  type WorkspaceEvents,
-  type WorkspaceStore,
-  type WorkspaceStoreAdapter,
-  type WorkspaceTarget,
 } from "./workspace";
-export {
-  invokeStoreHandler,
-  makeOfflineStoreApi,
-  storeHandlers,
-  subscribeSyncStatus,
-  withStoreEffect,
-  type StoreMethod,
-} from "./store-api";

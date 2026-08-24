@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useStore } from "@/lib/store";
+import { useInventoryActions } from "@/lib/inventory-db";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
@@ -140,14 +140,14 @@ const productToFormValues = (product: Product): ProductFormValues => {
 
 function useProductCreateForm(categories: ReadonlyArray<Category>) {
   const navigate = useNavigate();
-  const store = useStore();
+  const { createProduct } = useInventoryActions();
 
   return useForm({
     ...productFormOpts,
     defaultValues: { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
     onSubmit: async ({ value }) => {
       try {
-        const product = await store.createProduct(
+        const product = await createProduct(
           formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
         );
         toastManager.add({ title: "Product created", type: "success" });
@@ -164,13 +164,13 @@ function useProductUpdateForm(
   categories: ReadonlyArray<Category>,
   onUpdated: () => void,
 ) {
-  const store = useStore();
+  const { updateProduct } = useInventoryActions();
   return useForm({
     ...productFormOpts,
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
       try {
-        await store.updateProduct({
+        await updateProduct({
           id: product.id,
           ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
         });

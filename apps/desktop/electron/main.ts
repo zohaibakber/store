@@ -1,28 +1,19 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { OrganizationCommand, TokenSet } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
-import { encodeStoreError, InvoiceExtraction } from "@store/contracts";
-import { OfflineStore, PersistenceError, layer as persistenceLayer } from "@store/persistence";
-import {
-  AuthenticatedWorkspace,
-  fetchOrganizationRoster,
-  invokeStoreHandler,
-  organizeOrganization,
-  withStoreEffect,
-  type WorkspaceStoreAdapter,
-  type WorkspaceTarget,
-} from "@store/workspace";
+import { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
 import * as Effect from "effect/Effect";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
+import { registerInventoryHttpIpc } from "./inventory-http";
+import { registerLegacyLocalInventoryIpc } from "./legacy-local-inventory";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
 import {
   desktopRendererOrigin,
@@ -32,8 +23,10 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { makeShutdownCoordinator } from "./shutdown";
-import { STORE_CHANNEL_ENTRIES, STORE_SYNC_STATUS_CHANNEL } from "./store-channels";
-import { openDesktopSyncSocket } from "./sync-socket";
+import {
+  openDesktopTanStackDbPersistence,
+  type DesktopTanStackDbPersistence,
+} from "./tanstack-db-persistence";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,8 +54,10 @@ for (const file of envFiles) {
 }
 
 let win: BrowserWindow | null;
-let workspace: AuthenticatedWorkspace | undefined;
 let disposeUpdater: (() => Promise<void>) | undefined;
+let tanstackDbPersistence: DesktopTanStackDbPersistence | undefined;
+let disposeInventoryHttp: (() => void) | undefined;
+let disposeLegacyLocalInventory: (() => void) | undefined;
 
 function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
@@ -105,9 +100,6 @@ if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
   }
 }
 
-// Local commits wake the sync engine right away. The live socket usually
-// carries that signal; this poll only covers a missed wakeup.
-const DESKTOP_SYNC_POLL_INTERVAL_MS = 300_000;
 const TITLE_BAR_HEIGHT = 40;
 const TITLE_BAR_COLOR = "#01000000";
 const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
@@ -137,64 +129,6 @@ function registerRendererCsp() {
   });
 }
 
-type StoreIpcResult<A> =
-  | { readonly ok: true; readonly value: A }
-  | {
-      readonly ok: false;
-      readonly error: unknown;
-    };
-
-const ErrorDetails = Schema.Struct({ message: Schema.String });
-const errorMessage = (cause: unknown) => {
-  const details = Schema.decodeUnknownOption(ErrorDetails)(cause);
-  return details._tag === "Some" ? details.value.message : String(cause);
-};
-
-const encodeStoreErrorSafely = (cause: unknown) => {
-  try {
-    return encodeStoreError(cause);
-  } catch {
-    return encodeStoreError(
-      PersistenceError.make({ operation: "run store", message: errorMessage(cause) }),
-    );
-  }
-};
-
-const runStore = async <A, E>(
-  effect: Effect.Effect<A, E, OfflineStore>,
-): Promise<StoreIpcResult<A>> => {
-  if (!workspace)
-    return {
-      ok: false,
-      error: encodeStoreError(
-        PersistenceError.make({
-          operation: "run store",
-          message: "Local store isn't ready yet",
-        }),
-      ),
-    };
-  try {
-    return { ok: true, value: await workspace.runStore(effect) };
-  } catch (cause) {
-    return { ok: false, error: encodeStoreErrorSafely(cause) };
-  }
-};
-
-const withStore = withStoreEffect;
-
-function registerStoreIpc() {
-  for (const [method, channel] of STORE_CHANNEL_ENTRIES)
-    ipcMain.handle(channel, (_event, input) => runStore(invokeStoreHandler(method, input)));
-}
-
-const organizationKey = (organizationId: string) =>
-  createHash("sha256").update(organizationId).digest("hex").slice(0, 32);
-
-const migrationsFolder = () =>
-  app.isPackaged
-    ? path.join(process.resourcesPath, "database-migrations")
-    : path.join(process.env.APP_ROOT, "..", "..", "packages", "db", "migrations", "local");
-
 async function loadDeviceId() {
   const file = path.join(app.getPath("userData"), "device-id");
   try {
@@ -207,97 +141,21 @@ async function loadDeviceId() {
   }
 }
 
-const dataDirectory = (target: WorkspaceTarget) =>
-  target._tag === "Locked"
-    ? path.join(app.getPath("userData"), "locked", "data")
-    : path.join(
-        app.getPath("userData"),
-        "organizations",
-        organizationKey(target.organizationId),
-        "data",
-      );
+let authTransition: Promise<void> = Promise.resolve();
 
-const workspaceStores: WorkspaceStoreAdapter = {
-  open: async (target) => {
-    const dataDir = dataDirectory(target);
-    const baseConfig = {
-      dataDir,
-      migrationsFolder: migrationsFolder(),
-      clientPlatform: "desktop" as const,
-      clientVersion: app.getVersion(),
-      resyncIntervalMillis: DESKTOP_SYNC_POLL_INTERVAL_MS,
-    };
-    const persistenceConfig =
-      target._tag === "Authenticated"
-        ? {
-            ...baseConfig,
-            syncTransport: {
-              openLive: openDesktopSyncSocket({
-                baseUrl: API_BASE_URL,
-                organizationId: target.organizationId,
-                deviceId: target.deviceId,
-                getAccessToken: () => authBroker.accessToken,
-                ensureFreshAccess: () => authBroker.ensureFreshAccess().then(() => undefined),
-                electronOrigin: `${ELECTRON_PROTOCOL}://app`,
-              }),
-            },
-            workspace: {
-              organizationId: target.organizationId,
-              userId: target.userId,
-              deviceId: target.deviceId,
-            },
-          }
-        : baseConfig;
-    await mkdir(path.dirname(dataDir), { recursive: true });
-    const runtime = ManagedRuntime.make(persistenceLayer(persistenceConfig));
-    try {
-      await runtime.runPromise(OfflineStore.pipe(Effect.asVoid));
-    } catch (cause) {
-      await runtime.dispose();
-      throw cause;
-    }
-    return {
-      run: (effect) => runtime.runPromise(effect),
-      sync: () => runtime.runPromise(withStore((store) => store.sync)),
-      onSyncStatusChange: (listener) =>
-        runtime.runCallback(
-          withStore((store) =>
-            store.syncStatusChanges.pipe(
-              Stream.runForEach((status) => Effect.sync(() => listener(status))),
-            ),
-          ),
-        ),
-      dispose: () => runtime.dispose(),
-    };
-  },
+const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> => {
+  const result = authTransition.then(transition, transition);
+  authTransition = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 };
 
-const makeWorkspace = (deviceId: string) =>
-  new AuthenticatedWorkspace({
-    auth: authBroker,
-    stores: workspaceStores,
-    deviceId,
-    events: {
-      publishSnapshot: (snapshot) => win?.webContents.send("auth:session-changed", snapshot),
-      publishSyncStatus: (status) => win?.webContents.send(STORE_SYNC_STATUS_CHANNEL, status),
-    },
-  });
-
-const currentWorkspace = () => {
-  if (!workspace) throw new Error("Workspace isn't ready yet.");
-  return workspace;
+const publishSession = (snapshot: WorkspaceSnapshot) => {
+  win?.webContents.send("auth:session-changed", snapshot);
+  return snapshot;
 };
-
-async function initializeWorkspace(deviceId: string) {
-  workspace = makeWorkspace(deviceId);
-  return workspace.initialize();
-}
-
-async function disposeWorkspace() {
-  const current = workspace;
-  workspace = undefined;
-  if (current) await current.dispose();
-}
 
 const AuthTokens = Schema.NullOr(TokenSet);
 const InvoiceUpload = Schema.Struct({
@@ -312,22 +170,29 @@ const InvoiceUpload = Schema.Struct({
 const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", () => currentWorkspace().snapshot);
+  ipcMain.handle("auth:get-session", () => authBroker.snapshot);
   ipcMain.handle("auth:get-oauth-redirect-uri", () => `${ELECTRON_PROTOCOL}://auth/callback`);
   ipcMain.handle("auth:take-oauth-callback", () => oauthCallbacks.take());
   ipcMain.handle("auth:adopt-session", async (_event, input) => {
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
-    return currentWorkspace().execute({ _tag: "AdoptSession", tokens });
+    return serializeAuthTransition(() => authBroker.adoptSession(tokens).then(publishSession));
   });
-  ipcMain.handle("auth:renew-session", () => currentWorkspace().execute({ _tag: "RenewSession" }));
-  ipcMain.handle("auth:sign-out", () => currentWorkspace().execute({ _tag: "SignOut" }));
+  ipcMain.handle("auth:renew-session", () =>
+    serializeAuthTransition(() => authBroker.renewSession().then(publishSession)),
+  );
+  ipcMain.handle("auth:sign-out", () =>
+    serializeAuthTransition(async () => {
+      await authBroker.signOut();
+      publishSession(authBroker.snapshot);
+    }),
+  );
   ipcMain.handle("auth:organization", () =>
-    fetchOrganizationRoster((pathname, init) => currentWorkspace().authRequest(pathname, init)),
+    fetchOrganizationRoster((pathname, init) => authBroker.authRequest(pathname, init)),
   );
   ipcMain.handle("auth:organize", async (_event, input) => {
     const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
     return organizeOrganization(
-      (pathname, init) => currentWorkspace().authRequest(pathname, init),
+      (pathname, init) => authBroker.authRequest(pathname, init),
       command,
     );
   });
@@ -351,7 +216,7 @@ function registerServerIpc() {
         : "text/csv";
       body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
     }
-    const raw = await currentWorkspace().request("/api/uploads", { method: "POST", body });
+    const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
     return await Effect.runPromise(
       Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
         Effect.mapError(() => new Error("Invoice analysis returned an unexpected response.")),
@@ -382,7 +247,7 @@ function createWindow() {
           },
         }),
     webPreferences: {
-      preload: path.join(__dirname, "preload.mjs"),
+      preload: path.join(__dirname, "preload.cjs"),
       backgroundThrottling: true,
       contextIsolation: true,
       devTools: !app.isPackaged,
@@ -396,10 +261,7 @@ function createWindow() {
   win.setIcon(appIconPath());
   app.dock?.setIcon(appIconPath());
 
-  win.once("ready-to-show", () => {
-    win?.show();
-    void workspace?.startSync().catch(() => undefined);
-  });
+  win.once("ready-to-show", () => win?.show());
 
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
@@ -451,7 +313,12 @@ app.on("activate", () => {
 
 const shutdown = makeShutdownCoordinator({
   dispose: async () => {
-    const results = await Promise.allSettled([disposeWorkspace(), disposeUpdater?.()]);
+    const results = await Promise.allSettled([
+      disposeUpdater?.(),
+      tanstackDbPersistence?.dispose(),
+      Promise.resolve(disposeInventoryHttp?.()),
+      Promise.resolve(disposeLegacyLocalInventory?.()),
+    ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -498,9 +365,22 @@ void app.whenReady().then(async () => {
     contentSecurityPolicy: rendererCsp,
   });
   registerRendererCsp();
+  tanstackDbPersistence = await openDesktopTanStackDbPersistence({
+    ipcMain,
+    userDataPath: app.getPath("userData"),
+  });
   const deviceId = await loadDeviceId();
-  await initializeWorkspace(deviceId);
-  registerStoreIpc();
+  disposeInventoryHttp = registerInventoryHttpIpc({
+    apiBaseUrl: API_BASE_URL,
+    auth: authBroker,
+    deviceId,
+    ipcMain,
+  });
+  disposeLegacyLocalInventory = registerLegacyLocalInventoryIpc({
+    ipcMain,
+    userDataPath: app.getPath("userData"),
+  });
+  await authBroker.initialize();
   registerAuthIpc();
   registerServerIpc();
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win);

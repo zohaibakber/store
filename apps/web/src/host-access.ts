@@ -20,6 +20,22 @@ export type AccessVerdict =
 export type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
 /**
+ * Inventory identity selected by the host. The tag is part of the contract:
+ * local desktop workspaces must never be passed to PowerSync or server mutations.
+ */
+export type HostInventoryScope =
+  | {
+      readonly _tag: "Remote";
+      readonly organizationId: string;
+      readonly userId: string;
+    }
+  | {
+      readonly _tag: "Local";
+      readonly organizationId: "local";
+      readonly userId: "local";
+    };
+
+/**
  * Host access policy. Inject exactly one adapter at bootstrap
  * (`browserHostAccess` or `desktopHostAccess`). Routes stay host-blind.
  *
@@ -35,6 +51,9 @@ export interface HostAccessPolicy {
 
   readonly chrome: (input: AccessLocation) => AppChrome;
 
+  /** Resolves the inventory workspace available for this host and session. */
+  readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => HostInventoryScope | null;
+
   /**
    * True iff Locked guest inventory and sign-in “continue offline” are part of
    * this host product.
@@ -49,6 +68,21 @@ const isPublicPath = (pathname: string) => PUBLIC_PATHS.has(pathname);
 const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
   snapshot?.status === "authenticated" && snapshot.activeOrganization != null;
 
+const remoteInventoryScope = (snapshot: WorkspaceSnapshot | null): HostInventoryScope | null => {
+  if (snapshot?.status !== "authenticated" || !snapshot.activeOrganization) return null;
+  return {
+    _tag: "Remote",
+    organizationId: snapshot.activeOrganization.id,
+    userId: snapshot.user.id,
+  };
+};
+
+const localInventoryScope: HostInventoryScope = {
+  _tag: "Local",
+  organizationId: "local",
+  userId: "local",
+};
+
 const bareChrome = (input: AccessLocation): AppChrome =>
   isPublicPath(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
 
@@ -56,6 +90,7 @@ const bareChrome = (input: AccessLocation): AppChrome =>
 export const browserHostAccess = (): HostAccessPolicy => ({
   allowsGuestWorkspace: false,
   chrome: bareChrome,
+  inventoryScope: remoteInventoryScope,
   admit: ({ location, snapshot }) => {
     const authenticated = hasAuthenticatedWorkspace(snapshot);
     if (isPublicPath(location.pathname)) {
@@ -71,6 +106,7 @@ export const browserHostAccess = (): HostAccessPolicy => ({
 export const desktopHostAccess = (): HostAccessPolicy => ({
   allowsGuestWorkspace: true,
   chrome: bareChrome,
+  inventoryScope: (snapshot) => remoteInventoryScope(snapshot) ?? localInventoryScope,
   admit: ({ location, snapshot }) => {
     if (isPublicPath(location.pathname) && hasAuthenticatedWorkspace(snapshot)) {
       return { _tag: "Redirect", to: "/", replace: true };

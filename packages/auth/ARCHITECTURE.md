@@ -5,11 +5,12 @@
 Tabaaq currently delegates identity, sessions, organizations, UI state, and
 token refresh to Clerk. That choice made the first release smaller, but it also
 spread Clerk-specific IDs and lifecycle rules through the API, Electron main
-process, React renderer, Expo app, sync activation, deployment config, and CSP.
+process, React renderer, Expo app, synchronization, deployment config, and CSP.
 The replacement must preserve the useful invariant: an authenticated
-organization ID names the same local database and Durable Object. It must also
-make local use independent of authentication. A signed-out desktop opens the
-local store; signing in switches to an organization store and enables sync.
+organization ID scopes the same Postgres rows, PowerSync streams, and local
+replica on every client. During migration, that ID also remains the key of the
+legacy `ORGANIZATION_STORE` Durable Object so its production data can be found
+for export and backfill.
 
 ## Usage (caller's view)
 
@@ -104,8 +105,9 @@ const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk })
 
 The host owns secure token storage. Electron uses `safeStorage`, Expo uses
 SecureStore, and the browser keeps the refresh credential in an HttpOnly
-SameSite cookie. A host gives the workspace a token set or `null`. `null`
-always activates the local store.
+SameSite cookie. An authenticated workspace snapshot supplies the organization
+scope for Postgres mutations and PowerSync streams. TanStack DB owns each
+client's persisted inventory collections independently of the auth lifecycle.
 
 ## Shape
 
@@ -219,9 +221,17 @@ encode.
 - Access tokens are short-lived ES256 JWTs. The auth Worker signs with a private
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
-- A new user gets one organization in the same D1 batch. The organization ID is
-  also the inventory Durable Object key. No mapping table is needed for new
-  accounts.
+- A new user gets one organization in the same D1 batch. The organization ID
+  directly scopes inventory rows and PowerSync streams. It also remains the
+  legacy Durable Object lookup key during migration, so no separate mapping is
+  needed for export or backfill.
+- Postgres is the authoritative inventory database. Authenticated
+  `/api/inventory/*` requests write to Postgres. PowerSync validates the same
+  JWT and filters every TanStack DB stream by its signed organization claim.
+- The Cloudflare Durable Object and `/api/sync/live` WebSocket path is preserved
+  as production compatibility and migration source. Do not delete its schema,
+  contracts, or implementation until an explicit retirement confirms that no
+  production dependency remains.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in
   platform secure storage.
@@ -332,9 +342,9 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 
 ## Implementation notes and deviations
 
-- The implemented workspace command adopts the complete token set, not only an
-  access token. Native hosts need the rotating refresh credential, and keeping
-  that contract explicit prevents hidden token storage inside React components.
+- Native hosts adopt the complete token set, not only an access token. Native
+  hosts need the rotating refresh credential, and the explicit contract keeps
+  token storage out of React components.
 - Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
   development uses an unprefixed cookie because the prefix requires `Secure`.
 - The auth database keeps the old organization-binding table until production

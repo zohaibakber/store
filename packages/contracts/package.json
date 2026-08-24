@@ -12,10 +12,8 @@
     "./sync-live": "./src/sync/live.ts",
     "./workspace": "./src/workspace.ts",
     "./sync-session": "./src/sync/session.ts",
-    "./offline-store.api": "./src/store/api.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
     "./server-api.schema": "./src/server/schema.ts",
-    "./store-errors": "./src/store/errors.ts",
     "./store-helpers": "./src/store/helpers.ts",
     "./store.schema": "./src/store/schema.ts",
     "./sync.schema": "./src/sync/schema.ts",
@@ -28,12 +26,12 @@
   "dependencies": {
     "@noble/hashes": "2.3.0",
     "@store/db": "workspace:*",
-    "drizzle-orm": "catalog:",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "typescript": "catalog:",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

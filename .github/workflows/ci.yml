@@ -23,21 +23,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: 1.3.14
+          version: 11.22.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Check (format, lint, typecheck)
-        run: bunx vp check
+        run: pnpm exec vp check
 
       - name: Workspace checks
-        run: bun run check
+        run: pnpm run check
 
       - name: Tests
-        run: bunx vp test
+        run: pnpm exec vp test
 
   deploy:
     needs: verify
@@ -49,17 +54,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Check required configuration
         run: |
           for name in AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
-            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do
+            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID NEON_API_KEY POWERSYNC_URL; do
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty for ${STAGE}."
               exit 1
@@ -83,6 +98,9 @@ jobs:
           AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
@@ -91,6 +109,7 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
 
       - name: Deploy ${{ env.STAGE }}
         run: bun alchemy deploy --stage "${STAGE}" --yes
@@ -105,6 +124,7 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}
@@ -113,4 +133,5 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
           GITHUB_SHA: ${{ github.sha }}

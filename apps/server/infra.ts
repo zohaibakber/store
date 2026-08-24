@@ -23,6 +23,10 @@ import {
   type AuthVerificationConfig,
 } from "./src/auth/session";
 import {
+  ElectricMutationDatabase,
+  ElectricMutationDatabaseLive,
+} from "./src/electric/mutation-database";
+import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
   productionSiteOrigin,
@@ -48,9 +52,9 @@ export {
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
 /**
- * `ORGANIZATION_STORE` Durable Object names are first-party organization ids.
- * Do not rename the class or change the key without a data migration. Existing
- * sqlite databases are addressed by that name.
+ * `ORGANIZATION_STORE` is the deployed Durable Object identity that owns
+ * legacy production inventory. Do not rename or remove this binding until an
+ * export/backfill has completed and the copied data has been verified.
  */
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
 
@@ -84,6 +88,7 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
+    const electricMutations = yield* ElectricMutationDatabase;
     const ai = yield* Cloudflare.Workers.AI();
     const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
       namespaceId: 1001,
@@ -117,6 +122,7 @@ export const ApiLive = Api.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
+    const powerSyncUrl = yield* Config.string("POWERSYNC_URL").pipe(Config.withDefault(""));
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const { stage } = yield* Alchemy.Stack;
     const productionHostname = resolveProductionHostname(productionDomainEnv);
@@ -159,18 +165,22 @@ export const ApiLive = Api.make(
       audience: "tabaaq-api",
       publicJwk,
     };
-
     const RuntimeLive = Layer.succeed(ServerRuntime, {
       electronProtocol: security.electronProtocol,
       trustedOrigins: security.trustedOrigins,
       getSession: (headers) => authenticateHeaders(headers, jwtConfig),
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
+      powerSyncUrl: powerSyncUrl.trim().replace(/\/+$/u, ""),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
-      runSync: (actor, request) =>
-        organizationStore.getByName(actor.organizationId).exchange(actor, request),
+      // Kept only for already-deployed clients during the migration window.
+      // New web, mobile, and desktop clients use Postgres through PowerSync.
       connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
+      writeElectricMutation: electricMutations.write,
+      importInventory: electricMutations.importInventory,
+      issueInvoice: electricMutations.issueInvoice,
+      migrateLegacyCatalog: electricMutations.migrateLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
@@ -182,8 +192,10 @@ export const ApiLive = Api.make(
     };
   }).pipe(
     Effect.provide(OrganizationStoreLive),
+    Effect.provide(ElectricMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
+    Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
   ),
 );
 

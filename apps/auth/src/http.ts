@@ -11,7 +11,9 @@ import {
   SignOutInput,
   bearerToken,
   isTrustedOrigin,
+  powerSyncPublicJwks,
   type AuthClientKind,
+  type JwtConfiguration,
   type TokenSet,
 } from "@store/auth";
 import * as Effect from "effect/Effect";
@@ -29,6 +31,7 @@ const refreshCookieName = (secureCookies: boolean) =>
 
 export interface AuthHttpConfiguration {
   readonly baseUrl: string;
+  readonly publicJwk: JwtConfiguration["publicJwk"];
   readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
@@ -143,6 +146,13 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
           "GET",
           "/health",
           Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })),
+        );
+        yield* router.add(
+          "GET",
+          "/.well-known/jwks.json",
+          Effect.succeed(
+            HttpServerResponse.jsonUnsafe(powerSyncPublicJwks(configuration.publicJwk)),
+          ),
         );
         yield* router.add(
           "POST",

@@ -7,7 +7,7 @@ Use this guide when installing, previewing, or discovering coss components via t
 - Always use the project's package runner:
   - `npx shadcn@latest ...`
   - `pnpm dlx shadcn@latest ...`
-  - `bunx --bun shadcn@latest ...`
+  - `pnpm dlx shadcn@latest ...`
 - Do not invent flags. Use only documented CLI flags.
 
 ## Core Commands for coss Usage

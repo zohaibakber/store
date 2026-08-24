@@ -32,7 +32,7 @@ export interface TokenStore {
   set(tokens: TokenSetType | null): void;
 }
 
-export type SessionFetch = (url: string, init?: RequestInit) => Promise<Response>;
+export type SessionFetch = typeof fetch;
 
 export interface SessionHttpClientOptions {
   readonly apiBaseUrl: string;
@@ -174,6 +174,18 @@ export class SessionHttpClient {
     return this.request(this.#apiBaseUrl, pathname, init);
   }
 
+  /** Bearer-authenticated raw fetch for streaming/non-JSON API clients. */
+  async apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    await this.ensureFreshAccess();
+    const request = this.#apiRequest(input, init);
+    let response = await this.#sendRaw(request.clone());
+    if (response.status === 401) {
+      const refreshed = await this.ensureFreshAccess(true);
+      if (refreshed) response = await this.#sendRaw(request.clone());
+    }
+    return response;
+  }
+
   authRequest(pathname: string, init?: JsonRequestInit): Promise<JsonApiResponse> {
     return this.request(this.#authBaseUrl, pathname, init);
   }
@@ -225,6 +237,29 @@ export class SessionHttpClient {
       credentials: "omit",
       headers,
     });
+  }
+
+  #apiRequest(input: RequestInfo | URL, init?: RequestInit): Request {
+    const request =
+      input instanceof Request
+        ? new Request(input, init)
+        : new Request(new URL(input.toString(), `${this.#apiBaseUrl}/`), init);
+    const apiOrigin = new URL(`${this.#apiBaseUrl}/`).origin;
+    if (new URL(request.url).origin !== apiOrigin) {
+      throw new TypeError("Authenticated API requests must use the configured API origin.");
+    }
+    return request;
+  }
+
+  #sendRaw(request: Request): Promise<Response> {
+    const headers = new Headers(request.headers);
+    const extra = this.#requestHeaders?.();
+    if (extra) {
+      new Headers(extra).forEach((value, key) => headers.set(key, value));
+    }
+    const tokens = this.#tokens.get();
+    if (tokens) headers.set("authorization", `Bearer ${tokens.accessToken}`);
+    return this.#fetch(new Request(request, { credentials: "omit", headers }));
   }
 }
 

@@ -4,17 +4,8 @@
   appId: "com.tabaaq.desktop",
   executableName: "tabaaq",
   asar: true,
-  // libSQL ships a prebuilt N-API binary that cannot be read from inside the
-  // asar archive, so it must stay unpacked. N-API means no rebuild per
-  // Electron version.
-  //
-  // Each platform is a separate optional dependency
-  // (@libsql/linux-x64-gnu, @libsql/darwin-arm64, @libsql/win32-x64-msvc, ...).
-  // The package manager installs only the one for this machine. Build each
-  // target on its own platform, or force-install the matching optional
-  // dependency first. Otherwise the artifact ships without a loadable
-  // index.node. electron-builder reports the absent ones as "missing optional
-  // dependencies"; on a single-platform build that warning is expected.
+  // Native SQLite packages cannot load their binaries from inside the asar.
+  // electron-builder rebuilds better-sqlite3 for the target Electron ABI.
   asarUnpack: ["**/*.node"],
   // Fail before signing or publishing if monorepo/server sources, credentials,
   // or database schema code land in the packaged app.
@@ -46,10 +37,6 @@
   // orange mark from apps/web/public/logo-dev.png in the main process.
   icon: "assets/prod/icon.png",
   extraResources: [
-    {
-      from: "../../packages/db/migrations/local",
-      to: "database-migrations",
-    },
     {
       // BrowserWindow's `icon` option loads through nativeImage, which reads
       // the real filesystem and can't see into app.asar. The icon must live

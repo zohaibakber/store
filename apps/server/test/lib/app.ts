@@ -10,11 +10,7 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { ServerRoutes } from "../../src/http/app";
-import {
-  ServerRuntime,
-  type ServerRuntimeContract,
-  type SyncLiveInput,
-} from "../../src/http/runtime";
+import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 
 const session = AuthSession.make({
   user: {
@@ -67,12 +63,15 @@ const testRuntimeContext = Context.make(RuntimeContext, {
 });
 
 export interface AppOptions {
+  readonly powerSyncUrl?: string;
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
-  readonly connectSyncLive?: (
-    input: SyncLiveInput,
-  ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
+  readonly connectSyncLive?: ServerRuntimeContract["connectSyncLive"];
+  readonly writeElectricMutation?: ServerRuntimeContract["writeElectricMutation"];
+  readonly importInventory?: ServerRuntimeContract["importInventory"];
+  readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
+  readonly migrateLegacyCatalog?: ServerRuntimeContract["migrateLegacyCatalog"];
 }
 
 /** Route test harness. Organization access follows the JWT session: no session means revoked. */
@@ -107,23 +106,20 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
             : unauthenticated,
         ),
       invoiceAi: Effect.succeed(invoiceAi),
+      powerSyncUrl: options.powerSyncUrl ?? "https://powersync.example",
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-      runSync: (actor, request) =>
-        Effect.succeed({
-          protocolVersion: 2 as const,
-          organizationId: actor.organizationId,
-          cursor: request.cursor,
-          nextCursor: request.cursor,
-          headCursor: request.cursor,
-          hasMore: false,
-          acknowledgements: [],
-          changes: [],
-        }),
-      connectSyncLive: (input) =>
-        options.connectSyncLive
-          ? options.connectSyncLive(input)
-          : Effect.succeed(HttpServerResponse.empty()),
+      connectSyncLive:
+        options.connectSyncLive ??
+        (() => Effect.succeed(HttpServerResponse.empty({ status: 101 }))),
+      writeElectricMutation: options.writeElectricMutation ?? (() => Effect.succeed({ txid: 1 })),
+      importInventory:
+        options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
+      issueInvoice:
+        options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
+      migrateLegacyCatalog:
+        options.migrateLegacyCatalog ??
+        (() => Effect.die("Legacy catalog migration is not configured.")),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(
