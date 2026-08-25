@@ -241,7 +241,8 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
             eq(categories.id, change.entityId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
       if (change.action === "delete") {
         const [product] = yield* tx
@@ -287,7 +288,8 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .where(
           and(eq(products.organizationId, actor.organizationId), eq(products.id, change.entityId)),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
       if (change.action === "upsert") {
         const [category] = yield* tx
@@ -358,7 +360,8 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .where(
           and(eq(batches.organizationId, actor.organizationId), eq(batches.id, change.entityId)),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
       if (change.action === "upsert") {
         const [product] = yield* tx
