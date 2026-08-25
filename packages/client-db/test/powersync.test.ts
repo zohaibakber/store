@@ -85,16 +85,14 @@ describe("PowerSync catalog upload failures", () => {
       true,
     );
     expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(503, "down"))).toBe(true);
-    expect(shouldRetryInventoryUpload(new TypeError("Failed to fetch"))).toBe(true);
   });
 
-  it("does not retry other client errors or local decode failures", () => {
+  it("does not retry other client errors", () => {
     expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(400, "bad"))).toBe(false);
     expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(403, "no"))).toBe(false);
     expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(409, "conflict"))).toBe(
       false,
     );
-    expect(shouldRetryInventoryUpload(new Error("Use a soft delete"))).toBe(false);
   });
 
   it("skips a permanent 409 and still uploads the rest of the batch", async () => {
@@ -139,6 +137,24 @@ describe("PowerSync catalog upload failures", () => {
         },
       ),
     ).rejects.toThrow(InventoryMutationRequestError);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("leaves the queue in place when the network fails", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
+      ),
+    ).rejects.toThrow(TypeError);
     expect(complete).not.toHaveBeenCalled();
   });
 });

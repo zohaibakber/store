@@ -10,7 +10,11 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
-import { shouldRetryInventoryUpload, submitCatalogRows } from "./mutations";
+import {
+  InventoryMutationRequestError,
+  shouldRetryInventoryUpload,
+  submitCatalogRows,
+} from "./mutations";
 import {
   BatchRow,
   CategoryRow,
@@ -279,7 +283,8 @@ const catalogNulls = (table: "categories" | "products" | "batches") => {
   }
 };
 
-type InventoryCrudEntry = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues" | "table">;
+type InventoryCrudSnapshot = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues">;
+type InventoryCrudEntry = InventoryCrudSnapshot & Pick<CrudEntry, "table">;
 
 export const stampCatalogUploadRow = <Row extends { readonly operationId: string }>(
   row: Row,
@@ -287,7 +292,7 @@ export const stampCatalogUploadRow = <Row extends { readonly operationId: string
 
 export const decodePowerSyncCatalogCrudEntry = (
   table: "categories" | "products" | "batches",
-  entry: InventoryCrudEntry,
+  entry: InventoryCrudSnapshot,
 ) => {
   if (entry.op === UpdateType.DELETE) {
     throw new Error(`Use a soft delete for queued inventory row ${table}/${entry.id}.`);
@@ -340,7 +345,10 @@ export const uploadInventoryCrudTransaction = async (
     try {
       await uploadCatalogCrudEntry(input, entry);
     } catch (error) {
-      if (shouldRetryInventoryUpload(error)) throw error;
+      if (error instanceof TypeError) throw error;
+      if (error instanceof InventoryMutationRequestError && shouldRetryInventoryUpload(error)) {
+        throw error;
+      }
     }
   }
   await transaction.complete();

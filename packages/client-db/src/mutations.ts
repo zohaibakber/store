@@ -39,14 +39,8 @@ export class InventoryMutationRequestError extends Error {
 }
 
 /** Retry auth, timeout, rate-limit, and server failures. Other 4xx are permanent. */
-export const shouldRetryInventoryUpload = (error: unknown) => {
-  if (error instanceof InventoryMutationRequestError) {
-    return (
-      error.status === 401 || error.status === 408 || error.status === 429 || error.status >= 500
-    );
-  }
-  return error instanceof TypeError;
-};
+export const shouldRetryInventoryUpload = (error: InventoryMutationRequestError) =>
+  error.status === 401 || error.status === 408 || error.status === 429 || error.status >= 500;
 
 const throwIfNotOk = async (response: Response, fallback: string) => {
   if (response.ok) return;
