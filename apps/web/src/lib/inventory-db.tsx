@@ -44,13 +44,14 @@ import {
   decodeInvoiceItemId,
   decodeProductId,
 } from "@store/contracts/ids";
-import { powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
+import { PowerSyncTransactor, powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
 import {
   type Collection,
   DbClient,
   DbProvider,
   and,
   collectionOptions,
+  createTransaction,
   eq,
   isNull,
   toArray,
@@ -228,6 +229,7 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       dbClient,
       invoiceItems,
       invoices,
+      powerSync,
       products,
       stockMovements,
       mode: scope._tag,
@@ -285,6 +287,23 @@ const persistInsert = async <Row extends object>(
   row: Row,
 ) => {
   const transaction = collection.insert(row);
+  await transaction.isPersisted.promise;
+};
+
+/**
+ * One PowerSync SQLite write for every collection mutation in `mutate`.
+ * Direct `collection.insert` / `update` each open their own write, so a crash
+ * between them can leave an invoice without stock movements (or the reverse).
+ */
+const persistTogether = async (inventory: Inventory, mutate: () => void) => {
+  const transaction = createTransaction({
+    autoCommit: false,
+    mutationFn: async ({ transaction: pending }) => {
+      await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
+    },
+  });
+  transaction.mutate(mutate);
+  await transaction.commit();
   await transaction.isPersisted.promise;
 };
 
@@ -347,8 +366,8 @@ const importLocalInventory = async (
       product,
     ]),
   );
-  let createdProducts = 0;
-  let createdBatches = 0;
+  const createdProducts: ProductRow[] = [];
+  const createdBatches: Array<{ batch: BatchRow; movement: StockMovementRow }> = [];
 
   for (const line of input.lines) {
     const packQuantity = line.packQuantity ?? 0;
@@ -375,10 +394,9 @@ const importLocalInventory = async (
         visible: true,
         ...mutationMetadata(actor),
       };
-      await persistInsert(inventory.products, createdProduct);
       productsByName.set(createdProduct.name.toLocaleLowerCase(), createdProduct);
+      createdProducts.push(createdProduct);
       product = createdProduct;
-      createdProducts += 1;
     }
 
     if (packQuantity + unitQuantity === 0) continue;
@@ -391,10 +409,9 @@ const importLocalInventory = async (
       unitQuantity,
       ...mutationMetadata(actor),
     };
-    await persistInsert(inventory.batches, batch);
-    await persistInsert(
-      inventory.stockMovements,
-      movementRow(actor, {
+    createdBatches.push({
+      batch,
+      movement: movementRow(actor, {
         productId: product.id,
         batchId: batch.id,
         invoiceId: null,
@@ -403,11 +420,24 @@ const importLocalInventory = async (
         unitDelta: unitQuantity,
         note: "Initial batch stock",
       }),
-    );
-    createdBatches += 1;
+    });
   }
 
-  return { createdProducts, createdBatches, txid: Date.now() };
+  if (createdProducts.length + createdBatches.length > 0) {
+    await persistTogether(inventory, () => {
+      for (const product of createdProducts) inventory.products.insert(product);
+      for (const { batch, movement } of createdBatches) {
+        inventory.batches.insert(batch);
+        inventory.stockMovements.insert(movement);
+      }
+    });
+  }
+
+  return {
+    createdProducts: createdProducts.length,
+    createdBatches: createdBatches.length,
+    txid: Date.now(),
+  };
 };
 
 interface LocalInvoiceAllocation {
@@ -569,21 +599,20 @@ const issueLocalInvoice = async (
     total: input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0),
     ...mutationMetadata(actor),
   };
-  await persistInsert(inventory.invoices, invoice);
-  for (const allocation of allocations) {
-    await persistInsert(inventory.invoiceItems, allocation.item);
-    const nextBatch = requiredRow(
-      plannedBatches.get(allocation.item.batchId),
-      "The allocated batch",
-    );
-    const transaction = inventory.batches.update(nextBatch.id, (draft) =>
-      Object.assign(draft, nextBatch),
-    );
-    await transaction.isPersisted.promise;
-    for (const movement of allocation.movements) {
-      await persistInsert(inventory.stockMovements, movement);
+  await persistTogether(inventory, () => {
+    inventory.invoices.insert(invoice);
+    for (const allocation of allocations) {
+      inventory.invoiceItems.insert(allocation.item);
+      const nextBatch = requiredRow(
+        plannedBatches.get(allocation.item.batchId),
+        "The allocated batch",
+      );
+      inventory.batches.update(nextBatch.id, (draft) => Object.assign(draft, nextBatch));
+      for (const movement of allocation.movements) {
+        inventory.stockMovements.insert(movement);
+      }
     }
-  }
+  });
 
   return { invoiceId, invoiceNumber, txid: Date.now() };
 };
@@ -725,21 +754,24 @@ const makeInventoryActions = (
       unitQuantity,
       ...mutationMetadata(actor),
     };
-    const transaction = inventory.batches.insert(row);
-    await transaction.isPersisted.promise;
     if (inventory.mode === "Local") {
-      await persistInsert(
-        inventory.stockMovements,
-        movementRow(actor, {
-          productId: row.productId,
-          batchId: row.id,
-          invoiceId: null,
-          type: "stock_in",
-          packDelta: packQuantity,
-          unitDelta: unitQuantity,
-          note: "Initial batch stock",
-        }),
-      );
+      await persistTogether(inventory, () => {
+        inventory.batches.insert(row);
+        inventory.stockMovements.insert(
+          movementRow(actor, {
+            productId: row.productId,
+            batchId: row.id,
+            invoiceId: null,
+            type: "stock_in",
+            packDelta: packQuantity,
+            unitDelta: unitQuantity,
+            note: "Initial batch stock",
+          }),
+        );
+      });
+    } else {
+      const transaction = inventory.batches.insert(row);
+      await transaction.isPersisted.promise;
     }
     return row;
   },
@@ -760,23 +792,26 @@ const makeInventoryActions = (
       unitQuantity: input.unitQuantity ?? current.unitQuantity,
       ...metadata,
     } satisfies BatchRow;
-    const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
-    await transaction.isPersisted.promise;
     const packDelta = next.packQuantity - current.packQuantity;
     const unitDelta = next.unitQuantity - current.unitQuantity;
     if (inventory.mode === "Local" && (packDelta !== 0 || unitDelta !== 0)) {
-      await persistInsert(
-        inventory.stockMovements,
-        movementRow(actor, {
-          productId: current.productId,
-          batchId: current.id,
-          invoiceId: null,
-          type: "adjustment",
-          packDelta,
-          unitDelta,
-          note: "Stock corrected",
-        }),
-      );
+      await persistTogether(inventory, () => {
+        inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
+        inventory.stockMovements.insert(
+          movementRow(actor, {
+            productId: current.productId,
+            batchId: current.id,
+            invoiceId: null,
+            type: "adjustment",
+            packDelta,
+            unitDelta,
+            note: "Stock corrected",
+          }),
+        );
+      });
+    } else {
+      const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
+      await transaction.isPersisted.promise;
     }
     return next;
   },

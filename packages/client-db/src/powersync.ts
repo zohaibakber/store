@@ -10,7 +10,7 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
-import { submitCatalogRows } from "./mutations";
+import { shouldRetryInventoryUpload, submitCatalogRows } from "./mutations";
 import {
   BatchRow,
   CategoryRow,
@@ -279,7 +279,7 @@ const catalogNulls = (table: "categories" | "products" | "batches") => {
   }
 };
 
-type InventoryCrudEntry = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues">;
+type InventoryCrudEntry = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues" | "table">;
 
 export const stampCatalogUploadRow = <Row extends { readonly operationId: string }>(
   row: Row,
@@ -304,6 +304,48 @@ export const decodePowerSyncCatalogCrudEntry = (
   });
 };
 
+const uploadCatalogCrudEntry = async (
+  input: {
+    readonly apiBaseUrl: string;
+    readonly authenticatedFetch: typeof fetch;
+  },
+  entry: InventoryCrudEntry,
+) => {
+  const table = catalogTable(entry.table);
+  const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
+  switch (table) {
+    case "categories":
+      await submitCatalogRows({ ...input, entity: "category", rows: [row] });
+      break;
+    case "products":
+      await submitCatalogRows({ ...input, entity: "product", rows: [row] });
+      break;
+    case "batches":
+      await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
+      break;
+  }
+};
+
+export const uploadInventoryCrudTransaction = async (
+  input: {
+    readonly apiBaseUrl: string;
+    readonly authenticatedFetch: typeof fetch;
+  },
+  transaction: {
+    readonly crud: ReadonlyArray<InventoryCrudEntry>;
+    complete: () => Promise<void>;
+  },
+) => {
+  for (const entry of transaction.crud) {
+    try {
+      await uploadCatalogCrudEntry(input, entry);
+    } catch (error) {
+      if (shouldRetryInventoryUpload(error)) throw error;
+    }
+  }
+  await transaction.complete();
+};
+
 export const makeInventoryPowerSyncConnector = (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
@@ -312,24 +354,7 @@ export const makeInventoryPowerSyncConnector = (input: {
   uploadData: async (database) => {
     const transaction = await database.getNextCrudTransaction();
     if (!transaction) return;
-
-    for (const entry of transaction.crud) {
-      const table = catalogTable(entry.table);
-      const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
-      switch (table) {
-        case "categories":
-          await submitCatalogRows({ ...input, entity: "category", rows: [row] });
-          break;
-        case "products":
-          await submitCatalogRows({ ...input, entity: "product", rows: [row] });
-          break;
-        case "batches":
-          await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
-          break;
-      }
-    }
-
-    await transaction.complete();
+    await uploadInventoryCrudTransaction(input, transaction);
   },
 });
 

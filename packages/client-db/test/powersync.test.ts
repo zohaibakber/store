@@ -1,7 +1,12 @@
 import { UpdateType } from "@powersync/common";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { decodePowerSyncCatalogCrudEntry, stampCatalogUploadRow } from "../src/powersync";
+import { InventoryMutationRequestError, shouldRetryInventoryUpload } from "../src/mutations";
+import {
+  decodePowerSyncCatalogCrudEntry,
+  stampCatalogUploadRow,
+  uploadInventoryCrudTransaction,
+} from "../src/powersync";
 
 const category = {
   id: "category-1",
@@ -65,5 +70,75 @@ describe("PowerSync catalog upload snapshots", () => {
       stampCatalogUploadRow({ ...category, id: "category-2", operationId: "operation-2" })
         .operationId,
     ).toBe("operation-2");
+  });
+});
+
+describe("PowerSync catalog upload failures", () => {
+  it("retries auth, timeout, rate-limit, and server failures", () => {
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(401, "expired"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(408, "timeout"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(429, "slow down"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(503, "down"))).toBe(true);
+    expect(shouldRetryInventoryUpload(new TypeError("Failed to fetch"))).toBe(true);
+  });
+
+  it("does not retry other client errors or local decode failures", () => {
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(400, "bad"))).toBe(false);
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(403, "no"))).toBe(false);
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(409, "conflict"))).toBe(
+      false,
+    );
+    expect(shouldRetryInventoryUpload(new Error("Use a soft delete"))).toBe(false);
+  });
+
+  it("skips a permanent 409 and still uploads the rest of the batch", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("conflict", { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ txid: 1 }), { status: 200 }));
+    const complete = vi.fn(async () => undefined);
+
+    await uploadInventoryCrudTransaction(
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+      {
+        crud: [
+          { id: category.id, table: "categories", op: UpdateType.PUT, opData: category },
+          {
+            id: "category-2",
+            table: "categories",
+            op: UpdateType.PUT,
+            opData: { ...category, id: "category-2", operationId: "operation-2" },
+          },
+        ],
+        complete,
+      },
+    );
+
+    expect(authenticatedFetch).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the queue in place when the server is down", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
+      ),
+    ).rejects.toThrow(InventoryMutationRequestError);
+    expect(complete).not.toHaveBeenCalled();
   });
 });

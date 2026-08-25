@@ -1,0 +1,2 @@
+DROP INDEX "categories_organization_id_name_uidx";--> statement-breakpoint
+CREATE UNIQUE INDEX "categories_organization_id_name_uidx" ON "categories" ("organization_id","name") WHERE "deleted_at" is null;
