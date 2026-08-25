@@ -1,9 +1,12 @@
 import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
 import { invoiceUploadRejection } from "@store/contracts";
-import { createContext, use, useState, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { sameProduct } from "@/components/uploads/same-product";
+import {
+  ambiguousImportProductMessage,
+  importProductMatch,
+} from "@/components/uploads/same-product";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory-db";
@@ -60,6 +63,7 @@ function UploadProvider({
 }) {
   const inventory = useInventoryActions();
   const isOnline = useOnline();
+  const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
@@ -90,6 +94,7 @@ function UploadProvider({
   };
 
   const analyse = async () => {
+    if (busyRef.current) return;
     if (!isOnline) {
       toastManager.add({
         title: "You're offline. Connect before analysing invoices.",
@@ -101,6 +106,7 @@ function UploadProvider({
       toastManager.add({ title: "Add at least one invoice first.", type: "error" });
       return;
     }
+    busyRef.current = true;
     setPhase("processing");
     try {
       const payload = await analyseInvoices(
@@ -114,9 +120,12 @@ function UploadProvider({
       );
       setChanges(
         payload.lines.map((line) => {
-          const product = products.find((candidate) => sameProduct(line, candidate));
-          return product
-            ? { ...line, type: "add_inventory", productId: product.id }
+          const match = importProductMatch(line, products);
+          if (match._tag === "many") {
+            throw new Error(ambiguousImportProductMessage(line.name, line.unitsPerPack));
+          }
+          return match._tag === "one"
+            ? { ...line, type: "add_inventory", productId: match.id }
             : { ...line, type: "create_product" };
         }),
       );
@@ -131,10 +140,13 @@ function UploadProvider({
         type: "error",
       });
       setPhase("idle");
+    } finally {
+      busyRef.current = false;
     }
   };
 
   const applyChanges = async () => {
+    if (busyRef.current) return;
     if (!isOnline) {
       toastManager.add({
         title: "You're offline. Reconnect, then apply the changes.",
@@ -152,6 +164,7 @@ function UploadProvider({
       });
       return;
     }
+    busyRef.current = true;
     setPhase("syncing");
     try {
       const result = await inventory.importInventory({
@@ -180,6 +193,8 @@ function UploadProvider({
         type: "error",
       });
       setPhase("ready");
+    } finally {
+      busyRef.current = false;
     }
   };
 
@@ -208,7 +223,6 @@ export {
   UploadProvider,
   fileDescription,
   isInvoice,
-  sameProduct,
   useUpload,
   type ExtractedLine,
   type ProposedChange,
