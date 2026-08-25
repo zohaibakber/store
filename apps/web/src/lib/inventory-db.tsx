@@ -377,6 +377,7 @@ const importLocalInventory = async (
     const unitQuantity = line.unitQuantity ?? 0;
     requireNonNegativeQuantity(packQuantity, "Pack quantity");
     requireNonNegativeQuantity(unitQuantity, "Unit quantity");
+    if (packQuantity + unitQuantity === 0) continue;
 
     const unitsPerPack = line.unitsPerPack ?? 1;
     const sku = inventorySkuKey(line.name, unitsPerPack);
@@ -416,7 +417,6 @@ const importLocalInventory = async (
       product = createdProduct;
     }
 
-    if (packQuantity + unitQuantity === 0) continue;
     const batch: BatchRow = {
       id: decodeBatchId(crypto.randomUUID()),
       productId: product.id,

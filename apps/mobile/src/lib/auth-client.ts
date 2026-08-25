@@ -57,6 +57,17 @@ const native = nativeClient(__DEV__ ? "Tabaaq Dev Mobile" : "Tabaaq Mobile");
 let tokens: TokenSetType | null = null;
 let refreshInFlight: Promise<TokenSetType | null> | null = null;
 
+type WorkspaceAfterRefresh = (workspace: AuthenticatedWorkspaceSnapshot) => void;
+const workspaceAfterRefreshListeners = new Set<WorkspaceAfterRefresh>();
+
+/** Hosts remount inventory when refresh lands in a different organization. */
+export const subscribeWorkspaceAfterRefresh = (listener: WorkspaceAfterRefresh) => {
+  workspaceAfterRefreshListeners.add(listener);
+  return () => {
+    workspaceAfterRefreshListeners.delete(listener);
+  };
+};
+
 export class WorkspaceSessionError extends Schema.TaggedError<WorkspaceSessionError>()(
   "Mobile.WorkspaceSessionError",
   {
@@ -108,6 +119,10 @@ const refreshTokens = async () => {
   refreshInFlight = run(client.refresh({ refreshToken }))
     .then(async (next) => {
       await persistTokens(next);
+      // Drop the lock before session reload so getAccessToken cannot deadlock
+      // on this same in-flight refresh.
+      refreshInFlight = null;
+      await reloadWorkspaceAfterRefresh();
       return next;
     })
     .catch(async (cause: unknown) => {
@@ -178,6 +193,17 @@ export const fetchWorkspaceSession = async (): Promise<typeof WorkspaceSnapshot.
     throw cause;
   } finally {
     clearTimeout(timeout);
+  }
+};
+
+const reloadWorkspaceAfterRefresh = async () => {
+  try {
+    const workspace = await fetchWorkspaceSession();
+    if (workspace.status !== "authenticated") return;
+    await saveWorkspaceSnapshot(workspace);
+    for (const listener of workspaceAfterRefreshListeners) listener(workspace);
+  } catch {
+    // Rotated tokens still work. The next foreground load can refresh UI.
   }
 };
 

@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { parseCsvRecords } from "../src/invoice-extraction/csv";
@@ -6,7 +7,13 @@ import {
   parseUnitsPerPack,
   salvageUnitsPerPack,
 } from "../src/invoice-extraction/pack-size";
-import { parseCsv } from "../src/invoice-extraction/service";
+import {
+  hasReceivedStock,
+  invoiceExtractionLayer,
+  InvoiceExtractionService,
+  parseCsv,
+  type InvoiceAiClient,
+} from "../src/invoice-extraction/service";
 
 describe("parseUnitsPerPack", () => {
   it("multiplies pack factors instead of concatenating digits", () => {
@@ -83,5 +90,111 @@ describe("parseCsv", () => {
         packPrice: 950,
       },
     ]);
+  });
+
+  it("still parses rows whose headers did not map to stock", () => {
+    const lines = parseCsv("item,qty\nAmoxicillin,5\n");
+    const line = lines[0];
+    expect(line).toMatchObject({
+      name: "Unspecified item",
+      packQuantity: 0,
+      unitQuantity: 0,
+    });
+    expect(line ? hasReceivedStock(line) : false).toBe(false);
+  });
+
+  it("treats a named row with packs as received stock", () => {
+    const line = parseCsv("name,packs\nAmoxicillin,3\n")[0];
+    expect(line ? hasReceivedStock(line) : false).toBe(true);
+  });
+});
+
+const unusedAi = (): InvoiceAiClient => ({
+  toMarkdown: async () => {
+    throw new Error("PDF extraction should not run when the CSV already has stock.");
+  },
+  generate: async () => {
+    throw new Error("PDF extraction should not run when the CSV already has stock.");
+  },
+});
+
+const pdfAi = (): InvoiceAiClient => ({
+  toMarkdown: async () => [{ kind: "ok", name: "invoice.pdf", data: "Amoxicillin 3 packs" }],
+  generate: async () => ({
+    supplier: "Acme",
+    invoiceNumber: "INV-1",
+    lines: [
+      {
+        name: "Amoxicillin",
+        batchNumber: null,
+        expiresAt: null,
+        packQuantity: 3,
+        unitQuantity: 0,
+        unitsPerPack: 10,
+        packPrice: null,
+      },
+    ],
+  }),
+});
+
+const extract = (files: ReadonlyArray<File>, ai: InvoiceAiClient) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const service = yield* InvoiceExtractionService;
+      return yield* service.extract(files);
+    }).pipe(Effect.provide(invoiceExtractionLayer({ ai }))),
+  );
+
+describe("InvoiceExtraction.extract", () => {
+  it("keeps a stock CSV and does not mix in a PDF of the same shipment", async () => {
+    const result = await extract(
+      [
+        new File(["name,packs\nAmoxicillin,3\n"], "stock.csv", { type: "text/csv" }),
+        new File(["%PDF-1.4"], "invoice.pdf", { type: "application/pdf" }),
+      ],
+      unusedAi(),
+    );
+    expect(result.lines).toEqual([
+      {
+        name: "Amoxicillin",
+        batchNumber: null,
+        expiresAt: null,
+        packQuantity: 3,
+        unitQuantity: 0,
+        unitsPerPack: 1,
+        packPrice: null,
+      },
+    ]);
+  });
+
+  it("extracts a PDF when the CSV has no received stock", async () => {
+    const result = await extract(
+      [
+        new File(["item,qty\nAmoxicillin,5\n"], "headers.csv", { type: "text/csv" }),
+        new File(["%PDF-1.4"], "invoice.pdf", { type: "application/pdf" }),
+      ],
+      pdfAi(),
+    );
+    expect(result.supplier).toBe("Acme");
+    expect(result.lines).toEqual([
+      {
+        name: "Amoxicillin",
+        batchNumber: null,
+        expiresAt: null,
+        packQuantity: 3,
+        unitQuantity: 0,
+        unitsPerPack: 10,
+        packPrice: null,
+      },
+    ]);
+  });
+
+  it("drops placeholder CSV rows from a spreadsheet that already has stock", async () => {
+    const result = await extract(
+      [new File(["name,packs\nAmoxicillin,3\n,\n"], "stock.csv", { type: "text/csv" })],
+      unusedAi(),
+    );
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]?.name).toBe("Amoxicillin");
   });
 });

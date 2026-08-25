@@ -383,6 +383,12 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .limit(1)
         .for("update");
       yield* validateWriteVersion(change, current);
+      if (change.action === "delete") {
+        if ((current?.packQuantity ?? 0) > 0 || (current?.unitQuantity ?? 0) > 0)
+          return yield* Effect.fail(
+            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this batch."),
+          );
+      }
       if (change.action === "upsert") {
         const [product] = yield* tx
           .select({ id: products.id })
@@ -1269,13 +1275,14 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     .for("update");
   if (!category) return yield* Effect.fail(importError("Pick an active category for this import."));
 
+  const stockLines = command.input.lines.filter(
+    (line) => (line.packQuantity ?? 0) + (line.unitQuantity ?? 0) > 0,
+  );
   const suppliedProductIds = [
-    ...new Set(
-      command.input.lines.flatMap((line) => (line.productId === null ? [] : [line.productId])),
-    ),
+    ...new Set(stockLines.flatMap((line) => (line.productId === null ? [] : [line.productId]))),
   ].sort();
   const requestedNames = [
-    ...new Set(command.input.lines.map((line) => normalizedProductName(line.name))),
+    ...new Set(stockLines.map((line) => normalizedProductName(line.name))),
   ].sort();
 
   for (const name of requestedNames)
@@ -1328,6 +1335,10 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
   let observerBatchId: string | null = null;
 
   for (const line of command.input.lines) {
+    const packQuantity = line.packQuantity ?? 0;
+    const unitQuantity = line.unitQuantity ?? 0;
+    if (packQuantity + unitQuantity === 0) continue;
+
     const unitsPerPack = line.unitsPerPack ?? 1;
     const sku = inventorySkuKey(line.name, unitsPerPack);
     let productId: string | null = line.productId;
@@ -1380,10 +1391,6 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
         createdProducts += 1;
       }
     }
-
-    const packQuantity = line.packQuantity ?? 0;
-    const unitQuantity = line.unitQuantity ?? 0;
-    if (packQuantity + unitQuantity === 0) continue;
 
     const [batch] = yield* tx
       .insert(batches)

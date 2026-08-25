@@ -118,8 +118,12 @@ function UploadProvider({
           })),
         ),
       );
+      const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
+      if (stockLines.length === 0) {
+        throw new Error("No received stock was found in the attachments.");
+      }
       setChanges(
-        payload.lines.map((line) => {
+        stockLines.map((line) => {
           const match = importProductMatch(line, products);
           if (match._tag === "many") {
             throw new Error(ambiguousImportProductMessage(line.name, line.unitsPerPack));

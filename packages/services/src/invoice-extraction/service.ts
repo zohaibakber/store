@@ -104,8 +104,18 @@ const nullableString = (value: ModelScalar | undefined): string | null => {
 const count = (value: ModelScalar | undefined, fallback: number, minimum: number): number =>
   Math.max(minimum, Math.round(toFiniteNumber(value) ?? fallback));
 
+const unspecifiedItemName = "Unspecified item";
+
+/** CSV rows that only exist because headers did not map still parse as a line. */
+export const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
+  const name = line.name.trim();
+  return (
+    name.length > 0 && name !== unspecifiedItemName && line.packQuantity + line.unitQuantity > 0
+  );
+};
+
 const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => {
-  const name = nullableString(value.name) ?? "Unspecified item";
+  const name = nullableString(value.name) ?? unspecifiedItemName;
   return {
     name,
     batchNumber: nullableString(value.batchNumber),
@@ -204,10 +214,12 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
         const csvContents = yield* Effect.tryPromise(() =>
           Promise.all(csvFiles.map((file) => file.text())),
         );
-        const csvLines = csvContents.flatMap(parseCsv);
+        const csvLines = csvContents.flatMap(parseCsv).filter(hasReceivedStock);
         const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
         // CSV already has received-stock lines. Mixing in a PDF of the same
-        // shipment would double-count packs, so the spreadsheet wins.
+        // shipment would double-count packs, so the spreadsheet wins. A CSV
+        // whose columns did not map (placeholder names, zero quantities) is
+        // not a spreadsheet of received stock, so PDFs still get extracted.
         if (csvLines.length > 0 || !aiFiles.length)
           return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
             supplier: null,
