@@ -9,6 +9,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { parseUnitsPerPack, salvageUnitsPerPack } from "../invoice-extraction/pack-size";
+
 export class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
   message: Schema.String,
   cause: Schema.Defect(),
@@ -59,7 +61,7 @@ const instructions = [
   "Normalize whitespace and preserve the product or brand spelling shown on the package.",
   "Composition is the active ingredient or ingredient combination without its strength.",
   "Strength includes the numeric amount and unit, for example 500mg or 5mg/5ml.",
-  "Units per pack is the printed count of tablets, capsules, sachets, ampoules, or other sale units in one sealed pack; use null when it is not explicit.",
+  "Units per pack is the printed count in one sealed pack. Multiply pack factors: 10x10 is 100, not 1010. 20's and 20s are 20. Use null when it is not explicit.",
   "Batch number may also be labelled batch, lot, B.No, BN, or LOT.",
   "Use YYYY-MM-DD for a full expiry date and YYYY-MM when only month and year are printed.",
   "Confidence is one number from 0 to 1 for the extraction as a whole.",
@@ -162,26 +164,26 @@ const confidence = (value: ModelScalar | undefined): number => {
   return Math.min(1, Math.max(0, ratio));
 };
 
-const unitsPerPack = (value: ModelScalar | undefined): number | null => {
-  if (isNumber(value))
-    return Number.isSafeInteger(value) && value >= 1 && value <= 10_000 ? value : null;
-  if (!isString(value)) return null;
-  const normalized = value.trim();
-  if (!/^\d+(?:\s*[x×]\s*\d+)*$/i.test(normalized)) return null;
-  const factors = normalized.split(/\s*[x×]\s*/i).map(Number);
-  const product = factors.reduce((total, factor) => total * factor, 1);
-  return Number.isSafeInteger(product) && product >= 1 && product <= 10_000 ? product : null;
+const unitsPerPack = (value: ModelScalar | undefined, name: string | null): number | null => {
+  if (value === undefined || value === null) return null;
+  if (isString(value) && !value.trim()) return null;
+  const parsed = parseUnitsPerPack(value, Number.NaN);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10_000) return null;
+  return salvageUnitsPerPack(name ?? "", parsed);
 };
 
-const normalizeResult = (value: ProductScanModelObject) => ({
-  name: nullableText(value.name ?? value.productName, 120),
-  composition: nullableText(value.composition, 160),
-  strength: nullableText(value.strength, 20),
-  unitsPerPack: unitsPerPack(value.unitsPerPack),
-  batchNumber: nullableText(value.batchNumber, 64),
-  expiresAt: normalizeExpiry(value.expiresAt),
-  confidence: confidence(value.confidence),
-});
+const normalizeResult = (value: ProductScanModelObject) => {
+  const name = nullableText(value.name ?? value.productName, 120);
+  return {
+    name,
+    composition: nullableText(value.composition, 160),
+    strength: nullableText(value.strength, 20),
+    unitsPerPack: unitsPerPack(value.unitsPerPack, name),
+    batchNumber: nullableText(value.batchNumber, 64),
+    expiresAt: normalizeExpiry(value.expiresAt),
+    confidence: confidence(value.confidence),
+  };
+};
 
 const requestContent = (mode: ProductScanMode, recognizedText: string) =>
   [
