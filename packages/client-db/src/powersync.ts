@@ -368,3 +368,44 @@ export const makeInventoryPowerSyncConnector = (input: {
 
 export const inventoryPowerSyncDatabaseName = (scopeId: string) =>
   inventoryReplicaDatabaseName(scopeId).replace("tanstack-inventory", "powersync-inventory");
+
+export const INVENTORY_UPLOAD_DRAIN_TIMEOUT_MS = 15_000;
+const INVENTORY_UPLOAD_DRAIN_POLL_MS = 50;
+
+export type InventoryUploadDrainSource = {
+  readonly getUploadQueueStats: () => Promise<{ readonly count: number }>;
+  readonly currentStatus: {
+    readonly connected: boolean;
+    readonly connecting: boolean;
+  };
+};
+
+const pause = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * HTTP sales and imports read Postgres. Local catalog edits sit in the
+ * PowerSync upload queue until the connector `complete()`s them. An invoice
+ * issued first bumps `rowVersion` on the server; the queued edit then 409s
+ * and is skipped. Drain with `getUploadQueueStats` so the connector keeps
+ * the queued transaction.
+ */
+export const waitForInventoryUploadDrain = async (
+  powerSync: InventoryUploadDrainSource,
+  timeoutMs: number = INVENTORY_UPLOAD_DRAIN_TIMEOUT_MS,
+) => {
+  const pending = async () => (await powerSync.getUploadQueueStats()).count;
+  if ((await pending()) === 0) return;
+  if (!powerSync.currentStatus.connected && !powerSync.currentStatus.connecting) {
+    throw new Error("Wait until catalog changes finish uploading before continuing.");
+  }
+  const deadline = Date.now() + timeoutMs;
+  while ((await pending()) > 0) {
+    if (Date.now() >= deadline) {
+      throw new Error("Catalog changes are still uploading. Try again in a moment.");
+    }
+    await pause(INVENTORY_UPLOAD_DRAIN_POLL_MS);
+  }
+};

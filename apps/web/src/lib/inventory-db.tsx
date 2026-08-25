@@ -16,6 +16,7 @@ import {
   submitImportInventory,
   submitIssueInvoice,
   waitForInventoryFirstSync,
+  waitForInventoryUploadDrain,
 } from "@store/client-db";
 import type {
   Category,
@@ -840,6 +841,7 @@ const makeInventoryActions = (
   },
   importInventory: async (input) => {
     if (inventory.mode === "Local") return importLocalInventory(inventory, actor, input);
+    await waitForInventoryUploadDrain(inventory.powerSync);
     const command: ImportInventoryCommand = {
       commandId: crypto.randomUUID(),
       deviceId: actor.deviceId,
@@ -855,6 +857,7 @@ const makeInventoryActions = (
   },
   issueInvoice: async (input) => {
     if (inventory.mode === "Local") return issueLocalInvoice(inventory, actor, input);
+    await waitForInventoryUploadDrain(inventory.powerSync);
     const command: IssueInvoiceCommand = {
       commandId: crypto.randomUUID(),
       deviceId: actor.deviceId,

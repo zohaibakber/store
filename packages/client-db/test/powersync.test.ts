@@ -6,6 +6,7 @@ import {
   decodePowerSyncCatalogCrudEntry,
   stampCatalogUploadRow,
   uploadInventoryCrudTransaction,
+  waitForInventoryUploadDrain,
 } from "../src/powersync";
 
 const category = {
@@ -156,5 +157,50 @@ describe("PowerSync catalog upload failures", () => {
       ),
     ).rejects.toThrow(TypeError);
     expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForInventoryUploadDrain", () => {
+  it("returns immediately when the upload queue is empty", async () => {
+    const getUploadQueueStats = vi.fn(async () => ({ count: 0 }));
+    await waitForInventoryUploadDrain({
+      getUploadQueueStats,
+      currentStatus: { connected: false, connecting: false },
+    });
+    expect(getUploadQueueStats).toHaveBeenCalledOnce();
+  });
+
+  it("refuses when catalog changes are queued and PowerSync is offline", async () => {
+    await expect(
+      waitForInventoryUploadDrain({
+        getUploadQueueStats: async () => ({ count: 2 }),
+        currentStatus: { connected: false, connecting: false },
+      }),
+    ).rejects.toThrow("Wait until catalog changes finish uploading before continuing.");
+  });
+
+  it("waits until queued catalog changes finish uploading", async () => {
+    const getUploadQueueStats = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    await waitForInventoryUploadDrain({
+      getUploadQueueStats,
+      currentStatus: { connected: true, connecting: false },
+    });
+    expect(getUploadQueueStats).toHaveBeenCalledTimes(3);
+  });
+
+  it("times out if the upload queue does not drain", async () => {
+    await expect(
+      waitForInventoryUploadDrain(
+        {
+          getUploadQueueStats: async () => ({ count: 1 }),
+          currentStatus: { connected: true, connecting: false },
+        },
+        0,
+      ),
+    ).rejects.toThrow("Catalog changes are still uploading. Try again in a moment.");
   });
 });
