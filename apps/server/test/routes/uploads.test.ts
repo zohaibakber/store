@@ -124,6 +124,44 @@ describe("invoice upload extraction", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("keeps quoted CSV names and pack notation without asking the model", async () => {
+    const { ai, generate } = workingAi();
+    const csv = new File(
+      ['name,packs,units per pack,pack price\n"Amoxicillin 250mg, Capsules",3,10x10,"1,250.00"\n'],
+      "invoice.csv",
+      { type: "text/csv" },
+    );
+    const response = await appFor(true).request("/api/uploads", invoiceForm([csv]), ai);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      lines: [
+        {
+          name: "Amoxicillin 250mg, Capsules",
+          packQuantity: 3,
+          unitsPerPack: 100,
+          packPrice: 125000,
+        },
+      ],
+    });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("does not add PDF extraction on top of CSV lines from the same upload", async () => {
+    const { ai, generate } = workingAi();
+    const csv = new File(
+      ["name,packs,units per pack,pack price\nIbuprofen,3,20,9.5\n"],
+      "invoice.csv",
+      { type: "text/csv" },
+    );
+    const response = await appFor(true).request("/api/uploads", invoiceForm([csv, pdf()]), ai);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      lines: [{ name: "Ibuprofen", packQuantity: 3, unitsPerPack: 20, packPrice: 950 }],
+    });
+    expect(generate).not.toHaveBeenCalled();
+    expect(ai.toMarkdown).not.toHaveBeenCalled();
+  });
+
   it("reports a failed extraction without leaking the underlying cause", async () => {
     const generate = vi.fn(async () => {
       throw new Error("workers ai neuron budget exhausted");

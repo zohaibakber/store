@@ -4,13 +4,16 @@ import {
   decodeInvoiceId,
   type ImportInventoryCommand,
   type ImportInventoryCommandResult,
+  inventorySkuKey,
   type IssueInvoiceCommand,
   type IssueInvoiceResult,
   type LegacyCatalogMigrationCommand,
   type LegacyCatalogMigrationResult,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
+  LEGACY_ROW_OPERATION_PREFIX,
   MAX_SYNC_CHANGES_PER_OPERATION,
+  normalizedProductName,
   type SyncEntityChange,
   type SyncOperation,
   legacyCatalogRowOperationId,
@@ -30,7 +33,7 @@ import {
 } from "@store/db/postgres/schema";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Postgres from "alchemy/SQL/Postgres";
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, like, notInArray, or, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Clock from "effect/Clock";
@@ -240,7 +243,8 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
             eq(categories.id, change.entityId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
       if (change.action === "delete") {
         const [product] = yield* tx
@@ -286,8 +290,27 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .where(
           and(eq(products.organizationId, actor.organizationId), eq(products.id, change.entityId)),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
+      if (change.action === "delete") {
+        const [stocked] = yield* tx
+          .select({ id: batches.id })
+          .from(batches)
+          .where(
+            and(
+              eq(batches.organizationId, actor.organizationId),
+              eq(batches.productId, change.entityId),
+              isNull(batches.deletedAt),
+              or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
+            ),
+          )
+          .limit(1);
+        if (stocked)
+          return yield* Effect.fail(
+            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this product."),
+          );
+      }
       if (change.action === "upsert") {
         const [category] = yield* tx
           .select({ id: categories.id })
@@ -304,6 +327,27 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
           return yield* Effect.fail(
             protocolError("ENTITY_RELATION_INVALID", "Pick an active category for this product."),
           );
+        if (current && row.unitsPerPack !== current.unitsPerPack) {
+          const [stocked] = yield* tx
+            .select({ id: batches.id })
+            .from(batches)
+            .where(
+              and(
+                eq(batches.organizationId, actor.organizationId),
+                eq(batches.productId, change.entityId),
+                isNull(batches.deletedAt),
+                or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
+              ),
+            )
+            .limit(1);
+          if (stocked)
+            return yield* Effect.fail(
+              protocolError(
+                "ENTITY_CONFLICT",
+                "Change units per pack only after the product has no remaining stock.",
+              ),
+            );
+        }
       }
       const values = {
         name: row.name.trim(),
@@ -336,8 +380,15 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .where(
           and(eq(batches.organizationId, actor.organizationId), eq(batches.id, change.entityId)),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       yield* validateWriteVersion(change, current);
+      if (change.action === "delete") {
+        if ((current?.packQuantity ?? 0) > 0 || (current?.unitQuantity ?? 0) > 0)
+          return yield* Effect.fail(
+            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this batch."),
+          );
+      }
       if (change.action === "upsert") {
         const [product] = yield* tx
           .select({ id: products.id })
@@ -353,6 +404,10 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         if (!product)
           return yield* Effect.fail(
             protocolError("ENTITY_RELATION_INVALID", "The batch product is not active."),
+          );
+        if (current && row.productId !== current.productId)
+          return yield* Effect.fail(
+            protocolError("ENTITY_RELATION_INVALID", "A batch cannot be moved to another product."),
           );
       }
       const values = {
@@ -486,11 +541,11 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
 
 const excluded = (column: string) => sql.raw(`excluded.${column}`);
 
+// Re-uploading a stale snapshot must not revive rows the organization already deleted.
 const versionedUpsertSet = {
   updatedByUserId: excluded("updated_by_user_id"),
   deviceId: excluded("device_id"),
   operationId: excluded("operation_id"),
-  deletedAt: null,
 };
 
 const recordLegacyMigrationReceipts = (
@@ -853,6 +908,9 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   }
 });
 
+const importedByLegacyMigration = (operationId: Parameters<typeof like>[0]) =>
+  like(operationId, `${LEGACY_ROW_OPERATION_PREFIX}%`);
+
 const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalog")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
@@ -876,7 +934,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
       deletedStockMovements: 0,
       txid,
     } satisfies LegacyCatalogReconciliationResult;
-  const operationId = `legacy-reconcile:${command.deviceId}:v3`;
+  const operationId = `legacy-reconcile:${command.deviceId}:v4`;
   const [receipt] = yield* tx
     .select({ operationId: electricMutationReceipts.operationId })
     .from(electricMutationReceipts)
@@ -906,6 +964,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
           .where(
             and(
               eq(stockMovements.organizationId, actor.organizationId),
+              importedByLegacyMigration(stockMovements.operationId),
               notInArray(stockMovements.id, [...command.stockMovementIds]),
             ),
           )
@@ -927,6 +986,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(invoiceItems.organizationId, actor.organizationId),
               isNull(invoiceItems.deletedAt),
+              importedByLegacyMigration(invoiceItems.operationId),
               notInArray(invoiceItems.id, [...command.invoiceItemIds]),
             ),
           )
@@ -948,6 +1008,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(invoices.organizationId, actor.organizationId),
               isNull(invoices.deletedAt),
+              importedByLegacyMigration(invoices.operationId),
               notInArray(invoices.id, [...command.invoiceIds]),
             ),
           )
@@ -969,6 +1030,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(batches.organizationId, actor.organizationId),
               isNull(batches.deletedAt),
+              importedByLegacyMigration(batches.operationId),
               notInArray(batches.id, [...command.batchIds]),
             ),
           )
@@ -990,6 +1052,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(products.organizationId, actor.organizationId),
               isNull(products.deletedAt),
+              importedByLegacyMigration(products.operationId),
               notInArray(products.id, [...command.productIds]),
             ),
           )
@@ -1011,6 +1074,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             and(
               eq(categories.organizationId, actor.organizationId),
               isNull(categories.deletedAt),
+              importedByLegacyMigration(categories.operationId),
               notInArray(categories.id, [...command.categoryIds]),
             ),
           )
@@ -1069,7 +1133,6 @@ const parseInventoryImportReceipt = (value: string | null) =>
 
 const importError = (message: string) => protocolError("ENTITY_CONFLICT", message);
 
-const normalizedProductName = (value: string) => value.trim().toLocaleLowerCase();
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
 const validateInventoryImport = Effect.fn("InventoryCommand.validateImport")(function* (
@@ -1212,17 +1275,14 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     .for("update");
   if (!category) return yield* Effect.fail(importError("Pick an active category for this import."));
 
+  const stockLines = command.input.lines.filter(
+    (line) => (line.packQuantity ?? 0) + (line.unitQuantity ?? 0) > 0,
+  );
   const suppliedProductIds = [
-    ...new Set(
-      command.input.lines.flatMap((line) => (line.productId === null ? [] : [line.productId])),
-    ),
+    ...new Set(stockLines.flatMap((line) => (line.productId === null ? [] : [line.productId]))),
   ].sort();
   const requestedNames = [
-    ...new Set(
-      command.input.lines.flatMap((line) =>
-        line.productId === null ? [normalizedProductName(line.name)] : [],
-      ),
-    ),
+    ...new Set(stockLines.map((line) => normalizedProductName(line.name))),
   ].sort();
 
   for (const name of requestedNames)
@@ -1244,7 +1304,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     idCondition && nameCondition ? or(idCondition, nameCondition) : (idCondition ?? nameCondition);
   const existingProducts = relevantProduct
     ? yield* tx
-        .select({ id: products.id, name: products.name })
+        .select({ id: products.id, name: products.name, unitsPerPack: products.unitsPerPack })
         .from(products)
         .where(
           and(
@@ -1258,10 +1318,12 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     : [];
 
   const productsById = new Map(existingProducts.map((product) => [product.id, product]));
-  const productIdsByName = new Map<string, string>();
+  const productIdsBySku = new Map<string, string[]>();
   for (const product of existingProducts) {
-    const name = normalizedProductName(product.name);
-    if (!productIdsByName.has(name)) productIdsByName.set(name, product.id);
+    const key = inventorySkuKey(product.name, product.unitsPerPack);
+    const ids = productIdsBySku.get(key);
+    if (ids) ids.push(product.id);
+    else productIdsBySku.set(key, [product.id]);
   }
   for (const id of suppliedProductIds)
     if (!productsById.has(id))
@@ -1273,12 +1335,29 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
   let observerBatchId: string | null = null;
 
   for (const line of command.input.lines) {
+    const packQuantity = line.packQuantity ?? 0;
+    const unitQuantity = line.unitQuantity ?? 0;
+    if (packQuantity + unitQuantity === 0) continue;
+
+    const unitsPerPack = line.unitsPerPack ?? 1;
+    const sku = inventorySkuKey(line.name, unitsPerPack);
     let productId: string | null = line.productId;
+    if (productId !== null) {
+      const selected = productsById.get(productId);
+      if (!selected)
+        return yield* Effect.fail(importError("One of the selected products no longer exists."));
+      if (selected.unitsPerPack !== unitsPerPack) productId = null;
+    }
     if (productId === null) {
-      const normalizedName = normalizedProductName(line.name);
-      const existingProductId = productIdsByName.get(normalizedName);
-      if (existingProductId) {
-        productId = existingProductId;
+      const matches = productIdsBySku.get(sku) ?? [];
+      if (matches.length > 1)
+        return yield* Effect.fail(
+          importError(
+            `Multiple products are named “${line.name.trim()}” with ${unitsPerPack} units per pack. Choose which one to restock.`,
+          ),
+        );
+      if (matches[0]) {
+        productId = matches[0];
       } else {
         const [created] = yield* tx
           .insert(products)
@@ -1288,7 +1367,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
             aisle: null,
             composition: null,
             strength: null,
-            unitsPerPack: line.unitsPerPack ?? 1,
+            unitsPerPack,
             packPrice: line.packPrice ?? null,
             unitPrice: null,
             visible: true,
@@ -1302,19 +1381,16 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
             updatedAt: command.occurredAt,
             deletedAt: null,
           })
-          .returning({ id: products.id });
+          .returning({ id: products.id, name: products.name, unitsPerPack: products.unitsPerPack });
         if (!created)
           return yield* Effect.fail(importError("An imported product could not be created."));
         productId = created.id;
-        productIdsByName.set(normalizedName, productId);
+        productsById.set(productId, created);
+        productIdsBySku.set(sku, [productId]);
         observerProductId ??= productId;
         createdProducts += 1;
       }
     }
-
-    const packQuantity = line.packQuantity ?? 0;
-    const unitQuantity = line.unitQuantity ?? 0;
-    if (packQuantity + unitQuantity === 0) continue;
 
     const [batch] = yield* tx
       .insert(batches)
@@ -1508,7 +1584,8 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
           isNull(products.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!product) {
       return yield* Effect.fail(invoiceError("One of the products no longer exists."));
     }

@@ -8,6 +8,8 @@ import {
   LegacyCatalogMigrationResult,
   LegacyCatalogReconciliationCommand,
   LegacyCatalogReconciliationResult,
+  MAX_INVOICE_UPLOAD_BYTES,
+  MAX_INVOICE_UPLOAD_FILES,
   ProductScanInput,
   ProductScanResult,
   SyncOperation,
@@ -30,8 +32,8 @@ import {
   UpgradeRequired,
 } from "./errors";
 
-export const MAX_UPLOAD_FILES = 10;
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+export const MAX_UPLOAD_FILES = MAX_INVOICE_UPLOAD_FILES;
+export const MAX_UPLOAD_BYTES = MAX_INVOICE_UPLOAD_BYTES;
 
 const Landing = Schema.Struct({
   service: Schema.Literal("Store Invoice API"),

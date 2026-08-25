@@ -44,6 +44,10 @@ const matchScore = (product: MobileProduct, result: ProductScanResult, recognize
   const productStrength = normalized(product.strength);
   if (inferredStrength && productStrength)
     score += inferredStrength === productStrength ? 0.24 : -0.55;
+
+  if (result.unitsPerPack !== null) {
+    score += result.unitsPerPack === product.unitsPerPack ? 0.22 : -0.7;
+  }
   return Math.min(1, Math.max(0, score));
 };
 

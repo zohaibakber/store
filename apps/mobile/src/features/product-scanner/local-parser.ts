@@ -96,6 +96,30 @@ const likelyName = (lines: ReadonlyArray<string>) =>
     }),
   );
 
+export const salvageUnitsPerPack = (
+  name: string | null,
+  unitsPerPack: number | null,
+): number | null => {
+  if (unitsPerPack === null) return null;
+  const match = name?.match(/\d+(?:\s*[x×]\s*\d+)+/i);
+  if (!match?.[0]) return unitsPerPack;
+  const parsed = match[0]
+    .split(/\s*[x×]\s*/i)
+    .map(Number)
+    .reduce((total, factor) => total * factor, 1);
+  const concatenated = Number(match[0].replace(/[^\d]/g, ""));
+  if (
+    unitsPerPack === concatenated &&
+    parsed !== concatenated &&
+    Number.isSafeInteger(parsed) &&
+    parsed >= 1 &&
+    parsed <= 10_000
+  ) {
+    return parsed;
+  }
+  return unitsPerPack;
+};
+
 export const parseProductTextLocally = (
   recognizedText: string,
   mode: ProductScanMode,

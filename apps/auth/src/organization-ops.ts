@@ -17,7 +17,6 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { INVITATION_TTL_MS, randomSecret, sha256 } from "./crypto";
-import type { EphemeralStoreApi } from "./ephemeral";
 import { authError } from "./errors";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
@@ -28,7 +27,6 @@ export interface OrganizationOpsConfiguration {
 
 export const makeOrganizationOps = (
   repository: AuthRepositoryApi,
-  ephemeral: EphemeralStoreApi,
   email: EmailProviderApi,
   sessions: Pick<SessionOps, "authorize">,
   configuration: OrganizationOpsConfiguration,
@@ -185,7 +183,7 @@ export const makeOrganizationOps = (
     token: string,
   ) {
     const now = yield* Clock.currentTimeMillis;
-    const allowed = yield* ephemeral.allow({
+    const allowed = yield* repository.allowRateLimit({
       key: `accept-invitation:${claims.subject}`,
       limit: 10,
       windowSeconds: 600,
@@ -263,21 +261,24 @@ export const makeOrganizationOps = (
     }
     if (target.role === input.role) return { _tag: "Applied" } as const;
     // Somebody has to be able to grant roles, so the last owner cannot be
-    // demoted. Promote a second owner first.
-    if (target.role === "owner") {
-      const owners = yield* repository.countRole({
+    // demoted. Promote a second owner first. The predicate lives in the
+    // UPDATE so two concurrent demotes cannot both succeed.
+    const changed = yield* repository.changeMemberRole(input);
+    if (!changed) {
+      const latest = yield* repository.membershipInOrganization({
+        userId: input.userId,
         organizationId: input.organizationId,
-        role: "owner",
       });
-      if (owners <= 1) {
+      if (latest?.role === input.role) return { _tag: "Applied" } as const;
+      if (latest?.role === "owner" && input.role !== "owner") {
         return yield* authError(
           409,
           "LAST_OWNER",
           "Make someone else an owner before changing this role.",
         );
       }
+      return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
     }
-    yield* repository.changeMemberRole(input);
     return { _tag: "Applied" } as const;
   });
 
@@ -312,7 +313,21 @@ export const makeOrganizationOps = (
         "Only the organization owner can remove an owner or an admin.",
       );
     }
-    yield* repository.removeMember(input);
+    const removed = yield* repository.removeMember(input);
+    if (!removed) {
+      const latest = yield* repository.membershipInOrganization({
+        userId: input.userId,
+        organizationId: input.organizationId,
+      });
+      if (latest?.role === "owner") {
+        return yield* authError(
+          409,
+          "LAST_OWNER",
+          "Make someone else an owner before removing this person.",
+        );
+      }
+      return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
+    }
     return { _tag: "Applied" } as const;
   });
 

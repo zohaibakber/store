@@ -23,25 +23,32 @@ const InventoryMutationResult = Schema.Struct({
   txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 });
 
-const InventoryErrorBody = Schema.Struct({
-  error: Schema.Struct({
-    code: Schema.String,
-  }),
-});
-
-export const isIgnorableCatalogUploadError = (cause: unknown) => {
-  const text = cause instanceof Error ? cause.message : String(cause);
-  try {
-    const body = Schema.decodeUnknownSync(InventoryErrorBody)(JSON.parse(text));
-    return body.error.code === "OPERATION_ID_REUSED";
-  } catch {
-    return false;
-  }
-};
-
 const apiRoot = (baseUrl: string) => {
   const normalized = baseUrl.replace(/\/+$/u, "");
   return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
+};
+
+export class InventoryMutationRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "InventoryMutationRequestError";
+    this.status = status;
+  }
+}
+
+/** Retry auth, timeout, rate-limit, and server failures. Other 4xx are permanent. */
+export const shouldRetryInventoryUpload = (error: InventoryMutationRequestError) =>
+  error.status === 401 || error.status === 408 || error.status === 429 || error.status >= 500;
+
+const throwIfNotOk = async (response: Response, fallback: string) => {
+  if (response.ok) return;
+  const detail = (await response.text()).trim();
+  throw new InventoryMutationRequestError(
+    response.status,
+    detail || `${fallback} (${response.status}).`,
+  );
 };
 
 const submitInventoryCommand = async <Result>(input: {
@@ -60,10 +67,7 @@ const submitInventoryCommand = async <Result>(input: {
       body: JSON.stringify(input.command),
     },
   );
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(detail || `${input.failureLabel} (${response.status}).`);
-  }
+  await throwIfNotOk(response, input.failureLabel);
   return input.decode(Schema.decodeUnknownSync(Schema.Json)(await response.json()));
 };
 
@@ -80,10 +84,7 @@ export const submitInventoryOperation = async (input: {
       body: JSON.stringify({ operation: input.operation }),
     },
   );
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(detail || `Inventory mutation failed (${response.status}).`);
-  }
+  await throwIfNotOk(response, "Inventory mutation failed");
   return Schema.decodeUnknownSync(InventoryMutationResult)(await response.json());
 };
 
@@ -100,10 +101,7 @@ export const submitLegacyCatalogMigration = async (input: {
       body: JSON.stringify(input.command),
     },
   );
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(detail || `Legacy inventory migration failed (${response.status}).`);
-  }
+  await throwIfNotOk(response, "Legacy inventory migration failed");
   return Schema.decodeUnknownSync(LegacyCatalogMigrationResult)(await response.json());
 };
 
@@ -120,10 +118,7 @@ export const submitLegacyCatalogReconciliation = async (input: {
       body: JSON.stringify(input.command),
     },
   );
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(detail || `Legacy inventory reconciliation failed (${response.status}).`);
-  }
+  await throwIfNotOk(response, "Legacy inventory reconciliation failed");
   return Schema.decodeUnknownSync(LegacyCatalogReconciliationResult)(await response.json());
 };
 

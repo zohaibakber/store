@@ -8,6 +8,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { parseCsvRecords } from "./csv";
+import { parseMajorCurrencyToMinor, parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
+
 export class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
   "InvoiceExtractionError",
   {
@@ -72,11 +75,11 @@ const instructions = [
   "Extract received inventory from the supplier invoices below.",
   "Rules:",
   "- Every quantity is a whole number.",
-  '- unitsPerPack is how many units one sealed pack contains: "10x10" is 100, "20\'s" is 20, "1" is 1.',
+  '- unitsPerPack is how many units one sealed pack contains. Multiply pack factors: "10x10" is 100, not 1010. "20\'s" and "20s" are 20. "1" is 1.',
   "- packQuantity is how many whole sealed packs were received.",
   "- unitQuantity is only the LOOSE units received on top of the whole packs, usually from a",
   "  'loose' or 'extra' column. It is 0 when there are none. It is never a copy of unitsPerPack.",
-  "- packPrice is the price of ONE pack in the invoice currency's smallest unit (e.g. rupees x 100).",
+  "- packPrice is the price of ONE pack as an integer in the invoice currency's smallest unit (no thousand separators).",
   "- Ignore subtotal, tax, delivery, and grand total rows; they are not received stock.",
   "- Dates as DD-MM-YYYY, or null when absent.",
   "Respond with JSON matching the provided schema and nothing else.",
@@ -101,16 +104,36 @@ const nullableString = (value: ModelScalar | undefined): string | null => {
 const count = (value: ModelScalar | undefined, fallback: number, minimum: number): number =>
   Math.max(minimum, Math.round(toFiniteNumber(value) ?? fallback));
 
-const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => ({
-  name: nullableString(value.name) ?? "Unspecified item",
-  batchNumber: nullableString(value.batchNumber),
-  expiresAt: nullableString(value.expiresAt),
-  packQuantity: count(value.packQuantity, 0, 0),
-  unitQuantity: count(value.unitQuantity, 0, 0),
-  unitsPerPack: count(value.unitsPerPack, 1, 1),
-  packPrice:
-    value.packPrice == null ? null : Math.max(0, Math.round(toFiniteNumber(value.packPrice) ?? 0)),
-});
+const unspecifiedItemName = "Unspecified item";
+
+/** CSV rows that only exist because headers did not map still parse as a line. */
+export const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
+  const name = line.name.trim();
+  return (
+    name.length > 0 && name !== unspecifiedItemName && line.packQuantity + line.unitQuantity > 0
+  );
+};
+
+const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => {
+  const name = nullableString(value.name) ?? unspecifiedItemName;
+  return {
+    name,
+    batchNumber: nullableString(value.batchNumber),
+    expiresAt: nullableString(value.expiresAt),
+    packQuantity: count(value.packQuantity, 0, 0),
+    unitQuantity: count(value.unitQuantity, 0, 0),
+    unitsPerPack: salvageUnitsPerPack(
+      name,
+      isString(value.unitsPerPack) || isNumber(value.unitsPerPack)
+        ? parseUnitsPerPack(value.unitsPerPack, 1)
+        : 1,
+    ),
+    packPrice:
+      value.packPrice == null
+        ? null
+        : Math.max(0, Math.round(toFiniteNumber(value.packPrice) ?? 0)),
+  };
+};
 
 const normalizeExtraction = (value: InvoiceModelObject) => {
   const lines = value.lines;
@@ -121,25 +144,23 @@ const normalizeExtraction = (value: InvoiceModelObject) => {
   };
 };
 
-const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
-  const [headerRow = "", ...rows] = contents.trim().split(/\r?\n/);
-  const headers = headerRow.split(",").map((value) => value.trim().toLowerCase());
-  const valueAt = (row: string[], name: string) => row[headers.indexOf(name)]?.trim() ?? "";
-  return rows.filter(Boolean).map((row) => {
-    const values = row.split(",");
-    return normalizeLine({
+export const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
+  const [headerRow = [], ...rows] = parseCsvRecords(contents);
+  const headers = headerRow.map((value) => value.trim().toLowerCase());
+  const valueAt = (row: ReadonlyArray<string>, name: string) =>
+    row[headers.indexOf(name)]?.trim() ?? "";
+  return rows.map((values) =>
+    normalizeLine({
       name:
         valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
       batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
       expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
-      packQuantity: Number(valueAt(values, "packs") || valueAt(values, "pack quantity") || 0),
-      unitQuantity: Number(valueAt(values, "units") || valueAt(values, "unit quantity") || 0),
-      unitsPerPack: Number(valueAt(values, "units per pack") || 1),
-      packPrice: valueAt(values, "pack price")
-        ? Math.round(Number(valueAt(values, "pack price")) * 100)
-        : null,
-    });
-  });
+      packQuantity: valueAt(values, "packs") || valueAt(values, "pack quantity") || 0,
+      unitQuantity: valueAt(values, "units") || valueAt(values, "unit quantity") || 0,
+      unitsPerPack: valueAt(values, "units per pack") || 1,
+      packPrice: parseMajorCurrencyToMinor(valueAt(values, "pack price")),
+    }),
+  );
 };
 
 const isFailure = (
@@ -193,9 +214,13 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
         const csvContents = yield* Effect.tryPromise(() =>
           Promise.all(csvFiles.map((file) => file.text())),
         );
-        const csvLines = csvContents.flatMap(parseCsv);
+        const csvLines = csvContents.flatMap(parseCsv).filter(hasReceivedStock);
         const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
-        if (!aiFiles.length)
+        // CSV already has received-stock lines. Mixing in a PDF of the same
+        // shipment would double-count packs, so the spreadsheet wins. A CSV
+        // whose columns did not map (placeholder names, zero quantities) is
+        // not a spreadsheet of received stock, so PDFs still get extracted.
+        if (csvLines.length > 0 || !aiFiles.length)
           return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
             supplier: null,
             invoiceNumber: null,
@@ -227,13 +252,7 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
           }),
         ).pipe(Effect.timeout("30 seconds"));
         const output = yield* Effect.try(() => parseModelOutput(raw));
-        const extracted = yield* Schema.decodeUnknownEffect(InvoiceExtraction)(
-          normalizeExtraction(output),
-        );
-        return InvoiceExtraction.make({
-          ...extracted,
-          lines: [...csvLines, ...extracted.lines],
-        });
+        return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
       },
       (effect) =>
         effect.pipe(

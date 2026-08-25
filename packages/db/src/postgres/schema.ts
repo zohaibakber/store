@@ -80,7 +80,9 @@ export const categories = pgTable(
       name: "categories_organization_id_id_pk",
       columns: [table.organizationId, table.id],
     }),
-    uniqueIndex("categories_organization_id_name_uidx").on(table.organizationId, table.name),
+    uniqueIndex("categories_organization_id_name_uidx")
+      .on(table.organizationId, table.name)
+      .where(sql`${table.deletedAt} is null`),
     index("categories_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
   ],
 );

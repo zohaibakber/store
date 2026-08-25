@@ -100,4 +100,53 @@ describe("legacy catalog migrations", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ imported: 250, skipped: 0, txid: 42 });
   });
+
+  it("refuses legacy catalog uploads from members", async () => {
+    const migrateLegacyCatalog = vi.fn(() => Effect.succeed({ imported: 1, skipped: 0, txid: 42 }));
+    const response = await appFor(true, { role: "member", migrateLegacyCatalog }).request(
+      "/api/inventory/legacy-migrations",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(command),
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(migrateLegacyCatalog).not.toHaveBeenCalled();
+  });
+
+  it("refuses legacy catalog reconciliation from members", async () => {
+    const reconcileLegacyCatalog = vi.fn(() =>
+      Effect.succeed({
+        deletedCategories: 0,
+        deletedProducts: 0,
+        deletedBatches: 0,
+        deletedInvoices: 0,
+        deletedInvoiceItems: 0,
+        deletedStockMovements: 0,
+        txid: 1,
+      }),
+    );
+    const response = await appFor(true, { role: "member", reconcileLegacyCatalog }).request(
+      "/api/inventory/legacy-reconciliations",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          deviceId: "device-1",
+          occurredAt: 1_700_000_000_000,
+          categoryIds: ["medicine"],
+          productIds: [],
+          batchIds: [],
+          invoiceIds: [],
+          invoiceItemIds: [],
+          stockMovementIds: [],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(reconcileLegacyCatalog).not.toHaveBeenCalled();
+  });
 });

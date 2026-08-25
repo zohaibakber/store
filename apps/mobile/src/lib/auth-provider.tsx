@@ -19,6 +19,7 @@ import {
   restoreTokens,
   saveWorkspaceSnapshot,
   signOutMobile,
+  subscribeWorkspaceAfterRefresh,
 } from "@/lib/auth-client";
 import { forgetGoogleAccount, signInWithGoogleAccount } from "@/lib/google-signin";
 import { hapticSuccess } from "@/lib/haptics";
@@ -94,7 +95,8 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
       await clearMobileTokens();
       setState(signedOut);
     } catch {
-      const cached = await readWorkspaceSnapshot();
+      const stillHaveTokens = (await restoreTokens()) !== null;
+      const cached = stillHaveTokens ? await readWorkspaceSnapshot() : null;
       if (cached) {
         setState(
           await authenticatedState({
@@ -112,6 +114,14 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(
+    () =>
+      subscribeWorkspaceAfterRefresh((workspace) => {
+        void authenticatedState(workspace).then(setState);
+      }),
+    [],
+  );
 
   const completeAuthentication = useCallback(async () => {
     const workspace = await fetchWorkspaceSession();

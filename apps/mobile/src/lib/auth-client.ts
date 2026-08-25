@@ -23,7 +23,10 @@ import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
+import { usableAccessToken } from "@/lib/auth-tokens";
 import { isOfflineCause, OfflineError } from "@/lib/offline";
+
+export { usableAccessToken } from "@/lib/auth-tokens";
 
 export { isOfflineCause, OfflineError } from "@/lib/offline";
 
@@ -54,6 +57,17 @@ const native = nativeClient(__DEV__ ? "Tabaaq Dev Mobile" : "Tabaaq Mobile");
 let tokens: TokenSetType | null = null;
 let refreshInFlight: Promise<TokenSetType | null> | null = null;
 
+type WorkspaceAfterRefresh = (workspace: AuthenticatedWorkspaceSnapshot) => void;
+const workspaceAfterRefreshListeners = new Set<WorkspaceAfterRefresh>();
+
+/** Hosts remount inventory when refresh lands in a different organization. */
+export const subscribeWorkspaceAfterRefresh = (listener: WorkspaceAfterRefresh) => {
+  workspaceAfterRefreshListeners.add(listener);
+  return () => {
+    workspaceAfterRefreshListeners.delete(listener);
+  };
+};
+
 export class WorkspaceSessionError extends Schema.TaggedError<WorkspaceSessionError>()(
   "Mobile.WorkspaceSessionError",
   {
@@ -72,6 +86,7 @@ const persistTokens = async (next: TokenSetType | null) => {
     return;
   }
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await Storage.removeItem(SNAPSHOT_KEY);
 };
 
 const decodeStoredTokens = (serialized: string | null) => {
@@ -104,14 +119,19 @@ const refreshTokens = async () => {
   refreshInFlight = run(client.refresh({ refreshToken }))
     .then(async (next) => {
       await persistTokens(next);
+      // Drop the lock before session reload so getAccessToken cannot deadlock
+      // on this same in-flight refresh.
+      refreshInFlight = null;
+      await reloadWorkspaceAfterRefresh();
       return next;
     })
     .catch(async (cause: unknown) => {
       if (cause instanceof AuthClientError && (cause.status === 401 || cause.status === 403)) {
         await persistTokens(null);
       }
-      if (isOfflineCause(cause)) return null;
-      throw cause;
+      // Transient and server failures keep the current tokens so a still-valid
+      // access token can be used. Auth rejection already cleared them.
+      return null;
     })
     .finally(() => {
       refreshInFlight = null;
@@ -124,7 +144,7 @@ export const getAccessToken = async () => {
   if (!tokens) return null;
   if (tokens.accessExpiresAt > Date.now() + REFRESH_WINDOW_MS) return tokens.accessToken;
   const refreshed = await refreshTokens();
-  return refreshed?.accessToken ?? null;
+  return usableAccessToken(tokens, refreshed, Date.now());
 };
 
 export const nativeAuthHeaders = async (): Promise<Record<string, string>> => {
@@ -173,6 +193,17 @@ export const fetchWorkspaceSession = async (): Promise<typeof WorkspaceSnapshot.
     throw cause;
   } finally {
     clearTimeout(timeout);
+  }
+};
+
+const reloadWorkspaceAfterRefresh = async () => {
+  try {
+    const workspace = await fetchWorkspaceSession();
+    if (workspace.status !== "authenticated") return;
+    await saveWorkspaceSnapshot(workspace);
+    for (const listener of workspaceAfterRefreshListeners) listener(workspace);
+  } catch {
+    // Rotated tokens still work. The next foreground load can refresh UI.
   }
 };
 

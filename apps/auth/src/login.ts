@@ -34,7 +34,7 @@ export const makeLoginOps = (
     const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
       normalizeEmail(input.email),
     ).pipe(Effect.mapError(() => authError(400, "INVALID_EMAIL", "Enter a valid email.")));
-    const allowed = yield* ephemeral.allow({
+    const allowed = yield* repository.allowRateLimit({
       key: `identify:${normalized}`,
       limit: 10,
       windowSeconds: 60,
@@ -70,7 +70,7 @@ export const makeLoginOps = (
     switch (command._tag) {
       case "Password": {
         const emailAddress = EmailAddress.make(normalizeEmail(command.email));
-        const allowed = yield* ephemeral.allow({
+        const allowed = yield* repository.allowRateLimit({
           key: `password:${emailAddress}`,
           limit: 5,
           windowSeconds: 300,
@@ -98,7 +98,7 @@ export const makeLoginOps = (
         return yield* sessions.issueSession(user, command.client);
       }
       case "Otp": {
-        const allowed = yield* ephemeral.allow({
+        const allowed = yield* repository.allowRateLimit({
           key: `otp-attempt:${command.challengeId}`,
           limit: 5,
           windowSeconds: OTP_TTL_MS / 1_000,
@@ -123,7 +123,7 @@ export const makeLoginOps = (
       }
       case "RegisterPassword": {
         const emailAddress = EmailAddress.make(normalizeEmail(command.email));
-        const allowed = yield* ephemeral.allow({
+        const allowed = yield* repository.allowRateLimit({
           key: `register:${emailAddress}`,
           limit: 5,
           windowSeconds: 3_600,

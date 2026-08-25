@@ -12,6 +12,7 @@ export interface CurrentOrganizationContext {
   readonly user: AuthSession["user"];
   readonly session: AuthSession["session"];
   readonly organizationId: string;
+  readonly role: AuthSession["organizations"][number]["role"];
 }
 
 export class CurrentOrganization extends Context.Service<
@@ -49,23 +50,30 @@ export const authenticateCurrentOrganization = Effect.fn(
   "OrganizationAuth.authenticateCurrentOrganization",
 )(function* (runtime: ServerRuntimeContract) {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const headers = headersWithAccessToken(
-    authHeadersForRequest(new Headers(request.headers)),
-    request.url,
-  );
+  const headers = authHeadersForRequest(new Headers(request.headers));
+  const authenticatedHeaders =
+    request.headers.upgrade?.toLowerCase() === "websocket"
+      ? headersWithAccessToken(headers, request.url)
+      : headers;
   const session = yield* runtime
-    .getSession(headers)
+    .getSession(authenticatedHeaders)
     .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
   if (!session) return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
 
   const organizationId = session.session.activeOrganizationId;
   if (!organizationId)
     return yield* Effect.fail(forbidden("ORGANIZATION_REQUIRED", "Select an organization first."));
+  const membership = session.organizations.find(
+    (organization) => organization.id === organizationId,
+  );
+  if (!membership)
+    return yield* Effect.fail(forbidden("ORGANIZATION_REQUIRED", "Select an organization first."));
 
   return {
     user: session.user,
     session: session.session,
     organizationId,
+    role: membership.role,
   } satisfies CurrentOrganizationContext;
 });
 

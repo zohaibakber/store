@@ -59,6 +59,13 @@ describe("API Worker bundle", () => {
     expect(source).not.toContain("disposeSyncRuntime");
   });
 
+  it("does not call the Neon API from the Worker runtime", async () => {
+    const chunks = await bundleWorker();
+    const code = chunks.map((chunk) => chunk.code).join("\n");
+    expect(code).not.toContain("getConnectionURI");
+    expect(code).not.toContain("resetProjectBranchRolePassword");
+  }, 60_000);
+
   it("does not require process.env production hostnames at Worker runtime", async () => {
     // `requireProductionApiHostname()` reads process.env and throws. The
     // Worker bundle folds `__ALCHEMY_RUNTIME__` to true, so that deploy-time

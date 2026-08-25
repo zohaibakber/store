@@ -1,11 +1,12 @@
 import { UpdateType } from "@powersync/common";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { isIgnorableCatalogUploadError } from "../src/mutations";
+import { InventoryMutationRequestError, shouldRetryInventoryUpload } from "../src/mutations";
 import {
-  catalogCrudMutationId,
   decodePowerSyncCatalogCrudEntry,
   stampCatalogUploadRow,
+  uploadInventoryCrudTransaction,
+  waitForInventoryUploadDrain,
 } from "../src/powersync";
 
 const category = {
@@ -64,40 +65,142 @@ describe("PowerSync catalog upload snapshots", () => {
     ).toMatchObject({ id: category.id, deletedAt: null, tracksPacks: true });
   });
 
-  it("gives each queued write its own mutation id even when rows share one", () => {
-    const first = catalogCrudMutationId({ clientId: 11 });
-    const second = catalogCrudMutationId({ clientId: 12 });
-
-    expect(first).not.toBe(second);
-    expect(catalogCrudMutationId({ clientId: 11 })).toBe(first);
-    expect(stampCatalogUploadRow(category, { clientId: 11 }).operationId).toBe(first);
+  it("keeps the row mutation id instead of a replica-local CRUD sequence", () => {
+    expect(stampCatalogUploadRow(category).operationId).toBe("operation-1");
     expect(
-      stampCatalogUploadRow(
-        { ...category, id: "category-2", operationId: "operation-1" },
-        {
-          clientId: 12,
-        },
-      ).operationId,
-    ).toBe(second);
+      stampCatalogUploadRow({ ...category, id: "category-2", operationId: "operation-2" })
+        .operationId,
+    ).toBe("operation-2");
   });
 });
 
-describe("catalog upload conflicts", () => {
-  it("treats a reused mutation id as already acknowledged", () => {
-    expect(
-      isIgnorableCatalogUploadError(
-        new Error(
-          '{"error":{"code":"OPERATION_ID_REUSED","message":"The mutation id was reused with different content."}}',
-        ),
+describe("PowerSync catalog upload failures", () => {
+  it("retries auth, timeout, rate-limit, and server failures", () => {
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(401, "expired"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(408, "timeout"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(429, "slow down"))).toBe(
+      true,
+    );
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(503, "down"))).toBe(true);
+  });
+
+  it("does not retry other client errors", () => {
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(400, "bad"))).toBe(false);
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(403, "no"))).toBe(false);
+    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(409, "conflict"))).toBe(
+      false,
+    );
+  });
+
+  it("skips a permanent 409 and still uploads the rest of the batch", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("conflict", { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ txid: 1 }), { status: 200 }));
+    const complete = vi.fn(async () => undefined);
+
+    await uploadInventoryCrudTransaction(
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+      {
+        crud: [
+          { id: category.id, table: "categories", op: UpdateType.PUT, opData: category },
+          {
+            id: "category-2",
+            table: "categories",
+            op: UpdateType.PUT,
+            opData: { ...category, id: "category-2", operationId: "operation-2" },
+          },
+        ],
+        complete,
+      },
+    );
+
+    expect(authenticatedFetch).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the queue in place when the server is down", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
       ),
-    ).toBe(true);
-    expect(
-      isIgnorableCatalogUploadError(
-        new Error(
-          '{"error":{"code":"ENTITY_CONFLICT","message":"The entity changed before this mutation was saved."}}',
-        ),
+    ).rejects.toThrow(InventoryMutationRequestError);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("leaves the queue in place when the network fails", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
       ),
-    ).toBe(false);
-    expect(isIgnorableCatalogUploadError(new Error("network down"))).toBe(false);
+    ).rejects.toThrow(TypeError);
+    expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForInventoryUploadDrain", () => {
+  it("returns immediately when the upload queue is empty", async () => {
+    const getUploadQueueStats = vi.fn(async () => ({ count: 0 }));
+    await waitForInventoryUploadDrain({
+      getUploadQueueStats,
+      currentStatus: { connected: false, connecting: false },
+    });
+    expect(getUploadQueueStats).toHaveBeenCalledOnce();
+  });
+
+  it("refuses when catalog changes are queued and PowerSync is offline", async () => {
+    await expect(
+      waitForInventoryUploadDrain({
+        getUploadQueueStats: async () => ({ count: 2 }),
+        currentStatus: { connected: false, connecting: false },
+      }),
+    ).rejects.toThrow("Wait until catalog changes finish uploading before continuing.");
+  });
+
+  it("waits until queued catalog changes finish uploading", async () => {
+    const getUploadQueueStats = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    await waitForInventoryUploadDrain({
+      getUploadQueueStats,
+      currentStatus: { connected: true, connecting: false },
+    });
+    expect(getUploadQueueStats).toHaveBeenCalledTimes(3);
+  });
+
+  it("times out if the upload queue does not drain", async () => {
+    await expect(
+      waitForInventoryUploadDrain(
+        {
+          getUploadQueueStats: async () => ({ count: 1 }),
+          currentStatus: { connected: true, connecting: false },
+        },
+        0,
+      ),
+    ).rejects.toThrow("Catalog changes are still uploading. Try again in a moment.");
   });
 });

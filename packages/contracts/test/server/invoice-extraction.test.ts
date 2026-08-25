@@ -3,7 +3,13 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, test } from "vitest";
 
-import { InvoiceExtraction, invoiceExtractionJsonSchema } from "../../src/server/schema";
+import {
+  InvoiceExtraction,
+  invoiceExtractionJsonSchema,
+  invoiceUploadRejection,
+  MAX_INVOICE_UPLOAD_BYTES,
+  MAX_INVOICE_UPLOAD_FILES,
+} from "../../src/server/schema";
 
 describe("server API response contracts", () => {
   test("decodes a valid invoice extraction", () => {
@@ -44,5 +50,28 @@ describe("server API response contracts", () => {
       type: "object",
       required: ["supplier", "invoiceNumber", "lines"],
     });
+  });
+});
+
+describe("invoice upload limits", () => {
+  test("rejects an empty file list", () => {
+    expect(invoiceUploadRejection([])).toBe("Attach at least one invoice file.");
+  });
+
+  test("rejects more files than the server accepts", () => {
+    const files = Array.from({ length: MAX_INVOICE_UPLOAD_FILES + 1 }, () => ({ byteLength: 1 }));
+    expect(invoiceUploadRejection(files)).toBe(
+      `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`,
+    );
+  });
+
+  test("rejects a payload over the total byte cap", () => {
+    expect(invoiceUploadRejection([{ byteLength: MAX_INVOICE_UPLOAD_BYTES + 1 }])).toBe(
+      "The attachments are too large.",
+    );
+  });
+
+  test("accepts a payload within both caps", () => {
+    expect(invoiceUploadRejection([{ byteLength: 1 }, { byteLength: 1 }])).toBeNull();
   });
 });

@@ -304,7 +304,10 @@ export const decodeJsonWebKey = Schema.decodeUnknownEffect(JsonWebKeySchema);
 export const powerSyncPublicJwks = (publicJwk: JsonWebKey) => ({
   keys: [
     {
-      ...publicJwk,
+      kty: publicJwk.kty,
+      crv: publicJwk.crv,
+      x: publicJwk.x,
+      y: publicJwk.y,
       alg: "ES256",
       use: "sig",
       kid: AUTH_JWT_KEY_ID,

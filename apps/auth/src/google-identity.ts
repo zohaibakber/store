@@ -165,7 +165,7 @@ export const makeGoogleIdentityOps = (
           authError(401, "INVALID_GOOGLE_IDENTITY", "Google sign-in could not be verified."),
         ),
       );
-    const allowed = yield* ephemeral.allow({
+    const allowed = yield* repository.allowRateLimit({
       key: `google-identity:${profile.providerAccountId}`,
       limit: 10,
       windowSeconds: 60,

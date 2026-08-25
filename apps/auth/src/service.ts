@@ -81,13 +81,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         sessions,
         configuration,
       );
-      const organizations = makeOrganizationOps(
-        repository,
-        ephemeral,
-        email,
-        sessions,
-        configuration,
-      );
+      const organizations = makeOrganizationOps(repository, email, sessions, configuration);
 
       const handle = <A, E>(effect: Effect.Effect<A, E>) =>
         effect.pipe(Effect.tapError(infrastructureLog), Effect.mapError(infrastructureError));

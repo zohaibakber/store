@@ -185,7 +185,9 @@ function ProductDetailContent({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete product?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Delete {product.name}? Stock and batches for this product will no longer appear.
+                  {product.batches.some((batch) => batch.packQuantity > 0 || batch.unitQuantity > 0)
+                    ? `Sell or adjust remaining stock for ${product.name} before deleting it.`
+                    : `Delete ${product.name} from the catalog?`}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema";
 import type { IpcMain } from "electron";
 
 import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
-import { latestMigrationRows } from "./legacy-migration-catalog";
+import { latestCreatedRows, latestMigrationRows } from "./legacy-migration-catalog";
 
 type LegacyMigrationCatalog = {
   readonly categories: ReadonlyArray<LegacyCategoryMigrationRow>;
@@ -285,33 +285,19 @@ export const migrationDatabasePaths = (userDataPath: string) => {
   ];
 };
 
-const combinedMigrationCatalog = (userDataPath: string) => {
-  const catalogs = migrationDatabasePaths(userDataPath).map(loadMigrationCatalog);
-  const catalog =
-    [...catalogs].sort(
-      (left, right) =>
-        right.categories.length +
-        right.products.length +
-        right.batches.length +
-        right.invoices.length +
-        right.invoiceItems.length +
-        right.stockMovements.length -
-        (left.categories.length +
-          left.products.length +
-          left.batches.length +
-          left.invoices.length +
-          left.invoiceItems.length +
-          left.stockMovements.length),
-    )[0] ?? emptySnapshot().migrationCatalog;
-  return {
-    categories: latestMigrationRows(catalog.categories),
-    products: latestMigrationRows(catalog.products),
-    batches: latestMigrationRows(catalog.batches),
-    invoices: latestMigrationRows(catalog.invoices),
-    invoiceItems: latestMigrationRows(catalog.invoiceItems),
-    stockMovements: catalog.stockMovements,
-  };
-};
+export const mergeMigrationCatalogs = (
+  catalogs: ReadonlyArray<LegacyMigrationCatalog>,
+): LegacyMigrationCatalog => ({
+  categories: latestMigrationRows(catalogs.flatMap((catalog) => catalog.categories)),
+  products: latestMigrationRows(catalogs.flatMap((catalog) => catalog.products)),
+  batches: latestMigrationRows(catalogs.flatMap((catalog) => catalog.batches)),
+  invoices: latestMigrationRows(catalogs.flatMap((catalog) => catalog.invoices)),
+  invoiceItems: latestMigrationRows(catalogs.flatMap((catalog) => catalog.invoiceItems)),
+  stockMovements: latestCreatedRows(catalogs.flatMap((catalog) => catalog.stockMovements)),
+});
+
+const combinedMigrationCatalog = (userDataPath: string) =>
+  mergeMigrationCatalogs(migrationDatabasePaths(userDataPath).map(loadMigrationCatalog));
 
 export const loadLegacyLocalSnapshot = (userDataPath: string) => {
   const databasePath = path.join(userDataPath, "locked", "data", "store.db");

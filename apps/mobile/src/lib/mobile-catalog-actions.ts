@@ -114,7 +114,7 @@ const saveProduct = async (
   if (!categoryId) categoryId = activeCategories[0]?.id;
   if (!categoryId && activeCategories.length === 0) {
     const general: CategoryRow = {
-      id: decodeCategoryId("general"),
+      id: decodeCategoryId(Crypto.randomUUID()),
       name: "General",
       tracksPacks: true,
       ...createdMetadata(actor),
@@ -165,6 +165,17 @@ const saveProduct = async (
   };
 
   if (current) {
+    if (unitsPerPack !== current.unitsPerPack) {
+      const remainingStock = [...collections.batches.state.values()].some(
+        (batch) =>
+          batch.deletedAt === null &&
+          batch.productId === current.id &&
+          (batch.packQuantity > 0 || batch.unitQuantity > 0),
+      );
+      if (remainingStock) {
+        throw new Error("Change units per pack only after the product has no remaining stock.");
+      }
+    }
     const metadata = updatedMetadata(actor, current.rowVersion);
     const next = { ...current, ...values, ...metadata } satisfies ProductRow;
     const transaction = collections.products.update(id, (draft) => Object.assign(draft, next));

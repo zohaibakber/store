@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { OrganizationCommand, TokenSet } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
+import { invoiceUploadRejection, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
@@ -22,6 +23,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { isAllowedRendererNavigation } from "./renderer-navigation";
 import { makeShutdownCoordinator } from "./shutdown";
 import {
   openDesktopTanStackDbPersistence,
@@ -165,7 +167,7 @@ const InvoiceUpload = Schema.Struct({
       type: Schema.String,
       bytes: Schema.instanceOf(ArrayBuffer),
     }),
-  ),
+  ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
 });
 const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
@@ -209,6 +211,10 @@ function registerAuthIpc() {
 function registerServerIpc() {
   ipcMain.handle("server:uploads", async (_event, input) => {
     const upload = Schema.decodeUnknownSync(InvoiceUpload)(input);
+    const rejection = invoiceUploadRejection(
+      upload.files.map((file) => ({ byteLength: file.bytes.byteLength })),
+    );
+    if (rejection) throw new Error(rejection);
     const body = new FormData();
     for (const file of upload.files) {
       const inferredType = file.name.toLowerCase().endsWith(".pdf")
@@ -268,7 +274,7 @@ function createWindow() {
     const allowed = [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
       (value): value is string => Boolean(value),
     );
-    if (!allowed.some((origin) => url.startsWith(origin))) event.preventDefault();
+    if (!isAllowedRendererNavigation(url, allowed)) event.preventDefault();
   });
 
   win.on("closed", () => {

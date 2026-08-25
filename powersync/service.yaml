@@ -23,12 +23,8 @@ region: us
 replication:
   connections:
     - type: postgresql
-      # [optional] Connection string (recommended). Omit and use hostname/port/database/username/password instead.
-      uri: postgresql://neondb_owner:npg_cKT38DBPjOqL@ep-mute-dew-afrz2glu-pooler.c-2.us-west-2.aws.neon.tech/neondb
       password:
         secret_ref: default_password
-        #secret: !env POWERSYNC_DATABASE_PASSWORD
-      # [optional] Alternative to uri: individual connection parameters.
       hostname: ep-mute-dew-afrz2glu-pooler.c-2.us-west-2.aws.neon.tech
       port: 5432
       database: neondb

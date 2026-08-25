@@ -1,4 +1,12 @@
-import { EmailAddress, GoogleIdToken, IdentifyInput, Password } from "@store/auth";
+import {
+  EmailAddress,
+  GoogleIdToken,
+  IdentifyInput,
+  OtpChallengeId,
+  OtpCode,
+  Password,
+  RefreshInput,
+} from "@store/auth";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -157,6 +165,67 @@ describe("AuthService", () => {
   });
 });
 
+describe("refresh rotation", () => {
+  it("does not kill the rotated session when the previous token is presented immediately", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const first = await run(instance, (auth) =>
+      auth.authenticate({
+        _tag: "Password",
+        email: passwordUser.email,
+        password: Password.make("valid-password"),
+        client: { _tag: "Native", deviceName: "Test device" },
+      }),
+    );
+    const second = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
+    );
+
+    const replay = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
+    );
+    expect(replay).toMatchObject({ status: 401, code: "INVALID_REFRESH_TOKEN" });
+
+    const third = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken })),
+    );
+    expect(third.refreshToken).toBeDefined();
+    expect(instance.store.sessions.filter((session) => session.revokedAt === null)).toHaveLength(1);
+  });
+
+  it("burns the family when a revoked token is presented after the grace window", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const first = await run(instance, (auth) =>
+      auth.authenticate({
+        _tag: "Password",
+        email: passwordUser.email,
+        password: Password.make("valid-password"),
+        client: { _tag: "Native", deviceName: "Test device" },
+      }),
+    );
+    const second = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
+    );
+    const previousIndex = instance.store.sessions.findIndex(
+      (session) => session.replacedBySessionId !== null,
+    );
+    const previous = instance.store.sessions[previousIndex];
+    expect(previous?.revokedAt).not.toBeNull();
+    if (previousIndex < 0 || !previous) throw new Error("Expected a rotated session.");
+    instance.store.sessions[previousIndex] = { ...previous, revokedAt: Date.now() - 60_000 };
+
+    const replay = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
+    );
+    expect(replay).toMatchObject({ status: 401, code: "REFRESH_REUSE_DETECTED" });
+
+    const live = await run(instance, (auth) =>
+      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken }))),
+    );
+    expect(live).toMatchObject({ status: 401 });
+    expect(instance.store.sessions.every((session) => session.revokedAt !== null)).toBe(true);
+  });
+});
+
 describe("Google account linking", () => {
   const linkingHarness = (email: string) => {
     const instance = harness({
@@ -262,5 +331,80 @@ describe("Google account linking", () => {
 
     expect(instance.issued.at(-1)).toMatchObject({ subject: "first" });
     expect(instance.store.googleIdentities).toHaveLength(1);
+  });
+});
+
+describe("Rate limits", () => {
+  const nativeClient = { _tag: "Native" as const, deviceName: "Test device" };
+
+  it("caps identify attempts per email and leaves other addresses alone", async () => {
+    const instance = harness();
+    const identify = (email: string) =>
+      run(instance, (auth) =>
+        auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })),
+      );
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await expect(identify("flood@example.com")).resolves.toMatchObject({
+        _tag: "Registration",
+      });
+    }
+
+    const denied = await run(instance, (auth) =>
+      Effect.flip(
+        auth.identify(IdentifyInput.make({ email: EmailAddress.make("flood@example.com") })),
+      ),
+    );
+    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+    await expect(identify("other@example.com")).resolves.toMatchObject({ _tag: "Registration" });
+  });
+
+  it("caps password attempts before the sixth try", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const signIn = () =>
+      run(instance, (auth) =>
+        auth.authenticate({
+          _tag: "Password",
+          email: passwordUser.email,
+          password: Password.make("valid-password"),
+          client: nativeClient,
+        }),
+      );
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(signIn()).resolves.toMatchObject({ accessToken: expect.any(String) });
+    }
+
+    const denied = await run(instance, (auth) =>
+      Effect.flip(
+        auth.authenticate({
+          _tag: "Password",
+          email: passwordUser.email,
+          password: Password.make("valid-password"),
+          client: nativeClient,
+        }),
+      ),
+    );
+    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+  });
+
+  it("caps OTP guesses for one challenge", async () => {
+    const instance = harness();
+    const guess = () =>
+      run(instance, (auth) =>
+        Effect.flip(
+          auth.authenticate({
+            _tag: "Otp",
+            challengeId: OtpChallengeId.make("challenge-1"),
+            code: OtpCode.make("000000"),
+            client: nativeClient,
+          }),
+        ),
+      );
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(guess()).resolves.toMatchObject({ status: 401, code: "INVALID_OTP" });
+    }
+    await expect(guess()).resolves.toMatchObject({ status: 429, code: "RATE_LIMITED" });
   });
 });

@@ -14,11 +14,16 @@ import { formatPrice } from "@/lib/format";
 function InvoiceCompleteSaleAction() {
   const {
     actions: { completeSale },
-    meta: { canSubmit, total },
+    meta: { canSubmit, isSubmitting, total },
   } = useInvoiceCreate();
 
   return (
-    <Button disabled={!canSubmit} onClick={() => void completeSale()} type="button">
+    <Button
+      disabled={!canSubmit || isSubmitting}
+      loading={isSubmitting}
+      onClick={() => void completeSale()}
+      type="button"
+    >
       Complete sale{canSubmit && ` · ${formatPrice(total)}`}
     </Button>
   );

@@ -16,6 +16,7 @@ import {
   submitImportInventory,
   submitIssueInvoice,
   waitForInventoryFirstSync,
+  waitForInventoryUploadDrain,
 } from "@store/client-db";
 import type {
   Category,
@@ -37,6 +38,7 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
+import { inventorySkuKey } from "@store/contracts";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -44,13 +46,14 @@ import {
   decodeInvoiceItemId,
   decodeProductId,
 } from "@store/contracts/ids";
-import { powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
+import { PowerSyncTransactor, powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
 import {
   type Collection,
   DbClient,
   DbProvider,
   and,
   collectionOptions,
+  createTransaction,
   eq,
   isNull,
   toArray,
@@ -100,28 +103,32 @@ const replicateRemoteCatalog = (
   powerSync: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
 ) => {
   void (async () => {
+    void powerSync.connect(
+      makeInventoryPowerSyncConnector({
+        apiBaseUrl: host.apiBaseUrl,
+        authenticatedFetch: host.authenticatedFetch,
+      }),
+    );
     try {
       if (!legacyCatalogMigrated(scopeId)) {
-        const legacy = await host.loadLegacyLocalSnapshot?.();
-        if (legacy) {
-          await migrateLegacyCatalog({
-            apiBaseUrl: host.apiBaseUrl,
-            authenticatedFetch: host.authenticatedFetch,
-            deviceId: host.deviceId,
-            catalog: legacy.migrationCatalog,
-          });
+        try {
+          const legacy = await host.loadLegacyLocalSnapshot?.();
+          if (legacy) {
+            await migrateLegacyCatalog({
+              apiBaseUrl: host.apiBaseUrl,
+              authenticatedFetch: host.authenticatedFetch,
+              deviceId: host.deviceId,
+              catalog: legacy.migrationCatalog,
+            });
+          }
+          markLegacyCatalogMigrated(scopeId);
+        } catch {
+          // Retry the server copy on the next launch. Sync still runs.
         }
-        markLegacyCatalogMigrated(scopeId);
       }
-      void powerSync.connect(
-        makeInventoryPowerSyncConnector({
-          apiBaseUrl: host.apiBaseUrl,
-          authenticatedFetch: host.authenticatedFetch,
-        }),
-      );
       await waitForInventoryFirstSync(powerSync);
     } catch {
-      // Local rows stay on screen. The next launch retries the server copy.
+      // Local rows stay on screen.
     }
   })();
 };
@@ -206,14 +213,16 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       products.preload(),
       stockMovements.preload(),
     ]);
-    await seedLegacySnapshot(host, {
-      batches,
-      categories,
-      invoiceItems,
-      invoices,
-      products,
-      stockMovements,
-    });
+    if (scope._tag === "Local") {
+      await seedLegacySnapshot(host, {
+        batches,
+        categories,
+        invoiceItems,
+        invoices,
+        products,
+        stockMovements,
+      });
+    }
     if (scope._tag === "Remote") replicateRemoteCatalog(host, scopeId, powerSync);
 
     return {
@@ -222,6 +231,7 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
       dbClient,
       invoiceItems,
       invoices,
+      powerSync,
       products,
       stockMovements,
       mode: scope._tag,
@@ -282,6 +292,23 @@ const persistInsert = async <Row extends object>(
   await transaction.isPersisted.promise;
 };
 
+/**
+ * One PowerSync SQLite write for every collection mutation in `mutate`.
+ * Direct `collection.insert` / `update` each open their own write, so a crash
+ * between them can leave an invoice without stock movements (or the reverse).
+ */
+const persistTogether = async (inventory: Inventory, mutate: () => void) => {
+  const transaction = createTransaction({
+    autoCommit: false,
+    mutationFn: async ({ transaction: pending }) => {
+      await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
+    },
+  });
+  transaction.mutate(mutate);
+  await transaction.commit();
+  await transaction.isPersisted.promise;
+};
+
 const activeRows = <Row extends { readonly deletedAt: number | null }>(rows: Iterable<Row>) =>
   [...rows].filter((row) => row.deletedAt === null);
 
@@ -335,25 +362,41 @@ const importLocalInventory = async (
   if (!category || category.deletedAt !== null)
     throw new Error("The selected category is missing.");
 
-  const productsByName = new Map<string, ProductRow>(
-    activeRows(inventory.products.state.values()).map((product) => [
-      product.name.trim().toLocaleLowerCase(),
-      product,
-    ]),
-  );
-  let createdProducts = 0;
-  let createdBatches = 0;
+  const productsBySku = new Map<string, ProductRow[]>();
+  for (const product of activeRows(inventory.products.state.values())) {
+    const key = inventorySkuKey(product.name, product.unitsPerPack);
+    const matches = productsBySku.get(key);
+    if (matches) matches.push(product);
+    else productsBySku.set(key, [product]);
+  }
+  const createdProducts: ProductRow[] = [];
+  const createdBatches: Array<{ batch: BatchRow; movement: StockMovementRow }> = [];
 
   for (const line of input.lines) {
     const packQuantity = line.packQuantity ?? 0;
     const unitQuantity = line.unitQuantity ?? 0;
     requireNonNegativeQuantity(packQuantity, "Pack quantity");
     requireNonNegativeQuantity(unitQuantity, "Unit quantity");
+    if (packQuantity + unitQuantity === 0) continue;
 
-    const namedProduct = productsByName.get(line.name.trim().toLocaleLowerCase());
-    let product = line.productId ? inventory.products.state.get(line.productId) : namedProduct;
+    const unitsPerPack = line.unitsPerPack ?? 1;
+    const sku = inventorySkuKey(line.name, unitsPerPack);
+    let product: ProductRow | undefined = line.productId
+      ? inventory.products.state.get(line.productId)
+      : undefined;
     if (product?.deletedAt !== null) product = undefined;
     if (line.productId && !product) throw new Error(`Product ${line.productId} no longer exists.`);
+    if (product && product.unitsPerPack !== unitsPerPack) product = undefined;
+
+    if (!product) {
+      const matches = productsBySku.get(sku) ?? [];
+      if (matches.length > 1) {
+        throw new Error(
+          `Multiple products are named “${line.name.trim()}” with ${unitsPerPack} units per pack. Choose which one to restock.`,
+        );
+      }
+      product = matches[0];
+    }
 
     if (!product) {
       const createdProduct: ProductRow = {
@@ -363,19 +406,17 @@ const importLocalInventory = async (
         aisle: null,
         composition: null,
         strength: null,
-        unitsPerPack: line.unitsPerPack ?? 1,
+        unitsPerPack,
         packPrice: line.packPrice ?? null,
         unitPrice: null,
         visible: true,
         ...mutationMetadata(actor),
       };
-      await persistInsert(inventory.products, createdProduct);
-      productsByName.set(createdProduct.name.toLocaleLowerCase(), createdProduct);
+      productsBySku.set(sku, [createdProduct]);
+      createdProducts.push(createdProduct);
       product = createdProduct;
-      createdProducts += 1;
     }
 
-    if (packQuantity + unitQuantity === 0) continue;
     const batch: BatchRow = {
       id: decodeBatchId(crypto.randomUUID()),
       productId: product.id,
@@ -385,10 +426,9 @@ const importLocalInventory = async (
       unitQuantity,
       ...mutationMetadata(actor),
     };
-    await persistInsert(inventory.batches, batch);
-    await persistInsert(
-      inventory.stockMovements,
-      movementRow(actor, {
+    createdBatches.push({
+      batch,
+      movement: movementRow(actor, {
         productId: product.id,
         batchId: batch.id,
         invoiceId: null,
@@ -397,11 +437,24 @@ const importLocalInventory = async (
         unitDelta: unitQuantity,
         note: "Initial batch stock",
       }),
-    );
-    createdBatches += 1;
+    });
   }
 
-  return { createdProducts, createdBatches, txid: Date.now() };
+  if (createdProducts.length + createdBatches.length > 0) {
+    await persistTogether(inventory, () => {
+      for (const product of createdProducts) inventory.products.insert(product);
+      for (const { batch, movement } of createdBatches) {
+        inventory.batches.insert(batch);
+        inventory.stockMovements.insert(movement);
+      }
+    });
+  }
+
+  return {
+    createdProducts: createdProducts.length,
+    createdBatches: createdBatches.length,
+    txid: Date.now(),
+  };
 };
 
 interface LocalInvoiceAllocation {
@@ -563,21 +616,20 @@ const issueLocalInvoice = async (
     total: input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0),
     ...mutationMetadata(actor),
   };
-  await persistInsert(inventory.invoices, invoice);
-  for (const allocation of allocations) {
-    await persistInsert(inventory.invoiceItems, allocation.item);
-    const nextBatch = requiredRow(
-      plannedBatches.get(allocation.item.batchId),
-      "The allocated batch",
-    );
-    const transaction = inventory.batches.update(nextBatch.id, (draft) =>
-      Object.assign(draft, nextBatch),
-    );
-    await transaction.isPersisted.promise;
-    for (const movement of allocation.movements) {
-      await persistInsert(inventory.stockMovements, movement);
+  await persistTogether(inventory, () => {
+    inventory.invoices.insert(invoice);
+    for (const allocation of allocations) {
+      inventory.invoiceItems.insert(allocation.item);
+      const nextBatch = requiredRow(
+        plannedBatches.get(allocation.item.batchId),
+        "The allocated batch",
+      );
+      inventory.batches.update(nextBatch.id, (draft) => Object.assign(draft, nextBatch));
+      for (const movement of allocation.movements) {
+        inventory.stockMovements.insert(movement);
+      }
     }
-  }
+  });
 
   return { invoiceId, invoiceNumber, txid: Date.now() };
 };
@@ -626,7 +678,6 @@ const makeInventoryActions = (
   deleteCategory: async (id) => {
     const current = requiredRow(inventory.categories.state.get(id), "This category");
     if (
-      inventory.mode === "Local" &&
       activeRows(inventory.products.state.values()).some((product) => product.categoryId === id)
     ) {
       throw new Error(`Move the products in “${current.name}” to another category first.`);
@@ -639,7 +690,8 @@ const makeInventoryActions = (
     await transaction.isPersisted.promise;
   },
   createProduct: async (input) => {
-    const categoryId = decodeCategoryId(input.categoryId ?? "general");
+    if (!input.categoryId) throw new Error("Select an active category.");
+    const categoryId = decodeCategoryId(input.categoryId);
     const category = inventory.categories.state.get(categoryId);
     if (!category || category.deletedAt !== null) throw new Error("Select an active category.");
     const row: ProductRow = {
@@ -661,10 +713,20 @@ const makeInventoryActions = (
   },
   updateProduct: async (input) => {
     const current = requiredRow(inventory.products.state.get(input.id), "This product");
-    const categoryId = decodeCategoryId(input.categoryId ?? "general");
+    const categoryId = decodeCategoryId(input.categoryId ?? current.categoryId);
     const category = inventory.categories.state.get(categoryId);
     if (!category || category.deletedAt !== null) throw new Error("Select an active category.");
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });
+    const unitsPerPack = input.unitsPerPack ?? 1;
+    if (unitsPerPack !== current.unitsPerPack) {
+      const remainingStock = activeRows(inventory.batches.state.values()).some(
+        (batch) =>
+          batch.productId === current.id && (batch.packQuantity > 0 || batch.unitQuantity > 0),
+      );
+      if (remainingStock) {
+        throw new Error("Change units per pack only after the product has no remaining stock.");
+      }
+    }
     const next = {
       ...current,
       ...input,
@@ -673,7 +735,7 @@ const makeInventoryActions = (
       aisle: input.aisle ?? null,
       composition: input.composition ?? null,
       strength: input.strength ?? null,
-      unitsPerPack: input.unitsPerPack ?? 1,
+      unitsPerPack,
       packPrice: input.packPrice ?? null,
       unitPrice: input.unitPrice ?? null,
       visible: input.visible ?? true,
@@ -685,6 +747,13 @@ const makeInventoryActions = (
   },
   deleteProduct: async (id) => {
     const current = requiredRow(inventory.products.state.get(id), "This product");
+    const remainingStock = activeRows(inventory.batches.state.values()).some(
+      (batch) =>
+        batch.productId === current.id && (batch.packQuantity > 0 || batch.unitQuantity > 0),
+    );
+    if (remainingStock) {
+      throw new Error("Clear remaining stock before deleting this product.");
+    }
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });
     const transaction = inventory.products.update(id, (draft) => {
       draft.deletedAt = metadata.updatedAt;
@@ -709,21 +778,24 @@ const makeInventoryActions = (
       unitQuantity,
       ...mutationMetadata(actor),
     };
-    const transaction = inventory.batches.insert(row);
-    await transaction.isPersisted.promise;
     if (inventory.mode === "Local") {
-      await persistInsert(
-        inventory.stockMovements,
-        movementRow(actor, {
-          productId: row.productId,
-          batchId: row.id,
-          invoiceId: null,
-          type: "stock_in",
-          packDelta: packQuantity,
-          unitDelta: unitQuantity,
-          note: "Initial batch stock",
-        }),
-      );
+      await persistTogether(inventory, () => {
+        inventory.batches.insert(row);
+        inventory.stockMovements.insert(
+          movementRow(actor, {
+            productId: row.productId,
+            batchId: row.id,
+            invoiceId: null,
+            type: "stock_in",
+            packDelta: packQuantity,
+            unitDelta: unitQuantity,
+            note: "Initial batch stock",
+          }),
+        );
+      });
+    } else {
+      const transaction = inventory.batches.insert(row);
+      await transaction.isPersisted.promise;
     }
     return row;
   },
@@ -744,28 +816,32 @@ const makeInventoryActions = (
       unitQuantity: input.unitQuantity ?? current.unitQuantity,
       ...metadata,
     } satisfies BatchRow;
-    const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
-    await transaction.isPersisted.promise;
     const packDelta = next.packQuantity - current.packQuantity;
     const unitDelta = next.unitQuantity - current.unitQuantity;
     if (inventory.mode === "Local" && (packDelta !== 0 || unitDelta !== 0)) {
-      await persistInsert(
-        inventory.stockMovements,
-        movementRow(actor, {
-          productId: current.productId,
-          batchId: current.id,
-          invoiceId: null,
-          type: "adjustment",
-          packDelta,
-          unitDelta,
-          note: "Stock corrected",
-        }),
-      );
+      await persistTogether(inventory, () => {
+        inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
+        inventory.stockMovements.insert(
+          movementRow(actor, {
+            productId: current.productId,
+            batchId: current.id,
+            invoiceId: null,
+            type: "adjustment",
+            packDelta,
+            unitDelta,
+            note: "Stock corrected",
+          }),
+        );
+      });
+    } else {
+      const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
+      await transaction.isPersisted.promise;
     }
     return next;
   },
   importInventory: async (input) => {
     if (inventory.mode === "Local") return importLocalInventory(inventory, actor, input);
+    await waitForInventoryUploadDrain(inventory.powerSync);
     const command: ImportInventoryCommand = {
       commandId: crypto.randomUUID(),
       deviceId: actor.deviceId,
@@ -781,6 +857,7 @@ const makeInventoryActions = (
   },
   issueInvoice: async (input) => {
     if (inventory.mode === "Local") return issueLocalInvoice(inventory, actor, input);
+    await waitForInventoryUploadDrain(inventory.powerSync);
     const command: IssueInvoiceCommand = {
       commandId: crypto.randomUUID(),
       deviceId: actor.deviceId,

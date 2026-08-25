@@ -1,7 +1,12 @@
 import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
-import { createContext, use, useState, type ReactNode } from "react";
+import { invoiceUploadRejection } from "@store/contracts";
+import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import {
+  ambiguousImportProductMessage,
+  importProductMatch,
+} from "@/components/uploads/same-product";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory-db";
@@ -47,9 +52,6 @@ const fileDescription = (file: File) => {
 
 const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
 
-const sameProduct = (line: ExtractedLine, product: Product) =>
-  product.name.trim().toLocaleLowerCase() === line.name.trim().toLocaleLowerCase();
-
 function UploadProvider({
   children,
   products,
@@ -61,6 +63,7 @@ function UploadProvider({
 }) {
   const inventory = useInventoryActions();
   const isOnline = useOnline();
+  const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
@@ -72,14 +75,18 @@ function UploadProvider({
         title: "Only PDF and CSV invoice files can be uploaded.",
         type: "error",
       });
-    setFiles((current) =>
-      [...current, ...valid].filter(
+    setFiles((current) => {
+      const next = [...current, ...valid].filter(
         (file, index, list) =>
           list.findIndex(
             (candidate) => candidate.name === file.name && candidate.size === file.size,
           ) === index,
-      ),
-    );
+      );
+      const rejection = invoiceUploadRejection(next.map((file) => ({ byteLength: file.size })));
+      if (!rejection) return next;
+      toastManager.add({ title: rejection, type: "error" });
+      return current;
+    });
   };
 
   const removeFile = (file: File) => {
@@ -87,6 +94,7 @@ function UploadProvider({
   };
 
   const analyse = async () => {
+    if (busyRef.current) return;
     if (!isOnline) {
       toastManager.add({
         title: "You're offline. Connect before analysing invoices.",
@@ -98,6 +106,7 @@ function UploadProvider({
       toastManager.add({ title: "Add at least one invoice first.", type: "error" });
       return;
     }
+    busyRef.current = true;
     setPhase("processing");
     try {
       const payload = await analyseInvoices(
@@ -109,11 +118,18 @@ function UploadProvider({
           })),
         ),
       );
+      const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
+      if (stockLines.length === 0) {
+        throw new Error("No received stock was found in the attachments.");
+      }
       setChanges(
-        payload.lines.map((line) => {
-          const product = products.find((candidate) => sameProduct(line, candidate));
-          return product
-            ? { ...line, type: "add_inventory", productId: product.id }
+        stockLines.map((line) => {
+          const match = importProductMatch(line, products);
+          if (match._tag === "many") {
+            throw new Error(ambiguousImportProductMessage(line.name, line.unitsPerPack));
+          }
+          return match._tag === "one"
+            ? { ...line, type: "add_inventory", productId: match.id }
             : { ...line, type: "create_product" };
         }),
       );
@@ -128,10 +144,13 @@ function UploadProvider({
         type: "error",
       });
       setPhase("idle");
+    } finally {
+      busyRef.current = false;
     }
   };
 
   const applyChanges = async () => {
+    if (busyRef.current) return;
     if (!isOnline) {
       toastManager.add({
         title: "You're offline. Reconnect, then apply the changes.",
@@ -140,7 +159,8 @@ function UploadProvider({
       return;
     }
     const generalCategory =
-      categories.find((category) => category.id === "general") ?? categories[0];
+      categories.find((category) => category.name.trim().toLocaleLowerCase() === "general") ??
+      categories[0];
     if (!generalCategory) {
       toastManager.add({
         title: "Create a category before importing inventory.",
@@ -148,6 +168,7 @@ function UploadProvider({
       });
       return;
     }
+    busyRef.current = true;
     setPhase("syncing");
     try {
       const result = await inventory.importInventory({
@@ -176,6 +197,8 @@ function UploadProvider({
         type: "error",
       });
       setPhase("ready");
+    } finally {
+      busyRef.current = false;
     }
   };
 
@@ -204,7 +227,6 @@ export {
   UploadProvider,
   fileDescription,
   isInvoice,
-  sameProduct,
   useUpload,
   type ExtractedLine,
   type ProposedChange,

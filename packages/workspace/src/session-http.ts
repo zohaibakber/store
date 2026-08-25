@@ -48,6 +48,11 @@ export interface SessionHttpClientOptions {
   readonly refreshSession: () => Promise<TokenSetType | null>;
   /** Decide whether `refreshSession` should run for the current tokens. */
   readonly needsRefresh: (tokens: TokenSetType | null, force: boolean) => boolean;
+  /**
+   * Runs after a successful refresh, once the in-flight lock is released, so
+   * hosts can reload `/api/auth/session` without deadlocking.
+   */
+  readonly afterRefresh?: (tokens: TokenSetType) => Promise<void>;
   /** Extra headers on every bearer request (e.g. Electron `electron-origin`). */
   readonly requestHeaders?: () => HeadersInit;
 }
@@ -130,6 +135,7 @@ export class SessionHttpClient {
   readonly #fetch: SessionFetch;
   readonly #refreshSession: () => Promise<TokenSetType | null>;
   readonly #needsRefresh: (tokens: TokenSetType | null, force: boolean) => boolean;
+  readonly #afterRefresh: ((tokens: TokenSetType) => Promise<void>) | undefined;
   readonly #requestHeaders: (() => HeadersInit) | undefined;
   #refreshInFlight: Promise<TokenSetType | null> | null = null;
 
@@ -140,6 +146,7 @@ export class SessionHttpClient {
     this.#fetch = options.fetch;
     this.#refreshSession = options.refreshSession;
     this.#needsRefresh = options.needsRefresh;
+    this.#afterRefresh = options.afterRefresh;
     this.#requestHeaders = options.requestHeaders;
   }
 
@@ -159,9 +166,15 @@ export class SessionHttpClient {
     const tokens = this.#tokens.get();
     if (!this.#needsRefresh(tokens, force)) return Promise.resolve(tokens);
     if (this.#refreshInFlight) return this.#refreshInFlight;
-    this.#refreshInFlight = this.#refreshSession().finally(() => {
-      this.#refreshInFlight = null;
-    });
+    this.#refreshInFlight = this.#refreshSession()
+      .then(async (next) => {
+        this.#refreshInFlight = null;
+        if (next && this.#afterRefresh) await this.#afterRefresh(next);
+        return next;
+      })
+      .finally(() => {
+        this.#refreshInFlight = null;
+      });
     return this.#refreshInFlight;
   }
 

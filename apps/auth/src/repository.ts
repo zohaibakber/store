@@ -24,10 +24,25 @@ import {
   organization,
   organizationInvitation,
   organizationMembership,
+  rateLimit,
   session,
   user,
 } from "@store/db/auth.schema";
-import { and, asc, count, desc, eq, exists, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  isNotNull,
+  isNull,
+  ne,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
@@ -36,6 +51,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
+
+import type { RateLimitAttempt } from "./rate-limit";
 
 const UserRecord = Schema.Struct({
   id: UserId,
@@ -179,11 +196,21 @@ export interface AuthRepositoryApi {
     readonly organizationId: OrganizationIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<number, RepositoryError>;
+  /**
+   * Answers `false` when the row is missing, already has `role`, or the update
+   * would leave the organization without an owner. D1 has no transactions, so
+   * the last-owner predicate lives in this statement.
+   */
   readonly changeMemberRole: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<boolean, RepositoryError>;
+  /**
+   * Answers `false` when the row is missing or the delete would leave the
+   * organization without an owner. Session revoke runs in the same batch only
+   * after the membership row is gone.
+   */
   readonly removeMember: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
@@ -237,6 +264,11 @@ export interface AuthRepositoryApi {
   ) => Effect.Effect<void, RepositoryError>;
   readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
   readonly revokeUser: (userId: UserIdType, now: number) => Effect.Effect<void, RepositoryError>;
+  /**
+   * Increments `key` when the window still has room. Empty RETURNING is a
+   * denial, so two concurrent attempts cannot both slip under the cap.
+   */
+  readonly allowRateLimit: (input: RateLimitAttempt) => Effect.Effect<boolean, RepositoryError>;
 }
 
 export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
@@ -436,6 +468,23 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
           eq(organizationMembership.organizationId, organizationId),
         ),
       );
+
+  const anotherOwnerExists = (organizationId: OrganizationIdType, userId: UserIdType) =>
+    exists(
+      database
+        .select({ id: organizationMembership.id })
+        .from(organizationMembership)
+        .where(
+          and(
+            eq(organizationMembership.organizationId, organizationId),
+            eq(organizationMembership.role, "owner"),
+            ne(organizationMembership.userId, userId),
+          ),
+        ),
+    );
+
+  const leavesAnOwner = (organizationId: OrganizationIdType, userId: UserIdType) =>
+    or(ne(organizationMembership.role, "owner"), anotherOwnerExists(organizationId, userId));
 
   const findUserWhere = Effect.fn("AuthRepository.findUserWhere")(function* (
     operation: string,
@@ -686,6 +735,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
             eq(organizationMembership.organizationId, input.organizationId),
             eq(organizationMembership.userId, input.userId),
             ne(organizationMembership.role, input.role),
+            leavesAnOwner(input.organizationId, input.userId),
           ),
         )
         .returning({ id: organizationMembership.id })
@@ -701,11 +751,13 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
             and(
               eq(organizationMembership.organizationId, input.organizationId),
               eq(organizationMembership.userId, input.userId),
+              leavesAnOwner(input.organizationId, input.userId),
             ),
           )
           .returning({ id: organizationMembership.id }),
         // A session naming an organization the user left would keep refreshing
-        // into a store they can no longer read.
+        // into a store they can no longer read. Skip the revoke when the
+        // last-owner predicate blocked the delete.
         database
           .update(session)
           .set({ revokedAt: at(now) })
@@ -714,6 +766,19 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
               eq(session.userId, input.userId),
               eq(session.activeOrganizationId, input.organizationId),
               isNull(session.revokedAt),
+              not(
+                exists(
+                  database
+                    .select({ id: organizationMembership.id })
+                    .from(organizationMembership)
+                    .where(
+                      and(
+                        eq(organizationMembership.organizationId, input.organizationId),
+                        eq(organizationMembership.userId, input.userId),
+                      ),
+                    ),
+                ),
+              ),
             ),
           ),
       ]);
@@ -908,6 +973,27 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         .set({ revokedAt: at(now) })
         .where(and(eq(session.userId, userId), isNull(session.revokedAt)))
         .pipe(fail("revokeUser"));
+    }),
+    allowRateLimit: Effect.fn("AuthRepository.allowRateLimit")(function* (input) {
+      const expiresAt = input.now + input.windowSeconds * 1_000;
+      const granted = yield* database
+        .insert(rateLimit)
+        .values({
+          key: input.key,
+          count: 1,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: rateLimit.key,
+          set: {
+            count: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN 1 WHEN ${rateLimit.count} < ${input.limit} THEN ${rateLimit.count} + 1 ELSE ${rateLimit.count} END`,
+            expiresAt: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN excluded.expiresAt ELSE ${rateLimit.expiresAt} END`,
+          },
+          setWhere: sql`${rateLimit.expiresAt} <= ${input.now} OR ${rateLimit.count} < ${input.limit}`,
+        })
+        .returning({ count: rateLimit.count })
+        .pipe(fail("allowRateLimit"));
+      return granted.length === 1;
     }),
   };
 };
