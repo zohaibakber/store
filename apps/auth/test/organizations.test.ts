@@ -10,7 +10,14 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/service";
-import { harness, seedOrganization, seedSession, seedUser, type Harness } from "./harness";
+import {
+  fakeRepository,
+  harness,
+  seedOrganization,
+  seedSession,
+  seedUser,
+  type Harness,
+} from "./harness";
 
 type Api = ReturnType<typeof AuthService.of>;
 
@@ -299,6 +306,51 @@ describe("organization role guards", () => {
       role: "member",
     });
     expect(failure).toMatchObject({ status: 409, code: "LAST_OWNER" });
+  });
+
+  it("lets one of two owners be removed and then keeps the remaining owner", async () => {
+    const team = withTeam();
+    const promoted = await command(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.admin.id,
+      role: "owner",
+    });
+    expect(promoted).toEqual({ _tag: "Applied" });
+
+    const removed = await command(team.instance, team.ownerToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.admin.id,
+    });
+    expect(removed).toEqual({ _tag: "Applied" });
+
+    const demote = await failing(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.owner.id,
+      role: "member",
+    });
+    expect(demote).toMatchObject({ status: 409, code: "LAST_OWNER" });
+    expect(team.instance.store.memberships.filter((entry) => entry.role === "owner")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not delete the last owner from the membership table", async () => {
+    const team = withTeam();
+    const removed = await Effect.runPromise(
+      fakeRepository(team.instance.store).removeMember({
+        organizationId: team.organizationId,
+        userId: team.owner.id,
+      }),
+    );
+    expect(removed).toBe(false);
+    expect(
+      team.instance.store.memberships.some(
+        (entry) => entry.userId === team.owner.id && entry.role === "owner",
+      ),
+    ).toBe(true);
   });
 
   it("lets an admin remove a member but not another admin", async () => {

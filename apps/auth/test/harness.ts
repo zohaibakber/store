@@ -162,6 +162,12 @@ const membershipOf = (store: Store, userId: UserId, organizationId: Organization
 const pending = (invitation: InvitationRecord, now: number) =>
   invitation.acceptedAt === null && invitation.revokedAt === null && invitation.expiresAt > now;
 
+const anotherOwner = (store: Store, organizationId: OrganizationId, userId: UserId) =>
+  store.memberships.some(
+    (entry) =>
+      entry.organizationId === organizationId && entry.role === "owner" && entry.userId !== userId,
+  );
+
 export const fakeRepository = (store: Store): AuthRepositoryApi => ({
   findUserByEmail: (email) =>
     Effect.succeed(store.users.find((user) => user.email === email) ?? null),
@@ -303,6 +309,9 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
       );
       const membership = store.memberships[index];
       if (!membership || membership.role === input.role) return false;
+      if (membership.role === "owner" && !anotherOwner(store, input.organizationId, input.userId)) {
+        return false;
+      }
       store.memberships[index] = { ...membership, role: input.role };
       return true;
     }),
@@ -311,7 +320,11 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
       const index = store.memberships.findIndex(
         (entry) => entry.organizationId === input.organizationId && entry.userId === input.userId,
       );
-      if (index === -1) return false;
+      const membership = store.memberships[index];
+      if (!membership) return false;
+      if (membership.role === "owner" && !anotherOwner(store, input.organizationId, input.userId)) {
+        return false;
+      }
       store.memberships.splice(index, 1);
       for (const [sessionIndex, session] of store.sessions.entries()) {
         if (

@@ -114,7 +114,7 @@ const saveProduct = async (
   if (!categoryId) categoryId = activeCategories[0]?.id;
   if (!categoryId && activeCategories.length === 0) {
     const general: CategoryRow = {
-      id: decodeCategoryId("general"),
+      id: decodeCategoryId(Crypto.randomUUID()),
       name: "General",
       tracksPacks: true,
       ...createdMetadata(actor),

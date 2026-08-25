@@ -31,7 +31,7 @@ import {
 } from "@store/db/postgres/schema";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Postgres from "alchemy/SQL/Postgres";
-import { and, asc, eq, inArray, isNull, like, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, like, notInArray, or, sql } from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Clock from "effect/Clock";
@@ -305,6 +305,27 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
           return yield* Effect.fail(
             protocolError("ENTITY_RELATION_INVALID", "Pick an active category for this product."),
           );
+        if (current && row.unitsPerPack !== current.unitsPerPack) {
+          const [stocked] = yield* tx
+            .select({ id: batches.id })
+            .from(batches)
+            .where(
+              and(
+                eq(batches.organizationId, actor.organizationId),
+                eq(batches.productId, change.entityId),
+                isNull(batches.deletedAt),
+                or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
+              ),
+            )
+            .limit(1);
+          if (stocked)
+            return yield* Effect.fail(
+              protocolError(
+                "ENTITY_CONFLICT",
+                "Change units per pack only after the product has no remaining stock.",
+              ),
+            );
+        }
       }
       const values = {
         name: row.name.trim(),
@@ -1268,10 +1289,12 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     : [];
 
   const productsById = new Map(existingProducts.map((product) => [product.id, product]));
-  const productIdsByName = new Map<string, string>();
+  const productIdsByName = new Map<string, string[]>();
   for (const product of existingProducts) {
     const name = normalizedProductName(product.name);
-    if (!productIdsByName.has(name)) productIdsByName.set(name, product.id);
+    const ids = productIdsByName.get(name);
+    if (ids) ids.push(product.id);
+    else productIdsByName.set(name, [product.id]);
   }
   for (const id of suppliedProductIds)
     if (!productsById.has(id))
@@ -1286,9 +1309,15 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     let productId: string | null = line.productId;
     if (productId === null) {
       const normalizedName = normalizedProductName(line.name);
-      const existingProductId = productIdsByName.get(normalizedName);
-      if (existingProductId) {
-        productId = existingProductId;
+      const matches = productIdsByName.get(normalizedName) ?? [];
+      if (matches.length > 1)
+        return yield* Effect.fail(
+          importError(
+            `Multiple products are named “${line.name.trim()}”. Choose which one to restock.`,
+          ),
+        );
+      if (matches[0]) {
+        productId = matches[0];
       } else {
         const [created] = yield* tx
           .insert(products)
@@ -1316,7 +1345,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
         if (!created)
           return yield* Effect.fail(importError("An imported product could not be created."));
         productId = created.id;
-        productIdsByName.set(normalizedName, productId);
+        productIdsByName.set(normalizedName, [productId]);
         observerProductId ??= productId;
         createdProducts += 1;
       }

@@ -360,12 +360,13 @@ const importLocalInventory = async (
   if (!category || category.deletedAt !== null)
     throw new Error("The selected category is missing.");
 
-  const productsByName = new Map<string, ProductRow>(
-    activeRows(inventory.products.state.values()).map((product) => [
-      product.name.trim().toLocaleLowerCase(),
-      product,
-    ]),
-  );
+  const duplicateNames = new Set<string>();
+  const productsByName = new Map<string, ProductRow>();
+  for (const product of activeRows(inventory.products.state.values())) {
+    const name = product.name.trim().toLocaleLowerCase();
+    if (productsByName.has(name)) duplicateNames.add(name);
+    else productsByName.set(name, product);
+  }
   const createdProducts: ProductRow[] = [];
   const createdBatches: Array<{ batch: BatchRow; movement: StockMovementRow }> = [];
 
@@ -375,7 +376,13 @@ const importLocalInventory = async (
     requireNonNegativeQuantity(packQuantity, "Pack quantity");
     requireNonNegativeQuantity(unitQuantity, "Unit quantity");
 
-    const namedProduct = productsByName.get(line.name.trim().toLocaleLowerCase());
+    const name = line.name.trim().toLocaleLowerCase();
+    if (!line.productId && duplicateNames.has(name)) {
+      throw new Error(
+        `Multiple products are named “${line.name.trim()}”. Choose which one to restock.`,
+      );
+    }
+    const namedProduct = productsByName.get(name);
     let product = line.productId ? inventory.products.state.get(line.productId) : namedProduct;
     if (product?.deletedAt !== null) product = undefined;
     if (line.productId && !product) throw new Error(`Product ${line.productId} no longer exists.`);
@@ -661,7 +668,6 @@ const makeInventoryActions = (
   deleteCategory: async (id) => {
     const current = requiredRow(inventory.categories.state.get(id), "This category");
     if (
-      inventory.mode === "Local" &&
       activeRows(inventory.products.state.values()).some((product) => product.categoryId === id)
     ) {
       throw new Error(`Move the products in “${current.name}” to another category first.`);
@@ -674,7 +680,8 @@ const makeInventoryActions = (
     await transaction.isPersisted.promise;
   },
   createProduct: async (input) => {
-    const categoryId = decodeCategoryId(input.categoryId ?? "general");
+    if (!input.categoryId) throw new Error("Select an active category.");
+    const categoryId = decodeCategoryId(input.categoryId);
     const category = inventory.categories.state.get(categoryId);
     if (!category || category.deletedAt !== null) throw new Error("Select an active category.");
     const row: ProductRow = {
@@ -696,7 +703,7 @@ const makeInventoryActions = (
   },
   updateProduct: async (input) => {
     const current = requiredRow(inventory.products.state.get(input.id), "This product");
-    const categoryId = decodeCategoryId(input.categoryId ?? "general");
+    const categoryId = decodeCategoryId(input.categoryId ?? current.categoryId);
     const category = inventory.categories.state.get(categoryId);
     if (!category || category.deletedAt !== null) throw new Error("Select an active category.");
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });

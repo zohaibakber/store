@@ -28,7 +28,21 @@ import {
   session,
   user,
 } from "@store/db/auth.schema";
-import { and, asc, count, desc, eq, exists, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  isNotNull,
+  isNull,
+  ne,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
@@ -182,11 +196,21 @@ export interface AuthRepositoryApi {
     readonly organizationId: OrganizationIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<number, RepositoryError>;
+  /**
+   * Answers `false` when the row is missing, already has `role`, or the update
+   * would leave the organization without an owner. D1 has no transactions, so
+   * the last-owner predicate lives in this statement.
+   */
   readonly changeMemberRole: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<boolean, RepositoryError>;
+  /**
+   * Answers `false` when the row is missing or the delete would leave the
+   * organization without an owner. Session revoke runs in the same batch only
+   * after the membership row is gone.
+   */
   readonly removeMember: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
@@ -445,6 +469,23 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         ),
       );
 
+  const anotherOwnerExists = (organizationId: OrganizationIdType, userId: UserIdType) =>
+    exists(
+      database
+        .select({ id: organizationMembership.id })
+        .from(organizationMembership)
+        .where(
+          and(
+            eq(organizationMembership.organizationId, organizationId),
+            eq(organizationMembership.role, "owner"),
+            ne(organizationMembership.userId, userId),
+          ),
+        ),
+    );
+
+  const leavesAnOwner = (organizationId: OrganizationIdType, userId: UserIdType) =>
+    or(ne(organizationMembership.role, "owner"), anotherOwnerExists(organizationId, userId));
+
   const findUserWhere = Effect.fn("AuthRepository.findUserWhere")(function* (
     operation: string,
     rows: Effect.Effect<ReadonlyArray<UserColumns>, unknown>,
@@ -694,6 +735,7 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
             eq(organizationMembership.organizationId, input.organizationId),
             eq(organizationMembership.userId, input.userId),
             ne(organizationMembership.role, input.role),
+            leavesAnOwner(input.organizationId, input.userId),
           ),
         )
         .returning({ id: organizationMembership.id })
@@ -709,11 +751,13 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
             and(
               eq(organizationMembership.organizationId, input.organizationId),
               eq(organizationMembership.userId, input.userId),
+              leavesAnOwner(input.organizationId, input.userId),
             ),
           )
           .returning({ id: organizationMembership.id }),
         // A session naming an organization the user left would keep refreshing
-        // into a store they can no longer read.
+        // into a store they can no longer read. Skip the revoke when the
+        // last-owner predicate blocked the delete.
         database
           .update(session)
           .set({ revokedAt: at(now) })
@@ -722,6 +766,19 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
               eq(session.userId, input.userId),
               eq(session.activeOrganizationId, input.organizationId),
               isNull(session.revokedAt),
+              not(
+                exists(
+                  database
+                    .select({ id: organizationMembership.id })
+                    .from(organizationMembership)
+                    .where(
+                      and(
+                        eq(organizationMembership.organizationId, input.organizationId),
+                        eq(organizationMembership.userId, input.userId),
+                      ),
+                    ),
+                ),
+              ),
             ),
           ),
       ]);

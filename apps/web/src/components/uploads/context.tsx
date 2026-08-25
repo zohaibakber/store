@@ -145,7 +145,8 @@ function UploadProvider({
       return;
     }
     const generalCategory =
-      categories.find((category) => category.id === "general") ?? categories[0];
+      categories.find((category) => category.name.trim().toLocaleLowerCase() === "general") ??
+      categories[0];
     if (!generalCategory) {
       toastManager.add({
         title: "Create a category before importing inventory.",
