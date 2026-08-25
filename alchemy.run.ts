@@ -9,17 +9,11 @@ import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Api, ApiLive } from "./apps/server/infra.ts";
 import { Website } from "./apps/web/infra.ts";
 import { InventoryPostgres } from "./packages/db/src/postgres/infra.ts";
-import { inventoryRolePasswordProviders } from "./packages/db/src/postgres/role-password.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",
   {
-    providers: Layer.mergeAll(
-      Cloudflare.providers(),
-      Drizzle.providers(),
-      Neon.providers(),
-      inventoryRolePasswordProviders().pipe(Layer.provide(Neon.providers())),
-    ),
+    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers(), Neon.providers()),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {

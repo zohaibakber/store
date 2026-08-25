@@ -1,10 +1,8 @@
-import * as Alchemy from "alchemy";
+import { getConnectionURI } from "@distilled.cloud/neon";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
 import * as Neon from "alchemy/Neon";
 import * as Effect from "effect/Effect";
-
-import { InventoryRolePassword, inventoryRolePasswordVersion } from "./role-password";
 
 /** The authoritative inventory database. */
 export const InventoryPostgres = Effect.gen(function* () {
@@ -20,17 +18,45 @@ export const InventoryPostgres = Effect.gen(function* () {
   });
 });
 
+/**
+ * `Neon.Project` copies its create-time connection URI across updates, so
+ * Hyperdrive must not use `postgres.origin`. Ask Neon for the current URI at
+ * deploy time. The Worker runtime resolves the already-bound Hyperdrive and
+ * must not call the Neon API.
+ */
+const currentInventoryOrigin = (postgres: Neon.Project) =>
+  Effect.gen(function* () {
+    const projectId = yield* yield* postgres.projectId;
+    const branchId = yield* yield* postgres.defaultBranchId;
+    const databaseName = yield* yield* postgres.databaseName;
+    const roleName = yield* yield* postgres.roleName;
+    const direct = yield* getConnectionURI({
+      project_id: projectId,
+      branch_id: branchId,
+      database_name: databaseName,
+      role_name: roleName,
+      pooled: false,
+    });
+    const pooled = yield* getConnectionURI({
+      project_id: projectId,
+      branch_id: branchId,
+      database_name: databaseName,
+      role_name: roleName,
+      pooled: true,
+    });
+    return {
+      origin: Neon.parsePostgresOrigin(direct.uri),
+      pooledOrigin: Neon.parsePostgresOrigin(pooled.uri),
+    };
+  });
+
 /** Cloudflare's pooled Worker connection to the authoritative inventory DB. */
 export const InventoryHyperdrive = Effect.gen(function* () {
   const postgres = yield* InventoryPostgres;
-  const { stage } = yield* Alchemy.Stack;
-  const credentials = yield* InventoryRolePassword("InventoryRolePassword", {
-    projectId: postgres.projectId,
-    branchId: postgres.defaultBranchId,
-    roleName: postgres.roleName,
-    databaseName: postgres.databaseName,
-    version: inventoryRolePasswordVersion(stage),
-  });
+  // Folded to the cached origin in the Worker bundle; live fetch is deploy-only.
+  const credentials = !globalThis.__ALCHEMY_RUNTIME__
+    ? yield* currentInventoryOrigin(postgres)
+    : { origin: postgres.origin, pooledOrigin: postgres.pooledOrigin };
   return yield* Cloudflare.Hyperdrive.Connection("InventoryPostgresHyperdrive", {
     // Hyperdrive is itself a pooler, so its production origin is Neon's direct endpoint.
     origin: credentials.origin,
