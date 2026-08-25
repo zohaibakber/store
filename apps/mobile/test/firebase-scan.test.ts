@@ -35,6 +35,21 @@ describe("firebase product scan helpers", () => {
     expect(result?.expiresAt).toMatch(/^2027-06/);
   });
 
+  it("repairs concatenated 10x10 when the name still has the factors", () => {
+    const result = decodeProductScanResult(
+      JSON.stringify({
+        name: "Amoxicillin 10x10",
+        composition: null,
+        strength: "500mg",
+        unitsPerPack: 1010,
+        batchNumber: null,
+        expiresAt: null,
+        confidence: 0.9,
+      }),
+    );
+    expect(result?.unitsPerPack).toBe(100);
+  });
+
   it("rejects malformed JSON", () => {
     expect(decodeProductScanResult("not-json")).toBeNull();
   });

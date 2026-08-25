@@ -1,7 +1,7 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { normalizeExpiry } from "@/features/product-scanner/local-parser";
+import { normalizeExpiry, salvageUnitsPerPack } from "@/features/product-scanner/local-parser";
 import type { ProductScanMode } from "@/features/product-scanner/types";
 import { ProductScanResult } from "@/features/product-scanner/types";
 
@@ -12,7 +12,7 @@ export const scanInstructions = [
   "Normalize whitespace and preserve the product or brand spelling shown on the package.",
   "Composition is the active ingredient or ingredient combination without its strength.",
   "Strength includes the numeric amount and unit, for example 500mg or 5mg/5ml.",
-  "Units per pack is the printed count of tablets, capsules, sachets, ampoules, or other sale units in one sealed pack; use null when it is not explicit.",
+  "Units per pack is the printed count in one sealed pack. Multiply pack factors: 10x10 is 100, not 1010. 20's and 20s are 20. Use null when it is not explicit.",
   "Batch number may also be labelled batch, lot, B.No, BN, or LOT.",
   "Use YYYY-MM-DD for a full expiry date and YYYY-MM when only month and year are printed.",
   "Confidence is one number from 0 to 1 for the extraction as a whole.",
@@ -34,7 +34,7 @@ export const normalizeModelResult = (value: ProductScanResult): ProductScanResul
   name: tidy(value.name),
   composition: tidy(value.composition),
   strength: tidy(value.strength),
-  unitsPerPack: value.unitsPerPack,
+  unitsPerPack: salvageUnitsPerPack(value.name, value.unitsPerPack),
   batchNumber: tidy(value.batchNumber)?.toLocaleUpperCase() ?? null,
   expiresAt: normalizeExpiry(value.expiresAt) ?? tidy(value.expiresAt),
   confidence: value.confidence,
