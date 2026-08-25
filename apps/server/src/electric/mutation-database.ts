@@ -4,6 +4,7 @@ import {
   decodeInvoiceId,
   type ImportInventoryCommand,
   type ImportInventoryCommandResult,
+  inventorySkuKey,
   type IssueInvoiceCommand,
   type IssueInvoiceResult,
   type LegacyCatalogMigrationCommand,
@@ -12,6 +13,7 @@ import {
   type LegacyCatalogReconciliationResult,
   LEGACY_ROW_OPERATION_PREFIX,
   MAX_SYNC_CHANGES_PER_OPERATION,
+  normalizedProductName,
   type SyncEntityChange,
   type SyncOperation,
   legacyCatalogRowOperationId,
@@ -1103,7 +1105,6 @@ const parseInventoryImportReceipt = (value: string | null) =>
 
 const importError = (message: string) => protocolError("ENTITY_CONFLICT", message);
 
-const normalizedProductName = (value: string) => value.trim().toLocaleLowerCase();
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
 const validateInventoryImport = Effect.fn("InventoryCommand.validateImport")(function* (
@@ -1252,11 +1253,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     ),
   ].sort();
   const requestedNames = [
-    ...new Set(
-      command.input.lines.flatMap((line) =>
-        line.productId === null ? [normalizedProductName(line.name)] : [],
-      ),
-    ),
+    ...new Set(command.input.lines.map((line) => normalizedProductName(line.name))),
   ].sort();
 
   for (const name of requestedNames)
@@ -1278,7 +1275,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     idCondition && nameCondition ? or(idCondition, nameCondition) : (idCondition ?? nameCondition);
   const existingProducts = relevantProduct
     ? yield* tx
-        .select({ id: products.id, name: products.name })
+        .select({ id: products.id, name: products.name, unitsPerPack: products.unitsPerPack })
         .from(products)
         .where(
           and(
@@ -1292,12 +1289,12 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     : [];
 
   const productsById = new Map(existingProducts.map((product) => [product.id, product]));
-  const productIdsByName = new Map<string, string[]>();
+  const productIdsBySku = new Map<string, string[]>();
   for (const product of existingProducts) {
-    const name = normalizedProductName(product.name);
-    const ids = productIdsByName.get(name);
+    const key = inventorySkuKey(product.name, product.unitsPerPack);
+    const ids = productIdsBySku.get(key);
     if (ids) ids.push(product.id);
-    else productIdsByName.set(name, [product.id]);
+    else productIdsBySku.set(key, [product.id]);
   }
   for (const id of suppliedProductIds)
     if (!productsById.has(id))
@@ -1309,14 +1306,21 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
   let observerBatchId: string | null = null;
 
   for (const line of command.input.lines) {
+    const unitsPerPack = line.unitsPerPack ?? 1;
+    const sku = inventorySkuKey(line.name, unitsPerPack);
     let productId: string | null = line.productId;
+    if (productId !== null) {
+      const selected = productsById.get(productId);
+      if (!selected)
+        return yield* Effect.fail(importError("One of the selected products no longer exists."));
+      if (selected.unitsPerPack !== unitsPerPack) productId = null;
+    }
     if (productId === null) {
-      const normalizedName = normalizedProductName(line.name);
-      const matches = productIdsByName.get(normalizedName) ?? [];
+      const matches = productIdsBySku.get(sku) ?? [];
       if (matches.length > 1)
         return yield* Effect.fail(
           importError(
-            `Multiple products are named “${line.name.trim()}”. Choose which one to restock.`,
+            `Multiple products are named “${line.name.trim()}” with ${unitsPerPack} units per pack. Choose which one to restock.`,
           ),
         );
       if (matches[0]) {
@@ -1330,7 +1334,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
             aisle: null,
             composition: null,
             strength: null,
-            unitsPerPack: line.unitsPerPack ?? 1,
+            unitsPerPack,
             packPrice: line.packPrice ?? null,
             unitPrice: null,
             visible: true,
@@ -1344,11 +1348,12 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
             updatedAt: command.occurredAt,
             deletedAt: null,
           })
-          .returning({ id: products.id });
+          .returning({ id: products.id, name: products.name, unitsPerPack: products.unitsPerPack });
         if (!created)
           return yield* Effect.fail(importError("An imported product could not be created."));
         productId = created.id;
-        productIdsByName.set(normalizedName, [productId]);
+        productsById.set(productId, created);
+        productIdsBySku.set(sku, [productId]);
         observerProductId ??= productId;
         createdProducts += 1;
       }

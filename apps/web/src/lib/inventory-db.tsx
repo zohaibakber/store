@@ -37,6 +37,7 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
+import { inventorySkuKey } from "@store/contracts";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -360,12 +361,12 @@ const importLocalInventory = async (
   if (!category || category.deletedAt !== null)
     throw new Error("The selected category is missing.");
 
-  const duplicateNames = new Set<string>();
-  const productsByName = new Map<string, ProductRow>();
+  const productsBySku = new Map<string, ProductRow[]>();
   for (const product of activeRows(inventory.products.state.values())) {
-    const name = product.name.trim().toLocaleLowerCase();
-    if (productsByName.has(name)) duplicateNames.add(name);
-    else productsByName.set(name, product);
+    const key = inventorySkuKey(product.name, product.unitsPerPack);
+    const matches = productsBySku.get(key);
+    if (matches) matches.push(product);
+    else productsBySku.set(key, [product]);
   }
   const createdProducts: ProductRow[] = [];
   const createdBatches: Array<{ batch: BatchRow; movement: StockMovementRow }> = [];
@@ -376,16 +377,24 @@ const importLocalInventory = async (
     requireNonNegativeQuantity(packQuantity, "Pack quantity");
     requireNonNegativeQuantity(unitQuantity, "Unit quantity");
 
-    const name = line.name.trim().toLocaleLowerCase();
-    if (!line.productId && duplicateNames.has(name)) {
-      throw new Error(
-        `Multiple products are named “${line.name.trim()}”. Choose which one to restock.`,
-      );
-    }
-    const namedProduct = productsByName.get(name);
-    let product = line.productId ? inventory.products.state.get(line.productId) : namedProduct;
+    const unitsPerPack = line.unitsPerPack ?? 1;
+    const sku = inventorySkuKey(line.name, unitsPerPack);
+    let product: ProductRow | undefined = line.productId
+      ? inventory.products.state.get(line.productId)
+      : undefined;
     if (product?.deletedAt !== null) product = undefined;
     if (line.productId && !product) throw new Error(`Product ${line.productId} no longer exists.`);
+    if (product && product.unitsPerPack !== unitsPerPack) product = undefined;
+
+    if (!product) {
+      const matches = productsBySku.get(sku) ?? [];
+      if (matches.length > 1) {
+        throw new Error(
+          `Multiple products are named “${line.name.trim()}” with ${unitsPerPack} units per pack. Choose which one to restock.`,
+        );
+      }
+      product = matches[0];
+    }
 
     if (!product) {
       const createdProduct: ProductRow = {
@@ -395,13 +404,13 @@ const importLocalInventory = async (
         aisle: null,
         composition: null,
         strength: null,
-        unitsPerPack: line.unitsPerPack ?? 1,
+        unitsPerPack,
         packPrice: line.packPrice ?? null,
         unitPrice: null,
         visible: true,
         ...mutationMetadata(actor),
       };
-      productsByName.set(createdProduct.name.toLocaleLowerCase(), createdProduct);
+      productsBySku.set(sku, [createdProduct]);
       createdProducts.push(createdProduct);
       product = createdProduct;
     }

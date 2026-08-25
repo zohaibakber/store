@@ -34,3 +34,8 @@ export const productStockValue = (product: StockValueProduct) => {
 
 export const formatInvoiceNumber = (invoiceNumber: number) =>
   invoiceNumber.toString().padStart(4, "0");
+
+export const normalizedProductName = (value: string) => value.trim().toLocaleLowerCase();
+
+export const inventorySkuKey = (name: string, unitsPerPack: number) =>
+  `${normalizedProductName(name)}\0${unitsPerPack}`;

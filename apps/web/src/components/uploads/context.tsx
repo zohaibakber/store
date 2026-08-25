@@ -3,6 +3,7 @@ import { invoiceUploadRejection } from "@store/contracts";
 import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import { sameProduct } from "@/components/uploads/same-product";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory-db";
@@ -47,9 +48,6 @@ const fileDescription = (file: File) => {
 };
 
 const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
-
-const sameProduct = (line: ExtractedLine, product: Product) =>
-  product.name.trim().toLocaleLowerCase() === line.name.trim().toLocaleLowerCase();
 
 function UploadProvider({
   children,

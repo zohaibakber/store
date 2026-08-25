@@ -7,13 +7,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/services/test"
   },
   "dependencies": {
     "@store/contracts": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "^26.2.0",
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
   }
 }
