@@ -746,6 +746,13 @@ const makeInventoryActions = (
   },
   deleteProduct: async (id) => {
     const current = requiredRow(inventory.products.state.get(id), "This product");
+    const remainingStock = activeRows(inventory.batches.state.values()).some(
+      (batch) =>
+        batch.productId === current.id && (batch.packQuantity > 0 || batch.unitQuantity > 0),
+    );
+    if (remainingStock) {
+      throw new Error("Clear remaining stock before deleting this product.");
+    }
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });
     const transaction = inventory.products.update(id, (draft) => {
       draft.deletedAt = metadata.updatedAt;

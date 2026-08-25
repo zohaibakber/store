@@ -293,6 +293,24 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
         .limit(1)
         .for("update");
       yield* validateWriteVersion(change, current);
+      if (change.action === "delete") {
+        const [stocked] = yield* tx
+          .select({ id: batches.id })
+          .from(batches)
+          .where(
+            and(
+              eq(batches.organizationId, actor.organizationId),
+              eq(batches.productId, change.entityId),
+              isNull(batches.deletedAt),
+              or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
+            ),
+          )
+          .limit(1);
+        if (stocked)
+          return yield* Effect.fail(
+            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this product."),
+          );
+      }
       if (change.action === "upsert") {
         const [category] = yield* tx
           .select({ id: categories.id })
@@ -1555,7 +1573,8 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
           isNull(products.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!product) {
       return yield* Effect.fail(invoiceError("One of the products no longer exists."));
     }
