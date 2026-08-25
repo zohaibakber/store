@@ -122,15 +122,15 @@ describe("legacy catalog upload", () => {
       },
     });
 
-    expect(server.migrations).toHaveLength(37);
+    expect(server.migrations).toHaveLength(1 + Math.ceil(881 / LEGACY_MIGRATION_CHUNK_ROWS));
     expect(
       server.migrations.every((command) => command.rows.length <= LEGACY_MIGRATION_CHUNK_ROWS),
     ).toBe(true);
     expect(server.migrations[0]?.kind).toBe("categories");
     expect(server.migrations[1]?.kind).toBe("products");
     expect(server.migrations[1]?.commandId).toBe("legacy-v1:device-1:products:0");
-    expect(server.migrations[1]?.rows).toHaveLength(25);
-    expect(server.migrations.at(-1)?.rows).toHaveLength(6);
+    expect(server.migrations[1]?.rows).toHaveLength(LEGACY_MIGRATION_CHUNK_ROWS);
+    expect(server.migrations.at(-1)?.rows).toHaveLength(881 % LEGACY_MIGRATION_CHUNK_ROWS);
     expect(server.reconciled).toBe(true);
   });
 
@@ -214,7 +214,8 @@ describe("legacy catalog upload", () => {
     expect(progress).toEqual([
       { step: "categories", uploadedRows: 0, totalRows: 31 },
       { step: "products", uploadedRows: 1, totalRows: 31 },
-      { step: "products", uploadedRows: 26, totalRows: 31 },
+      { step: "products", uploadedRows: 1 + LEGACY_MIGRATION_CHUNK_ROWS, totalRows: 31 },
+      { step: "products", uploadedRows: 1 + LEGACY_MIGRATION_CHUNK_ROWS * 2, totalRows: 31 },
       { step: "reconcile", uploadedRows: 31, totalRows: 31 },
     ]);
   });

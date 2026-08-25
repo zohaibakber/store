@@ -1,4 +1,6 @@
-const migratedKey = (scopeId: string) => `tabaaq-legacy-migrated:v1:${scopeId}`;
+// v2: reconnect devices that marked handoff complete while PowerSync still
+// connected first and wiped local rows before a failed upload could finish.
+const migratedKey = (scopeId: string) => `tabaaq-legacy-migrated:v2:${scopeId}`;
 
 const migrated = new Set<string>();
 

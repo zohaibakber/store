@@ -90,8 +90,8 @@ export const LegacyStockMovementMigrationRow = Schema.Struct({
 export type LegacyStockMovementMigrationRow = typeof LegacyStockMovementMigrationRow.Type;
 
 export const MAX_LEGACY_MIGRATION_ROWS = 250;
-/** Client POST size. 35 category rows already survive Worker CPU; products are heavier. */
-export const LEGACY_MIGRATION_CHUNK_ROWS = 25;
+/** Client POST size. 25-row batch chunks still trip Worker CPU on large catalogs. */
+export const LEGACY_MIGRATION_CHUNK_ROWS = 10;
 
 export const LEGACY_ROW_OPERATION_PREFIX = "legacy-row:v1:";
 
