@@ -165,7 +165,9 @@ export const AuthLive = Auth.make(
     const developmentOtp = yield* Config.boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
     if (!localDevelopment && developmentOtp) {
       return yield* Effect.die(
-        new Error("AUTH_DEV_OTP must be disabled outside local development because it exposes OTP codes."),
+        new Error(
+          "AUTH_DEV_OTP must be disabled outside local development because it exposes OTP codes.",
+        ),
       );
     }
 

@@ -197,9 +197,13 @@ describe("refresh rotation", () => {
     const second = await run(instance, (auth) =>
       auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
     );
-    const previous = instance.store.sessions.find((session) => session.replacedBySessionId !== null);
+    const previousIndex = instance.store.sessions.findIndex(
+      (session) => session.replacedBySessionId !== null,
+    );
+    const previous = instance.store.sessions[previousIndex];
     expect(previous?.revokedAt).not.toBeNull();
-    if (previous) previous.revokedAt = Date.now() - 60_000;
+    if (previousIndex < 0 || !previous) throw new Error("Expected a rotated session.");
+    instance.store.sessions[previousIndex] = { ...previous, revokedAt: Date.now() - 60_000 };
 
     const replay = await run(instance, (auth) =>
       Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),

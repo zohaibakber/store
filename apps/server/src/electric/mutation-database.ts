@@ -854,7 +854,7 @@ const applyLegacyCatalogMigration = Effect.fn("InventoryCommand.migrateLegacyCat
   }
 });
 
-const importedByLegacyMigration = (operationId: typeof categories.operationId) =>
+const importedByLegacyMigration = (operationId: Parameters<typeof like>[0]) =>
   like(operationId, `${LEGACY_ROW_OPERATION_PREFIX}%`);
 
 const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalog")(function* (
