@@ -24,6 +24,7 @@ import * as Schema from "effect/Schema";
 
 import { EphemeralStore } from "../src/ephemeral";
 import { GoogleOAuth, GoogleOAuthError, type GoogleProfile } from "../src/google";
+import { nextRateLimit, type RateLimitWindow } from "../src/rate-limit";
 import {
   AuthRepository,
   type AuthRepositoryApi,
@@ -59,6 +60,7 @@ export interface Store {
   readonly sessions: Array<SessionRecord>;
   readonly googleIdentities: Array<{ providerAccountId: string; userId: UserId }>;
   readonly sentInvitations: Array<SendInvitationInput>;
+  readonly rateLimits: Map<string, RateLimitWindow>;
 }
 
 export const emptyStore = (): Store => ({
@@ -69,6 +71,7 @@ export const emptyStore = (): Store => ({
   sessions: [],
   googleIdentities: [],
   sentInvitations: [],
+  rateLimits: new Map(),
 });
 
 export const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
@@ -472,6 +475,13 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
         }
       }
     }),
+  allowRateLimit: (input) =>
+    Effect.sync(() => {
+      const next = nextRateLimit(store.rateLimits.get(input.key), input);
+      if (next === null) return false;
+      store.rateLimits.set(input.key, next);
+      return true;
+    }),
 });
 
 export const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
@@ -498,9 +508,7 @@ export interface Harness {
   readonly layer: Layer.Layer<AuthService>;
 }
 
-export const harness = (
-  options: { readonly googleProfile?: GoogleProfile; readonly allow?: () => boolean } = {},
-): Harness => {
+export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}): Harness => {
   const store = emptyStore();
   const issued: Array<IssueAccessTokenInput> = [];
 
@@ -516,7 +524,6 @@ export const harness = (
         createAuthorizationGrant: () =>
           Effect.succeed(AuthorizationCode.make("authorization-code")),
         consumeAuthorizationGrant: () => Effect.succeed(null),
-        allow: () => Effect.succeed(options.allow?.() ?? true),
       }),
     ),
     Layer.succeed(

@@ -158,3 +158,14 @@ export const session = sqliteTable(
     index("auth_session_expiry_idx").on(table.expiresAt),
   ],
 );
+
+/**
+ * Login, OTP, invitation, and Google identity throttles. One statement both
+ * counts and decides, because D1 has no transactions and KV get-then-put
+ * races. `expiresAt` is milliseconds, matching `Clock.currentTimeMillis`.
+ */
+export const rateLimit = sqliteTable("auth_rate_limit", {
+  key: text().primaryKey(),
+  count: integer().notNull(),
+  expiresAt: integer().notNull(),
+});

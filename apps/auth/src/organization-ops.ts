@@ -17,7 +17,6 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
 import { INVITATION_TTL_MS, randomSecret, sha256 } from "./crypto";
-import type { EphemeralStoreApi } from "./ephemeral";
 import { authError } from "./errors";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
@@ -28,7 +27,6 @@ export interface OrganizationOpsConfiguration {
 
 export const makeOrganizationOps = (
   repository: AuthRepositoryApi,
-  ephemeral: EphemeralStoreApi,
   email: EmailProviderApi,
   sessions: Pick<SessionOps, "authorize">,
   configuration: OrganizationOpsConfiguration,
@@ -185,7 +183,7 @@ export const makeOrganizationOps = (
     token: string,
   ) {
     const now = yield* Clock.currentTimeMillis;
-    const allowed = yield* ephemeral.allow({
+    const allowed = yield* repository.allowRateLimit({
       key: `accept-invitation:${claims.subject}`,
       limit: 10,
       windowSeconds: 600,

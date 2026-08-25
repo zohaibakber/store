@@ -1,4 +1,12 @@
-import { EmailAddress, GoogleIdToken, IdentifyInput, Password, RefreshInput } from "@store/auth";
+import {
+  EmailAddress,
+  GoogleIdToken,
+  IdentifyInput,
+  OtpChallengeId,
+  OtpCode,
+  Password,
+  RefreshInput,
+} from "@store/auth";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -323,5 +331,80 @@ describe("Google account linking", () => {
 
     expect(instance.issued.at(-1)).toMatchObject({ subject: "first" });
     expect(instance.store.googleIdentities).toHaveLength(1);
+  });
+});
+
+describe("Rate limits", () => {
+  const nativeClient = { _tag: "Native" as const, deviceName: "Test device" };
+
+  it("caps identify attempts per email and leaves other addresses alone", async () => {
+    const instance = harness();
+    const identify = (email: string) =>
+      run(instance, (auth) =>
+        auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })),
+      );
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await expect(identify("flood@example.com")).resolves.toMatchObject({
+        _tag: "Registration",
+      });
+    }
+
+    const denied = await run(instance, (auth) =>
+      Effect.flip(
+        auth.identify(IdentifyInput.make({ email: EmailAddress.make("flood@example.com") })),
+      ),
+    );
+    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+    await expect(identify("other@example.com")).resolves.toMatchObject({ _tag: "Registration" });
+  });
+
+  it("caps password attempts before the sixth try", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const signIn = () =>
+      run(instance, (auth) =>
+        auth.authenticate({
+          _tag: "Password",
+          email: passwordUser.email,
+          password: Password.make("valid-password"),
+          client: nativeClient,
+        }),
+      );
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(signIn()).resolves.toMatchObject({ accessToken: expect.any(String) });
+    }
+
+    const denied = await run(instance, (auth) =>
+      Effect.flip(
+        auth.authenticate({
+          _tag: "Password",
+          email: passwordUser.email,
+          password: Password.make("valid-password"),
+          client: nativeClient,
+        }),
+      ),
+    );
+    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+  });
+
+  it("caps OTP guesses for one challenge", async () => {
+    const instance = harness();
+    const guess = () =>
+      run(instance, (auth) =>
+        Effect.flip(
+          auth.authenticate({
+            _tag: "Otp",
+            challengeId: OtpChallengeId.make("challenge-1"),
+            code: OtpCode.make("000000"),
+            client: nativeClient,
+          }),
+        ),
+      );
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(guess()).resolves.toMatchObject({ status: 401, code: "INVALID_OTP" });
+    }
+    await expect(guess()).resolves.toMatchObject({ status: 429, code: "RATE_LIMITED" });
   });
 });

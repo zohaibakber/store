@@ -24,6 +24,7 @@ import {
   organization,
   organizationInvitation,
   organizationMembership,
+  rateLimit,
   session,
   user,
 } from "@store/db/auth.schema";
@@ -36,6 +37,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
+
+import type { RateLimitAttempt } from "./rate-limit";
 
 const UserRecord = Schema.Struct({
   id: UserId,
@@ -237,6 +240,11 @@ export interface AuthRepositoryApi {
   ) => Effect.Effect<void, RepositoryError>;
   readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
   readonly revokeUser: (userId: UserIdType, now: number) => Effect.Effect<void, RepositoryError>;
+  /**
+   * Increments `key` when the window still has room. Empty RETURNING is a
+   * denial, so two concurrent attempts cannot both slip under the cap.
+   */
+  readonly allowRateLimit: (input: RateLimitAttempt) => Effect.Effect<boolean, RepositoryError>;
 }
 
 export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
@@ -908,6 +916,27 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         .set({ revokedAt: at(now) })
         .where(and(eq(session.userId, userId), isNull(session.revokedAt)))
         .pipe(fail("revokeUser"));
+    }),
+    allowRateLimit: Effect.fn("AuthRepository.allowRateLimit")(function* (input) {
+      const expiresAt = input.now + input.windowSeconds * 1_000;
+      const granted = yield* database
+        .insert(rateLimit)
+        .values({
+          key: input.key,
+          count: 1,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: rateLimit.key,
+          set: {
+            count: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN 1 WHEN ${rateLimit.count} < ${input.limit} THEN ${rateLimit.count} + 1 ELSE ${rateLimit.count} END`,
+            expiresAt: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN excluded.expiresAt ELSE ${rateLimit.expiresAt} END`,
+          },
+          setWhere: sql`${rateLimit.expiresAt} <= ${input.now} OR ${rateLimit.count} < ${input.limit}`,
+        })
+        .returning({ count: rateLimit.count })
+        .pipe(fail("allowRateLimit"));
+      return granted.length === 1;
     }),
   };
 };

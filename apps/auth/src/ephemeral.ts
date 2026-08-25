@@ -49,11 +49,6 @@ export interface AuthorizationGrantRecord extends Schema.Schema.Type<
   typeof AuthorizationGrantRecord
 > {}
 
-const RateLimitRecord = Schema.Struct({
-  count: Schema.Number,
-  expiresAt: Schema.Number,
-});
-
 export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>()(
   "Auth.EphemeralStoreError",
   {
@@ -94,12 +89,6 @@ export interface EphemeralStoreApi {
     code: AuthorizationCodeType,
     now: number,
   ) => Effect.Effect<AuthorizationGrantRecord | null, EphemeralStoreError>;
-  readonly allow: (input: {
-    readonly key: string;
-    readonly limit: number;
-    readonly windowSeconds: number;
-    readonly now: number;
-  }) => Effect.Effect<boolean, EphemeralStoreError>;
 }
 
 export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralStoreApi>()(
@@ -110,10 +99,11 @@ const error = (operation: string, cause: unknown) =>
   new EphemeralStoreError({ operation, message: String(cause), cause });
 
 /**
- * Cloudflare KV refuses `expiration`/`expirationTtl` under 60 seconds. Identify
- * and native Google rate-limit with a 60-second window, so flooring that window
- * to an absolute timestamp often lands at 59s remaining and the put throws.
- * KV TTL is only garbage collection: the JSON `expiresAt` is the real window.
+ * Cloudflare KV refuses `expiration`/`expirationTtl` under 60 seconds. OTP
+ * challenges, OAuth state, and authorization grants all last minutes, but
+ * flooring an absolute `expiresAt` to remaining seconds can still land under
+ * that floor near expiry. KV TTL is only garbage collection: the JSON
+ * `expiresAt` is what consume methods honor.
  */
 export const kvExpirationTtlSeconds = (expiresAtMs: number, nowMs: number) =>
   Math.max(Math.ceil((expiresAtMs - nowMs) / 1_000), 60) + 1;
@@ -233,34 +223,5 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
           return record;
         },
       ),
-      allow: Effect.fn("EphemeralStore.allow")(function* (input) {
-        const key = `rate:${input.key}`;
-        const raw = yield* Effect.tryPromise({
-          try: () => namespace.get(key, "json"),
-          catch: (cause) => error("allow.get", cause),
-        });
-        const current =
-          raw === null
-            ? null
-            : yield* Schema.decodeUnknownEffect(RateLimitRecord)(raw).pipe(
-                Effect.mapError((cause) => error("allow.decode", cause)),
-              );
-        if (current && current.expiresAt > input.now && current.count >= input.limit) {
-          return false;
-        }
-        const expiresAt =
-          current && current.expiresAt > input.now
-            ? current.expiresAt
-            : input.now + input.windowSeconds * 1_000;
-        const count = current && current.expiresAt > input.now ? current.count + 1 : 1;
-        yield* Effect.tryPromise({
-          try: () =>
-            namespace.put(key, JSON.stringify({ count, expiresAt }), {
-              expirationTtl: kvExpirationTtlSeconds(expiresAt, input.now),
-            }),
-          catch: (cause) => error("allow.put", cause),
-        });
-        return true;
-      }),
     }),
   );
