@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "b5187201-6f74-44e9-88de-35a17aa48b1f",
-  "prevIds": [
-    "f43f8508-b500-4649-84ee-61a772b830d2"
-  ],
+  "prevIds": ["f43f8508-b500-4649-84ee-61a772b830d2"],
   "ddl": [
     {
       "name": "clerk_org_binding",
@@ -579,13 +577,9 @@
       "table": "auth_user"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -594,13 +588,9 @@
       "table": "auth_oauth_account"
     },
     {
-      "columns": [
-        "organizationId"
-      ],
+      "columns": ["organizationId"],
       "tableTo": "auth_organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -609,13 +599,9 @@
       "table": "auth_organization_invitation"
     },
     {
-      "columns": [
-        "invitedByUserId"
-      ],
+      "columns": ["invitedByUserId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -624,13 +610,9 @@
       "table": "auth_organization_invitation"
     },
     {
-      "columns": [
-        "organizationId"
-      ],
+      "columns": ["organizationId"],
       "tableTo": "auth_organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -639,13 +621,9 @@
       "table": "auth_organization_membership"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -654,13 +632,9 @@
       "table": "auth_organization_membership"
     },
     {
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "tableTo": "auth_user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -669,13 +643,9 @@
       "table": "auth_session"
     },
     {
-      "columns": [
-        "activeOrganizationId"
-      ],
+      "columns": ["activeOrganizationId"],
       "tableTo": "auth_organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -684,72 +654,56 @@
       "table": "auth_session"
     },
     {
-      "columns": [
-        "clerkOrganizationId"
-      ],
+      "columns": ["clerkOrganizationId"],
       "nameExplicit": false,
       "name": "clerk_org_binding_pk",
       "table": "clerk_org_binding",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_oauth_account_pk",
       "table": "auth_oauth_account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_organization_pk",
       "table": "auth_organization",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_organization_invitation_pk",
       "table": "auth_organization_invitation",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_organization_membership_pk",
       "table": "auth_organization_membership",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "key"
-      ],
+      "columns": ["key"],
       "nameExplicit": false,
       "name": "auth_rate_limit_pk",
       "table": "auth_rate_limit",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_session_pk",
       "table": "auth_session",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "auth_user_pk",
       "table": "auth_user",
