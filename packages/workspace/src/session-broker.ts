@@ -31,8 +31,8 @@ export const loadSessionSnapshot = async (
   hooks: SessionSnapshotHooks,
 ): Promise<WorkspaceSnapshotType> => {
   if (!hooks.http.tokens.get()) {
-    const local = hooks.getLocalSnapshot();
-    return hooks.publish(withWorkspaceOnline(local, local.status === "authenticated"));
+    await hooks.clearAuthenticated?.();
+    return hooks.publish(unauthenticated(true));
   }
   try {
     const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(

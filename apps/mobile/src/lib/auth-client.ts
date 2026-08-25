@@ -114,8 +114,9 @@ const refreshTokens = async () => {
       if (cause instanceof AuthClientError && (cause.status === 401 || cause.status === 403)) {
         await persistTokens(null);
       }
-      if (isOfflineCause(cause)) return null;
-      throw cause;
+      // Transient and server failures keep the current tokens so a still-valid
+      // access token can be used. Auth rejection already cleared them.
+      return null;
     })
     .finally(() => {
       refreshInFlight = null;

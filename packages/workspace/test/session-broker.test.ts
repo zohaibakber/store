@@ -58,4 +58,32 @@ describe("session snapshot persistence", () => {
       "authenticated",
     ]);
   });
+
+  it("does not keep a cached authenticated snapshot when tokens are gone", async () => {
+    let local: WorkspaceSnapshot = authenticated;
+    const publish = vi.fn((snapshot: WorkspaceSnapshot) => {
+      local = snapshot;
+      return snapshot;
+    });
+    const clearAuthenticated = vi.fn(async () => undefined);
+    const http = new SessionHttpClient({
+      apiBaseUrl: "https://api.example.com",
+      authBaseUrl: "https://auth.example.com",
+      tokens: { get: () => null, set: vi.fn() },
+      fetch: vi.fn(),
+      refreshSession: async () => null,
+      needsRefresh: () => false,
+    });
+
+    const result = await loadSessionSnapshot({
+      http,
+      getLocalSnapshot: () => local,
+      publish,
+      clearAuthenticated,
+    });
+
+    expect(result).toMatchObject({ status: "unauthenticated", isOnline: true });
+    expect(clearAuthenticated).toHaveBeenCalledOnce();
+    expect(http.tokens.get()).toBeNull();
+  });
 });
