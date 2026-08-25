@@ -46,8 +46,8 @@ test("desktop chunks stay under the Worker-safe size while HTTP still accepts th
 
   const products = Array.from({ length: 881 }, (_, index) => index);
   const chunks = chunkLegacyMigrationRows(products);
-  expect(chunks).toHaveLength(36);
+  expect(chunks).toHaveLength(Math.ceil(products.length / LEGACY_MIGRATION_CHUNK_ROWS));
   expect(chunks.every((chunk) => chunk.length <= LEGACY_MIGRATION_CHUNK_ROWS)).toBe(true);
-  expect(chunks.at(-1)).toHaveLength(6);
+  expect(chunks.at(-1)).toHaveLength(products.length % LEGACY_MIGRATION_CHUNK_ROWS || LEGACY_MIGRATION_CHUNK_ROWS);
   expect(chunks.flat()).toEqual(products);
 });

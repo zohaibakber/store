@@ -103,32 +103,32 @@ const replicateRemoteCatalog = (
   powerSync: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
 ) => {
   void (async () => {
-    void powerSync.connect(
-      makeInventoryPowerSyncConnector({
-        apiBaseUrl: host.apiBaseUrl,
-        authenticatedFetch: host.authenticatedFetch,
-      }),
-    );
     try {
+      // Upload the on-disk legacy catalog before PowerSync connects. Connecting
+      // first replaces local SQLite with remote and drops invoices that never
+      // reached Postgres when the upload hits a Worker CPU limit or FK skip.
       if (!legacyCatalogMigrated(scopeId)) {
-        try {
-          const legacy = await host.loadLegacyLocalSnapshot?.();
-          if (legacy) {
-            await migrateLegacyCatalog({
-              apiBaseUrl: host.apiBaseUrl,
-              authenticatedFetch: host.authenticatedFetch,
-              deviceId: host.deviceId,
-              catalog: legacy.migrationCatalog,
-            });
-          }
-          markLegacyCatalogMigrated(scopeId);
-        } catch {
-          // Retry the server copy on the next launch. Sync still runs.
+        const legacy = await host.loadLegacyLocalSnapshot?.();
+        if (legacy) {
+          await migrateLegacyCatalog({
+            apiBaseUrl: host.apiBaseUrl,
+            authenticatedFetch: host.authenticatedFetch,
+            deviceId: host.deviceId,
+            catalog: legacy.migrationCatalog,
+          });
         }
+        markLegacyCatalogMigrated(scopeId);
       }
+      void powerSync.connect(
+        makeInventoryPowerSyncConnector({
+          apiBaseUrl: host.apiBaseUrl,
+          authenticatedFetch: host.authenticatedFetch,
+        }),
+      );
       await waitForInventoryFirstSync(powerSync);
     } catch {
-      // Local rows stay on screen.
+      // Keep seeded local rows. Do not connect until the upload finishes, so a
+      // failed handoff can retry on the next launch without remote wiping it.
     }
   })();
 };
