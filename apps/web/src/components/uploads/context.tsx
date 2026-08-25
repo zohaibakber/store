@@ -1,4 +1,5 @@
 import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
+import { invoiceUploadRejection } from "@store/contracts";
 import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
@@ -72,14 +73,18 @@ function UploadProvider({
         title: "Only PDF and CSV invoice files can be uploaded.",
         type: "error",
       });
-    setFiles((current) =>
-      [...current, ...valid].filter(
+    setFiles((current) => {
+      const next = [...current, ...valid].filter(
         (file, index, list) =>
           list.findIndex(
             (candidate) => candidate.name === file.name && candidate.size === file.size,
           ) === index,
-      ),
-    );
+      );
+      const rejection = invoiceUploadRejection(next.map((file) => ({ byteLength: file.size })));
+      if (!rejection) return next;
+      toastManager.add({ title: rejection, type: "error" });
+      return current;
+    });
   };
 
   const removeFile = (file: File) => {

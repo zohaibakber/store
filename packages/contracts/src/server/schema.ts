@@ -1,5 +1,20 @@
 import * as Schema from "effect/Schema";
 
+export const MAX_INVOICE_UPLOAD_FILES = 10;
+export const MAX_INVOICE_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+export const invoiceUploadRejection = (
+  files: ReadonlyArray<{ readonly byteLength: number }>,
+): string | null => {
+  if (files.length === 0) return "Attach at least one invoice file.";
+  if (files.length > MAX_INVOICE_UPLOAD_FILES) {
+    return `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`;
+  }
+  const total = files.reduce((sum, file) => sum + file.byteLength, 0);
+  if (total > MAX_INVOICE_UPLOAD_BYTES) return "The attachments are too large.";
+  return null;
+};
+
 const nonNegativeInteger = (description: string) =>
   Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({ description });
 
