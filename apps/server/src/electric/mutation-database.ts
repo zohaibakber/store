@@ -401,10 +401,7 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
           );
         if (current && row.productId !== current.productId)
           return yield* Effect.fail(
-            protocolError(
-              "ENTITY_RELATION_INVALID",
-              "A batch cannot be moved to another product.",
-            ),
+            protocolError("ENTITY_RELATION_INVALID", "A batch cannot be moved to another product."),
           );
       }
       const values = {

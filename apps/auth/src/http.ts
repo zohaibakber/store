@@ -24,8 +24,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { AuthError, AuthService } from "./service";
 import { resolveRefreshCredential } from "./refresh-credential";
+import { AuthError, AuthService } from "./service";
 
 const refreshCookieName = (secureCookies: boolean) =>
   secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh";
