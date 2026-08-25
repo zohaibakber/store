@@ -133,6 +133,31 @@ describe("SessionHttpClient", () => {
     expect(refreshes).toBe(1);
   });
 
+  it("reloads host state after a refresh without deadlocking ensureFreshAccess", async () => {
+    const store = new MemoryTokenStore();
+    store.set(tokens(Date.now() + 1_000));
+    let afterRefreshCalls = 0;
+    const client = new SessionHttpClient({
+      apiBaseUrl: "http://localhost:8787",
+      authBaseUrl: "http://localhost:8788",
+      tokens: store,
+      fetch: vi.fn(),
+      refreshSession: async () => {
+        const next = tokens(Date.now() + 120_000);
+        store.set(next);
+        return next;
+      },
+      needsRefresh: cookieSessionNeedsRefresh,
+      afterRefresh: async () => {
+        afterRefreshCalls += 1;
+        await client.ensureFreshAccess();
+      },
+    });
+
+    await client.ensureFreshAccess();
+    expect(afterRefreshCalls).toBe(1);
+  });
+
   it("applies host request headers", async () => {
     const store = new MemoryTokenStore();
     store.set(tokens(Date.now() + 60_000));

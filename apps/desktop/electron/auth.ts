@@ -54,6 +54,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
       needsRefresh: refreshTokenNeedsRefresh,
       refreshSession: () => this.#rotateTokens(),
+      afterRefresh: async () => {
+        await loadSessionSnapshot(this.#hooks);
+      },
       requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
     });
     this.#hooks = {
@@ -89,6 +92,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       this.#tokens.set(persisted.tokens);
       this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
       await this.#http.ensureFreshAccess().catch(() => undefined);
+      if (this.#tokens.get()) return loadSessionSnapshot(this.#hooks);
     }
     return this.#snapshot;
   }

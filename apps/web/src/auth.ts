@@ -66,6 +66,9 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       fetch: (url, init) => fetch(url, init),
       needsRefresh: cookieSessionNeedsRefresh,
       refreshSession: () => this.#refreshViaCookie(),
+      afterRefresh: async () => {
+        await loadSessionSnapshot(this.#hooks);
+      },
     });
     this.#hooks = {
       http: this.#http,

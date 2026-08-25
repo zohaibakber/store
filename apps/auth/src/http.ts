@@ -25,6 +25,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { AuthError, AuthService } from "./service";
+import { resolveRefreshCredential } from "./refresh-credential";
 
 const refreshCookieName = (secureCookies: boolean) =>
   secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh";
@@ -122,13 +123,11 @@ const refreshTokenFromRequest = (
   request: HttpServerRequest.HttpServerRequest,
   secureCookies: boolean,
   provided?: typeof RefreshToken.Type,
-) => {
-  if (provided) return provided;
-  const cookie = request.cookies[refreshCookieName(secureCookies)];
-  if (!cookie) return undefined;
-  const decoded = Schema.decodeUnknownOption(RefreshToken)(cookie);
-  return decoded._tag === "Some" ? decoded.value : undefined;
-};
+) =>
+  resolveRefreshCredential({
+    cookie: request.cookies[refreshCookieName(secureCookies)],
+    bodyToken: provided,
+  })?.refreshToken;
 
 const withAuthErrorResponse = <R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, AuthError, R>,
@@ -261,16 +260,15 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
             Effect.gen(function* () {
               const request = yield* HttpServerRequest.HttpServerRequest;
               const input = yield* requestJson(RefreshInput);
-              const cookie = request.cookies[refreshCookieName(configuration.secureCookies)];
-              const refreshToken = refreshTokenFromRequest(
-                request,
-                configuration.secureCookies,
-                input.refreshToken,
-              );
-              const tokens = yield* auth.refresh({ refreshToken });
-              const client: AuthClientKind = cookie
-                ? { _tag: "Browser" }
-                : { _tag: "Native", deviceName: "Native client" };
+              const resolved = resolveRefreshCredential({
+                cookie: request.cookies[refreshCookieName(configuration.secureCookies)],
+                bodyToken: input.refreshToken,
+              });
+              const tokens = yield* auth.refresh({ refreshToken: resolved?.refreshToken });
+              const client: AuthClientKind = resolved?.client ?? {
+                _tag: "Native",
+                deviceName: "Native client",
+              };
               return browserTokenResponse(tokens, client, configuration.secureCookies);
             }),
           ),
