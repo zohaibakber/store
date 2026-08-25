@@ -112,7 +112,12 @@ const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => {
     expiresAt: nullableString(value.expiresAt),
     packQuantity: count(value.packQuantity, 0, 0),
     unitQuantity: count(value.unitQuantity, 0, 0),
-    unitsPerPack: salvageUnitsPerPack(name, parseUnitsPerPack(value.unitsPerPack, 1)),
+    unitsPerPack: salvageUnitsPerPack(
+      name,
+      isString(value.unitsPerPack) || isNumber(value.unitsPerPack)
+        ? parseUnitsPerPack(value.unitsPerPack, 1)
+        : 1,
+    ),
     packPrice:
       value.packPrice == null
         ? null

@@ -165,7 +165,7 @@ const confidence = (value: ModelScalar | undefined): number => {
 };
 
 const unitsPerPack = (value: ModelScalar | undefined, name: string | null): number | null => {
-  if (value === undefined || value === null) return null;
+  if (!isString(value) && !isNumber(value)) return null;
   if (isString(value) && !value.trim()) return null;
   const parsed = parseUnitsPerPack(value, Number.NaN);
   if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10_000) return null;

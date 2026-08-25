@@ -1,14 +1,17 @@
 const MAX_UNITS_PER_PACK = 10_000;
 
+export type PrintedPackSize = string | number;
+
+const isPrintedPackCount = (value: PrintedPackSize): value is number => typeof value === "number";
+
 const asPositiveInt = (value: number, fallback: number) => {
   if (!Number.isFinite(value)) return fallback;
   const rounded = Math.round(value);
   return rounded >= 1 ? rounded : fallback;
 };
 
-export const parseUnitsPerPack = (value: unknown, fallback = 1): number => {
-  if (typeof value === "number") return asPositiveInt(value, fallback);
-  if (typeof value !== "string") return fallback;
+export const parseUnitsPerPack = (value: PrintedPackSize, fallback = 1): number => {
+  if (isPrintedPackCount(value)) return asPositiveInt(value, fallback);
   const trimmed = value.trim();
   if (!trimmed) return fallback;
 
