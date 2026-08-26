@@ -41,6 +41,31 @@ export const INVENTORY_COMMAND_PATHS = [
   "legacy-reconciliations",
 ] as const;
 
+export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
+/** One catalog snapshot can exceed 1 MiB (up to 5_000 rows per table). */
+export const MAX_INVENTORY_CATALOG_BODY_BYTES = 32 * 1_048_576;
+
+const CATALOG_COMMAND_PATHS = new Set(["legacy-migrations", "legacy-reconciliations"]);
+
+export const maxInventoryRequestBodyBytes = (apiBaseUrl: string, url: string) => {
+  const pathname = new URL(url).pathname;
+  const apiPath = inventoryApiPath(apiBaseUrl);
+  for (const command of CATALOG_COMMAND_PATHS) {
+    if (pathname === `${apiPath}/inventory/${command}`) return MAX_INVENTORY_CATALOG_BODY_BYTES;
+  }
+  return MAX_INVENTORY_COMMAND_BODY_BYTES;
+};
+
+export const assertInventoryRequestBodySize = (
+  apiBaseUrl: string,
+  request: Pick<InventoryHttpRequest, "url" | "body">,
+) => {
+  if (!request.body) return;
+  const limit = maxInventoryRequestBodyBytes(apiBaseUrl, request.url);
+  if (request.body.byteLength <= limit) return;
+  throw new Error(`The inventory request body exceeds the ${limit / 1_048_576} MiB limit.`);
+};
+
 export const validatedInventoryUrl = (
   apiBaseUrl: string,
   request: Pick<InventoryHttpRequest, "method" | "url">,
@@ -99,9 +124,8 @@ export const registerInventoryHttpIpc = (options: {
     input: InventoryHttpRequest,
   ): Promise<InventoryHttpResponse> => {
     const request = Schema.decodeUnknownSync(InventoryHttpRequestInput)(input);
-    if (request.body && request.body.byteLength > 1_048_576) {
-      throw new Error("The inventory request body exceeds the 1 MiB limit.");
-    }
+    validatedInventoryUrl(options.apiBaseUrl, request);
+    assertInventoryRequestBodySize(options.apiBaseUrl, request);
     const key = requestKey(event.sender.id, request.requestId);
     if (inFlight.has(key)) throw new Error("The inventory request ID is already in use.");
 
