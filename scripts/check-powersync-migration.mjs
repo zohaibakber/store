@@ -6,6 +6,9 @@ const read = (path) => readFileSync(new URL(path, root), "utf8");
 const requireText = (text, expected, label) => {
   if (!text.includes(expected)) throw new Error(`${label} is missing ${expected}.`);
 };
+const forbidText = (text, forbidden, label) => {
+  if (text.includes(forbidden)) throw new Error(`${label} still contains ${forbidden}.`);
+};
 
 const sourceFiles = (directory) => {
   const absolute = new URL(directory, root).pathname;
@@ -44,25 +47,16 @@ requireText(syncConfig, "auth.parameter('org')", "PowerSync organization isolati
 
 const server = read("apps/server/src/http/app.ts");
 requireText(server, '"/api/powersync/credentials"', "server credential route");
-requireText(
+forbidText(
   read("apps/server/src/http/api.ts"),
   '"/api/inventory/legacy-migrations"',
-  "legacy desktop migration route",
+  "server API",
 );
-requireText(
-  read("apps/desktop/electron/legacy-local-inventory.ts"),
-  'path.join(userDataPath, "organizations")',
-  "legacy signed-in database discovery",
-);
-requireText(
+forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
+forbidText(
   read("apps/web/src/lib/inventory-db.tsx"),
-  "await migrateLegacyCatalog({",
-  "desktop migration gate",
-);
-requireText(
-  read("packages/client-db/src/legacy-catalog.ts"),
-  "export const migrateLegacyCatalog",
-  "legacy catalog migration helper",
+  "migrateLegacyCatalog",
+  "inventory database",
 );
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
 requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");

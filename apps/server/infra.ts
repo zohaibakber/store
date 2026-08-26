@@ -11,8 +11,6 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 
@@ -25,19 +23,9 @@ import {
   type AuthVerificationConfig,
 } from "./src/auth/session";
 import {
-  LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS,
-  LegacyMigrationJobProcessingError,
-  type LegacyMigrationJobStore,
-  LegacyMigrationQueueError,
-  LegacyMigrationQueueMessage,
-  processLegacyMigrationJob,
-  terminalMigrationFailure,
-} from "./src/electric/legacy-migration-worker";
-import {
   ElectricMutationDatabase,
   ElectricMutationDatabaseLive,
 } from "./src/electric/mutation-database";
-import type { InventoryDatabaseError, InventoryProtocolError } from "./src/inventory/errors";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -46,7 +34,7 @@ import {
   resolveProductionApiHostname,
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
-import { reportError, reportRejectedAuthSettings } from "./src/runtime/worker";
+import { reportRejectedAuthSettings } from "./src/runtime/worker";
 import {
   OrganizationStore,
   OrganizationStoreLive,
@@ -69,7 +57,6 @@ const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as 
  * export/backfill has completed and the copied data has been verified.
  */
 export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
-export const LegacyMigrationQueue = Cloudflare.Queues.Queue("LegacyMigrationQueue");
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -102,64 +89,6 @@ export const ApiLive = Api.make(
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
     const electricMutations = yield* ElectricMutationDatabase;
-    const migrationQueueResource = yield* LegacyMigrationQueue;
-    const migrationQueue = yield* Cloudflare.Queues.WriteQueue(migrationQueueResource);
-    const migrationJobs: LegacyMigrationJobStore = {
-      claim: electricMutations.legacyMigrationJobs.claim,
-      migrateBatch: electricMutations.migrateLegacyCatalog,
-      reconcile: electricMutations.reconcileLegacyCatalog,
-      updateProgress: electricMutations.legacyMigrationJobs.updateProgress,
-      succeed: electricMutations.legacyMigrationJobs.succeed,
-      fail: electricMutations.legacyMigrationJobs.fail,
-    };
-    yield* Cloudflare.Queues.consumeQueueMessages(
-      migrationQueueResource,
-      {
-        batchSize: 1,
-        maxConcurrency: 1,
-        maxRetries: LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS,
-        maxWaitTime: "1 second",
-        retryDelay: "15 seconds",
-      },
-      (stream) =>
-        Stream.runForEach(stream, (message) =>
-          Schema.decodeUnknownEffect(LegacyMigrationQueueMessage)(message.body).pipe(
-            Effect.flatMap((body) => {
-              const handleFailure = (
-                error:
-                  | InventoryDatabaseError
-                  | InventoryProtocolError
-                  | LegacyMigrationJobProcessingError,
-              ) => {
-                reportError("legacy_migration.queue_attempt_failed", error);
-                return message.attempts >= LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS
-                  ? terminalMigrationFailure(migrationJobs, body)(error)
-                  : Effect.fail(error);
-              };
-              return processLegacyMigrationJob(migrationJobs, body, message.attempts).pipe(
-                Effect.flatMap((outcome) =>
-                  outcome.kind === "continue"
-                    ? migrationQueue.send(body, { contentType: "json" }).pipe(
-                        Effect.asVoid,
-                        Effect.mapError(() =>
-                          LegacyMigrationQueueError.make({
-                            message: "Migration could not be continued. It will retry shortly.",
-                          }),
-                        ),
-                      )
-                    : Effect.void,
-                ),
-                Effect.catchTags({
-                  InventoryDatabaseError: handleFailure,
-                  InventoryProtocolError: handleFailure,
-                  LegacyMigrationJobProcessingError: handleFailure,
-                  LegacyMigrationQueueError: (error) => Effect.fail(error),
-                }),
-              );
-            }),
-          ),
-        ),
-    );
     const ai = yield* Cloudflare.Workers.AI();
     const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
       namespaceId: 1001,
@@ -251,38 +180,6 @@ export const ApiLive = Api.make(
       writeElectricMutation: electricMutations.write,
       importInventory: electricMutations.importInventory,
       issueInvoice: electricMutations.issueInvoice,
-      startLegacyCatalogMigration: (actor, request) =>
-        electricMutations.legacyMigrationJobs.start(actor, request).pipe(
-          Effect.tap(({ jobId }) =>
-            migrationQueue
-              .send(
-                {
-                  jobId,
-                  organizationId: actor.organizationId,
-                } satisfies LegacyMigrationQueueMessage,
-                { contentType: "json" },
-              )
-              .pipe(
-                Effect.tapError(() =>
-                  electricMutations.legacyMigrationJobs
-                    .fail({
-                      jobId,
-                      organizationId: actor.organizationId,
-                      error: "Migration could not be queued. Reopen the app to try again.",
-                    })
-                    .pipe(Effect.ignore),
-                ),
-                Effect.mapError(() =>
-                  LegacyMigrationQueueError.make({
-                    message: "Migration could not be queued. Try again shortly.",
-                  }),
-                ),
-              ),
-          ),
-        ),
-      getLegacyCatalogMigration: electricMutations.legacyMigrationJobs.getStatus,
-      migrateLegacyCatalogBatch: electricMutations.migrateLegacyCatalog,
-      reconcileLegacyCatalog: electricMutations.reconcileLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
@@ -298,8 +195,6 @@ export const ApiLive = Api.make(
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
     Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
-    Effect.provide(Cloudflare.Queues.WriteQueueBinding),
-    Effect.provide(Cloudflare.Queues.EventSourceLive),
   ),
 );
 

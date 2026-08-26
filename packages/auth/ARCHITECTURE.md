@@ -335,8 +335,6 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 
 - Which production apex should `PRODUCTION_AUTH_DOMAIN` override when it cannot
   be derived as `auth.<PRODUCTION_DOMAIN>`?
-- What account-linking verification should the Clerk cutover require before an
-  existing inventory organization is assigned to a first-party user?
 - Should a later Cloudflare Email provider send OTP through Email Routing or an
   external transactional provider bound to the Worker?
 
@@ -347,9 +345,8 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
   token storage out of React components.
 - Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
   development uses an unprefixed cookie because the prefix requires `Secure`.
-- The auth database keeps the old organization-binding table until production
-  account linking is complete. No runtime code reads it. A dedicated cutover
-  migration can remove it after existing organizations have first-party owners.
+- The Clerk organization-binding D1 table is unused. No runtime path reads it.
+  Dropping the table is a separate schema change.
 - Registration and Google sign-up still create one owner organization. That
   store can invite members and manage roles through `/v1/organization`. Creating
   additional organizations, or switching among them, is intentionally absent.

@@ -1,38 +1,10 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
-import {
-  LegacyBatchMigrationRow,
-  LegacyCategoryMigrationRow,
-  LegacyInvoiceItemMigrationRow,
-  LegacyInvoiceMigrationRow,
-  LegacyProductMigrationRow,
-  LegacyStockMovementMigrationRow,
-} from "@store/contracts";
 import Database from "better-sqlite3";
-import * as Schema from "effect/Schema";
 import type { IpcMain } from "electron";
 
 import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
-import { latestCreatedRows, latestMigrationRows } from "./legacy-migration-catalog";
-
-type LegacyMigrationCatalog = {
-  readonly categories: ReadonlyArray<LegacyCategoryMigrationRow>;
-  readonly products: ReadonlyArray<LegacyProductMigrationRow>;
-  readonly batches: ReadonlyArray<LegacyBatchMigrationRow>;
-  readonly invoices: ReadonlyArray<LegacyInvoiceMigrationRow>;
-  readonly invoiceItems: ReadonlyArray<LegacyInvoiceItemMigrationRow>;
-  readonly stockMovements: ReadonlyArray<LegacyStockMovementMigrationRow>;
-};
-
-const emptyMigrationCatalog = (): LegacyMigrationCatalog => ({
-  categories: [],
-  products: [],
-  batches: [],
-  invoices: [],
-  invoiceItems: [],
-  stockMovements: [],
-});
 
 const emptySnapshot = () => ({
   categories: [],
@@ -41,12 +13,6 @@ const emptySnapshot = () => ({
   invoices: [],
   invoiceItems: [],
   stockMovements: [],
-  migrationCatalog: emptyMigrationCatalog(),
-});
-
-export const snapshotWithoutReadableLockedReplica = (migrationCatalog: LegacyMigrationCatalog) => ({
-  ...emptySnapshot(),
-  migrationCatalog,
 });
 
 const requiredTables = [
@@ -63,302 +29,20 @@ const isMissingDatabase = (cause: unknown): boolean =>
   "code" in cause &&
   (cause.code === "ENOENT" || cause.code === "SQLITE_CANTOPEN");
 
-const ColumnInfo = Schema.Struct({ name: Schema.String });
-const SQLiteBoolean = Schema.Union([Schema.Boolean, Schema.Literals([0, 1])]);
-const SqliteLegacyCategoryMigrationRow = Schema.Struct({
-  ...LegacyCategoryMigrationRow.fields,
-  tracksPacks: SQLiteBoolean,
-});
-const SqliteLegacyProductMigrationRow = Schema.Struct({
-  ...LegacyProductMigrationRow.fields,
-  visible: SQLiteBoolean,
-});
-const readCategories = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(SqliteLegacyCategoryMigrationRow))(statement.all()).map(
-    (row) => ({
-      ...row,
-      tracksPacks: row.tracksPacks === true || row.tracksPacks === 1,
-    }),
-  );
-const readProducts = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(SqliteLegacyProductMigrationRow))(statement.all()).map(
-    (row) => ({
-      ...row,
-      visible: row.visible === true || row.visible === 1,
-    }),
-  );
-const readBatches = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(LegacyBatchMigrationRow))(statement.all());
-const readInvoices = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(LegacyInvoiceMigrationRow))(statement.all());
-const readInvoiceItems = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(LegacyInvoiceItemMigrationRow))(statement.all());
-const readStockMovements = (statement: Database.Statement) =>
-  Schema.decodeUnknownSync(Schema.Array(LegacyStockMovementMigrationRow))(statement.all());
+export const lockedLocalDatabasePath = (userDataPath: string) =>
+  path.join(userDataPath, "locked", "data", "store.db");
 
-const hasColumns = (
-  database: Database.Database,
-  table: string,
-  required: ReadonlyArray<string>,
-) => {
-  const columns = new Set(
-    Schema.decodeUnknownSync(Schema.Array(ColumnInfo))(
-      database.prepare(`PRAGMA table_info(${table})`).all(),
-    ).map((column) => column.name),
-  );
-  return required.every((column) => columns.has(column));
-};
-
-const emptyMigrationHistory = () => ({ invoices: [], invoiceItems: [], stockMovements: [] });
-
-const loadMigrationHistory = (database: Database.Database) => {
-  if (
-    !requiredTables
-      .slice(3)
-      .every((table) =>
-        database
-          .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?")
-          .pluck()
-          .get(table),
-      ) ||
-    !hasColumns(database, "invoice_items", ["quantityType", "baseUnitQuantity"]) ||
-    !hasColumns(database, "stock_movements", ["packDelta", "unitDelta"])
-  )
-    return emptyMigrationHistory();
-  return {
-    invoices: readInvoices(
-      database.prepare(`SELECT id, invoiceNumber, customerName, total,
-    createdAt, updatedAt FROM invoices WHERE deletedAt IS NULL`),
-    ),
-    invoiceItems: readInvoiceItems(
-      database.prepare(`SELECT id, invoiceId, productId, batchId,
-    productName, batchNumber, quantity, quantityType, baseUnitQuantity, salePrice,
-    createdAt, updatedAt FROM invoice_items
-    WHERE deletedAt IS NULL
-      AND invoiceId IN (SELECT id FROM invoices WHERE deletedAt IS NULL)
-      AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)
-      AND batchId IN (SELECT id FROM batches WHERE deletedAt IS NULL)`),
-    ),
-    stockMovements: readStockMovements(
-      database.prepare(`SELECT id, productId, batchId, invoiceId,
-    type, packDelta, unitDelta, note, createdAt FROM stock_movements
-    WHERE productId IN (SELECT id FROM products WHERE deletedAt IS NULL)
-      AND batchId IN (SELECT id FROM batches WHERE deletedAt IS NULL)
-      AND (invoiceId IS NULL OR invoiceId IN (SELECT id FROM invoices WHERE deletedAt IS NULL))`),
-    ),
-  };
-};
-
-const readMigrationCatalog = (databasePath: string) => {
-  if (!existsSync(databasePath)) return emptySnapshot().migrationCatalog;
-  const database = new Database(databasePath, { fileMustExist: true, readonly: true });
-  try {
-    if (
-      !requiredTables
-        .slice(0, 3)
-        .every((table) =>
-          database
-            .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?")
-            .pluck()
-            .get(table),
-        )
-    )
-      return emptySnapshot().migrationCatalog;
-
-    if (hasColumns(database, "categories", ["createdAt", "tracksPacks"])) {
-      return {
-        ...loadMigrationHistory(database),
-        categories: readCategories(
-          database.prepare(
-            `SELECT id, name, tracksPacks, createdAt, updatedAt
-               FROM categories WHERE deletedAt IS NULL`,
-          ),
-        ),
-        products: readProducts(
-          database.prepare(
-            `SELECT id, name, categoryId, aisle, composition, strength, unitsPerPack,
-                    packPrice, unitPrice, visible, createdAt, updatedAt
-               FROM products WHERE deletedAt IS NULL`,
-          ),
-        ),
-        batches: readBatches(
-          database.prepare(
-            `SELECT id, productId, batchNumber, expiresAt, packQuantity, unitQuantity,
-                    createdAt, updatedAt
-               FROM batches
-              WHERE deletedAt IS NULL
-                AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)`,
-          ),
-        ),
-      };
-    }
-
-    if (hasColumns(database, "categories", ["createdAt"])) {
-      return {
-        ...loadMigrationHistory(database),
-        categories: readCategories(
-          database.prepare(
-            `SELECT id, name, 1 AS tracksPacks, createdAt, updatedAt
-               FROM categories WHERE deletedAt IS NULL`,
-          ),
-        ),
-        products: readProducts(
-          database.prepare(
-            `SELECT id, name, categoryId, aisle, composition, strength, unitsPerPack,
-                    packPrice, unitPrice, visible, createdAt, updatedAt
-               FROM products WHERE deletedAt IS NULL`,
-          ),
-        ),
-        batches: readBatches(
-          database.prepare(
-            `SELECT id, productId, batchNumber, expiresAt, packQuantity, unitQuantity,
-                    createdAt, updatedAt
-               FROM batches
-              WHERE deletedAt IS NULL
-                AND productId IN (SELECT id FROM products WHERE deletedAt IS NULL)`,
-          ),
-        ),
-      };
-    }
-
-    if (hasColumns(database, "categories", ["created_at"])) {
-      return {
-        ...loadMigrationHistory(database),
-        categories: readCategories(
-          database.prepare(
-            `SELECT id, name, 1 AS tracksPacks, created_at AS createdAt, updated_at AS updatedAt
-               FROM categories WHERE deleted_at IS NULL`,
-          ),
-        ),
-        products: readProducts(
-          database.prepare(
-            `SELECT id, name, category_id AS categoryId, NULL AS aisle, composition, strength,
-                    units_per_pack AS unitsPerPack, pack_price AS packPrice,
-                    unit_price AS unitPrice, 1 AS visible,
-                    created_at AS createdAt, updated_at AS updatedAt
-               FROM products WHERE deleted_at IS NULL`,
-          ),
-        ),
-        batches: readBatches(
-          database.prepare(
-            `SELECT id, product_id AS productId, batch_number AS batchNumber,
-                    expires_at AS expiresAt, 0 AS packQuantity, quantity AS unitQuantity,
-                    created_at AS createdAt, updated_at AS updatedAt
-               FROM batches
-              WHERE deleted_at IS NULL
-                AND product_id IN (SELECT id FROM products WHERE deleted_at IS NULL)`,
-          ),
-        ),
-      };
-    }
-
-    return emptySnapshot().migrationCatalog;
-  } finally {
-    database.close();
-  }
-};
-
-export const catalogSize = (catalog: LegacyMigrationCatalog) =>
-  catalog.categories.length +
-  catalog.products.length +
-  catalog.batches.length +
-  catalog.invoices.length +
-  catalog.invoiceItems.length +
-  catalog.stockMovements.length;
-
-export type CatalogErrorReporter = (cause: Error, databasePath: string) => void;
-
-export const mergeLoadedMigrationCatalogs = (
-  catalogs: ReadonlyArray<LegacyMigrationCatalog>,
-  failedExistingFiles: number,
-) => {
-  const merged = mergeMigrationCatalogs(catalogs);
-  if (catalogSize(merged) === 0 && failedExistingFiles > 0) {
-    throw new Error(
-      `Could not read the local inventory catalog (${failedExistingFiles} database files failed).`,
-    );
-  }
-  return merged;
-};
-
-const loadReadableMigrationCatalog = (
-  databasePath: string,
-  reportError: CatalogErrorReporter,
-): { readonly catalog: LegacyMigrationCatalog } | { readonly failed: true } => {
-  try {
-    return { catalog: readMigrationCatalog(databasePath) };
-  } catch (cause) {
-    reportError(cause instanceof Error ? cause : new Error(String(cause)), databasePath);
-    return { failed: true };
-  }
-};
-
-export const combineMigrationCatalogs = (
-  userDataPath: string,
-  reportError: CatalogErrorReporter = () => undefined,
-) => {
-  const catalogs: LegacyMigrationCatalog[] = [];
-  let failedExistingFiles = 0;
-  for (const databasePath of migrationDatabasePaths(userDataPath)) {
-    if (!existsSync(databasePath)) continue;
-    const loaded = loadReadableMigrationCatalog(databasePath, reportError);
-    if ("failed" in loaded) {
-      failedExistingFiles += 1;
-      continue;
-    }
-    catalogs.push(loaded.catalog);
-  }
-  return mergeLoadedMigrationCatalogs(catalogs, failedExistingFiles);
-};
-
-export const migrationDatabasePaths = (userDataPath: string) => {
-  const organizationsPath = path.join(userDataPath, "organizations");
-  const organizationDatabases = existsSync(organizationsPath)
-    ? readdirSync(organizationsPath, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .flatMap((entry) => [
-          path.join(organizationsPath, entry.name, "data", "store.db"),
-          path.join(organizationsPath, entry.name, "store.db"),
-        ])
-    : [];
-  return [
-    path.join(userDataPath, "locked", "data", "store.db"),
-    path.join(userDataPath, "store-v5.db"),
-    path.join(userDataPath, "store-v4.db"),
-    path.join(userDataPath, "store-v3.db"),
-    ...organizationDatabases,
-  ];
-};
-
-export const mergeMigrationCatalogs = (
-  catalogs: ReadonlyArray<LegacyMigrationCatalog>,
-): LegacyMigrationCatalog => ({
-  categories: latestMigrationRows(catalogs.flatMap((catalog) => catalog.categories)),
-  products: latestMigrationRows(catalogs.flatMap((catalog) => catalog.products)),
-  batches: latestMigrationRows(catalogs.flatMap((catalog) => catalog.batches)),
-  invoices: latestMigrationRows(catalogs.flatMap((catalog) => catalog.invoices)),
-  invoiceItems: latestMigrationRows(catalogs.flatMap((catalog) => catalog.invoiceItems)),
-  stockMovements: latestCreatedRows(catalogs.flatMap((catalog) => catalog.stockMovements)),
-});
-
-const combinedMigrationCatalog = (userDataPath: string, reportError?: CatalogErrorReporter) =>
-  combineMigrationCatalogs(userDataPath, reportError);
-
-export const loadLegacyLocalSnapshot = (
-  userDataPath: string,
-  reportError: CatalogErrorReporter = () => undefined,
-) => {
-  const databasePath = path.join(userDataPath, "locked", "data", "store.db");
+export const loadLegacyLocalSnapshot = (userDataPath: string) => {
+  const databasePath = lockedLocalDatabasePath(userDataPath);
   // better-sqlite3 throws a plain TypeError (without an SQLite/ENOENT code)
   // when fileMustExist points into a missing directory. Treat that normal
   // first-run state as an empty legacy source before opening SQLite.
-  const migrationCatalog = combinedMigrationCatalog(userDataPath, reportError);
-  if (!existsSync(databasePath)) return snapshotWithoutReadableLockedReplica(migrationCatalog);
+  if (!existsSync(databasePath)) return emptySnapshot();
   let database: Database.Database;
   try {
     database = new Database(databasePath, { fileMustExist: true, readonly: true });
   } catch (cause) {
-    if (isMissingDatabase(cause)) return snapshotWithoutReadableLockedReplica(migrationCatalog);
+    if (isMissingDatabase(cause)) return emptySnapshot();
     throw cause;
   }
 
@@ -369,8 +53,7 @@ export const loadLegacyLocalSnapshot = (
       )
       .pluck()
       .get(...requiredTables);
-    if (tableCount !== requiredTables.length)
-      return snapshotWithoutReadableLockedReplica(migrationCatalog);
+    if (tableCount !== requiredTables.length) return emptySnapshot();
 
     return {
       categories: database
@@ -428,7 +111,6 @@ export const loadLegacyLocalSnapshot = (
             WHERE organizationId = ?`,
         )
         .all("local"),
-      migrationCatalog,
     };
   } finally {
     database.close();
@@ -438,10 +120,9 @@ export const loadLegacyLocalSnapshot = (
 export const registerLegacyLocalInventoryIpc = (options: {
   readonly ipcMain: IpcMain;
   readonly userDataPath: string;
-  readonly reportError?: CatalogErrorReporter;
 }) => {
   options.ipcMain.handle(LEGACY_LOCAL_INVENTORY_CHANNEL, () =>
-    loadLegacyLocalSnapshot(options.userDataPath, options.reportError),
+    loadLegacyLocalSnapshot(options.userDataPath),
   );
   return () => options.ipcMain.removeHandler(LEGACY_LOCAL_INVENTORY_CHANNEL);
 };

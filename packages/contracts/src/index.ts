@@ -1,7 +1,6 @@
 export * from "./ids";
 export * from "./server/schema";
 export * from "./store/helpers";
-export * from "./store/legacy-migration";
 export * from "./store/schema";
 export * from "./sync/canonical-json";
 export * from "./sync/entity-semantics";

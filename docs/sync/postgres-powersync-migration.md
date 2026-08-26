@@ -74,5 +74,5 @@ a dual-write system. Do not delete production data as part of the PowerSync
 cutover.
 
 Run `vp run check:powersync-migration` to verify the runtime has no Electric
-client dependency and that tenant filtering, JWKS, endpoint, and workflow
-configuration remain wired.
+client dependency, no leftover catalog-upload migrator, and that tenant
+filtering, JWKS, endpoint, and workflow configuration remain wired.

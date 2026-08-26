@@ -4,13 +4,6 @@ import type {
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
   IssueInvoiceResult,
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationJobStatus,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogMigrationStartRequest,
-  LegacyCatalogMigrationStarted,
-  LegacyCatalogReconciliationCommand,
-  LegacyCatalogReconciliationResult,
   SyncOperation,
   WorkspaceSnapshot,
 } from "@store/contracts";
@@ -23,7 +16,6 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { LegacyMigrationQueueError } from "../electric/legacy-migration-worker";
 import type { ElectricMutationResult } from "../electric/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
@@ -75,38 +67,6 @@ export interface ServerRuntimeContract {
     command: ImportInventoryCommand,
   ) => Effect.Effect<
     ImportInventoryCommandResult,
-    InventoryProtocolError | InventoryDatabaseError,
-    RuntimeContext | Scope.Scope
-  >;
-  readonly startLegacyCatalogMigration: (
-    actor: InventoryActor,
-    command: LegacyCatalogMigrationStartRequest,
-  ) => Effect.Effect<
-    LegacyCatalogMigrationStarted,
-    InventoryDatabaseError | LegacyMigrationQueueError,
-    RuntimeContext | Scope.Scope
-  >;
-  readonly getLegacyCatalogMigration: (
-    actor: InventoryActor,
-    jobId: string,
-  ) => Effect.Effect<
-    LegacyCatalogMigrationJobStatus | null,
-    InventoryDatabaseError,
-    RuntimeContext | Scope.Scope
-  >;
-  readonly migrateLegacyCatalogBatch: (
-    actor: InventoryActor,
-    command: LegacyCatalogMigrationCommand,
-  ) => Effect.Effect<
-    LegacyCatalogMigrationResult,
-    InventoryProtocolError | InventoryDatabaseError,
-    RuntimeContext | Scope.Scope
-  >;
-  readonly reconcileLegacyCatalog: (
-    actor: InventoryActor,
-    command: LegacyCatalogReconciliationCommand,
-  ) => Effect.Effect<
-    LegacyCatalogReconciliationResult,
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
