@@ -4,7 +4,7 @@
 
 Neon Postgres is the only inventory authority. PowerSync replicates those rows
 to clients. TanStack DB is the application query and mutation layer, backed by
-PowerSync SQLite on browser, Electron, and Expo.
+PowerSync SQLite on Electron and Expo.
 
 Categories, products, and batches have a durable local write queue. Imports and
 invoice issuance remain online commands because they span multiple tables.
@@ -24,8 +24,8 @@ Invoice data still syncs down for existing screens.
 5. The Worker validates row versions and commits to Postgres. PowerSync then
    streams the canonical row back to every device in the organization.
 
-The Worker never gives clients a Postgres credential. The PowerSync service,
-not the browser, receives the logical-replication connection.
+The Worker never gives clients a Postgres credential. The PowerSync service
+receives the logical-replication connection.
 
 Idempotency receipts live in `inventory_mutation_receipts`. That table is the
 live write-path ack store.
@@ -60,10 +60,8 @@ a preview copy.
 Authenticated clients have a durable PowerSync upload queue. There is no
 hidden leftover authenticated queue from the previous read-replica client.
 
-The signed-out Electron inventory is different: it is an authoritative local
-workspace. On first launch, the app reads that legacy SQLite snapshot and
-copies missing rows into the local PowerSync database. It is never uploaded
-to an organization merely by deploying this code.
+Desktop requires an authenticated organization before inventory. There is no
+signed-out local catalog.
 
 ## Compatibility and retirement
 

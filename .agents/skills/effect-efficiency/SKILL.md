@@ -106,8 +106,9 @@ cookie expectation.
 
 ## Store cold start
 
-`#boot-shell` stays until `startWeb()` finishes. Today that path awaits cookie
-refresh → session → OfflineStore open → live WS → **blocking** `store.sync()`.
+`#boot-shell` stays until `startElectron()` finishes. Keep that path to session
+bootstrap only, then mount. PowerSync connect and first sync belong in the
+inventory provider after paint.
 
 Do this instead:
 
@@ -125,7 +126,7 @@ Detail and ranked causes: [SYNC-NETWORK.md](references/SYNC-NETWORK.md).
 - Do not create a `ManagedRuntime` per request, per sync tick, or per component
   mount.
 - Do not block first paint on network sync or WebSocket handshake.
-- Do not force cookie refresh on every cold start for unsigned browsers.
+- Do not force a session refresh on every cold start when unsigned.
 - Do not open a new live socket per exchange.
 - Do not hand-roll Map/TTL/in-flight dedupe when `Cache` fits.
 - Do not use `Ref` alone when subscribers need updates; use `SubscriptionRef`.

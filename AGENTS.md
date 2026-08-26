@@ -79,7 +79,6 @@ and `vp build` (Turborepo fans them out per package).
   secrets per stage. Do not commit env files or env templates.
 - **Auth gating.** The desktop renderer is gated behind sign-in/sign-up, which
   call the backend API. End-to-end auth UI (sign up, create organization, sync)
-  needs the backend running with the credentials above. Offline, the desktop
-  still opens a local "Locked" catalog snapshot. Inventory lives in
-  `@store/client-db` (PowerSync) and can be driven directly without the
-  backend.
+  needs the backend running with the credentials above. Desktop does not open
+  inventory until there is an authenticated organization. Inventory lives in
+  `@store/client-db` (PowerSync).

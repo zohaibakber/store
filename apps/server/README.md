@@ -34,7 +34,7 @@ backfilled, and verified and the legacy clients have completed cutover.
 
 Infrastructure is declared in TypeScript with [Alchemy](https://alchemy.run).
 The Worker, its bindings, and the local dev port live in `infra.ts`.
-`alchemy.run.ts` composes the API Worker, auth Worker, website, and inventory
+`alchemy.run.ts` composes the API Worker, auth Worker, and inventory
 Postgres project into one stack.
 
 Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,

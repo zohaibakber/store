@@ -1,20 +1,19 @@
 # Store
 
-Bun workspace for offline-first inventory: a TanStack web app, an Electron
-desktop app, an Expo mobile app, and a Cloudflare Worker API. Postgres is the
+Bun workspace for offline-first inventory: an Electron desktop app, an Expo
+mobile app, and a Cloudflare Worker API plus auth. Postgres is the
 authoritative inventory database. PowerSync streams organization-scoped rows
 into durable SQLite-backed TanStack DB collections on each client.
 
 ## Workspace boundaries
 
-- `apps/web` is the Vite + TanStack Router SPA (web-first, same model as T3 Code).
-  Alchemy deploys it with `Cloudflare.Website.Vite` so the production hostname
-  serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
-  on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
+- `apps/web` is the Electron renderer (Vite + TanStack Router, hash history).
+  It is not a public website. A later Forge packaging change may colocate it
+  under `apps/desktop`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
-  preload. It loads the web renderer with hash history, persists TanStack DB
-  collections in SQLite, and keeps encrypted refresh credentials in the main
-  process.
+  preload. It loads the renderer, keeps encrypted refresh credentials in the
+  main process, and packages the app. Inventory PowerSync SQLite lives in the
+  renderer. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres
@@ -36,8 +35,8 @@ Web components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Inventory reads come from TanStack DB live queries. Browser clients persist
-collections in PowerSync SQLite on every platform. Category, product, and batch
+Inventory reads come from TanStack DB live queries. Desktop and mobile persist
+collections in PowerSync SQLite. Category, product, and batch
 mutations are durably queued offline, uploaded through authenticated
 `/api/inventory/*` commands, committed in Postgres, and streamed back by
 PowerSync. The signed organization claim defines every sync stream.
@@ -52,14 +51,12 @@ explicit retirement removes the remaining production dependency.
 
 ```sh
 vp install
-vp run dev:web
+vp run dev:desktop
 ```
 
-That starts the API Worker (`:8787`), auth Worker (`:8788`), and browser app
-(`:5174`). Use `vp run dev:desktop` instead to run the same backend stack and
-web renderer inside the Electron shell. The two commands are separate on
-purpose: `apps/web` owns the renderer, while `apps/desktop` owns only Electron's
-main process, preload bridge, packaging, and native integrations.
+That starts the API Worker (`:8787`), auth Worker (`:8788`), the renderer Vite
+server (`:5174`), and the Electron shell. `vp run dev` starts only the backend
+stack, which is enough for mobile or API work.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
@@ -76,8 +73,8 @@ stage its own ES256 key pair, refresh and ephemeral peppers, and Google OAuth
 credentials. Worker setup and stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change. Pull requests do not create Cloudflare
-resources. A push to `main` deploys `prod`. `alchemy deploy` builds the SPA.
-CI does not run a separate Vite build. Bootstrap its least-privilege Cloudflare
+resources. A push to `main` deploys `prod` (API and auth Workers). Desktop
+builds run after that deploy. Bootstrap least-privilege Cloudflare
 credentials once:
 
 ```sh
@@ -109,12 +106,15 @@ Each GitHub Environment must define:
 The `Production` environment must also define these variables. There is no
 domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 
-- `PRODUCTION_DOMAIN`. Site hostname only (example: `tabaaq.app`). Website Worker.
-- `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`). Desktop and the
-  production SPA. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
+- `PRODUCTION_DOMAIN`. Hostname used to derive `api.<domain>` and
+  `auth.<domain>` (example: `tabaaq.app`).
+- `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`). Desktop
+  packages this into the Electron build. If unset, the API hostname is
+  `api.<PRODUCTION_DOMAIN>`.
 - `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
   the auth hostname is `auth.<PRODUCTION_DOMAIN>`.
-- `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
+- `AUTH_TRUSTED_ORIGINS`. Extra CORS origins. Desktop OAuth uses the custom
+  protocol, not a website origin.
 - `EXPO_PUBLIC_API_URL`. Same origin as `VITE_API_URL`. The mobile app reads it.
 - `EXPO_PUBLIC_AUTH_URL`. Same origin as `VITE_AUTH_URL`.
   The EAS production profile uses the EAS `production` environment, not GitHub
@@ -123,9 +123,8 @@ domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
   Worker).
 
 Configure the Google OAuth client callback as
-`https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
-to the trusted web origin or native custom scheme after PKCE verification. Web
-and desktop use that redirect flow.
+`https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects
+desktop back to the native custom scheme after PKCE verification.
 
 Mobile does not. It signs in through Google's own SDK, which presents Google's
 account picker, and posts the resulting ID token to
@@ -157,8 +156,8 @@ for a manual rebuild.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build`. Production deploys run `pnpm exec alchemy deploy`,
-which serves the SPA from `PRODUCTION_DOMAIN` and the API from
-`api.<PRODUCTION_DOMAIN>`, with auth at `auth.<PRODUCTION_DOMAIN>`.
+which serves the API from `api.<PRODUCTION_DOMAIN>` and auth from
+`auth.<PRODUCTION_DOMAIN>`.
 
 ## Install
 

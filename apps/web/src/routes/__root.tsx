@@ -70,7 +70,7 @@ function AuthenticatedLayout() {
 
   // beforeLoad protects navigation. This render-time check also protects an
   // already-mounted route while the live auth snapshot changes underneath it.
-  // Hide every scope transition so local or previous-organization rows cannot
+  // Hide every scope transition so previous-organization rows cannot
   // remain visible while router invalidation is in flight.
   if (auth._tag === "Loading" && !auth.snapshot) return <AppLoading />;
 

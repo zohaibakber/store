@@ -1,11 +1,10 @@
 # Tabaaq design system
 
-Shared tokens for three clients: web (`apps/web`, Tailwind v4 + coss),
-desktop (`apps/desktop`, the same renderer in Electron), and mobile
-(`apps/mobile`, React Native + `@expo/ui`).
+Shared tokens for two clients: the Electron renderer (`apps/web`, Tailwind v4 +
+coss) and mobile (`apps/mobile`, React Native + `@expo/ui`).
 
-Palette, type scale, radii, and component vocabulary live here once. Web and
-desktop read them as CSS custom properties in `apps/web/src/styles.css`. Mobile
+Palette, type scale, radii, and component vocabulary live here once. Desktop
+reads them as CSS custom properties in `apps/web/src/styles.css`. Mobile
 stores the same numbers as literals in `apps/mobile/src/theme/tokens.ts`. When
 the two disagree, `styles.css` wins and the mobile tokens are wrong.
 
@@ -487,4 +486,4 @@ Before shipping UI in any client:
 - [ ] Empty, loading and error states exist and use `Empty` / `Spinner` /
       `Alert`.
 - [ ] Touch targets ≥ 44; reduced motion respected.
-- [ ] Android and iOS screenshots read as the same product as the web app.
+- [ ] Android and iOS screenshots read as the same product as the desktop app.

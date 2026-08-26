@@ -76,9 +76,8 @@ Do not copy:
 
 ## Store cold start
 
-`#boot-shell` in `apps/web/index.html` stays until `startWeb()` finishes.
-That path currently awaits the full authenticated bootstrap before React
-mounts.
+`#boot-shell` in `apps/web/index.html` stays until `startElectron()` finishes.
+Keep that path to session bootstrap only, then mount.
 
 Ordered blockers before paint:
 
@@ -88,8 +87,7 @@ Ordered blockers before paint:
 4. Live WS open during store construction (network handshake).
 5. **`await store.sync()`** until first pull drains (highest signed-in cost).
 
-Unsigned browser: refresh still runs; Locked open throws
-`GuestWorkspaceRefused`; logo stick ≈ auth RTT only.
+Unsigned desktop: stay on sign-in. Do not open inventory without an organization.
 
 Rules:
 
@@ -104,5 +102,4 @@ Rules:
 5. Prefer mounting a React shell earlier over holding the static logo through
    network.
 
-Evidence trail: `apps/web` `start-web.tsx`, `mount-app.tsx`, workspace
-`#activate`, `host.ts`, sync `engine.ts` / `runtime.ts`.
+Evidence trail: `apps/web` `start-electron.tsx`, `mount-app.tsx`.
