@@ -1,3 +1,8 @@
+/**
+ * One-shot reader for the pre-PowerSync Locked Electron `store.db`.
+ * This is not the catalog engine: renderer inventory uses `@powersync/web`
+ * + wa-sqlite. Main process only opens this file to seed a local snapshot.
+ */
 import { existsSync } from "node:fs";
 import path from "node:path";
 

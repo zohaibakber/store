@@ -1,14 +1,13 @@
 import { PowerSyncDatabase } from "@powersync/react-native";
 import {
+  disconnectAndClearInventoryPowerSync,
+  inventoryPowerSyncCollectionConfigs,
   inventoryPowerSyncDatabaseName,
   inventoryPowerSyncSchema,
   inventoryReplicaScope,
   makeInventoryPowerSyncConnector,
-  powerSyncCollectionSchemas,
-  powerSyncDeserializationSchemas,
-  powerSyncDeserializationFailure,
+  waitForInventoryFirstSync,
 } from "@store/client-db";
-import { powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
 import { createCollection } from "@tanstack/react-db";
 
 import { apiOrigin, nativeAuthHeaders } from "@/lib/auth-client";
@@ -29,32 +28,7 @@ export const createMobileInventoryCollections = (organizationId: string) => {
     database: { dbFilename: inventoryPowerSyncDatabaseName(scopeId) },
     schema: inventoryPowerSyncSchema,
   });
-  const configs = {
-    categories: powerSyncCollectionOptions({
-      id: `${scopeId}:categories`,
-      database,
-      table: inventoryPowerSyncSchema.props.categories,
-      schema: powerSyncCollectionSchemas.categories,
-      deserializationSchema: powerSyncDeserializationSchemas.categories,
-      onDeserializationError: powerSyncDeserializationFailure,
-    }),
-    products: powerSyncCollectionOptions({
-      id: `${scopeId}:products`,
-      database,
-      table: inventoryPowerSyncSchema.props.products,
-      schema: powerSyncCollectionSchemas.products,
-      deserializationSchema: powerSyncDeserializationSchemas.products,
-      onDeserializationError: powerSyncDeserializationFailure,
-    }),
-    batches: powerSyncCollectionOptions({
-      id: `${scopeId}:batches`,
-      database,
-      table: inventoryPowerSyncSchema.props.batches,
-      schema: powerSyncCollectionSchemas.batches,
-      deserializationSchema: powerSyncDeserializationSchemas.batches,
-      onDeserializationError: powerSyncDeserializationFailure,
-    }),
-  };
+  const configs = inventoryPowerSyncCollectionConfigs(database, scopeId);
   const categories = createCollection(configs.categories);
   const products = createCollection(configs.products);
   const batches = createCollection(configs.batches);
@@ -66,19 +40,20 @@ export const createMobileInventoryCollections = (organizationId: string) => {
     products,
     preload: async () => {
       await database.init();
-      await database.connect(
+      void database.connect(
         makeInventoryPowerSyncConnector({
           apiBaseUrl: apiOrigin,
           authenticatedFetch,
         }),
       );
+      await waitForInventoryFirstSync(database);
       await Promise.all([categories.preload(), products.preload(), batches.preload()]);
     },
     dispose: async () => {
       if (disposed) return;
       disposed = true;
       await Promise.all([categories.cleanup(), products.cleanup(), batches.cleanup()]);
-      await database.close();
+      await disconnectAndClearInventoryPowerSync(database);
     },
   };
 };
