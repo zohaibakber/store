@@ -1,31 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { CategorySettings } from "@/components/settings/category-settings";
-import { useAuth } from "@/lib/auth";
-import { InventoryProvider, useCatalogCategories, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogCategories, useInventoryState } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/settings/categories")({
-  component: CategoriesRoute,
+  component: LiveCategorySettings,
   staticData: { breadcrumb: "Categories" },
 });
-
-function CategoriesRoute() {
-  const auth = useAuth();
-  const { access, inventory } = Route.useRouteContext();
-  const scope = access.inventoryScope(auth.snapshot);
-  if (inventory && scope) {
-    return (
-      <InventoryProvider
-        key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
-        host={inventory}
-        scope={scope}
-      >
-        <LiveCategorySettings />
-      </InventoryProvider>
-    );
-  }
-  return <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>;
-}
 
 function LiveCategorySettings() {
   const state = useInventoryState();
