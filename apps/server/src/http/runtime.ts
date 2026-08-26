@@ -5,7 +5,7 @@ import type {
   IssueInvoiceCommand,
   IssueInvoiceResult,
   LegacyCatalogMigrationJobStatus,
-  LegacyCatalogMigrationStart,
+  LegacyCatalogMigrationStartRequest,
   LegacyCatalogMigrationStarted,
   SyncOperation,
   WorkspaceSnapshot,
@@ -76,7 +76,7 @@ export interface ServerRuntimeContract {
   >;
   readonly startLegacyCatalogMigration: (
     actor: InventoryActor,
-    command: LegacyCatalogMigrationStart,
+    command: LegacyCatalogMigrationStartRequest,
   ) => Effect.Effect<
     LegacyCatalogMigrationStarted,
     InventoryDatabaseError | LegacyMigrationQueueError,
