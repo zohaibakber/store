@@ -2,15 +2,13 @@
 
 ## Decision
 
-Neon Postgres remains the only inventory authority. PowerSync replaces Electric
-Cloud as the Postgres-to-client replication service. TanStack DB remains the
-application query and mutation layer, backed by PowerSync SQLite on browser,
-Electron, and Expo.
+Neon Postgres is the only inventory authority. PowerSync replicates those rows
+to clients. TanStack DB is the application query and mutation layer, backed by
+PowerSync SQLite on browser, Electron, and Expo.
 
-Categories, products, and batches now have a durable local write queue. Imports
-and invoice issuance remain online commands because they span multiple tables;
-invoice data still syncs down for existing screens, but invoices are not a
-migration priority.
+Categories, products, and batches have a durable local write queue. Imports and
+invoice issuance remain online commands because they span multiple tables.
+Invoice data still syncs down for existing screens.
 
 ## Data flow
 
@@ -22,12 +20,15 @@ migration priority.
    `powersync/sync-config.yaml` to isolate every stream.
 4. TanStack DB writes to PowerSync SQLite immediately. PowerSync durably queues
    changes and the connector uploads full category, product, or batch rows to
-   the existing idempotent `/api/inventory/mutations` endpoint.
+   the idempotent `/api/inventory/mutations` endpoint.
 5. The Worker validates row versions and commits to Postgres. PowerSync then
    streams the canonical row back to every device in the organization.
 
 The Worker never gives clients a Postgres credential. The PowerSync service,
 not the browser, receives the logical-replication connection.
+
+Idempotency receipts live in `inventory_mutation_receipts`. That table is the
+live write-path ack store.
 
 ## Preview rollout
 
@@ -56,13 +57,12 @@ a preview copy.
 
 ## Existing local data
 
-The previous Electric client persisted a read replica but had no durable
-offline upload queue. Authenticated offline mutations failed and rolled back,
-so there is no hidden authenticated queue for this migration to replay.
+Authenticated clients have a durable PowerSync upload queue. There is no
+hidden leftover authenticated queue from the previous read-replica client.
 
 The signed-out Electron inventory is different: it is an authoritative local
 workspace. On first launch, the app reads that legacy SQLite snapshot and
-copies missing rows into the new local PowerSync database. It is never uploaded
+copies missing rows into the local PowerSync database. It is never uploaded
 to an organization merely by deploying this code.
 
 ## Compatibility and retirement
@@ -73,6 +73,6 @@ and the rollback window closes. The retained route is compatibility code, not
 a dual-write system. Do not delete production data as part of the PowerSync
 cutover.
 
-Run `vp run check:powersync-migration` to verify the runtime has no Electric
-client dependency and that tenant filtering, JWKS, endpoint, and workflow
+Run `vp run check:powersync-migration` to verify the runtime has no retired
+sync-client dependency and that tenant filtering, JWKS, endpoint, and workflow
 configuration remain wired.

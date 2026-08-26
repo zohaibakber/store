@@ -9,7 +9,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
-import { ElectricMutationHandlers } from "../routes/electric-mutations";
+import { InventoryMutationHandlers } from "../routes/inventory-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
@@ -22,7 +22,7 @@ import { SystemHandlers } from "./system";
 const ProtectedHandlers = Layer.mergeAll(
   UploadHandlers,
   ProductScanHandlers,
-  ElectricMutationHandlers,
+  InventoryMutationHandlers,
   SyncHandlers,
 ).pipe(Layer.provide(OrganizationAuthLive));
 

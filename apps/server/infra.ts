@@ -32,11 +32,11 @@ import {
   LegacyMigrationQueueMessage,
   processLegacyMigrationJob,
   terminalMigrationFailure,
-} from "./src/electric/legacy-migration-worker";
+} from "./src/inventory/legacy-migration-worker";
 import {
-  ElectricMutationDatabase,
-  ElectricMutationDatabaseLive,
-} from "./src/electric/mutation-database";
+  InventoryMutationDatabase,
+  InventoryMutationDatabaseLive,
+} from "./src/inventory/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "./src/inventory/errors";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
@@ -101,16 +101,16 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const organizationStore = yield* OrganizationStore;
-    const electricMutations = yield* ElectricMutationDatabase;
+    const inventoryMutations = yield* InventoryMutationDatabase;
     const migrationQueueResource = yield* LegacyMigrationQueue;
     const migrationQueue = yield* Cloudflare.Queues.WriteQueue(migrationQueueResource);
     const migrationJobs: LegacyMigrationJobStore = {
-      claim: electricMutations.legacyMigrationJobs.claim,
-      migrateBatch: electricMutations.migrateLegacyCatalog,
-      reconcile: electricMutations.reconcileLegacyCatalog,
-      updateProgress: electricMutations.legacyMigrationJobs.updateProgress,
-      succeed: electricMutations.legacyMigrationJobs.succeed,
-      fail: electricMutations.legacyMigrationJobs.fail,
+      claim: inventoryMutations.legacyMigrationJobs.claim,
+      migrateBatch: inventoryMutations.migrateLegacyCatalog,
+      reconcile: inventoryMutations.reconcileLegacyCatalog,
+      updateProgress: inventoryMutations.legacyMigrationJobs.updateProgress,
+      succeed: inventoryMutations.legacyMigrationJobs.succeed,
+      fail: inventoryMutations.legacyMigrationJobs.fail,
     };
     yield* Cloudflare.Queues.consumeQueueMessages(
       migrationQueueResource,
@@ -248,11 +248,11 @@ export const ApiLive = Api.make(
       // Kept only for already-deployed clients during the migration window.
       // New web, mobile, and desktop clients use Postgres through PowerSync.
       connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
-      writeElectricMutation: electricMutations.write,
-      importInventory: electricMutations.importInventory,
-      issueInvoice: electricMutations.issueInvoice,
+      writeInventoryMutation: inventoryMutations.write,
+      importInventory: inventoryMutations.importInventory,
+      issueInvoice: inventoryMutations.issueInvoice,
       startLegacyCatalogMigration: (actor, request) =>
-        electricMutations.legacyMigrationJobs.start(actor, request).pipe(
+        inventoryMutations.legacyMigrationJobs.start(actor, request).pipe(
           Effect.tap(({ jobId }) =>
             migrationQueue
               .send(
@@ -264,7 +264,7 @@ export const ApiLive = Api.make(
               )
               .pipe(
                 Effect.tapError(() =>
-                  electricMutations.legacyMigrationJobs
+                  inventoryMutations.legacyMigrationJobs
                     .fail({
                       jobId,
                       organizationId: actor.organizationId,
@@ -280,9 +280,9 @@ export const ApiLive = Api.make(
               ),
           ),
         ),
-      getLegacyCatalogMigration: electricMutations.legacyMigrationJobs.getStatus,
-      migrateLegacyCatalogBatch: electricMutations.migrateLegacyCatalog,
-      reconcileLegacyCatalog: electricMutations.reconcileLegacyCatalog,
+      getLegacyCatalogMigration: inventoryMutations.legacyMigrationJobs.getStatus,
+      migrateLegacyCatalogBatch: inventoryMutations.migrateLegacyCatalog,
+      reconcileLegacyCatalog: inventoryMutations.reconcileLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
@@ -294,7 +294,7 @@ export const ApiLive = Api.make(
     };
   }).pipe(
     Effect.provide(OrganizationStoreLive),
-    Effect.provide(ElectricMutationDatabaseLive),
+    Effect.provide(InventoryMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
     Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),

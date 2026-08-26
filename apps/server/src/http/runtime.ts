@@ -23,8 +23,8 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { LegacyMigrationQueueError } from "../electric/legacy-migration-worker";
-import type { ElectricMutationResult } from "../electric/mutation-database";
+import type { LegacyMigrationQueueError } from "../inventory/legacy-migration-worker";
+import type { InventoryMutationResult } from "../inventory/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
 
@@ -54,11 +54,11 @@ export interface ServerRuntimeContract {
   readonly connectSyncLive: (
     input: SyncLiveInput,
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
-  readonly writeElectricMutation: (
+  readonly writeInventoryMutation: (
     actor: InventoryActor,
     operation: SyncOperation,
   ) => Effect.Effect<
-    ElectricMutationResult,
+    InventoryMutationResult,
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;

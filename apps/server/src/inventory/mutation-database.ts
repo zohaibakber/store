@@ -27,7 +27,7 @@ import { InventoryHyperdrive } from "@store/db/postgres/infra";
 import {
   batches,
   categories,
-  electricMutationReceipts,
+  inventoryMutationReceipts,
   invoiceCounters,
   invoiceItems,
   invoices,
@@ -51,16 +51,16 @@ import {
   InventoryDatabaseError,
   InventoryProtocolError,
   inventoryProtocolError as protocolError,
-} from "../inventory/errors";
-import type { InventoryActor } from "../inventory/model";
-import { decodeEntityRow, serverOwnedColumns } from "../inventory/row-validation";
+} from "./errors";
+import type { InventoryActor } from "./model";
+import { decodeEntityRow, serverOwnedColumns } from "./row-validation";
 import type {
   LegacyMigrationJobClaim,
   LegacyMigrationProgressUpdate,
   LegacyMigrationQueueMessage,
 } from "./legacy-migration-worker";
 
-export interface ElectricMutationResult {
+export interface InventoryMutationResult {
   readonly txid: number;
 }
 
@@ -92,7 +92,7 @@ const databaseError = (cause: unknown) => {
 
 const validIdentifier = (value: string) => value.length > 0 && value.length <= 200;
 
-const validateOperation = Effect.fn("ElectricMutation.validateOperation")(function* (
+const validateOperation = Effect.fn("InventoryMutation.validateOperation")(function* (
   actor: InventoryActor,
   operation: SyncOperation,
 ) {
@@ -162,7 +162,7 @@ const validateOperation = Effect.fn("ElectricMutation.validateOperation")(functi
     );
 });
 
-const currentTransactionId = Effect.fn("ElectricMutation.currentTransactionId")(function* (
+const currentTransactionId = Effect.fn("InventoryMutation.currentTransactionId")(function* (
   tx: PostgresTransaction,
 ) {
   const [row] = yield* tx.execute<{ value: string }>(
@@ -177,7 +177,7 @@ const currentTransactionId = Effect.fn("ElectricMutation.currentTransactionId")(
   return txid;
 });
 
-const touchMutationTarget = Effect.fn("ElectricMutation.touchTarget")(function* (
+const touchMutationTarget = Effect.fn("InventoryMutation.touchTarget")(function* (
   tx: PostgresTransaction,
   organizationId: string,
   change: SyncEntityChange,
@@ -214,7 +214,7 @@ const batchMovementId = (
   type: "stock_in" | "adjustment",
 ) => `batch:${operation.operationId}:${change.entityId}:${type}`;
 
-const validateWriteVersion = Effect.fn("ElectricMutation.validateWriteVersion")(function* (
+const validateWriteVersion = Effect.fn("InventoryMutation.validateWriteVersion")(function* (
   change: SyncEntityChange,
   current: { readonly rowVersion: number; readonly deletedAt: number | null } | undefined,
 ) {
@@ -239,7 +239,7 @@ const validateWriteVersion = Effect.fn("ElectricMutation.validateWriteVersion")(
     );
 });
 
-const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
+const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
   operation: SyncOperation,
@@ -477,7 +477,7 @@ const applyChange = Effect.fn("ElectricMutation.applyChange")(function* (
   }
 });
 
-const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
+const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
   operation: SyncOperation,
@@ -491,12 +491,12 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
     ])}, 0))`,
   );
   const [receipt] = yield* tx
-    .select({ payloadHash: electricMutationReceipts.payloadHash })
-    .from(electricMutationReceipts)
+    .select({ payloadHash: inventoryMutationReceipts.payloadHash })
+    .from(inventoryMutationReceipts)
     .where(
       and(
-        eq(electricMutationReceipts.organizationId, actor.organizationId),
-        eq(electricMutationReceipts.operationId, operation.operationId),
+        eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+        eq(inventoryMutationReceipts.operationId, operation.operationId),
       ),
     )
     .limit(1);
@@ -518,15 +518,15 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
         protocolError("ENTITY_WRITE_FAILED", "Could not acknowledge the replayed mutation."),
       );
     yield* tx
-      .update(electricMutationReceipts)
+      .update(inventoryMutationReceipts)
       .set({ transactionId: txid })
       .where(
         and(
-          eq(electricMutationReceipts.organizationId, actor.organizationId),
-          eq(electricMutationReceipts.operationId, operation.operationId),
+          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+          eq(inventoryMutationReceipts.operationId, operation.operationId),
         ),
       );
-    return { txid } satisfies ElectricMutationResult;
+    return { txid } satisfies InventoryMutationResult;
   }
 
   const canonicalChanges = [...operation.changes].sort(compareSyncEntityChanges);
@@ -540,7 +540,7 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
     );
   for (const change of canonicalChanges) yield* applyChange(tx, actor, operation, change);
 
-  yield* tx.insert(electricMutationReceipts).values({
+  yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: operation.operationId,
     deviceId: operation.deviceId,
@@ -550,7 +550,7 @@ const applyOperation = Effect.fn("ElectricMutation.applyOperation")(function* (
     transactionId: txid,
     receivedAt,
   });
-  return { txid } satisfies ElectricMutationResult;
+  return { txid } satisfies InventoryMutationResult;
 });
 
 const excluded = (column: string) => sql.raw(`excluded.${column}`);
@@ -571,7 +571,7 @@ const recordLegacyMigrationReceipts = (
   rows: ReadonlyArray<{ readonly id: string }>,
 ) =>
   tx
-    .insert(electricMutationReceipts)
+    .insert(inventoryMutationReceipts)
     .values(
       rows.map((row) => ({
         organizationId: actor.organizationId,
@@ -950,12 +950,12 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
     } satisfies LegacyCatalogReconciliationResult;
   const operationId = `legacy-reconcile:${command.deviceId}:v4`;
   const [receipt] = yield* tx
-    .select({ operationId: electricMutationReceipts.operationId })
-    .from(electricMutationReceipts)
+    .select({ operationId: inventoryMutationReceipts.operationId })
+    .from(inventoryMutationReceipts)
     .where(
       and(
-        eq(electricMutationReceipts.organizationId, actor.organizationId),
-        eq(electricMutationReceipts.operationId, operationId),
+        eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+        eq(inventoryMutationReceipts.operationId, operationId),
       ),
     )
     .limit(1);
@@ -1093,7 +1093,7 @@ const reconcileLegacyCatalog = Effect.fn("InventoryCommand.reconcileLegacyCatalo
             ),
           )
           .returning({ id: categories.id });
-  yield* tx.insert(electricMutationReceipts).values({
+  yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId,
     deviceId: command.deviceId,
@@ -1206,14 +1206,14 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
 
   const [receipt] = yield* tx
     .select({
-      payloadHash: electricMutationReceipts.payloadHash,
-      commandResult: electricMutationReceipts.commandResult,
+      payloadHash: inventoryMutationReceipts.payloadHash,
+      commandResult: inventoryMutationReceipts.commandResult,
     })
-    .from(electricMutationReceipts)
+    .from(inventoryMutationReceipts)
     .where(
       and(
-        eq(electricMutationReceipts.organizationId, actor.organizationId),
-        eq(electricMutationReceipts.operationId, command.commandId),
+        eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+        eq(inventoryMutationReceipts.operationId, command.commandId),
       ),
     )
     .limit(1);
@@ -1258,12 +1258,12 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
         );
     }
     yield* tx
-      .update(electricMutationReceipts)
+      .update(inventoryMutationReceipts)
       .set({ transactionId: txid })
       .where(
         and(
-          eq(electricMutationReceipts.organizationId, actor.organizationId),
-          eq(electricMutationReceipts.operationId, command.commandId),
+          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+          eq(inventoryMutationReceipts.operationId, command.commandId),
         ),
       );
     return {
@@ -1457,7 +1457,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     observerProductId,
     observerBatchId,
   };
-  yield* tx.insert(electricMutationReceipts).values({
+  yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: command.commandId,
     deviceId: command.deviceId,
@@ -1487,12 +1487,12 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
   );
 
   const [receipt] = yield* tx
-    .select({ payloadHash: electricMutationReceipts.payloadHash })
-    .from(electricMutationReceipts)
+    .select({ payloadHash: inventoryMutationReceipts.payloadHash })
+    .from(inventoryMutationReceipts)
     .where(
       and(
-        eq(electricMutationReceipts.organizationId, actor.organizationId),
-        eq(electricMutationReceipts.operationId, command.commandId),
+        eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+        eq(inventoryMutationReceipts.operationId, command.commandId),
       ),
     )
     .limit(1);
@@ -1528,12 +1528,12 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
         ),
       );
     yield* tx
-      .update(electricMutationReceipts)
+      .update(inventoryMutationReceipts)
       .set({ transactionId: txid })
       .where(
         and(
-          eq(electricMutationReceipts.organizationId, actor.organizationId),
-          eq(electricMutationReceipts.operationId, command.commandId),
+          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
+          eq(inventoryMutationReceipts.operationId, command.commandId),
         ),
       );
     return {
@@ -1737,7 +1737,7 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
     }
   }
 
-  yield* tx.insert(electricMutationReceipts).values({
+  yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: command.commandId,
     deviceId: command.deviceId,
@@ -1754,8 +1754,8 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
   } satisfies IssueInvoiceResult;
 });
 
-export const makeElectricMutationDatabase = (db: PostgresDrizzle) =>
-  Effect.fn("ElectricMutationDatabase.write")(
+export const makeInventoryMutationDatabase = (db: PostgresDrizzle) =>
+  Effect.fn("InventoryMutationDatabase.write")(
     function* (actor: InventoryActor, operation: SyncOperation) {
       yield* validateOperation(actor, operation);
       const receivedAt = yield* Clock.currentTimeMillis;
@@ -2096,34 +2096,34 @@ export const makeLegacyCatalogReconciliationDatabase = (db: PostgresDrizzle) =>
     ),
   );
 
-export type ElectricMutationWriter = ReturnType<typeof makeElectricMutationDatabase>;
+export type InventoryMutationWriter = ReturnType<typeof makeInventoryMutationDatabase>;
 
-export class ElectricMutationDatabase extends Context.Service<
-  ElectricMutationDatabase,
+export class InventoryMutationDatabase extends Context.Service<
+  InventoryMutationDatabase,
   {
-    readonly write: ElectricMutationWriter;
+    readonly write: InventoryMutationWriter;
     readonly importInventory: ReturnType<typeof makeInventoryImportCommandDatabase>;
     readonly legacyMigrationJobs: ReturnType<typeof makeLegacyMigrationJobDatabase>;
     readonly migrateLegacyCatalog: ReturnType<typeof makeLegacyCatalogMigrationDatabase>;
     readonly reconcileLegacyCatalog: ReturnType<typeof makeLegacyCatalogReconciliationDatabase>;
     readonly issueInvoice: ReturnType<typeof makeInvoiceCommandDatabase>;
   }
->()("@store/server/ElectricMutationDatabase") {}
+>()("@store/server/InventoryMutationDatabase") {}
 
-export const ElectricMutationDatabaseLive = Layer.effect(
-  ElectricMutationDatabase,
+export const InventoryMutationDatabaseLive = Layer.effect(
+  InventoryMutationDatabase,
   Effect.gen(function* () {
     const inventoryHyperdrive = yield* InventoryHyperdrive;
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(inventoryHyperdrive);
     const postgres = yield* Postgres.Postgres({
       url: hyperdrive.connectionString,
       maxConnections: 1,
-      applicationName: "tabaaq-electric-mutations",
+      applicationName: "tabaaq-inventory-mutations",
     });
     const db = yield* makePostgresDrizzle(postgres);
     const legacyMigrationJobs = makeLegacyMigrationJobDatabase(db);
-    return ElectricMutationDatabase.of({
-      write: makeElectricMutationDatabase(db),
+    return InventoryMutationDatabase.of({
+      write: makeInventoryMutationDatabase(db),
       importInventory: makeInventoryImportCommandDatabase(db),
       legacyMigrationJobs,
       migrateLegacyCatalog: makeLegacyCatalogMigrationDatabase(db),

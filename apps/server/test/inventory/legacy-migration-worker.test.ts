@@ -8,7 +8,7 @@ import {
   type LegacyMigrationProgressUpdate,
   processLegacyMigrationJob,
   terminalMigrationFailure,
-} from "../../src/electric/legacy-migration-worker";
+} from "../../src/inventory/legacy-migration-worker";
 
 const migration = Schema.decodeUnknownSync(LegacyCatalogMigrationStart)({
   requestId: "legacy-catalog:v3:device-1",

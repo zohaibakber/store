@@ -32,19 +32,19 @@ const mutationProtocolError = (error: InventoryProtocolError) => {
   }
 };
 
-export const ElectricMutationHandlers = HttpApiBuilder.group(
+export const InventoryMutationHandlers = HttpApiBuilder.group(
   StoreApi,
-  "electricMutations",
-  Effect.fn("ElectricMutationHandlers.make")(function* (handlers) {
+  "inventoryMutations",
+  Effect.fn("InventoryMutationHandlers.make")(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
     return handlers
       .handle(
         "write",
-        Effect.fn("ElectricMutationHandlers.write")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.write")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
-            .writeElectricMutation(
+            .writeInventoryMutation(
               { organizationId: identity.organizationId, userId: identity.user.id },
               payload.operation,
             )
@@ -58,7 +58,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "importInventory",
-        Effect.fn("ElectricMutationHandlers.importInventory")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.importInventory")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
             .importInventory(
@@ -75,7 +75,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "issueInvoice",
-        Effect.fn("ElectricMutationHandlers.issueInvoice")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.issueInvoice")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
             .issueInvoice(
@@ -92,7 +92,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "migrateLegacyCatalog",
-        Effect.fn("ElectricMutationHandlers.migrateLegacyCatalog")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.migrateLegacyCatalog")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime
@@ -110,7 +110,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "legacyCatalogMigrationStatus",
-        Effect.fn("ElectricMutationHandlers.legacyCatalogMigrationStatus")(function* ({ params }) {
+        Effect.fn("InventoryMutationHandlers.legacyCatalogMigrationStatus")(function* ({ params }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           const status = yield* runtime
@@ -127,7 +127,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "migrateLegacyCatalogBatch",
-        Effect.fn("ElectricMutationHandlers.migrateLegacyCatalogBatch")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.migrateLegacyCatalogBatch")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime
@@ -145,7 +145,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "reconcileLegacyCatalog",
-        Effect.fn("ElectricMutationHandlers.reconcileLegacyCatalog")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.reconcileLegacyCatalog")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime

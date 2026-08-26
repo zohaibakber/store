@@ -38,10 +38,10 @@ describe("legacy catalog migrations", () => {
 
   it("creates a queued job without calling an inventory mutation", async () => {
     const startLegacyCatalogMigration = vi.fn(() => Effect.succeed({ jobId: "job-1" }));
-    const writeElectricMutation = vi.fn(() => Effect.succeed({ txid: 42 }));
+    const writeInventoryMutation = vi.fn(() => Effect.succeed({ txid: 42 }));
     const response = await appFor(true, {
       startLegacyCatalogMigration,
-      writeElectricMutation,
+      writeInventoryMutation,
     }).request("/api/inventory/legacy-migrations", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -54,7 +54,7 @@ describe("legacy catalog migrations", () => {
       { organizationId: "org-1", userId: "user-1" },
       command,
     );
-    expect(writeElectricMutation).not.toHaveBeenCalled();
+    expect(writeInventoryMutation).not.toHaveBeenCalled();
   });
 
   it("rejects oversized catalog tables at the HTTP boundary", async () => {
