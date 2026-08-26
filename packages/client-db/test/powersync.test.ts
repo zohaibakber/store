@@ -236,6 +236,7 @@ describe("PowerSync catalog upload failures", () => {
       onUploadHalt,
     });
 
+    // SAFETY: uploadData only reads getNextCrudTransaction and disconnect from this stub.
     await expect(
       connector.uploadData({
         getNextCrudTransaction: async () => ({
@@ -266,6 +267,7 @@ describe("PowerSync catalog upload failures", () => {
       onUploadHalt,
     });
 
+    // SAFETY: uploadData only reads getNextCrudTransaction and disconnect from this stub.
     await expect(
       connector.uploadData({
         getNextCrudTransaction: async () => ({

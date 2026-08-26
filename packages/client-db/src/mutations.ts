@@ -15,6 +15,7 @@ import {
   type IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
 import type { SyncEntityChange, SyncOperation } from "@store/contracts/sync.schema";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
@@ -22,6 +23,7 @@ import {
   InventoryFailure,
   inventoryFailureFromHttp,
   isAbortError,
+  type InventoryHttpPayload,
 } from "./inventory-failure";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
@@ -46,11 +48,13 @@ export const inventoryApiRoot = (baseUrl: string) => {
   return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
 };
 
-const readJsonPayload = async (response: Response): Promise<unknown> => {
+const readJsonPayload = async (response: Response): Promise<InventoryHttpPayload> => {
   const text = await response.text();
   if (text.trim().length === 0) return null;
   try {
-    return JSON.parse(text) as unknown;
+    return Schema.decodeUnknownOption(Schema.Json)(JSON.parse(text)).pipe(
+      Option.getOrElse(() => text.trim()),
+    );
   } catch {
     return text.trim();
   }
@@ -62,7 +66,7 @@ export const inventoryRequest = async <Result>(input: {
   readonly path: string;
   readonly method?: "GET" | "POST";
   readonly body?: unknown;
-  readonly decode: (payload: unknown) => Result;
+  readonly decode: (payload: InventoryHttpPayload) => Result;
   readonly failureLabel: string;
 }): Promise<Result> => {
   let response: Response;
@@ -98,7 +102,7 @@ const submitInventoryCommand = async <Result>(input: {
   readonly authenticatedFetch: typeof fetch;
   readonly path: "imports" | "invoices";
   readonly command: ImportInventoryCommand | IssueInvoiceCommand;
-  readonly decode: (input: unknown) => Result;
+  readonly decode: (payload: InventoryHttpPayload) => Result;
   readonly failureLabel: string;
 }) =>
   inventoryRequest({
