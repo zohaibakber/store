@@ -12,9 +12,11 @@ into durable SQLite-backed TanStack DB collections on each client.
   serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
   on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
-  preload. It loads the web renderer with hash history, persists TanStack DB
-  collections in SQLite, and keeps encrypted refresh credentials in the main
-  process.
+  preload. It loads the web renderer with hash history and keeps encrypted
+  refresh credentials in the main process. Main also proxies authenticated
+  inventory HTTP and reads the one-shot Locked catalog in `store.db`. Live
+  inventory SQLite is `@powersync/web` plus wa-sqlite in the renderer, the
+  same engine as the browser. There is no main-process PowerSync.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres
@@ -30,15 +32,17 @@ into durable SQLite-backed TanStack DB collections on each client.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
-Reusable fixtures and harnesses live under `test/lib`.
+Shared helpers stay next to the tests that use them, for example
+`apps/web/test/lib`.
 
 Web components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Inventory reads come from TanStack DB live queries. Browser clients persist
-collections in PowerSync SQLite on every platform. Category, product, and batch
-mutations are durably queued offline, uploaded through authenticated
+Inventory reads come from TanStack DB live queries over PowerSync SQLite.
+Web and Electron open that database in the renderer with `@powersync/web`.
+Expo uses `@powersync/react-native`. Category, product, and batch mutations
+are durably queued offline, uploaded through authenticated
 `/api/inventory/*` commands, committed in Postgres, and streamed back by
 PowerSync. The signed organization claim defines every sync stream.
 

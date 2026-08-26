@@ -80,6 +80,9 @@ and `vp build` (Turborepo fans them out per package).
 - **Auth gating.** The desktop renderer is gated behind sign-in/sign-up, which
   call the backend API. End-to-end auth UI (sign up, create organization, sync)
   needs the backend running with the credentials above. Offline, the desktop
-  still opens a local "Locked" catalog snapshot. Inventory lives in
-  `@store/client-db` (PowerSync) and can be driven directly without the
+  still opens a local "Locked" catalog snapshot. Inventory authority is
+  Postgres. PowerSync streams organization-scoped rows into renderer SQLite
+  (`@store/client-db`). D1 is auth. The organization Durable Object and
+  `/api/sync/live` remain as compatibility until an explicit retirement.
+  Inventory can be driven from the local PowerSync replica without the
   backend.
