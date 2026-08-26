@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp run --filter @store/server dev",
-    "dev:web": "vp run --filter @store/server dev",
-    "dev:desktop": "cross-env STORE_DESKTOP_RENDERER=1 VITE_DEV_SERVER_URL=http://127.0.0.1:5174 vp run --filter @store/server --filter @store/desktop dev",
-    "build:web": "vp run --filter @store/web build",
+    "dev:desktop": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5174 vp run --filter @store/server --filter @store/web --filter @store/desktop dev",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "turbo run build",
     "check": "node scripts/check-powersync-migration.mjs && turbo run check",

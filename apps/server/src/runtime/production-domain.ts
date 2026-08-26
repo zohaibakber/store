@@ -1,5 +1,5 @@
 /**
- * Production hostnames for the Website (apex) and API (`api.` subdomain).
+ * Production hostnames for auth (`auth.` subdomain) and API (`api.` subdomain).
  *
  * Site hostname precedence: `PRODUCTION_DOMAIN`, then the first
  * `AUTH_TRUSTED_ORIGINS` host, then the parent of an `api.*` `VITE_API_URL`.

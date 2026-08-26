@@ -1,6 +1,6 @@
 import "@fontsource-variable/inter/index.css";
 import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";
-import { startWeb } from "./start-web";
+import { startElectron } from "./start-electron";
 
-void startWeb();
+void startElectron();

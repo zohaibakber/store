@@ -7,7 +7,6 @@ import * as Layer from "effect/Layer";
 
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Api, ApiLive } from "./apps/server/infra.ts";
-import { Website } from "./apps/web/infra.ts";
 import { InventoryPostgres } from "./packages/db/src/postgres/infra.ts";
 
 export default Alchemy.Stack(
@@ -21,11 +20,9 @@ export default Alchemy.Stack(
     const auth = yield* Auth;
     const api = yield* Api;
     const inventoryPostgres = yield* InventoryPostgres;
-    const website = yield* Website;
 
     return {
       stage,
-      websiteUrl: website.url,
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,

@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node", "@cloudflare/workers-types"]
   },
-  "include": ["alchemy.run.ts", "apps/web/infra.ts", "apps/web/worker.ts"]
+  "include": ["alchemy.run.ts"]
 }

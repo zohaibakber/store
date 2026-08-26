@@ -19,12 +19,8 @@ export interface AuthSessionBridge {
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
-  /** Bearer-authenticated store API. Web-only; Electron uses `window.serverApi`. */
+  /** Bearer-authenticated store API when the host exposes it. Electron uses IPC. */
   readonly apiRequest?: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
-  /** Raw bearer-authenticated fetch for streaming clients such as PowerSync. */
-  readonly apiFetch?: typeof fetch;
-  /** Stable host device namespace for idempotent mutations. */
-  readonly deviceId?: string;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }
 
@@ -42,14 +38,8 @@ const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
     ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
     : null;
 
-let sessionBridge: AuthSessionBridge | undefined;
-
-export const setAuthSessionBridge = (bridge: AuthSessionBridge) => {
-  sessionBridge = bridge;
-};
-
 export const authSession = (): AuthSessionBridge => {
-  const bridge = sessionBridge ?? globalThis.window?.auth;
+  const bridge = globalThis.window?.auth;
   if (!bridge) throw new Error("Authentication is unavailable in this build.");
   return bridge;
 };
@@ -161,7 +151,7 @@ export function AuthProvider({
   }, [apply, snapshot]);
 
   React.useEffect(() => {
-    const bridge = sessionBridge ?? window.auth;
+    const bridge = window.auth;
     if (!bridge) return;
     const dispose = bridge.onSessionChange((next) => void apply(next));
     return () => dispose();

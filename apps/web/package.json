@@ -2,7 +2,7 @@
   "name": "@store/web",
   "version": "0.2.21",
   "private": true,
-  "description": "Tabaaq inventory web app",
+  "description": "Tabaaq inventory Electron renderer",
   "type": "module",
   "scripts": {
     "dev": "vp dev",
@@ -42,7 +42,6 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
-    "alchemy": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
