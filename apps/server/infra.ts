@@ -137,10 +137,23 @@ export const ApiLive = Api.make(
                   : Effect.fail(error);
               };
               return processLegacyMigrationJob(migrationJobs, body, message.attempts).pipe(
+                Effect.flatMap((outcome) =>
+                  outcome.kind === "continue"
+                    ? migrationQueue.send(body, { contentType: "json" }).pipe(
+                        Effect.asVoid,
+                        Effect.mapError(() =>
+                          LegacyMigrationQueueError.make({
+                            message: "Migration could not be continued. It will retry shortly.",
+                          }),
+                        ),
+                      )
+                    : Effect.void,
+                ),
                 Effect.catchTags({
                   InventoryDatabaseError: handleFailure,
                   InventoryProtocolError: handleFailure,
                   LegacyMigrationJobProcessingError: handleFailure,
+                  LegacyMigrationQueueError: (error) => Effect.fail(error),
                 }),
               );
             }),

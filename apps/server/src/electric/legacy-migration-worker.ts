@@ -15,6 +15,8 @@ import type { InventoryDatabaseError, InventoryProtocolError } from "../inventor
 import type { InventoryActor } from "../inventory/model";
 
 export const LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS = 3;
+/** Neon writes are cheap per chunk; finishing a large catalog in one Worker blows the CPU budget (1102). */
+export const LEGACY_MIGRATION_BATCHES_PER_INVOCATION = 15;
 
 export const LegacyMigrationQueueMessage = Schema.Struct({
   jobId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
@@ -48,6 +50,8 @@ export type LegacyMigrationJobClaim =
     }
   | { readonly kind: "skip" }
   | { readonly kind: "missing" };
+
+export type LegacyMigrationJobOutcome = { readonly kind: "done" } | { readonly kind: "continue" };
 
 export interface LegacyMigrationProgressUpdate {
   readonly jobId: string;
@@ -180,9 +184,10 @@ export const processLegacyMigrationJob = Effect.fn("LegacyMigrationJob.process")
   store: LegacyMigrationJobStore,
   message: LegacyMigrationQueueMessage,
   deliveryAttempt: number,
+  batchesPerInvocation: number = LEGACY_MIGRATION_BATCHES_PER_INVOCATION,
 ) {
   const claim = yield* store.claim({ message, deliveryAttempt });
-  if (claim.kind === "skip") return;
+  if (claim.kind === "skip") return { kind: "done" } as const;
   if (claim.kind === "missing") {
     return yield* Effect.fail(
       LegacyMigrationJobProcessingError.make({
@@ -198,6 +203,7 @@ export const processLegacyMigrationJob = Effect.fn("LegacyMigrationJob.process")
   let importedRows = claim.importedRows;
   let skippedRows = claim.skippedRows;
   let plannedRows = 0;
+  let batchesThisInvocation = 0;
 
   const firstPending = plan.find((unit) => {
     plannedRows += unit.command.rows.length;
@@ -217,6 +223,9 @@ export const processLegacyMigrationJob = Effect.fn("LegacyMigrationJob.process")
   for (const unit of plan) {
     plannedRows += unit.command.rows.length;
     if (plannedRows <= processedRows) continue;
+    if (batchesThisInvocation >= batchesPerInvocation) {
+      return { kind: "continue" } as const;
+    }
 
     const result = yield* store.migrateBatch(claim.actor, unit.command);
     if (result.imported + result.skipped !== unit.command.rows.length) {
@@ -230,6 +239,7 @@ export const processLegacyMigrationJob = Effect.fn("LegacyMigrationJob.process")
     processedRows = plannedRows;
     importedRows += result.imported;
     skippedRows += result.skipped;
+    batchesThisInvocation += 1;
     yield* store.updateProgress({
       jobId: message.jobId,
       organizationId: message.organizationId,
@@ -258,6 +268,7 @@ export const processLegacyMigrationJob = Effect.fn("LegacyMigrationJob.process")
     importedRows,
     skippedRows,
   });
+  return { kind: "done" } as const;
 });
 
 export const terminalMigrationFailure =

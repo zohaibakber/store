@@ -57,17 +57,18 @@ const makeStore = () => {
 
   const store: LegacyMigrationJobStore = {
     claim: () => {
-      if (status === "succeeded" || status === "migrating") {
+      if (status === "succeeded" || status === "failed") {
         return Effect.succeed({ kind: "skip" });
       }
+      const last = progress.at(-1);
       status = "migrating";
       return Effect.succeed({
         kind: "process",
         actor: { organizationId: "org-1", userId: "user-1" },
         request: migration,
-        processedRows: 0,
-        importedRows: 0,
-        skippedRows: 0,
+        processedRows: last?.processedRows ?? 0,
+        importedRows: last?.importedRows ?? 0,
+        skippedRows: last?.skippedRows ?? 0,
       });
     },
     migrateBatch: (_actor, command) =>
@@ -125,7 +126,9 @@ describe("legacy migration queue worker", () => {
   it("writes Neon batches and records progress before succeeding", async () => {
     const fixture = makeStore();
 
-    await Effect.runPromise(processLegacyMigrationJob(fixture.store, message, 1));
+    await expect(
+      Effect.runPromise(processLegacyMigrationJob(fixture.store, message, 1)),
+    ).resolves.toEqual({ kind: "done" });
 
     expect(fixture.batches).toEqual(["categories", "products", "products"]);
     expect(fixture.rows.size).toBe(13);
@@ -142,6 +145,25 @@ describe("legacy migration queue worker", () => {
       skippedRows: 0,
       progress: 99,
     });
+    expect(fixture.reconciliations).toBe(1);
+    expect(fixture.status).toBe("succeeded");
+  });
+
+  it("yields remaining batches to a later queue invocation", async () => {
+    const fixture = makeStore();
+
+    await expect(
+      Effect.runPromise(processLegacyMigrationJob(fixture.store, message, 1, 2)),
+    ).resolves.toEqual({ kind: "continue" });
+    expect(fixture.batches).toEqual(["categories", "products"]);
+    expect(fixture.reconciliations).toBe(0);
+    expect(fixture.status).toBe("migrating");
+
+    await expect(
+      Effect.runPromise(processLegacyMigrationJob(fixture.store, message, 1, 2)),
+    ).resolves.toEqual({ kind: "done" });
+    expect(fixture.batches).toEqual(["categories", "products", "products"]);
+    expect(fixture.rows.size).toBe(13);
     expect(fixture.reconciliations).toBe(1);
     expect(fixture.status).toBe("succeeded");
   });
