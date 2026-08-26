@@ -74,9 +74,7 @@ export const legacyCatalogMigrationJobs = pgTable(
     requestId: text("request_id").notNull(),
     requestedByUserId: text("requested_by_user_id").notNull(),
     deviceId: text("device_id").notNull(),
-    status: text("status")
-      .$type<"queued" | "migrating" | "succeeded" | "failed">()
-      .notNull(),
+    status: text("status").$type<"queued" | "migrating" | "succeeded" | "failed">().notNull(),
     phase: text("phase")
       .$type<
         | "queued"

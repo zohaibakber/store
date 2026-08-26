@@ -136,11 +136,7 @@ describe("legacy catalog upload", () => {
     expect(server.migrations[0]?.catalog.categories).toHaveLength(1);
     expect(server.migrations[0]?.catalog.products).toHaveLength(2);
     expect(server.statusReads).toBe(2);
-    expect(progress.map((status) => status.status)).toEqual([
-      "queued",
-      "migrating",
-      "succeeded",
-    ]);
+    expect(progress.map((status) => status.status)).toEqual(["queued", "migrating", "succeeded"]);
   });
 
   it("surfaces the terminal failed state from the worker", async () => {

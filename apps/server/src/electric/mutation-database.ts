@@ -9,10 +9,8 @@ import {
   type IssueInvoiceResult,
   type LegacyCatalogMigrationCommand,
   type LegacyCatalogMigrationJobStatus,
-  type LegacyCatalogMigrationPhase,
   type LegacyCatalogMigrationResult,
-  type LegacyCatalogMigrationStart,
-  type LegacyCatalogMigrationStarted,
+  LegacyCatalogMigrationStart,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
   LEGACY_ROW_OPERATION_PREFIX,
@@ -72,6 +70,11 @@ export type PostgresDrizzle = Effect.Success<ReturnType<typeof makePostgresDrizz
 type PostgresTransaction = Parameters<Parameters<PostgresDrizzle["transaction"]>[0]>[0];
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+const legacyMigrationJobDatabaseError = (cause: unknown) =>
+  cause instanceof InventoryDatabaseError
+    ? cause
+    : InventoryDatabaseError.make({ message: messageOf(cause), cause });
 
 const databaseError = (cause: unknown) => {
   if (cause instanceof EffectDrizzleQueryError && cause.cause instanceof SqlError) {
@@ -1800,9 +1803,7 @@ const legacyMigrationTotalRows = (request: LegacyCatalogMigrationStart) =>
   request.catalog.invoiceItems.length +
   request.catalog.stockMovements.length;
 
-const legacyMigrationStatus = (
-  row: LegacyMigrationJobRow,
-): LegacyCatalogMigrationJobStatus => {
+const legacyMigrationStatus = (row: LegacyMigrationJobRow): LegacyCatalogMigrationJobStatus => {
   const progress = {
     jobId: row.id,
     processedRows: row.processedRows,
@@ -1831,253 +1832,232 @@ const legacyMigrationStatus = (
 const decodeLegacyMigrationRequest = (row: LegacyMigrationJobRow) =>
   Effect.try({
     try: () => JSON.parse(row.payload),
-    catch: (cause) => databaseError(cause),
+    catch: legacyMigrationJobDatabaseError,
   }).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(LegacyCatalogMigrationStart)),
-    Effect.mapError((cause) =>
-      cause instanceof InventoryDatabaseError ? cause : databaseError(cause),
-    ),
+    Effect.mapError(legacyMigrationJobDatabaseError),
   );
 
 export const makeLegacyMigrationJobDatabase = (db: PostgresDrizzle) => {
-  const start = Effect.fn("LegacyMigrationJobDatabase.start")(
-    function* (
-      actor: InventoryActor,
-      request: LegacyCatalogMigrationStart,
-    ): Effect.fn.Return<LegacyCatalogMigrationStarted, InventoryDatabaseError> {
-      const now = yield* Clock.currentTimeMillis;
-      const proposedJobId = crypto.randomUUID();
-      const values = {
-        id: proposedJobId,
-        organizationId: actor.organizationId,
-        requestId: request.requestId,
-        requestedByUserId: actor.userId,
-        deviceId: request.deviceId,
-        status: "queued" as const,
-        phase: "queued" as const,
-        progress: 0,
-        processedRows: 0,
-        totalRows: legacyMigrationTotalRows(request),
-        importedRows: 0,
-        skippedRows: 0,
-        attempts: 0,
-        payload: JSON.stringify(request),
+  const start = Effect.fn("LegacyMigrationJobDatabase.start")(function* (
+    actor: InventoryActor,
+    request: LegacyCatalogMigrationStart,
+  ) {
+    const now = yield* Clock.currentTimeMillis;
+    const proposedJobId = crypto.randomUUID();
+    const values = {
+      id: proposedJobId,
+      organizationId: actor.organizationId,
+      requestId: request.requestId,
+      requestedByUserId: actor.userId,
+      deviceId: request.deviceId,
+      status: "queued" as const,
+      phase: "queued" as const,
+      progress: 0,
+      processedRows: 0,
+      totalRows: legacyMigrationTotalRows(request),
+      importedRows: 0,
+      skippedRows: 0,
+      attempts: 0,
+      payload: JSON.stringify(request),
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    };
+    const [started] = yield* db
+      .insert(legacyCatalogMigrationJobs)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [legacyCatalogMigrationJobs.organizationId, legacyCatalogMigrationJobs.requestId],
+        set: {
+          requestedByUserId: actor.userId,
+          deviceId: request.deviceId,
+          status: "queued",
+          phase: "queued",
+          progress: 0,
+          processedRows: 0,
+          totalRows: values.totalRows,
+          importedRows: 0,
+          skippedRows: 0,
+          attempts: 0,
+          payload: values.payload,
+          error: null,
+          updatedAt: now,
+          completedAt: null,
+        },
+        setWhere: eq(legacyCatalogMigrationJobs.status, "failed"),
+      })
+      .returning({ id: legacyCatalogMigrationJobs.id });
+    if (started) return { jobId: started.id };
+
+    const [existing] = yield* db
+      .select({ id: legacyCatalogMigrationJobs.id })
+      .from(legacyCatalogMigrationJobs)
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, actor.organizationId),
+          eq(legacyCatalogMigrationJobs.requestId, request.requestId),
+        ),
+      )
+      .limit(1);
+    if (existing) return { jobId: existing.id };
+    return yield* Effect.fail(
+      InventoryDatabaseError.make({
+        message: "Could not create or recover the legacy migration job.",
+      }),
+    );
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
+
+  const getStatus = Effect.fn("LegacyMigrationJobDatabase.getStatus")(function* (
+    actor: InventoryActor,
+    jobId: string,
+  ) {
+    const [row] = yield* db
+      .select()
+      .from(legacyCatalogMigrationJobs)
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, actor.organizationId),
+          eq(legacyCatalogMigrationJobs.id, jobId),
+        ),
+      )
+      .limit(1);
+    return row ? legacyMigrationStatus(row) : null;
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
+
+  const claim = Effect.fn("LegacyMigrationJobDatabase.claim")(function* (input: {
+    readonly message: LegacyMigrationQueueMessage;
+    readonly deliveryAttempt: number;
+  }) {
+    const now = yield* Clock.currentTimeMillis;
+    const claimable =
+      input.deliveryAttempt === 1
+        ? eq(legacyCatalogMigrationJobs.status, "queued")
+        : or(
+            eq(legacyCatalogMigrationJobs.status, "queued"),
+            eq(legacyCatalogMigrationJobs.status, "migrating"),
+          );
+    const [row] = yield* db
+      .update(legacyCatalogMigrationJobs)
+      .set({
+        status: "migrating",
+        attempts: input.deliveryAttempt,
         error: null,
-        createdAt: now,
         updatedAt: now,
-        completedAt: null,
-      };
-      const [started] = yield* db
-        .insert(legacyCatalogMigrationJobs)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [
-            legacyCatalogMigrationJobs.organizationId,
-            legacyCatalogMigrationJobs.requestId,
-          ],
-          set: {
-            requestedByUserId: actor.userId,
-            deviceId: request.deviceId,
-            status: "queued",
-            phase: "queued",
-            progress: 0,
-            processedRows: 0,
-            totalRows: values.totalRows,
-            importedRows: 0,
-            skippedRows: 0,
-            attempts: 0,
-            payload: values.payload,
-            error: null,
-            updatedAt: now,
-            completedAt: null,
-          },
-          setWhere: eq(legacyCatalogMigrationJobs.status, "failed"),
-        })
-        .returning({ id: legacyCatalogMigrationJobs.id });
-      if (started) return { jobId: started.id };
+      })
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, input.message.organizationId),
+          eq(legacyCatalogMigrationJobs.id, input.message.jobId),
+          claimable,
+        ),
+      )
+      .returning();
+    if (row) {
+      const request = yield* decodeLegacyMigrationRequest(row);
+      return {
+        kind: "process",
+        actor: {
+          organizationId: row.organizationId,
+          userId: row.requestedByUserId,
+        },
+        request,
+        processedRows: row.processedRows,
+        importedRows: row.importedRows,
+        skippedRows: row.skippedRows,
+      } satisfies LegacyMigrationJobClaim;
+    }
 
-      const [existing] = yield* db
-        .select({ id: legacyCatalogMigrationJobs.id })
-        .from(legacyCatalogMigrationJobs)
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, actor.organizationId),
-            eq(legacyCatalogMigrationJobs.requestId, request.requestId),
-          ),
-        )
-        .limit(1);
-      if (existing) return { jobId: existing.id };
-      return yield* Effect.fail(
-        InventoryDatabaseError.make({
-          message: "Could not create or recover the legacy migration job.",
-        }),
+    const [existing] = yield* db
+      .select({ id: legacyCatalogMigrationJobs.id })
+      .from(legacyCatalogMigrationJobs)
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, input.message.organizationId),
+          eq(legacyCatalogMigrationJobs.id, input.message.jobId),
+        ),
+      )
+      .limit(1);
+    if (existing) return { kind: "skip" } satisfies LegacyMigrationJobClaim;
+    return { kind: "missing" } satisfies LegacyMigrationJobClaim;
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
+
+  const updateProgress = Effect.fn("LegacyMigrationJobDatabase.updateProgress")(function* (
+    input: LegacyMigrationProgressUpdate,
+  ) {
+    const now = yield* Clock.currentTimeMillis;
+    yield* db
+      .update(legacyCatalogMigrationJobs)
+      .set({
+        status: "migrating",
+        phase: input.phase,
+        processedRows: input.processedRows,
+        importedRows: input.importedRows,
+        skippedRows: input.skippedRows,
+        progress: input.progress,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
+          eq(legacyCatalogMigrationJobs.id, input.jobId),
+          eq(legacyCatalogMigrationJobs.status, "migrating"),
+        ),
       );
-    },
-    Effect.mapError((cause) =>
-      cause instanceof InventoryDatabaseError ? cause : databaseError(cause),
-    ),
-  );
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
 
-  const getStatus = Effect.fn("LegacyMigrationJobDatabase.getStatus")(
-    function* (actor: InventoryActor, jobId: string) {
-      const [row] = yield* db
-        .select()
-        .from(legacyCatalogMigrationJobs)
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, actor.organizationId),
-            eq(legacyCatalogMigrationJobs.id, jobId),
-          ),
-        )
-        .limit(1);
-      return row ? legacyMigrationStatus(row) : null;
-    },
-    Effect.mapError((cause) => databaseError(cause)),
-  );
+  const succeed = Effect.fn("LegacyMigrationJobDatabase.succeed")(function* (
+    input: Omit<LegacyMigrationProgressUpdate, "phase" | "progress">,
+  ) {
+    const now = yield* Clock.currentTimeMillis;
+    yield* db
+      .update(legacyCatalogMigrationJobs)
+      .set({
+        status: "succeeded",
+        phase: "complete",
+        progress: 100,
+        processedRows: input.processedRows,
+        importedRows: input.importedRows,
+        skippedRows: input.skippedRows,
+        error: null,
+        updatedAt: now,
+        completedAt: now,
+      })
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
+          eq(legacyCatalogMigrationJobs.id, input.jobId),
+          eq(legacyCatalogMigrationJobs.status, "migrating"),
+        ),
+      );
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
 
-  const claim = Effect.fn("LegacyMigrationJobDatabase.claim")(
-    function* (input: {
-      readonly message: LegacyMigrationQueueMessage;
-      readonly deliveryAttempt: number;
-    }): Effect.fn.Return<LegacyMigrationJobClaim, InventoryDatabaseError> {
-      const now = yield* Clock.currentTimeMillis;
-      const claimable =
-        input.deliveryAttempt === 1
-          ? eq(legacyCatalogMigrationJobs.status, "queued")
-          : or(
-              eq(legacyCatalogMigrationJobs.status, "queued"),
-              eq(legacyCatalogMigrationJobs.status, "migrating"),
-            );
-      const [row] = yield* db
-        .update(legacyCatalogMigrationJobs)
-        .set({
-          status: "migrating",
-          attempts: input.deliveryAttempt,
-          error: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, input.message.organizationId),
-            eq(legacyCatalogMigrationJobs.id, input.message.jobId),
-            claimable,
-          ),
-        )
-        .returning();
-      if (row) {
-        const request = yield* decodeLegacyMigrationRequest(row);
-        return {
-          kind: "process",
-          actor: {
-            organizationId: row.organizationId,
-            userId: row.requestedByUserId,
-          },
-          request,
-          processedRows: row.processedRows,
-          importedRows: row.importedRows,
-          skippedRows: row.skippedRows,
-        };
-      }
-
-      const [existing] = yield* db
-        .select({ id: legacyCatalogMigrationJobs.id })
-        .from(legacyCatalogMigrationJobs)
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, input.message.organizationId),
-            eq(legacyCatalogMigrationJobs.id, input.message.jobId),
-          ),
-        )
-        .limit(1);
-      return existing ? { kind: "skip" } : { kind: "missing" };
-    },
-    Effect.mapError((cause) =>
-      cause instanceof InventoryDatabaseError ? cause : databaseError(cause),
-    ),
-  );
-
-  const updateProgress = Effect.fn("LegacyMigrationJobDatabase.updateProgress")(
-    function* (input: LegacyMigrationProgressUpdate) {
-      const now = yield* Clock.currentTimeMillis;
-      yield* db
-        .update(legacyCatalogMigrationJobs)
-        .set({
-          status: "migrating",
-          phase: input.phase,
-          processedRows: input.processedRows,
-          importedRows: input.importedRows,
-          skippedRows: input.skippedRows,
-          progress: input.progress,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
-            eq(legacyCatalogMigrationJobs.id, input.jobId),
+  const fail = Effect.fn("LegacyMigrationJobDatabase.fail")(function* (input: {
+    readonly jobId: string;
+    readonly organizationId: string;
+    readonly error: string;
+  }) {
+    const now = yield* Clock.currentTimeMillis;
+    yield* db
+      .update(legacyCatalogMigrationJobs)
+      .set({
+        status: "failed",
+        error: input.error,
+        updatedAt: now,
+        completedAt: now,
+      })
+      .where(
+        and(
+          eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
+          eq(legacyCatalogMigrationJobs.id, input.jobId),
+          or(
+            eq(legacyCatalogMigrationJobs.status, "queued"),
             eq(legacyCatalogMigrationJobs.status, "migrating"),
           ),
-        );
-    },
-    Effect.mapError((cause) => databaseError(cause)),
-  );
-
-  const succeed = Effect.fn("LegacyMigrationJobDatabase.succeed")(
-    function* (
-      input: Omit<LegacyMigrationProgressUpdate, "phase" | "progress">,
-    ) {
-      const now = yield* Clock.currentTimeMillis;
-      yield* db
-        .update(legacyCatalogMigrationJobs)
-        .set({
-          status: "succeeded",
-          phase: "complete",
-          progress: 100,
-          processedRows: input.processedRows,
-          importedRows: input.importedRows,
-          skippedRows: input.skippedRows,
-          error: null,
-          updatedAt: now,
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
-            eq(legacyCatalogMigrationJobs.id, input.jobId),
-            eq(legacyCatalogMigrationJobs.status, "migrating"),
-          ),
-        );
-    },
-    Effect.mapError((cause) => databaseError(cause)),
-  );
-
-  const fail = Effect.fn("LegacyMigrationJobDatabase.fail")(
-    function* (input: {
-      readonly jobId: string;
-      readonly organizationId: string;
-      readonly error: string;
-    }) {
-      const now = yield* Clock.currentTimeMillis;
-      yield* db
-        .update(legacyCatalogMigrationJobs)
-        .set({
-          status: "failed",
-          error: input.error,
-          updatedAt: now,
-          completedAt: now,
-        })
-        .where(
-          and(
-            eq(legacyCatalogMigrationJobs.organizationId, input.organizationId),
-            eq(legacyCatalogMigrationJobs.id, input.jobId),
-            or(
-              eq(legacyCatalogMigrationJobs.status, "queued"),
-              eq(legacyCatalogMigrationJobs.status, "migrating"),
-            ),
-          ),
-        );
-    },
-    Effect.mapError((cause) => databaseError(cause)),
-  );
+        ),
+      );
+  }, Effect.mapError(legacyMigrationJobDatabaseError));
 
   return { start, getStatus, claim, updateProgress, succeed, fail };
 };

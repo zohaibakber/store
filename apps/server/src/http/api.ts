@@ -121,15 +121,11 @@ const electricMutations = HttpApiGroup.make("electricMutations")
     }).middleware(OrganizationAuth),
   )
   .add(
-    HttpApiEndpoint.get(
-      "legacyCatalogMigrationStatus",
-      "/api/inventory/legacy-migrations/:jobId",
-      {
-        params: { jobId: LegacyCatalogMigrationStarted.fields.jobId },
-        success: LegacyCatalogMigrationJobStatus,
-        error: [Forbidden, NotFound],
-      },
-    ).middleware(OrganizationAuth),
+    HttpApiEndpoint.get("legacyCatalogMigrationStatus", "/api/inventory/legacy-migrations/:jobId", {
+      params: { jobId: LegacyCatalogMigrationStarted.fields.jobId },
+      success: LegacyCatalogMigrationJobStatus,
+      error: [Forbidden, NotFound],
+    }).middleware(OrganizationAuth),
   );
 
 export const StoreApi = HttpApi.make("StoreApi").add(

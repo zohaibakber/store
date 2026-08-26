@@ -19,8 +19,8 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { ElectricMutationResult } from "../electric/mutation-database";
 import type { LegacyMigrationQueueError } from "../electric/legacy-migration-worker";
+import type { ElectricMutationResult } from "../electric/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
 

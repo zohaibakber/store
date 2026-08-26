@@ -42,14 +42,11 @@ describe("legacy catalog migrations", () => {
     const response = await appFor(true, {
       startLegacyCatalogMigration,
       writeElectricMutation,
-    }).request(
-      "/api/inventory/legacy-migrations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(command),
-      },
-    );
+    }).request("/api/inventory/legacy-migrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    });
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ jobId: "job-1" });

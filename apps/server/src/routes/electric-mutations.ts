@@ -102,12 +102,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
             )
             .pipe(
               Effect.catchTag("LegacyMigrationQueueError", (error) =>
-                Effect.fail(
-                  badGateway(
-                    "LEGACY_MIGRATION_QUEUE_UNAVAILABLE",
-                    error.message,
-                  ),
-                ),
+                Effect.fail(badGateway("LEGACY_MIGRATION_QUEUE_UNAVAILABLE", error.message)),
               ),
               Effect.catchTag("InventoryDatabaseError", Effect.die),
             );
@@ -115,9 +110,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "legacyCatalogMigrationStatus",
-        Effect.fn("ElectricMutationHandlers.legacyCatalogMigrationStatus")(function* ({
-          params,
-        }) {
+        Effect.fn("ElectricMutationHandlers.legacyCatalogMigrationStatus")(function* ({ params }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           const status = yield* runtime

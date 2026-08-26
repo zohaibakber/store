@@ -161,9 +161,7 @@ describe("legacy migration queue worker", () => {
     const fixture = makeStore();
 
     await Effect.runPromise(
-      terminalMigrationFailure(fixture.store, message)(
-        new Error("connection reset"),
-      ),
+      terminalMigrationFailure(fixture.store, message)(new Error("connection reset")),
     );
 
     expect(fixture.status).toBe("failed");

@@ -25,10 +25,6 @@ import {
   type AuthVerificationConfig,
 } from "./src/auth/session";
 import {
-  ElectricMutationDatabase,
-  ElectricMutationDatabaseLive,
-} from "./src/electric/mutation-database";
-import {
   LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS,
   LegacyMigrationJobProcessingError,
   type LegacyMigrationJobStore,
@@ -38,6 +34,11 @@ import {
   terminalMigrationFailure,
 } from "./src/electric/legacy-migration-worker";
 import {
+  ElectricMutationDatabase,
+  ElectricMutationDatabaseLive,
+} from "./src/electric/mutation-database";
+import type { InventoryDatabaseError, InventoryProtocolError } from "./src/inventory/errors";
+import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
   productionSiteOrigin,
@@ -46,10 +47,6 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 import { reportError, reportRejectedAuthSettings } from "./src/runtime/worker";
-import type {
-  InventoryDatabaseError,
-  InventoryProtocolError,
-} from "./src/inventory/errors";
 import {
   OrganizationStore,
   OrganizationStoreLive,
@@ -139,11 +136,7 @@ export const ApiLive = Api.make(
                   ? terminalMigrationFailure(migrationJobs, body)(error)
                   : Effect.fail(error);
               };
-              return processLegacyMigrationJob(
-                migrationJobs,
-                body,
-                message.attempts,
-              ).pipe(
+              return processLegacyMigrationJob(migrationJobs, body, message.attempts).pipe(
                 Effect.catchTags({
                   InventoryDatabaseError: handleFailure,
                   InventoryProtocolError: handleFailure,
