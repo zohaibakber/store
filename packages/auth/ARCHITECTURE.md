@@ -2,15 +2,16 @@
 
 ## Problem
 
-Tabaaq currently delegates identity, sessions, organizations, UI state, and
-token refresh to Clerk. That choice made the first release smaller, but it also
-spread Clerk-specific IDs and lifecycle rules through the API, Electron main
-process, React renderer, Expo app, synchronization, deployment config, and CSP.
-The replacement must preserve the useful invariant: an authenticated
-organization ID scopes the same Postgres rows, PowerSync streams, and local
-replica on every client. During migration, that ID also remains the key of the
-legacy `ORGANIZATION_STORE` Durable Object so its production data can be found
-for export and backfill.
+Tabaaq used to delegate identity, sessions, organizations, UI state, and token
+refresh to Clerk. That kept the first release small, and it also spread vendor
+IDs and lifecycle rules through the API, Electron main process, React renderer,
+Expo app, synchronization, deployment config, and CSP.
+
+First-party auth owns those concerns now. An authenticated organization ID
+still scopes the same Postgres rows, PowerSync streams, and local replica on
+every client. That ID is also the key of the legacy `ORGANIZATION_STORE`
+Durable Object so remaining production data can be found for export and
+backfill.
 
 ## Usage (caller's view)
 
@@ -335,8 +336,6 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
 
 - Which production apex should `PRODUCTION_AUTH_DOMAIN` override when it cannot
   be derived as `auth.<PRODUCTION_DOMAIN>`?
-- What account-linking verification should the Clerk cutover require before an
-  existing inventory organization is assigned to a first-party user?
 - Should a later Cloudflare Email provider send OTP through Email Routing or an
   external transactional provider bound to the Worker?
 
@@ -347,9 +346,6 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
   token storage out of React components.
 - Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
   development uses an unprefixed cookie because the prefix requires `Secure`.
-- The auth database keeps the old organization-binding table until production
-  account linking is complete. No runtime code reads it. A dedicated cutover
-  migration can remove it after existing organizations have first-party owners.
 - Registration and Google sign-up still create one owner organization. That
   store can invite members and manage roles through `/v1/organization`. Creating
   additional organizations, or switching among them, is intentionally absent.
