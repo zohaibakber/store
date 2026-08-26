@@ -4,10 +4,9 @@ import {
   IssueInvoiceCommand,
   IssueInvoiceResult,
   InvoiceExtraction,
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogReconciliationCommand,
-  LegacyCatalogReconciliationResult,
+  LegacyCatalogMigrationJobStatus,
+  LegacyCatalogMigrationStart,
+  LegacyCatalogMigrationStarted,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
   ProductScanInput,
@@ -26,6 +25,7 @@ import {
   BadRequest,
   Conflict,
   Forbidden,
+  NotFound,
   PayloadTooLarge,
   TooManyRequests,
   UnsupportedMediaType,
@@ -115,16 +115,16 @@ const electricMutations = HttpApiGroup.make("electricMutations")
   )
   .add(
     HttpApiEndpoint.post("migrateLegacyCatalog", "/api/inventory/legacy-migrations", {
-      payload: LegacyCatalogMigrationCommand,
-      success: LegacyCatalogMigrationResult,
-      error: [BadRequest, Forbidden, Conflict],
+      payload: LegacyCatalogMigrationStart,
+      success: LegacyCatalogMigrationStarted.pipe(HttpApiSchema.status(202)),
+      error: [BadRequest, Forbidden, BadGateway],
     }).middleware(OrganizationAuth),
   )
   .add(
-    HttpApiEndpoint.post("reconcileLegacyCatalog", "/api/inventory/legacy-reconciliations", {
-      payload: LegacyCatalogReconciliationCommand,
-      success: LegacyCatalogReconciliationResult,
-      error: [BadRequest, Forbidden, Conflict],
+    HttpApiEndpoint.get("legacyCatalogMigrationStatus", "/api/inventory/legacy-migrations/:jobId", {
+      params: { jobId: LegacyCatalogMigrationStarted.fields.jobId },
+      success: LegacyCatalogMigrationJobStatus,
+      error: [Forbidden, NotFound],
     }).middleware(OrganizationAuth),
   );
 

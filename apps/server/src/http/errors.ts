@@ -21,6 +21,9 @@ export type Unauthenticated = typeof Unauthenticated.Type;
 export const Forbidden = publicErrorSchema("Forbidden", 403);
 export type Forbidden = typeof Forbidden.Type;
 
+export const NotFound = publicErrorSchema("NotFound", 404);
+export type NotFound = typeof NotFound.Type;
+
 export const Conflict = publicErrorSchema("Conflict", 409);
 export type Conflict = typeof Conflict.Type;
 
@@ -45,6 +48,7 @@ export const badRequest = (code: string, message: string) => BadRequest.make(bod
 export const unauthenticated = (code: string, message: string) =>
   Unauthenticated.make(body(code, message));
 export const forbidden = (code: string, message: string) => Forbidden.make(body(code, message));
+export const notFound = (code: string, message: string) => NotFound.make(body(code, message));
 export const conflict = (code: string, message: string) => Conflict.make(body(code, message));
 export const upgradeRequired = (code: string, message: string) =>
   UpgradeRequired.make(body(code, message));

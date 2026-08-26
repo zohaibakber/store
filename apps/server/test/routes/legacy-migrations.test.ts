@@ -4,19 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import { appFor } from "../lib/app";
 
 const command = {
-  kind: "categories" as const,
-  commandId: "legacy-v1:device-1:categories:0",
+  requestId: "legacy-catalog:v3:device-1",
   deviceId: "device-1",
   occurredAt: 1_700_000_000_000,
-  rows: [
-    {
-      id: "medicine",
-      name: "Medicine",
-      tracksPacks: true,
-      createdAt: 1_600_000_000_000,
-      updatedAt: 1_650_000_000_000,
-    },
-  ],
+  catalog: {
+    categories: [
+      {
+        id: "medicine",
+        name: "Medicine",
+        tracksPacks: true,
+        createdAt: 1_600_000_000_000,
+        updatedAt: 1_650_000_000_000,
+      },
+    ],
+    products: [],
+    batches: [],
+    invoices: [],
+    invoiceItems: [],
+    stockMovements: [],
+  },
 };
 
 describe("legacy catalog migrations", () => {
@@ -30,123 +36,112 @@ describe("legacy catalog migrations", () => {
     expect(response.status).toBe(401);
   });
 
-  it("binds imported rows to the authenticated organization", async () => {
-    const migrateLegacyCatalog = vi.fn(() => Effect.succeed({ imported: 1, skipped: 0, txid: 42 }));
-    const response = await appFor(true, { migrateLegacyCatalog }).request(
-      "/api/inventory/legacy-migrations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(command),
-      },
-    );
+  it("creates a queued job without calling an inventory mutation", async () => {
+    const startLegacyCatalogMigration = vi.fn(() => Effect.succeed({ jobId: "job-1" }));
+    const writeElectricMutation = vi.fn(() => Effect.succeed({ txid: 42 }));
+    const response = await appFor(true, {
+      startLegacyCatalogMigration,
+      writeElectricMutation,
+    }).request("/api/inventory/legacy-migrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    });
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ imported: 1, skipped: 0, txid: 42 });
-    expect(migrateLegacyCatalog).toHaveBeenCalledWith(
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ jobId: "job-1" });
+    expect(startLegacyCatalogMigration).toHaveBeenCalledWith(
       { organizationId: "org-1", userId: "user-1" },
       command,
     );
+    expect(writeElectricMutation).not.toHaveBeenCalled();
   });
 
-  it("rejects oversized chunks at the HTTP boundary", async () => {
+  it("rejects oversized catalog tables at the HTTP boundary", async () => {
     const response = await appFor(true).request("/api/inventory/legacy-migrations", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         ...command,
-        rows: Array.from({ length: 251 }, (_, index) => ({
-          ...command.rows[0],
-          id: `category-${index}`,
-        })),
+        catalog: {
+          ...command.catalog,
+          categories: Array.from({ length: 5_001 }, (_, index) => ({
+            ...command.catalog.categories[0],
+            id: `category-${index}`,
+          })),
+        },
       }),
     });
 
     expect(response.status).toBe(400);
   });
 
-  it("still accepts the live AppImage 250-row product payload", async () => {
-    const migrateLegacyCatalog = vi.fn(() =>
-      Effect.succeed({ imported: 250, skipped: 0, txid: 42 }),
-    );
-    const response = await appFor(true, { migrateLegacyCatalog }).request(
-      "/api/inventory/legacy-migrations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "products",
-          commandId: "legacy-v1:device-1:products:0",
-          deviceId: "device-1",
-          occurredAt: 1_700_000_000_000,
-          rows: Array.from({ length: 250 }, (_, index) => ({
-            id: `product-${index}`,
-            name: `Product ${index}`,
-            categoryId: "medicine",
-            aisle: null,
-            composition: null,
-            strength: null,
-            unitsPerPack: 1,
-            packPrice: null,
-            unitPrice: null,
-            visible: true,
-            createdAt: 1_600_000_000_000,
-            updatedAt: 1_650_000_000_000,
-          })),
-        }),
-      },
+  it("refuses legacy catalog uploads from members", async () => {
+    const startLegacyCatalogMigration = vi.fn(() => Effect.succeed({ jobId: "job-1" }));
+    const response = await appFor(true, {
+      role: "member",
+      startLegacyCatalogMigration,
+    }).request("/api/inventory/legacy-migrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    });
+
+    expect(response.status).toBe(403);
+    expect(startLegacyCatalogMigration).not.toHaveBeenCalled();
+  });
+
+  it("returns job progress scoped to the authenticated organization", async () => {
+    const status = {
+      status: "migrating" as const,
+      phase: "products" as const,
+      jobId: "job-1",
+      processedRows: 10,
+      totalRows: 20,
+      importedRows: 10,
+      skippedRows: 0,
+      progress: 50,
+    };
+    const getLegacyCatalogMigration = vi.fn(() => Effect.succeed(status));
+    const response = await appFor(true, { getLegacyCatalogMigration }).request(
+      "/api/inventory/legacy-migrations/job-1",
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ imported: 250, skipped: 0, txid: 42 });
-  });
-
-  it("refuses legacy catalog uploads from members", async () => {
-    const migrateLegacyCatalog = vi.fn(() => Effect.succeed({ imported: 1, skipped: 0, txid: 42 }));
-    const response = await appFor(true, { role: "member", migrateLegacyCatalog }).request(
-      "/api/inventory/legacy-migrations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(command),
-      },
+    expect(await response.json()).toEqual(status);
+    expect(getLegacyCatalogMigration).toHaveBeenCalledWith(
+      { organizationId: "org-1", userId: "user-1" },
+      "job-1",
     );
-
-    expect(response.status).toBe(403);
-    expect(migrateLegacyCatalog).not.toHaveBeenCalled();
   });
 
-  it("refuses legacy catalog reconciliation from members", async () => {
-    const reconcileLegacyCatalog = vi.fn(() =>
+  it("returns not found for a job outside the authenticated organization", async () => {
+    const response = await appFor(true, {
+      getLegacyCatalogMigration: () => Effect.succeed(null),
+    }).request("/api/inventory/legacy-migrations/job-other");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses migration status reads from members", async () => {
+    const getLegacyCatalogMigration = vi.fn(() =>
       Effect.succeed({
-        deletedCategories: 0,
-        deletedProducts: 0,
-        deletedBatches: 0,
-        deletedInvoices: 0,
-        deletedInvoiceItems: 0,
-        deletedStockMovements: 0,
-        txid: 1,
+        status: "queued" as const,
+        phase: "queued" as const,
+        jobId: "job-1",
+        processedRows: 0,
+        totalRows: 1,
+        importedRows: 0,
+        skippedRows: 0,
+        progress: 0,
       }),
     );
-    const response = await appFor(true, { role: "member", reconcileLegacyCatalog }).request(
-      "/api/inventory/legacy-reconciliations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          deviceId: "device-1",
-          occurredAt: 1_700_000_000_000,
-          categoryIds: ["medicine"],
-          productIds: [],
-          batchIds: [],
-          invoiceIds: [],
-          invoiceItemIds: [],
-          stockMovementIds: [],
-        }),
-      },
-    );
+    const response = await appFor(true, {
+      role: "member",
+      getLegacyCatalogMigration,
+    }).request("/api/inventory/legacy-migrations/job-1");
 
     expect(response.status).toBe(403);
-    expect(reconcileLegacyCatalog).not.toHaveBeenCalled();
+    expect(getLegacyCatalogMigration).not.toHaveBeenCalled();
   });
 });

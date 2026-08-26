@@ -39,7 +39,7 @@ test("retries skip rows that already have a receipt id", () => {
   });
 });
 
-test("desktop chunks stay under the Worker-safe size while HTTP still accepts the live AppImage payload", () => {
+test("queue consumer chunks stay under the Worker-safe Neon transaction size", () => {
   expect(LEGACY_MIGRATION_CHUNK_ROWS).toBeLessThanOrEqual(35);
   expect(LEGACY_MIGRATION_CHUNK_ROWS).toBeLessThanOrEqual(MAX_LEGACY_MIGRATION_ROWS);
   expect(MAX_LEGACY_MIGRATION_ROWS).toBe(250);

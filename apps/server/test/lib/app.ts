@@ -73,8 +73,8 @@ export interface AppOptions {
   readonly writeElectricMutation?: ServerRuntimeContract["writeElectricMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
   readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
-  readonly migrateLegacyCatalog?: ServerRuntimeContract["migrateLegacyCatalog"];
-  readonly reconcileLegacyCatalog?: ServerRuntimeContract["reconcileLegacyCatalog"];
+  readonly startLegacyCatalogMigration?: ServerRuntimeContract["startLegacyCatalogMigration"];
+  readonly getLegacyCatalogMigration?: ServerRuntimeContract["getLegacyCatalogMigration"];
 }
 
 /** Route test harness. Organization access follows the JWT session: no session means revoked. */
@@ -122,12 +122,12 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
       issueInvoice:
         options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
-      migrateLegacyCatalog:
-        options.migrateLegacyCatalog ??
+      startLegacyCatalogMigration:
+        options.startLegacyCatalogMigration ??
         (() => Effect.die("Legacy catalog migration is not configured.")),
-      reconcileLegacyCatalog:
-        options.reconcileLegacyCatalog ??
-        (() => Effect.die("Legacy catalog reconciliation is not configured.")),
+      getLegacyCatalogMigration:
+        options.getLegacyCatalogMigration ??
+        (() => Effect.die("Legacy catalog migration status is not configured.")),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

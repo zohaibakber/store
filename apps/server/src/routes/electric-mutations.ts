@@ -3,7 +3,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/organization";
 import { StoreApi } from "../http/api";
-import { badRequest, conflict, forbidden } from "../http/errors";
+import { badGateway, badRequest, conflict, forbidden, notFound } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 import type { InventoryProtocolError } from "../inventory/errors";
 
@@ -96,34 +96,33 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
           return yield* runtime
-            .migrateLegacyCatalog(
+            .startLegacyCatalogMigration(
               { organizationId: identity.organizationId, userId: identity.user.id },
               payload,
             )
             .pipe(
-              Effect.mapError((error) =>
-                error._tag === "InventoryProtocolError" ? mutationProtocolError(error) : error,
+              Effect.catchTag("LegacyMigrationQueueError", (error) =>
+                Effect.fail(badGateway("LEGACY_MIGRATION_QUEUE_UNAVAILABLE", error.message)),
               ),
               Effect.catchTag("InventoryDatabaseError", Effect.die),
             );
         }),
       )
       .handle(
-        "reconcileLegacyCatalog",
-        Effect.fn("ElectricMutationHandlers.reconcileLegacyCatalog")(function* ({ payload }) {
+        "legacyCatalogMigrationStatus",
+        Effect.fn("ElectricMutationHandlers.legacyCatalogMigrationStatus")(function* ({ params }) {
           const identity = yield* CurrentOrganization;
           yield* requireLegacyCatalogAdmin(identity);
-          return yield* runtime
-            .reconcileLegacyCatalog(
+          const status = yield* runtime
+            .getLegacyCatalogMigration(
               { organizationId: identity.organizationId, userId: identity.user.id },
-              payload,
+              params.jobId,
             )
-            .pipe(
-              Effect.mapError((error) =>
-                error._tag === "InventoryProtocolError" ? mutationProtocolError(error) : error,
-              ),
-              Effect.catchTag("InventoryDatabaseError", Effect.die),
-            );
+            .pipe(Effect.catchTag("InventoryDatabaseError", Effect.die));
+          if (status) return status;
+          return yield* Effect.fail(
+            notFound("LEGACY_MIGRATION_NOT_FOUND", "Migration job not found."),
+          );
         }),
       );
   }),
