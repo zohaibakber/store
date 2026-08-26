@@ -14,9 +14,9 @@ into durable SQLite-backed TanStack DB collections on each client.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
   preload. It loads the web renderer with hash history and keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
-  inventory HTTP and reads the one-shot Locked catalog in `store.db`. Live
-  inventory SQLite is `@powersync/web` plus wa-sqlite in the renderer, the
-  same engine as the browser. There is no main-process PowerSync.
+  inventory HTTP. Live inventory SQLite is `@powersync/web` plus wa-sqlite in
+  the renderer, the same engine as the browser. There is no main-process
+  PowerSync. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres

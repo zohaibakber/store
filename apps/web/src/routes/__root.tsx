@@ -114,7 +114,7 @@ function AppShell() {
   return (
     <InventoryProvider
       host={inventory}
-      key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
+      key={`${scope.organizationId}:${scope.userId}`}
       scope={scope}
     >
       {shell}

@@ -25,7 +25,7 @@ Preconditions:
 - Start with no authenticated session on this origin (or use a fresh browser profile).
 - `sign-in-email` and later steps need `doctor: api ok`. Skip those steps when the API is down; still run `sign-in-shell` and `sign-in-no-guest`.
 
-- **Open shell.** Navigate to `http://127.0.0.1:5174/sign-in`. The heading is `Sign in to Tabaaq`. A textbox named `Email` and buttons `Continue` and `Continue with Google` are visible. There is no `Continue offline` link.
+- **Open shell.** Navigate to `http://127.0.0.1:5174/sign-in`. The heading is `Sign in to Tabaaq`. A textbox named `Email` and buttons `Continue` and `Continue with Google` are visible.
 - **Reject guest catalog.** Navigate to `http://127.0.0.1:5174/` and to `http://127.0.0.1:5174/products`. The location returns to `/sign-in` and the same identifier heading is shown.
 - **Proof (shell).** Save an ARIA snapshot and a screenshot under `artifacts/sign-in/`. The heading `Sign in to Tabaaq` and the `Email` textbox must be in both.
 - **Continue with email.** Fill `Email` with a real mailbox the operator provided and choose `Continue`. Either the heading becomes `Enter your password`, `Enter your code`, or a registration heading, or an error alert explains the failure. Do not invent credentials.
@@ -35,7 +35,6 @@ Preconditions:
 
 ## Gotchas
 
-- `Continue offline` exists only on the Electron host. Seeing it in the browser means the wrong renderer.
 - Identify without the auth Worker yields a generic failure. That is not a product bug if doctor already reported `api down`.
 - After a successful sign-in, `/sign-in` redirects to `/`. Re-verify the shell in a logged-out profile.
 - OTP development codes appear in the form description only when the auth Worker has `AUTH_DEV_OTP` enabled. Production must not.

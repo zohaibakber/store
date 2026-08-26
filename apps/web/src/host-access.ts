@@ -19,29 +19,16 @@ export type AccessVerdict =
 
 export type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
-/**
- * Inventory identity selected by the host. The tag is part of the contract:
- * local desktop workspaces must never be passed to PowerSync or server mutations.
- */
-export type HostInventoryScope =
-  | {
-      readonly _tag: "Remote";
-      readonly organizationId: string;
-      readonly userId: string;
-    }
-  | {
-      readonly _tag: "Local";
-      readonly organizationId: "local";
-      readonly userId: "local";
-    };
+/** Signed organization inventory. Neither host opens a guest catalog. */
+export type HostInventoryScope = {
+  readonly organizationId: string;
+  readonly userId: string;
+};
 
 /**
  * Host access policy. Inject exactly one adapter at bootstrap
  * (`browserHostAccess` or `desktopHostAccess`). Routes stay host-blind.
- *
- * Product axis: {@link HostAccessPolicy.allowsGuestWorkspace} — whether this
- * host may run without an authenticated workspace (Locked store + continue
- * offline). Browser: false. Desktop: true.
+ * Both hosts require an authenticated organization before inventory.
  */
 export interface HostAccessPolicy {
   readonly admit: (input: {
@@ -51,14 +38,8 @@ export interface HostAccessPolicy {
 
   readonly chrome: (input: AccessLocation) => AppChrome;
 
-  /** Resolves the inventory workspace available for this host and session. */
+  /** Resolves the inventory workspace for this session, or null until signed in. */
   readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => HostInventoryScope | null;
-
-  /**
-   * True iff Locked guest inventory and sign-in “continue offline” are part of
-   * this host product.
-   */
-  readonly allowsGuestWorkspace: boolean;
 }
 
 const PUBLIC_PATHS = new Set(["/sign-in"]);
@@ -73,24 +54,15 @@ const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean 
 const remoteInventoryScope = (snapshot: WorkspaceSnapshot | null): HostInventoryScope | null => {
   if (snapshot?.status !== "authenticated" || !snapshot.activeOrganization) return null;
   return {
-    _tag: "Remote",
     organizationId: snapshot.activeOrganization.id,
     userId: snapshot.user.id,
   };
 };
 
-const localInventoryScope: HostInventoryScope = {
-  _tag: "Local",
-  organizationId: "local",
-  userId: "local",
-};
-
 const bareChrome = (input: AccessLocation): AppChrome =>
   BARE_PATHS.has(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
 
-/** Browser: app routes require an authenticated workspace. */
-export const browserHostAccess = (): HostAccessPolicy => ({
-  allowsGuestWorkspace: false,
+const authenticatedHostAccess = (): HostAccessPolicy => ({
   chrome: bareChrome,
   inventoryScope: remoteInventoryScope,
   admit: ({ location, snapshot }) => {
@@ -104,15 +76,8 @@ export const browserHostAccess = (): HostAccessPolicy => ({
   },
 });
 
-/** Desktop: anonymous / locked local store remains a first-class entry. */
-export const desktopHostAccess = (): HostAccessPolicy => ({
-  allowsGuestWorkspace: true,
-  chrome: bareChrome,
-  inventoryScope: (snapshot) => remoteInventoryScope(snapshot) ?? localInventoryScope,
-  admit: ({ location, snapshot }) => {
-    if (isPublicPath(location.pathname) && hasAuthenticatedWorkspace(snapshot)) {
-      return { _tag: "Redirect", to: "/", replace: true };
-    }
-    return { _tag: "Allow" };
-  },
-});
+/** Browser: app routes require an authenticated workspace. */
+export const browserHostAccess = authenticatedHostAccess;
+
+/** Desktop: app routes require an authenticated workspace. */
+export const desktopHostAccess = authenticatedHostAccess;

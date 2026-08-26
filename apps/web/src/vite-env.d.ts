@@ -8,7 +8,6 @@ import type {
 } from "@store/auth";
 import type { InvoiceExtraction, WorkspaceSnapshot } from "@store/contracts";
 import type { UpdaterEvent } from "@store/contracts/updater";
-import type { JsonApiResponse } from "@store/workspace";
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
@@ -44,9 +43,6 @@ declare global {
         body: ArrayBuffer;
       }>;
       abort(requestId: string): void;
-    };
-    legacyLocalInventory?: {
-      load(): Promise<JsonApiResponse>;
     };
     auth?: {
       getSession(): Promise<WorkspaceSnapshot>;

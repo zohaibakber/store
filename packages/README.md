@@ -18,7 +18,7 @@ Package tests mirror the source domains under `test`.
 collection factory. Hosts construct `PowerSyncDatabase` and `DbClient` only.
 Web and Electron use `@powersync/web` plus wa-sqlite in the renderer. Expo uses
 `@powersync/react-native`. Electron's main process does not open the catalog
-database; it proxies HTTP and reads the legacy Locked `store.db` snapshot.
+database; it proxies HTTP.
 
 The retained Cloudflare Durable Object implementation, schema, migrations,
 contracts, and WebSocket protocol document the production path that preceded

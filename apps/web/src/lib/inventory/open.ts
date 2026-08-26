@@ -1,15 +1,9 @@
 import {
-  type BatchRow,
-  type CategoryRow,
   disconnectAndClearInventoryPowerSync,
-  type InvoiceItemRow,
-  type InvoiceRow,
   inventoryPowerSyncCollectionConfigs,
   inventoryPowerSyncDatabaseName,
   inventoryReplicaScope,
   makeInventoryPowerSyncConnector,
-  type ProductRow,
-  type StockMovementRow,
   waitForInventoryFirstSync,
 } from "@store/client-db";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
@@ -19,38 +13,7 @@ import { toastStoreError } from "@/lib/errors";
 import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
 
-import { persistInsert } from "./persist";
-import type { Inventory, InventoryCollection } from "./types";
-
-const seedMissingRows = async <Row extends { readonly id: string }>(
-  collection: InventoryCollection<Row>,
-  rows: ReadonlyArray<Row>,
-) => {
-  for (const row of rows) {
-    if (!collection.state.has(row.id)) await persistInsert(collection, row);
-  }
-};
-
-const seedLegacySnapshot = async (
-  host: InventoryHost,
-  collections: {
-    readonly batches: InventoryCollection<BatchRow>;
-    readonly categories: InventoryCollection<CategoryRow>;
-    readonly invoiceItems: InventoryCollection<InvoiceItemRow>;
-    readonly invoices: InventoryCollection<InvoiceRow>;
-    readonly products: InventoryCollection<ProductRow>;
-    readonly stockMovements: InventoryCollection<StockMovementRow>;
-  },
-) => {
-  const legacy = await host.loadLegacyLocalSnapshot?.();
-  if (!legacy) return;
-  await seedMissingRows(collections.categories, legacy.categories);
-  await seedMissingRows(collections.products, legacy.products);
-  await seedMissingRows(collections.batches, legacy.batches);
-  await seedMissingRows(collections.invoices, legacy.invoices);
-  await seedMissingRows(collections.invoiceItems, legacy.invoiceItems);
-  await seedMissingRows(collections.stockMovements, legacy.stockMovements);
-};
+import type { Inventory } from "./types";
 
 const connectRemoteCatalog = (
   host: InventoryHost,
@@ -78,9 +41,7 @@ const connectRemoteCatalog = (
 };
 
 export const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
-  scope._tag === "Local"
-    ? "desktop-local:locked"
-    : inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
+  inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
 
 export const openInventory = async (
   host: InventoryHost,
@@ -106,17 +67,7 @@ export const openInventory = async (
       products.preload(),
       stockMovements.preload(),
     ]);
-    if (scope._tag === "Local") {
-      await seedLegacySnapshot(host, {
-        batches,
-        categories,
-        invoiceItems,
-        invoices,
-        products,
-        stockMovements,
-      });
-    }
-    if (scope._tag === "Remote") connectRemoteCatalog(host, scopeId, powerSync);
+    connectRemoteCatalog(host, scopeId, powerSync);
 
     return {
       batches,
@@ -127,14 +78,9 @@ export const openInventory = async (
       powerSync,
       products,
       stockMovements,
-      mode: scope._tag,
       dispose: async () => {
         await dbClient.cleanup();
-        if (scope._tag === "Remote") {
-          await disconnectAndClearInventoryPowerSync(powerSync);
-          return;
-        }
-        await powerSync.close();
+        await disconnectAndClearInventoryPowerSync(powerSync);
       },
     };
   } catch (cause) {

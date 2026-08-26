@@ -17,7 +17,7 @@ path.
   durable SQLite (`powersync-inventory-<hash>.sqlite`).
 - Web and Electron open `@powersync/web` plus wa-sqlite in the renderer.
   Expo opens `@powersync/react-native`. Electron main does not run PowerSync.
-  It proxies authenticated HTTP and reads the one-shot Locked `store.db`.
+  It proxies authenticated HTTP.
 - TanStack DB collections come from `@store/client-db` via
   `powerSyncCollectionOptions`. Hosts construct `PowerSyncDatabase` and
   `DbClient` only.
@@ -98,8 +98,6 @@ Ordered work before paint:
 5. `waitForFirstSync()` in the background. Loaders tolerate empty-until-live.
 
 Unsigned browser: skip forced cookie refresh when there is no session.
-Desktop Locked: open the local replica and seed from legacy `store.db`
-without connecting.
 
 Rules:
 

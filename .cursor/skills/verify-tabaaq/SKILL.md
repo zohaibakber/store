@@ -5,9 +5,9 @@ description: Drive the Tabaaq inventory web SPA the way a user does (sign-in, ca
 
 # Verify Tabaaq
 
-Tabaaq is an offline-first inventory app. The surface this skill drives is the **web SPA** at `http://127.0.0.1:5174` (TanStack Router). Other surfaces exist and are out of scope unless a feature file says otherwise: Electron (`vp run dev:desktop`, Locked guest workspace + “Continue offline”), Expo mobile, and the Cloudflare Worker API (`:8787`).
+Tabaaq is an offline-first inventory app. The surface this skill drives is the **web SPA** at `http://127.0.0.1:5174` (TanStack Router). Other surfaces exist and are out of scope unless a feature file says otherwise: Electron (`vp run dev:desktop`), Expo mobile, and the Cloudflare Worker API (`:8787`).
 
-Browser hosts require an authenticated organization before any app route. Desktop hosts allow a local Locked catalog without sign-in. Do not assume “Continue offline” exists in the browser.
+Browser and desktop hosts require an authenticated organization before any app route.
 
 Read `features/README.md`, then the matching feature file, before driving.
 

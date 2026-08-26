@@ -2,8 +2,7 @@ import { createHashHistory } from "@tanstack/react-router";
 
 import { bootstrapAuth } from "@/lib/auth";
 import { completeGoogle, reportGoogleAuthError } from "@/lib/first-party-auth";
-import type { InventoryHost, LegacyLocalInventorySnapshot } from "@/lib/inventory-host";
-import { decodeLegacyLocalInventorySnapshot } from "@/lib/legacy-local-snapshot";
+import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
 import { initClientSentry } from "@/lib/sentry";
 
@@ -11,23 +10,6 @@ import { desktopHostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 
 type InventoryHttpBridge = NonNullable<Window["inventoryHttp"]>;
-
-const emptyLegacySnapshot = (): LegacyLocalInventorySnapshot => ({
-  categories: [],
-  products: [],
-  batches: [],
-  invoices: [],
-  invoiceItems: [],
-  stockMovements: [],
-});
-
-const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot> => {
-  const bridge = window.legacyLocalInventory;
-  if (!bridge) return emptyLegacySnapshot();
-  return decodeLegacyLocalInventorySnapshot(await bridge.load(), (cause) => {
-    reportError(cause, { op: "legacy-locked-replica-decode" });
-  });
-};
 
 const aborted = (signal: AbortSignal) => {
   if (signal.reason) throw signal.reason;
@@ -80,7 +62,6 @@ const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
       const { openWebInventoryPowerSync } = await import("@/lib/inventory-powersync.web");
       return openWebInventoryPowerSync(databaseName);
     },
-    loadLegacyLocalSnapshot: loadLegacyLocalInventory,
   };
 };
 

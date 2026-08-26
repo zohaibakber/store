@@ -32,7 +32,6 @@ export type Inventory = {
   readonly powerSync: AbstractPowerSyncDatabase;
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
-  readonly mode: "Local" | "Remote";
   readonly dispose: () => Promise<void>;
 };
 

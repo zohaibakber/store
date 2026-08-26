@@ -26,7 +26,7 @@ This directory is the maintained source for verifying user-facing behavior of th
 - Record the feature ID and entry point used with every artifact.
 - Report an unreachable path with the attempted command and the unmet precondition (especially `api down` or redirect to `/sign-in`).
 - Do not report a skipped entry point as verified through a different path.
-- Do not treat desktop “Continue offline” as proof of the browser product.
+- Do not treat a skipped signed-in path as verified through the public sign-in shell.
 
 ## Feature entry contract
 

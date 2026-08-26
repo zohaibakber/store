@@ -79,10 +79,10 @@ and `vp build` (Turborepo fans them out per package).
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
   refresh and ephemeral peppers, and Google OAuth credentials. Use different
   secrets per stage. Do not commit env files or env templates.
-- **Auth gating.** The desktop renderer is gated behind sign-in/sign-up, which
-  call the backend API. End-to-end auth UI (sign up, create organization, sync)
-  needs the backend running with the credentials above. Offline, the desktop
-  still opens a local "Locked" catalog snapshot. Inventory authority is
+- **Auth gating.** The desktop renderer and the hosted SPA are gated behind
+  sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
+  create organization, sync) needs the backend running with the credentials
+  above. Inventory authority is
   Postgres. PowerSync streams organization-scoped rows into renderer SQLite
   (`@store/client-db`). D1 is auth. The organization Durable Object and
   `/api/sync/live` remain as compatibility until an explicit retirement.

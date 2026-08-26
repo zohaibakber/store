@@ -10,20 +10,14 @@ import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contrac
 
 import type { InventoryHost } from "@/lib/inventory-host";
 
-import {
-  importLocalInventory,
-  issueLocalInvoice,
-  requireNonNegativeQuantity,
-} from "./local-workspace";
-import {
-  activeRows,
-  movementRow,
-  mutationMetadata,
-  persistTogether,
-  requiredRow,
-  updatedMetadata,
-} from "./persist";
+import { activeRows, mutationMetadata, requiredRow, updatedMetadata } from "./persist";
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
+
+const requireNonNegativeQuantity = (quantity: number, label: string) => {
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    throw new Error(`${label} must be a non-negative whole number.`);
+  }
+};
 
 export const makeInventoryActions = (
   inventory: Inventory,
@@ -169,25 +163,8 @@ export const makeInventoryActions = (
       unitQuantity,
       ...mutationMetadata(actor),
     };
-    if (inventory.mode === "Local") {
-      await persistTogether(inventory, () => {
-        inventory.batches.insert(row);
-        inventory.stockMovements.insert(
-          movementRow(actor, {
-            productId: row.productId,
-            batchId: row.id,
-            invoiceId: null,
-            type: "stock_in",
-            packDelta: packQuantity,
-            unitDelta: unitQuantity,
-            note: "Initial batch stock",
-          }),
-        );
-      });
-    } else {
-      const transaction = inventory.batches.insert(row);
-      await transaction.isPersisted.promise;
-    }
+    const transaction = inventory.batches.insert(row);
+    await transaction.isPersisted.promise;
     return row;
   },
   updateBatch: async (input) => {
@@ -207,31 +184,11 @@ export const makeInventoryActions = (
       unitQuantity: input.unitQuantity ?? current.unitQuantity,
       ...metadata,
     } satisfies BatchRow);
-    const packDelta = next.packQuantity - current.packQuantity;
-    const unitDelta = next.unitQuantity - current.unitQuantity;
-    if (inventory.mode === "Local" && (packDelta !== 0 || unitDelta !== 0)) {
-      await persistTogether(inventory, () => {
-        inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
-        inventory.stockMovements.insert(
-          movementRow(actor, {
-            productId: current.productId,
-            batchId: current.id,
-            invoiceId: null,
-            type: "adjustment",
-            packDelta,
-            unitDelta,
-            note: "Stock corrected",
-          }),
-        );
-      });
-    } else {
-      const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
-      await transaction.isPersisted.promise;
-    }
+    const transaction = inventory.batches.update(input.id, (draft) => Object.assign(draft, next));
+    await transaction.isPersisted.promise;
     return next;
   },
   importInventory: async (input) => {
-    if (inventory.mode === "Local") return importLocalInventory(inventory, actor, input);
     await waitForInventoryUploadDrain(inventory.powerSync);
     const command: ImportInventoryCommand = {
       commandId: crypto.randomUUID(),
@@ -247,7 +204,6 @@ export const makeInventoryActions = (
     return result;
   },
   issueInvoice: async (input) => {
-    if (inventory.mode === "Local") return issueLocalInvoice(inventory, actor, input);
     await waitForInventoryUploadDrain(inventory.powerSync);
     const command: IssueInvoiceCommand = {
       commandId: crypto.randomUUID(),

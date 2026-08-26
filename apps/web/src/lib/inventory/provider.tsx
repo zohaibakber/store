@@ -57,7 +57,6 @@ export function InventoryProvider({
   readonly scope: HostInventoryScope;
 }) {
   const resourceKey = inventoryScopeId(host, scope);
-  const scopeTag = scope._tag;
   const organizationId = scope.organizationId;
   const userId = scope.userId;
   const [state, setState] = React.useState<InventoryState>({ _tag: "Opening" });
@@ -68,11 +67,7 @@ export function InventoryProvider({
     for (const key of Array.from(resources.keys())) {
       if (key !== resourceKey) disposeResource(key);
     }
-    const inventoryScope: HostInventoryScope =
-      scopeTag === "Local"
-        ? { _tag: "Local", organizationId: "local", userId: "local" }
-        : { _tag: "Remote", organizationId, userId };
-    const resource = resourceFor(resourceKey, () => openInventory(host, inventoryScope));
+    const resource = resourceFor(resourceKey, () => openInventory(host, scope));
     void resource.promise.then(
       (inventory) => {
         if (active) {
@@ -82,7 +77,7 @@ export function InventoryProvider({
             actions: makeInventoryActions(inventory, host, {
               organizationId,
               userId,
-              deviceId: scopeTag === "Local" ? "local" : host.deviceId,
+              deviceId: host.deviceId,
             }),
           });
         }
@@ -95,7 +90,7 @@ export function InventoryProvider({
     return () => {
       active = false;
     };
-  }, [attempt, host, organizationId, resourceKey, scopeTag, userId]);
+  }, [attempt, host, organizationId, resourceKey, scope, userId]);
 
   if (state._tag === "Error") {
     return (
