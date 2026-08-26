@@ -211,6 +211,34 @@ export const LegacyCatalogMigrationStart = Schema.Struct({
 });
 export type LegacyCatalogMigrationStart = typeof LegacyCatalogMigrationStart.Type;
 
+/** HTTP ingest only. Per-row schema runs later, 10 rows at a time, in the queue. */
+export const LegacyCatalogMigrationStartRequest = Schema.Struct({
+  requestId: LegacyCatalogMigrationStart.fields.requestId,
+  deviceId: LegacyCatalogMigrationStart.fields.deviceId,
+  occurredAt: LegacyCatalogMigrationStart.fields.occurredAt,
+  catalog: Schema.Struct({
+    categories: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+    products: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+    batches: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+    invoices: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+    invoiceItems: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+    stockMovements: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+    ),
+  }),
+});
+export type LegacyCatalogMigrationStartRequest = typeof LegacyCatalogMigrationStartRequest.Type;
+
 export const LegacyCatalogMigrationStarted = Schema.Struct({
   jobId: Identifier,
 });

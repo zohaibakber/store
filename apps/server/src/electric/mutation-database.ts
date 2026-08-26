@@ -11,6 +11,7 @@ import {
   type LegacyCatalogMigrationJobStatus,
   type LegacyCatalogMigrationResult,
   LegacyCatalogMigrationStart,
+  type LegacyCatalogMigrationStartRequest,
   type LegacyCatalogReconciliationCommand,
   type LegacyCatalogReconciliationResult,
   LEGACY_ROW_OPERATION_PREFIX,
@@ -1795,7 +1796,16 @@ export const makeInventoryImportCommandDatabase = (db: PostgresDrizzle) =>
 
 type LegacyMigrationJobRow = typeof legacyCatalogMigrationJobs.$inferSelect;
 
-const legacyMigrationTotalRows = (request: LegacyCatalogMigrationStart) =>
+const legacyMigrationTotalRows = (request: {
+  readonly catalog: {
+    readonly categories: ReadonlyArray<unknown>;
+    readonly products: ReadonlyArray<unknown>;
+    readonly batches: ReadonlyArray<unknown>;
+    readonly invoices: ReadonlyArray<unknown>;
+    readonly invoiceItems: ReadonlyArray<unknown>;
+    readonly stockMovements: ReadonlyArray<unknown>;
+  };
+}) =>
   request.catalog.categories.length +
   request.catalog.products.length +
   request.catalog.batches.length +
@@ -1831,17 +1841,17 @@ const legacyMigrationStatus = (row: LegacyMigrationJobRow): LegacyCatalogMigrati
 
 const decodeLegacyMigrationRequest = (row: LegacyMigrationJobRow) =>
   Effect.try({
-    try: () => JSON.parse(row.payload),
+    try: () => {
+      // SAFETY: start() persisted the HTTP body; migrateBatch still schema-checks each 10-row chunk.
+      return JSON.parse(row.payload) as LegacyCatalogMigrationStart;
+    },
     catch: legacyMigrationJobDatabaseError,
-  }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(LegacyCatalogMigrationStart)),
-    Effect.mapError(legacyMigrationJobDatabaseError),
-  );
+  });
 
 export const makeLegacyMigrationJobDatabase = (db: PostgresDrizzle) => {
   const start = Effect.fn("LegacyMigrationJobDatabase.start")(function* (
     actor: InventoryActor,
-    request: LegacyCatalogMigrationStart,
+    request: LegacyCatalogMigrationStartRequest,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const proposedJobId = crypto.randomUUID();

@@ -5,7 +5,7 @@ import {
   IssueInvoiceResult,
   InvoiceExtraction,
   LegacyCatalogMigrationJobStatus,
-  LegacyCatalogMigrationStart,
+  LegacyCatalogMigrationStartRequest,
   LegacyCatalogMigrationStarted,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
@@ -115,7 +115,7 @@ const electricMutations = HttpApiGroup.make("electricMutations")
   )
   .add(
     HttpApiEndpoint.post("migrateLegacyCatalog", "/api/inventory/legacy-migrations", {
-      payload: LegacyCatalogMigrationStart,
+      payload: LegacyCatalogMigrationStartRequest,
       success: LegacyCatalogMigrationStarted.pipe(HttpApiSchema.status(202)),
       error: [BadRequest, Forbidden, BadGateway],
     }).middleware(OrganizationAuth),
