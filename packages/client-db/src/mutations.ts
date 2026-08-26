@@ -17,41 +17,77 @@ import {
 import type { SyncEntityChange, SyncOperation } from "@store/contracts/sync.schema";
 import * as Schema from "effect/Schema";
 
+import {
+  failureFromUnknown,
+  InventoryFailure,
+  inventoryFailureFromHttp,
+  isAbortError,
+} from "./inventory-failure";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
 export type CatalogMutationEntity = "category" | "product" | "batch";
 export type CatalogMutationRow = BatchRow | CategoryRow | ProductRow;
 
+export {
+  catalogUploadDisposition,
+  failureFromUnknown,
+  InventoryFailure,
+  isAbortError,
+  type CatalogUploadDisposition,
+  type InventoryFailureReason,
+} from "./inventory-failure";
+
 const InventoryMutationResult = Schema.Struct({
   txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 });
 
-const apiRoot = (baseUrl: string) => {
+export const inventoryApiRoot = (baseUrl: string) => {
   const normalized = baseUrl.replace(/\/+$/u, "");
   return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
 };
 
-export class InventoryMutationRequestError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "InventoryMutationRequestError";
-    this.status = status;
+const readJsonPayload = async (response: Response): Promise<unknown> => {
+  const text = await response.text();
+  if (text.trim().length === 0) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text.trim();
   }
-}
+};
 
-/** Retry auth, timeout, rate-limit, and server failures. Other 4xx are permanent. */
-export const shouldRetryInventoryUpload = (error: InventoryMutationRequestError) =>
-  error.status === 401 || error.status === 408 || error.status === 429 || error.status >= 500;
-
-const throwIfNotOk = async (response: Response, fallback: string) => {
-  if (response.ok) return;
-  const detail = (await response.text()).trim();
-  throw new InventoryMutationRequestError(
-    response.status,
-    detail || `${fallback} (${response.status}).`,
-  );
+export const inventoryRequest = async <Result>(input: {
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+  readonly path: string;
+  readonly method?: "GET" | "POST";
+  readonly body?: unknown;
+  readonly decode: (payload: unknown) => Result;
+  readonly failureLabel: string;
+}): Promise<Result> => {
+  let response: Response;
+  try {
+    response = await input.authenticatedFetch(`${inventoryApiRoot(input.apiBaseUrl)}${input.path}`, {
+      method: input.method ?? "POST",
+      headers: input.body === undefined ? undefined : { "content-type": "application/json" },
+      body: input.body === undefined ? undefined : JSON.stringify(input.body),
+    });
+  } catch (cause) {
+    if (isAbortError(cause)) throw cause;
+    throw failureFromUnknown(cause);
+  }
+  const payload = await readJsonPayload(response);
+  if (!response.ok) {
+    throw inventoryFailureFromHttp(response.status, payload, input.failureLabel);
+  }
+  try {
+    return input.decode(payload);
+  } catch {
+    throw new InventoryFailure({
+      message: input.failureLabel,
+      reason: { _tag: "rejected", code: "INVALID_JSON_RESPONSE" },
+    });
+  }
 };
 
 const submitInventoryCommand = async <Result>(input: {
@@ -59,100 +95,87 @@ const submitInventoryCommand = async <Result>(input: {
   readonly authenticatedFetch: typeof fetch;
   readonly path: "imports" | "invoices";
   readonly command: ImportInventoryCommand | IssueInvoiceCommand;
-  readonly decode: (input: typeof Schema.Json.Type) => Result;
+  readonly decode: (input: unknown) => Result;
   readonly failureLabel: string;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/${input.path}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.command),
-    },
-  );
-  await throwIfNotOk(response, input.failureLabel);
-  return input.decode(Schema.decodeUnknownSync(Schema.Json)(await response.json()));
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: `/inventory/${input.path}`,
+    body: input.command,
+    decode: input.decode,
+    failureLabel: input.failureLabel,
+  });
 
 export const submitInventoryOperation = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly operation: SyncOperation;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/mutations`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ operation: input.operation }),
-    },
-  );
-  await throwIfNotOk(response, "Inventory mutation failed");
-  return Schema.decodeUnknownSync(InventoryMutationResult)(await response.json());
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/inventory/mutations",
+    body: { operation: input.operation },
+    decode: Schema.decodeUnknownSync(InventoryMutationResult),
+    failureLabel: "Inventory mutation failed.",
+  });
 
 export const submitLegacyCatalogMigration = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly command: LegacyCatalogMigrationStart;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migrations`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.command),
-    },
-  );
-  await throwIfNotOk(response, "Legacy inventory migration failed");
-  return Schema.decodeUnknownSync(LegacyCatalogMigrationStarted)(await response.json());
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/inventory/legacy-migrations",
+    body: input.command,
+    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationStarted),
+    failureLabel: "Legacy inventory migration failed.",
+  });
 
 export const getLegacyCatalogMigrationStatus = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly jobId: string;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migrations/${encodeURIComponent(input.jobId)}`,
-  );
-  await throwIfNotOk(response, "Legacy inventory migration status failed");
-  return Schema.decodeUnknownSync(LegacyCatalogMigrationJobStatus)(await response.json());
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: `/inventory/legacy-migrations/${encodeURIComponent(input.jobId)}`,
+    method: "GET",
+    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationJobStatus),
+    failureLabel: "Legacy inventory migration status failed.",
+  });
 
 export const submitLegacyCatalogMigrationBatch = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly command: LegacyCatalogMigrationCommand;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migration-batches`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.command),
-    },
-  );
-  await throwIfNotOk(response, "Legacy inventory migration batch failed");
-  return Schema.decodeUnknownSync(LegacyCatalogMigrationResult)(await response.json());
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/inventory/legacy-migration-batches",
+    body: input.command,
+    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationResult),
+    failureLabel: "Legacy inventory migration batch failed.",
+  });
 
 export const submitLegacyCatalogReconciliation = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly command: LegacyCatalogReconciliationCommand;
-}) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-reconciliations`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.command),
-    },
-  );
-  await throwIfNotOk(response, "Legacy inventory reconciliation failed");
-  return Schema.decodeUnknownSync(LegacyCatalogReconciliationResult)(await response.json());
-};
+}) =>
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/inventory/legacy-reconciliations",
+    body: input.command,
+    decode: Schema.decodeUnknownSync(LegacyCatalogReconciliationResult),
+    failureLabel: "Legacy inventory reconciliation failed.",
+  });
 
 export const submitCatalogRows = (input: {
   readonly apiBaseUrl: string;
@@ -197,7 +220,7 @@ export const submitIssueInvoice = async (input: {
     ...input,
     path: "invoices",
     decode: Schema.decodeUnknownSync(IssueInvoiceResult),
-    failureLabel: "Invoice creation failed",
+    failureLabel: "Invoice creation failed.",
   });
 };
 
@@ -210,5 +233,5 @@ export const submitImportInventory = async (input: {
     ...input,
     path: "imports",
     decode: Schema.decodeUnknownSync(ImportInventoryCommandResult),
-    failureLabel: "Inventory import failed",
+    failureLabel: "Inventory import failed.",
   });

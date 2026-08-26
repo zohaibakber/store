@@ -1,9 +1,10 @@
 import { UpdateType } from "@powersync/common";
 import { describe, expect, it, vi } from "vitest";
 
-import { InventoryMutationRequestError, shouldRetryInventoryUpload } from "../src/mutations";
+import { InventoryFailure } from "../src/inventory-failure";
 import {
   decodePowerSyncCatalogCrudEntry,
+  makeInventoryPowerSyncConnector,
   stampCatalogUploadRow,
   uploadInventoryCrudTransaction,
   waitForInventoryUploadDrain,
@@ -75,31 +76,17 @@ describe("PowerSync catalog upload snapshots", () => {
 });
 
 describe("PowerSync catalog upload failures", () => {
-  it("retries auth, timeout, rate-limit, and server failures", () => {
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(401, "expired"))).toBe(
-      true,
-    );
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(408, "timeout"))).toBe(
-      true,
-    );
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(429, "slow down"))).toBe(
-      true,
-    );
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(503, "down"))).toBe(true);
+  const conflictBody = JSON.stringify({
+    error: {
+      code: "ENTITY_CONFLICT",
+      message: "The entity changed before this mutation was saved.",
+    },
   });
 
-  it("does not retry other client errors", () => {
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(400, "bad"))).toBe(false);
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(403, "no"))).toBe(false);
-    expect(shouldRetryInventoryUpload(new InventoryMutationRequestError(409, "conflict"))).toBe(
-      false,
-    );
-  });
-
-  it("skips a permanent 409 and still uploads the rest of the batch", async () => {
+  it("skips ENTITY_CONFLICT and still uploads the rest of the batch", async () => {
     const authenticatedFetch = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response("conflict", { status: 409 }))
+      .mockResolvedValueOnce(new Response(conflictBody, { status: 409 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ txid: 1 }), { status: 200 }));
     const complete = vi.fn(async () => undefined);
 
@@ -124,9 +111,11 @@ describe("PowerSync catalog upload failures", () => {
   });
 
   it("leaves the queue in place when the server is down", async () => {
-    const authenticatedFetch = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "INTERNAL_SERVER_ERROR", message: "down" } }), {
+        status: 503,
+      }),
+    );
     const complete = vi.fn(async () => undefined);
 
     await expect(
@@ -137,7 +126,7 @@ describe("PowerSync catalog upload failures", () => {
           complete,
         },
       ),
-    ).rejects.toThrow(InventoryMutationRequestError);
+    ).rejects.toThrow(InventoryFailure);
     expect(complete).not.toHaveBeenCalled();
   });
 
@@ -155,7 +144,133 @@ describe("PowerSync catalog upload failures", () => {
           complete,
         },
       ),
-    ).rejects.toThrow(TypeError);
+    ).rejects.toMatchObject({ name: "InventoryFailure", reason: { _tag: "transport" } });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("retries Electron IPC network failures instead of dropping the queue", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("Error invoking remote method 'inventory:http': Failed to fetch"),
+      );
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
+      ),
+    ).rejects.toMatchObject({ name: "InventoryFailure", reason: { _tag: "transport" } });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("does not complete a 401 after refresh is exhausted", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
+        { status: 401 },
+      ),
+    );
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "InventoryFailure",
+      message: "Sign in required.",
+      reason: { _tag: "unauthenticated" },
+    });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("does not complete other permanent 4xx failures", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "ORGANIZATION_MISMATCH", message: "Wrong org." } }),
+        { status: 403 },
+      ),
+    );
+    const complete = vi.fn(async () => undefined);
+
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        },
+      ),
+    ).rejects.toMatchObject({ name: "InventoryFailure", message: "Wrong org." });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("disconnects and reports halt on 401 so PowerSync does not retry", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
+        { status: 401 },
+      ),
+    );
+    const complete = vi.fn(async () => undefined);
+    const disconnect = vi.fn(async () => undefined);
+    const onUploadHalt = vi.fn();
+    const connector = makeInventoryPowerSyncConnector({
+      apiBaseUrl: "https://api.example/api",
+      authenticatedFetch,
+      onUploadHalt,
+    });
+
+    await expect(
+      connector.uploadData({
+        getNextCrudTransaction: async () => ({
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        }),
+        disconnect,
+      } as never),
+    ).rejects.toMatchObject({
+      name: "InventoryFailure",
+      reason: { _tag: "unauthenticated" },
+    });
+    expect(onUploadHalt).toHaveBeenCalledOnce();
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("does not disconnect on transport failures so PowerSync can retry", async () => {
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const complete = vi.fn(async () => undefined);
+    const disconnect = vi.fn(async () => undefined);
+    const onUploadHalt = vi.fn();
+    const connector = makeInventoryPowerSyncConnector({
+      apiBaseUrl: "https://api.example/api",
+      authenticatedFetch,
+      onUploadHalt,
+    });
+
+    await expect(
+      connector.uploadData({
+        getNextCrudTransaction: async () => ({
+          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+          complete,
+        }),
+        disconnect,
+      } as never),
+    ).rejects.toMatchObject({ name: "InventoryFailure", reason: { _tag: "transport" } });
+    expect(onUploadHalt).not.toHaveBeenCalled();
+    expect(disconnect).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
   });
 });
