@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import { liveSocketUrl, SYNC_LIVE_PATH } from "../../src/sync/session";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
 test("liveSocketUrl upgrades http(s) and carries workspace identity", () => {
   const url = liveSocketUrl({
     baseUrl: "https://api.example.com",
