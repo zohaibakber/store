@@ -50,8 +50,18 @@ export const validatedInventoryUrl = (
   const apiPath = inventoryApiPath(apiBaseUrl);
   const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
+  const migrationStatusPrefix = `${apiPath}/inventory/legacy-migrations/`;
+  const migrationJobId = requested.pathname.startsWith(migrationStatusPrefix)
+    ? requested.pathname.slice(migrationStatusPrefix.length)
+    : "";
+  const migrationStatusAllowed =
+    migrationJobId.length > 0 &&
+    migrationJobId.length <= 200 &&
+    !migrationJobId.includes("/") &&
+    !/%(?:2f|5c)/iu.test(migrationJobId);
   const routeAllowed =
-    (request.method === "GET" && requested.pathname === credentialsPath) ||
+    (request.method === "GET" &&
+      (requested.pathname === credentialsPath || migrationStatusAllowed)) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname));
   if (
     requested.username ||
