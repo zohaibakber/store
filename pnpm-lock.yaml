@@ -315,9 +315,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@sentry/electron':
-        specifier: 7.17.0
-        version: 7.17.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
@@ -331,6 +328,9 @@ importers:
       '@electron/asar':
         specifier: ^4.3.0
         version: 4.3.0
+      '@sentry/electron':
+        specifier: 7.17.0
+        version: 7.17.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
       '@store/auth':
         specifier: workspace:*
         version: link:../../packages/auth
