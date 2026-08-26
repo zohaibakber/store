@@ -4,9 +4,13 @@ import type {
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
   IssueInvoiceResult,
+  LegacyCatalogMigrationCommand,
   LegacyCatalogMigrationJobStatus,
+  LegacyCatalogMigrationResult,
   LegacyCatalogMigrationStartRequest,
   LegacyCatalogMigrationStarted,
+  LegacyCatalogReconciliationCommand,
+  LegacyCatalogReconciliationResult,
   SyncOperation,
   WorkspaceSnapshot,
 } from "@store/contracts";
@@ -88,6 +92,22 @@ export interface ServerRuntimeContract {
   ) => Effect.Effect<
     LegacyCatalogMigrationJobStatus | null,
     InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly migrateLegacyCatalogBatch: (
+    actor: InventoryActor,
+    command: LegacyCatalogMigrationCommand,
+  ) => Effect.Effect<
+    LegacyCatalogMigrationResult,
+    InventoryProtocolError | InventoryDatabaseError,
+    RuntimeContext | Scope.Scope
+  >;
+  readonly reconcileLegacyCatalog: (
+    actor: InventoryActor,
+    command: LegacyCatalogReconciliationCommand,
+  ) => Effect.Effect<
+    LegacyCatalogReconciliationResult,
+    InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
 }

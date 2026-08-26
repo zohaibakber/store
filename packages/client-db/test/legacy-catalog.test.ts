@@ -1,6 +1,6 @@
 import {
   LegacyBatchMigrationRow,
-  LegacyCatalogMigrationStart,
+  LegacyCatalogMigrationCommand,
   LegacyCategoryMigrationRow,
   LegacyProductMigrationRow,
 } from "@store/contracts";
@@ -60,61 +60,53 @@ const batchRow = (id: string, productId: string): LegacyBatchMigrationRow =>
     updatedAt: 1,
   });
 
-const jsonResponse = (body: typeof Schema.Json.Type) =>
+const jsonResponse = (body: typeof Schema.Json.Type, status = 200) =>
   new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   });
 
-const readCommand = async (request: Request) =>
-  Schema.decodeUnknownSync(LegacyCatalogMigrationStart)(
-    Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await request.text())),
-  );
-
 const migrationServer = () => {
-  const migrations: LegacyCatalogMigrationStart[] = [];
-  let statusReads = 0;
+  const batches: LegacyCatalogMigrationCommand[] = [];
+  let reconciliations = 0;
   const authenticatedFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
-    if (request.method === "GET") {
-      statusReads += 1;
-      return statusReads === 1
-        ? jsonResponse({
-            status: "migrating",
-            phase: "products",
-            jobId: "job-1",
-            processedRows: 1,
-            totalRows: 3,
-            importedRows: 1,
-            skippedRows: 0,
-            progress: 33,
-          })
-        : jsonResponse({
-            status: "succeeded",
-            phase: "complete",
-            jobId: "job-1",
-            processedRows: 3,
-            totalRows: 3,
-            importedRows: 3,
-            skippedRows: 0,
-            progress: 100,
-          });
+    const url = new URL(request.url);
+    const body = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await request.text()));
+    if (url.pathname.endsWith("/legacy-migration-batches")) {
+      const command = Schema.decodeUnknownSync(LegacyCatalogMigrationCommand)(body);
+      batches.push(command);
+      return jsonResponse({
+        imported: command.rows.length,
+        skipped: 0,
+        txid: batches.length,
+      });
     }
-    const command = await readCommand(request);
-    migrations.push(command);
-    return jsonResponse({ jobId: "job-1" });
+    if (url.pathname.endsWith("/legacy-reconciliations")) {
+      reconciliations += 1;
+      return jsonResponse({
+        deletedCategories: 0,
+        deletedProducts: 0,
+        deletedBatches: 0,
+        deletedInvoices: 0,
+        deletedInvoiceItems: 0,
+        deletedStockMovements: 0,
+        txid: 99,
+      });
+    }
+    return jsonResponse({ error: "unexpected" }, 404);
   };
   return {
     authenticatedFetch,
-    migrations,
-    get statusReads() {
-      return statusReads;
+    batches,
+    get reconciliations() {
+      return reconciliations;
     },
   };
 };
 
 describe("legacy catalog upload", () => {
-  it("starts one queued job and polls until Neon migration succeeds", async () => {
+  it("writes catalog chunks then reconciles without a queue job", async () => {
     const server = migrationServer();
     const progress: LegacyMigrationProgress[] = [];
 
@@ -128,34 +120,26 @@ describe("legacy catalog upload", () => {
         products: [productRow(1), productRow(2)],
       },
       onProgress: (status) => progress.push(status),
-      pollIntervalMs: 0,
     });
 
-    expect(server.migrations).toHaveLength(1);
-    expect(server.migrations[0]?.requestId).toBe("legacy-catalog:v3:device-1");
-    expect(server.migrations[0]?.catalog.categories).toHaveLength(1);
-    expect(server.migrations[0]?.catalog.products).toHaveLength(2);
-    expect(server.statusReads).toBe(2);
-    expect(progress.map((status) => status.status)).toEqual(["queued", "migrating", "succeeded"]);
+    expect(server.batches.map((batch) => batch.kind)).toEqual(["categories", "products"]);
+    expect(server.batches[0]?.rows).toHaveLength(1);
+    expect(server.batches[1]?.rows).toHaveLength(2);
+    expect(server.reconciliations).toBe(1);
+    expect(progress.map((status) => status.status)).toEqual([
+      "queued",
+      "migrating",
+      "migrating",
+      "migrating",
+      "succeeded",
+    ]);
   });
 
-  it("surfaces the terminal failed state from the worker", async () => {
+  it("surfaces a failed catalog batch", async () => {
     let calls = 0;
-    const authenticatedFetch: typeof fetch = async (input, init) => {
+    const authenticatedFetch: typeof fetch = async () => {
       calls += 1;
-      const request = new Request(input, init);
-      if (request.method === "POST") return jsonResponse({ jobId: "job-failed" });
-      return jsonResponse({
-        status: "failed",
-        phase: "products",
-        jobId: "job-failed",
-        processedRows: 1,
-        totalRows: 3,
-        importedRows: 1,
-        skippedRows: 0,
-        progress: 33,
-        error: "Neon rejected the product batch.",
-      });
+      return new Response("Neon rejected the product batch.", { status: 400 });
     };
 
     await expect(
@@ -168,10 +152,9 @@ describe("legacy catalog upload", () => {
           categories: [categoryRow("medicine")],
           products: [productRow(1), productRow(2)],
         },
-        pollIntervalMs: 0,
       }),
     ).rejects.toThrow("Neon rejected the product batch.");
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
   });
 
   it("does not create a job for an empty local catalog", async () => {

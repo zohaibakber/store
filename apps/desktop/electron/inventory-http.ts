@@ -38,6 +38,7 @@ export const INVENTORY_COMMAND_PATHS = [
   "invoices",
   "imports",
   "legacy-migrations",
+  "legacy-migration-batches",
   "legacy-reconciliations",
 ] as const;
 

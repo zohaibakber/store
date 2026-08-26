@@ -124,6 +124,42 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
             notFound("LEGACY_MIGRATION_NOT_FOUND", "Migration job not found."),
           );
         }),
+      )
+      .handle(
+        "migrateLegacyCatalogBatch",
+        Effect.fn("ElectricMutationHandlers.migrateLegacyCatalogBatch")(function* ({ payload }) {
+          const identity = yield* CurrentOrganization;
+          yield* requireLegacyCatalogAdmin(identity);
+          return yield* runtime
+            .migrateLegacyCatalogBatch(
+              { organizationId: identity.organizationId, userId: identity.user.id },
+              payload,
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                error._tag === "InventoryProtocolError" ? mutationProtocolError(error) : error,
+              ),
+              Effect.catchTag("InventoryDatabaseError", Effect.die),
+            );
+        }),
+      )
+      .handle(
+        "reconcileLegacyCatalog",
+        Effect.fn("ElectricMutationHandlers.reconcileLegacyCatalog")(function* ({ payload }) {
+          const identity = yield* CurrentOrganization;
+          yield* requireLegacyCatalogAdmin(identity);
+          return yield* runtime
+            .reconcileLegacyCatalog(
+              { organizationId: identity.organizationId, userId: identity.user.id },
+              payload,
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                error._tag === "InventoryProtocolError" ? mutationProtocolError(error) : error,
+              ),
+              Effect.catchTag("InventoryDatabaseError", Effect.die),
+            );
+        }),
       );
   }),
 );
