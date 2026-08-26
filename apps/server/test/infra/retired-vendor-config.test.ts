@@ -42,36 +42,17 @@ const forbiddenPackages = [
   "@tanstack/electric-db-collection",
 ];
 const leftoverEnvName = /\b(?:CLERK_|ELECTRIC_|VITE_CLERK|EXPO_PUBLIC_CLERK)[A-Z0-9_]*/u;
-const dependencyFields = [
-  "dependencies",
-  "devDependencies",
-  "optionalDependencies",
-  "peerDependencies",
-] as const;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object";
 
 const readRepo = (path: string) => readFileSync(`${repoRoot}${path}`, "utf8");
-
-const dependencyNames = (manifestPath: string) => {
-  const manifest: unknown = JSON.parse(readRepo(manifestPath));
-  if (!isRecord(manifest)) {
-    throw new Error(`${manifestPath} is not a JSON object.`);
-  }
-  return dependencyFields.flatMap((field) => {
-    const value = manifest[field];
-    if (!isRecord(value)) return [];
-    return Object.keys(value);
-  });
-};
 
 describe("retired Clerk and Electric config", () => {
   it("keeps Clerk and Electric client packages out of workspace manifests", () => {
     for (const manifestPath of packageManifests) {
-      const names = dependencyNames(manifestPath);
-      expect(names.filter((name) => name.startsWith("@clerk/"))).toEqual([]);
-      expect(names.filter((name) => forbiddenPackages.includes(name))).toEqual([]);
+      const text = readRepo(manifestPath);
+      expect(text.includes('"@clerk/')).toBe(false);
+      for (const forbidden of forbiddenPackages) {
+        expect(text.includes(`"${forbidden}"`)).toBe(false);
+      }
     }
   });
 
@@ -79,7 +60,8 @@ describe("retired Clerk and Electric config", () => {
     for (const path of configFiles) {
       const text = readRepo(path);
       expect(text.match(leftoverEnvName)).toBeNull();
-      for (const forbidden of [...forbiddenPackages, "@clerk/"]) {
+      expect(text.includes("@clerk/")).toBe(false);
+      for (const forbidden of forbiddenPackages) {
         expect(text.includes(forbidden)).toBe(false);
       }
     }
