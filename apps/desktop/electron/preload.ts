@@ -18,21 +18,11 @@ import {
   type InventoryHttpBridge,
 } from "./inventory-http-channels";
 import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
-import {
-  TANSTACK_DB_PERSISTENCE_CHANNEL,
-  type TanStackDbPersistenceBridge,
-} from "./tanstack-db-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
   ...args: Arguments
 ): Promise<Result> => ipcRenderer.invoke(channel, ...args);
-
-const tanstackDbPersistence: TanStackDbPersistenceBridge = {
-  invoke: (request) => ipcRenderer.invoke(TANSTACK_DB_PERSISTENCE_CHANNEL, request),
-};
-
-contextBridge.exposeInMainWorld("tanstackDbPersistence", tanstackDbPersistence);
 
 contextBridge.exposeInMainWorld("legacyLocalInventory", {
   load: (): Promise<JsonApiResponse> => ipcRenderer.invoke(LEGACY_LOCAL_INVENTORY_CHANNEL),

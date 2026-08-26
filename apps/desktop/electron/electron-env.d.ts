@@ -12,7 +12,6 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import type { JsonApiResponse } from "@store/workspace";
 
 import type { InventoryHttpBridge } from "./inventory-http-channels";
-import type { TanStackDbPersistenceBridge } from "./tanstack-db-channels";
 
 declare global {
   namespace NodeJS {
@@ -25,7 +24,6 @@ declare global {
 
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
-    tanstackDbPersistence?: TanStackDbPersistenceBridge;
     legacyLocalInventory?: {
       load: () => Promise<JsonApiResponse>;
     };

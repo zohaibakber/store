@@ -346,6 +346,8 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
   token storage out of React components.
 - Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
   development uses an unprefixed cookie because the prefix requires `Secure`.
+- The auth database keeps the old organization-binding table until a dedicated
+  migration drops it. No runtime code reads it.
 - Registration and Google sign-up still create one owner organization. That
   store can invite members and manage roles through `/v1/organization`. Creating
   additional organizations, or switching among them, is intentionally absent.

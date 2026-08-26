@@ -38,7 +38,7 @@ const mutableMetadata = {
 };
 
 /**
- * Durable acknowledgement for a client mutation.
+ * Durable acknowledgement for an Electric-backed client mutation.
  *
  * A browser can lose the HTTP response after Postgres commits and replay the
  * same optimistic transaction after a restart. The payload hash rejects an

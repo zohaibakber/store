@@ -27,10 +27,6 @@ import { isAllowedRendererNavigation } from "./renderer-navigation";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { makeShutdownCoordinator } from "./shutdown";
-import {
-  openDesktopTanStackDbPersistence,
-  type DesktopTanStackDbPersistence,
-} from "./tanstack-db-persistence";
 import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,7 +57,6 @@ initDesktopSentry();
 
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
-let tanstackDbPersistence: DesktopTanStackDbPersistence | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
 let disposeLegacyLocalInventory: (() => void) | undefined;
 
@@ -326,7 +321,6 @@ const shutdown = makeShutdownCoordinator({
   dispose: async () => {
     const results = await Promise.allSettled([
       disposeUpdater?.(),
-      tanstackDbPersistence?.dispose(),
       Promise.resolve(disposeInventoryHttp?.()),
       Promise.resolve(disposeLegacyLocalInventory?.()),
     ]);
@@ -376,10 +370,6 @@ void app.whenReady().then(async () => {
     contentSecurityPolicy: rendererCsp,
   });
   registerRendererCsp();
-  tanstackDbPersistence = await openDesktopTanStackDbPersistence({
-    ipcMain,
-    userDataPath: app.getPath("userData"),
-  });
   const deviceId = await loadDeviceId();
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
