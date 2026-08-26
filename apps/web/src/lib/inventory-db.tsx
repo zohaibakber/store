@@ -493,7 +493,6 @@ const acquireInventory = (key: string, open: () => Promise<Inventory>): Inventor
   };
 };
 
-/** Drops a failed open so the next mount runs it again from the start. */
 const forgetInventory = (key: string) => {
   const resource = resources.get(key);
   if (!resource) return;

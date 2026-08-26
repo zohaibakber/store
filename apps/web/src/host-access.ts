@@ -1,14 +1,9 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 
-/** Where the user is trying to go, stripped to what access needs. */
 export interface AccessLocation {
   readonly pathname: string;
 }
 
-/**
- * Outcome of one admit() call. Completes the host decision in one step —
- * callers do not classify routes, then check auth, then pick a URL.
- */
 export type AccessVerdict =
   | { readonly _tag: "Allow" }
   | {
@@ -19,15 +14,11 @@ export type AccessVerdict =
 
 export type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
-/** Signed organization inventory. Desktop does not open a guest catalog. */
 export type HostInventoryScope = {
   readonly organizationId: string;
   readonly userId: string;
 };
 
-/**
- * Host access policy. Injected at Electron bootstrap. Routes stay host-blind.
- */
 export interface HostAccessPolicy {
   readonly admit: (input: {
     readonly location: AccessLocation;
@@ -36,7 +27,6 @@ export interface HostAccessPolicy {
 
   readonly chrome: (input: AccessLocation) => AppChrome;
 
-  /** Resolves the inventory workspace for this session, or null until signed in. */
   readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => HostInventoryScope | null;
 }
 
@@ -60,7 +50,6 @@ const remoteInventoryScope = (snapshot: WorkspaceSnapshot | null): HostInventory
 const bareChrome = (input: AccessLocation): AppChrome =>
   BARE_PATHS.has(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
 
-/** Desktop: app routes require an authenticated workspace. */
 export const desktopHostAccess = (): HostAccessPolicy => ({
   chrome: bareChrome,
   inventoryScope: remoteInventoryScope,

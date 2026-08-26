@@ -19,7 +19,6 @@ export interface AuthSessionBridge {
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
-  /** Bearer-authenticated store API when the host exposes it. Electron uses IPC. */
   readonly apiRequest?: (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 }

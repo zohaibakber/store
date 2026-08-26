@@ -1,11 +1,11 @@
 /**
  * Production hostnames for auth (`auth.` subdomain) and API (`api.` subdomain).
  *
- * Site hostname precedence: `PRODUCTION_DOMAIN`, then the first
+ * Root hostname precedence: `PRODUCTION_DOMAIN`, then the first
  * `AUTH_TRUSTED_ORIGINS` host, then the parent of an `api.*` `VITE_API_URL`.
  *
  * API hostname precedence: `PRODUCTION_API_DOMAIN`, then `VITE_API_URL` when it
- * is not the site host, then `api.${site}`. There is no baked product domain.
+ * is not the root host, then `api.${root}`. There is no baked product domain.
  */
 export const PRODUCTION_DOMAIN_MISSING_MESSAGE =
   "Production hostname is not configured. Set PRODUCTION_DOMAIN (hostname only, e.g. example.com) on the Production GitHub Environment.";

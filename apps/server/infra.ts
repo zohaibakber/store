@@ -175,7 +175,7 @@ export const ApiLive = Api.make(
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
       // Kept only for already-deployed clients during the migration window.
-      // New web, mobile, and desktop clients use Postgres through PowerSync.
+      // New desktop and mobile clients use Postgres through PowerSync.
       connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
       writeInventoryMutation: inventoryMutations.write,
       importInventory: inventoryMutations.importInventory,
