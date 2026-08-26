@@ -15,13 +15,13 @@
     "test": "vitest run --root ../.. apps/desktop/test"
   },
   "dependencies": {
-    "@sentry/electron": "7.17.0",
     "better-sqlite3": "^12.11.1",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@electron/asar": "^4.3.0",
+    "@sentry/electron": "7.17.0",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/workspace": "workspace:*",
