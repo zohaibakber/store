@@ -21,6 +21,12 @@ describe("desktop inventory HTTP allowlist", () => {
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "POST",
+        url: "https://api.tabaaq.app/api/inventory/legacy-migration-batches",
+      }),
+    ).toBe("https://api.tabaaq.app/api/inventory/legacy-migration-batches");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
         url: "https://api.tabaaq.app/api/inventory/legacy-reconciliations",
       }),
     ).toBe("https://api.tabaaq.app/api/inventory/legacy-reconciliations");

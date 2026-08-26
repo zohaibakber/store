@@ -1,6 +1,10 @@
 import {
+  LegacyCatalogMigrationCommand,
   LegacyCatalogMigrationJobStatus,
+  LegacyCatalogMigrationResult,
   LegacyCatalogMigrationStarted,
+  LegacyCatalogReconciliationCommand,
+  LegacyCatalogReconciliationResult,
   type LegacyCatalogMigrationStart,
 } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
@@ -114,6 +118,40 @@ export const getLegacyCatalogMigrationStatus = async (input: {
   );
   await throwIfNotOk(response, "Legacy inventory migration status failed");
   return Schema.decodeUnknownSync(LegacyCatalogMigrationJobStatus)(await response.json());
+};
+
+export const submitLegacyCatalogMigrationBatch = async (input: {
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+  readonly command: LegacyCatalogMigrationCommand;
+}) => {
+  const response = await input.authenticatedFetch(
+    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migration-batches`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input.command),
+    },
+  );
+  await throwIfNotOk(response, "Legacy inventory migration batch failed");
+  return Schema.decodeUnknownSync(LegacyCatalogMigrationResult)(await response.json());
+};
+
+export const submitLegacyCatalogReconciliation = async (input: {
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+  readonly command: LegacyCatalogReconciliationCommand;
+}) => {
+  const response = await input.authenticatedFetch(
+    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-reconciliations`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input.command),
+    },
+  );
+  await throwIfNotOk(response, "Legacy inventory reconciliation failed");
+  return Schema.decodeUnknownSync(LegacyCatalogReconciliationResult)(await response.json());
 };
 
 export const submitCatalogRows = (input: {

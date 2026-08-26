@@ -281,6 +281,8 @@ export const ApiLive = Api.make(
           ),
         ),
       getLegacyCatalogMigration: electricMutations.legacyMigrationJobs.getStatus,
+      migrateLegacyCatalogBatch: electricMutations.migrateLegacyCatalog,
+      reconcileLegacyCatalog: electricMutations.reconcileLegacyCatalog,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),

@@ -1,14 +1,23 @@
 import {
+  chunkLegacyMigrationRows,
+  MAX_LEGACY_MIGRATION_ROWS,
+  type LegacyCatalogMigrationCommand,
   type LegacyCatalogMigrationData,
   type LegacyCatalogMigrationJobStatus,
 } from "@store/contracts";
 
-import { getLegacyCatalogMigrationStatus, submitLegacyCatalogMigration } from "./mutations";
+import {
+  InventoryMutationRequestError,
+  shouldRetryInventoryUpload,
+  submitLegacyCatalogMigrationBatch,
+  submitLegacyCatalogReconciliation,
+} from "./mutations";
 
 export const LEGACY_CATALOG_REQUEST_TIMEOUT_MS = 60_000;
 export const LEGACY_CATALOG_FIRST_SYNC_TIMEOUT_MS = 300_000;
 export const LEGACY_CATALOG_JOB_TIMEOUT_MS = 15 * 60_000;
 export const LEGACY_CATALOG_POLL_INTERVAL_MS = 1_000;
+const LEGACY_CATALOG_BATCH_ATTEMPTS = 4;
 
 export type LegacyMigrationCatalog = LegacyCatalogMigrationData;
 export type LegacyMigrationProgress = LegacyCatalogMigrationJobStatus;
@@ -16,8 +25,8 @@ export type LegacyMigrationProgress = LegacyCatalogMigrationJobStatus;
 const catalogSize = (catalog: LegacyMigrationCatalog) =>
   catalog.categories.length +
   catalog.products.length +
-  catalog.batches.length +
   catalog.invoices.length +
+  catalog.batches.length +
   catalog.invoiceItems.length +
   catalog.stockMovements.length;
 
@@ -70,6 +79,122 @@ const wait = (duration: number) =>
     setTimeout(resolve, duration);
   });
 
+const withInventoryRetry = async <Value>(run: () => Promise<Value>) => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < LEGACY_CATALOG_BATCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof InventoryMutationRequestError) || !shouldRetryInventoryUpload(error)) {
+        throw error;
+      }
+      await wait(500 * 2 ** attempt);
+    }
+  }
+  throw lastError;
+};
+
+const commandId = (deviceId: string, kind: LegacyCatalogMigrationCommand["kind"], index: number) =>
+  `legacy-http:v4:${deviceId}:${kind}:${index}`;
+
+const commandsFor = (
+  catalog: LegacyMigrationCatalog,
+  deviceId: string,
+  occurredAt: number,
+): ReadonlyArray<LegacyCatalogMigrationCommand> => {
+  const chunk = <Row>(rows: ReadonlyArray<Row>) =>
+    chunkLegacyMigrationRows(rows, MAX_LEGACY_MIGRATION_ROWS);
+  return [
+    ...chunk(catalog.categories).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "categories",
+      commandId: commandId(deviceId, "categories", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+    ...chunk(catalog.products).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "products",
+      commandId: commandId(deviceId, "products", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+    ...chunk(catalog.batches).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "batches",
+      commandId: commandId(deviceId, "batches", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+    ...chunk(catalog.invoices).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "invoices",
+      commandId: commandId(deviceId, "invoices", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+    ...chunk(catalog.invoiceItems).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "invoice-items",
+      commandId: commandId(deviceId, "invoice-items", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+    ...chunk(catalog.stockMovements).map((rows, index): LegacyCatalogMigrationCommand => ({
+      kind: "stock-movements",
+      commandId: commandId(deviceId, "stock-movements", index),
+      deviceId,
+      occurredAt,
+      rows,
+    })),
+  ];
+};
+
+const progressFor = (input: {
+  readonly jobId: string;
+  readonly phase: LegacyCatalogMigrationJobStatus["phase"];
+  readonly status: LegacyCatalogMigrationJobStatus["status"];
+  readonly processedRows: number;
+  readonly totalRows: number;
+  readonly importedRows: number;
+  readonly skippedRows: number;
+  readonly error?: string;
+}): LegacyMigrationProgress => {
+  const progress = {
+    jobId: input.jobId,
+    processedRows: input.processedRows,
+    totalRows: input.totalRows,
+    importedRows: input.importedRows,
+    skippedRows: input.skippedRows,
+    progress:
+      input.status === "succeeded"
+        ? 100
+        : input.totalRows === 0
+          ? 0
+          : Math.min(99, Math.floor((input.processedRows / input.totalRows) * 100)),
+  };
+  if (input.status === "failed") {
+    return {
+      status: "failed",
+      phase: input.phase === "queued" || input.phase === "complete" ? "products" : input.phase,
+      error: input.error ?? "Migration failed.",
+      ...progress,
+    };
+  }
+  if (input.status === "succeeded") {
+    return { status: "succeeded", phase: "complete", ...progress };
+  }
+  if (input.status === "queued") {
+    return { status: "queued", phase: "queued", ...progress };
+  }
+  return {
+    status: "migrating",
+    phase: input.phase === "queued" || input.phase === "complete" ? "categories" : input.phase,
+    ...progress,
+  };
+};
+
 export const migrateLegacyCatalog = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
@@ -84,51 +209,85 @@ export const migrateLegacyCatalog = async (input: {
   if (totalRows === 0) return;
   const occurredAt = Date.now();
   const authenticatedFetch = timedFetch(input.authenticatedFetch);
-  const started = await submitLegacyCatalogMigration({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch,
-    command: {
-      requestId: `legacy-catalog:v3:${input.deviceId}`,
-      deviceId: input.deviceId,
-      occurredAt,
-      catalog,
-    },
-  });
-  input.onProgress?.({
-    status: "queued",
-    phase: "queued",
-    jobId: started.jobId,
-    processedRows: 0,
-    totalRows,
-    importedRows: 0,
-    skippedRows: 0,
-    progress: 0,
-  });
+  const jobId = `legacy-http:v4:${input.deviceId}`;
+  const commands = commandsFor(catalog, input.deviceId, occurredAt);
+  let processedRows = 0;
+  let importedRows = 0;
+  let skippedRows = 0;
+  input.onProgress?.(
+    progressFor({
+      jobId,
+      phase: "queued",
+      status: "queued",
+      processedRows,
+      totalRows,
+      importedRows,
+      skippedRows,
+    }),
+  );
 
-  const deadline = Date.now() + (input.jobTimeoutMs ?? LEGACY_CATALOG_JOB_TIMEOUT_MS);
-  while (Date.now() <= deadline) {
-    const status = await getLegacyCatalogMigrationStatus({
+  for (const command of commands) {
+    const result = await withInventoryRetry(() =>
+      submitLegacyCatalogMigrationBatch({
+        apiBaseUrl: input.apiBaseUrl,
+        authenticatedFetch,
+        command,
+      }),
+    );
+    processedRows += command.rows.length;
+    importedRows += result.imported;
+    skippedRows += result.skipped;
+    input.onProgress?.(
+      progressFor({
+        jobId,
+        phase: command.kind,
+        status: "migrating",
+        processedRows,
+        totalRows,
+        importedRows,
+        skippedRows,
+      }),
+    );
+  }
+
+  input.onProgress?.(
+    progressFor({
+      jobId,
+      phase: "reconcile",
+      status: "migrating",
+      processedRows,
+      totalRows,
+      importedRows,
+      skippedRows,
+    }),
+  );
+  await withInventoryRetry(() =>
+    submitLegacyCatalogReconciliation({
       apiBaseUrl: input.apiBaseUrl,
       authenticatedFetch,
-      jobId: started.jobId,
-    });
-    input.onProgress?.(status);
-    switch (status.status) {
-      case "queued":
-      case "migrating":
-        await wait(input.pollIntervalMs ?? LEGACY_CATALOG_POLL_INTERVAL_MS);
-        break;
-      case "succeeded":
-        return status;
-      case "failed":
-        throw new Error(status.error);
-      default: {
-        const _exhaustive: never = status;
-        return _exhaustive;
-      }
-    }
-  }
-  throw new Error("Inventory migration is still running. Reopen the app to check its progress.");
+      command: {
+        deviceId: input.deviceId,
+        occurredAt,
+        categoryIds: catalog.categories.map((row) => row.id),
+        productIds: catalog.products.map((row) => row.id),
+        batchIds: catalog.batches.map((row) => row.id),
+        invoiceIds: catalog.invoices.map((row) => row.id),
+        invoiceItemIds: catalog.invoiceItems.map((row) => row.id),
+        stockMovementIds: catalog.stockMovements.map((row) => row.id),
+      },
+    }),
+  );
+  const succeeded = progressFor({
+    jobId,
+    phase: "complete",
+    status: "succeeded",
+    processedRows,
+    totalRows,
+    importedRows,
+    skippedRows,
+  });
+  input.onProgress?.(succeeded);
+  return succeeded;
 };
 
 export const waitForInventoryFirstSync = async (
