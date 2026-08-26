@@ -90,7 +90,8 @@ export const LegacyStockMovementMigrationRow = Schema.Struct({
 export type LegacyStockMovementMigrationRow = typeof LegacyStockMovementMigrationRow.Type;
 
 export const MAX_LEGACY_MIGRATION_ROWS = 250;
-/** Client POST size. 25-row batch chunks still trip Worker CPU on large catalogs. */
+export const MAX_LEGACY_MIGRATION_TABLE_ROWS = 5_000;
+/** Queue-consumer write size. Keep each Neon transaction inside the Worker CPU budget. */
 export const LEGACY_MIGRATION_CHUNK_ROWS = 10;
 
 export const LEGACY_ROW_OPERATION_PREFIX = "legacy-row:v1:";
@@ -179,6 +180,88 @@ export const LegacyCatalogMigrationResult = Schema.Struct({
   txid: PositiveTimestamp,
 });
 export type LegacyCatalogMigrationResult = typeof LegacyCatalogMigrationResult.Type;
+
+export const LegacyCatalogMigrationData = Schema.Struct({
+  categories: Schema.Array(LegacyCategoryMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+  products: Schema.Array(LegacyProductMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+  batches: Schema.Array(LegacyBatchMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+  invoices: Schema.Array(LegacyInvoiceMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+  invoiceItems: Schema.Array(LegacyInvoiceItemMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+  stockMovements: Schema.Array(LegacyStockMovementMigrationRow).check(
+    Schema.isMaxLength(MAX_LEGACY_MIGRATION_TABLE_ROWS),
+  ),
+});
+export type LegacyCatalogMigrationData = typeof LegacyCatalogMigrationData.Type;
+
+export const LegacyCatalogMigrationStart = Schema.Struct({
+  requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(250)),
+  deviceId: Identifier,
+  occurredAt: PositiveTimestamp,
+  catalog: LegacyCatalogMigrationData,
+});
+export type LegacyCatalogMigrationStart = typeof LegacyCatalogMigrationStart.Type;
+
+export const LegacyCatalogMigrationStarted = Schema.Struct({
+  jobId: Identifier,
+});
+export type LegacyCatalogMigrationStarted = typeof LegacyCatalogMigrationStarted.Type;
+
+export const LegacyCatalogMigrationPhase = Schema.Literals([
+  "queued",
+  "categories",
+  "products",
+  "batches",
+  "invoices",
+  "invoice-items",
+  "stock-movements",
+  "reconcile",
+  "complete",
+]);
+export type LegacyCatalogMigrationPhase = typeof LegacyCatalogMigrationPhase.Type;
+
+const jobProgressFields = {
+  jobId: Identifier,
+  processedRows: NonNegativeInteger,
+  totalRows: NonNegativeInteger,
+  importedRows: NonNegativeInteger,
+  skippedRows: NonNegativeInteger,
+  progress: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(100)),
+};
+
+export const LegacyCatalogMigrationJobStatus = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("queued"),
+    phase: Schema.Literal("queued"),
+    ...jobProgressFields,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("migrating"),
+    phase: LegacyCatalogMigrationPhase,
+    ...jobProgressFields,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("succeeded"),
+    phase: Schema.Literal("complete"),
+    ...jobProgressFields,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("failed"),
+    phase: LegacyCatalogMigrationPhase,
+    error: Schema.String.check(Schema.isMinLength(1)),
+    ...jobProgressFields,
+  }),
+]);
+export type LegacyCatalogMigrationJobStatus = typeof LegacyCatalogMigrationJobStatus.Type;
 
 export const LegacyCatalogReconciliationCommand = Schema.Struct({
   deviceId: Identifier,

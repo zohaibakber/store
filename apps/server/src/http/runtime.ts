@@ -4,10 +4,9 @@ import type {
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
   IssueInvoiceResult,
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogReconciliationCommand,
-  LegacyCatalogReconciliationResult,
+  LegacyCatalogMigrationJobStatus,
+  LegacyCatalogMigrationStart,
+  LegacyCatalogMigrationStarted,
   SyncOperation,
   WorkspaceSnapshot,
 } from "@store/contracts";
@@ -21,6 +20,7 @@ import type * as HttpServerResponse from "effect/unstable/http/HttpServerRespons
 
 import type { AuthError } from "../auth/session";
 import type { ElectricMutationResult } from "../electric/mutation-database";
+import type { LegacyMigrationQueueError } from "../electric/legacy-migration-worker";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
 
@@ -74,20 +74,20 @@ export interface ServerRuntimeContract {
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
-  readonly migrateLegacyCatalog: (
+  readonly startLegacyCatalogMigration: (
     actor: InventoryActor,
-    command: LegacyCatalogMigrationCommand,
+    command: LegacyCatalogMigrationStart,
   ) => Effect.Effect<
-    LegacyCatalogMigrationResult,
-    InventoryProtocolError | InventoryDatabaseError,
+    LegacyCatalogMigrationStarted,
+    InventoryDatabaseError | LegacyMigrationQueueError,
     RuntimeContext | Scope.Scope
   >;
-  readonly reconcileLegacyCatalog: (
+  readonly getLegacyCatalogMigration: (
     actor: InventoryActor,
-    command: LegacyCatalogReconciliationCommand,
+    jobId: string,
   ) => Effect.Effect<
-    LegacyCatalogReconciliationResult,
-    InventoryProtocolError | InventoryDatabaseError,
+    LegacyCatalogMigrationJobStatus | null,
+    InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
 }

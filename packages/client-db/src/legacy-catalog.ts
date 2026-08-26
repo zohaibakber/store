@@ -1,36 +1,17 @@
 import {
-  chunkLegacyMigrationRows,
-  type LegacyBatchMigrationRow,
-  type LegacyCatalogMigrationCommand,
-  type LegacyCategoryMigrationRow,
-  type LegacyInvoiceItemMigrationRow,
-  type LegacyInvoiceMigrationRow,
-  type LegacyProductMigrationRow,
-  type LegacyStockMovementMigrationRow,
+  type LegacyCatalogMigrationData,
+  type LegacyCatalogMigrationJobStatus,
 } from "@store/contracts";
 
-import { submitLegacyCatalogMigration, submitLegacyCatalogReconciliation } from "./mutations";
+import { getLegacyCatalogMigrationStatus, submitLegacyCatalogMigration } from "./mutations";
 
 export const LEGACY_CATALOG_REQUEST_TIMEOUT_MS = 60_000;
 export const LEGACY_CATALOG_FIRST_SYNC_TIMEOUT_MS = 300_000;
+export const LEGACY_CATALOG_JOB_TIMEOUT_MS = 15 * 60_000;
+export const LEGACY_CATALOG_POLL_INTERVAL_MS = 1_000;
 
-export interface LegacyMigrationCatalog {
-  readonly categories: ReadonlyArray<LegacyCategoryMigrationRow>;
-  readonly products: ReadonlyArray<LegacyProductMigrationRow>;
-  readonly batches: ReadonlyArray<LegacyBatchMigrationRow>;
-  readonly invoices: ReadonlyArray<LegacyInvoiceMigrationRow>;
-  readonly invoiceItems: ReadonlyArray<LegacyInvoiceItemMigrationRow>;
-  readonly stockMovements: ReadonlyArray<LegacyStockMovementMigrationRow>;
-}
-
-/** Upload order. A row is never sent before the rows it points at. */
-export type LegacyMigrationStep = LegacyCatalogMigrationCommand["kind"] | "reconcile";
-
-export interface LegacyMigrationProgress {
-  readonly step: LegacyMigrationStep;
-  readonly uploadedRows: number;
-  readonly totalRows: number;
-}
+export type LegacyMigrationCatalog = LegacyCatalogMigrationData;
+export type LegacyMigrationProgress = LegacyCatalogMigrationJobStatus;
 
 const catalogSize = (catalog: LegacyMigrationCatalog) =>
   catalog.categories.length +
@@ -84,84 +65,10 @@ const timedFetch =
       signal: AbortSignal.timeout(LEGACY_CATALOG_REQUEST_TIMEOUT_MS),
     });
 
-interface UploadUnit {
-  readonly command: LegacyCatalogMigrationCommand;
-  readonly failure: string;
-}
-
-const commandId = (deviceId: string, kind: LegacyCatalogMigrationCommand["kind"], index: number) =>
-  `legacy-v1:${deviceId}:${kind}:${index}`;
-
-/**
- * One POST per chunk, in dependency order. Empty kinds produce no unit, so an
- * empty table never costs a request.
- */
-const uploadPlan = (
-  catalog: LegacyMigrationCatalog,
-  deviceId: string,
-  occurredAt: number,
-): ReadonlyArray<UploadUnit> => [
-  ...chunkLegacyMigrationRows(catalog.categories).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "categories",
-      commandId: commandId(deviceId, "categories", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every category.",
-  })),
-  ...chunkLegacyMigrationRows(catalog.products).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "products",
-      commandId: commandId(deviceId, "products", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every product.",
-  })),
-  ...chunkLegacyMigrationRows(catalog.batches).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "batches",
-      commandId: commandId(deviceId, "batches", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every stock batch.",
-  })),
-  ...chunkLegacyMigrationRows(catalog.invoices).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "invoices",
-      commandId: commandId(deviceId, "invoices", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every invoice.",
-  })),
-  ...chunkLegacyMigrationRows(catalog.invoiceItems).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "invoice-items",
-      commandId: commandId(deviceId, "invoice-items", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every invoice line.",
-  })),
-  ...chunkLegacyMigrationRows(catalog.stockMovements).map((rows, index): UploadUnit => ({
-    command: {
-      kind: "stock-movements",
-      commandId: commandId(deviceId, "stock-movements", index),
-      deviceId,
-      occurredAt,
-      rows,
-    },
-    failure: "The server did not confirm every stock entry.",
-  })),
-];
+const wait = (duration: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, duration);
+  });
 
 export const migrateLegacyCatalog = async (input: {
   readonly apiBaseUrl: string;
@@ -169,41 +76,59 @@ export const migrateLegacyCatalog = async (input: {
   readonly deviceId: string;
   readonly catalog: LegacyMigrationCatalog;
   readonly onProgress?: (progress: LegacyMigrationProgress) => void;
+  readonly pollIntervalMs?: number;
+  readonly jobTimeoutMs?: number;
 }) => {
   const catalog = withoutOrphanRows(input.catalog);
   const totalRows = catalogSize(catalog);
   if (totalRows === 0) return;
   const occurredAt = Date.now();
   const authenticatedFetch = timedFetch(input.authenticatedFetch);
-  let uploadedRows = 0;
-
-  for (const unit of uploadPlan(catalog, input.deviceId, occurredAt)) {
-    input.onProgress?.({ step: unit.command.kind, uploadedRows, totalRows });
-    const result = await submitLegacyCatalogMigration({
-      apiBaseUrl: input.apiBaseUrl,
-      authenticatedFetch,
-      command: unit.command,
-    });
-    if (result.imported + result.skipped !== unit.command.rows.length)
-      throw new Error(unit.failure);
-    uploadedRows += unit.command.rows.length;
-  }
-
-  input.onProgress?.({ step: "reconcile", uploadedRows, totalRows });
-  await submitLegacyCatalogReconciliation({
+  const started = await submitLegacyCatalogMigration({
     apiBaseUrl: input.apiBaseUrl,
     authenticatedFetch,
     command: {
+      requestId: `legacy-catalog:v3:${input.deviceId}`,
       deviceId: input.deviceId,
       occurredAt,
-      categoryIds: catalog.categories.map((row) => row.id),
-      productIds: catalog.products.map((row) => row.id),
-      batchIds: catalog.batches.map((row) => row.id),
-      invoiceIds: catalog.invoices.map((row) => row.id),
-      invoiceItemIds: catalog.invoiceItems.map((row) => row.id),
-      stockMovementIds: catalog.stockMovements.map((row) => row.id),
+      catalog,
     },
   });
+  input.onProgress?.({
+    status: "queued",
+    phase: "queued",
+    jobId: started.jobId,
+    processedRows: 0,
+    totalRows,
+    importedRows: 0,
+    skippedRows: 0,
+    progress: 0,
+  });
+
+  const deadline = Date.now() + (input.jobTimeoutMs ?? LEGACY_CATALOG_JOB_TIMEOUT_MS);
+  while (Date.now() <= deadline) {
+    const status = await getLegacyCatalogMigrationStatus({
+      apiBaseUrl: input.apiBaseUrl,
+      authenticatedFetch,
+      jobId: started.jobId,
+    });
+    input.onProgress?.(status);
+    switch (status.status) {
+      case "queued":
+      case "migrating":
+        await wait(input.pollIntervalMs ?? LEGACY_CATALOG_POLL_INTERVAL_MS);
+        break;
+      case "succeeded":
+        return status;
+      case "failed":
+        throw new Error(status.error);
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  }
+  throw new Error("Inventory migration is still running. Reopen the app to check its progress.");
 };
 
 export const waitForInventoryFirstSync = async (

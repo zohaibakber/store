@@ -1,14 +1,11 @@
 import {
-  LEGACY_MIGRATION_CHUNK_ROWS,
   LegacyBatchMigrationRow,
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogReconciliationResult,
+  LegacyCatalogMigrationStart,
   LegacyCategoryMigrationRow,
   LegacyProductMigrationRow,
 } from "@store/contracts";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type LegacyMigrationProgress,
@@ -63,121 +60,106 @@ const batchRow = (id: string, productId: string): LegacyBatchMigrationRow =>
     updatedAt: 1,
   });
 
-const jsonResponse = (body: LegacyCatalogMigrationResult | LegacyCatalogReconciliationResult) =>
+const jsonResponse = (body: typeof Schema.Json.Type) =>
   new Response(JSON.stringify(body), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
 
-const emptyReconciliation: LegacyCatalogReconciliationResult = {
-  deletedCategories: 0,
-  deletedProducts: 0,
-  deletedBatches: 0,
-  deletedInvoices: 0,
-  deletedInvoiceItems: 0,
-  deletedStockMovements: 0,
-  txid: 1,
-};
-
 const readCommand = async (request: Request) =>
-  Schema.decodeUnknownSync(LegacyCatalogMigrationCommand)(
+  Schema.decodeUnknownSync(LegacyCatalogMigrationStart)(
     Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await request.text())),
   );
 
-/** Server that acknowledges every row it receives. */
-const acknowledgingServer = () => {
-  const migrations: LegacyCatalogMigrationCommand[] = [];
-  let reconciled = false;
+const migrationServer = () => {
+  const migrations: LegacyCatalogMigrationStart[] = [];
+  let statusReads = 0;
   const authenticatedFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
-    if (request.url.endsWith("/legacy-reconciliations")) {
-      reconciled = true;
-      return jsonResponse(emptyReconciliation);
+    if (request.method === "GET") {
+      statusReads += 1;
+      return statusReads === 1
+        ? jsonResponse({
+            status: "migrating",
+            phase: "products",
+            jobId: "job-1",
+            processedRows: 1,
+            totalRows: 3,
+            importedRows: 1,
+            skippedRows: 0,
+            progress: 33,
+          })
+        : jsonResponse({
+            status: "succeeded",
+            phase: "complete",
+            jobId: "job-1",
+            processedRows: 3,
+            totalRows: 3,
+            importedRows: 3,
+            skippedRows: 0,
+            progress: 100,
+          });
     }
     const command = await readCommand(request);
     migrations.push(command);
-    return jsonResponse({ imported: command.rows.length, skipped: 0, txid: 1 });
+    return jsonResponse({ jobId: "job-1" });
   };
   return {
     authenticatedFetch,
     migrations,
-    get reconciled() {
-      return reconciled;
+    get statusReads() {
+      return statusReads;
     },
   };
 };
 
 describe("legacy catalog upload", () => {
-  it("posts rows in Worker-safe chunks, parents first, and then reconciles", async () => {
-    const server = acknowledgingServer();
+  it("starts one queued job and polls until Neon migration succeeds", async () => {
+    const server = migrationServer();
+    const progress: LegacyMigrationProgress[] = [];
 
     await migrateLegacyCatalog({
       apiBaseUrl: "https://api.tabaaq.app",
       authenticatedFetch: server.authenticatedFetch,
-      deviceId: "device-1",
-      catalog: {
-        ...emptyCatalog,
-        categories: [categoryRow("medicine")],
-        products: Array.from({ length: 881 }, (_, index) => productRow(index)),
-      },
-    });
-
-    expect(server.migrations).toHaveLength(1 + Math.ceil(881 / LEGACY_MIGRATION_CHUNK_ROWS));
-    expect(
-      server.migrations.every((command) => command.rows.length <= LEGACY_MIGRATION_CHUNK_ROWS),
-    ).toBe(true);
-    expect(server.migrations[0]?.kind).toBe("categories");
-    expect(server.migrations[1]?.kind).toBe("products");
-    expect(server.migrations[1]?.commandId).toBe("legacy-v1:device-1:products:0");
-    expect(server.migrations[1]?.rows).toHaveLength(LEGACY_MIGRATION_CHUNK_ROWS);
-    expect(server.migrations.at(-1)?.rows).toHaveLength(881 % LEGACY_MIGRATION_CHUNK_ROWS);
-    expect(server.reconciled).toBe(true);
-  });
-
-  it("never posts a chunk for an empty kind", async () => {
-    const server = acknowledgingServer();
-
-    await migrateLegacyCatalog({
-      apiBaseUrl: "https://api.tabaaq.app",
-      authenticatedFetch: server.authenticatedFetch,
-      deviceId: "device-1",
-      catalog: { ...emptyCatalog, categories: [categoryRow("medicine")] },
-    });
-
-    expect(server.migrations.map((command) => command.kind)).toEqual(["categories"]);
-  });
-
-  it("treats receipt skips as a full acknowledgement so retries can continue", async () => {
-    let calls = 0;
-    const authenticatedFetch: typeof fetch = async (input, init) => {
-      calls += 1;
-      const request = new Request(input, init);
-      if (request.url.endsWith("/legacy-reconciliations")) {
-        return jsonResponse(emptyReconciliation);
-      }
-      const command = await readCommand(request);
-      return jsonResponse({ imported: 0, skipped: command.rows.length, txid: 1 });
-    };
-
-    await migrateLegacyCatalog({
-      apiBaseUrl: "https://api.tabaaq.app",
-      authenticatedFetch,
       deviceId: "device-1",
       catalog: {
         ...emptyCatalog,
         categories: [categoryRow("medicine")],
         products: [productRow(1), productRow(2)],
       },
+      onProgress: (status) => progress.push(status),
+      pollIntervalMs: 0,
     });
 
-    expect(calls).toBe(3);
+    expect(server.migrations).toHaveLength(1);
+    expect(server.migrations[0]?.requestId).toBe("legacy-catalog:v3:device-1");
+    expect(server.migrations[0]?.catalog.categories).toHaveLength(1);
+    expect(server.migrations[0]?.catalog.products).toHaveLength(2);
+    expect(server.statusReads).toBe(2);
+    expect(progress.map((status) => status.status)).toEqual([
+      "queued",
+      "migrating",
+      "succeeded",
+    ]);
   });
 
-  it("stops uploading after a chunk is only partially acknowledged", async () => {
+  it("surfaces the terminal failed state from the worker", async () => {
     let calls = 0;
-    const authenticatedFetch: typeof fetch = async () => {
+    const authenticatedFetch: typeof fetch = async (input, init) => {
       calls += 1;
-      return jsonResponse({ imported: 1, skipped: 0, txid: 1 });
+      const request = new Request(input, init);
+      if (request.method === "POST") return jsonResponse({ jobId: "job-failed" });
+      return jsonResponse({
+        status: "failed",
+        phase: "products",
+        jobId: "job-failed",
+        processedRows: 1,
+        totalRows: 3,
+        importedRows: 1,
+        skippedRows: 0,
+        progress: 33,
+        error: "Neon rejected the product batch.",
+      });
     };
 
     await expect(
@@ -190,34 +172,23 @@ describe("legacy catalog upload", () => {
           categories: [categoryRow("medicine")],
           products: [productRow(1), productRow(2)],
         },
+        pollIntervalMs: 0,
       }),
-    ).rejects.toThrow("The server did not confirm every product.");
+    ).rejects.toThrow("Neon rejected the product batch.");
     expect(calls).toBe(2);
   });
 
-  it("reports the step and row counts behind each chunk", async () => {
-    const server = acknowledgingServer();
-    const progress: LegacyMigrationProgress[] = [];
+  it("does not create a job for an empty local catalog", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>();
 
     await migrateLegacyCatalog({
       apiBaseUrl: "https://api.tabaaq.app",
-      authenticatedFetch: server.authenticatedFetch,
+      authenticatedFetch,
       deviceId: "device-1",
-      catalog: {
-        ...emptyCatalog,
-        categories: [categoryRow("medicine")],
-        products: Array.from({ length: 30 }, (_, index) => productRow(index)),
-      },
-      onProgress: (event) => progress.push(event),
+      catalog: emptyCatalog,
     });
 
-    expect(progress).toEqual([
-      { step: "categories", uploadedRows: 0, totalRows: 31 },
-      { step: "products", uploadedRows: 1, totalRows: 31 },
-      { step: "products", uploadedRows: 1 + LEGACY_MIGRATION_CHUNK_ROWS, totalRows: 31 },
-      { step: "products", uploadedRows: 1 + LEGACY_MIGRATION_CHUNK_ROWS * 2, totalRows: 31 },
-      { step: "reconcile", uploadedRows: 31, totalRows: 31 },
-    ]);
+    expect(authenticatedFetch).not.toHaveBeenCalled();
   });
 });
 

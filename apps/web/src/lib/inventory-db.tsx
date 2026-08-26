@@ -62,7 +62,12 @@ import {
 import * as React from "react";
 
 import type { HostInventoryScope } from "@/host-access";
-import { legacyCatalogMigrated, markLegacyCatalogMigrated } from "@/lib/catalog-migration";
+import {
+  legacyCatalogMigrated,
+  markLegacyCatalogMigrated,
+  showLegacyCatalogMigrationFailure,
+  showLegacyCatalogMigrationToast,
+} from "@/lib/catalog-migration";
 import type { InventoryHost } from "@/lib/inventory-host";
 
 type InventoryCollection<Row extends object> = Collection<Row, string>;
@@ -115,6 +120,7 @@ const replicateRemoteCatalog = (
             authenticatedFetch: host.authenticatedFetch,
             deviceId: host.deviceId,
             catalog: legacy.migrationCatalog,
+            onProgress: (status) => showLegacyCatalogMigrationToast(scopeId, status),
           });
         }
         markLegacyCatalogMigrated(scopeId);
@@ -126,7 +132,8 @@ const replicateRemoteCatalog = (
         }),
       );
       await waitForInventoryFirstSync(powerSync);
-    } catch {
+    } catch (cause) {
+      showLegacyCatalogMigrationFailure(scopeId, cause);
       // Keep seeded local rows. Do not connect until the upload finishes, so a
       // failed handoff can retry on the next launch without remote wiping it.
     }

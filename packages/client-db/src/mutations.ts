@@ -1,8 +1,7 @@
 import {
-  LegacyCatalogMigrationResult,
-  LegacyCatalogReconciliationResult,
-  type LegacyCatalogMigrationCommand,
-  type LegacyCatalogReconciliationCommand,
+  LegacyCatalogMigrationJobStatus,
+  LegacyCatalogMigrationStarted,
+  type LegacyCatalogMigrationStart,
 } from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import {
@@ -91,7 +90,7 @@ export const submitInventoryOperation = async (input: {
 export const submitLegacyCatalogMigration = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
-  readonly command: LegacyCatalogMigrationCommand;
+  readonly command: LegacyCatalogMigrationStart;
 }) => {
   const response = await input.authenticatedFetch(
     `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migrations`,
@@ -102,24 +101,19 @@ export const submitLegacyCatalogMigration = async (input: {
     },
   );
   await throwIfNotOk(response, "Legacy inventory migration failed");
-  return Schema.decodeUnknownSync(LegacyCatalogMigrationResult)(await response.json());
+  return Schema.decodeUnknownSync(LegacyCatalogMigrationStarted)(await response.json());
 };
 
-export const submitLegacyCatalogReconciliation = async (input: {
+export const getLegacyCatalogMigrationStatus = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
-  readonly command: LegacyCatalogReconciliationCommand;
+  readonly jobId: string;
 }) => {
   const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-reconciliations`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.command),
-    },
+    `${apiRoot(input.apiBaseUrl)}/inventory/legacy-migrations/${encodeURIComponent(input.jobId)}`,
   );
-  await throwIfNotOk(response, "Legacy inventory reconciliation failed");
-  return Schema.decodeUnknownSync(LegacyCatalogReconciliationResult)(await response.json());
+  await throwIfNotOk(response, "Legacy inventory migration status failed");
+  return Schema.decodeUnknownSync(LegacyCatalogMigrationJobStatus)(await response.json());
 };
 
 export const submitCatalogRows = (input: {
