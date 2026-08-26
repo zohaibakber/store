@@ -2,9 +2,7 @@
   "version": "8",
   "dialect": "postgres",
   "id": "70c4ed5a-879f-4b28-8c44-47586f4ae00b",
-  "prevIds": [
-    "9223889b-4297-46ce-97c8-c5d194a05c8b"
-  ],
+  "prevIds": ["9223889b-4297-46ce-97c8-c5d194a05c8b"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -1781,16 +1779,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "product_id"
-      ],
+      "columns": ["organization_id", "product_id"],
       "schemaTo": "public",
       "tableTo": "products",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "batches_organization_product_fk",
@@ -1800,16 +1792,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "invoice_id"
-      ],
+      "columns": ["organization_id", "invoice_id"],
       "schemaTo": "public",
       "tableTo": "invoices",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "invoice_items_organization_invoice_fk",
@@ -1819,16 +1805,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "product_id"
-      ],
+      "columns": ["organization_id", "product_id"],
       "schemaTo": "public",
       "tableTo": "products",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "invoice_items_organization_product_fk",
@@ -1838,16 +1818,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "batch_id"
-      ],
+      "columns": ["organization_id", "batch_id"],
       "schemaTo": "public",
       "tableTo": "batches",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "invoice_items_organization_batch_fk",
@@ -1857,16 +1831,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "category_id"
-      ],
+      "columns": ["organization_id", "category_id"],
       "schemaTo": "public",
       "tableTo": "categories",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "products_organization_category_fk",
@@ -1876,16 +1844,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "product_id"
-      ],
+      "columns": ["organization_id", "product_id"],
       "schemaTo": "public",
       "tableTo": "products",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "stock_movements_organization_product_fk",
@@ -1895,16 +1857,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "batch_id"
-      ],
+      "columns": ["organization_id", "batch_id"],
       "schemaTo": "public",
       "tableTo": "batches",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "stock_movements_organization_batch_fk",
@@ -1914,16 +1870,10 @@
     },
     {
       "nameExplicit": true,
-      "columns": [
-        "organization_id",
-        "invoice_id"
-      ],
+      "columns": ["organization_id", "invoice_id"],
       "schemaTo": "public",
       "tableTo": "invoices",
-      "columnsTo": [
-        "organization_id",
-        "id"
-      ],
+      "columnsTo": ["organization_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "stock_movements_organization_invoice_fk",
@@ -1932,10 +1882,7 @@
       "table": "stock_movements"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "batches_organization_id_id_pk",
       "entityType": "pks",
@@ -1943,10 +1890,7 @@
       "table": "batches"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "categories_organization_id_id_pk",
       "entityType": "pks",
@@ -1954,10 +1898,7 @@
       "table": "categories"
     },
     {
-      "columns": [
-        "organization_id",
-        "operation_id"
-      ],
+      "columns": ["organization_id", "operation_id"],
       "nameExplicit": true,
       "name": "electric_mutation_receipts_organization_operation_pk",
       "entityType": "pks",
@@ -1965,10 +1906,7 @@
       "table": "electric_mutation_receipts"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "invoice_items_organization_id_id_pk",
       "entityType": "pks",
@@ -1976,10 +1914,7 @@
       "table": "invoice_items"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "invoices_organization_id_id_pk",
       "entityType": "pks",
@@ -1987,10 +1922,7 @@
       "table": "invoices"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "products_organization_id_id_pk",
       "entityType": "pks",
@@ -1998,10 +1930,7 @@
       "table": "products"
     },
     {
-      "columns": [
-        "organization_id",
-        "id"
-      ],
+      "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "stock_movements_organization_id_id_pk",
       "entityType": "pks",
@@ -2009,9 +1938,7 @@
       "table": "stock_movements"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "invoice_counters_pkey",
       "schema": "public",

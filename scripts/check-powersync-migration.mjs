@@ -47,17 +47,9 @@ requireText(syncConfig, "auth.parameter('org')", "PowerSync organization isolati
 
 const server = read("apps/server/src/http/app.ts");
 requireText(server, '"/api/powersync/credentials"', "server credential route");
-forbidText(
-  read("apps/server/src/http/api.ts"),
-  '"/api/inventory/legacy-migrations"',
-  "server API",
-);
+forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
-forbidText(
-  read("apps/web/src/lib/inventory-db.tsx"),
-  "migrateLegacyCatalog",
-  "inventory database",
-);
+forbidText(read("apps/web/src/lib/inventory-db.tsx"), "migrateLegacyCatalog", "inventory database");
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
 requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
 
