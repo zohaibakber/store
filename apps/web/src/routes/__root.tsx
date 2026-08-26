@@ -18,6 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, type InitialAuth, useAuth } from "@/lib/auth";
+import { InventoryProvider, InventoryReady } from "@/lib/inventory-db";
 import type { InventoryHost } from "@/lib/inventory-host";
 
 export interface RouterContext {
@@ -82,21 +83,41 @@ function AuthenticatedLayout() {
 }
 
 function AppShell() {
-  const { access } = Route.useRouteContext();
+  const auth = useAuth();
+  const { access, inventory } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const chrome = access.chrome({ pathname });
   if (chrome._tag === "Bare") return <Outlet />;
-  return (
+
+  const scope = access.inventoryScope(auth.snapshot);
+  const shell = (
     <TooltipProvider>
       <CommandMenuProvider>
         <SidebarProvider className="h-svh min-h-0 overflow-hidden" defaultOpen={false}>
           <AppSidebar />
           <SidebarInset className="min-h-0 scrollbar-none overflow-y-auto">
             <SiteHeader />
-            <Outlet />
+            {inventory && scope ? (
+              <InventoryReady>
+                <Outlet />
+              </InventoryReady>
+            ) : (
+              <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
+            )}
           </SidebarInset>
         </SidebarProvider>
       </CommandMenuProvider>
     </TooltipProvider>
+  );
+
+  if (!inventory || !scope) return shell;
+  return (
+    <InventoryProvider
+      host={inventory}
+      key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
+      scope={scope}
+    >
+      {shell}
+    </InventoryProvider>
   );
 }

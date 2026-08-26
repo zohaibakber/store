@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import { syncEntityPushRows, syncEntityRows } from "../../src/sync/entity-rows";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
 const productRow = {
   id: "product-1",
   name: "Panadol",

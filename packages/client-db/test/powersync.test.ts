@@ -1,12 +1,13 @@
 import { UpdateType } from "@powersync/common";
 import { describe, expect, it, vi } from "vitest";
 
+import { inventoryReplicaDatabaseName } from "../src/inventory";
 import { InventoryFailure } from "../src/inventory-failure";
 import {
   decodePowerSyncCatalogCrudEntry,
-  makeInventoryPowerSyncConnector,
-  stampCatalogUploadRow,
+  disconnectAndClearInventoryPowerSync,
   uploadInventoryCrudTransaction,
+  uploadInventoryData,
   waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
 } from "../src/powersync";
@@ -67,11 +68,20 @@ describe("PowerSync catalog upload snapshots", () => {
     ).toMatchObject({ id: category.id, deletedAt: null, tracksPacks: true });
   });
 
-  it("keeps the row mutation id instead of a replica-local CRUD sequence", () => {
-    expect(stampCatalogUploadRow(category).operationId).toBe("operation-1");
+  it("keeps the row mutation id on reconstructed catalog writes", () => {
     expect(
-      stampCatalogUploadRow({ ...category, id: "category-2", operationId: "operation-2" })
-        .operationId,
+      decodePowerSyncCatalogCrudEntry("categories", {
+        id: category.id,
+        op: UpdateType.PUT,
+        opData: category,
+      }).operationId,
+    ).toBe("operation-1");
+    expect(
+      decodePowerSyncCatalogCrudEntry("categories", {
+        id: "category-2",
+        op: UpdateType.PUT,
+        opData: { ...category, id: "category-2", operationId: "operation-2" },
+      }).operationId,
     ).toBe("operation-2");
   });
 });
@@ -231,21 +241,17 @@ describe("PowerSync catalog upload failures", () => {
     const complete = vi.fn(async () => undefined);
     const disconnect = vi.fn(async () => undefined);
     const onUploadHalt = vi.fn();
-    const connector = makeInventoryPowerSyncConnector({
-      apiBaseUrl: "https://api.example/api",
-      authenticatedFetch,
-      onUploadHalt,
-    });
-
-    // SAFETY: uploadData only reads getNextCrudTransaction and disconnect from this stub.
     await expect(
-      connector.uploadData({
-        getNextCrudTransaction: async () => ({
-          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
-          complete,
-        }),
-        disconnect,
-      } as never),
+      uploadInventoryData(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch, onUploadHalt },
+        {
+          getNextCrudTransaction: async () => ({
+            crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+            complete,
+          }),
+          disconnect,
+        },
+      ),
     ).rejects.toMatchObject({
       name: "InventoryFailure",
       reason: { _tag: "unauthenticated" },
@@ -262,21 +268,17 @@ describe("PowerSync catalog upload failures", () => {
     const complete = vi.fn(async () => undefined);
     const disconnect = vi.fn(async () => undefined);
     const onUploadHalt = vi.fn();
-    const connector = makeInventoryPowerSyncConnector({
-      apiBaseUrl: "https://api.example/api",
-      authenticatedFetch,
-      onUploadHalt,
-    });
-
-    // SAFETY: uploadData only reads getNextCrudTransaction and disconnect from this stub.
     await expect(
-      connector.uploadData({
-        getNextCrudTransaction: async () => ({
-          crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
-          complete,
-        }),
-        disconnect,
-      } as never),
+      uploadInventoryData(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch, onUploadHalt },
+        {
+          getNextCrudTransaction: async () => ({
+            crud: [{ id: category.id, table: "categories", op: UpdateType.PUT, opData: category }],
+            complete,
+          }),
+          disconnect,
+        },
+      ),
     ).rejects.toMatchObject({ name: "InventoryFailure", reason: { _tag: "transport" } });
     expect(onUploadHalt).not.toHaveBeenCalled();
     expect(disconnect).not.toHaveBeenCalled();
@@ -354,5 +356,28 @@ describe("waitForInventoryUploadDrain", () => {
         0,
       ),
     ).rejects.toThrow("Catalog changes are still uploading. Try again in a moment.");
+  });
+});
+
+describe("inventory replica database name", () => {
+  it("names the SQLite file from a stable hash of the scope", () => {
+    const first = inventoryReplicaDatabaseName("https://api.example:org-1");
+    const second = inventoryReplicaDatabaseName("https://api.example:org-1");
+    const other = inventoryReplicaDatabaseName("https://api.example:org-2");
+    expect(first).toMatch(/^powersync-inventory-[0-9a-f]{8}\.sqlite$/u);
+    expect(first).toBe(second);
+    expect(first).not.toBe(other);
+    expect(first.startsWith("tanstack-")).toBe(false);
+  });
+});
+
+describe("disconnectAndClearInventoryPowerSync", () => {
+  it("clears synced rows then closes", async () => {
+    const disconnectAndClear = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    await disconnectAndClearInventoryPowerSync({ disconnectAndClear, close });
+    expect(disconnectAndClear.mock.invocationCallOrder[0]).toBeLessThan(
+      close.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 });

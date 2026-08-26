@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import { operationPayloadHash } from "../../src/sync/operation-hash";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
 test("payload hashes are stable hex sha256 of the canonical operation", () => {
   const hash = operationPayloadHash({
     operationId: "operation-1",

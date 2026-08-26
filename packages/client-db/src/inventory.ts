@@ -35,4 +35,4 @@ export const inventoryReplicaScope = (apiBaseUrl: string, organizationId: string
   `${inventorySourceId(apiBaseUrl)}:${organizationId}`;
 
 export const inventoryReplicaDatabaseName = (scopeId: string) =>
-  `tanstack-inventory-${fnv1a(scopeId)}.sqlite`;
+  `powersync-inventory-${fnv1a(scopeId)}.sqlite`;

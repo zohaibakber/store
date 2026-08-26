@@ -64,6 +64,12 @@ export default defineConfig(({ mode }) => {
     resolve: {
       tsconfigPaths: true,
     },
+    optimizeDeps: {
+      exclude: ["@powersync/web", "@journeyapps/wa-sqlite"],
+    },
+    worker: {
+      format: "es",
+    },
     server: {
       host: "127.0.0.1",
       port: 5174,
