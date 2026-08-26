@@ -65,7 +65,7 @@ export function InventoryProvider({
 
   React.useEffect(() => {
     let active = true;
-    for (const key of [...resources.keys()]) {
+    for (const key of Array.from(resources.keys())) {
       if (key !== resourceKey) disposeResource(key);
     }
     const inventoryScope: HostInventoryScope =

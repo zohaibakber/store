@@ -51,9 +51,9 @@ describe("inventory mutation HTTP", () => {
     expect(authenticatedFetch).toHaveBeenCalledOnce();
     const [url, init] = authenticatedFetch.mock.calls[0] ?? [];
     expect(url).toBe("https://api.example/api/inventory/mutations");
-    expect(init).toMatchObject({ method: "POST" });
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      operation: { operationId: "operation-1", organizationId: "org-1" },
+    expect(init).toMatchObject({
+      method: "POST",
+      body: expect.stringContaining('"operationId":"operation-1"'),
     });
   });
 

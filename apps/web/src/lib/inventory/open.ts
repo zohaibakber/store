@@ -1,18 +1,18 @@
 import {
   type BatchRow,
   type CategoryRow,
+  disconnectAndClearInventoryPowerSync,
   type InvoiceItemRow,
   type InvoiceRow,
-  type ProductRow,
-  type StockMovementRow,
-  disconnectAndClearInventoryPowerSync,
   inventoryPowerSyncCollectionConfigs,
   inventoryPowerSyncDatabaseName,
   inventoryReplicaScope,
   makeInventoryPowerSyncConnector,
+  type ProductRow,
+  type StockMovementRow,
   waitForInventoryFirstSync,
 } from "@store/client-db";
-import { DbClient } from "@tanstack/react-db";
+import { collectionOptions, DbClient } from "@tanstack/react-db";
 
 import type { HostInventoryScope } from "@/host-access";
 import { toastStoreError } from "@/lib/errors";
@@ -91,12 +91,12 @@ export const openInventory = async (
   const powerSync = await host.openPowerSyncDatabase(inventoryPowerSyncDatabaseName(scopeId));
   try {
     const configs = inventoryPowerSyncCollectionConfigs(powerSync, scopeId);
-    const categories = dbClient.collection(configs.categories);
-    const products = dbClient.collection(configs.products);
-    const batches = dbClient.collection(configs.batches);
-    const stockMovements = dbClient.collection(configs.stockMovements);
-    const invoices = dbClient.collection(configs.invoices);
-    const invoiceItems = dbClient.collection(configs.invoiceItems);
+    const categories = dbClient.collection(collectionOptions(configs.categories));
+    const products = dbClient.collection(collectionOptions(configs.products));
+    const batches = dbClient.collection(collectionOptions(configs.batches));
+    const stockMovements = dbClient.collection(collectionOptions(configs.stockMovements));
+    const invoices = dbClient.collection(collectionOptions(configs.invoices));
+    const invoiceItems = dbClient.collection(collectionOptions(configs.invoiceItems));
 
     await Promise.all([
       batches.preload(),
