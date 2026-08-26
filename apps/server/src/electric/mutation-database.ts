@@ -1931,13 +1931,10 @@ export const makeLegacyMigrationJobDatabase = (db: PostgresDrizzle) => {
     readonly deliveryAttempt: number;
   }) {
     const now = yield* Clock.currentTimeMillis;
-    const claimable =
-      input.deliveryAttempt === 1
-        ? eq(legacyCatalogMigrationJobs.status, "queued")
-        : or(
-            eq(legacyCatalogMigrationJobs.status, "queued"),
-            eq(legacyCatalogMigrationJobs.status, "migrating"),
-          );
+    const claimable = or(
+      eq(legacyCatalogMigrationJobs.status, "queued"),
+      eq(legacyCatalogMigrationJobs.status, "migrating"),
+    );
     const [row] = yield* db
       .update(legacyCatalogMigrationJobs)
       .set({
