@@ -22,7 +22,7 @@ describe("desktop content security policy", () => {
     expect(scriptSources).not.toContain("'unsafe-eval'");
   });
 
-  it("permits production PowerSync Cloud connections", () => {
+  it("permits production PowerSync Cloud and Sentry ingest connections", () => {
     const connectSources = productionPolicy()
       .split("; ")
       .find((directive) => directive.startsWith("connect-src "))
@@ -30,6 +30,8 @@ describe("desktop content security policy", () => {
 
     expect(connectSources).toContain("https://*.powersync.journeyapps.com");
     expect(connectSources).toContain("wss://*.powersync.journeyapps.com");
+    expect(connectSources).toContain("https://*.ingest.sentry.io");
+    expect(connectSources).toContain("https://*.ingest.us.sentry.io");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
   });

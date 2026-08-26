@@ -1,4 +1,4 @@
-import type { LegacyCatalogMigrationJobStatus } from "@store/contracts";
+import type { LegacyCatalogMigrationData, LegacyCatalogMigrationJobStatus } from "@store/contracts";
 
 import { toastManager } from "@/components/ui/toast";
 
@@ -157,4 +157,35 @@ export const showLegacyCatalogMigrationFailure = (scopeId: string, cause: unknow
     timeout: 0,
     type: "error",
   });
+};
+
+export const catalogRowCount = (catalog: LegacyCatalogMigrationData) =>
+  catalog.categories.length +
+  catalog.products.length +
+  catalog.batches.length +
+  catalog.invoices.length +
+  catalog.invoiceItems.length +
+  catalog.stockMovements.length;
+
+/**
+ * Upload any on-disk catalog, then allow PowerSync to connect. A failed load
+ * or upload must not mark the device migrated and must not connect, or remote
+ * sync would replace local rows that never reached Postgres.
+ */
+export const completeLegacyCatalogHandoff = async (input: {
+  readonly scopeId: string;
+  readonly loadCatalog: () => Promise<LegacyCatalogMigrationData | undefined>;
+  readonly migrate: (catalog: LegacyCatalogMigrationData) => Promise<void>;
+  readonly reportError: (cause: unknown) => void;
+}): Promise<"connect" | "hold"> => {
+  if (legacyCatalogMigrated(input.scopeId)) return "connect";
+  try {
+    const catalog = await input.loadCatalog();
+    if (catalog && catalogRowCount(catalog) > 0) await input.migrate(catalog);
+    markLegacyCatalogMigrated(input.scopeId);
+    return "connect";
+  } catch (cause) {
+    input.reportError(cause);
+    return "hold";
+  }
 };

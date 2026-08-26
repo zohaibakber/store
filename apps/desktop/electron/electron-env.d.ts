@@ -19,6 +19,7 @@ declare global {
     interface ProcessEnv {
       APP_ROOT: string;
       VITE_PUBLIC: string;
+      VITE_SENTRY_DSN?: string;
     }
   }
 

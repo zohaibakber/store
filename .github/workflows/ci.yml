@@ -86,6 +86,7 @@ jobs:
           echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
           echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
           echo "VITE_AUTH_URL=${VITE_AUTH_URL:-<unset>}"
+          echo "VITE_SENTRY_DSN=${VITE_SENTRY_DSN:+set}"
           if [ -z "${PRODUCTION_DOMAIN}" ]; then
             echo "::error::PRODUCTION_DOMAIN is empty." \
                  "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
@@ -109,6 +110,7 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
 
       - name: Deploy ${{ env.STAGE }}
@@ -133,6 +135,7 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
           GITHUB_SHA: ${{ github.sha }}
 

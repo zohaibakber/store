@@ -5,6 +5,7 @@ const rendererConfig = {
   "import.meta.env.PROD": JSON.stringify(!development),
   "import.meta.env.VITE_API_URL": JSON.stringify(process.env["VITE_API_URL"] ?? ""),
   "import.meta.env.VITE_AUTH_URL": JSON.stringify(process.env["VITE_AUTH_URL"] ?? ""),
+  "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(process.env["VITE_SENTRY_DSN"] ?? ""),
 };
 
 export default defineConfig({
@@ -18,9 +19,9 @@ export default defineConfig({
       clean: true,
       define: rendererConfig,
       deps: {
-        alwaysBundle: [/^@tanstack\//u],
+        alwaysBundle: [/^@tanstack\//u, /^@sentry\//u],
         neverBundle: ["better-sqlite3", "electron", "electron-updater"],
-        onlyBundle: [/^@tanstack\//u, /^effect(?:\/|$)/u],
+        onlyBundle: [/^@tanstack\//u, /^effect(?:\/|$)/u, /^@sentry\//u],
       },
       onSuccess: development ? "node scripts/dev-electron.mjs" : undefined,
     },

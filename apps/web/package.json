@@ -14,6 +14,7 @@
     "@journeyapps/wa-sqlite": "^1.7.2",
     "@powersync/common": "1.57.3",
     "@powersync/web": "1.39.1",
+    "@sentry/react": "10.71.0",
     "@store/client-db": "workspace:*",
     "@tanstack/charts": "^0.14.0",
     "@tanstack/powersync-db-collection": "0.1.62",

@@ -1,6 +1,9 @@
+import { decodeCategoryId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
 import {
+  catalogRowCount,
+  completeLegacyCatalogHandoff,
   legacyCatalogMigrated,
   legacyCatalogMigrationToast,
   markLegacyCatalogMigrated,
@@ -71,5 +74,68 @@ describe("legacy catalog migration toast", () => {
       kind: "error",
       description: "Neon is unavailable.",
     });
+  });
+});
+
+const emptyCatalog = {
+  categories: [],
+  products: [],
+  batches: [],
+  invoices: [],
+  invoiceItems: [],
+  stockMovements: [],
+};
+
+describe("legacy catalog handoff", () => {
+  it("counts rows across every catalog table", () => {
+    expect(catalogRowCount(emptyCatalog)).toBe(0);
+    expect(
+      catalogRowCount({
+        ...emptyCatalog,
+        categories: [
+          {
+            id: decodeCategoryId("medicine"),
+            name: "Medicine",
+            tracksPacks: true,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+      }),
+    ).toBe(1);
+  });
+
+  it("connects without uploading when there is no local catalog", async () => {
+    await expect(
+      completeLegacyCatalogHandoff({
+        scopeId: "scope-empty",
+        loadCatalog: async () => emptyCatalog,
+        migrate: async () => {
+          throw new Error("should not migrate an empty catalog");
+        },
+        reportError: () => {
+          throw new Error("should not report");
+        },
+      }),
+    ).resolves.toBe("connect");
+    expect(legacyCatalogMigrated("scope-empty")).toBe(true);
+  });
+
+  it("holds and does not mark migrated when load or upload fails", async () => {
+    const reported: unknown[] = [];
+    await expect(
+      completeLegacyCatalogHandoff({
+        scopeId: "scope-fail",
+        loadCatalog: async () => {
+          throw new Error("snapshot ipc failed");
+        },
+        migrate: async () => undefined,
+        reportError: (cause) => {
+          reported.push(cause);
+        },
+      }),
+    ).resolves.toBe("hold");
+    expect(legacyCatalogMigrated("scope-fail")).toBe(false);
+    expect(reported).toHaveLength(1);
   });
 });
