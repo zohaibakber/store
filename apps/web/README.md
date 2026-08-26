@@ -3,9 +3,11 @@
 Vite + TanStack Router SPA for Tabaaq, deployed with
 [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
 This app owns the renderer. Electron loads the same routes (hash history +
-Electron preload bridge). TanStack DB supplies live queries and optimistic
-mutations. PowerSync streams organization-scoped Postgres rows into durable
-SQLite-backed collections in browser and Electron.
+Electron preload bridge) and the same `@powersync/web` plus wa-sqlite catalog
+in the renderer. The Electron main process does not run PowerSync. It proxies
+authenticated HTTP and, for a signed-out Locked workspace, reads the legacy
+`store.db` snapshot once. TanStack DB supplies live queries and optimistic
+mutations over that in-process PowerSync database.
 
 The original Cloudflare Durable Object and `/api/sync/live` WebSocket engine is
 preserved as production compatibility and migration source. Migrated web and

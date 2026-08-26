@@ -9,6 +9,7 @@ import {
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
 const validRequest = {
   protocolVersion: 2,
   organizationId: "org-1",

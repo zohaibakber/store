@@ -19,7 +19,7 @@ Copy:
 - HttpClient pipe: `retryTransient` → `filterStatusOk` →
   `schemaBodyJson`.
 - Token refresh dedupe via `Cache.make` with `timeToLive: Duration.zero`
-  (in-flight only).
+  (in-flight only) so PowerSync `fetchCredentials` does not stampede.
 - Keyed mutex: map of `Semaphore` per path.
 - Bootstrap `init()` via `Effect.forkDetach`; do not fork inside state
   `make` that should stay sync.
@@ -75,15 +75,17 @@ Copy:
 
 Skip:
 
-- Assuming Electric/sync extras are required; only the contract split and
-  pin discipline matter for store.
+- Assuming a second sync client besides PowerSync; only the contract split
+  and pin discipline matter for store.
 
 ## This repo (already aligned)
 
 - HttpApi server: `apps/server/src/http/api.ts`.
-- ManagedRuntime hosts: `apps/server/src/sync/runtime.ts`,
-  `apps/desktop/electron/main.ts`, `apps/web/src/host.ts`.
-- SubscriptionRef + Semaphore + Stream: `packages/sync-client/src/runtime.ts`.
-- Named `Context.Service` classes (`AuthClient`, `OfflineStore`); follow
-  local style over OpenCode `export * as Foo` self-exports.
-- Thin raw `fetch` in `packages/auth` / `session-http` only.
+- ManagedRuntime hosts: `apps/server` Worker runtime,
+  `apps/desktop/electron/main.ts`.
+- Inventory client: `@store/client-db` PowerSync connector and collection
+  factory; hosts construct `PowerSyncDatabase` only.
+- Named `Context.Service` classes (`AuthClient`); follow local style over
+  OpenCode `export * as Foo` self-exports.
+- Thin raw `fetch` in `packages/auth` / session HTTP adapters only. The
+  PowerSync connector also uses host `fetch` for credentials and uploads.

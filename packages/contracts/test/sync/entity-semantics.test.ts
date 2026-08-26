@@ -7,6 +7,7 @@ import {
 } from "@store/contracts";
 import { expect, test } from "vitest";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
 const change = (entity: SyncEntity, entityId: string): SyncEntityChange => ({
   entity,
   entityId,

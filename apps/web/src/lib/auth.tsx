@@ -10,6 +10,7 @@ import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
+import { disposeInventoryCache } from "@/lib/inventory-db";
 
 export interface AuthSessionBridge {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
@@ -62,6 +63,11 @@ export type InitialAuth =
 
 /** Ends the session; the host broadcasts the resulting snapshot. */
 export async function signOut() {
+  try {
+    await disposeInventoryCache();
+  } catch {
+    // Still drop the session if replica teardown fails.
+  }
   try {
     await authSession().signOut();
   } catch (error) {

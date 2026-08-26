@@ -6,6 +6,7 @@ import { authHeadersForRequest } from "../../src/auth/organization";
 import type { SyncLiveInput } from "../../src/http/runtime";
 import { appFor } from "../lib/app";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket engine. */
 describe("sync authorization", () => {
   it("normalizes Expo's trusted native origin", () => {
     const requestHeaders = new Headers({

@@ -4,105 +4,111 @@ title: Sync, network, and cold start
 
 # Sync and network
 
-Mechanisms only. Store truth is the organization Durable Object + change log,
-local SQLite, and an outbox. Do not replace that with Zero or PowerSync stacks.
+Mechanisms only. Inventory truth is Postgres. PowerSync streams
+organization-scoped rows into client SQLite. TanStack DB collections sit
+in-process on that `PowerSyncDatabase`. D1 is auth. The organization Durable
+Object, outbox, and `/api/sync/live` WebSocket remain in the repo as
+compatibility until an explicit retirement. They are not the live inventory
+path.
 
 ## What store does today
 
-- Local-first SQLite + outbox; LWW by `rowVersion`.
-- Exchange RPC: one request pushes ≤100 ops and pulls change-log since
-  `cursor` (`hasMore` / multi-round drain).
-- Live path multiplexes exchange on the same WebSocket.
-- Live payload is a contentless poke: `{ type: 'invalidate', headCursor }`.
-  Client coalesces (sliding queue size 1) and re-runs `exchangeOnce` under a
-  semaphore. Safety poll ~5m when live.
-- Auth: access token in live URL on open; DO closes expired sockets. No
-  mid-session token refresh API yet.
-- Scope: whole organization change log, not query/bucket partial sync.
+- Postgres is the catalog authority. PowerSync replicates those rows into
+  durable SQLite (`powersync-inventory-<hash>.sqlite`).
+- Web and Electron open `@powersync/web` plus wa-sqlite in the renderer.
+  Expo opens `@powersync/react-native`. Electron main does not run PowerSync.
+  It proxies authenticated HTTP and reads the one-shot Locked `store.db`.
+- TanStack DB collections come from `@store/client-db` via
+  `powerSyncCollectionOptions`. Hosts construct `PowerSyncDatabase` and
+  `DbClient` only.
+- Catalog writes (category, product, batch) go through the PowerSync upload
+  queue: `getNextCrudTransaction()`, HTTP `/api/inventory/mutations`, then
+  `transaction.complete()` on success. Do not complete on halt.
+- Imports and invoice issuance are online HTTP commands after the upload
+  queue drains.
+- `connect()` is fire-and-forget. Gate readiness with `waitForFirstSync()`.
+- Logout, org switch, and scope change: `disconnectAndClear()` then `close()`,
+  then drop the cached database. `close()` alone leaves the previous org's
+  rows on disk.
 
-Code: `packages/sync-client`, `packages/persistence` sync engine,
-`apps/server` organization store, `packages/contracts` sync schema.
+Code: `packages/client-db`, `apps/web/src/lib/inventory`, `powersync/sync-config.yaml`,
+`apps/server` inventory routes and PowerSync credentials. Compatibility DO
+engine: `apps/server/src/sync`, `packages/contracts` sync schema.
 
 ## Lessons from Zero
 
 Steal:
 
-- Client answers from local store first; network patches later.
-- Auth refresh that keeps the client/session object alive
-  (`connect({ auth })` style), not teardown + reconnect storms.
-- When inventory grows, move toward query-shaped partial sync and serve diffs
-  on the wire instead of invalidate-only pokes.
+- Client answers from local SQLite first; network patches later.
+- Auth refresh that keeps the session object alive, not teardown + reconnect
+  storms.
+- When inventory grows, keep query-shaped partial sync (PowerSync streams)
+  instead of shipping the whole org on every connect.
 
 Do not copy:
 
-- Postgres + `zero-cache` IVM as the source of truth.
-- Official online-only writes (disconnected rejects mutations). This product
-  needs offline inventory writes.
+- Postgres + `zero-cache` IVM as a second cache tier in front of our
+  PowerSync service.
+- Official online-only writes (disconnected rejects mutations). Catalog
+  edits stay on the upload queue.
 
 ## Lessons from PowerSync
 
-Steal:
+This is the live stack, not a source of optional ideas. Follow the official
+JS/TanStack patterns:
 
-- Buckets / streams style partial sync and resume from op IDs when full org
-  log bandwidth hurts.
-- Checkpoint + checksum thinking if multi-table txn consistency becomes
-  user-visible.
-- Keep UI reads on local SQLite; never block reads on network.
-
-Do not copy:
-
-- Blocking download progress on a non-empty upload queue. That stalls
-  multi-device catch-up behind one stuck outbox op. Store quarantines instead.
+- Renderer `@powersync/web` in Electron (example-electron). No
+  `@powersync/node`, no main-process DB, no query IPC.
+- One `PowerSyncDatabase` per authenticated scope. Do not create or close it
+  in a Strict Mode `useEffect`.
+- Do not block download progress behind a stuck upload in a way that hides
+  other devices' catch-up. Skip `ENTITY_CONFLICT` rows; halt permanent 4xx
+  without `complete()`.
 
 ## Network checklist
 
-- [ ] One long-lived socket; reuse for push + pull.
-- [ ] Coalesce invalidations; single-flight exchange under Semaphore.
-- [ ] Batch ops (store cap 100); drain with `hasMore` / max rounds / yield.
-- [ ] Auth refresh before connect or reconnect; avoid URL-token-only storms.
-- [ ] Prefer delta frames over invalidate → full catch-up when fan-out grows.
-- [ ] Add partial sync before bandwidth hurts, not after.
-- [ ] Do not open a socket per exchange.
+- [ ] `connect()` without await; `waitForFirstSync()` when the UI needs rows.
+- [ ] Drain `getUploadQueueStats` before multi-table HTTP commands.
+- [ ] `disconnectAndClear()` then `close()` on logout or org change.
+- [ ] Refresh auth before `fetchCredentials` returns an expired token.
+- [ ] Do not open a compatibility `/api/sync/live` socket for inventory.
+- [ ] Do not block `#boot-shell` on first sync.
 
 ## Contrast
 
-| | Zero | PowerSync | Store |
+| | Zero | PowerSync (live) | DO engine (compat) |
 | --- | --- | --- | --- |
-| Local reads | IndexedDB + ZQL | SQLite | SQLite |
-| Partial sync | Query subscriptions | Buckets/streams | Full org log |
-| Live payload | Diff patches on WS | Bucket ops stream | Invalidate hint |
+| Local reads | IndexedDB + ZQL | SQLite | SQLite / DO storage |
+| Partial sync | Query subscriptions | Sync streams | Full org change log |
+| Live payload | Diff patches on WS | Stream ops | Invalidate hint |
 | Offline writes | Rejected (official) | Upload queue | Outbox |
-| Server role | Cache + IVM over Postgres | CDC + buckets | Org DO + change log |
+| Server role | Cache + IVM over Postgres | CDC + streams over Postgres | Org DO + change log |
 
 ## Store cold start
 
 `#boot-shell` in `apps/web/index.html` stays until `startWeb()` finishes.
-That path currently awaits the full authenticated bootstrap before React
-mounts.
+Keep that path off PowerSync first sync.
 
-Ordered blockers before paint:
+Ordered work before paint:
 
-1. `WebAuthBroker.initialize` → forced `ensureFreshAccess(true)` (network).
-2. Session GET when tokens exist (network).
-3. OfflineStore open: ManagedRuntime + OPFS libSQL + migrations (local I/O).
-4. Live WS open during store construction (network handshake).
-5. **`await store.sync()`** until first pull drains (highest signed-in cost).
+1. Session bootstrap (`ensureFreshAccess` / session GET).
+2. Mount the React shell.
+3. Open the scoped `PowerSyncDatabase` after paint (InventoryProvider).
+4. `void connect()`; collections preload from local SQLite.
+5. `waitForFirstSync()` in the background. Loaders tolerate empty-until-live.
 
-Unsigned browser: refresh still runs; Locked open throws
-`GuestWorkspaceRefused`; logo stick ≈ auth RTT only.
+Unsigned browser: skip forced cookie refresh when there is no session.
+Desktop Locked: open the local replica and seed from legacy `store.db`
+without connecting.
 
 Rules:
 
-1. Do not block `#boot-shell` on `store.sync()` or live WS.
-2. Defer first sync past paint (background fiber / post-mount). Keep loaders
-   tolerant of empty-until-live, or soft-block only loaders that need rows.
-3. Do not open live WS until after first paint or first navigation. Open store
-   without `syncTransport`, then attach.
-4. Skip forced cookie refresh when unsigned; fail fast offline. Signed-in:
-   one refresh is enough; do not serialize it with work that could overlap
-   after paint.
+1. Do not block `#boot-shell` on `waitForFirstSync()` or live WS.
+2. Defer first sync past paint. Keep loaders tolerant of empty-until-live.
+3. Do not open `/api/sync/live` for inventory.
+4. Skip forced cookie refresh when unsigned; fail fast offline.
 5. Prefer mounting a React shell earlier over holding the static logo through
    network.
 
-Evidence trail: `apps/web` `start-web.tsx`, `mount-app.tsx`, workspace
-`#activate`, `host.ts`, sync `engine.ts` / `runtime.ts`.
+Evidence trail: `apps/web` `start-web.tsx`, `mount-app.tsx`,
+`apps/web/src/lib/inventory`.

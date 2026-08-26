@@ -282,10 +282,6 @@ const catalogNulls = (table: "categories" | "products" | "batches") => {
 type InventoryCrudSnapshot = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues">;
 type InventoryCrudEntry = InventoryCrudSnapshot & Pick<CrudEntry, "table">;
 
-export const stampCatalogUploadRow = <Row extends { readonly operationId: string }>(
-  row: Row,
-): Row => row;
-
 export const decodePowerSyncCatalogCrudEntry = (
   table: "categories" | "products" | "batches",
   entry: InventoryCrudSnapshot,
@@ -314,7 +310,7 @@ const uploadCatalogCrudEntry = async (
 ) => {
   try {
     const table = catalogTable(entry.table);
-    const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
+    const row = decodePowerSyncCatalogCrudEntry(table, entry);
     switch (table) {
       case "categories":
         await submitCatalogRows({ ...input, entity: "category", rows: [row] });
@@ -359,31 +355,60 @@ export const uploadInventoryCrudTransaction = async (
   await transaction.complete();
 };
 
-export const makeInventoryPowerSyncConnector = (input: {
+export type InventoryPowerSyncUploadSource = {
+  readonly getNextCrudTransaction: () => Promise<{
+    readonly crud: ReadonlyArray<InventoryCrudEntry>;
+    complete: () => Promise<void>;
+  } | null>;
+  disconnect: () => Promise<void>;
+};
+
+type InventoryPowerSyncConnectorInput = {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly onUploadHalt?: (failure: InventoryFailure) => void;
-}): PowerSyncBackendConnector => ({
-  fetchCredentials: () => fetchInventoryPowerSyncCredentials(input),
-  uploadData: async (database) => {
-    const transaction = await database.getNextCrudTransaction();
-    if (!transaction) return;
-    try {
-      await uploadInventoryCrudTransaction(input, transaction);
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      const failure = failureFromUnknown(error);
-      if (catalogUploadDisposition(failure)._tag === "halt") {
-        input.onUploadHalt?.(failure);
-        await database.disconnect();
-      }
-      throw failure;
+};
+
+export const uploadInventoryData = async (
+  input: InventoryPowerSyncConnectorInput,
+  database: InventoryPowerSyncUploadSource,
+) => {
+  const transaction = await database.getNextCrudTransaction();
+  if (!transaction) return;
+  try {
+    await uploadInventoryCrudTransaction(input, transaction);
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    const failure = failureFromUnknown(error);
+    if (catalogUploadDisposition(failure)._tag === "halt") {
+      input.onUploadHalt?.(failure);
+      await database.disconnect();
     }
-  },
+    throw failure;
+  }
+};
+
+export const makeInventoryPowerSyncConnector = (
+  input: InventoryPowerSyncConnectorInput,
+): PowerSyncBackendConnector => ({
+  fetchCredentials: () => fetchInventoryPowerSyncCredentials(input),
+  uploadData: (database) => uploadInventoryData(input, database),
 });
 
-export const inventoryPowerSyncDatabaseName = (scopeId: string) =>
-  inventoryReplicaDatabaseName(scopeId).replace("tanstack-inventory", "powersync-inventory");
+export const inventoryPowerSyncDatabaseName = inventoryReplicaDatabaseName;
+
+export type InventoryPowerSyncLifecycle = {
+  disconnectAndClear: (options?: { clearLocal?: boolean }) => Promise<void>;
+  close: () => Promise<void>;
+};
+
+/** Stops sync, wipes synced rows, then closes. Call on logout or org change. */
+export const disconnectAndClearInventoryPowerSync = async (
+  powerSync: InventoryPowerSyncLifecycle,
+) => {
+  await powerSync.disconnectAndClear();
+  await powerSync.close();
+};
 
 export const INVENTORY_FIRST_SYNC_TIMEOUT_MS = 300_000;
 export const INVENTORY_UPLOAD_DRAIN_TIMEOUT_MS = 15_000;

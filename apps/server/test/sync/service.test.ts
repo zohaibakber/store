@@ -16,6 +16,7 @@ import {
   type SyncActor,
 } from "../../src/sync/service";
 
+/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket engine. */
 const actor: SyncActor = { organizationId: "org-1", userId: "user-1" };
 
 const requestFor = (): SyncRequest => {

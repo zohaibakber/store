@@ -20,7 +20,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAuth } from "@/lib/auth";
 import { formatPrice } from "@/lib/format";
-import { InventoryProvider, useCatalogProducts, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogProducts, useInventoryState } from "@/lib/inventory-db";
 import { Route as RootRoute } from "@/routes/__root";
 
 const RESULT_LIMIT = 20;
@@ -126,13 +126,7 @@ export function InventoryCommandDialog({
         ) : !scope ? (
           <p className="p-6 text-sm text-destructive">Product search workspace is unavailable.</p>
         ) : (
-          <InventoryProvider
-            key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
-            host={inventory}
-            scope={scope}
-          >
-            <LiveCommandMenu onOpenChange={onOpenChange} />
-          </InventoryProvider>
+          <LiveCommandMenu onOpenChange={onOpenChange} />
         )}
       </CommandDialogPopup>
     </CommandDialog>

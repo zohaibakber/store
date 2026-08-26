@@ -12,12 +12,13 @@
 - `workspace`. Shared session HTTP, token renewal, and organization clients.
 - `services`. Application services shared by multiple apps.
 
-Package tests mirror the source domains under `test`; shared test utilities belong in `test/lib`.
+Package tests mirror the source domains under `test`.
 
-TanStack DB persistence lives in host adapters instead of a shared hand-rolled
-store. The web renderer uses WASQLite, Electron uses SQLite in the main process,
-and Expo uses `expo-sqlite`. PowerSync fills the persisted collections from
-organization-scoped Postgres streams.
+`@store/client-db` owns the PowerSync schema, connector, and TanStack DB
+collection factory. Hosts construct `PowerSyncDatabase` and `DbClient` only.
+Web and Electron use `@powersync/web` plus wa-sqlite in the renderer. Expo uses
+`@powersync/react-native`. Electron's main process does not open the catalog
+database; it proxies HTTP and reads the legacy Locked `store.db` snapshot.
 
 The retained Cloudflare Durable Object implementation, schema, migrations,
 contracts, and WebSocket protocol document the production path that preceded

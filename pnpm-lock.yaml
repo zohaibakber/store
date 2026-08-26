@@ -677,9 +677,6 @@ importers:
       '@hugeicons/react':
         specifier: ^1.1.10
         version: 1.1.10(react@19.2.8)
-      '@shadcn/react':
-        specifier: ^0.3.0
-        version: 0.3.0(@types/react@19.2.18)(react@19.2.8)
       '@store/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -801,6 +798,9 @@ importers:
       '@store/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tanstack/powersync-db-collection':
+        specifier: 0.1.62
+        version: 0.1.62(@powersync/common@1.57.3)(supports-color@10.2.2)(typescript@7.0.2)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
@@ -5100,17 +5100,6 @@ packages:
   '@sentry/server-utils@10.70.0':
     resolution: {integrity: sha512-rzegZjMFFgCp3o+N8+XU13rfSvz4B+f8rU0ijBGrQcHdMNyfsFDTu1UTm262JofmrV2u+s+D0u0vFTnqtOGkbA==}
     engines: {node: '>=18'}
-
-  '@shadcn/react@0.3.0':
-    resolution: {integrity: sha512-iKN0NuYe850VDHlxEfvppFrpa7CMV3zArTHusXlaSmeFeQhohGbIqclv6WwPTs/44I8EkXQpcuRt6sXEVKkWqQ==}
-    peerDependencies:
-      '@types/react': '>=19'
-      react: '>=19'
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      react:
-        optional: true
 
   '@shopify/flash-list@2.0.2':
     resolution: {integrity: sha512-zhlrhA9eiuEzja4wxVvotgXHtqd3qsYbXkQ3rsBfOgbFA9BVeErpDE/yEwtlIviRGEqpuFj/oU5owD6ByaNX+w==}
@@ -15866,11 +15855,6 @@ snapshots:
       meriyah: 6.1.4
     transitivePeerDependencies:
       - supports-color
-
-  '@shadcn/react@0.3.0(@types/react@19.2.18)(react@19.2.8)':
-    optionalDependencies:
-      '@types/react': 19.2.18
-      react: 19.2.8
 
   '@shopify/flash-list@2.0.2(@babel/runtime@7.29.7)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)':
     dependencies:
