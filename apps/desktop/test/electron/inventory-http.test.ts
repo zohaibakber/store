@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { validatedInventoryUrl } from "../../electron/inventory-http";
+import {
+  MAX_INVENTORY_CATALOG_BODY_BYTES,
+  MAX_INVENTORY_COMMAND_BODY_BYTES,
+  assertInventoryRequestBodySize,
+  maxInventoryRequestBodyBytes,
+  validatedInventoryUrl,
+} from "../../electron/inventory-http";
 
 const apiBaseUrl = "https://api.tabaaq.app";
 
@@ -41,6 +47,44 @@ describe("desktop inventory HTTP allowlist", () => {
         url,
       }),
     ).toThrow("The inventory request is outside the configured inventory API.");
+  });
+
+  it("allows a catalog snapshot larger than 1 MiB on the migration routes", () => {
+    expect(
+      maxInventoryRequestBodyBytes(
+        apiBaseUrl,
+        "https://api.tabaaq.app/api/inventory/legacy-migrations",
+      ),
+    ).toBe(MAX_INVENTORY_CATALOG_BODY_BYTES);
+    expect(
+      maxInventoryRequestBodyBytes(
+        apiBaseUrl,
+        "https://api.tabaaq.app/api/inventory/legacy-reconciliations",
+      ),
+    ).toBe(MAX_INVENTORY_CATALOG_BODY_BYTES);
+    expect(
+      maxInventoryRequestBodyBytes(apiBaseUrl, "https://api.tabaaq.app/api/inventory/mutations"),
+    ).toBe(MAX_INVENTORY_COMMAND_BODY_BYTES);
+
+    const catalogBody = new ArrayBuffer(MAX_INVENTORY_COMMAND_BODY_BYTES + 1);
+    expect(() =>
+      assertInventoryRequestBodySize(apiBaseUrl, {
+        url: "https://api.tabaaq.app/api/inventory/legacy-migrations",
+        body: catalogBody,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertInventoryRequestBodySize(apiBaseUrl, {
+        url: "https://api.tabaaq.app/api/inventory/mutations",
+        body: catalogBody,
+      }),
+    ).toThrow("The inventory request body exceeds the 1 MiB limit.");
+    expect(() =>
+      assertInventoryRequestBodySize(apiBaseUrl, {
+        url: "https://api.tabaaq.app/api/inventory/legacy-migrations",
+        body: new ArrayBuffer(MAX_INVENTORY_CATALOG_BODY_BYTES + 1),
+      }),
+    ).toThrow("The inventory request body exceeds the 32 MiB limit.");
   });
 
   it("rejects inventory posts that are not on the command allowlist", () => {
