@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import type { InitialAuth } from "@/lib/auth";
 import type { InventoryHost } from "@/lib/inventory-host";
+import { Sentry } from "@/lib/sentry";
 
 import { getRouter } from "./router";
 
@@ -27,7 +28,13 @@ export const mountApp = (input: {
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <ThemeProvider>{app}</ThemeProvider>
+      <Sentry.ErrorBoundary
+        fallback={
+          <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
+        }
+      >
+        <ThemeProvider>{app}</ThemeProvider>
+      </Sentry.ErrorBoundary>
     </React.StrictMode>,
   );
 };

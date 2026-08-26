@@ -258,12 +258,57 @@ const readMigrationCatalog = (databasePath: string) => {
   }
 };
 
-const loadMigrationCatalog = (databasePath: string) => {
-  try {
-    return readMigrationCatalog(databasePath);
-  } catch {
-    return emptySnapshot().migrationCatalog;
+export const catalogSize = (catalog: LegacyMigrationCatalog) =>
+  catalog.categories.length +
+  catalog.products.length +
+  catalog.batches.length +
+  catalog.invoices.length +
+  catalog.invoiceItems.length +
+  catalog.stockMovements.length;
+
+export type CatalogErrorReporter = (cause: Error, databasePath: string) => void;
+
+export const mergeLoadedMigrationCatalogs = (
+  catalogs: ReadonlyArray<LegacyMigrationCatalog>,
+  failedExistingFiles: number,
+) => {
+  const merged = mergeMigrationCatalogs(catalogs);
+  if (catalogSize(merged) === 0 && failedExistingFiles > 0) {
+    throw new Error(
+      `Could not read the local inventory catalog (${failedExistingFiles} database files failed).`,
+    );
   }
+  return merged;
+};
+
+const loadReadableMigrationCatalog = (
+  databasePath: string,
+  reportError: CatalogErrorReporter,
+): { readonly catalog: LegacyMigrationCatalog } | { readonly failed: true } => {
+  try {
+    return { catalog: readMigrationCatalog(databasePath) };
+  } catch (cause) {
+    reportError(cause instanceof Error ? cause : new Error(String(cause)), databasePath);
+    return { failed: true };
+  }
+};
+
+export const combineMigrationCatalogs = (
+  userDataPath: string,
+  reportError: CatalogErrorReporter = () => undefined,
+) => {
+  const catalogs: LegacyMigrationCatalog[] = [];
+  let failedExistingFiles = 0;
+  for (const databasePath of migrationDatabasePaths(userDataPath)) {
+    if (!existsSync(databasePath)) continue;
+    const loaded = loadReadableMigrationCatalog(databasePath, reportError);
+    if ("failed" in loaded) {
+      failedExistingFiles += 1;
+      continue;
+    }
+    catalogs.push(loaded.catalog);
+  }
+  return mergeLoadedMigrationCatalogs(catalogs, failedExistingFiles);
 };
 
 export const migrationDatabasePaths = (userDataPath: string) => {
@@ -296,15 +341,18 @@ export const mergeMigrationCatalogs = (
   stockMovements: latestCreatedRows(catalogs.flatMap((catalog) => catalog.stockMovements)),
 });
 
-const combinedMigrationCatalog = (userDataPath: string) =>
-  mergeMigrationCatalogs(migrationDatabasePaths(userDataPath).map(loadMigrationCatalog));
+const combinedMigrationCatalog = (userDataPath: string, reportError?: CatalogErrorReporter) =>
+  combineMigrationCatalogs(userDataPath, reportError);
 
-export const loadLegacyLocalSnapshot = (userDataPath: string) => {
+export const loadLegacyLocalSnapshot = (
+  userDataPath: string,
+  reportError: CatalogErrorReporter = () => undefined,
+) => {
   const databasePath = path.join(userDataPath, "locked", "data", "store.db");
   // better-sqlite3 throws a plain TypeError (without an SQLite/ENOENT code)
   // when fileMustExist points into a missing directory. Treat that normal
   // first-run state as an empty legacy source before opening SQLite.
-  const migrationCatalog = combinedMigrationCatalog(userDataPath);
+  const migrationCatalog = combinedMigrationCatalog(userDataPath, reportError);
   if (!existsSync(databasePath)) return snapshotWithoutReadableLockedReplica(migrationCatalog);
   let database: Database.Database;
   try {
@@ -390,9 +438,10 @@ export const loadLegacyLocalSnapshot = (userDataPath: string) => {
 export const registerLegacyLocalInventoryIpc = (options: {
   readonly ipcMain: IpcMain;
   readonly userDataPath: string;
+  readonly reportError?: CatalogErrorReporter;
 }) => {
   options.ipcMain.handle(LEGACY_LOCAL_INVENTORY_CHANNEL, () =>
-    loadLegacyLocalSnapshot(options.userDataPath),
+    loadLegacyLocalSnapshot(options.userDataPath, options.reportError),
   );
   return () => options.ipcMain.removeHandler(LEGACY_LOCAL_INVENTORY_CHANNEL);
 };

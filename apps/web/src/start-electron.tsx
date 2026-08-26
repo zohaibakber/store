@@ -1,101 +1,40 @@
-import {
-  BatchRow,
-  CategoryRow,
-  InvoiceItemRow,
-  InvoiceRow,
-  ProductRow,
-  StockMovementRow,
-} from "@store/client-db";
-import {
-  LegacyBatchMigrationRow,
-  LegacyCategoryMigrationRow,
-  LegacyInvoiceItemMigrationRow,
-  LegacyInvoiceMigrationRow,
-  LegacyProductMigrationRow,
-  LegacyStockMovementMigrationRow,
-} from "@store/contracts";
 import { createHashHistory } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
 
 import { bootstrapAuth } from "@/lib/auth";
 import { completeGoogle, reportGoogleAuthError } from "@/lib/first-party-auth";
 import type { InventoryHost, LegacyLocalInventorySnapshot } from "@/lib/inventory-host";
+import { decodeLegacyLocalInventorySnapshot } from "@/lib/legacy-local-snapshot";
+import { reportError } from "@/lib/report-error";
+import { initClientSentry } from "@/lib/sentry";
 
 import { desktopHostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 
 type InventoryHttpBridge = NonNullable<Window["inventoryHttp"]>;
 
-const SQLiteBoolean = Schema.Union([Schema.Boolean, Schema.Literals([0, 1])]);
-const LegacyCategoryRow = Schema.Struct({
-  ...CategoryRow.fields,
-  tracksPacks: SQLiteBoolean,
+const emptyLegacySnapshot = (): LegacyLocalInventorySnapshot => ({
+  categories: [],
+  products: [],
+  batches: [],
+  invoices: [],
+  invoiceItems: [],
+  stockMovements: [],
+  migrationCatalog: {
+    categories: [],
+    products: [],
+    batches: [],
+    invoices: [],
+    invoiceItems: [],
+    stockMovements: [],
+  },
 });
-const LegacyProductRow = Schema.Struct({
-  ...ProductRow.fields,
-  visible: SQLiteBoolean,
-});
-const LegacyLocalInventorySnapshotWire = Schema.Struct({
-  categories: Schema.Array(LegacyCategoryRow),
-  products: Schema.Array(LegacyProductRow),
-  batches: Schema.Array(BatchRow),
-  invoices: Schema.Array(InvoiceRow),
-  invoiceItems: Schema.Array(InvoiceItemRow),
-  stockMovements: Schema.Array(StockMovementRow),
-  migrationCatalog: Schema.Struct({
-    categories: Schema.Array(LegacyCategoryMigrationRow),
-    products: Schema.Array(LegacyProductMigrationRow),
-    batches: Schema.Array(LegacyBatchMigrationRow),
-    invoices: Schema.Array(LegacyInvoiceMigrationRow),
-    invoiceItems: Schema.Array(LegacyInvoiceItemMigrationRow),
-    stockMovements: Schema.Array(LegacyStockMovementMigrationRow),
-  }),
-});
-
-const decodeSQLiteBoolean = (value: boolean | 0 | 1) => value === true || value === 1;
 
 const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot> => {
   const bridge = window.legacyLocalInventory;
-  if (!bridge) {
-    return {
-      categories: [],
-      products: [],
-      batches: [],
-      invoices: [],
-      invoiceItems: [],
-      stockMovements: [],
-      migrationCatalog: {
-        categories: [],
-        products: [],
-        batches: [],
-        invoices: [],
-        invoiceItems: [],
-        stockMovements: [],
-      },
-    };
-  }
-  const raw = Schema.decodeUnknownSync(LegacyLocalInventorySnapshotWire)(await bridge.load());
-  return {
-    categories: raw.categories.map((row) =>
-      Schema.decodeUnknownSync(CategoryRow)({
-        ...row,
-        tracksPacks: decodeSQLiteBoolean(row.tracksPacks),
-      }),
-    ),
-    products: raw.products.map((row) =>
-      Schema.decodeUnknownSync(ProductRow)({
-        ...row,
-        visible: decodeSQLiteBoolean(row.visible),
-      }),
-    ),
-    batches: raw.batches.map((row) => Schema.decodeUnknownSync(BatchRow)(row)),
-    invoices: raw.invoices.map((row) => Schema.decodeUnknownSync(InvoiceRow)(row)),
-    invoiceItems: raw.invoiceItems.map((row) => Schema.decodeUnknownSync(InvoiceItemRow)(row)),
-    stockMovements: raw.stockMovements.map((row) =>
-      Schema.decodeUnknownSync(StockMovementRow)(row),
-    ),
-    migrationCatalog: raw.migrationCatalog,
-  };
+  if (!bridge) return emptyLegacySnapshot();
+  return decodeLegacyLocalInventorySnapshot(await bridge.load(), (cause) => {
+    reportError(cause, { op: "legacy-locked-replica-decode" });
+  });
 };
 
 const aborted = (signal: AbortSignal) => {
@@ -154,7 +93,11 @@ const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
 };
 
 export const startElectron = async () => {
-  const inventory = await electronInventoryHost().catch(() => undefined);
+  initClientSentry();
+  const inventory = await electronInventoryHost().catch((cause) => {
+    reportError(cause, { op: "electron-inventory-host" });
+    return undefined;
+  });
   mountApp({
     initialAuth: await bootstrapAuth(),
     history: createHashHistory(),
@@ -163,7 +106,7 @@ export const startElectron = async () => {
   });
   window.auth?.onOAuthCallback((url) => {
     void completeGoogle(url).catch((cause) => {
-      console.error("Google sign-in callback failed", cause);
+      reportError(cause, { op: "google-sign-in-callback" });
       reportGoogleAuthError(cause);
     });
   });

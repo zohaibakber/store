@@ -15,6 +15,7 @@
     "test": "vitest run --root ../.. apps/desktop/test"
   },
   "dependencies": {
+    "@sentry/electron": "7.17.0",
     "better-sqlite3": "^12.11.1",
     "electron-updater": "^6.8.9"
   },

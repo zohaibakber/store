@@ -6,6 +6,7 @@ import { decodeCategoryId, decodeInvoiceId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
 import {
+  mergeLoadedMigrationCatalogs,
   mergeMigrationCatalogs,
   migrationDatabasePaths,
   snapshotWithoutReadableLockedReplica,
@@ -88,5 +89,17 @@ describe("legacy local inventory discovery", () => {
 
     expect(merged.categories).toHaveLength(1);
     expect(merged.invoices).toHaveLength(1);
+  });
+
+  it("refuses to treat a failed catalog read as an empty successful handoff", () => {
+    expect(() => mergeLoadedMigrationCatalogs([], 2)).toThrow(/2 database files failed/);
+    expect(mergeLoadedMigrationCatalogs([], 0)).toEqual({
+      categories: [],
+      products: [],
+      batches: [],
+      invoices: [],
+      invoiceItems: [],
+      stockMovements: [],
+    });
   });
 });

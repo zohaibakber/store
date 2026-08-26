@@ -24,6 +24,8 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { isAllowedRendererNavigation } from "./renderer-navigation";
+import { forwardRendererLogs } from "./report-renderer-logs";
+import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { makeShutdownCoordinator } from "./shutdown";
 import {
   openDesktopTanStackDbPersistence,
@@ -54,6 +56,8 @@ for (const file of envFiles) {
     process.loadEnvFile(file);
   } catch {}
 }
+
+initDesktopSentry();
 
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
@@ -268,6 +272,7 @@ function createWindow() {
   app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
+  forwardRendererLogs(win);
 
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
@@ -331,7 +336,7 @@ const shutdown = makeShutdownCoordinator({
     if (failures[0]) throw failures[0].reason;
   },
   quit: () => app.quit(),
-  reportError: (cause) => console.error("Desktop shutdown cleanup failed", cause),
+  reportError: (cause) => reportDesktopError(cause, { op: "desktop-shutdown" }),
 });
 
 app.on("before-quit", shutdown);
@@ -385,6 +390,8 @@ void app.whenReady().then(async () => {
   disposeLegacyLocalInventory = registerLegacyLocalInventoryIpc({
     ipcMain,
     userDataPath: app.getPath("userData"),
+    reportError: (cause, databasePath) =>
+      reportDesktopError(cause, { op: "legacy-catalog-read", databasePath }),
   });
   await authBroker.initialize();
   registerAuthIpc();

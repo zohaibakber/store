@@ -92,6 +92,7 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
+          VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
@@ -117,4 +118,5 @@ jobs:
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
           VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
+          VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}

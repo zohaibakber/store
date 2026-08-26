@@ -87,10 +87,12 @@ jobs:
           fi
           echo "VITE_API_URL=${VITE_API_URL}"
           echo "VITE_AUTH_URL=${VITE_AUTH_URL}"
+          echo "VITE_SENTRY_DSN=${VITE_SENTRY_DSN:+set}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
       - name: Set desktop app version
@@ -116,6 +118,7 @@ jobs:
           # masked as ***.
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
   publish:
