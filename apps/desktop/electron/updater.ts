@@ -4,8 +4,10 @@ import path from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { app, ipcMain, type BrowserWindow } from "electron";
+import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
+
+import { assertTrustedIpcSender } from "./ipc-sender";
 
 import {
   makeUpdaterWorkflow,
@@ -97,9 +99,17 @@ const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
   };
 };
 
-export async function setupUpdater(getWindow: () => BrowserWindow | null) {
+export async function setupUpdater(
+  getWindow: () => BrowserWindow | null,
+  allowedOrigins: () => ReadonlyArray<string>,
+) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "zohaibakber",
+    repo: "store",
+  });
   await clearStalePendingUpdate(app.getVersion());
 
   const provider: UpdaterProvider = {
@@ -130,9 +140,16 @@ export async function setupUpdater(getWindow: () => BrowserWindow | null) {
 
   // Manual "Check for updates" and focus checks must skip the throttle, or a
   // stale not-available right after publish sticks for minutes.
-  ipcMain.handle("updater:check", () => Effect.runPromise(workflow.check(true)));
-  ipcMain.handle("updater:download", () => Effect.runPromise(workflow.download));
-  const install = () => {
+  ipcMain.handle("updater:check", (event) => {
+    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
+    return Effect.runPromise(workflow.check(true));
+  });
+  ipcMain.handle("updater:download", (event) => {
+    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
+    return Effect.runPromise(workflow.download);
+  });
+  const install = (event: IpcMainEvent) => {
+    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
     Effect.runSync(workflow.install);
   };
   ipcMain.on("updater:install", install);

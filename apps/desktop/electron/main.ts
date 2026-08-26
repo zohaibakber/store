@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,10 +11,11 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
 import { registerInventoryHttpIpc } from "./inventory-http";
+import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerLegacyLocalInventoryIpc } from "./legacy-local-inventory";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
 import {
@@ -23,18 +25,21 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
-import { isAllowedRendererNavigation } from "./renderer-navigation";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
+import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { makeShutdownCoordinator } from "./shutdown";
 import { setupUpdater } from "./updater";
+import { registerWebContentsSecurity } from "./web-contents-security";
+
+const require = createRequire(import.meta.url);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-process.env.APP_ROOT = path.join(__dirname, "..");
+process.env.APP_ROOT = path.join(__dirname, "..", "..");
 
 export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
+export const MAIN_DIST = path.join(process.env.APP_ROOT, ".vite", "build");
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
@@ -53,6 +58,10 @@ for (const file of envFiles) {
   } catch {}
 }
 
+if (require("electron-squirrel-startup")) {
+  app.quit();
+}
+
 initDesktopSentry();
 
 let win: BrowserWindow | null;
@@ -66,7 +75,7 @@ function appIconPath() {
   // icon from extraResources, not from renderer assets. Unpackaged/dev uses
   // the orange mark; packaged/prod uses the monochrome mark.
   return app.isPackaged
-    ? path.join(process.resourcesPath, "logo.png")
+    ? path.join(process.resourcesPath, "icon.png")
     : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
 }
 // Packaged apps ship no .env, so the API URL is baked in at build time via
@@ -107,6 +116,8 @@ const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
+Menu.setApplicationMenu(null);
+
 const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
 const oauthCallbacks = makeOAuthCallbackMailbox(ELECTRON_PROTOCOL, () => {
   win?.webContents.send("auth:oauth-callback-available");
@@ -118,6 +129,14 @@ const rendererCsp = makeDesktopContentSecurityPolicy({
   authOrigin: new URL(AUTH_BASE_URL).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
+
+const allowedRendererOrigins = () =>
+  [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
+    (value): value is string => Boolean(value),
+  );
+
+const assertRendererIpc = (frame: Electron.WebFrameMain | null | undefined) =>
+  assertTrustedIpcSender(frame, allowedRendererOrigins());
 
 function registerRendererCsp() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -171,33 +190,48 @@ const InvoiceUpload = Schema.Struct({
 const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", () => authBroker.snapshot);
-  ipcMain.handle("auth:get-oauth-redirect-uri", () => `${ELECTRON_PROTOCOL}://auth/callback`);
-  ipcMain.handle("auth:take-oauth-callback", () => oauthCallbacks.take());
-  ipcMain.handle("auth:adopt-session", async (_event, input) => {
+  ipcMain.handle("auth:get-session", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return authBroker.snapshot;
+  });
+  ipcMain.handle("auth:get-oauth-redirect-uri", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return `${ELECTRON_PROTOCOL}://auth/callback`;
+  });
+  ipcMain.handle("auth:take-oauth-callback", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return oauthCallbacks.take();
+  });
+  ipcMain.handle("auth:adopt-session", async (event, input) => {
+    assertRendererIpc(event.senderFrame);
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
     return serializeAuthTransition(() => authBroker.adoptSession(tokens).then(publishSession));
   });
-  ipcMain.handle("auth:renew-session", () =>
-    serializeAuthTransition(() => authBroker.renewSession().then(publishSession)),
-  );
-  ipcMain.handle("auth:sign-out", () =>
-    serializeAuthTransition(async () => {
+  ipcMain.handle("auth:renew-session", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return serializeAuthTransition(() => authBroker.renewSession().then(publishSession));
+  });
+  ipcMain.handle("auth:sign-out", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return serializeAuthTransition(async () => {
       await authBroker.signOut();
       publishSession(authBroker.snapshot);
-    }),
-  );
-  ipcMain.handle("auth:organization", () =>
-    fetchOrganizationRoster((pathname, init) => authBroker.authRequest(pathname, init)),
-  );
-  ipcMain.handle("auth:organize", async (_event, input) => {
+    });
+  });
+  ipcMain.handle("auth:organization", (event) => {
+    assertRendererIpc(event.senderFrame);
+    return fetchOrganizationRoster((pathname, init) => authBroker.authRequest(pathname, init));
+  });
+  ipcMain.handle("auth:organize", async (event, input) => {
+    assertRendererIpc(event.senderFrame);
     const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
     return organizeOrganization(
       (pathname, init) => authBroker.authRequest(pathname, init),
       command,
     );
   });
-  ipcMain.handle("auth:open-external", async (_event, input) => {
+  ipcMain.handle("auth:open-external", async (event, input) => {
+    assertRendererIpc(event.senderFrame);
     const url = Schema.decodeUnknownSync(Schema.String)(input);
     const parsed = new URL(url);
     if (parsed.protocol !== "https:" || parsed.hostname !== "accounts.google.com") {
@@ -208,7 +242,8 @@ function registerAuthIpc() {
 }
 
 function registerServerIpc() {
-  ipcMain.handle("server:uploads", async (_event, input) => {
+  ipcMain.handle("server:uploads", async (event, input) => {
+    assertRendererIpc(event.senderFrame);
     const upload = Schema.decodeUnknownSync(InvoiceUpload)(input);
     const rejection = invoiceUploadRejection(
       upload.files.map((file) => ({ byteLength: file.bytes.byteLength })),
@@ -260,6 +295,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      webSecurity: true,
     },
   });
 
@@ -268,14 +304,6 @@ function createWindow() {
 
   win.once("ready-to-show", () => win?.show());
   forwardRendererLogs(win);
-
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (event, url) => {
-    const allowed = [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
-      (value): value is string => Boolean(value),
-    );
-    if (!isAllowedRendererNavigation(url, allowed)) event.preventDefault();
-  });
 
   win.on("closed", () => {
     win = null;
@@ -299,7 +327,12 @@ nativeTheme.on("updated", () => {
   }
 });
 
-ipcMain.on("theme:set-source", (_event, input) => {
+ipcMain.on("theme:set-source", (event, input) => {
+  try {
+    assertRendererIpc(event.senderFrame);
+  } catch {
+    return;
+  }
   const source = Schema.decodeUnknownOption(ThemeSource)(input);
   if (source._tag === "Some") nativeTheme.themeSource = source.value;
 });
@@ -370,20 +403,25 @@ void app.whenReady().then(async () => {
     contentSecurityPolicy: rendererCsp,
   });
   registerRendererCsp();
+  denyAllSessionPermissionRequests(session.defaultSession);
+  registerWebContentsSecurity(allowedRendererOrigins);
+  registerAuthIpc();
+  registerServerIpc();
+  createWindow();
   const deviceId = await loadDeviceId();
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
     auth: authBroker,
     deviceId,
     ipcMain,
+    allowedOrigins: allowedRendererOrigins,
   });
   disposeLegacyLocalInventory = registerLegacyLocalInventoryIpc({
     ipcMain,
     userDataPath: app.getPath("userData"),
+    allowedOrigins: allowedRendererOrigins,
   });
   await authBroker.initialize();
-  registerAuthIpc();
-  registerServerIpc();
-  if (app.isPackaged) disposeUpdater = await setupUpdater(() => win);
-  createWindow();
+  publishSession(authBroker.snapshot);
+  if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
 });

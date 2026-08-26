@@ -9,6 +9,7 @@ import {
   type InventoryHttpRequest,
   type InventoryHttpResponse,
 } from "./inventory-http-channels";
+import { assertTrustedIpcSender } from "./ipc-sender";
 
 const InventoryHttpRequestInput = Schema.Struct({
   requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
@@ -84,17 +85,24 @@ export const registerInventoryHttpIpc = (options: {
   readonly auth: AuthBroker;
   readonly deviceId: string;
   readonly ipcMain: IpcMain;
+  readonly allowedOrigins: () => ReadonlyArray<string>;
 }) => {
   const inFlight = new Map<string, AbortController>();
+  const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent) =>
+    assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
 
-  const handleConfig = () => ({
-    apiBaseUrl: options.apiBaseUrl,
-    deviceId: options.deviceId,
-  });
+  const handleConfig = (event: IpcMainInvokeEvent) => {
+    assertSender(event);
+    return {
+      apiBaseUrl: options.apiBaseUrl,
+      deviceId: options.deviceId,
+    };
+  };
   const handleRequest = async (
     event: IpcMainInvokeEvent,
     input: InventoryHttpRequest,
   ): Promise<InventoryHttpResponse> => {
+    assertSender(event);
     const request = Schema.decodeUnknownSync(InventoryHttpRequestInput)(input);
     validatedInventoryUrl(options.apiBaseUrl, request);
     assertInventoryRequestBodySize(options.apiBaseUrl, request);
@@ -127,6 +135,7 @@ export const registerInventoryHttpIpc = (options: {
     }
   };
   const abortRequest = (event: IpcMainEvent, input: string) => {
+    assertSender(event);
     const requestId = Schema.decodeUnknownSync(Schema.String)(input);
     inFlight.get(requestKey(event.sender.id, requestId))?.abort();
   };
