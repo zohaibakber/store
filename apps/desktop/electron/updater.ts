@@ -8,7 +8,6 @@ import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
 
 import { assertTrustedIpcSender } from "./ipc-sender";
-
 import {
   makeUpdaterWorkflow,
   type UpdaterProvider,

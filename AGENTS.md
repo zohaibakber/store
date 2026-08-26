@@ -70,8 +70,8 @@ and `vp build` (Turborepo fans them out per package).
   `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
   `DISPLAY=:1` in the headless VM. Production packages flip Electron Fuses via
   `@electron-forge/plugin-fuses` and keep `sandbox: true`. `ERROR:dbus/...`
-  lines in the log are harmless. Package with `vp run --filter @store/desktop
-  package` (or `make` / `publish`).
+  lines in the log are harmless. Package with
+  `vp run --filter @store/desktop package` (or `make` / `publish`).
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
   stores state remotely and binds real dev-stage D1 + Durable Objects. There is

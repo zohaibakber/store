@@ -131,8 +131,8 @@ const rendererCsp = makeDesktopContentSecurityPolicy({
 });
 
 const allowedRendererOrigins = () =>
-  [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter(
-    (value): value is string => Boolean(value),
+  [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
+    Boolean(value),
   );
 
 const assertRendererIpc = (frame: Electron.WebFrameMain | null | undefined) =>

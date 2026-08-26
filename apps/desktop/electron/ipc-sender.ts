@@ -1,9 +1,12 @@
-import type { WebFrameMain } from "electron";
-
 import { isAllowedRendererNavigation } from "./renderer-navigation";
 
+export type TrustedIpcSenderFrame = {
+  readonly url: string;
+  readonly detached?: boolean;
+};
+
 export const isTrustedIpcSenderFrame = (
-  frame: WebFrameMain | null | undefined,
+  frame: TrustedIpcSenderFrame | null | undefined,
   allowedOrigins: ReadonlyArray<string>,
 ) => {
   if (!frame) return false;
@@ -16,7 +19,7 @@ export const isTrustedIpcSenderFrame = (
 };
 
 export const assertTrustedIpcSender = (
-  frame: WebFrameMain | null | undefined,
+  frame: TrustedIpcSenderFrame | null | undefined,
   allowedOrigins: ReadonlyArray<string>,
 ) => {
   if (!isTrustedIpcSenderFrame(frame, allowedOrigins)) {

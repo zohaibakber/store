@@ -1,5 +1,3 @@
-/// <reference path="../forge.env.d.ts" />
-
 import type {
   OrganizationCommand,
   OrganizationCommandResult,

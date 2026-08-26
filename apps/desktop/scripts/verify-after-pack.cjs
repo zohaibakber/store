@@ -117,7 +117,6 @@ const verifyDesktopAsar = (archivePath) => {
     );
   }
 
-
   const requiredEntries = [
     "/dist/index.html",
     "/.vite/build/main.js",

@@ -20,16 +20,14 @@ describe("trusted IPC sender", () => {
   it("rejects missing frames and prefix-similar hosts", () => {
     expect(isTrustedIpcSenderFrame(null, ["com.tabaaq.desktop://app"])).toBe(false);
     expect(
-      isTrustedIpcSenderFrame(
-        { url: "com.tabaaq.desktop://app.attacker.example/" } as never,
-        ["com.tabaaq.desktop://app"],
-      ),
+      isTrustedIpcSenderFrame({ url: "com.tabaaq.desktop://app.attacker.example/" }, [
+        "com.tabaaq.desktop://app",
+      ]),
     ).toBe(false);
     expect(
-      isTrustedIpcSenderFrame(
-        { url: "com.tabaaq.desktop://app/inventory" } as never,
-        ["com.tabaaq.desktop://app"],
-      ),
+      isTrustedIpcSenderFrame({ url: "com.tabaaq.desktop://app/inventory" }, [
+        "com.tabaaq.desktop://app",
+      ]),
     ).toBe(true);
   });
 });
