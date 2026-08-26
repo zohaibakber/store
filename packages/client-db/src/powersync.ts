@@ -385,8 +385,22 @@ export const makeInventoryPowerSyncConnector = (input: {
 export const inventoryPowerSyncDatabaseName = (scopeId: string) =>
   inventoryReplicaDatabaseName(scopeId).replace("tanstack-inventory", "powersync-inventory");
 
+export const INVENTORY_FIRST_SYNC_TIMEOUT_MS = 300_000;
 export const INVENTORY_UPLOAD_DRAIN_TIMEOUT_MS = 15_000;
 const INVENTORY_UPLOAD_DRAIN_POLL_MS = 50;
+
+export const waitForInventoryFirstSync = async (
+  powerSync: {
+    readonly waitForFirstSync: (request?: AbortSignal) => Promise<void>;
+    readonly currentStatus: { readonly hasSynced?: boolean | null };
+  },
+  timeoutMs: number = INVENTORY_FIRST_SYNC_TIMEOUT_MS,
+) => {
+  const signal = AbortSignal.timeout(timeoutMs);
+  await powerSync.waitForFirstSync(signal);
+  if (powerSync.currentStatus.hasSynced) return;
+  throw new Error("The first sync did not finish in time.");
+};
 
 export type InventoryUploadDrainSource = {
   readonly getUploadQueueStats: () => Promise<{ readonly count: number }>;
