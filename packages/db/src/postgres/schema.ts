@@ -38,15 +38,15 @@ const mutableMetadata = {
 };
 
 /**
- * Durable acknowledgement for an Electric-backed client mutation.
+ * Durable acknowledgement for an inventory command.
  *
- * A browser can lose the HTTP response after Postgres commits and replay the
- * same optimistic transaction after a restart. The payload hash rejects an
- * operation-id collision, while the stored transaction id makes that replay
- * an acknowledgement instead of applying the domain changes twice.
+ * A client can lose the HTTP response after Postgres commits and replay the
+ * same operation after a restart. The payload hash rejects an operation-id
+ * collision, while the stored transaction id makes that replay an
+ * acknowledgement instead of applying the domain changes twice.
  */
-export const electricMutationReceipts = pgTable(
-  "electric_mutation_receipts",
+export const inventoryMutationReceipts = pgTable(
+  "inventory_mutation_receipts",
   {
     organizationId: tenantId(),
     operationId: text("operation_id").notNull(),
@@ -60,7 +60,7 @@ export const electricMutationReceipts = pgTable(
   },
   (table) => [
     primaryKey({
-      name: "electric_mutation_receipts_organization_operation_pk",
+      name: "inventory_mutation_receipts_organization_operation_pk",
       columns: [table.organizationId, table.operationId],
     }),
   ],

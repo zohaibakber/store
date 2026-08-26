@@ -16,9 +16,9 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { ElectricMutationResult } from "../electric/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
+import type { InventoryMutationResult } from "../inventory/mutation-database";
 
 export interface SyncLiveInput {
   readonly organizationId: string;
@@ -46,11 +46,11 @@ export interface ServerRuntimeContract {
   readonly connectSyncLive: (
     input: SyncLiveInput,
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
-  readonly writeElectricMutation: (
+  readonly writeInventoryMutation: (
     actor: InventoryActor,
     operation: SyncOperation,
   ) => Effect.Effect<
-    ElectricMutationResult,
+    InventoryMutationResult,
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;

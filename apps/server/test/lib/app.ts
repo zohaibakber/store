@@ -70,7 +70,7 @@ export interface AppOptions {
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
   readonly connectSyncLive?: ServerRuntimeContract["connectSyncLive"];
-  readonly writeElectricMutation?: ServerRuntimeContract["writeElectricMutation"];
+  readonly writeInventoryMutation?: ServerRuntimeContract["writeInventoryMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
   readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
 }
@@ -115,7 +115,7 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
       connectSyncLive:
         options.connectSyncLive ??
         (() => Effect.succeed(HttpServerResponse.empty({ status: 101 }))),
-      writeElectricMutation: options.writeElectricMutation ?? (() => Effect.succeed({ txid: 1 })),
+      writeInventoryMutation: options.writeInventoryMutation ?? (() => Effect.succeed({ txid: 1 })),
       importInventory:
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
       issueInvoice:

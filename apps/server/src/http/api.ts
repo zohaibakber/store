@@ -83,15 +83,15 @@ const productScans = HttpApiGroup.make("productScans").add(
   }).middleware(OrganizationAuth),
 );
 
-const ElectricMutationResult = Schema.Struct({
+const InventoryMutationResult = Schema.Struct({
   txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 });
 
-const electricMutations = HttpApiGroup.make("electricMutations")
+const inventoryMutations = HttpApiGroup.make("inventoryMutations")
   .add(
     HttpApiEndpoint.post("write", "/api/inventory/mutations", {
       payload: Schema.Struct({ operation: SyncOperation }),
-      success: ElectricMutationResult,
+      success: InventoryMutationResult,
       error: [BadRequest, Forbidden, Conflict],
     }).middleware(OrganizationAuth),
   )
@@ -115,5 +115,5 @@ export const StoreApi = HttpApi.make("StoreApi").add(
   legacySync,
   uploads,
   productScans,
-  electricMutations,
+  inventoryMutations,
 );

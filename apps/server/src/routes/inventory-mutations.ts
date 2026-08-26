@@ -22,19 +22,19 @@ const mutationProtocolError = (error: InventoryProtocolError) => {
   }
 };
 
-export const ElectricMutationHandlers = HttpApiBuilder.group(
+export const InventoryMutationHandlers = HttpApiBuilder.group(
   StoreApi,
-  "electricMutations",
-  Effect.fn("ElectricMutationHandlers.make")(function* (handlers) {
+  "inventoryMutations",
+  Effect.fn("InventoryMutationHandlers.make")(function* (handlers) {
     const runtime = yield* ServerRuntime;
 
     return handlers
       .handle(
         "write",
-        Effect.fn("ElectricMutationHandlers.write")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.write")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
-            .writeElectricMutation(
+            .writeInventoryMutation(
               { organizationId: identity.organizationId, userId: identity.user.id },
               payload.operation,
             )
@@ -48,7 +48,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "importInventory",
-        Effect.fn("ElectricMutationHandlers.importInventory")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.importInventory")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
             .importInventory(
@@ -65,7 +65,7 @@ export const ElectricMutationHandlers = HttpApiBuilder.group(
       )
       .handle(
         "issueInvoice",
-        Effect.fn("ElectricMutationHandlers.issueInvoice")(function* ({ payload }) {
+        Effect.fn("InventoryMutationHandlers.issueInvoice")(function* ({ payload }) {
           const identity = yield* CurrentOrganization;
           return yield* runtime
             .issueInvoice(
