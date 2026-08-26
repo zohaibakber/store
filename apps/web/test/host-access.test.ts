@@ -21,9 +21,11 @@ describe("desktopHostAccess", () => {
       to: "/sign-in",
       replace: true,
     });
-    expect(access.admit({ location: { pathname: "/sign-in" }, snapshot: unauthenticated })).toEqual({
-      _tag: "Allow",
-    });
+    expect(access.admit({ location: { pathname: "/sign-in" }, snapshot: unauthenticated })).toEqual(
+      {
+        _tag: "Allow",
+      },
+    );
     expect(access.inventoryScope(unauthenticated)).toBeNull();
   });
 

@@ -1,10 +1,7 @@
 import {
   type BatchRow,
   type CategoryRow,
-  type InvoiceItemRow,
-  type InvoiceRow,
   type ProductRow,
-  type StockMovementRow,
   inventoryPowerSyncSchema,
   inventoryPowerSyncDatabaseName,
   inventoryReplicaScope,
@@ -38,11 +35,7 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
-import {
-  decodeBatchId,
-  decodeCategoryId,
-  decodeProductId,
-} from "@store/contracts/ids";
+import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { powerSyncCollectionOptions } from "@tanstack/powersync-db-collection";
 import {
   DbClient,
