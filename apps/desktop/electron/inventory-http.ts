@@ -33,38 +33,19 @@ const inventoryApiPath = (apiBaseUrl: string) => {
   return (basePath.endsWith("/api") ? basePath : `${basePath}/api`).replace(/^\/\//u, "/");
 };
 
-export const INVENTORY_COMMAND_PATHS = [
-  "mutations",
-  "invoices",
-  "imports",
-  "legacy-migrations",
-  "legacy-migration-batches",
-  "legacy-reconciliations",
-] as const;
+export const INVENTORY_COMMAND_PATHS = ["mutations", "invoices", "imports"] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
-/** One catalog snapshot can exceed 1 MiB (up to 5_000 rows per table). */
-export const MAX_INVENTORY_CATALOG_BODY_BYTES = 32 * 1_048_576;
-
-const CATALOG_COMMAND_PATHS = new Set(["legacy-migrations", "legacy-reconciliations"]);
-
-export const maxInventoryRequestBodyBytes = (apiBaseUrl: string, url: string) => {
-  const pathname = new URL(url).pathname;
-  const apiPath = inventoryApiPath(apiBaseUrl);
-  for (const command of CATALOG_COMMAND_PATHS) {
-    if (pathname === `${apiPath}/inventory/${command}`) return MAX_INVENTORY_CATALOG_BODY_BYTES;
-  }
-  return MAX_INVENTORY_COMMAND_BODY_BYTES;
-};
 
 export const assertInventoryRequestBodySize = (
-  apiBaseUrl: string,
+  _apiBaseUrl: string,
   request: Pick<InventoryHttpRequest, "url" | "body">,
 ) => {
   if (!request.body) return;
-  const limit = maxInventoryRequestBodyBytes(apiBaseUrl, request.url);
-  if (request.body.byteLength <= limit) return;
-  throw new Error(`The inventory request body exceeds the ${limit / 1_048_576} MiB limit.`);
+  if (request.body.byteLength <= MAX_INVENTORY_COMMAND_BODY_BYTES) return;
+  throw new Error(
+    `The inventory request body exceeds the ${MAX_INVENTORY_COMMAND_BODY_BYTES / 1_048_576} MiB limit.`,
+  );
 };
 
 export const validatedInventoryUrl = (
@@ -76,18 +57,8 @@ export const validatedInventoryUrl = (
   const apiPath = inventoryApiPath(apiBaseUrl);
   const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
-  const migrationStatusPrefix = `${apiPath}/inventory/legacy-migrations/`;
-  const migrationJobId = requested.pathname.startsWith(migrationStatusPrefix)
-    ? requested.pathname.slice(migrationStatusPrefix.length)
-    : "";
-  const migrationStatusAllowed =
-    migrationJobId.length > 0 &&
-    migrationJobId.length <= 200 &&
-    !migrationJobId.includes("/") &&
-    !/%(?:2f|5c)/iu.test(migrationJobId);
   const routeAllowed =
-    (request.method === "GET" &&
-      (requested.pathname === credentialsPath || migrationStatusAllowed)) ||
+    (request.method === "GET" && requested.pathname === credentialsPath) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname));
   if (
     requested.username ||

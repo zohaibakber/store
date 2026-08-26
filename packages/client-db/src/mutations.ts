@@ -1,12 +1,3 @@
-import {
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationJobStatus,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogMigrationStarted,
-  LegacyCatalogReconciliationCommand,
-  LegacyCatalogReconciliationResult,
-  type LegacyCatalogMigrationStart,
-} from "@store/contracts";
 import { operationPayloadHash } from "@store/contracts/operation-hash";
 import {
   ImportInventoryCommandResult,
@@ -126,62 +117,6 @@ export const submitInventoryOperation = async (input: {
     body: { operation: input.operation },
     decode: Schema.decodeUnknownSync(InventoryMutationResult),
     failureLabel: "Inventory mutation failed.",
-  });
-
-export const submitLegacyCatalogMigration = async (input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly command: LegacyCatalogMigrationStart;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: "/inventory/legacy-migrations",
-    body: input.command,
-    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationStarted),
-    failureLabel: "Legacy inventory migration failed.",
-  });
-
-export const getLegacyCatalogMigrationStatus = async (input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly jobId: string;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: `/inventory/legacy-migrations/${encodeURIComponent(input.jobId)}`,
-    method: "GET",
-    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationJobStatus),
-    failureLabel: "Legacy inventory migration status failed.",
-  });
-
-export const submitLegacyCatalogMigrationBatch = async (input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly command: LegacyCatalogMigrationCommand;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: "/inventory/legacy-migration-batches",
-    body: input.command,
-    decode: Schema.decodeUnknownSync(LegacyCatalogMigrationResult),
-    failureLabel: "Legacy inventory migration batch failed.",
-  });
-
-export const submitLegacyCatalogReconciliation = async (input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly command: LegacyCatalogReconciliationCommand;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: "/inventory/legacy-reconciliations",
-    body: input.command,
-    decode: Schema.decodeUnknownSync(LegacyCatalogReconciliationResult),
-    failureLabel: "Legacy inventory reconciliation failed.",
   });
 
 export const submitCatalogRows = (input: {

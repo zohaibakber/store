@@ -390,8 +390,6 @@ void app.whenReady().then(async () => {
   disposeLegacyLocalInventory = registerLegacyLocalInventoryIpc({
     ipcMain,
     userDataPath: app.getPath("userData"),
-    reportError: (cause, databasePath) =>
-      reportDesktopError(cause, { op: "legacy-catalog-read", databasePath }),
   });
   await authBroker.initialize();
   registerAuthIpc();

@@ -12,7 +12,6 @@ import {
   powerSyncCollectionSchemas,
   powerSyncDeserializationSchemas,
   powerSyncDeserializationFailure,
-  migrateLegacyCatalog,
   submitImportInventory,
   submitIssueInvoice,
   waitForInventoryFirstSync,
@@ -62,11 +61,6 @@ import {
 import * as React from "react";
 
 import type { HostInventoryScope } from "@/host-access";
-import {
-  completeLegacyCatalogHandoff,
-  showLegacyCatalogMigrationFailure,
-  showLegacyCatalogMigrationToast,
-} from "@/lib/catalog-migration";
 import { toastStoreError } from "@/lib/errors";
 import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
@@ -103,30 +97,12 @@ const seedLegacySnapshot = async (
   await seedMissingRows(collections.stockMovements, legacy.stockMovements);
 };
 
-const replicateRemoteCatalog = (
+const connectRemoteCatalog = (
   host: InventoryHost,
   scopeId: string,
   powerSync: Awaited<ReturnType<InventoryHost["openPowerSyncDatabase"]>>,
 ) => {
   void (async () => {
-    const outcome = await completeLegacyCatalogHandoff({
-      scopeId,
-      loadCatalog: async () => (await host.loadLegacyLocalSnapshot?.())?.migrationCatalog,
-      migrate: async (catalog) => {
-        await migrateLegacyCatalog({
-          apiBaseUrl: host.apiBaseUrl,
-          authenticatedFetch: host.authenticatedFetch,
-          deviceId: host.deviceId,
-          catalog,
-          onProgress: (status) => showLegacyCatalogMigrationToast(scopeId, status),
-        });
-      },
-      reportError: (cause) => {
-        reportError(cause, { op: "legacy-catalog-handoff", scopeId });
-        showLegacyCatalogMigrationFailure(scopeId, cause);
-      },
-    });
-    if (outcome === "hold") return;
     try {
       void powerSync.connect(
         makeInventoryPowerSyncConnector({
@@ -141,7 +117,7 @@ const replicateRemoteCatalog = (
       await waitForInventoryFirstSync(powerSync);
     } catch (cause) {
       reportError(cause, { op: "inventory-first-sync", scopeId });
-      showLegacyCatalogMigrationFailure(scopeId, cause);
+      toastStoreError(cause);
     }
   })();
 };
@@ -236,7 +212,7 @@ const openInventory = async (host: InventoryHost, scope: HostInventoryScope) => 
         stockMovements,
       });
     }
-    if (scope._tag === "Remote") replicateRemoteCatalog(host, scopeId, powerSync);
+    if (scope._tag === "Remote") connectRemoteCatalog(host, scopeId, powerSync);
 
     return {
       batches,

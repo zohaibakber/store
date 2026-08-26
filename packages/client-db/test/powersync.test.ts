@@ -7,6 +7,7 @@ import {
   makeInventoryPowerSyncConnector,
   stampCatalogUploadRow,
   uploadInventoryCrudTransaction,
+  waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
 } from "../src/powersync";
 
@@ -280,6 +281,34 @@ describe("PowerSync catalog upload failures", () => {
     expect(onUploadHalt).not.toHaveBeenCalled();
     expect(disconnect).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForInventoryFirstSync", () => {
+  it("surfaces a timeout instead of treating an aborted wait as a completed sync", async () => {
+    await expect(
+      waitForInventoryFirstSync(
+        {
+          currentStatus: { hasSynced: false },
+          waitForFirstSync: async (signal) => {
+            await new Promise<void>((resolve) => {
+              signal?.addEventListener("abort", () => resolve(), { once: true });
+            });
+          },
+        },
+        20,
+      ),
+    ).rejects.toThrow("The first sync did not finish in time.");
+  });
+
+  it("returns once PowerSync reports a completed first sync", async () => {
+    await waitForInventoryFirstSync(
+      {
+        currentStatus: { hasSynced: true },
+        waitForFirstSync: async () => undefined,
+      },
+      20,
+    );
   });
 });
 

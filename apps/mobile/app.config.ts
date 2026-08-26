@@ -39,7 +39,11 @@ export default ({ config }: ConfigContext): ExpoConfig =>
       name: isProductionBuild ? "Tabaaq" : "Tabaaq Dev",
       slug: config.slug ?? "tabaaq",
       scheme: isProductionBuild ? "com.tabaaq.mobile" : "com.tabaaq.mobile.debug",
-      plugins: [...(config.plugins ?? []), ...googleSignInPlugin, "./plugins/with-android-dev-variant"],
+      plugins: [
+        ...(config.plugins ?? []),
+        ...googleSignInPlugin,
+        "./plugins/with-android-dev-variant",
+      ],
       extra: {
         ...config.extra,
         ...extraFromEnv,

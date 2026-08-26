@@ -4,13 +4,6 @@ import {
   IssueInvoiceCommand,
   IssueInvoiceResult,
   InvoiceExtraction,
-  LegacyCatalogMigrationCommand,
-  LegacyCatalogMigrationJobStatus,
-  LegacyCatalogMigrationResult,
-  LegacyCatalogMigrationStartRequest,
-  LegacyCatalogMigrationStarted,
-  LegacyCatalogReconciliationCommand,
-  LegacyCatalogReconciliationResult,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
   ProductScanInput,
@@ -29,7 +22,6 @@ import {
   BadRequest,
   Conflict,
   Forbidden,
-  NotFound,
   PayloadTooLarge,
   TooManyRequests,
   UnsupportedMediaType,
@@ -114,34 +106,6 @@ const electricMutations = HttpApiGroup.make("electricMutations")
     HttpApiEndpoint.post("issueInvoice", "/api/inventory/invoices", {
       payload: IssueInvoiceCommand,
       success: IssueInvoiceResult,
-      error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("migrateLegacyCatalog", "/api/inventory/legacy-migrations", {
-      payload: LegacyCatalogMigrationStartRequest,
-      success: LegacyCatalogMigrationStarted.pipe(HttpApiSchema.status(202)),
-      error: [BadRequest, Forbidden, BadGateway],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.get("legacyCatalogMigrationStatus", "/api/inventory/legacy-migrations/:jobId", {
-      params: { jobId: LegacyCatalogMigrationStarted.fields.jobId },
-      success: LegacyCatalogMigrationJobStatus,
-      error: [Forbidden, NotFound],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("migrateLegacyCatalogBatch", "/api/inventory/legacy-migration-batches", {
-      payload: LegacyCatalogMigrationCommand,
-      success: LegacyCatalogMigrationResult,
-      error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("reconcileLegacyCatalog", "/api/inventory/legacy-reconciliations", {
-      payload: LegacyCatalogReconciliationCommand,
-      success: LegacyCatalogReconciliationResult,
       error: [BadRequest, Forbidden, Conflict],
     }).middleware(OrganizationAuth),
   );

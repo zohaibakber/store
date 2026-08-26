@@ -66,64 +66,6 @@ export const electricMutationReceipts = pgTable(
   ],
 );
 
-export const legacyCatalogMigrationJobs = pgTable(
-  "legacy_catalog_migration_jobs",
-  {
-    id: text("id").notNull(),
-    organizationId: tenantId(),
-    requestId: text("request_id").notNull(),
-    requestedByUserId: text("requested_by_user_id").notNull(),
-    deviceId: text("device_id").notNull(),
-    status: text("status").$type<"queued" | "migrating" | "succeeded" | "failed">().notNull(),
-    phase: text("phase")
-      .$type<
-        | "queued"
-        | "categories"
-        | "products"
-        | "batches"
-        | "invoices"
-        | "invoice-items"
-        | "stock-movements"
-        | "reconcile"
-        | "complete"
-      >()
-      .notNull(),
-    progress: integer("progress").notNull().default(0),
-    processedRows: integer("processed_rows").notNull().default(0),
-    totalRows: integer("total_rows").notNull(),
-    importedRows: integer("imported_rows").notNull().default(0),
-    skippedRows: integer("skipped_rows").notNull().default(0),
-    attempts: integer("attempts").notNull().default(0),
-    payload: text("payload").notNull(),
-    error: text("error"),
-    createdAt: epochMilliseconds("created_at").notNull(),
-    updatedAt: epochMilliseconds("updated_at").notNull(),
-    completedAt: epochMilliseconds("completed_at"),
-  },
-  (table) => [
-    primaryKey({
-      name: "legacy_catalog_migration_jobs_organization_id_id_pk",
-      columns: [table.organizationId, table.id],
-    }),
-    uniqueIndex("legacy_catalog_migration_jobs_organization_request_uidx").on(
-      table.organizationId,
-      table.requestId,
-    ),
-    index("legacy_catalog_migration_jobs_organization_status_idx").on(
-      table.organizationId,
-      table.status,
-    ),
-    check(
-      "legacy_catalog_migration_jobs_progress_range",
-      sql`${table.progress} >= 0 and ${table.progress} <= 100`,
-    ),
-    check(
-      "legacy_catalog_migration_jobs_counts_nonnegative",
-      sql`${table.processedRows} >= 0 and ${table.totalRows} >= 0 and ${table.importedRows} >= 0 and ${table.skippedRows} >= 0 and ${table.attempts} >= 0`,
-    ),
-  ],
-);
-
 export const categories = pgTable(
   "categories",
   {

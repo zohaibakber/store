@@ -19,14 +19,6 @@ const emptyLegacySnapshot = (): LegacyLocalInventorySnapshot => ({
   invoices: [],
   invoiceItems: [],
   stockMovements: [],
-  migrationCatalog: {
-    categories: [],
-    products: [],
-    batches: [],
-    invoices: [],
-    invoiceItems: [],
-    stockMovements: [],
-  },
 });
 
 const loadLegacyLocalInventory = async (): Promise<LegacyLocalInventorySnapshot> => {

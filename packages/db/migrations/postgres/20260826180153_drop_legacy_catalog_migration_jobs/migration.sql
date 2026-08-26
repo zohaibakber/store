@@ -1,0 +1,1 @@
+DROP TABLE "legacy_catalog_migration_jobs";
