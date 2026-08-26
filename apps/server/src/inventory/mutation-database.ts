@@ -52,13 +52,13 @@ import {
   InventoryProtocolError,
   inventoryProtocolError as protocolError,
 } from "./errors";
-import type { InventoryActor } from "./model";
-import { decodeEntityRow, serverOwnedColumns } from "./row-validation";
 import type {
   LegacyMigrationJobClaim,
   LegacyMigrationProgressUpdate,
   LegacyMigrationQueueMessage,
 } from "./legacy-migration-worker";
+import type { InventoryActor } from "./model";
+import { decodeEntityRow, serverOwnedColumns } from "./row-validation";
 
 export interface InventoryMutationResult {
   readonly txid: number;

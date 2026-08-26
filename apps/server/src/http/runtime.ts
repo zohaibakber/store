@@ -23,10 +23,10 @@ import type * as Scope from "effect/Scope";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { AuthError } from "../auth/session";
-import type { LegacyMigrationQueueError } from "../inventory/legacy-migration-worker";
-import type { InventoryMutationResult } from "../inventory/mutation-database";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
+import type { LegacyMigrationQueueError } from "../inventory/legacy-migration-worker";
 import type { InventoryActor } from "../inventory/model";
+import type { InventoryMutationResult } from "../inventory/mutation-database";
 
 export interface SyncLiveInput {
   readonly organizationId: string;

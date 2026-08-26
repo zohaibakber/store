@@ -24,6 +24,7 @@ import {
   loadWorkspaceSnapshot,
   type AuthVerificationConfig,
 } from "./src/auth/session";
+import type { InventoryDatabaseError, InventoryProtocolError } from "./src/inventory/errors";
 import {
   LEGACY_MIGRATION_QUEUE_MAX_ATTEMPTS,
   LegacyMigrationJobProcessingError,
@@ -37,7 +38,6 @@ import {
   InventoryMutationDatabase,
   InventoryMutationDatabaseLive,
 } from "./src/inventory/mutation-database";
-import type { InventoryDatabaseError, InventoryProtocolError } from "./src/inventory/errors";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
