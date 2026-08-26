@@ -1,3 +1,4 @@
+import "@sentry/electron/preload";
 import type {
   OrganizationCommand,
   OrganizationCommandResult,
