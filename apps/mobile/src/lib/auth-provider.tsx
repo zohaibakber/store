@@ -24,6 +24,7 @@ import {
 import { forgetGoogleAccount, signInWithGoogleAccount } from "@/lib/google-signin";
 import { hapticSuccess } from "@/lib/haptics";
 import { rememberLastUserId } from "@/lib/local-session";
+import { Sentry } from "@/lib/sentry";
 
 /** Mobile has no guest mode: without a session there is no inventory to open. */
 type SignedOutAuth = {
@@ -114,6 +115,14 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (state._tag === "Authenticated") {
+      Sentry.setUser({ id: state.inventoryUserId });
+      return;
+    }
+    Sentry.setUser(null);
+  }, [state]);
 
   useEffect(
     () =>

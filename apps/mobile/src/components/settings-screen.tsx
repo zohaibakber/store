@@ -99,6 +99,16 @@ export function SettingsScreen() {
               supporting={mobileApplicationId}
               title={__DEV__ ? "Development build" : "Production build"}
             />
+            {__DEV__ ? (
+              <Row
+                leading={<Icon name="bolt" size={18} tone="muted" />}
+                onPress={() => {
+                  throw new Error(`Mobile Sentry test error ${Date.now()}`);
+                }}
+                supporting="Throws so Sentry can confirm the SDK is wired"
+                title="Send test error"
+              />
+            ) : null}
           </RowGroup>
         </View>
 

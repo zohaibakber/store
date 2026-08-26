@@ -1,11 +1,20 @@
 import "@azure/core-asynciterator-polyfill";
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import {
+  DarkTheme,
+  DefaultTheme,
+  ErrorBoundary as ExpoErrorBoundary,
+  Stack,
+  ThemeProvider,
+} from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { MobileAuthProvider } from "@/lib/auth-provider";
+import { initMobileSentry, Sentry } from "@/lib/sentry";
 import { followDeviceColorScheme, useAppColorScheme } from "@/theme/appearance";
 import { palettes } from "@/theme/tokens";
+
+initMobileSentry();
 
 followDeviceColorScheme();
 
@@ -31,7 +40,7 @@ const navigationTheme = (scheme: "light" | "dark") => {
   };
 };
 
-export default function RootLayout() {
+function RootLayout() {
   const scheme = useAppColorScheme();
 
   return (
@@ -55,3 +64,7 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
+
+export const ErrorBoundary = Sentry.wrapExpoRouterErrorBoundary(ExpoErrorBoundary);

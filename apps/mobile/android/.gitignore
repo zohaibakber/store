@@ -17,3 +17,6 @@ app/src/main/java/inline/
 
 # Bundle artifacts
 *.jsbundle
+
+# Sentry upload config (org/project; auth token stays in SENTRY_AUTH_TOKEN)
+sentry.properties
