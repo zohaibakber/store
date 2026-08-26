@@ -10,7 +10,11 @@ import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contrac
 
 import type { InventoryHost } from "@/lib/inventory-host";
 
-import { importLocalInventory, issueLocalInvoice, requireNonNegativeQuantity } from "./local-workspace";
+import {
+  importLocalInventory,
+  issueLocalInvoice,
+  requireNonNegativeQuantity,
+} from "./local-workspace";
 import {
   activeRows,
   movementRow,

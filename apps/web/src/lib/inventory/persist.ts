@@ -35,7 +35,7 @@ export const updatedMetadata = (actor: {
   updatedAt: Date.now(),
 });
 
-export const requiredRow = <Row,>(row: Row | undefined, label: string): Row => {
+export const requiredRow = <Row>(row: Row | undefined, label: string): Row => {
   if (!row) throw new Error(`${label} no longer exists.`);
   return row;
 };
@@ -65,8 +65,9 @@ export const persistTogether = async (inventory: Inventory, mutate: () => void) 
   await transaction.isPersisted.promise;
 };
 
-export const activeRows = <Row extends { readonly deletedAt: number | null }>(rows: Iterable<Row>) =>
-  [...rows].filter((row) => row.deletedAt === null);
+export const activeRows = <Row extends { readonly deletedAt: number | null }>(
+  rows: Iterable<Row>,
+) => [...rows].filter((row) => row.deletedAt === null);
 
 export const movementRow = (
   actor: { readonly organizationId: string; readonly userId: string; readonly deviceId: string },

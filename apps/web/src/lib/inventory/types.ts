@@ -53,7 +53,7 @@ export interface InventoryActions {
   readonly updateBatch: (input: UpdateBatchInput) => Promise<BatchRow>;
   readonly importInventory: (input: ImportInventoryInput) => Promise<ImportInventoryCommandResult>;
   readonly issueInvoice: (input: CreateInvoiceInput) => Promise<IssueInvoiceResult>;
-};
+}
 
 export type InventoryState =
   | { readonly _tag: "Opening" }

@@ -101,7 +101,9 @@ describe("inventory mutation HTTP", () => {
       }),
     ).resolves.toEqual({ invoiceId, invoiceNumber: 4, txid: 11 });
 
-    expect(authenticatedFetch.mock.calls[0]?.[0]).toBe("https://api.example/api/inventory/invoices");
+    expect(authenticatedFetch.mock.calls[0]?.[0]).toBe(
+      "https://api.example/api/inventory/invoices",
+    );
   });
 
   it("rejects a malformed mutation receipt", async () => {
