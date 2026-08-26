@@ -11,8 +11,11 @@ import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
 import {
-  InventoryMutationRequestError,
-  shouldRetryInventoryUpload,
+  catalogUploadDisposition,
+  failureFromUnknown,
+  InventoryFailure,
+  isAbortError,
+  inventoryRequest,
   submitCatalogRows,
 } from "./mutations";
 import {
@@ -30,25 +33,18 @@ const PowerSyncCredentialsResponse = EffectSchema.Struct({
   expiresAt: EffectSchema.Number,
 });
 
-const apiRoot = (baseUrl: string) => {
-  const normalized = baseUrl.replace(/\/+$/u, "");
-  return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
-};
-
 export const fetchInventoryPowerSyncCredentials = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
 }) => {
-  const response = await input.authenticatedFetch(
-    `${apiRoot(input.apiBaseUrl)}/powersync/credentials`,
-  );
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(detail || `PowerSync credentials failed (${response.status}).`);
-  }
-  const credentials = EffectSchema.decodeUnknownSync(PowerSyncCredentialsResponse)(
-    await response.json(),
-  );
+  const credentials = await inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/powersync/credentials",
+    method: "GET",
+    decode: EffectSchema.decodeUnknownSync(PowerSyncCredentialsResponse),
+    failureLabel: "PowerSync credentials failed.",
+  });
   return {
     endpoint: credentials.endpoint,
     token: credentials.token,
@@ -316,18 +312,26 @@ const uploadCatalogCrudEntry = async (
   },
   entry: InventoryCrudEntry,
 ) => {
-  const table = catalogTable(entry.table);
-  const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
-  switch (table) {
-    case "categories":
-      await submitCatalogRows({ ...input, entity: "category", rows: [row] });
-      break;
-    case "products":
-      await submitCatalogRows({ ...input, entity: "product", rows: [row] });
-      break;
-    case "batches":
-      await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
-      break;
+  try {
+    const table = catalogTable(entry.table);
+    const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
+    switch (table) {
+      case "categories":
+        await submitCatalogRows({ ...input, entity: "category", rows: [row] });
+        break;
+      case "products":
+        await submitCatalogRows({ ...input, entity: "product", rows: [row] });
+        break;
+      case "batches":
+        await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
+        break;
+    }
+  } catch (cause) {
+    if (cause instanceof InventoryFailure || isAbortError(cause)) throw cause;
+    throw new InventoryFailure({
+      message: cause instanceof Error ? cause.message : "Catalog upload is invalid.",
+      reason: { _tag: "rejected", code: "CLIENT_UPLOAD_INVALID" },
+    });
   }
 };
 
@@ -345,10 +349,11 @@ export const uploadInventoryCrudTransaction = async (
     try {
       await uploadCatalogCrudEntry(input, entry);
     } catch (error) {
-      if (error instanceof TypeError) throw error;
-      if (error instanceof InventoryMutationRequestError && shouldRetryInventoryUpload(error)) {
-        throw error;
-      }
+      if (isAbortError(error)) throw error;
+      const failure = failureFromUnknown(error);
+      const fate = catalogUploadDisposition(failure);
+      if (fate._tag === "skip") continue;
+      throw failure;
     }
   }
   await transaction.complete();
@@ -357,12 +362,23 @@ export const uploadInventoryCrudTransaction = async (
 export const makeInventoryPowerSyncConnector = (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
+  readonly onUploadHalt?: (failure: InventoryFailure) => void;
 }): PowerSyncBackendConnector => ({
   fetchCredentials: () => fetchInventoryPowerSyncCredentials(input),
   uploadData: async (database) => {
     const transaction = await database.getNextCrudTransaction();
     if (!transaction) return;
-    await uploadInventoryCrudTransaction(input, transaction);
+    try {
+      await uploadInventoryCrudTransaction(input, transaction);
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      const failure = failureFromUnknown(error);
+      if (catalogUploadDisposition(failure)._tag === "halt") {
+        input.onUploadHalt?.(failure);
+        await database.disconnect();
+      }
+      throw failure;
+    }
   },
 });
 

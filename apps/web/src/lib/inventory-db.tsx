@@ -67,6 +67,7 @@ import {
   showLegacyCatalogMigrationFailure,
   showLegacyCatalogMigrationToast,
 } from "@/lib/catalog-migration";
+import { toastStoreError } from "@/lib/errors";
 import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
 
@@ -131,6 +132,10 @@ const replicateRemoteCatalog = (
         makeInventoryPowerSyncConnector({
           apiBaseUrl: host.apiBaseUrl,
           authenticatedFetch: host.authenticatedFetch,
+          onUploadHalt: (failure) => {
+            reportError(failure, { op: "inventory-upload-halt", scopeId });
+            toastStoreError(failure);
+          },
         }),
       );
       await waitForInventoryFirstSync(powerSync);
