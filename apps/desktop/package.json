@@ -25,8 +25,6 @@
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/workspace": "workspace:*",
-    "@tanstack/electron-db-sqlite-persistence": "0.1.27",
-    "@tanstack/node-db-sqlite-persistence": "0.2.15",
     "@types/better-sqlite3": "^7.6.13",
     "cross-env": "^10.1.0",
     "effect": "catalog:",

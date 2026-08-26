@@ -340,12 +340,6 @@ importers:
       '@store/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
-      '@tanstack/electron-db-sqlite-persistence':
-        specifier: 0.1.27
-        version: 0.1.27(typescript@7.0.2)
-      '@tanstack/node-db-sqlite-persistence':
-        specifier: 0.2.15
-        version: 0.2.15(typescript@7.0.2)
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
@@ -5094,11 +5088,6 @@ packages:
     peerDependencies:
       typescript: '>=4.7'
 
-  '@tanstack/db-sqlite-persistence-core@0.2.15':
-    resolution: {integrity: sha512-+lfcNPayWxuPGgGgGahcmoucBaGtPaEbXbjdHz+Jo1tVku1bNk8MDDfNeVJg/dAXacg2BiJTssbq6WP63qf7Hg==}
-    peerDependencies:
-      typescript: '>=4.7'
-
   '@tanstack/db@0.8.2':
     resolution: {integrity: sha512-ZnwTCH4bd7fodVCbI1SGQWlqL/wWNErfbloweErwfgSD4ULzGoW4AVyxYHH/kK2b5iM9X6Qui0OeTFaY7FM52A==}
     peerDependencies:
@@ -5114,22 +5103,12 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@tanstack/electron-db-sqlite-persistence@0.1.27':
-    resolution: {integrity: sha512-u9LQlC+v+tBTAuTPj8/EZE01YJEhyXDrBYJ1egIKGzEIPeTb5557CnT0LnN7ss9qeBR1JguucZs5RLe9R1sZ8Q==}
-    peerDependencies:
-      typescript: '>=4.7'
-
   '@tanstack/form-core@1.33.5':
     resolution: {integrity: sha512-3dfx9MBP0aq5sXKteikG629X9oviptrQj0IFRk9YGcb+lB7Kv5x8S17oOSk1wUWgjQZ4xVJEMbKwOAODymocgA==}
 
   '@tanstack/history@1.162.1':
     resolution: {integrity: sha512-DR9t6lfLVdrjgCwpglrR9DR7Ok8/HlXjcOE+goWXF3zyuLUO/ug7vMbSFxTqrQTtbRghJfyhmIZ0S6LhPIy44w==}
     engines: {node: '>=20.19'}
-
-  '@tanstack/node-db-sqlite-persistence@0.2.15':
-    resolution: {integrity: sha512-2MWerJRIXIrCliq0jbfSAxg+CDKvB66j5r6VaS9LELPehT1hRCaXzbMCBjvt0V9u3VYiQrXZv0ftrs4+YdTVWQ==}
-    peerDependencies:
-      typescript: '>=4.7'
 
   '@tanstack/pacer-lite@0.1.1':
     resolution: {integrity: sha512-y/xtNPNt/YeyoVxE/JCx+T7yjEzpezmbb+toK8DDD1P4m7Kzs5YR956+7OKexG3f8aXgC3rLZl7b1V+yNUSy5w==}
@@ -15026,12 +15005,6 @@ snapshots:
       sorted-btree: 1.8.1
       typescript: 7.0.2
 
-  '@tanstack/db-sqlite-persistence-core@0.2.15(typescript@7.0.2)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/db': 0.8.2(typescript@7.0.2)
-      typescript: 7.0.2
-
   '@tanstack/db@0.8.2(typescript@7.0.2)':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -15055,11 +15028,6 @@ snapshots:
 
   '@tanstack/devtools-event-client@0.4.4': {}
 
-  '@tanstack/electron-db-sqlite-persistence@0.1.27(typescript@7.0.2)':
-    dependencies:
-      '@tanstack/db-sqlite-persistence-core': 0.2.15(typescript@7.0.2)
-      typescript: 7.0.2
-
   '@tanstack/form-core@1.33.5':
     dependencies:
       '@tanstack/devtools-event-client': 0.4.4
@@ -15067,12 +15035,6 @@ snapshots:
       '@tanstack/store': 0.11.1
 
   '@tanstack/history@1.162.1': {}
-
-  '@tanstack/node-db-sqlite-persistence@0.2.15(typescript@7.0.2)':
-    dependencies:
-      '@tanstack/db-sqlite-persistence-core': 0.2.15(typescript@7.0.2)
-      better-sqlite3: 12.11.1
-      typescript: 7.0.2
 
   '@tanstack/pacer-lite@0.1.1': {}
 

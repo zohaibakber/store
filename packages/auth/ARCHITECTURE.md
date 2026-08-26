@@ -2,15 +2,16 @@
 
 ## Problem
 
-Tabaaq currently delegates identity, sessions, organizations, UI state, and
-token refresh to Clerk. That choice made the first release smaller, but it also
-spread Clerk-specific IDs and lifecycle rules through the API, Electron main
-process, React renderer, Expo app, synchronization, deployment config, and CSP.
-The replacement must preserve the useful invariant: an authenticated
-organization ID scopes the same Postgres rows, PowerSync streams, and local
-replica on every client. During migration, that ID also remains the key of the
-legacy `ORGANIZATION_STORE` Durable Object so its production data can be found
-for export and backfill.
+Tabaaq used to delegate identity, sessions, organizations, UI state, and token
+refresh to Clerk. That kept the first release small, and it also spread vendor
+IDs and lifecycle rules through the API, Electron main process, React renderer,
+Expo app, synchronization, deployment config, and CSP.
+
+First-party auth owns those concerns now. An authenticated organization ID
+still scopes the same Postgres rows, PowerSync streams, and local replica on
+every client. That ID is also the key of the legacy `ORGANIZATION_STORE`
+Durable Object so remaining production data can be found for export and
+backfill.
 
 ## Usage (caller's view)
 
@@ -345,8 +346,6 @@ complete a user-visible transition, so callers do not coordinate hidden stages.
   token storage out of React components.
 - Browser production cookies use the `__Host-` prefix and path `/`. Local HTTP
   development uses an unprefixed cookie because the prefix requires `Secure`.
-- The Clerk organization-binding D1 table is unused. No runtime path reads it.
-  Dropping the table is a separate schema change.
 - Registration and Google sign-up still create one owner organization. That
   store can invite members and manage roles through `/v1/organization`. Creating
   additional organizations, or switching among them, is intentionally absent.

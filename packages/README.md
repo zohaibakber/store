@@ -21,5 +21,5 @@ organization-scoped Postgres streams.
 
 The retained Cloudflare Durable Object implementation, schema, migrations,
 contracts, and WebSocket protocol document the production path that preceded
-Electric. Preserve that compatibility source until an explicit retirement
-confirms that no production migration or rollback depends on it.
+Postgres and PowerSync. Preserve that compatibility source until an explicit
+retirement confirms that no production migration or rollback depends on it.
