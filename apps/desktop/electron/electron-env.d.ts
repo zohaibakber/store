@@ -1,4 +1,4 @@
-/// <reference types="vite-plugin-electron/electron-env" />
+/// <reference path="../forge.env.d.ts" />
 
 import type {
   OrganizationCommand,

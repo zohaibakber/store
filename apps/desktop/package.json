@@ -5,22 +5,41 @@
   "description": "Tabaaq inventory desktop app",
   "homepage": "https://github.com/zohaibakber/store",
   "author": "Zohaib Akber <zohaibakber99@gmail.com>",
+  "productName": "Tabaaq",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": ".vite/build/main.js",
   "scripts": {
-    "dev": "cross-env STORE_DESKTOP_DEV=1 vp pack --watch",
-    "build": "tsc && vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir && vp pack && electron-builder --config electron-builder.json5",
-    "release": "tsc && vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir && vp pack && electron-builder --config electron-builder.json5 --publish always",
+    "dev": "cross-env STORE_DESKTOP_DEV=1 node scripts/dev-electron.mjs",
+    "start": "electron-forge start",
+    "bundle:renderer": "vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir",
+    "package": "pnpm run bundle:renderer && electron-forge package",
+    "make": "pnpm run bundle:renderer && electron-forge make",
+    "publish": "pnpm run bundle:renderer && electron-forge publish",
+    "build": "tsc && pnpm run bundle:renderer && electron-forge package",
+    "release": "tsc && pnpm run bundle:renderer && electron-forge publish",
     "check": "vp check",
     "test": "vitest run --root ../.. apps/desktop/test"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
+    "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@electron-forge/publisher-github": "^7.10.2",
+    "@electron-forge/shared-types": "^7.10.2",
     "@electron/asar": "^4.3.0",
+    "@electron/fuses": "^1.8.0",
+    "@reforged/maker-appimage": "^5.1.1",
     "@sentry/electron": "7.17.0",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
@@ -29,7 +48,6 @@
     "cross-env": "^10.1.0",
     "effect": "catalog:",
     "electron": "^43.4.1",
-    "electron-builder": "^26.15.3",
     "typescript": "catalog:",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
     "vite-plus": "catalog:",
@@ -44,6 +62,5 @@
       "version": "11.22.0",
       "onFail": "download"
     }
-  },
-  "desktopName": "Tabaaq.desktop"
+  }
 }
