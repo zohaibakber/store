@@ -1,5 +1,3 @@
-/// <reference types="vite-plugin-electron/electron-env" />
-
 import type {
   OrganizationCommand,
   OrganizationCommandResult,

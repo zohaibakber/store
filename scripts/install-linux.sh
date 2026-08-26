@@ -15,7 +15,7 @@ ICON_NAME="tabaaq"
 command -v curl >/dev/null || { echo "curl is required to install ${APP_NAME}." >&2; exit 1; }
 
 asset_url=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-  | grep -o '"browser_download_url": *"[^"]*Linux[^"]*\.AppImage"' \
+  | grep -o '"browser_download_url": *"[^"]*\.AppImage"' \
   | head -n1 \
   | sed -E 's/.*"(https[^"]+)"/\1/')
 

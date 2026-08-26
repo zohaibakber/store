@@ -62,14 +62,16 @@ the Electron binary. From the repo root: `vp install`, `vp check`, `vp test`,
 and `vp build` (Turborepo fans them out per package).
 
 - **Electron binary.** If installation leaves `apps/desktop/node_modules/electron`
-  without its `dist/` binary, fetch it via that package's `install.js`. If
-  `vp dev` for the desktop errors that
-  Electron is missing, run
-  `node apps/desktop/node_modules/electron/install.js`.
-- **Desktop app.** `cd apps/desktop && vp dev` starts the Vite dev server
-  (`:5173`) and launches Electron. In the headless VM you must set
+  without its `dist/` binary, or `vp dev` for the desktop errors that Electron
+  is missing, run `node apps/desktop/node_modules/electron/install.js`.
+- **Desktop app.** `vp run dev:desktop` from the repo root starts the API/auth
+  workers and the web renderer, then `apps/desktop`'s `dev` script waits for
+  `:5174` and runs `electron-forge start`. Unpackaged/dev keeps an escape hatch:
   `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
-  `DISPLAY=:1`. `ERROR:dbus/...` lines in the log are harmless.
+  `DISPLAY=:1` in the headless VM. Production packages flip Electron Fuses via
+  `@electron-forge/plugin-fuses` and keep `sandbox: true`. `ERROR:dbus/...`
+  lines in the log are harmless. Package with
+  `vp run --filter @store/desktop package` (or `make` / `publish`).
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
   stores state remotely and binds real dev-stage D1 + Durable Objects. There is

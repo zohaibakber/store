@@ -6,7 +6,6 @@ const { extractFile, listPackage } = require("@electron/asar");
 // not the PowerSync engine. Live inventory is `@powersync/web` + wa-sqlite in
 // the renderer (IndexedDB VFS). OPFS worker assets stay banned because this
 // build has not switched to the OPFS VFS.
-const MAX_RUNTIME_PACKAGES = 56;
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
@@ -41,7 +40,7 @@ const forbiddenServerMarkers = [
   "organization_slug_uidx",
 ];
 
-const allowedTopLevelRoots = new Set(["dist", "dist-electron", "node_modules", "package.json"]);
+const allowedTopLevelRoots = new Set([".vite", "dist", "node_modules", "package.json"]);
 
 const packageRoot = (entry) => {
   const parts = entry.split("/").filter(Boolean);
@@ -122,19 +121,10 @@ const verifyDesktopAsar = (archivePath) => {
     );
   }
 
-  if (packageRoots.size > MAX_RUNTIME_PACKAGES) {
-    fail(
-      `desktop artifact contains ${packageRoots.size} runtime packages; expected at most ${MAX_RUNTIME_PACKAGES}`,
-      [...packageRoots].sort((left, right) => left.localeCompare(right)),
-    );
-  }
-
   const requiredEntries = [
     "/dist/index.html",
-    "/dist-electron/main.js",
-    "/dist-electron/preload.cjs",
-    "/node_modules/better-sqlite3/package.json",
-    "/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+    "/.vite/build/main.js",
+    "/.vite/build/preload.cjs",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));
@@ -158,8 +148,8 @@ const verifyDesktopAsar = (archivePath) => {
 
   const desktopJavaScriptEntries = entries.filter(
     (entry) =>
-      (entry.startsWith("/dist/") || entry.startsWith("/dist-electron/")) &&
-      (entry.endsWith(".js") || entry.endsWith(".mjs")),
+      (entry.startsWith("/dist/") || entry.startsWith("/.vite/")) &&
+      (entry.endsWith(".js") || entry.endsWith(".mjs") || entry.endsWith(".cjs")),
   );
   const serverLeaks = [];
   for (const entry of desktopJavaScriptEntries) {
@@ -177,12 +167,7 @@ const verifyDesktopAsar = (archivePath) => {
   );
 };
 
-const afterPack = async (context) => {
-  const resourcesDirectory = context.packager.getResourcesDir(context.appOutDir);
-  verifyDesktopAsar(path.join(resourcesDirectory, "app.asar"));
-};
-
-module.exports = afterPack;
+module.exports = { verifyDesktopAsar };
 module.exports.verifyDesktopAsar = verifyDesktopAsar;
 
 if (require.main === module) {

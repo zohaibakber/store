@@ -9,6 +9,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { IpcMain } from "electron";
 
+import { assertTrustedIpcSender } from "./ipc-sender";
 import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
 
 const emptySnapshot = () => ({
@@ -125,9 +126,11 @@ export const loadLegacyLocalSnapshot = (userDataPath: string) => {
 export const registerLegacyLocalInventoryIpc = (options: {
   readonly ipcMain: IpcMain;
   readonly userDataPath: string;
+  readonly allowedOrigins: () => ReadonlyArray<string>;
 }) => {
-  options.ipcMain.handle(LEGACY_LOCAL_INVENTORY_CHANNEL, () =>
-    loadLegacyLocalSnapshot(options.userDataPath),
-  );
+  options.ipcMain.handle(LEGACY_LOCAL_INVENTORY_CHANNEL, (event) => {
+    assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
+    return loadLegacyLocalSnapshot(options.userDataPath);
+  });
   return () => options.ipcMain.removeHandler(LEGACY_LOCAL_INVENTORY_CHANNEL);
 };
