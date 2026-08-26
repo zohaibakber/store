@@ -38,12 +38,15 @@ const mutableMetadata = {
 };
 
 /**
- * Durable acknowledgement for an Electric-backed client mutation.
+ * Durable acknowledgement for an inventory command.
  *
- * A browser can lose the HTTP response after Postgres commits and replay the
- * same optimistic transaction after a restart. The payload hash rejects an
- * operation-id collision, while the stored transaction id makes that replay
- * an acknowledgement instead of applying the domain changes twice.
+ * A client can lose the HTTP response after Postgres commits and replay the
+ * same operation after a restart. The payload hash rejects an operation-id
+ * collision, while the stored transaction id makes that replay an
+ * acknowledgement instead of applying the domain changes twice.
+ *
+ * The table name is leftover from Electric Cloud. The write path still uses
+ * it; do not drop it with the Electric publication cleanup.
  */
 export const electricMutationReceipts = pgTable(
   "electric_mutation_receipts",
