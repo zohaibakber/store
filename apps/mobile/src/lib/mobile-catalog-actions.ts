@@ -1,4 +1,4 @@
-import type { BatchRow, CategoryRow, ProductRow } from "@store/client-db";
+import { persistableRow, type BatchRow, type CategoryRow, type ProductRow } from "@store/client-db";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import * as Crypto from "expo-crypto";
 
@@ -177,7 +177,7 @@ const saveProduct = async (
       }
     }
     const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = { ...current, ...values, ...metadata } satisfies ProductRow;
+    const next = persistableRow({ ...current, ...values, ...metadata } satisfies ProductRow);
     const transaction = collections.products.update(id, (draft) => Object.assign(draft, next));
     await transaction.isPersisted.promise;
   } else {
@@ -205,7 +205,7 @@ const saveBatch = async (
   };
   if (current) {
     const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = { ...current, ...values, ...metadata } satisfies BatchRow;
+    const next = persistableRow({ ...current, ...values, ...metadata } satisfies BatchRow);
     const transaction = collections.batches.update(id, (draft) => Object.assign(draft, next));
     await transaction.isPersisted.promise;
   } else {
@@ -250,7 +250,7 @@ const saveQuantity = async (
   };
   if (current) {
     const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = { ...current, ...values, ...metadata } satisfies BatchRow;
+    const next = persistableRow({ ...current, ...values, ...metadata } satisfies BatchRow);
     const transaction = collections.batches.update(id, (draft) => Object.assign(draft, next));
     await transaction.isPersisted.promise;
   } else {

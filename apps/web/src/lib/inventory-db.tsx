@@ -12,6 +12,7 @@ import {
   powerSyncCollectionSchemas,
   powerSyncDeserializationSchemas,
   powerSyncDeserializationFailure,
+  persistableRow,
   submitImportInventory,
   submitIssueInvoice,
   waitForInventoryFirstSync,
@@ -528,7 +529,11 @@ const issueLocalInvoice = async (
       let nextBatch: BatchRow;
 
       if (line.quantityType === "pack") {
-        nextBatch = { ...batch, packQuantity: batch.packQuantity - taken, ...metadata };
+        nextBatch = persistableRow({
+          ...batch,
+          packQuantity: batch.packQuantity - taken,
+          ...metadata,
+        });
         movements.push(
           movementRow(actor, {
             productId: product.id,
@@ -546,12 +551,12 @@ const issueLocalInvoice = async (
           Math.ceil((taken - batch.unitQuantity) / product.unitsPerPack),
         );
         const looseUnits = batch.unitQuantity + packsOpened * product.unitsPerPack;
-        nextBatch = {
+        nextBatch = persistableRow({
           ...batch,
           packQuantity: batch.packQuantity - packsOpened,
           unitQuantity: looseUnits - taken,
           ...metadata,
-        };
+        });
         if (packsOpened > 0) {
           movements.push(
             movementRow(actor, {
@@ -716,7 +721,7 @@ const makeInventoryActions = (
         throw new Error("Change units per pack only after the product has no remaining stock.");
       }
     }
-    const next = {
+    const next = persistableRow({
       ...current,
       ...input,
       name: input.name.trim(),
@@ -729,7 +734,7 @@ const makeInventoryActions = (
       unitPrice: input.unitPrice ?? null,
       visible: input.visible ?? true,
       ...metadata,
-    } satisfies ProductRow;
+    } satisfies ProductRow);
     const transaction = inventory.products.update(input.id, (draft) => Object.assign(draft, next));
     await transaction.isPersisted.promise;
     return next;
@@ -797,14 +802,14 @@ const makeInventoryActions = (
       requireNonNegativeQuantity(input.unitQuantity, "Unit quantity");
     }
     const metadata = updatedMetadata({ ...actor, rowVersion: current.rowVersion });
-    const next = {
+    const next = persistableRow({
       ...current,
       batchNumber: input.batchNumber?.trim() || null,
       expiresAt: input.expiresAt,
       packQuantity: input.packQuantity ?? current.packQuantity,
       unitQuantity: input.unitQuantity ?? current.unitQuantity,
       ...metadata,
-    } satisfies BatchRow;
+    } satisfies BatchRow);
     const packDelta = next.packQuantity - current.packQuantity;
     const unitDelta = next.unitQuantity - current.unitQuantity;
     if (inventory.mode === "Local" && (packDelta !== 0 || unitDelta !== 0)) {
