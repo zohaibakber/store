@@ -1,6 +1,17 @@
 import { defineConfig } from "vite-plus";
 
 const development = process.env["STORE_DESKTOP_DEV"] === "1";
+const electronMainBundleDeps = [
+  /^@tanstack\//u,
+  /^@sentry\//u,
+  /^@opentelemetry\//u,
+  /^ms(?:\/|$)/u,
+  /^debug(?:\/|$)/u,
+  /^supports-color(?:\/|$)/u,
+  /^module-details-from-path(?:\/|$)/u,
+  /^require-in-the-middle(?:\/|$)/u,
+  /^import-in-the-middle(?:\/|$)/u,
+];
 const rendererConfig = {
   "import.meta.env.PROD": JSON.stringify(!development),
   "import.meta.env.VITE_API_URL": JSON.stringify(process.env["VITE_API_URL"] ?? ""),
@@ -19,9 +30,9 @@ export default defineConfig({
       clean: true,
       define: rendererConfig,
       deps: {
-        alwaysBundle: [/^@tanstack\//u, /^@sentry\//u],
+        alwaysBundle: electronMainBundleDeps,
         neverBundle: ["better-sqlite3", "electron", "electron-updater"],
-        onlyBundle: [/^@tanstack\//u, /^effect(?:\/|$)/u, /^@sentry\//u],
+        onlyBundle: [...electronMainBundleDeps, /^effect(?:\/|$)/u],
       },
       onSuccess: development ? "node scripts/dev-electron.mjs" : undefined,
     },

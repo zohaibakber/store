@@ -1,4 +1,4 @@
-import { init, captureException, withScope } from "@sentry/electron/main";
+import * as Sentry from "@sentry/electron/main";
 import { app } from "electron";
 
 export interface DesktopErrorContext {
@@ -12,7 +12,7 @@ const sentryDsn = () =>
 export const initDesktopSentry = () => {
   const dsn = sentryDsn();
   if (!dsn) return;
-  init({
+  Sentry.init({
     dsn,
     environment: app.isPackaged ? "production" : "development",
     release: `tabaaq-desktop@${app.getVersion()}`,
@@ -23,9 +23,9 @@ export const initDesktopSentry = () => {
 export const reportDesktopError = (cause: unknown, context: DesktopErrorContext) => {
   const error = cause instanceof Error ? cause : new Error(String(cause));
   console.error(error, context);
-  withScope((scope) => {
+  Sentry.withScope((scope) => {
     scope.setTag("op", context.op);
     if (context.databasePath) scope.setTag("databasePath", context.databasePath);
-    captureException(error);
+    Sentry.captureException(error);
   });
 };
