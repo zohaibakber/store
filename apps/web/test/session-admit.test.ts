@@ -2,7 +2,7 @@ import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/c
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 
-import { browserHostAccess } from "../src/host-access";
+import { desktopHostAccess } from "../src/host-access";
 import { getRouter } from "../src/router";
 
 const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
@@ -16,7 +16,7 @@ const authenticated = decodeAuthenticatedWorkspace({
 
 describe("live sessionSnapshot admit", () => {
   it("beforeLoad truth follows router.update, not frozen initialAuth", () => {
-    const access = browserHostAccess();
+    const access = desktopHostAccess();
     const router = getRouter({
       history: createMemoryHistory({ initialEntries: ["/"] }),
       initialAuth: { _tag: "Session", snapshot: unauthenticated },
@@ -50,7 +50,7 @@ describe("live sessionSnapshot admit", () => {
   });
 
   it("sessionPending keeps cold-start admit from bouncing to sign-in", () => {
-    const access = browserHostAccess();
+    const access = desktopHostAccess();
     const router = getRouter({
       history: createMemoryHistory({ initialEntries: ["/"] }),
       initialAuth: { _tag: "Loading" },

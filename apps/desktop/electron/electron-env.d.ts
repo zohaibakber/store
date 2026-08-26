@@ -9,7 +9,6 @@ import type {
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import type { JsonApiResponse } from "@store/workspace";
 
 import type { InventoryHttpBridge } from "./inventory-http-channels";
 
@@ -24,9 +23,6 @@ declare global {
 
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
-    legacyLocalInventory?: {
-      load: () => Promise<JsonApiResponse>;
-    };
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };

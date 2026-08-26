@@ -15,7 +15,6 @@
     "test": "vitest run --root ../.. apps/desktop/test"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
@@ -25,7 +24,6 @@
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/workspace": "workspace:*",
-    "@types/better-sqlite3": "^7.6.13",
     "cross-env": "^10.1.0",
     "effect": "catalog:",
     "electron": "^43.4.1",

@@ -4,8 +4,6 @@
   appId: "com.tabaaq.desktop",
   executableName: "tabaaq",
   asar: true,
-  // Native SQLite packages cannot load their binaries from inside the asar.
-  // electron-builder rebuilds better-sqlite3 for the target Electron ABI.
   asarUnpack: ["**/*.node"],
   // Fail before signing or publishing if monorepo/server sources, credentials,
   // or database schema code land in the packaged app.

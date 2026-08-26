@@ -20,7 +20,7 @@ function DashboardRoute() {
   }
   return (
     <InventoryProvider
-      key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
+      key={`${scope.organizationId}:${scope.userId}`}
       host={inventory}
       scope={scope}
     >

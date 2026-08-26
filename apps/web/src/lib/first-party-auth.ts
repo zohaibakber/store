@@ -2,7 +2,6 @@ import {
   AuthorizationCode,
   makeAuthClient,
   nativeClient,
-  browserClient,
   type AuthClientKind,
   type IdentifyInput,
   type LoginCommand,
@@ -22,8 +21,13 @@ export const authBaseUrl = (configuredAuthUrl || "http://localhost:8788").replac
 
 const client = makeAuthClient({ baseUrl: authBaseUrl });
 
-const currentClient = (): AuthClientKind =>
-  window.auth ? nativeClient("Tabaaq Desktop") : browserClient();
+const currentClient = (): AuthClientKind => nativeClient("Tabaaq Desktop");
+
+const requireDesktopAuth = () => {
+  const desktop = window.auth;
+  if (!desktop) throw new Error("Desktop authentication is unavailable.");
+  return desktop;
+};
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
@@ -50,12 +54,10 @@ const pkce = async () => {
 };
 
 export const beginGoogle = async () => {
+  const desktop = requireDesktopAuth();
   const { verifier, challenge } = await pkce();
   sessionStorage.setItem(PKCE_KEY, verifier);
-  const native = Boolean(window.auth);
-  const redirectUri = window.auth
-    ? await window.auth.getOAuthRedirectUri()
-    : `${window.location.origin}/`;
+  const redirectUri = await desktop.getOAuthRedirectUri();
   const authorization = await run(
     client.beginGoogle({
       redirectUri,
@@ -63,11 +65,7 @@ export const beginGoogle = async () => {
       client: currentClient(),
     }),
   );
-  if (native && window.auth) {
-    await window.auth.openExternal(authorization.url);
-    return;
-  }
-  window.location.assign(authorization.url);
+  await desktop.openExternal(authorization.url);
 };
 
 export const completeGoogle = async (callbackUrl: string) => {
@@ -85,9 +83,6 @@ export const completeGoogle = async (callbackUrl: string) => {
     }),
   );
   await authSession().adoptSession(tokens);
-  if (!window.auth) {
-    window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
-  }
   return true;
 };
 

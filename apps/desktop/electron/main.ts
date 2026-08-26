@@ -14,7 +14,6 @@ import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from "electr
 
 import { AuthBroker } from "./auth";
 import { registerInventoryHttpIpc } from "./inventory-http";
-import { registerLegacyLocalInventoryIpc } from "./legacy-local-inventory";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
 import {
   desktopRendererOrigin,
@@ -58,7 +57,6 @@ initDesktopSentry();
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
-let disposeLegacyLocalInventory: (() => void) | undefined;
 
 function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
@@ -322,7 +320,6 @@ const shutdown = makeShutdownCoordinator({
     const results = await Promise.allSettled([
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
-      Promise.resolve(disposeLegacyLocalInventory?.()),
     ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -376,10 +373,6 @@ void app.whenReady().then(async () => {
     auth: authBroker,
     deviceId,
     ipcMain,
-  });
-  disposeLegacyLocalInventory = registerLegacyLocalInventoryIpc({
-    ipcMain,
-    userDataPath: app.getPath("userData"),
   });
   await authBroker.initialize();
   registerAuthIpc();

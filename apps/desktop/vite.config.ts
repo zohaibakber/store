@@ -31,7 +31,7 @@ export default defineConfig({
       define: rendererConfig,
       deps: {
         alwaysBundle: electronMainBundleDeps,
-        neverBundle: ["better-sqlite3", "electron", "electron-updater"],
+        neverBundle: ["electron", "electron-updater"],
         onlyBundle: [...electronMainBundleDeps, /^effect(?:\/|$)/u],
       },
       onSuccess: development ? "node scripts/dev-electron.mjs" : undefined,

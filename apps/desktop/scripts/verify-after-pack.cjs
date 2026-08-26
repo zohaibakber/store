@@ -2,8 +2,8 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// better-sqlite3 ships its native binary plus the installer dependency graph.
-// The TanStack persistence packages themselves are bundled into main.js.
+// Live inventory is `@powersync/web` + wa-sqlite in the renderer.
+// Native installer packages stay out of the asar except electron-updater.
 const MAX_RUNTIME_PACKAGES = 56;
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
@@ -131,8 +131,6 @@ const verifyDesktopAsar = (archivePath) => {
     "/dist/index.html",
     "/dist-electron/main.js",
     "/dist-electron/preload.cjs",
-    "/node_modules/better-sqlite3/package.json",
-    "/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));

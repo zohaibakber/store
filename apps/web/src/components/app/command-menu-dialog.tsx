@@ -127,7 +127,7 @@ export function InventoryCommandDialog({
           <p className="p-6 text-sm text-destructive">Product search workspace is unavailable.</p>
         ) : (
           <InventoryProvider
-            key={`${scope._tag}:${scope.organizationId}:${scope.userId}`}
+            key={`${scope.organizationId}:${scope.userId}`}
             host={inventory}
             scope={scope}
           >

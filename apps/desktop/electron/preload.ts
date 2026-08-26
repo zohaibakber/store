@@ -8,7 +8,6 @@ import type {
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import type { JsonApiResponse } from "@store/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
 import {
@@ -17,16 +16,11 @@ import {
   INVENTORY_HTTP_REQUEST_CHANNEL,
   type InventoryHttpBridge,
 } from "./inventory-http-channels";
-import { LEGACY_LOCAL_INVENTORY_CHANNEL } from "./legacy-local-inventory-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
   ...args: Arguments
 ): Promise<Result> => ipcRenderer.invoke(channel, ...args);
-
-contextBridge.exposeInMainWorld("legacyLocalInventory", {
-  load: (): Promise<JsonApiResponse> => ipcRenderer.invoke(LEGACY_LOCAL_INVENTORY_CHANNEL),
-});
 
 const inventoryHttp: InventoryHttpBridge = {
   getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),

@@ -24,7 +24,6 @@ overrides:
 
 onlyBuiltDependencies:
   - "@sentry/cli"
-  - better-sqlite3
   - electron
   - esbuild
   - sharp
