@@ -59,9 +59,9 @@ const tokens =
   });
 ```
 
-Google in the browser and on the desktop uses an authorization code and PKCE
-between the app and the auth service. The Google client secret stays in the
-Worker.
+Google on the desktop uses an authorization code and PKCE between the app and
+the auth service. The Google client secret stays in the Worker. Mobile posts
+an ID token from Google's SDK.
 
 ```ts
 const client = nativeClient("Desktop");
@@ -104,9 +104,9 @@ request path.
 const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk });
 ```
 
-The host owns secure token storage. Electron uses `safeStorage`, Expo uses
-SecureStore, and the browser keeps the refresh credential in an HttpOnly
-SameSite cookie. An authenticated workspace snapshot supplies the organization
+The host owns secure token storage. Electron uses `safeStorage`. Expo uses
+SecureStore. Cookie refresh remains in the auth Worker for compatibility
+sessions. An authenticated workspace snapshot supplies the organization
 scope for Postgres mutations and PowerSync streams. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.
 
@@ -233,9 +233,9 @@ encode.
   as production compatibility and migration source. Do not delete its schema,
   contracts, or implementation until an explicit retirement confirms that no
   production dependency remains.
-- The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
-  to the auth host. Native clients receive it in the response and store it in
-  platform secure storage.
+- Native clients receive the refresh token in the response and store it in
+  platform secure storage. The Worker can still mint an HttpOnly, Secure,
+  SameSite=Lax cookie on the auth host for compatibility sessions.
 - Every cookie-authenticated mutation validates `Origin` against the explicit
   allowlist and requires JSON. Native refresh uses a bearer-like body secret and
   an allowlisted app redirect.

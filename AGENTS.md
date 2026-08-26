@@ -66,8 +66,8 @@ and `vp build` (Turborepo fans them out per package).
   `vp dev` for the desktop errors that
   Electron is missing, run
   `node apps/desktop/node_modules/electron/install.js`.
-- **Desktop app.** `cd apps/desktop && vp dev` starts the Vite dev server
-  (`:5173`) and launches Electron. In the headless VM you must set
+- **Desktop app.** `vp run dev:desktop` starts the API, auth, the renderer
+  Vite server (`:5174`), and Electron. In the headless VM you must set
   `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
   `DISPLAY=:1`. `ERROR:dbus/...` lines in the log are harmless.
 - **Backend.** `apps/server` runs via

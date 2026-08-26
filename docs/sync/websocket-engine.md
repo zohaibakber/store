@@ -16,8 +16,8 @@ from a migrated client as proof that the server-side source is safe to delete.
 Postgres is the authoritative inventory database. The active path has four
 parts:
 
-1. Web, Electron, and Expo read inventory through TanStack DB live queries.
-2. PowerSync SQLite durably persists TanStack DB collections on web, Electron,
+1. Electron and Expo read inventory through TanStack DB live queries.
+2. PowerSync SQLite durably persists TanStack DB collections on Electron
    and Expo.
 3. Authenticated `/api/inventory/*` commands write to Postgres through the
    Cloudflare Worker and Hyperdrive. Mutation receipts make replayed commands
@@ -26,9 +26,8 @@ parts:
    from the verified JWT before a client receives a stream.
 
 TanStack DB combines PowerSync collections with durable local writes and
-reactive queries. Clients no longer
-maintain a separate handwritten outbox, pull cursor, or last-writer-wins apply
-loop for the migrated inventory path.
+reactive queries. Clients no longer maintain a separate handwritten outbox,
+pull cursor, or last-writer-wins apply loop for the migrated inventory path.
 
 ## Preserved compatibility implementation
 
