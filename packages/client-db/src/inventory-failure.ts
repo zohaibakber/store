@@ -76,9 +76,7 @@ export const inventoryFailureFromHttp = (
   );
   const code = envelope?.error.code?.trim();
   const message =
-    envelope?.error.message?.trim() ||
-    (typeof payload === "string" ? payload : "") ||
-    fallback;
+    envelope?.error.message?.trim() || (typeof payload === "string" ? payload : "") || fallback;
   if (status === 401) {
     return new InventoryFailure({ message, reason: { _tag: "unauthenticated" } });
   }

@@ -86,7 +86,10 @@ const withInventoryRetry = async <Value>(run: () => Promise<Value>) => {
       return await run();
     } catch (error) {
       lastError = error;
-      if (!(error instanceof InventoryFailure) || catalogUploadDisposition(error)._tag !== "retry") {
+      if (
+        !(error instanceof InventoryFailure) ||
+        catalogUploadDisposition(error)._tag !== "retry"
+      ) {
         throw error;
       }
       await wait(500 * 2 ** attempt);

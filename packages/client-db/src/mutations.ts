@@ -67,11 +67,14 @@ export const inventoryRequest = async <Result>(input: {
 }): Promise<Result> => {
   let response: Response;
   try {
-    response = await input.authenticatedFetch(`${inventoryApiRoot(input.apiBaseUrl)}${input.path}`, {
-      method: input.method ?? "POST",
-      headers: input.body === undefined ? undefined : { "content-type": "application/json" },
-      body: input.body === undefined ? undefined : JSON.stringify(input.body),
-    });
+    response = await input.authenticatedFetch(
+      `${inventoryApiRoot(input.apiBaseUrl)}${input.path}`,
+      {
+        method: input.method ?? "POST",
+        headers: input.body === undefined ? undefined : { "content-type": "application/json" },
+        body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      },
+    );
   } catch (cause) {
     if (isAbortError(cause)) throw cause;
     throw failureFromUnknown(cause);

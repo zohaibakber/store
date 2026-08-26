@@ -169,12 +169,14 @@ describe("PowerSync catalog upload failures", () => {
   });
 
   it("does not complete a 401 after refresh is exhausted", async () => {
-    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
-        { status: 401 },
-      ),
-    );
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
+          { status: 401 },
+        ),
+      );
     const complete = vi.fn(async () => undefined);
 
     await expect(
@@ -194,12 +196,14 @@ describe("PowerSync catalog upload failures", () => {
   });
 
   it("does not complete other permanent 4xx failures", async () => {
-    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({ error: { code: "ORGANIZATION_MISMATCH", message: "Wrong org." } }),
-        { status: 403 },
-      ),
-    );
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { code: "ORGANIZATION_MISMATCH", message: "Wrong org." } }),
+          { status: 403 },
+        ),
+      );
     const complete = vi.fn(async () => undefined);
 
     await expect(
@@ -215,12 +219,14 @@ describe("PowerSync catalog upload failures", () => {
   });
 
   it("disconnects and reports halt on 401 so PowerSync does not retry", async () => {
-    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
-        { status: 401 },
-      ),
-    );
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Sign in required." } }),
+          { status: 401 },
+        ),
+      );
     const complete = vi.fn(async () => undefined);
     const disconnect = vi.fn(async () => undefined);
     const onUploadHalt = vi.fn();
