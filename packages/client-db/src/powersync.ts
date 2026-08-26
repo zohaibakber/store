@@ -282,10 +282,6 @@ const catalogNulls = (table: "categories" | "products" | "batches") => {
 type InventoryCrudSnapshot = Pick<CrudEntry, "id" | "op" | "opData" | "previousValues">;
 type InventoryCrudEntry = InventoryCrudSnapshot & Pick<CrudEntry, "table">;
 
-export const stampCatalogUploadRow = <Row extends { readonly operationId: string }>(
-  row: Row,
-): Row => row;
-
 export const decodePowerSyncCatalogCrudEntry = (
   table: "categories" | "products" | "batches",
   entry: InventoryCrudSnapshot,
@@ -314,7 +310,7 @@ const uploadCatalogCrudEntry = async (
 ) => {
   try {
     const table = catalogTable(entry.table);
-    const row = stampCatalogUploadRow(decodePowerSyncCatalogCrudEntry(table, entry));
+    const row = decodePowerSyncCatalogCrudEntry(table, entry);
     switch (table) {
       case "categories":
         await submitCatalogRows({ ...input, entity: "category", rows: [row] });

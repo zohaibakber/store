@@ -5,7 +5,6 @@ import { InventoryFailure } from "../src/inventory-failure";
 import {
   decodePowerSyncCatalogCrudEntry,
   makeInventoryPowerSyncConnector,
-  stampCatalogUploadRow,
   uploadInventoryCrudTransaction,
   waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
@@ -65,14 +64,6 @@ describe("PowerSync catalog upload snapshots", () => {
         opData: insert,
       }),
     ).toMatchObject({ id: category.id, deletedAt: null, tracksPacks: true });
-  });
-
-  it("keeps the row mutation id instead of a replica-local CRUD sequence", () => {
-    expect(stampCatalogUploadRow(category).operationId).toBe("operation-1");
-    expect(
-      stampCatalogUploadRow({ ...category, id: "category-2", operationId: "operation-2" })
-        .operationId,
-    ).toBe("operation-2");
   });
 });
 
