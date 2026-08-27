@@ -24,12 +24,13 @@ const { verifyDesktopAsar } = require("./scripts/verify-after-pack.cjs") as {
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const iconPng = path.join(root, "assets/prod/icon.png");
+const executableName = "tabaaq";
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: "Tabaaq",
-    executableName: "tabaaq",
+    executableName,
     appBundleId: "com.tabaaq.desktop",
     icon: path.join(root, "assets/prod/icon"),
     extraResource: [iconPng],
@@ -46,12 +47,14 @@ const config: ForgeConfig = {
     new MakerZIP({}, ["darwin"]),
     new MakerRpm({
       options: {
+        bin: executableName,
         icon: iconPng,
         categories: ["Office"],
       },
     }),
     new MakerDeb({
       options: {
+        bin: executableName,
         icon: iconPng,
         maintainer: "Zohaib Akber <zohaibakber99@gmail.com>",
         categories: ["Office"],
@@ -60,6 +63,8 @@ const config: ForgeConfig = {
     }),
     new MakerAppImage({
       options: {
+        name: executableName,
+        bin: executableName,
         categories: ["Office"],
         icon: iconPng,
       },
