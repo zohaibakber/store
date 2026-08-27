@@ -65,11 +65,13 @@ function OrSeparator() {
 }
 
 function IdentifierSignIn({
-  busy,
+  emailBusy,
+  googleBusy,
   onContinue,
   onGoogle,
 }: {
-  readonly busy: boolean;
+  readonly emailBusy: boolean;
+  readonly googleBusy: boolean;
   readonly onContinue: (email: string) => Promise<void>;
   readonly onGoogle: () => Promise<void>;
 }) {
@@ -97,7 +99,7 @@ function IdentifierSignIn({
           />
         </Field>
         <Field>
-          <Button className="w-full" loading={busy} type="submit">
+          <Button className="w-full" loading={emailBusy} type="submit">
             Continue
           </Button>
         </Field>
@@ -105,7 +107,7 @@ function IdentifierSignIn({
         <Field>
           <Button
             className="w-full"
-            disabled={busy}
+            loading={googleBusy}
             onClick={() => void onGoogle()}
             type="button"
             variant="outline"
@@ -304,30 +306,32 @@ function PasswordRegistration({
 
 export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
   const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<"idle" | "email" | "google">("idle");
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const receiveGoogleError = (event: WindowEventMap[typeof GOOGLE_AUTH_ERROR_EVENT]) => {
       setError(event.detail);
-      setBusy(false);
+      setBusy("idle");
     };
     window.addEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
     return () => window.removeEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
   }, []);
 
-  const run = async (operation: () => Promise<void>) => {
-    setBusy(true);
+  const run = async (lane: "email" | "google", operation: () => Promise<void>) => {
+    setBusy(lane);
     setError(null);
     try {
       await operation();
+      if (lane === "google") return;
     } catch (cause) {
       setError(messageOf(cause));
     }
-    setBusy(false);
+    setBusy("idle");
   };
   const startOver = () => {
     setError(null);
+    setBusy("idle");
     setStep({ _tag: "Identifier" });
   };
 
@@ -341,23 +345,24 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
       ) : null}
       {step._tag === "Identifier" ? (
         <IdentifierSignIn
-          busy={busy}
+          emailBusy={busy === "email"}
+          googleBusy={busy === "google"}
           onContinue={(email) =>
-            run(async () => {
+            run("email", async () => {
               const route = await identify({ email: EmailAddress.make(normalizeEmail(email)) });
               setStep(route);
             })
           }
-          onGoogle={() => run(beginGoogle)}
+          onGoogle={() => run("google", beginGoogle)}
         />
       ) : null}
       {step._tag === "Password" ? (
         <PasswordSignIn
-          busy={busy}
+          busy={busy === "email"}
           email={step.email}
           onBack={startOver}
           onSubmit={(password) =>
-            run(async () => {
+            run("email", async () => {
               await authenticate({
                 _tag: "Password",
                 email: step.email,
@@ -370,12 +375,12 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
       ) : null}
       {step._tag === "Otp" ? (
         <OtpSignIn
-          busy={busy}
+          busy={busy === "email"}
           developmentCode={step.developmentCode}
           email={step.email}
           onBack={startOver}
           onSubmit={(code) =>
-            run(async () => {
+            run("email", async () => {
               await authenticate({
                 _tag: "Otp",
                 challengeId: step.challengeId,
@@ -388,11 +393,11 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
       ) : null}
       {step._tag === "Registration" ? (
         <PasswordRegistration
-          busy={busy}
+          busy={busy === "email"}
           email={step.email}
           onBack={startOver}
           onSubmit={(input) =>
-            run(async () => {
+            run("email", async () => {
               await authenticate({
                 _tag: "RegisterPassword",
                 email: step.email,
