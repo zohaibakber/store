@@ -66,16 +66,16 @@ function AppUpdater() {
 
 function AuthenticatedLayout() {
   const auth = useAuth();
-  const { access, sessionPending } = Route.useRouteContext();
+  const { access } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // beforeLoad protects navigation. This render-time check also protects an
   // already-mounted route while the live auth snapshot changes underneath it.
   // Hide every scope transition so local or previous-organization rows cannot
-  // remain visible while router invalidation is in flight. Skip <Navigate>
-  // until AuthProvider publishes the new snapshot, or hash history races
-  // beforeLoad (router context) against this live snapshot.
-  if (sessionPending || auth._tag === "Loading") return <AppLoading />;
+  // remain visible while router invalidation is in flight. AuthProvider sets
+  // Loading before publishing the new snapshot so <Navigate> cannot race
+  // beforeLoad (router context) against a stale live snapshot.
+  if (auth._tag === "Loading") return <AppLoading />;
 
   const verdict = access.admit({ location: { pathname }, snapshot: auth.snapshot });
   if (verdict._tag === "Redirect") {

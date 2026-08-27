@@ -125,9 +125,10 @@ export function AuthProvider({
       transitionRef.current = transition;
       pendingScopeRef.current = nextScope;
       setError(next.workspaceError ?? null);
-      // Hide the shell before replica teardown so live queries unmount first.
-      // Otherwise Electron's hash history bounces / ↔ /sign-in until Chromium
-      // throttles navigation and the renderer locks (crbug.com/1038223).
+      // Hide the shell so live queries unmount before replica teardown. Do not
+      // await PowerSync dispose — disconnectAndClear can hang, and that left
+      // logout stuck on the loading screen. Hash history still needs this
+      // gate so / and /sign-in cannot bounce (crbug.com/1038223).
       flushSync(() => {
         setLoading(true);
       });
@@ -140,29 +141,31 @@ export function AuthProvider({
         },
       });
 
-      if (nextScope === null) {
-        try {
-          await disposeInventoryCache();
-        } catch {
-          // Still finish the session transition if replica teardown fails.
+      try {
+        if (nextScope === null) {
+          router.clearCache();
+        } else {
+          await router.invalidate().catch(() => undefined);
         }
-        router.clearCache();
-      } else {
-        await router.invalidate().catch(() => undefined);
+      } finally {
+        if (transition === transitionRef.current) {
+          currentScopeRef.current = nextScope;
+          pendingScopeRef.current = undefined;
+          setSnapshot(next);
+          setLoading(false);
+          router.update({
+            context: {
+              ...router.options.context,
+              sessionSnapshot: next,
+              sessionPending: false,
+            },
+          });
+        }
       }
 
-      if (transition !== transitionRef.current) return;
-      currentScopeRef.current = nextScope;
-      pendingScopeRef.current = undefined;
-      setSnapshot(next);
-      setLoading(false);
-      router.update({
-        context: {
-          ...router.options.context,
-          sessionSnapshot: next,
-          sessionPending: false,
-        },
-      });
+      if (nextScope === null) {
+        void disposeInventoryCache().catch(() => undefined);
+      }
     },
     [router],
   );
