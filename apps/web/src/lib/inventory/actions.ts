@@ -1,9 +1,22 @@
-import { makeCatalogWrites, submitImportInventory, submitIssueInvoice } from "@store/client-db";
-import type { ImportInventoryCommand, IssueInvoiceCommand } from "@store/contracts";
+import { makeCatalogWrites, makeInvoiceWrites, submitImportInventory } from "@store/client-db";
+import type { ImportInventoryCommand } from "@store/contracts";
+import { PowerSyncTransactor } from "@tanstack/powersync-db-collection";
 
 import type { InventoryHost } from "@/lib/inventory-host";
 
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
+
+const persistSale = (inventory: Inventory) => async (work: () => void) => {
+  const transaction = inventory.dbClient.createTransaction({
+    autoCommit: false,
+    mutationFn: async ({ transaction: pending }) => {
+      await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
+    },
+  });
+  transaction.mutate(work);
+  await transaction.commit();
+  await transaction.isPersisted.promise;
+};
 
 export const makeInventoryActions = (
   inventory: Inventory,
@@ -11,6 +24,7 @@ export const makeInventoryActions = (
   actor: InventoryActor,
 ): InventoryActions => {
   const writes = makeCatalogWrites(inventory, actor);
+  const invoices = makeInvoiceWrites({ ...inventory, persist: persistSale(inventory) }, actor);
   return {
     createCategory: writes.createCategory,
     updateCategory: writes.updateCategory,
@@ -39,19 +53,6 @@ export const makeInventoryActions = (
         command,
       });
     },
-    issueInvoice: async (input) => {
-      await inventory.waitForUploadDrain();
-      const command: IssueInvoiceCommand = {
-        commandId: crypto.randomUUID(),
-        deviceId: actor.deviceId,
-        occurredAt: Date.now(),
-        input,
-      };
-      return submitIssueInvoice({
-        apiBaseUrl: host.apiBaseUrl,
-        authenticatedFetch: host.authenticatedFetch,
-        command,
-      });
-    },
+    issueInvoice: invoices.issueInvoice,
   };
 };

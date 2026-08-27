@@ -10,13 +10,16 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
+import { classifyInventoryCrudTransaction } from "./invoice-projection";
 import {
   catalogUploadDisposition,
   failureFromUnknown,
   InventoryFailure,
+  invoiceUploadDisposition,
   isAbortError,
   inventoryRequest,
   submitCatalogRows,
+  submitIssueInvoice,
 } from "./mutations";
 import {
   BatchRow,
@@ -331,6 +334,15 @@ const uploadCatalogCrudEntry = async (
   }
 };
 
+const saleUploadFailure = (cause: unknown): InventoryFailure => {
+  if (isAbortError(cause)) throw cause;
+  if (cause instanceof InventoryFailure) return cause;
+  return new InventoryFailure({
+    message: cause instanceof Error ? cause.message : "Invoice upload is invalid.",
+    reason: { _tag: "rejected", code: "CLIENT_UPLOAD_INVALID" },
+  });
+};
+
 export const uploadInventoryCrudTransaction = async (
   input: {
     readonly apiBaseUrl: string;
@@ -341,6 +353,22 @@ export const uploadInventoryCrudTransaction = async (
     complete: () => Promise<void>;
   },
 ) => {
+  let classified;
+  try {
+    classified = classifyInventoryCrudTransaction(transaction.crud);
+  } catch (cause) {
+    throw saleUploadFailure(cause);
+  }
+  if (classified._tag === "sale") {
+    try {
+      await submitIssueInvoice({ ...input, command: classified.command });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw failureFromUnknown(error);
+    }
+    await transaction.complete();
+    return;
+  }
   for (const entry of transaction.crud) {
     try {
       await uploadCatalogCrudEntry(input, entry);
@@ -380,7 +408,14 @@ export const uploadInventoryData = async (
   } catch (error) {
     if (isAbortError(error)) throw error;
     const failure = failureFromUnknown(error);
-    if (catalogUploadDisposition(failure)._tag === "halt") {
+    const saleHead = transaction.crud.some(
+      (entry) =>
+        entry.table === "invoices" ||
+        entry.table === "invoice_items" ||
+        entry.table === "stock_movements",
+    );
+    const fate = saleHead ? invoiceUploadDisposition(failure) : catalogUploadDisposition(failure);
+    if (fate._tag === "halt") {
       input.onUploadHalt?.(failure);
       await database.disconnect();
     }
@@ -411,6 +446,7 @@ export const disconnectAndClearInventoryPowerSync = async (
 };
 
 export const INVENTORY_FIRST_SYNC_TIMEOUT_MS = 300_000;
+export const INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE = "The first sync did not finish in time.";
 export const INVENTORY_UPLOAD_DRAIN_TIMEOUT_MS = 15_000;
 const INVENTORY_UPLOAD_DRAIN_POLL_MS = 50;
 
@@ -424,7 +460,7 @@ export const waitForInventoryFirstSync = async (
   const signal = AbortSignal.timeout(timeoutMs);
   await powerSync.waitForFirstSync(signal);
   if (powerSync.currentStatus.hasSynced) return;
-  throw new Error("The first sync did not finish in time.");
+  throw new Error(INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE);
 };
 
 export type InventoryUploadDrainSource = {
@@ -441,11 +477,9 @@ const pause = (ms: number) =>
   });
 
 /**
- * HTTP sales and imports read Postgres. Local catalog edits sit in the
- * PowerSync upload queue until the connector `complete()`s them. An invoice
- * issued first bumps `rowVersion` on the server; the queued edit then 409s
- * and is skipped. Drain with `getUploadQueueStats` so the connector keeps
- * the queued transaction.
+ * Imports still POST to Postgres. Local catalog edits and sales sit in the
+ * PowerSync upload queue until the connector `complete()`s them. Drain with
+ * `getUploadQueueStats` so the connector keeps the queued transaction.
  */
 export const waitForInventoryUploadDrain = async (
   powerSync: InventoryUploadDrainSource,

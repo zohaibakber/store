@@ -204,18 +204,34 @@ export const ImportInventoryCommandResult = Schema.Struct({
 });
 export type ImportInventoryCommandResult = typeof ImportInventoryCommandResult.Type;
 
+export const InvoiceAllocation = Schema.Struct({
+  invoiceItemId: InvoiceItemId,
+  saleMovementId: Schema.String.check(Schema.isMinLength(1)),
+  openPackMovementId: Schema.NullOr(Schema.String.check(Schema.isMinLength(1))),
+  productId: ProductId,
+  batchId: BatchId,
+  quantity: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  quantityType: Schema.Literals(["unit", "pack"]),
+  salePrice: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  packsOpened: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+});
+export type InvoiceAllocation = typeof InvoiceAllocation.Type;
+
 export const IssueInvoiceCommand = Schema.Struct({
   commandId: CommandIdentifier,
   deviceId: CommandIdentifier,
   occurredAt: PositiveTimestamp,
+  invoiceId: InvoiceId,
+  invoiceNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
   input: CreateInvoiceInput,
+  allocations: Schema.Array(InvoiceAllocation).check(Schema.isMinLength(1)),
 });
 export type IssueInvoiceCommand = typeof IssueInvoiceCommand.Type;
 
 export const IssueInvoiceResult = Schema.Struct({
   invoiceId: InvoiceId,
   invoiceNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  txid: PositiveTimestamp,
+  txid: Schema.optionalKey(PositiveTimestamp),
 });
 export type IssueInvoiceResult = typeof IssueInvoiceResult.Type;
 

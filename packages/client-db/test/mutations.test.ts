@@ -1,4 +1,10 @@
-import { decodeCategoryId, decodeInvoiceId } from "@store/contracts/ids";
+import {
+  decodeBatchId,
+  decodeCategoryId,
+  decodeInvoiceId,
+  decodeInvoiceItemId,
+  decodeProductId,
+} from "@store/contracts/ids";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -104,7 +110,33 @@ describe("inventory mutation HTTP", () => {
           commandId: "command-2",
           deviceId: "device-1",
           occurredAt: 100,
-          input: { customerName: null, items: [] },
+          invoiceId,
+          invoiceNumber: 4,
+          input: {
+            customerName: null,
+            items: [
+              {
+                productId: decodeProductId("product-1"),
+                batchId: null,
+                quantity: 1,
+                quantityType: "unit",
+                salePrice: 10,
+              },
+            ],
+          },
+          allocations: [
+            {
+              invoiceItemId: decodeInvoiceItemId("item-1"),
+              saleMovementId: "sale-1",
+              openPackMovementId: null,
+              productId: decodeProductId("product-1"),
+              batchId: decodeBatchId("batch-1"),
+              quantity: 1,
+              quantityType: "unit",
+              salePrice: 10,
+              packsOpened: 0,
+            },
+          ],
         },
       }),
     ).resolves.toEqual({ invoiceId, invoiceNumber: 4, txid: 11 });

@@ -21,6 +21,8 @@ export const InventoryProtocolCode = Schema.Literals([
   "ENTITY_ID_MISMATCH",
   "INVALID_ENTITY_ROW",
   "ENTITY_WRITE_FAILED",
+  "INSUFFICIENT_STOCK",
+  "INVOICE_IDENTITY_CONFLICT",
 ]);
 export type InventoryProtocolCode = typeof InventoryProtocolCode.Type;
 

@@ -16,6 +16,8 @@ const mutationProtocolError = (error: InventoryProtocolError) => {
     case "DUPLICATE_OPERATION":
     case "ENTITY_CONFLICT":
     case "ENTITY_RELATION_INVALID":
+    case "INSUFFICIENT_STOCK":
+    case "INVOICE_IDENTITY_CONFLICT":
       return conflict(error.code, error.message);
     default:
       return badRequest(error.code, error.message);

@@ -39,6 +39,20 @@ export const catalogUploadDisposition = (failure: InventoryFailure): CatalogUplo
   }
 };
 
+export type InvoiceUploadDisposition = { readonly _tag: "retry" } | { readonly _tag: "halt" };
+
+export const invoiceUploadDisposition = (failure: InventoryFailure): InvoiceUploadDisposition => {
+  switch (failure.reason._tag) {
+    case "transport":
+    case "transient":
+      return { _tag: "retry" };
+    case "staleReplica":
+    case "unauthenticated":
+    case "rejected":
+      return { _tag: "halt" };
+  }
+};
+
 export const isAbortError = (cause: unknown) =>
   (cause instanceof DOMException && cause.name === "AbortError") ||
   (cause instanceof Error && cause.name === "AbortError");

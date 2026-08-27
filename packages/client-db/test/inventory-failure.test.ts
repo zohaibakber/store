@@ -5,6 +5,7 @@ import {
   failureFromUnknown,
   InventoryFailure,
   inventoryFailureFromHttp,
+  invoiceUploadDisposition,
 } from "../src/inventory-failure";
 
 describe("inventoryFailureFromHttp", () => {
@@ -88,5 +89,21 @@ describe("inventoryFailureFromHttp", () => {
       "Inventory mutation failed.",
     );
     expect(catalogUploadDisposition(forbidden)).toEqual({ _tag: "halt" });
+  });
+
+  it("never skips a sale conflict the way catalog ENTITY_CONFLICT is skipped", () => {
+    const stock = inventoryFailureFromHttp(
+      409,
+      { error: { code: "INSUFFICIENT_STOCK", message: "Not enough stock." } },
+      "Invoice creation failed.",
+    );
+    expect(invoiceUploadDisposition(stock)).toEqual({ _tag: "halt" });
+    const stale = inventoryFailureFromHttp(
+      409,
+      { error: { code: "ENTITY_CONFLICT", message: "The entity changed." } },
+      "Invoice creation failed.",
+    );
+    expect(invoiceUploadDisposition(stale)).toEqual({ _tag: "halt" });
+    expect(catalogUploadDisposition(stale)).toEqual({ _tag: "skip" });
   });
 });

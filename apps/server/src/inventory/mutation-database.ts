@@ -1,5 +1,6 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
+  allocationsCoverInput,
   catalogWriteError,
   compareSyncEntityChanges,
   decodeInvoiceId,
@@ -547,7 +548,8 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
   return { txid } satisfies InventoryMutationResult;
 });
 
-const invoiceError = (message: string) => protocolError("ENTITY_CONFLICT", message);
+const invoiceError = (message: string) => protocolError("INVALID_OPERATION", message);
+const invoiceStockError = (message: string) => protocolError("INSUFFICIENT_STOCK", message);
 
 const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
@@ -987,47 +989,82 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
       return yield* Effect.fail(invoiceError("Sale prices cannot be negative."));
     }
   }
-
-  const [counter] = yield* tx
-    .insert(invoiceCounters)
-    .values({ organizationId: actor.organizationId, lastInvoiceNumber: 1 })
-    .onConflictDoUpdate({
-      target: invoiceCounters.organizationId,
-      set: { lastInvoiceNumber: sql`${invoiceCounters.lastInvoiceNumber} + 1` },
-    })
-    .returning({ invoiceNumber: invoiceCounters.lastInvoiceNumber });
-  if (!counter) {
-    return yield* Effect.fail(invoiceError("The invoice number could not be allocated."));
+  if (!allocationsCoverInput(command.input, command.allocations)) {
+    return yield* Effect.fail(invoiceError("The sale allocations do not match the items."));
   }
 
+  yield* tx
+    .insert(invoiceCounters)
+    .values({ organizationId: actor.organizationId, lastInvoiceNumber: command.invoiceNumber })
+    .onConflictDoUpdate({
+      target: invoiceCounters.organizationId,
+      set: {
+        lastInvoiceNumber: sql`GREATEST(${invoiceCounters.lastInvoiceNumber}, ${command.invoiceNumber})`,
+      },
+    });
+
   const total = command.input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
-  const [invoice] = yield* tx
+  const [existingInvoice] = yield* tx
+    .select({ operationId: invoices.operationId })
+    .from(invoices)
+    .where(
+      and(eq(invoices.organizationId, actor.organizationId), eq(invoices.id, command.invoiceId)),
+    )
+    .limit(1);
+  if (existingInvoice && existingInvoice.operationId !== command.commandId) {
+    return yield* Effect.fail(
+      protocolError("INVOICE_IDENTITY_CONFLICT", "This invoice id is already in use."),
+    );
+  }
+
+  const invoiceValues = (invoiceNumber: number) => ({
+    id: command.invoiceId,
+    invoiceNumber,
+    customerName: command.input.customerName?.trim() || null,
+    total,
+    organizationId: actor.organizationId,
+    createdByUserId: actor.userId,
+    updatedByUserId: actor.userId,
+    deviceId: command.deviceId,
+    operationId: command.commandId,
+    rowVersion: 1,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+    deletedAt: null,
+  });
+  const inserted = yield* tx
     .insert(invoices)
-    .values({
-      invoiceNumber: counter.invoiceNumber,
-      customerName: command.input.customerName?.trim() || null,
-      total,
-      organizationId: actor.organizationId,
-      createdByUserId: actor.userId,
-      updatedByUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId: command.commandId,
-      rowVersion: 1,
-      createdAt: command.occurredAt,
-      updatedAt: command.occurredAt,
-      deletedAt: null,
+    .values(invoiceValues(command.invoiceNumber))
+    .onConflictDoNothing({
+      target: [invoices.organizationId, invoices.invoiceNumber],
     })
     .returning({ id: invoices.id, invoiceNumber: invoices.invoiceNumber });
+  let invoice = inserted[0];
+  if (!invoice) {
+    const [bumped] = yield* tx
+      .update(invoiceCounters)
+      .set({ lastInvoiceNumber: sql`${invoiceCounters.lastInvoiceNumber} + 1` })
+      .where(eq(invoiceCounters.organizationId, actor.organizationId))
+      .returning({ invoiceNumber: invoiceCounters.lastInvoiceNumber });
+    if (!bumped) {
+      return yield* Effect.fail(invoiceError("The invoice number could not be allocated."));
+    }
+    const [retry] = yield* tx
+      .insert(invoices)
+      .values(invoiceValues(bumped.invoiceNumber))
+      .returning({ id: invoices.id, invoiceNumber: invoices.invoiceNumber });
+    invoice = retry;
+  }
   if (!invoice) return yield* Effect.fail(invoiceError("The invoice could not be created."));
 
-  for (const line of command.input.items) {
+  for (const take of command.allocations) {
     const [product] = yield* tx
       .select()
       .from(products)
       .where(
         and(
           eq(products.organizationId, actor.organizationId),
-          eq(products.id, line.productId),
+          eq(products.id, take.productId),
           isNull(products.deletedAt),
         ),
       )
@@ -1037,130 +1074,111 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
       return yield* Effect.fail(invoiceError("One of the products no longer exists."));
     }
 
-    const availableBatches = yield* tx
+    const [batch] = yield* tx
       .select()
       .from(batches)
       .where(
         and(
           eq(batches.organizationId, actor.organizationId),
-          eq(batches.productId, line.productId),
+          eq(batches.id, take.batchId),
           isNull(batches.deletedAt),
         ),
       )
-      .orderBy(sql`${batches.expiresAt} asc nulls last`, asc(batches.createdAt))
+      .limit(1)
       .for("update");
-    const candidates = line.batchId
-      ? availableBatches.filter((batch) => batch.id === line.batchId)
-      : availableBatches.filter((batch) =>
-          line.quantityType === "pack"
-            ? batch.packQuantity > 0
-            : batch.packQuantity * product.unitsPerPack + batch.unitQuantity > 0,
-        );
-    if (line.batchId && candidates.length === 0) {
-      return yield* Effect.fail(invoiceError(`The selected batch for ${product.name} is gone.`));
-    }
-    const available = candidates.reduce(
-      (sum, batch) =>
-        sum +
-        (line.quantityType === "pack"
-          ? batch.packQuantity
-          : batch.packQuantity * product.unitsPerPack + batch.unitQuantity),
-      0,
-    );
-    if (available < line.quantity) {
+    if (!batch) {
       return yield* Effect.fail(
-        invoiceError(
-          `Not enough stock for ${product.name}: ${available} available, ${line.quantity} requested.`,
+        invoiceStockError(`The selected batch for ${product.name} is gone.`),
+      );
+    }
+
+    const available =
+      take.quantityType === "pack"
+        ? batch.packQuantity
+        : batch.packQuantity * product.unitsPerPack + batch.unitQuantity;
+    if (available < take.quantity) {
+      return yield* Effect.fail(
+        invoiceStockError(
+          `Not enough stock for ${product.name}: ${available} available, ${take.quantity} requested.`,
         ),
       );
     }
 
-    let remaining = line.quantity;
-    for (const batch of candidates) {
-      if (remaining === 0) break;
-      const batchAvailable =
-        line.quantityType === "pack"
-          ? batch.packQuantity
-          : batch.packQuantity * product.unitsPerPack + batch.unitQuantity;
-      const taken = Math.min(batchAvailable, remaining);
-      remaining -= taken;
-      const packsOpened =
-        line.quantityType === "unit"
-          ? Math.max(0, Math.ceil((taken - batch.unitQuantity) / product.unitsPerPack))
-          : 0;
-      const nextPackQuantity =
-        line.quantityType === "pack"
-          ? batch.packQuantity - taken
-          : batch.packQuantity - packsOpened;
-      const nextUnitQuantity =
-        line.quantityType === "pack"
-          ? batch.unitQuantity
-          : batch.unitQuantity + packsOpened * product.unitsPerPack - taken;
+    const packsOpened =
+      take.quantityType === "unit"
+        ? Math.max(0, Math.ceil((take.quantity - batch.unitQuantity) / product.unitsPerPack))
+        : take.packsOpened;
+    if (take.quantityType === "unit" && packsOpened !== take.packsOpened) {
+      return yield* Effect.fail(
+        invoiceStockError(`Not enough stock for ${product.name}: pack layout changed.`),
+      );
+    }
+    const nextPackQuantity =
+      take.quantityType === "pack"
+        ? batch.packQuantity - take.quantity
+        : batch.packQuantity - take.packsOpened;
+    const nextUnitQuantity =
+      take.quantityType === "pack"
+        ? batch.unitQuantity
+        : batch.unitQuantity + take.packsOpened * product.unitsPerPack - take.quantity;
+    if (nextPackQuantity < 0 || nextUnitQuantity < 0) {
+      return yield* Effect.fail(invoiceStockError(`Not enough stock for ${product.name}.`));
+    }
 
-      const [updatedBatch] = yield* tx
-        .update(batches)
-        .set({
-          packQuantity: nextPackQuantity,
-          unitQuantity: nextUnitQuantity,
-          updatedByUserId: actor.userId,
-          deviceId: command.deviceId,
-          operationId: command.commandId,
-          rowVersion: batch.rowVersion + 1,
-          updatedAt: command.occurredAt,
-        })
-        .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)))
-        .returning({ id: batches.id });
-      if (!updatedBatch) return yield* Effect.fail(invoiceError("Stock could not be updated."));
+    const [updatedBatch] = yield* tx
+      .update(batches)
+      .set({
+        packQuantity: nextPackQuantity,
+        unitQuantity: nextUnitQuantity,
+        updatedByUserId: actor.userId,
+        deviceId: command.deviceId,
+        operationId: command.commandId,
+        rowVersion: batch.rowVersion + 1,
+        updatedAt: command.occurredAt,
+      })
+      .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, batch.id)))
+      .returning({ id: batches.id });
+    if (!updatedBatch) return yield* Effect.fail(invoiceError("Stock could not be updated."));
 
-      const [item] = yield* tx
-        .insert(invoiceItems)
-        .values({
-          invoiceId: invoice.id,
-          productId: product.id,
-          batchId: batch.id,
-          productName: product.name,
-          batchNumber: batch.batchNumber,
-          quantity: taken,
-          quantityType: line.quantityType,
-          baseUnitQuantity: taken * (line.quantityType === "pack" ? product.unitsPerPack : 1),
-          salePrice: line.salePrice,
-          organizationId: actor.organizationId,
-          createdByUserId: actor.userId,
-          updatedByUserId: actor.userId,
-          deviceId: command.deviceId,
-          operationId: command.commandId,
-          rowVersion: 1,
-          createdAt: command.occurredAt,
-          updatedAt: command.occurredAt,
-          deletedAt: null,
-        })
-        .returning({ id: invoiceItems.id });
-      if (!item) return yield* Effect.fail(invoiceError("The invoice item could not be saved."));
+    const [item] = yield* tx
+      .insert(invoiceItems)
+      .values({
+        id: take.invoiceItemId,
+        invoiceId: invoice.id,
+        productId: product.id,
+        batchId: batch.id,
+        productName: product.name,
+        batchNumber: batch.batchNumber,
+        quantity: take.quantity,
+        quantityType: take.quantityType,
+        baseUnitQuantity: take.quantity * (take.quantityType === "pack" ? product.unitsPerPack : 1),
+        salePrice: take.salePrice,
+        organizationId: actor.organizationId,
+        createdByUserId: actor.userId,
+        updatedByUserId: actor.userId,
+        deviceId: command.deviceId,
+        operationId: command.commandId,
+        rowVersion: 1,
+        createdAt: command.occurredAt,
+        updatedAt: command.occurredAt,
+        deletedAt: null,
+      })
+      .returning({ id: invoiceItems.id });
+    if (!item) return yield* Effect.fail(invoiceError("The invoice item could not be saved."));
 
-      if (packsOpened > 0) {
-        yield* tx.insert(stockMovements).values({
-          productId: product.id,
-          batchId: batch.id,
-          invoiceId: invoice.id,
-          type: "open_pack",
-          packDelta: -packsOpened,
-          unitDelta: packsOpened * product.unitsPerPack,
-          note: `Opened for invoice #${counter.invoiceNumber}`,
-          organizationId: actor.organizationId,
-          actorUserId: actor.userId,
-          deviceId: command.deviceId,
-          operationId: command.commandId,
-          createdAt: command.occurredAt,
-        });
+    if (take.packsOpened > 0) {
+      if (!take.openPackMovementId) {
+        return yield* Effect.fail(invoiceError("The invoice item could not be saved."));
       }
       yield* tx.insert(stockMovements).values({
+        id: take.openPackMovementId,
         productId: product.id,
         batchId: batch.id,
         invoiceId: invoice.id,
-        type: "sale",
-        packDelta: line.quantityType === "pack" ? -taken : 0,
-        unitDelta: line.quantityType === "unit" ? -taken : 0,
-        note: `Invoice #${counter.invoiceNumber}`,
+        type: "open_pack",
+        packDelta: -take.packsOpened,
+        unitDelta: take.packsOpened * product.unitsPerPack,
+        note: `Opened for invoice #${invoice.invoiceNumber}`,
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
         deviceId: command.deviceId,
@@ -1168,6 +1186,21 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
         createdAt: command.occurredAt,
       });
     }
+    yield* tx.insert(stockMovements).values({
+      id: take.saleMovementId,
+      productId: product.id,
+      batchId: batch.id,
+      invoiceId: invoice.id,
+      type: "sale",
+      packDelta: take.quantityType === "pack" ? -take.quantity : 0,
+      unitDelta: take.quantityType === "unit" ? -take.quantity : 0,
+      note: `Invoice #${invoice.invoiceNumber}`,
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      deviceId: command.deviceId,
+      operationId: command.commandId,
+      createdAt: command.occurredAt,
+    });
   }
 
   yield* tx.insert(inventoryMutationReceipts).values({

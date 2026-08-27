@@ -261,6 +261,198 @@ describe("PowerSync catalog upload failures", () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
+  it("uploads a sale transaction as one invoice command", async () => {
+    const invoiceId = "command-1";
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ invoiceId, invoiceNumber: 1, txid: 9 }), { status: 200 }),
+      );
+    const complete = vi.fn(async () => undefined);
+    await uploadInventoryCrudTransaction(
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+      {
+        crud: [
+          {
+            id: invoiceId,
+            table: "invoices",
+            op: UpdateType.PUT,
+            opData: {
+              id: invoiceId,
+              invoiceNumber: 1,
+              customerName: null,
+              total: 50,
+              organizationId: "org-1",
+              createdByUserId: "user-1",
+              updatedByUserId: "user-1",
+              deviceId: "device-1",
+              operationId: "command-1",
+              rowVersion: 1,
+              createdAt: 100,
+              updatedAt: 100,
+              deletedAt: null,
+            },
+          },
+          {
+            id: "item-1",
+            table: "invoice_items",
+            op: UpdateType.PUT,
+            opData: {
+              id: "item-1",
+              invoiceId,
+              productId: "product-1",
+              batchId: "batch-1",
+              productName: "Paracetamol",
+              batchNumber: "A",
+              quantity: 1,
+              quantityType: "pack",
+              baseUnitQuantity: 10,
+              salePrice: 50,
+              organizationId: "org-1",
+              createdByUserId: "user-1",
+              updatedByUserId: "user-1",
+              deviceId: "device-1",
+              operationId: "command-1",
+              rowVersion: 1,
+              createdAt: 100,
+              updatedAt: 100,
+              deletedAt: null,
+            },
+          },
+          {
+            id: "batch-1",
+            table: "batches",
+            op: UpdateType.PATCH,
+            opData: { packQuantity: 1, unitQuantity: 0, operationId: "command-1" },
+            previousValues: { packQuantity: 2, unitQuantity: 0 },
+          },
+          {
+            id: "sale-1",
+            table: "stock_movements",
+            op: UpdateType.PUT,
+            opData: {
+              id: "sale-1",
+              productId: "product-1",
+              batchId: "batch-1",
+              invoiceId,
+              type: "sale",
+              packDelta: -1,
+              unitDelta: 0,
+              note: "Invoice #0001",
+              organizationId: "org-1",
+              actorUserId: "user-1",
+              deviceId: "device-1",
+              operationId: "command-1",
+              createdAt: 100,
+            },
+          },
+        ],
+        complete,
+      },
+    );
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    expect(authenticatedFetch.mock.calls[0]?.[0]).toBe(
+      "https://api.example/api/inventory/invoices",
+    );
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("does not complete a sale when the server rejects stock", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "INSUFFICIENT_STOCK", message: "No stock." } }),
+        {
+          status: 409,
+        },
+      ),
+    );
+    const complete = vi.fn(async () => undefined);
+    await expect(
+      uploadInventoryCrudTransaction(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        {
+          crud: [
+            {
+              id: "command-1",
+              table: "invoices",
+              op: UpdateType.PUT,
+              opData: {
+                id: "command-1",
+                invoiceNumber: 1,
+                customerName: null,
+                total: 50,
+                organizationId: "org-1",
+                createdByUserId: "user-1",
+                updatedByUserId: "user-1",
+                deviceId: "device-1",
+                operationId: "command-1",
+                rowVersion: 1,
+                createdAt: 100,
+                updatedAt: 100,
+                deletedAt: null,
+              },
+            },
+            {
+              id: "item-1",
+              table: "invoice_items",
+              op: UpdateType.PUT,
+              opData: {
+                id: "item-1",
+                invoiceId: "command-1",
+                productId: "product-1",
+                batchId: "batch-1",
+                productName: "Paracetamol",
+                batchNumber: "A",
+                quantity: 1,
+                quantityType: "pack",
+                baseUnitQuantity: 10,
+                salePrice: 50,
+                organizationId: "org-1",
+                createdByUserId: "user-1",
+                updatedByUserId: "user-1",
+                deviceId: "device-1",
+                operationId: "command-1",
+                rowVersion: 1,
+                createdAt: 100,
+                updatedAt: 100,
+                deletedAt: null,
+              },
+            },
+            {
+              id: "batch-1",
+              table: "batches",
+              op: UpdateType.PATCH,
+              opData: { packQuantity: 1 },
+              previousValues: { packQuantity: 2 },
+            },
+            {
+              id: "sale-1",
+              table: "stock_movements",
+              op: UpdateType.PUT,
+              opData: {
+                id: "sale-1",
+                productId: "product-1",
+                batchId: "batch-1",
+                invoiceId: "command-1",
+                type: "sale",
+                packDelta: -1,
+                unitDelta: 0,
+                note: null,
+                organizationId: "org-1",
+                actorUserId: "user-1",
+                deviceId: "device-1",
+                operationId: "command-1",
+                createdAt: 100,
+              },
+            },
+          ],
+          complete,
+        },
+      ),
+    ).rejects.toMatchObject({ reason: { _tag: "rejected", code: "INSUFFICIENT_STOCK" } });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it("does not disconnect on transport failures so PowerSync can retry", async () => {
     const authenticatedFetch = vi
       .fn<typeof fetch>()

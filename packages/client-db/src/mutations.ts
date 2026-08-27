@@ -24,9 +24,11 @@ export {
   catalogUploadDisposition,
   failureFromUnknown,
   InventoryFailure,
+  invoiceUploadDisposition,
   isAbortError,
   type CatalogUploadDisposition,
   type InventoryFailureReason,
+  type InvoiceUploadDisposition,
 } from "./inventory-failure";
 
 const InventoryMutationResult = Schema.Struct({

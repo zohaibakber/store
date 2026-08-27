@@ -71,6 +71,7 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
     const { cleanupCollections, ...tables } = collections;
     return {
       ...tables,
+      powerSync,
       waitForUploadDrain: () => waitForInventoryUploadDrain(powerSync),
       dispose: async () => {
         await cleanupCollections();

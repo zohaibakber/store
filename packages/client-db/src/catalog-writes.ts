@@ -31,7 +31,7 @@ export type CatalogWriteIds = {
 
 type Mutable<Row> = { -readonly [K in keyof Row]: Row[K] };
 
-type PersistableCollection<Row extends { readonly id: string }> = {
+export type PersistableCollection<Row extends { readonly id: string }> = {
   readonly state: {
     get: (id: string) => Row | undefined;
     values: () => Iterable<Row>;

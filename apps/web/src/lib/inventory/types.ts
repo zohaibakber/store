@@ -1,3 +1,4 @@
+import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import type {
   BatchRow,
   CategoryRow,
@@ -30,6 +31,7 @@ export type Inventory = {
   readonly invoices: InventoryCollection<InvoiceRow>;
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
+  readonly powerSync: AbstractPowerSyncDatabase;
   readonly waitForUploadDrain: () => Promise<void>;
   readonly dispose: () => Promise<void>;
 };
