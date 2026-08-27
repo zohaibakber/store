@@ -147,10 +147,10 @@ Google Play. GitHub Actions `eas` still needs repository secret `EXPO_TOKEN`;
 builds started by the Expo GitHub app do not.
 
 Desktop releases run from CI after a successful production deploy on
-`main` via Electron Forge (`electron-forge publish`). Forge needs a real
-`node_modules` tree, so `pnpm-workspace.yaml` sets `nodeLinker: hoisted`. Each
-run bumps the latest GitHub release patch and publishes a draft until Linux
-artifacts are present. A
+`main` via Electron Forge (`electron-forge publish`). Forge's pnpm preflight
+needs a hoist pattern; `pnpm-workspace.yaml` sets `publicHoistPattern` for
+Electron packages and keeps the isolated linker. Each run bumps the latest
+GitHub release patch and publishes a draft until Linux artifacts are present. A
 version tag is no longer required. `workflow_dispatch` on
 `.github/workflows/release.yml` remains for a manual rebuild.
 

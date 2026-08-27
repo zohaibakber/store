@@ -2,9 +2,13 @@ packages:
   - apps/*
   - packages/*
 
-# Electron Forge walks a real node_modules tree. Isolated linking fails its
-# preflight (`pnpm config get node-linker`) and packaging.
-nodeLinker: hoisted
+# Forge's pnpm preflight only requires a hoist pattern to be defined. Keep the
+# isolated linker — hoisting the whole workspace duplicates React (web 19.2.8
+# vs Expo 19.2.3) and breaks `useTable` tests.
+publicHoistPattern:
+  - "*electron*"
+  - "@electron/*"
+  - "@electron-forge/*"
 
 catalog:
   "@effect/sql-d1": 4.0.0-rc.111

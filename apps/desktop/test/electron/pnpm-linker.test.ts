@@ -2,9 +2,14 @@ import { execFileSync } from "node:child_process";
 
 import { expect, test } from "vitest";
 
-test("pnpm node-linker is hoisted so Electron Forge can package", () => {
-  const linker = execFileSync("pnpm", ["config", "get", "node-linker"], {
-    encoding: "utf8",
-  }).trim();
-  expect(linker).toBe("hoisted");
+const pnpmConfig = (key: string) =>
+  execFileSync("pnpm", ["config", "get", key], { encoding: "utf8" }).trim();
+
+test("pnpm hoist config satisfies Electron Forge packaging preflight", () => {
+  const hoistPattern = pnpmConfig("hoist-pattern");
+  const publicHoistPattern = pnpmConfig("public-hoist-pattern");
+  const nodeLinker = pnpmConfig("node-linker");
+  const forgeAcceptsPnpm =
+    hoistPattern !== "undefined" || publicHoistPattern !== "undefined" || nodeLinker === "hoisted";
+  expect(forgeAcceptsPnpm).toBe(true);
 });
