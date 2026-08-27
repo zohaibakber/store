@@ -24,6 +24,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
 import { resolveRefreshCredential } from "./refresh-credential";
 import { AuthError, AuthService } from "./service";
 
@@ -134,6 +135,15 @@ const withAuthErrorResponse = <R>(
 ) =>
   effect.pipe(Effect.catchTag("Auth.AuthError", (error) => Effect.succeed(errorResponse(error))));
 
+const withOAuthCallbackErrorPage = <R>(
+  effect: Effect.Effect<HttpServerResponse.HttpServerResponse, AuthError, R>,
+) =>
+  effect.pipe(
+    Effect.catchTag("Auth.AuthError", (error) =>
+      Effect.succeed(oauthCallbackErrorResponse(error.status, error.message)),
+    ),
+  );
+
 export const authRoutes = (configuration: AuthHttpConfiguration) =>
   Layer.mergeAll(
     HttpRouter.use((router) =>
@@ -215,19 +225,25 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
         yield* router.add(
           "GET",
           "/v1/oauth/google/callback",
-          withAuthErrorResponse(
+          withOAuthCallbackErrorPage(
             Effect.gen(function* () {
               const request = yield* HttpServerRequest.HttpServerRequest;
               const url = new URL(request.originalUrl, configuration.baseUrl);
+              if (url.searchParams.get("error") === "access_denied") {
+                return oauthCallbackErrorResponse(400, "Google sign-in was cancelled.");
+              }
               const code = url.searchParams.get("code");
               const state = url.searchParams.get("state");
               if (!code || !state) {
-                return invalidRequest("Google did not return an authorization code.");
+                return oauthCallbackErrorResponse(
+                  400,
+                  "Google did not return an authorization code.",
+                );
               }
               const callback = yield* auth.completeGoogle({ code, state });
               const redirect = new URL(callback.redirectUri);
               redirect.searchParams.set("code", callback.code);
-              return HttpServerResponse.redirect(redirect);
+              return googleOAuthAppResponse(redirect);
             }),
           ),
         );

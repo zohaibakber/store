@@ -4,6 +4,7 @@ import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
+  isNativeRedirect,
   isTrustedOrigin,
   isTrustedRedirect,
   parseTrustedOrigins,
@@ -201,6 +202,18 @@ describe("matchesTrustedOrigin", () => {
   it("matches a bare host pattern against the origin host", () => {
     expect(isTrustedOrigin("https://api.example.com", ["*.example.com"])).toBe(true);
     expect(isTrustedOrigin("https://api.example.com", ["*.other.com"])).toBe(false);
+  });
+});
+
+describe("isNativeRedirect", () => {
+  it.each([
+    ["com.tabaaq.desktop://auth/callback", true],
+    ["com.tabaaq.mobile://auth/callback?code=1", true],
+    ["https://app.example.com/", false],
+    ["http://localhost:5174/?code=1", false],
+    ["not a url", false],
+  ])("decides %s", (redirectUri, expected) => {
+    expect(isNativeRedirect(redirectUri)).toBe(expected);
   });
 });
 

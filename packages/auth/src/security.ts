@@ -285,6 +285,21 @@ export const matchesTrustedOrigin = (origin: string | undefined, pattern: string
 export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyArray<string>) =>
   patterns.some((pattern) => matchesTrustedOrigin(origin, pattern));
 
+const isHttpProtocol = (protocol: string) => protocol === "http:" || protocol === "https:";
+
+/**
+ * Native OAuth callbacks (`com.tabaaq.desktop://auth/callback`) are not HTTP
+ * documents. The leftover system-browser tab needs an HTML handoff page
+ * instead of a 302 onto the custom scheme.
+ */
+export const isNativeRedirect = (redirectUri: string) => {
+  try {
+    return !isHttpProtocol(new URL(redirectUri).protocol);
+  } catch {
+    return false;
+  }
+};
+
 /**
  * An OAuth redirect is trusted when its origin is. A web redirect carries a
  * path (`https://app.example.com/callback`), so it is reduced to its origin
@@ -298,7 +313,7 @@ export const isTrustedRedirect = (redirectUri: string, patterns: ReadonlyArray<s
   let target: string;
   try {
     const url = new URL(redirectUri);
-    target = url.protocol === "http:" || url.protocol === "https:" ? url.origin : redirectUri;
+    target = isHttpProtocol(url.protocol) ? url.origin : redirectUri;
   } catch {
     return false;
   }
