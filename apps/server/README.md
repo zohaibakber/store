@@ -5,7 +5,6 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 - `GET /api/health`
 - `GET /api/auth/session` and `GET /api/auth/get-session`
 - `GET /api/powersync/credentials`
-- `GET /api/sync/live` (legacy WebSocket compatibility)
 - `POST /api/inventory/mutations`
 - `POST /api/inventory/imports`
 - `POST /api/inventory/invoices`
@@ -18,17 +17,10 @@ signed claims. Auth users, organizations, memberships, and refresh sessions
 live in D1.
 
 Inventory is authoritative in Neon Postgres. The Worker authenticates and
-validates commands, commits each command in one Postgres transaction, and
-returns that transaction ID. PowerSync publishes organization-scoped table
-changes to TanStack DB clients.
-
-The existing `ORGANIZATION_STORE` Durable Object class, binding, schema, and
-`/api/sync/live` WebSocket route remain in place for deployed clients whose
-local outboxes still synchronize with the legacy inventory database. This is a
-compatibility path, not a dual-write path: new clients use Postgres/PowerSync,
-while legacy clients continue to use their existing Durable Object. Do not
-rename or remove the class or binding until production data has been exported,
-backfilled, and verified and the legacy clients have completed cutover.
+validates catalog write commands, commits each command in one Postgres
+transaction, and returns that transaction ID. PowerSync publishes
+organization-scoped table changes to TanStack DB clients. There is no
+organization Durable Object and no `/api/sync/live` route.
 
 ## Infrastructure
 
@@ -38,8 +30,7 @@ The Worker, its bindings, and the local dev port live in `infra.ts`.
 Postgres project into one stack.
 
 Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,
-and product-scan rate limiter, and preserves the existing
-`ORGANIZATION_STORE` binding. PowerSync receives the direct Neon connection;
+and a product-scan rate limiter. PowerSync receives the direct Neon connection;
 Worker commands use Hyperdrive for pooled Postgres access.
 
 Run deployments from the repository root and always pass a stage:
@@ -71,9 +62,7 @@ development-stage resources rather than emulating them locally.
 Auth D1 migrations live under `packages/db/migrations/auth`. Inventory
 Postgres migrations live under `packages/db/migrations/postgres`. The checked-in
 Drizzle schemas are `packages/db/src/auth/schema.ts` and
-`packages/db/src/postgres/schema.ts`. The retained legacy Durable Object schema
-and migrations live under `packages/db/src/do` and `packages/db/migrations/do`;
-they must remain available while the compatibility binding exists.
+`packages/db/src/postgres/schema.ts`.
 
 ## Data flow
 
@@ -81,8 +70,8 @@ PowerSync credentials reuse the short-lived access token. The checked-in sync
 config filters every query by its signed `org` claim; clients cannot supply the
 source credentials or replace the tenant filter.
 
-Inventory writes go through typed commands. The server derives organization and
-actor metadata from the session, records an idempotency receipt, and obtains
-`pg_current_xact_id()` inside the same transaction as the domain writes.
-PowerSync durably queues simple catalog changes and streams canonical Postgres
-rows back into TanStack DB.
+Inventory writes go through typed catalog commands. The server derives
+organization and actor metadata from the session, records an idempotency
+receipt, and obtains `pg_current_xact_id()` inside the same transaction as the
+domain writes. PowerSync durably queues simple catalog changes and streams
+canonical Postgres rows back into TanStack DB.

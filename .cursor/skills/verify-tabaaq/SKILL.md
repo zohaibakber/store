@@ -21,7 +21,7 @@ From the repository root:
 
 That starts `vp dev` in `apps/web` (Vite on `127.0.0.1:5174`, `strictPort: true`, `/api` proxied to `http://localhost:8787`). Ready when `GET http://127.0.0.1:5174` returns HTML with `<title>Tabaaq</title>` (the script waits up to ~30s). Log: `/tmp/tabaaq-verify/vite.log`. Pidfile: `/tmp/tabaaq-verify/vite.pid`.
 
-Full stack (auth, inventory mutations, PowerSync) is `vp run dev:web` from the repo root. That needs gitignored `.env.dev`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`. Alchemy binds real `dev`-stage D1 and Durable Objects; there is no local emulation. Prefer the SPA-only launch for sign-in-shell proofs. Use the full stack only when the feature file’s preconditions require a session.
+Full stack (auth, inventory mutations, PowerSync) is `vp run dev:web` from the repo root. That needs gitignored `.env.dev`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`. Alchemy binds real `dev`-stage D1, Hyperdrive, and Postgres; there is no local emulation. Prefer the SPA-only launch for sign-in-shell proofs. Use the full stack only when the feature file’s preconditions require a session.
 
 Teardown is Cleanup below. Do not start a second Vite on 5174; the port is exclusive.
 

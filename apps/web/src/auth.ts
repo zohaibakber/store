@@ -88,7 +88,6 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.#tokens.get()?.accessToken ?? null;
   }
 
-  /** Refresh near-expiry access (live sync reconnect). */
   ensureFreshAccess(force = false) {
     return this.#http.ensureFreshAccess(force);
   }

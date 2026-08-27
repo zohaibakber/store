@@ -26,7 +26,6 @@ function ControlGroupNumberInput({
   return (
     <NumberField className="contents" {...props}>
       <NumberFieldInput {...inputProps} className={cn("text-left", inputProps?.className)} />
-      {/* Steppers require NumberField context. */}
       {children}
     </NumberField>
   );

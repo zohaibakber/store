@@ -9,8 +9,6 @@ export const InventoryProtocolCode = Schema.Literals([
   "INVALID_DEVICE",
   "INVALID_OPERATION",
   "INVALID_OCCURRED_AT",
-  "INVALID_PAYLOAD_HASH",
-  "INVALID_CLIENT_SEQUENCE",
   "INVALID_ENTITY_ID",
   "EMPTY_OPERATION",
   "TOO_MANY_CHANGES",
@@ -22,7 +20,6 @@ export const InventoryProtocolCode = Schema.Literals([
   "ENTITY_RELATION_INVALID",
   "ENTITY_ID_MISMATCH",
   "INVALID_ENTITY_ROW",
-  "PAYLOAD_HASH_MISMATCH",
   "ENTITY_WRITE_FAILED",
 ]);
 export type InventoryProtocolCode = typeof InventoryProtocolCode.Type;

@@ -3,7 +3,6 @@ import { StyleSheet, View } from "react-native";
 import { InventoryFabs } from "@/components/inventory-fabs";
 import { useActionsInset } from "@/hooks/use-overlay-insets";
 
-/** Pins the inventory actions above whichever bottom navigation the platform draws. */
 export function InventoryFabAnchor() {
   const actionsBottom = useActionsInset();
 

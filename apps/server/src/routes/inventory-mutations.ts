@@ -36,7 +36,7 @@ export const InventoryMutationHandlers = HttpApiBuilder.group(
           return yield* runtime
             .writeInventoryMutation(
               { organizationId: identity.organizationId, userId: identity.user.id },
-              payload.operation,
+              payload,
             )
             .pipe(
               Effect.mapError((error) =>

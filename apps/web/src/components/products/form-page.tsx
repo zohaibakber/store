@@ -6,11 +6,6 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
-/**
- * Shell shared by create and edit product routes. Only the heading, the submit
- * label, and where Cancel goes differ. `cancelTo` is a rendered `<Link/>` the
- * button adopts.
- */
 export function ProductFormPage({
   cancelTo,
   categories,

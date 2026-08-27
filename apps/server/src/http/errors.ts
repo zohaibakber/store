@@ -27,9 +27,6 @@ export type NotFound = typeof NotFound.Type;
 export const Conflict = publicErrorSchema("Conflict", 409);
 export type Conflict = typeof Conflict.Type;
 
-export const UpgradeRequired = publicErrorSchema("UpgradeRequired", 426);
-export type UpgradeRequired = typeof UpgradeRequired.Type;
-
 export const PayloadTooLarge = publicErrorSchema("PayloadTooLarge", 413);
 export type PayloadTooLarge = typeof PayloadTooLarge.Type;
 
@@ -50,8 +47,6 @@ export const unauthenticated = (code: string, message: string) =>
 export const forbidden = (code: string, message: string) => Forbidden.make(body(code, message));
 export const notFound = (code: string, message: string) => NotFound.make(body(code, message));
 export const conflict = (code: string, message: string) => Conflict.make(body(code, message));
-export const upgradeRequired = (code: string, message: string) =>
-  UpgradeRequired.make(body(code, message));
 export const payloadTooLarge = (code: string, message: string) =>
   PayloadTooLarge.make(body(code, message));
 export const unsupportedMediaType = (code: string, message: string) =>

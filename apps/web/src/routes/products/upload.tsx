@@ -15,7 +15,7 @@ import { UploadAttachmentList } from "@/components/uploads/attachment-list";
 import { UploadProvider, useUpload } from "@/components/uploads/context";
 import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
-import { useCatalogCategories, useCatalogProducts, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogCategories, useCatalogProducts } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/products/upload")({
   component: UploadInvoicesRoute,
@@ -23,21 +23,8 @@ export const Route = createFileRoute("/products/upload")({
 });
 
 function UploadInvoicesRoute() {
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") throw new Error("Inventory storage is not ready.");
-  return <LiveUploadInvoices inventory={state.inventory} />;
-}
-
-function LiveUploadInvoices({
-  inventory,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-}) {
-  const products = useCatalogProducts(inventory);
-  const categories = useCatalogCategories(inventory);
+  const products = useCatalogProducts();
+  const categories = useCatalogCategories();
   if (categories.isError && categories.data.length === 0) {
     return <p className="p-6 text-sm text-destructive">Could not load inventory.</p>;
   }
@@ -78,8 +65,6 @@ function UploadPage() {
           </Alert>
         )}
 
-        {/* The dropzone doubles as the empty state. A separate one on top of it
-            said the same thing twice. */}
         <div className="flex flex-col gap-3">
           <UploadDropzone />
           <UploadAttachmentList />

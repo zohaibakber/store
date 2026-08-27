@@ -7,9 +7,10 @@ import type {
 } from "@store/contracts";
 import { and, eq, isNull, toArray, useLiveQuery } from "@tanstack/react-db";
 
-import type { Inventory } from "./types";
+import { useCatalogReplica } from "./provider";
 
-export const useCatalogCategories = (inventory: Inventory) => {
+export const useCatalogCategories = () => {
+  const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
       query
@@ -35,7 +36,8 @@ export const useCatalogCategories = (inventory: Inventory) => {
   return { ...live, data };
 };
 
-export const useCatalogProducts = (inventory: Inventory) => {
+export const useCatalogProducts = () => {
+  const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
       query
@@ -107,12 +109,13 @@ export const useCatalogProducts = (inventory: Inventory) => {
   return { ...live, data };
 };
 
-export const useCatalogProduct = (inventory: Inventory, productId: string) => {
-  const live = useCatalogProducts(inventory);
+export const useCatalogProduct = (productId: string) => {
+  const live = useCatalogProducts();
   return { ...live, data: live.data.find((product) => product.id === productId) };
 };
 
-export const useCatalogStockMovements = (inventory: Inventory, productId: string) => {
+export const useCatalogStockMovements = (productId: string) => {
+  const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
       query
@@ -140,7 +143,8 @@ export const useCatalogStockMovements = (inventory: Inventory, productId: string
   return { ...live, data };
 };
 
-export const useInventoryInvoices = (inventory: Inventory) => {
+export const useInventoryInvoices = () => {
+  const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
       query
@@ -192,13 +196,13 @@ export const useInventoryInvoices = (inventory: Inventory) => {
   return { ...live, data };
 };
 
-export const useInventoryInvoice = (inventory: Inventory, invoiceId: string) => {
-  const live = useInventoryInvoices(inventory);
+export const useInventoryInvoice = (invoiceId: string) => {
+  const live = useInventoryInvoices();
   return { ...live, data: live.data.find((invoice) => invoice.id === invoiceId) };
 };
 
-export const useCatalogSuggestions = (inventory: Inventory): ProductSuggestions => {
-  const products = useCatalogProducts(inventory).data;
+export const useCatalogSuggestions = (): ProductSuggestions => {
+  const products = useCatalogProducts().data;
   const distinct = (values: ReadonlyArray<string | null>) =>
     [...new Set(values.flatMap((value) => (value?.trim() ? [value.trim()] : [])))].sort((a, b) =>
       a.localeCompare(b),

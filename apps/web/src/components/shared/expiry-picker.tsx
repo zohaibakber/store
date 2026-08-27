@@ -146,7 +146,6 @@ export function ExpiryPicker({
           id={id}
           inputMode="numeric"
           name={name}
-          // Dropping the draft also drops input that never became a month and year.
           onBlur={() => {
             setDraft(null);
             onBlur?.();

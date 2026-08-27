@@ -53,7 +53,15 @@ describe("inventory mutation HTTP", () => {
     expect(url).toBe("https://api.example/api/inventory/mutations");
     expect(init).toMatchObject({
       method: "POST",
-      body: expect.stringContaining('"operationId":"operation-1"'),
+      body: JSON.stringify({
+        operationId: "operation-1",
+        organizationId: "org-1",
+        deviceId: "device-1",
+        actorUserId: "user-1",
+        occurredAt: 100,
+        entity: "category",
+        rows: [category],
+      }),
     });
   });
 

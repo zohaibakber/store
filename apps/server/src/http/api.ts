@@ -1,4 +1,5 @@
 import {
+  CatalogWriteCommand,
   ImportInventoryCommand,
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
@@ -8,7 +9,6 @@ import {
   MAX_INVOICE_UPLOAD_FILES,
   ProductScanInput,
   ProductScanResult,
-  SyncOperation,
 } from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
@@ -25,7 +25,6 @@ import {
   PayloadTooLarge,
   TooManyRequests,
   UnsupportedMediaType,
-  UpgradeRequired,
 } from "./errors";
 
 export const MAX_UPLOAD_FILES = MAX_INVOICE_UPLOAD_FILES;
@@ -47,19 +46,6 @@ const system = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("landing", "/", { success: Landing }))
   .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
   .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
-
-const legacySync = HttpApiGroup.make("sync").add(
-  HttpApiEndpoint.get("live", "/api/sync/live", {
-    query: {
-      organizationId: Schema.optionalKey(Schema.String),
-      deviceId: Schema.optionalKey(Schema.String),
-      protocolVersion: Schema.optionalKey(Schema.String),
-      access_token: Schema.optionalKey(Schema.String),
-    },
-    success: HttpApiSchema.NoContent,
-    error: [BadRequest, Forbidden, UpgradeRequired],
-  }).middleware(OrganizationAuth),
-);
 
 const uploads = HttpApiGroup.make("uploads").add(
   HttpApiEndpoint.post("extract", "/api/uploads", {
@@ -90,7 +76,7 @@ const InventoryMutationResult = Schema.Struct({
 const inventoryMutations = HttpApiGroup.make("inventoryMutations")
   .add(
     HttpApiEndpoint.post("write", "/api/inventory/mutations", {
-      payload: Schema.Struct({ operation: SyncOperation }),
+      payload: CatalogWriteCommand,
       success: InventoryMutationResult,
       error: [BadRequest, Forbidden, Conflict],
     }).middleware(OrganizationAuth),
@@ -112,7 +98,6 @@ const inventoryMutations = HttpApiGroup.make("inventoryMutations")
 
 export const StoreApi = HttpApi.make("StoreApi").add(
   system,
-  legacySync,
   uploads,
   productScans,
   inventoryMutations,

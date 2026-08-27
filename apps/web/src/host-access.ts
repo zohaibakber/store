@@ -1,13 +1,12 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 
-/** Where the user is trying to go, stripped to what access needs. */
 export interface AccessLocation {
   readonly pathname: string;
 }
 
 /**
- * Outcome of one admit() call. Completes the host decision in one step —
- * callers do not classify routes, then check auth, then pick a URL.
+ * Outcome of one admit() call. Completes the host decision in one step.
+ * Callers do not classify routes, then check auth, then pick a URL.
  */
 export type AccessVerdict =
   | { readonly _tag: "Allow" }
@@ -26,8 +25,7 @@ export type HostInventoryScope = {
 };
 
 /**
- * Host access policy. Inject exactly one adapter at bootstrap
- * (`browserHostAccess` or `desktopHostAccess`). Routes stay host-blind.
+ * Host access policy. Inject once at bootstrap. Routes stay host-blind.
  * Both hosts require an authenticated organization before inventory.
  */
 export interface HostAccessPolicy {
@@ -38,13 +36,10 @@ export interface HostAccessPolicy {
 
   readonly chrome: (input: AccessLocation) => AppChrome;
 
-  /** Resolves the inventory workspace for this session, or null until signed in. */
   readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => HostInventoryScope | null;
 }
 
 const PUBLIC_PATHS = new Set(["/sign-in"]);
-
-const BARE_PATHS = PUBLIC_PATHS;
 
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.has(pathname);
 
@@ -60,9 +55,9 @@ const remoteInventoryScope = (snapshot: WorkspaceSnapshot | null): HostInventory
 };
 
 const bareChrome = (input: AccessLocation): AppChrome =>
-  BARE_PATHS.has(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
+  PUBLIC_PATHS.has(input.pathname) ? { _tag: "Bare" } : { _tag: "Shell" };
 
-const authenticatedHostAccess = (): HostAccessPolicy => ({
+export const hostAccess = (): HostAccessPolicy => ({
   chrome: bareChrome,
   inventoryScope: remoteInventoryScope,
   admit: ({ location, snapshot }) => {
@@ -75,9 +70,3 @@ const authenticatedHostAccess = (): HostAccessPolicy => ({
     return { _tag: "Allow" };
   },
 });
-
-/** Browser: app routes require an authenticated workspace. */
-export const browserHostAccess = authenticatedHostAccess;
-
-/** Desktop: app routes require an authenticated workspace. */
-export const desktopHostAccess = authenticatedHostAccess;

@@ -8,11 +8,8 @@ in the renderer. The Electron main process does not run PowerSync. It proxies
 authenticated HTTP. TanStack DB supplies live queries and optimistic
 mutations over that in-process PowerSync database.
 
-The original Cloudflare Durable Object and `/api/sync/live` WebSocket engine is
-preserved as production compatibility and migration source. Migrated web and
-desktop inventory code does not use that engine. Do not delete the legacy
-engine until an explicit retirement confirms that production no longer needs
-it.
+Routes read the catalog through query and action hooks. They do not open
+PowerSync or inspect replica internals.
 
 ## Local development
 

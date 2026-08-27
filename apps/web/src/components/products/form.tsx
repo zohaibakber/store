@@ -398,7 +398,6 @@ function ProductForm({
   );
 }
 
-/** Sold in packs: pack size, pack price, and the unit price derived from them. */
 function PackPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
   return (
     <Fieldset className="grid gap-4 sm:grid-cols-2">
@@ -482,7 +481,6 @@ function PackPricingFields({ form }: { form: ReturnType<typeof useProductCreateF
   );
 }
 
-/** Sold one at a time: a single price, and no pack size to state. */
 function SingleUnitPricingField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
   return (
     <Fieldset className="grid gap-4 sm:grid-cols-2">

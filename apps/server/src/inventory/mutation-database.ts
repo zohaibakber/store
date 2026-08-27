@@ -1,19 +1,20 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
+  catalogWriteError,
   compareSyncEntityChanges,
   decodeInvoiceId,
+  type CatalogWriteCommand,
   type ImportInventoryCommand,
   type ImportInventoryCommandResult,
   inventorySkuKey,
   type IssueInvoiceCommand,
   type IssueInvoiceResult,
-  MAX_SYNC_CHANGES_PER_OPERATION,
+  MAX_CATALOG_WRITE_ROWS,
   normalizedProductName,
   type SyncEntityChange,
-  type SyncOperation,
 } from "@store/contracts";
 import { syncEntityChangeKey } from "@store/contracts";
-import { canonicalPayloadHash, operationPayloadHash } from "@store/contracts/operation-hash";
+import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import { InventoryHyperdrive } from "@store/db/postgres/infra";
 import {
   batches,
@@ -43,7 +44,7 @@ import {
   inventoryProtocolError as protocolError,
 } from "./errors";
 import type { InventoryActor } from "./model";
-import { decodeEntityRow, serverOwnedColumns } from "./row-validation";
+import { decodeEntityRow, serverOwnedColumns, type CatalogWriteStamp } from "./row-validation";
 
 export interface InventoryMutationResult {
   readonly txid: number;
@@ -72,74 +73,92 @@ const databaseError = (cause: unknown) => {
 
 const validIdentifier = (value: string) => value.length > 0 && value.length <= 200;
 
-const validateOperation = Effect.fn("InventoryMutation.validateOperation")(function* (
+const CatalogRowMeta = Schema.Struct({
+  id: Schema.String,
+  rowVersion: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  deletedAt: Schema.NullOr(Schema.Number),
+});
+
+type CatalogWrite = {
+  readonly command: CatalogWriteCommand;
+  readonly changes: ReadonlyArray<SyncEntityChange>;
+  readonly payloadHash: string;
+};
+
+const writeStamp = (command: CatalogWriteCommand): CatalogWriteStamp => ({
+  occurredAt: command.occurredAt,
+  deviceId: command.deviceId,
+  operationId: command.operationId,
+});
+
+const decodeCatalogWrite = Effect.fn("InventoryMutation.decodeCatalogWrite")(function* (
   actor: InventoryActor,
-  operation: SyncOperation,
+  command: CatalogWriteCommand,
 ) {
-  if (operation.organizationId !== actor.organizationId)
+  if (command.organizationId !== actor.organizationId)
     return yield* Effect.fail(
       protocolError(
         "ORGANIZATION_MISMATCH",
         "The mutation does not belong to the active organization.",
       ),
     );
-  if (operation.actorUserId !== actor.userId)
+  if (command.actorUserId !== actor.userId)
     return yield* Effect.fail(
       protocolError("ACTOR_MISMATCH", "The mutation was created by a different user."),
     );
-  if (!validIdentifier(operation.operationId))
+  if (!validIdentifier(command.operationId))
     return yield* Effect.fail(protocolError("INVALID_OPERATION", "The mutation id is invalid."));
-  if (!validIdentifier(operation.deviceId))
+  if (!validIdentifier(command.deviceId))
     return yield* Effect.fail(protocolError("INVALID_DEVICE", "The device id is invalid."));
-  if (!Number.isSafeInteger(operation.clientSequence) || operation.clientSequence < 1)
-    return yield* Effect.fail(
-      protocolError("INVALID_CLIENT_SEQUENCE", "The client sequence must be a positive integer."),
-    );
-  if (!Number.isSafeInteger(operation.occurredAt) || operation.occurredAt < 1)
+  if (!Number.isSafeInteger(command.occurredAt) || command.occurredAt < 1)
     return yield* Effect.fail(
       protocolError("INVALID_OCCURRED_AT", "The mutation timestamp is invalid."),
     );
-  if (!/^[0-9a-f]{64}$/.test(operation.payloadHash))
-    return yield* Effect.fail(
-      protocolError("INVALID_PAYLOAD_HASH", "The mutation payload hash is invalid."),
-    );
-  if (operation.changes.length === 0)
+  if (command.rows.length === 0)
     return yield* Effect.fail(
       protocolError("EMPTY_OPERATION", "A mutation must contain a change."),
     );
-  if (operation.changes.length > MAX_SYNC_CHANGES_PER_OPERATION)
+  if (command.rows.length > MAX_CATALOG_WRITE_ROWS)
     return yield* Effect.fail(
       protocolError(
         "TOO_MANY_CHANGES",
-        `A mutation may contain at most ${MAX_SYNC_CHANGES_PER_OPERATION} changes.`,
+        `A mutation may contain at most ${MAX_CATALOG_WRITE_ROWS} changes.`,
       ),
     );
 
+  const changes: SyncEntityChange[] = [];
   const keys = new Set<string>();
-  for (const change of operation.changes) {
-    if (change.entity !== "category" && change.entity !== "product" && change.entity !== "batch")
-      return yield* Effect.fail(
-        protocolError(
-          "INVALID_OPERATION",
-          "This Postgres mutation endpoint currently accepts categories, products, and batches only.",
-        ),
-      );
-    if (!validIdentifier(change.entityId))
+  for (const raw of command.rows) {
+    const meta = yield* Schema.decodeUnknownEffect(CatalogRowMeta)(raw).pipe(
+      Effect.mapError(() =>
+        protocolError("INVALID_ENTITY_ROW", "A catalog row is missing id, version, or deletion."),
+      ),
+    );
+    if (!validIdentifier(meta.id))
       return yield* Effect.fail(
         protocolError("INVALID_ENTITY_ID", "A mutation entity id is invalid."),
       );
+    const change: SyncEntityChange = {
+      entity: command.entity,
+      action: meta.deletedAt === null ? "upsert" : "delete",
+      entityId: meta.id,
+      rowVersion: meta.rowVersion,
+      row: raw,
+    };
     const key = syncEntityChangeKey(change);
     if (keys.has(key))
       return yield* Effect.fail(
         protocolError("DUPLICATE_OPERATION", "A mutation may change an entity only once."),
       );
     keys.add(key);
+    changes.push(change);
   }
 
-  if (operationPayloadHash(operation) !== operation.payloadHash)
-    return yield* Effect.fail(
-      protocolError("PAYLOAD_HASH_MISMATCH", "The mutation failed its integrity check."),
-    );
+  return {
+    command,
+    changes,
+    payloadHash: canonicalPayloadHash(command),
+  } satisfies CatalogWrite;
 });
 
 const currentTransactionId = Effect.fn("InventoryMutation.currentTransactionId")(function* (
@@ -189,10 +208,10 @@ const touchMutationTarget = Effect.fn("InventoryMutation.touchTarget")(function*
 });
 
 const batchMovementId = (
-  operation: SyncOperation,
+  write: CatalogWriteStamp,
   change: SyncEntityChange,
   type: "stock_in" | "adjustment",
-) => `batch:${operation.operationId}:${change.entityId}:${type}`;
+) => `batch:${write.operationId}:${change.entityId}:${type}`;
 
 const validateWriteVersion = Effect.fn("InventoryMutation.validateWriteVersion")(function* (
   change: SyncEntityChange,
@@ -222,7 +241,7 @@ const validateWriteVersion = Effect.fn("InventoryMutation.validateWriteVersion")
 const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
-  operation: SyncOperation,
+  write: CatalogWriteStamp,
   change: SyncEntityChange,
 ) {
   switch (change.entity) {
@@ -254,16 +273,13 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
           .limit(1);
         if (product)
           return yield* Effect.fail(
-            protocolError(
-              "ENTITY_CONFLICT",
-              "Move products to another category before deleting this category.",
-            ),
+            protocolError("ENTITY_CONFLICT", catalogWriteError.categoryHasProducts),
           );
       }
       const values = {
         name: row.name.trim(),
         tracksPacks: row.tracksPacks,
-        ...serverOwnedColumns(actor, operation, change, row, current),
+        ...serverOwnedColumns(actor, write, change, row, current),
       };
       const [saved] = yield* tx
         .insert(categories)
@@ -302,7 +318,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
           .limit(1);
         if (stocked)
           return yield* Effect.fail(
-            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this product."),
+            protocolError("ENTITY_CONFLICT", catalogWriteError.productHasStock),
           );
       }
       if (change.action === "upsert") {
@@ -336,10 +352,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
             .limit(1);
           if (stocked)
             return yield* Effect.fail(
-              protocolError(
-                "ENTITY_CONFLICT",
-                "Change units per pack only after the product has no remaining stock.",
-              ),
+              protocolError("ENTITY_CONFLICT", catalogWriteError.unitsPerPackWithStock),
             );
         }
       }
@@ -353,7 +366,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
         packPrice: row.packPrice,
         unitPrice: row.unitPrice,
         visible: row.visible,
-        ...serverOwnedColumns(actor, operation, change, row, current),
+        ...serverOwnedColumns(actor, write, change, row, current),
       };
       const [saved] = yield* tx
         .insert(products)
@@ -380,7 +393,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
       if (change.action === "delete") {
         if ((current?.packQuantity ?? 0) > 0 || (current?.unitQuantity ?? 0) > 0)
           return yield* Effect.fail(
-            protocolError("ENTITY_CONFLICT", "Clear remaining stock before deleting this batch."),
+            protocolError("ENTITY_CONFLICT", catalogWriteError.batchHasStock),
           );
       }
       if (change.action === "upsert") {
@@ -410,7 +423,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
         expiresAt: row.expiresAt,
         packQuantity: row.packQuantity,
         unitQuantity: row.unitQuantity,
-        ...serverOwnedColumns(actor, operation, change, row, current),
+        ...serverOwnedColumns(actor, write, change, row, current),
       };
       const [saved] = yield* tx
         .insert(batches)
@@ -428,7 +441,7 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
         const [movement] = yield* tx
           .insert(stockMovements)
           .values({
-            id: batchMovementId(operation, change, current ? "adjustment" : "stock_in"),
+            id: batchMovementId(write, change, current ? "adjustment" : "stock_in"),
             productId: row.productId,
             batchId: change.entityId,
             invoiceId: null,
@@ -438,9 +451,9 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
             note: current ? "Stock corrected" : "Initial batch stock",
             organizationId: actor.organizationId,
             actorUserId: actor.userId,
-            deviceId: operation.deviceId,
-            operationId: operation.operationId,
-            createdAt: operation.occurredAt,
+            deviceId: write.deviceId,
+            operationId: write.operationId,
+            createdAt: write.occurredAt,
           })
           .returning({ id: stockMovements.id });
         if (!movement)
@@ -460,14 +473,14 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
 const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
   tx: PostgresTransaction,
   actor: InventoryActor,
-  operation: SyncOperation,
+  write: CatalogWrite,
   receivedAt: number,
 ) {
-  // Serialize replays of the same operation while its receipt is being written.
+  const { command, changes, payloadHash } = write;
   yield* tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
       actor.organizationId,
-      operation.operationId,
+      command.operationId,
     ])}, 0))`,
   );
   const [receipt] = yield* tx
@@ -476,18 +489,18 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
     .where(
       and(
         eq(inventoryMutationReceipts.organizationId, actor.organizationId),
-        eq(inventoryMutationReceipts.operationId, operation.operationId),
+        eq(inventoryMutationReceipts.operationId, command.operationId),
       ),
     )
     .limit(1);
 
   const txid = yield* currentTransactionId(tx);
   if (receipt) {
-    if (receipt.payloadHash !== operation.payloadHash)
+    if (receipt.payloadHash !== payloadHash)
       return yield* Effect.fail(
         protocolError("OPERATION_ID_REUSED", "The mutation id was reused with different content."),
       );
-    const firstChange = operation.changes[0];
+    const firstChange = changes[0];
     if (!firstChange)
       return yield* Effect.fail(
         protocolError("EMPTY_OPERATION", "A mutation must contain a change."),
@@ -503,13 +516,14 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
       .where(
         and(
           eq(inventoryMutationReceipts.organizationId, actor.organizationId),
-          eq(inventoryMutationReceipts.operationId, operation.operationId),
+          eq(inventoryMutationReceipts.operationId, command.operationId),
         ),
       );
     return { txid } satisfies InventoryMutationResult;
   }
 
-  const canonicalChanges = [...operation.changes].sort(compareSyncEntityChanges);
+  const stamp = writeStamp(command);
+  const canonicalChanges = [...changes].sort(compareSyncEntityChanges);
   for (const change of canonicalChanges)
     yield* tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
@@ -518,15 +532,15 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
         change.entityId,
       ])}, 0))`,
     );
-  for (const change of canonicalChanges) yield* applyChange(tx, actor, operation, change);
+  for (const change of canonicalChanges) yield* applyChange(tx, actor, stamp, change);
 
   yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
-    operationId: operation.operationId,
-    deviceId: operation.deviceId,
+    operationId: command.operationId,
+    deviceId: command.deviceId,
     actorUserId: actor.userId,
-    clientSequence: operation.clientSequence,
-    payloadHash: operation.payloadHash,
+    clientSequence: command.occurredAt,
+    payloadHash,
     transactionId: txid,
     receivedAt,
   });
@@ -1175,10 +1189,10 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
 
 export const makeInventoryMutationDatabase = (db: PostgresDrizzle) =>
   Effect.fn("InventoryMutationDatabase.write")(
-    function* (actor: InventoryActor, operation: SyncOperation) {
-      yield* validateOperation(actor, operation);
+    function* (actor: InventoryActor, command: CatalogWriteCommand) {
+      const write = yield* decodeCatalogWrite(actor, command);
       const receivedAt = yield* Clock.currentTimeMillis;
-      return yield* db.transaction((tx) => applyOperation(tx, actor, operation, receivedAt));
+      return yield* db.transaction((tx) => applyOperation(tx, actor, write, receivedAt));
     },
     Effect.mapError((cause) =>
       cause instanceof InventoryProtocolError || cause instanceof InventoryDatabaseError

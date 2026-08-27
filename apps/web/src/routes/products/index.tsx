@@ -21,27 +21,14 @@ import {
 } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useCatalogProducts, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogProducts } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/products/")({
   component: ProductsPage,
 });
 
 function ProductsPage() {
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
-  return <LiveProductsPage inventory={state.inventory} />;
-}
-
-function LiveProductsPage({
-  inventory,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-}) {
-  const live = useCatalogProducts(inventory);
+  const live = useCatalogProducts();
   if (live.isError && live.data.length === 0) {
     return <ProductsStatus error message="The catalog could not be loaded." />;
   }

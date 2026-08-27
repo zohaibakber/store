@@ -74,8 +74,8 @@ and `vp build` (Turborepo fans them out per package).
   `vp run --filter @store/desktop package` (or `make` / `publish`).
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
-  stores state remotely and binds real dev-stage D1 + Durable Objects. There is
-  no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
+  stores state remotely and binds real dev-stage D1, Hyperdrive, and Postgres.
+  There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
   refresh and ephemeral peppers, and Google OAuth credentials. Use different
   secrets per stage. Do not commit env files or env templates.
@@ -84,7 +84,7 @@ and `vp build` (Turborepo fans them out per package).
   create organization, sync) needs the backend running with the credentials
   above. Inventory authority is
   Postgres. PowerSync streams organization-scoped rows into renderer SQLite
-  (`@store/client-db`). D1 is auth. The organization Durable Object and
-  `/api/sync/live` remain as compatibility until an explicit retirement.
+  (`@store/client-db`). D1 is auth. There is no organization Durable Object
+  and no `/api/sync/live` path.
   Inventory can be driven from the local PowerSync replica without the
   backend.

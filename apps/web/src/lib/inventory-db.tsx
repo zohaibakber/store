@@ -4,6 +4,7 @@ export {
   disposeInventoryCache,
   inventoryScopeId,
   useCatalogCategories,
+  useCatalogIsReady,
   useCatalogProduct,
   useCatalogProducts,
   useCatalogStockMovements,
@@ -12,6 +13,5 @@ export {
   useInventoryDashboardAnalytics,
   useInventoryInvoice,
   useInventoryInvoices,
-  useInventoryState,
 } from "./inventory";
-export type { Inventory, InventoryActions, InventoryState } from "./inventory";
+export type { InventoryActions } from "./inventory";

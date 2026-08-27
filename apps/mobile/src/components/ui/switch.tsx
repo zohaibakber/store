@@ -2,7 +2,6 @@ import { Switch as RNSwitch } from "react-native";
 
 import { useColors } from "@/theme/colors";
 
-/** Platform switch (native gesture/size/animation) with palette track/thumb colors. */
 export function Switch({
   accessibilityLabel,
   isDisabled,

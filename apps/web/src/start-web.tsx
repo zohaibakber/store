@@ -5,7 +5,7 @@ import { bootstrapAuth, setAuthSessionBridge } from "@/lib/auth";
 import { authBaseUrl, completeGoogle } from "@/lib/first-party-auth";
 import { initClientSentry } from "@/lib/sentry";
 
-import { browserHostAccess } from "./host-access";
+import { hostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 import { startWebSession } from "./session-host";
 
@@ -23,7 +23,7 @@ export const startWeb = async () => {
   mountApp({
     initialAuth: await bootstrapAuth(),
     history: createBrowserHistory(),
-    access: browserHostAccess(),
+    access: hostAccess(),
     inventory: {
       apiBaseUrl,
       authenticatedFetch: session.bridge.apiFetch!,

@@ -2,7 +2,6 @@ import type { DashboardAnalytics, Product } from "@store/contracts";
 import * as React from "react";
 
 import { useCatalogProducts, useInventoryInvoices } from "./queries";
-import type { Inventory } from "./types";
 
 const DAY_MS = 86_400_000;
 const DASHBOARD_DAYS = 30;
@@ -11,9 +10,9 @@ const LOW_STOCK_THRESHOLD = 10;
 const utcDayStart = (timestamp: number) => timestamp - (timestamp % DAY_MS);
 const isoDay = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
-export const useInventoryDashboardAnalytics = (inventory: Inventory) => {
-  const products = useCatalogProducts(inventory);
-  const invoices = useInventoryInvoices(inventory);
+export const useInventoryDashboardAnalytics = () => {
+  const products = useCatalogProducts();
+  const invoices = useInventoryInvoices();
   const [now] = React.useState(() => Date.now());
   const data = React.useMemo<DashboardAnalytics>(() => {
     const todayStart = utcDayStart(now);

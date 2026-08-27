@@ -7,7 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
@@ -69,7 +68,6 @@ export interface AppOptions {
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
-  readonly connectSyncLive?: ServerRuntimeContract["connectSyncLive"];
   readonly writeInventoryMutation?: ServerRuntimeContract["writeInventoryMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
   readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
@@ -112,9 +110,6 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
       powerSyncUrl: options.powerSyncUrl ?? "https://powersync.example",
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-      connectSyncLive:
-        options.connectSyncLive ??
-        (() => Effect.succeed(HttpServerResponse.empty({ status: 101 }))),
       writeInventoryMutation: options.writeInventoryMutation ?? (() => Effect.succeed({ txid: 1 })),
       importInventory:
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),

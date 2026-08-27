@@ -8,25 +8,12 @@ import { StatTiles } from "@/components/dashboard/stat-tiles";
 import { TopProducts } from "@/components/dashboard/top-products";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useInventoryDashboardAnalytics, useInventoryState } from "@/lib/inventory-db";
+import { useInventoryDashboardAnalytics } from "@/lib/inventory-db";
 
 const LOW_STOCK_THRESHOLD = 10;
 
 export function HomePage() {
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") throw new Error("Dashboard storage is not ready.");
-  return <LiveDashboard inventory={state.inventory} />;
-}
-
-function LiveDashboard({
-  inventory,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-}) {
-  const analytics = useInventoryDashboardAnalytics(inventory);
+  const analytics = useInventoryDashboardAnalytics();
 
   return (
     <PageLayout>

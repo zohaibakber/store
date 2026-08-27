@@ -24,7 +24,6 @@ export interface JsonApiObject {
   readonly [key: string]: JsonApiResponse;
 }
 
-/** Host-specific token/session persistence behind the shared auth broker. */
 export interface WorkspaceAuthAdapter {
   readonly snapshot: WorkspaceSnapshot;
   readonly initialize: () => Promise<WorkspaceSnapshot>;

@@ -44,8 +44,6 @@ function UploadAttachmentList() {
         </Frame>
       ))}
 
-      {/* Neither step reports real progress, so an indeterminate orb is honest
-          where a percentage bar was not. */}
       {processing && (
         <div
           aria-live="polite"

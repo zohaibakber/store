@@ -1,12 +1,11 @@
-export { makeInventoryActions } from "./actions";
 export { useInventoryDashboardAnalytics } from "./dashboard";
-export { inventoryScopeId, openInventory } from "./open";
+export { inventoryScopeId } from "./open";
 export {
   InventoryProvider,
   InventoryReady,
   disposeInventoryCache,
   useInventoryActions,
-  useInventoryState,
+  useCatalogIsReady,
 } from "./provider";
 export {
   useCatalogCategories,
@@ -17,4 +16,4 @@ export {
   useInventoryInvoice,
   useInventoryInvoices,
 } from "./queries";
-export type { Inventory, InventoryActions, InventoryState } from "./types";
+export type { InventoryActions } from "./types";

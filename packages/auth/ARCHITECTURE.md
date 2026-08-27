@@ -9,9 +9,7 @@ Expo app, synchronization, deployment config, and CSP.
 
 First-party auth owns those concerns now. An authenticated organization ID
 still scopes the same Postgres rows, PowerSync streams, and local replica on
-every client. That ID is also the key of the legacy `ORGANIZATION_STORE`
-Durable Object so remaining production data can be found for export and
-backfill.
+every client.
 
 ## Usage (caller's view)
 
@@ -223,16 +221,10 @@ encode.
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
 - A new user gets one organization in the same D1 batch. The organization ID
-  directly scopes inventory rows and PowerSync streams. It also remains the
-  legacy Durable Object lookup key during migration, so no separate mapping is
-  needed for export or backfill.
+  directly scopes inventory rows and PowerSync streams.
 - Postgres is the authoritative inventory database. Authenticated
   `/api/inventory/*` requests write to Postgres. PowerSync validates the same
   JWT and filters every TanStack DB stream by its signed organization claim.
-- The Cloudflare Durable Object and `/api/sync/live` WebSocket path is preserved
-  as production compatibility and migration source. Do not delete its schema,
-  contracts, or implementation until an explicit retirement confirms that no
-  production dependency remains.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in
   platform secure storage.

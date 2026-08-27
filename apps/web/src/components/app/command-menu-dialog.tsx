@@ -20,7 +20,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAuth } from "@/lib/auth";
 import { formatPrice } from "@/lib/format";
-import { useCatalogProducts, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogIsReady, useCatalogProducts } from "@/lib/inventory-db";
 import { Route as RootRoute } from "@/routes/__root";
 
 const RESULT_LIMIT = 20;
@@ -134,24 +134,15 @@ export function InventoryCommandDialog({
 }
 
 function LiveCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boolean) => void }) {
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") return null;
-  return <ProductCommandMenu inventory={state.inventory} onOpenChange={onOpenChange} />;
+  const catalogReady = useCatalogIsReady();
+  if (!catalogReady) return null;
+  return <ProductCommandMenu onOpenChange={onOpenChange} />;
 }
 
-function ProductCommandMenu({
-  inventory,
-  onOpenChange,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-  readonly onOpenChange: (open: boolean) => void;
-}) {
+function ProductCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boolean) => void }) {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
-  const products = useCatalogProducts(inventory);
+  const products = useCatalogProducts();
   const normalizedQuery = query.trim();
 
   const prepared = useMemo(

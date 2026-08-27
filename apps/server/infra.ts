@@ -35,13 +35,7 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 import { reportRejectedAuthSettings } from "./src/runtime/worker";
-import {
-  OrganizationStore,
-  OrganizationStoreLive,
-  connectWithOrganizationStore,
-} from "./src/sync/organization-store";
 
-export { OrganizationStore };
 export {
   requireProductionApiHostname,
   requireProductionHostname,
@@ -51,12 +45,7 @@ export {
 
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-/**
- * `ORGANIZATION_STORE` is the deployed Durable Object identity that owns
- * legacy production inventory. Do not rename or remove this binding until an
- * export/backfill has completed and the copied data has been verified.
- */
-export class Api extends Cloudflare.Worker<Api, {}, OrganizationStore>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -87,7 +76,6 @@ export const ApiLive = Api.make(
     return apiHostname ? { ...worker, domain: apiHostname } : worker;
   }),
   Effect.gen(function* () {
-    const organizationStore = yield* OrganizationStore;
     const inventoryMutations = yield* InventoryMutationDatabase;
     const ai = yield* Cloudflare.Workers.AI();
     const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
@@ -174,9 +162,6 @@ export const ApiLive = Api.make(
       powerSyncUrl: powerSyncUrl.trim().replace(/\/+$/u, ""),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
-      // Kept only for already-deployed clients during the migration window.
-      // New web, mobile, and desktop clients use Postgres through PowerSync.
-      connectSyncLive: (input) => connectWithOrganizationStore(organizationStore, input),
       writeInventoryMutation: inventoryMutations.write,
       importInventory: inventoryMutations.importInventory,
       issueInvoice: inventoryMutations.issueInvoice,
@@ -190,7 +175,6 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
     };
   }).pipe(
-    Effect.provide(OrganizationStoreLive),
     Effect.provide(InventoryMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),

@@ -9,11 +9,6 @@ import {
   AutocompletePopup,
 } from "@/components/ui/autocomplete";
 
-/**
- * Free text, with catalog values offered as you type. Suggestions are whole
- * values already used, a product name, an aisle, a composition, so the same
- * thing does not end up spelled three ways.
- */
 export function SuggestField({
   autoFocus,
   emptyMessage,
@@ -37,7 +32,6 @@ export function SuggestField({
   suggestions: ReadonlyArray<string>;
   value: string;
 }) {
-  // A value the user is still typing is not a suggestion worth offering.
   const items = useMemo(
     () => suggestions.filter((suggestion) => suggestion !== value.trim()),
     [suggestions, value],

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useCatalogCategories, useCatalogSuggestions, useInventoryState } from "@/lib/inventory-db";
+import { useCatalogCategories, useCatalogSuggestions } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/products/new")({
   component: NewProductPage,
@@ -10,21 +10,8 @@ export const Route = createFileRoute("/products/new")({
 });
 
 function NewProductPage() {
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
-  return <LiveNewProductPage inventory={state.inventory} />;
-}
-
-function LiveNewProductPage({
-  inventory,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-}) {
-  const categories = useCatalogCategories(inventory);
-  const suggestions = useCatalogSuggestions(inventory);
+  const categories = useCatalogCategories();
+  const suggestions = useCatalogSuggestions();
   if (categories.isError && categories.data.length === 0) {
     throw new Error("The catalog categories could not be loaded.");
   }

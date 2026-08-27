@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { authErrorMessage } from "@/lib/auth-client";
-import { createMobileInventoryCollections } from "@/lib/inventory-collections";
+import { openMobileCatalog, type MobileInventoryCollections } from "@/lib/inventory-collections";
 import { persistentDeviceId } from "@/lib/inventory-session";
 import { snapshotFromRows } from "@/lib/inventory-snapshot";
 import type {
@@ -54,6 +54,21 @@ const ProductsDataContext = createContext<ProductsData | null>(null);
 const ProductsStatusContext = createContext<ProductsStatus | null>(null);
 const ProductsActionsContext = createContext<ProductsActions | null>(null);
 
+const emptyData: ProductsData = { products: [], categories: [] };
+const loadingStatus: ProductsStatus = { _tag: "Loading" };
+const unavailableActions: ProductsActions = {
+  refresh: async () => undefined,
+  saveScannedProduct: async () => {
+    throw new Error("This device is still opening its inventory.");
+  },
+  saveBatchDetails: async () => {
+    throw new Error("This device is still opening its inventory.");
+  },
+  updateBatchQuantity: async () => {
+    throw new Error("This device is still opening its inventory.");
+  },
+};
+
 type ProductsProviderProps = PropsWithChildren<{
   userId: string;
   organizationId: string;
@@ -64,10 +79,64 @@ export function ProductsProvider(props: ProductsProviderProps) {
 }
 
 function ScopedProductsProvider({ children, organizationId, userId }: ProductsProviderProps) {
-  const [collections] = useState(() => createMobileInventoryCollections(organizationId));
-  const categoriesQuery = useLiveQuery(collections.categories);
-  const productsQuery = useLiveQuery(collections.products);
-  const batchesQuery = useLiveQuery(collections.batches);
+  const [catalog, setCatalog] = useState<MobileInventoryCollections | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let opened: MobileInventoryCollections | undefined;
+    void openMobileCatalog(organizationId)
+      .then((next) => {
+        opened = next;
+        if (!cancelled) setCatalog(next);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setOpenError(authErrorMessage(cause));
+      });
+    return () => {
+      cancelled = true;
+      void opened?.dispose();
+    };
+  }, [organizationId]);
+
+  if (!catalog) {
+    return (
+      <ProductsActionsContext value={unavailableActions}>
+        <ProductsDataContext value={emptyData}>
+          <ProductsStatusContext
+            value={
+              openError
+                ? { _tag: "Error", error: openError, lastUpdatedAt: null, refreshing: false }
+                : loadingStatus
+            }
+          >
+            {children}
+          </ProductsStatusContext>
+        </ProductsDataContext>
+      </ProductsActionsContext>
+    );
+  }
+
+  return (
+    <LiveProductsProvider catalog={catalog} organizationId={organizationId} userId={userId}>
+      {children}
+    </LiveProductsProvider>
+  );
+}
+
+function LiveProductsProvider({
+  children,
+  catalog,
+  organizationId,
+  userId,
+}: PropsWithChildren<{
+  catalog: MobileInventoryCollections;
+  organizationId: string;
+  userId: string;
+}>) {
+  const categoriesQuery = useLiveQuery(catalog.categories);
+  const productsQuery = useLiveQuery(catalog.products);
+  const batchesQuery = useLiveQuery(catalog.batches);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,21 +157,23 @@ function ScopedProductsProvider({ children, organizationId, userId }: ProductsPr
     setRefreshing(true);
     setError(null);
     try {
-      await collections.preload();
+      await Promise.all([
+        catalog.categories.preload(),
+        catalog.products.preload(),
+        catalog.batches.preload(),
+      ]);
       setLastUpdatedAt(new Date());
     } catch (cause) {
       if (!hasCatalogRows) setError(authErrorMessage(cause));
     } finally {
       setRefreshing(false);
     }
-  }, [collections, hasCatalogRows]);
+  }, [catalog, hasCatalogRows]);
 
   const catalogActions = useMemo(
     () =>
-      deviceId
-        ? createMobileCatalogActions(collections, { organizationId, userId, deviceId })
-        : null,
-    [collections, deviceId, organizationId, userId],
+      deviceId ? createMobileCatalogActions(catalog, { organizationId, userId, deviceId }) : null,
+    [catalog, deviceId, organizationId, userId],
   );
 
   const runWrite = useCallback(
@@ -142,13 +213,7 @@ function ScopedProductsProvider({ children, organizationId, userId }: ProductsPr
       .catch((cause: unknown) => {
         setError(authErrorMessage(cause));
       });
-    void collections.preload().catch((cause: unknown) => {
-      setError(authErrorMessage(cause));
-    });
-    return () => {
-      void collections.dispose();
-    };
-  }, [collections]);
+  }, []);
 
   useEffect(() => {
     const loading = categoriesQuery.isLoading || productsQuery.isLoading || batchesQuery.isLoading;

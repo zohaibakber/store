@@ -6,7 +6,7 @@ import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
 import { initClientSentry } from "@/lib/sentry";
 
-import { desktopHostAccess } from "./host-access";
+import { hostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 
 type InventoryHttpBridge = NonNullable<Window["inventoryHttp"]>;
@@ -74,7 +74,7 @@ export const startElectron = async () => {
   mountApp({
     initialAuth: await bootstrapAuth(),
     history: createHashHistory(),
-    access: desktopHostAccess(),
+    access: hostAccess(),
     inventory,
   });
   window.auth?.onOAuthCallback((url) => {

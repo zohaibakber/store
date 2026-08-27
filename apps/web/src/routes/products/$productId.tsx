@@ -38,7 +38,6 @@ import {
   useCatalogProduct,
   useCatalogStockMovements,
   useInventoryActions,
-  useInventoryState,
 } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/products/$productId")({
@@ -74,23 +73,8 @@ function BackToProducts() {
 
 function ProductDetailPage() {
   const { productId } = Route.useParams();
-  const state = useInventoryState();
-  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
-  return <LiveProductDetailPage inventory={state.inventory} productId={productId} />;
-}
-
-function LiveProductDetailPage({
-  inventory,
-  productId,
-}: {
-  readonly inventory: Extract<
-    NonNullable<ReturnType<typeof useInventoryState>>,
-    { _tag: "Ready" }
-  >["inventory"];
-  readonly productId: string;
-}) {
-  const product = useCatalogProduct(inventory, productId);
-  const movements = useCatalogStockMovements(inventory, productId);
+  const product = useCatalogProduct(productId);
+  const movements = useCatalogStockMovements(productId);
   const { deleteProduct } = useInventoryActions();
   const navigate = useNavigate();
 

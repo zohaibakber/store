@@ -1,4 +1,4 @@
-import { persistableRow, type BatchRow, type CategoryRow, type ProductRow } from "@store/client-db";
+import { makeCatalogWrites } from "@store/client-db";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import * as Crypto from "expo-crypto";
 
@@ -18,28 +18,11 @@ type Actor = {
   readonly deviceId: string;
 };
 
-const createdMetadata = (actor: Actor) => {
-  const now = Date.now();
-  return {
-    organizationId: actor.organizationId,
-    createdByUserId: actor.userId,
-    updatedByUserId: actor.userId,
-    deviceId: actor.deviceId,
-    operationId: Crypto.randomUUID(),
-    rowVersion: 1,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-  } as const;
+const ids = {
+  now: Date.now,
+  operationId: () => Crypto.randomUUID(),
+  rowId: () => Crypto.randomUUID(),
 };
-
-const updatedMetadata = (actor: Actor, rowVersion: number) => ({
-  updatedByUserId: actor.userId,
-  deviceId: actor.deviceId,
-  operationId: Crypto.randomUUID(),
-  rowVersion: rowVersion + 1,
-  updatedAt: Date.now(),
-});
 
 const requiredName = (value: string) => {
   const normalized = value.trim();
@@ -80,47 +63,23 @@ const snapshot = (collections: MobileInventoryCollections) =>
     products: [...collections.products.state.values()].filter((row) => row.deletedAt === null),
   });
 
-const requiredProduct = (collections: MobileInventoryCollections, productId: string) => {
-  const product = collections.products.state.get(productId);
-  if (!product || product.deletedAt !== null) {
-    throw new Error("The product no longer exists. Refresh and try again.");
-  }
-  return product;
-};
-
-const requiredBatch = (
-  collections: MobileInventoryCollections,
-  productId: string,
-  batchId: string,
-) => {
-  const batch = collections.batches.state.get(batchId);
-  if (!batch || batch.deletedAt !== null || batch.productId !== productId) {
-    throw new Error("The batch no longer exists for this product. Refresh and try again.");
-  }
-  return batch;
-};
-
 const saveProduct = async (
   collections: MobileInventoryCollections,
   actor: Actor,
   input: SaveScannedProductInput,
 ): Promise<MobileProduct> => {
+  const writes = makeCatalogWrites(collections, actor, ids);
   const id = decodeProductId(input.productId ?? input.newProductId);
-  const current = input.productId ? requiredProduct(collections, input.productId) : null;
+  const current = input.productId ? collections.products.state.get(input.productId) : null;
+  if (input.productId && (!current || current.deletedAt !== null)) {
+    throw new Error("The product no longer exists. Refresh and try again.");
+  }
   let categoryId = input.categoryId?.trim() || current?.categoryId;
   const activeCategories = [...collections.categories.state.values()].filter(
     (row) => row.deletedAt === null,
   );
-  if (!categoryId) categoryId = activeCategories[0]?.id;
   if (!categoryId && activeCategories.length === 0) {
-    const general: CategoryRow = {
-      id: decodeCategoryId(Crypto.randomUUID()),
-      name: "General",
-      tracksPacks: true,
-      ...createdMetadata(actor),
-    };
-    const categoryTransaction = collections.categories.insert(general);
-    await categoryTransaction.isPersisted.promise;
+    const general = await writes.createCategory({ name: "General", tracksPacks: true });
     categoryId = general.id;
   }
   const category = categoryId ? collections.categories.state.get(categoryId) : undefined;
@@ -165,25 +124,9 @@ const saveProduct = async (
   };
 
   if (current) {
-    if (unitsPerPack !== current.unitsPerPack) {
-      const remainingStock = [...collections.batches.state.values()].some(
-        (batch) =>
-          batch.deletedAt === null &&
-          batch.productId === current.id &&
-          (batch.packQuantity > 0 || batch.unitQuantity > 0),
-      );
-      if (remainingStock) {
-        throw new Error("Change units per pack only after the product has no remaining stock.");
-      }
-    }
-    const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = persistableRow({ ...current, ...values, ...metadata } satisfies ProductRow);
-    const transaction = collections.products.update(id, (draft) => Object.assign(draft, next));
-    await transaction.isPersisted.promise;
+    await writes.updateProduct({ id, ...values });
   } else {
-    const row = { id, ...values, ...createdMetadata(actor) } satisfies ProductRow;
-    const transaction = collections.products.insert(row);
-    await transaction.isPersisted.promise;
+    await writes.createProduct({ id, ...values });
   }
   return mobileProductById(snapshot(collections), id);
 };
@@ -193,25 +136,33 @@ const saveBatch = async (
   actor: Actor,
   input: SaveBatchDetailsInput,
 ): Promise<MobileBatch> => {
-  requiredProduct(collections, input.productId);
+  const writes = makeCatalogWrites(collections, actor, ids);
+  const product = collections.products.state.get(input.productId);
+  if (!product || product.deletedAt !== null) {
+    throw new Error("The product no longer exists. Refresh and try again.");
+  }
   const id = decodeBatchId(input.batchId ?? input.newBatchId);
-  const current = input.batchId ? requiredBatch(collections, input.productId, input.batchId) : null;
+  const current = input.batchId ? collections.batches.state.get(input.batchId) : null;
+  if (
+    input.batchId &&
+    (!current || current.deletedAt !== null || current.productId !== input.productId)
+  ) {
+    throw new Error("The batch no longer exists for this product. Refresh and try again.");
+  }
   const values = {
-    productId: decodeProductId(input.productId),
     batchNumber: optionalText(input.batchNumber, 64, "Batch number"),
     expiresAt: expiryTimestamp(input.expiresAt),
     packQuantity: current?.packQuantity ?? 0,
     unitQuantity: current?.unitQuantity ?? 0,
   };
   if (current) {
-    const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = persistableRow({ ...current, ...values, ...metadata } satisfies BatchRow);
-    const transaction = collections.batches.update(id, (draft) => Object.assign(draft, next));
-    await transaction.isPersisted.promise;
+    await writes.updateBatch({ id, ...values });
   } else {
-    const row = { id, ...values, ...createdMetadata(actor) } satisfies BatchRow;
-    const transaction = collections.batches.insert(row);
-    await transaction.isPersisted.promise;
+    await writes.createBatch({
+      id,
+      productId: decodeProductId(input.productId),
+      ...values,
+    });
   }
   return mobileBatchById(snapshot(collections), input.productId, id);
 };
@@ -221,10 +172,20 @@ const saveQuantity = async (
   actor: Actor,
   input: UpdateBatchQuantityInput,
 ): Promise<MobileBatch> => {
-  const product = requiredProduct(collections, input.productId);
+  const writes = makeCatalogWrites(collections, actor, ids);
+  const product = collections.products.state.get(input.productId);
+  if (!product || product.deletedAt !== null) {
+    throw new Error("The product no longer exists. Refresh and try again.");
+  }
   const category = collections.categories.state.get(product.categoryId);
   const id = decodeBatchId(input.batchId ?? input.newBatchId);
-  const current = input.batchId ? requiredBatch(collections, input.productId, input.batchId) : null;
+  const current = input.batchId ? collections.batches.state.get(input.batchId) : null;
+  if (
+    input.batchId &&
+    (!current || current.deletedAt !== null || current.productId !== input.productId)
+  ) {
+    throw new Error("The batch no longer exists for this product. Refresh and try again.");
+  }
   const requestedPacks = nonNegativeInteger(input.packQuantity, "Pack quantity");
   const unitQuantity = nonNegativeInteger(input.unitQuantity, "Unit quantity");
   if (category?.tracksPacks === false && !current && requestedPacks !== 0) {
@@ -236,7 +197,6 @@ const saveQuantity = async (
     throw new Error("Add at least one pack or unit when creating stock.");
   }
   const values = {
-    productId: decodeProductId(input.productId),
     batchNumber: optionalText(
       input.batchNumber === undefined ? (current?.batchNumber ?? null) : input.batchNumber,
       64,
@@ -249,14 +209,13 @@ const saveQuantity = async (
     unitQuantity,
   };
   if (current) {
-    const metadata = updatedMetadata(actor, current.rowVersion);
-    const next = persistableRow({ ...current, ...values, ...metadata } satisfies BatchRow);
-    const transaction = collections.batches.update(id, (draft) => Object.assign(draft, next));
-    await transaction.isPersisted.promise;
+    await writes.updateBatch({ id, ...values });
   } else {
-    const row = { id, ...values, ...createdMetadata(actor) } satisfies BatchRow;
-    const transaction = collections.batches.insert(row);
-    await transaction.isPersisted.promise;
+    await writes.createBatch({
+      id,
+      productId: decodeProductId(input.productId),
+      ...values,
+    });
   }
   return mobileBatchById(snapshot(collections), input.productId, id);
 };

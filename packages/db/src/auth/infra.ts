@@ -3,9 +3,6 @@ import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 
 /**
- * First-party identity, credentials, organizations, memberships, and refresh
- * sessions.
- *
  * Wired the way Alchemy documents for D1 + Drizzle (`alchemy.run/cloudflare/data/d1-drizzle`):
  * `Drizzle.Schema` regenerates pending SQL from `schema.ts` on every deploy, and
  * `migrationsDir` applies it. Both resources move together on a schema change,

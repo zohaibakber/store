@@ -36,7 +36,6 @@ const versionFromPendingFileName = (fileName: string) => {
 
 const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
 
-/** Remove pending packages that are not newer than the running build. */
 export const clearStalePendingUpdate = async (currentVersion: string) => {
   const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
   try {

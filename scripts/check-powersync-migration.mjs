@@ -47,8 +47,6 @@ const configTexts = [
   ["apps/server/README.md", read("apps/server/README.md")],
   ["apps/web/README.md", read("apps/web/README.md")],
   ["packages/README.md", read("packages/README.md")],
-  ["docs/sync/postgres-powersync-migration.md", read("docs/sync/postgres-powersync-migration.md")],
-  ["docs/sync/websocket-engine.md", read("docs/sync/websocket-engine.md")],
 ];
 
 const forbiddenPackages = [

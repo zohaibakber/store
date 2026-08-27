@@ -1,29 +1,19 @@
 import { expect, test } from "vitest";
 
-import { operationPayloadHash } from "../../src/sync/operation-hash";
+import { canonicalPayloadHash } from "../../src/sync/operation-hash";
 
-/** Compat until retirement: Durable Object / `/api/sync/live` WebSocket types. */
-test("payload hashes are stable hex sha256 of the canonical operation", () => {
-  const hash = operationPayloadHash({
+test("payload hashes are stable hex sha256 of the canonical payload", () => {
+  const hash = canonicalPayloadHash({
     operationId: "operation-1",
     organizationId: "org-1",
-    deviceId: "device-1",
-    actorUserId: "user-1",
-    clientSequence: 1,
-    occurredAt: 1_750_000_000_000,
-    changes: [],
+    rows: [{ id: "category-1" }],
   });
   expect(hash).toMatch(/^[0-9a-f]{64}$/);
   expect(
-    operationPayloadHash({
+    canonicalPayloadHash({
       operationId: "operation-1",
       organizationId: "org-1",
-      deviceId: "device-1",
-      actorUserId: "user-1",
-      clientSequence: 1,
-      occurredAt: 1_750_000_000_000,
-      payloadHash: "ignored",
-      changes: [],
+      rows: [{ id: "category-1" }],
     }),
   ).toBe(hash);
 });

@@ -185,7 +185,6 @@ export const ExchangeGoogleInput = Schema.Struct({
 });
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}
 
-/** An OpenID Connect ID token minted by Google for one of our client IDs. */
 export const GoogleIdToken = NonEmptyString.check(Schema.isMaxLength(8192)).pipe(
   Schema.brand("GoogleIdToken"),
 );

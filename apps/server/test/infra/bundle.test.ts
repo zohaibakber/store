@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
 const authDatabaseSource = `${repoRoot}packages/db/src/auth/infra.ts`;
-const organizationStoreSource = `${repoRoot}apps/server/src/sync/organization-store.ts`;
 
 const bundleWorker = async () => {
   const bundle = await rolldown({
@@ -51,12 +50,11 @@ describe("API Worker bundle", () => {
     expect(source).toContain("AuthVerificationConfig");
   });
 
-  it("keeps the sync runtime alive for the Durable Object activation", () => {
-    // Alchemy closes the Effect scope used to construct the object before its
-    // first request. A finalizer in that scope disposes the runtime immediately.
-    const source = readFileSync(organizationStoreSource, "utf8");
-    expect(source).not.toMatch(/makeSyncRuntime[\s\S]{0,200}Effect\.addFinalizer/u);
-    expect(source).not.toContain("disposeSyncRuntime");
+  it("does not bind an organization Durable Object", () => {
+    const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
+    expect(source).not.toContain("ORGANIZATION_STORE");
+    expect(source).not.toContain("OrganizationStore");
+    expect(source).not.toContain("connectSyncLive");
   });
 
   it("does not call the Neon API from the Worker runtime", async () => {

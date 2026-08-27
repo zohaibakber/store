@@ -4,8 +4,8 @@ description: >
   Cuts Effect runtime, network, sync, and cold-start cost in this monorepo.
   Covers ManagedRuntime reuse, Semaphore/SubscriptionRef/Cache/Stream fiber
   choices, HttpApi vs raw fetch, sync coalesce and partial sync, and web
-  boot that must not block #boot-shell on waitForFirstSync or compatibility
-  live WS. Use when optimizing latency, bandwidth, concurrency, startup paint,
+  boot that must not block #boot-shell on waitForFirstSync. Use when
+  optimizing latency, bandwidth, concurrency, startup paint,
   PowerSync connect/upload, or when choosing Effect concurrency/caching APIs.
   For general Effect services, Schema, Schedule, and tests, use the effect
   skill instead.
@@ -25,7 +25,7 @@ Pin: `effect@4.0.0-rc.110`. Typed errors use `Schema.TaggedError`, not beta's
 - Choosing ManagedRuntime, Semaphore, SubscriptionRef, Cache, Stream, or fork
   variants for load or latency.
 - Wiring HttpApi / HttpClient vs raw `fetch`.
-- Changing PowerSync connect/upload, inventory HTTP, or compatibility live WS.
+- Changing PowerSync connect/upload or inventory HTTP.
 - Touching web/desktop bootstrap so the logo or shell paints sooner.
 
 Skip this skill for Schema modeling, Layer shape, Schedule recipes, or vitest
@@ -77,13 +77,13 @@ Rules:
    `ENTITY_CONFLICT`; do not `complete()` on halt.
 4. On logout or org change, `disconnectAndClear()` then `close()`. Drop the
    cached database. `close()` alone is not enough.
-5. Keep `waitForFirstSync()` and compatibility `/api/sync/live` off the
-   critical path for first paint (next section).
+5. Keep `waitForFirstSync()` off the critical path for first paint
+   (next section).
 
 ## Batching and caching
 
 - Batch catalog rows in one PowerSync CRUD transaction when they share an
-  operation. Do not open a compatibility live socket for inventory.
+  operation.
 - Dedupe token refresh with `Cache` (capacity + `timeToLive: Duration.zero`
   for in-flight-only dedupe is an OpenCode pattern).
 - Memoize layer-scoped resources; do not put per-call `Map` + TTL + in-flight
@@ -135,8 +135,8 @@ Detail and ranked causes: [SYNC-NETWORK.md](references/SYNC-NETWORK.md).
 - Do not put raw `fetch` in Effect domain layers that already have HttpApi.
 - Do not cargo-cult Zero's online-only writes. Catalog edits stay on the
   PowerSync upload queue.
-- Do not treat the org Durable Object as inventory truth; Postgres is.
-  Keep the DO engine until an explicit retirement.
+- Do not treat anything other than Postgres as inventory truth.
+
 - Do not write `Schema.TaggedErrorClass` on this pin; use `Schema.TaggedError`.
 - Do not use Cluster/Entity until multi-node sharding is a real need.
 - Do not fork long-lived work with the wrong fork: prefer `forkScoped` for
@@ -157,6 +157,6 @@ Read only what matches:
 - [ ] Hot-path concurrency bounded by Semaphore; invalidations coalesced.
 - [ ] Latest sync/auth UI state via SubscriptionRef or equivalent, not poll.
 - [ ] HttpApiClient or HttpClient in Effect domains; fetch only at thin adapters.
-- [ ] First paint not awaiting `waitForFirstSync()` or compatibility live WS.
+- [ ] First paint not awaiting `waitForFirstSync()`.
 - [ ] Unsigned boot skips forced refresh.
 - [ ] Errors are `Schema.TaggedError` on rc.110.

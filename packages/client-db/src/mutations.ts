@@ -1,11 +1,10 @@
-import { operationPayloadHash } from "@store/contracts/operation-hash";
+import type { CatalogWriteCommand, CatalogWriteEntity } from "@store/contracts/catalog-write";
 import {
   ImportInventoryCommandResult,
   IssueInvoiceResult,
   type ImportInventoryCommand,
   type IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
-import type { SyncEntityChange, SyncOperation } from "@store/contracts/sync.schema";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -18,7 +17,7 @@ import {
 } from "./inventory-failure";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
-export type CatalogMutationEntity = "category" | "product" | "batch";
+export type CatalogMutationEntity = CatalogWriteEntity;
 export type CatalogMutationRow = BatchRow | CategoryRow | ProductRow;
 
 export {
@@ -105,20 +104,6 @@ const submitInventoryCommand = async <Result>(input: {
     failureLabel: input.failureLabel,
   });
 
-export const submitInventoryOperation = async (input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly operation: SyncOperation;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: "/inventory/mutations",
-    body: { operation: input.operation },
-    decode: Schema.decodeUnknownSync(InventoryMutationResult),
-    failureLabel: "Inventory mutation failed.",
-  });
-
 export const submitCatalogRows = (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
@@ -130,26 +115,22 @@ export const submitCatalogRows = (input: {
   if (input.rows.some((row) => row.operationId !== first.operationId)) {
     throw new Error("Inventory rows from different operations cannot be submitted together.");
   }
-  const changes: ReadonlyArray<SyncEntityChange> = input.rows.map((row) => ({
-    entity: input.entity,
-    action: row.deletedAt === null ? "upsert" : "delete",
-    entityId: row.id,
-    rowVersion: row.rowVersion,
-    row,
-  }));
-  const unhashed = {
+  const command: CatalogWriteCommand = {
     operationId: first.operationId,
     organizationId: first.organizationId,
     deviceId: first.deviceId,
     actorUserId: first.updatedByUserId,
-    clientSequence: first.updatedAt,
     occurredAt: first.updatedAt,
-    changes,
-  } satisfies Omit<SyncOperation, "payloadHash">;
-  return submitInventoryOperation({
+    entity: input.entity,
+    rows: input.rows,
+  };
+  return inventoryRequest({
     apiBaseUrl: input.apiBaseUrl,
     authenticatedFetch: input.authenticatedFetch,
-    operation: { ...unhashed, payloadHash: operationPayloadHash(unhashed) },
+    path: "/inventory/mutations",
+    body: command,
+    decode: Schema.decodeUnknownSync(InventoryMutationResult),
+    failureLabel: "Inventory mutation failed.",
   });
 };
 

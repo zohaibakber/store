@@ -6,10 +6,8 @@ title: Sync, network, and cold start
 
 Mechanisms only. Inventory truth is Postgres. PowerSync streams
 organization-scoped rows into client SQLite. TanStack DB collections sit
-in-process on that `PowerSyncDatabase`. D1 is auth. The organization Durable
-Object, outbox, and `/api/sync/live` WebSocket remain in the repo as
-compatibility until an explicit retirement. They are not the live inventory
-path.
+in-process on that `PowerSyncDatabase`. D1 is auth. There is no organization
+Durable Object and no `/api/sync/live` path.
 
 ## What store does today
 
@@ -32,8 +30,7 @@ path.
   rows on disk.
 
 Code: `packages/client-db`, `apps/web/src/lib/inventory`, `powersync/sync-config.yaml`,
-`apps/server` inventory routes and PowerSync credentials. Compatibility DO
-engine: `apps/server/src/sync`, `packages/contracts` sync schema.
+`apps/server` inventory routes and PowerSync credentials.
 
 ## Lessons from Zero
 
@@ -71,18 +68,18 @@ JS/TanStack patterns:
 - [ ] Drain `getUploadQueueStats` before multi-table HTTP commands.
 - [ ] `disconnectAndClear()` then `close()` on logout or org change.
 - [ ] Refresh auth before `fetchCredentials` returns an expired token.
-- [ ] Do not open a compatibility `/api/sync/live` socket for inventory.
+- [ ] Do not open `/api/sync/live`. It is retired.
 - [ ] Do not block `#boot-shell` on first sync.
 
 ## Contrast
 
-| | Zero | PowerSync (live) | DO engine (compat) |
-| --- | --- | --- | --- |
-| Local reads | IndexedDB + ZQL | SQLite | SQLite / DO storage |
-| Partial sync | Query subscriptions | Sync streams | Full org change log |
-| Live payload | Diff patches on WS | Stream ops | Invalidate hint |
-| Offline writes | Rejected (official) | Upload queue | Outbox |
-| Server role | Cache + IVM over Postgres | CDC + streams over Postgres | Org DO + change log |
+| | Zero | PowerSync |
+| --- | --- | --- |
+| Local reads | IndexedDB + ZQL | SQLite |
+| Partial sync | Query subscriptions | Sync streams |
+| Live payload | Diff patches on WS | Stream ops |
+| Offline writes | Rejected (official) | Upload queue |
+| Server role | Cache + IVM over Postgres | CDC + streams over Postgres |
 
 ## Store cold start
 
@@ -101,11 +98,10 @@ Unsigned browser: skip forced cookie refresh when there is no session.
 
 Rules:
 
-1. Do not block `#boot-shell` on `waitForFirstSync()` or live WS.
+1. Do not block `#boot-shell` on `waitForFirstSync()`.
 2. Defer first sync past paint. Keep loaders tolerant of empty-until-live.
-3. Do not open `/api/sync/live` for inventory.
-4. Skip forced cookie refresh when unsigned; fail fast offline.
-5. Prefer mounting a React shell earlier over holding the static logo through
+3. Skip forced cookie refresh when unsigned; fail fast offline.
+4. Prefer mounting a React shell earlier over holding the static logo through
    network.
 
 Evidence trail: `apps/web` `start-web.tsx`, `mount-app.tsx`,

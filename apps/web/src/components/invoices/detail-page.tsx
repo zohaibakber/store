@@ -64,7 +64,6 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
       </PageHeader>
 
       <PageContent className="gap-4">
-        {/* Same row shape as the new-sale page, minus the controls. */}
         <div className="flex flex-col gap-2">
           {invoice.items.map((item) => (
             <Frame className="w-full" key={item.id}>

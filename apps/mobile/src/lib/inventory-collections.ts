@@ -1,16 +1,14 @@
-import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import { PowerSyncDatabase } from "@powersync/react-native";
 import {
-  type BatchRow,
-  type CategoryRow,
-  disconnectAndClearInventoryPowerSync,
-  inventoryPowerSyncCollectionConfigs,
-  inventoryPowerSyncDatabaseName,
   inventoryPowerSyncSchema,
-  inventoryReplicaScope,
-  makeInventoryPowerSyncConnector,
+  openCatalog,
+  type BatchRow,
+  type CatalogCollectionConfigs,
+  type CategoryRow,
+  type InvoiceItemRow,
+  type InvoiceRow,
   type ProductRow,
-  waitForInventoryFirstSync,
+  type StockMovementRow,
 } from "@store/client-db";
 import { createCollection, type Collection, type NonSingleResult } from "@tanstack/react-db";
 
@@ -24,54 +22,60 @@ const authenticatedFetch: typeof fetch = async (input, init) => {
   return fetch(input, { ...init, headers });
 };
 
-type InventoryCollectionConfig = ReturnType<
-  typeof inventoryPowerSyncCollectionConfigs
->[keyof ReturnType<typeof inventoryPowerSyncCollectionConfigs>];
+type InventoryCollectionConfig = CatalogCollectionConfigs[keyof CatalogCollectionConfigs];
 type CatalogCollection<Row extends object> = Collection<Row, string> & NonSingleResult;
 
 const catalogCollection = <Row extends object>(
   options: InventoryCollectionConfig,
 ): CatalogCollection<Row> => {
-  // SAFETY: Runtime value is powerSyncCollectionOptions output. Expo TypeScript 6
-  // and workspace TypeScript 7 load separate @tanstack/db copies, so CollectionConfig
+  // SAFETY: Runtime value is powerSyncCollectionOptions output. Expo TypeScript
+  // and workspace TypeScript load separate @tanstack/db copies, so CollectionConfig
   // from client-db is not assignable to createCollection here.
   return createCollection(options as never) as CatalogCollection<Row>;
 };
 
-export type MobileInventoryCollections = ReturnType<typeof createMobileInventoryCollections>;
+export type MobileInventoryCollections = Awaited<ReturnType<typeof openMobileCatalog>>;
 
-export const createMobileInventoryCollections = (organizationId: string) => {
-  const scopeId = inventoryReplicaScope(apiOrigin, organizationId);
-  const database: AbstractPowerSyncDatabase = new PowerSyncDatabase({
-    database: { dbFilename: inventoryPowerSyncDatabaseName(scopeId) },
-    schema: inventoryPowerSyncSchema,
-  });
-  const configs = inventoryPowerSyncCollectionConfigs(database, scopeId);
-  const categories = catalogCollection<CategoryRow>(configs.categories);
-  const products = catalogCollection<ProductRow>(configs.products);
-  const batches = catalogCollection<BatchRow>(configs.batches);
-  let disposed = false;
-
-  return {
-    batches,
-    categories,
-    products,
-    preload: async () => {
-      await database.init();
-      void database.connect(
-        makeInventoryPowerSyncConnector({
-          apiBaseUrl: apiOrigin,
-          authenticatedFetch,
-        }),
-      );
-      await waitForInventoryFirstSync(database);
-      await Promise.all([categories.preload(), products.preload(), batches.preload()]);
+export const openMobileCatalog = (organizationId: string) =>
+  openCatalog(
+    {
+      apiBaseUrl: apiOrigin,
+      authenticatedFetch,
+      openPowerSyncDatabase: async (databaseName) => {
+        const database = new PowerSyncDatabase({
+          database: { dbFilename: databaseName },
+          schema: inventoryPowerSyncSchema,
+        });
+        await database.init();
+        return database;
+      },
+      bindCollections: (configs) => {
+        const batches = catalogCollection<BatchRow>(configs.batches);
+        const categories = catalogCollection<CategoryRow>(configs.categories);
+        const products = catalogCollection<ProductRow>(configs.products);
+        const invoices = catalogCollection<InvoiceRow>(configs.invoices);
+        const invoiceItems = catalogCollection<InvoiceItemRow>(configs.invoiceItems);
+        const stockMovements = catalogCollection<StockMovementRow>(configs.stockMovements);
+        return {
+          batches,
+          categories,
+          products,
+          invoices,
+          invoiceItems,
+          stockMovements,
+          cleanupCollections: async () => {
+            await Promise.all([
+              batches.cleanup(),
+              categories.cleanup(),
+              products.cleanup(),
+              invoices.cleanup(),
+              invoiceItems.cleanup(),
+              stockMovements.cleanup(),
+            ]);
+          },
+        };
+      },
     },
-    dispose: async () => {
-      if (disposed) return;
-      disposed = true;
-      await Promise.all([categories.cleanup(), products.cleanup(), batches.cleanup()]);
-      await disconnectAndClearInventoryPowerSync(database);
-    },
-  };
-};
+    organizationId,
+    { waitForFirstSync: true },
+  );

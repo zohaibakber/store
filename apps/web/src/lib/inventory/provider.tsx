@@ -42,11 +42,6 @@ export const disposeInventoryCache = async () => {
   );
 };
 
-/** Drops a failed open so the next mount runs it again from the start. */
-const forgetInventory = (key: string) => {
-  disposeResource(key);
-};
-
 export function InventoryProvider({
   children,
   host,
@@ -99,7 +94,7 @@ export function InventoryProvider({
         <button
           className="text-sm underline"
           onClick={() => {
-            forgetInventory(resourceKey);
+            disposeResource(resourceKey);
             setState({ _tag: "Opening" });
             setAttempt((value) => value + 1);
           }}
@@ -122,16 +117,25 @@ export function InventoryProvider({
   );
 }
 
-export const useInventoryState = () => React.useContext(InventoryContext);
-
 export const useInventoryActions = () => {
   const state = React.useContext(InventoryContext);
   if (!state || state._tag !== "Ready") throw new Error("Inventory is not ready.");
   return state.actions;
 };
 
+export const useCatalogReplica = () => {
+  const state = React.useContext(InventoryContext);
+  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
+  return state.inventory;
+};
+
+export const useCatalogIsReady = () => {
+  const state = React.useContext(InventoryContext);
+  return state?._tag === "Ready";
+};
+
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
-  const state = useInventoryState();
+  const state = React.useContext(InventoryContext);
   if (!state || state._tag === "Opening") return null;
   if (state._tag === "Error") return null;
   return children;

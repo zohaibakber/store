@@ -29,7 +29,6 @@ const wholeNumber = (value: string): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
-/** Native `Modal` formSheet — platform drag-to-dismiss, keyboard avoidance, detents. */
 function QuantitySheet({
   mode,
   visible,

@@ -41,7 +41,6 @@ const desktopRendererEntry = (): Plugin => ({
   },
 });
 
-/** Use the development mark for Electron's boot splash and favicon. */
 const desktopDevSplash = (): Plugin => ({
   name: "desktop-dev-splash",
   apply: "serve",

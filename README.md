@@ -21,11 +21,10 @@ into durable SQLite-backed TanStack DB collections on each client.
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres
   through Hyperdrive and issues authenticated PowerSync connection credentials.
-- `packages/contracts` owns shared store, server, and compatibility sync contracts.
-- `packages/client-db` owns the shared PowerSync schema and connector, row
-  models, and Postgres mutation clients.
-- `packages/db` owns the authentication and Postgres schemas. Its Durable Object
-  schema is preserved for compatibility and migration work.
+- `packages/contracts` owns shared store and server contracts.
+- `packages/client-db` owns the catalog replica (`openCatalog`), catalog writes,
+  PowerSync schema and connector, row models, and Postgres mutation clients.
+- `packages/db` owns the authentication and Postgres schemas.
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
@@ -45,12 +44,6 @@ Expo uses `@powersync/react-native`. Category, product, and batch mutations
 are durably queued offline, uploaded through authenticated
 `/api/inventory/*` commands, committed in Postgres, and streamed back by
 PowerSync. The signed organization claim defines every sync stream.
-
-The original Cloudflare Durable Object, outbox, and `/api/sync/live` WebSocket
-implementation remains in the repository as production compatibility and
-migration source. It is not the active persistence path for migrated clients.
-Do not delete that implementation, its schema, or its contracts until an
-explicit retirement removes the remaining production dependency.
 
 ## Run locally
 

@@ -4,7 +4,6 @@ import * as Schema from "effect/Schema";
 
 import type { JsonApiResponse, JsonRequestInit, JsonRequestPayload } from "./workspace";
 
-/** Refresh when the access token is within this many ms of expiry. */
 export const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
 
 const RequestFailure = Schema.Struct({
@@ -26,7 +25,6 @@ export class RequestError extends Schema.TaggedError<RequestError>()("Workspace.
   code: Schema.optionalKey(Schema.String),
 }) {}
 
-/** Where access/refresh tokens live for a host (memory, cookie session, safeStorage). */
 export interface TokenStore {
   get(): TokenSetType | null;
   set(tokens: TokenSetType | null): void;
@@ -46,7 +44,6 @@ export interface SessionHttpClientOptions {
    * Concurrent callers share one in-flight refresh.
    */
   readonly refreshSession: () => Promise<TokenSetType | null>;
-  /** Decide whether `refreshSession` should run for the current tokens. */
   readonly needsRefresh: (tokens: TokenSetType | null, force: boolean) => boolean;
   /**
    * Runs after a successful refresh, once the in-flight lock is released, so

@@ -55,13 +55,11 @@ export const authSession = (): AuthSessionBridge => {
   return bridge;
 };
 
-/** Session snapshot from startup, handed to {@link AuthProvider} as props. */
 export type InitialAuth =
   | { readonly _tag: "Session"; readonly snapshot: WorkspaceSnapshot }
   | { readonly _tag: "Loading" }
   | { readonly _tag: "Failed"; readonly error: string };
 
-/** Ends the session; the host broadcasts the resulting snapshot. */
 export async function signOut() {
   try {
     await disposeInventoryCache();

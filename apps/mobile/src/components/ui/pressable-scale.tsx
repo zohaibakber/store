@@ -29,10 +29,6 @@ type PressableScaleProps = {
   readonly testID?: string;
 };
 
-/**
- * Press state lives in a Reanimated shared value (0→1); scale is interpolated
- * on the UI thread. Reduced motion dims instead of scaling.
- */
 export function PressableScale({
   accessibilityHint,
   accessibilityLabel,
