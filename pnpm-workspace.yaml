@@ -2,14 +2,6 @@ packages:
   - apps/*
   - packages/*
 
-# Forge's pnpm preflight only requires a hoist pattern to be defined. Keep the
-# isolated linker — hoisting the whole workspace duplicates React (web 19.2.8
-# vs Expo 19.2.3) and breaks `useTable` tests.
-publicHoistPattern:
-  - "*electron*"
-  - "@electron/*"
-  - "@electron-forge/*"
-
 catalog:
   "@effect/sql-d1": 4.0.0-rc.111
   "@effect/sql-sqlite-do": 4.0.0-rc.111
@@ -27,10 +19,6 @@ overrides:
   "@effect/sql-d1": 4.0.0-rc.111
   "@effect/sql-sqlite-do": 4.0.0-rc.111
   drizzle-orm: 1.0.0-rc.5-ab785fc
-  # Forge 7.x pins @electron/rebuild@3.7, which depends on a git tarball of
-  # @electron/node-gyp. pnpm 11 blockExoticSubdeps refuses that. 4.x uses
-  # registry node-gyp and is the documented drop-in for Forge 7 consumers.
-  "@electron/rebuild": "^4.0.4"
   vite: npm:@voidzero-dev/vite-plus-core@0.2.9
   vitest: 4.1.11
 

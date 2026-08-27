@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,14 +30,12 @@ import { makeShutdownCoordinator } from "./shutdown";
 import { setupUpdater } from "./updater";
 import { registerWebContentsSecurity } from "./web-contents-security";
 
-const require = createRequire(import.meta.url);
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-process.env.APP_ROOT = path.join(__dirname, "..", "..");
+process.env.APP_ROOT = path.join(__dirname, "..");
 
 export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-export const MAIN_DIST = path.join(process.env.APP_ROOT, ".vite", "build");
+export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
@@ -57,10 +54,6 @@ for (const file of envFiles) {
   } catch {}
 }
 
-if (require("electron-squirrel-startup")) {
-  app.quit();
-}
-
 initDesktopSentry();
 
 let win: BrowserWindow | null;
@@ -73,7 +66,7 @@ function appIconPath() {
   // icon from extraResources, not from renderer assets. Unpackaged/dev uses
   // the orange mark; packaged/prod uses the monochrome mark.
   return app.isPackaged
-    ? path.join(process.resourcesPath, "icon.png")
+    ? path.join(process.resourcesPath, "logo.png")
     : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
 }
 // Packaged apps ship no .env, so the API URL is baked in at build time via

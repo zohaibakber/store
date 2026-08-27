@@ -37,7 +37,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".vite/**", "out/**", "release/**"]
+      "outputs": ["dist/**", "dist-electron/**", "release/**"]
     },
     "check": {
       "dependsOn": ["^check"]

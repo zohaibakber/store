@@ -17,6 +17,6 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["electron", "scripts", "test", "forge.env.d.ts"],
+  "include": ["electron", "test"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

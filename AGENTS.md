@@ -66,15 +66,13 @@ and `vp build` (Turborepo fans them out per package).
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
 - **Desktop app.** `vp run dev:desktop` from the repo root starts the API/auth
   workers and the web renderer, then `apps/desktop`'s `dev` script waits for
-  `:5174` and runs `electron-forge start`. Unpackaged/dev keeps an escape hatch:
-  `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper can't run) and
-  `DISPLAY=:1` in the headless VM. Production packages flip Electron Fuses via
-  `@electron-forge/plugin-fuses` and keep `sandbox: true`. `ERROR:dbus/...`
-  lines in the log are harmless. Package with
-  `vp run --filter @store/desktop package` (or `make` / `publish`).
-  Electron Forge's pnpm preflight needs `publicHoistPattern` in
-  `pnpm-workspace.yaml`. Do not set `nodeLinker: hoisted` — that duplicates
-  React across web and Expo.
+  `:5174` and packs main/preload with `vp pack --watch`. Unpackaged/dev keeps an
+  escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
+  can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
+  Electron Fuses in electron-builder's `afterPack` hook and keep
+  `sandbox: true`. `ERROR:dbus/...` lines in the log are harmless. Package with
+  `vp run --filter @store/desktop build` (or `release`). Do not set
+  `nodeLinker: hoisted` — that duplicates React across web and Expo.
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
   stores state remotely and binds real dev-stage D1, Hyperdrive, and Postgres.
