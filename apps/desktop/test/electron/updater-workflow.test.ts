@@ -88,7 +88,7 @@ it.effect("throttles manual checks and runs periodic checks on the configured ca
   }),
 );
 
-it.effect("retries pending release metadata once and keeps network failures quiet", () =>
+it.effect("retries pending release metadata once and sanitizes network failures", () =>
   Effect.gen(function* () {
     const test = fixture();
     const workflow = yield* makeUpdaterWorkflow(
@@ -112,8 +112,17 @@ it.effect("retries pending release metadata once and keeps network failures quie
     assert.strictEqual(test.counts().checks, 1);
 
     test.emit({ type: "error", error: new Error("getaddrinfo ENOTFOUND github.com") });
+    test.emit({ type: "error", error: new Error("net::ERR_NETWORK_CHANGED") });
+    test.emit({ type: "error", error: new Error("net::ERR_INTERNET_DISCONNECTED") });
     yield* Effect.yieldNow;
-    assert.strictEqual(test.events.length, 2);
+    assert.strictEqual(test.events.length, 5);
+    for (const event of test.events.slice(2)) {
+      assert.strictEqual(event.type, "error");
+      if (event.type === "error") {
+        assert.strictEqual(event.failure, "network");
+        assert.strictEqual(event.message, "You're offline.");
+      }
+    }
     yield* workflow.dispose;
   }),
 );

@@ -1,3 +1,4 @@
+import { classifyUpdateFailure, updateFailureMessage } from "@store/contracts";
 import { useEffect } from "react";
 
 import { toastManager } from "@/components/ui/toast";
@@ -45,14 +46,18 @@ const startDownload = (version: string) => {
       });
     })
     .catch((error) => {
+      const message = error instanceof Error ? error.message : "";
+      const offline = classifyUpdateFailure(message) === "network";
       toastManager.add({
         data: {},
-        description: error instanceof Error ? error.message : "Try again.",
+        description: offline
+          ? "The download will continue when you're back online."
+          : updateFailureMessage(message),
         id: UPDATE_DOWNLOAD_TOAST_ID,
-        priority: "high",
-        title: "Update failed",
-        type: "error",
-        timeout: 0,
+        priority: offline ? undefined : "high",
+        title: offline ? "You're offline" : "Update failed",
+        type: offline ? "info" : "error",
+        timeout: offline ? undefined : 0,
       });
     });
 };
@@ -70,13 +75,18 @@ export const checkForAppUpdate = () => {
     type: "loading",
   });
   void updater.check().catch((error) => {
+    if (!manualCheck) return;
     manualCheck = false;
+    const message = error instanceof Error ? error.message : "";
+    const offline = classifyUpdateFailure(message) === "network";
     toastManager.add({
-      description: error instanceof Error ? error.message : "Try again.",
+      description: offline
+        ? "Tabaaq will check for updates when you're back online."
+        : updateFailureMessage(message),
       id: UPDATE_CHECK_TOAST_ID,
-      priority: "high",
-      title: "Update check failed",
-      type: "error",
+      priority: offline ? undefined : "high",
+      title: offline ? "You're offline" : "Update check failed",
+      type: offline ? "info" : "error",
     });
   });
 };
@@ -120,16 +130,26 @@ export function useAppUpdater() {
           showDownloadProgress(event.percent, "Almost ready to install.");
           break;
         case "error":
-          if (manualCheck || !event.retrying) {
-            manualCheck = false;
+          // electron-updater / Electron autoUpdater: log errors, notify only
+          // when an update is ready. Background checks stay silent.
+          if (!manualCheck) break;
+          manualCheck = false;
+          if (event.failure === "network") {
             toastManager.add({
-              description: event.message,
+              description: "Tabaaq will check for updates when you're back online.",
               id: UPDATE_CHECK_TOAST_ID,
-              priority: "high",
-              title: event.retrying ? "Update check delayed" : "Update check failed",
-              type: event.retrying ? "info" : "error",
+              title: "You're offline",
+              type: "info",
             });
+            break;
           }
+          toastManager.add({
+            description: event.message,
+            id: UPDATE_CHECK_TOAST_ID,
+            priority: event.retrying ? undefined : "high",
+            title: event.retrying ? "Update check delayed" : "Update check failed",
+            type: event.retrying ? "info" : "error",
+          });
           break;
         case "checking":
         case "downloaded":
@@ -141,25 +161,6 @@ export function useAppUpdater() {
       }
     });
 
-    // Main-process startup checks can hit a stale GitHub /releases/latest right
-    // after a tag is published. Ask again once the UI is up, and always force
-    // through the workflow throttle when the user focuses the window.
-    const startupCheck = window.setTimeout(() => void updater.check(), 8_000);
-    const requestCheck = () => void updater.check();
-    const checkWhenVisible = () => {
-      if (document.visibilityState === "visible") requestCheck();
-    };
-
-    window.addEventListener("focus", requestCheck);
-    window.addEventListener("online", requestCheck);
-    document.addEventListener("visibilitychange", checkWhenVisible);
-
-    return () => {
-      window.clearTimeout(startupCheck);
-      unsubscribe();
-      window.removeEventListener("focus", requestCheck);
-      window.removeEventListener("online", requestCheck);
-      document.removeEventListener("visibilitychange", checkWhenVisible);
-    };
+    return unsubscribe;
   }, []);
 }

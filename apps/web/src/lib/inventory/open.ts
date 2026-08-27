@@ -1,4 +1,10 @@
-import { openCatalog, inventoryReplicaScope } from "@store/client-db";
+import {
+  InventoryFailure,
+  INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE,
+  inventoryReplicaScope,
+  openCatalog,
+} from "@store/client-db";
+import { isConnectivityFailure } from "@store/contracts";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
 
 import type { HostInventoryScope } from "@/host-access";
@@ -39,8 +45,17 @@ export const openInventory = async (
         toastStoreError(failure);
       },
       onFirstSyncError: (cause) => {
+        // PowerSync connect() is background. waitForFirstSync is optional for a
+        // first-launch loading screen, not a user-facing error when offline.
+        // https://docs.powersync.com/client-sdks/reference/javascript-web
+        const message = cause instanceof Error ? cause.message : String(cause);
+        const expectedOffline =
+          isConnectivityFailure(message) ||
+          message === INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE ||
+          (cause instanceof InventoryFailure &&
+            (cause.reason._tag === "transport" || cause.reason._tag === "transient"));
+        if (expectedOffline) return;
         reportError(cause, { op: "inventory-first-sync", scopeId });
-        toastStoreError(cause);
       },
     },
     scope.organizationId,

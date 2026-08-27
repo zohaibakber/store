@@ -136,8 +136,11 @@ export const makeUpdaterWorkflow = (
               type: "error",
               message: updateFailureMessage(event.error.message),
               retrying: failure === "pending-release",
+              failure,
             };
-            yield* transition(output, failure !== "network");
+            // Official autoUpdater sample logs errors; the renderer decides
+            // whether a background check is worth a toast.
+            yield* transition(output);
             if (failure === "pending-release") yield* schedulePendingReleaseRetry;
           })
         : transition(event);

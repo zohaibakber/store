@@ -78,7 +78,13 @@ const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
   };
   const downloaded = (info: { version: string }) =>
     listener({ type: "downloaded", version: info.version });
-  const error = (cause: Error) => listener({ type: "error", error: cause });
+  const error = (cause: Error) => {
+    // Official Electron autoUpdater sample: log update errors, don't surface
+    // them as application failures. https://www.electronjs.org/docs/latest/tutorial/updates
+    console.error("There was a problem updating the application");
+    console.error(cause);
+    listener({ type: "error", error: cause });
+  };
 
   autoUpdater.on("checking-for-update", checking);
   autoUpdater.on("update-available", available);
@@ -103,6 +109,7 @@ export async function setupUpdater(
 ) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
   autoUpdater.setFeedURL({
     provider: "github",
     owner: "zohaibakber",
@@ -136,8 +143,8 @@ export async function setupUpdater(
     ),
   );
 
-  // Manual "Check for updates" and focus checks must skip the throttle, or a
-  // stale not-available right after publish sticks for minutes.
+  // Manual "Check for updates" skips the throttle. Background checks live in
+  // the workflow (electron-updater's checkForUpdatesAndNotify equivalent).
   ipcMain.handle("updater:check", (event) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());
     return Effect.runPromise(workflow.check(true));

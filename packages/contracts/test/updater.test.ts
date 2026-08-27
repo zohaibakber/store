@@ -30,9 +30,12 @@ test("checking does not disturb an in-flight download", () => {
 });
 
 test("a failure returns to idle so the next check can run", () => {
-  expect(phaseAfter([{ type: "error", message: "boom", retrying: false }], "downloading")).toBe(
-    "idle",
-  );
+  expect(
+    phaseAfter(
+      [{ type: "error", message: "boom", retrying: false, failure: "other" }],
+      "downloading",
+    ),
+  ).toBe("idle");
 });
 
 test("an available event is withheld unless nothing is downloading", () => {
@@ -43,7 +46,12 @@ test("an available event is withheld unless nothing is downloading", () => {
 });
 
 test("an error during a download is withheld. The download reports it itself", () => {
-  const failed: UpdaterEvent = { type: "error", message: "boom", retrying: false };
+  const failed: UpdaterEvent = {
+    type: "error",
+    message: "boom",
+    retrying: false,
+    failure: "other",
+  };
   expect(forwardsToRenderer("idle", failed)).toBe(true);
   expect(forwardsToRenderer("downloading", failed)).toBe(false);
 });
@@ -59,6 +67,10 @@ test("progress and completion always reach the renderer", () => {
 test("connectivity failures are classified apart from real ones", () => {
   for (const message of [
     "net::ERR_INTERNET_DISCONNECTED",
+    "net::ERR_NETWORK_CHANGED",
+    "net::ERR_NAME_NOT_RESOLVED",
+    "net::ERR_CONNECTION_TIMED_OUT",
+    "Failed to fetch",
     "getaddrinfo ENOTFOUND github.com",
     "connect ECONNREFUSED 127.0.0.1:443",
     "read ECONNRESET",
@@ -78,4 +90,8 @@ test("a release whose Linux metadata has not published yet is a delay, not a fai
 test("other failures are reported by their first line", () => {
   expect(updateFailureMessage("Something broke\nstack frame\nstack frame")).toBe("Something broke");
   expect(updateFailureMessage("")).toBe("Unable to check for updates.");
+});
+
+test("connectivity is not reported as a Chromium net error", () => {
+  expect(updateFailureMessage("net::ERR_NETWORK_CHANGED")).toBe("You're offline.");
 });
