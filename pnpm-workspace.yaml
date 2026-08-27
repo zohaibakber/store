@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# Electron Forge walks a real node_modules tree. Isolated linking fails its
+# preflight (`pnpm config get node-linker`) and packaging.
+nodeLinker: hoisted
+
 catalog:
   "@effect/sql-d1": 4.0.0-rc.111
   "@effect/sql-sqlite-do": 4.0.0-rc.111
