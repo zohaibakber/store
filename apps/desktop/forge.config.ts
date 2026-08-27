@@ -15,6 +15,7 @@ import type { ForgeConfig } from "@electron-forge/shared-types";
 import MakerAppImage from "@reforged/maker-appimage";
 
 import { desktopFuses } from "./electron/fuses.js";
+import { stageRuntimeModules } from "./scripts/stage-runtime-modules.js";
 
 const require = createRequire(import.meta.url);
 const { verifyDesktopAsar } = require("./scripts/verify-after-pack.cjs") as {
@@ -74,6 +75,7 @@ const config: ForgeConfig = {
   hooks: {
     packageAfterCopy: async (_forgeConfig, buildPath) => {
       await cp(path.join(root, "dist"), path.join(buildPath, "dist"), { recursive: true });
+      await stageRuntimeModules(root, buildPath);
     },
     postPackage: async (_forgeConfig, options) => {
       for (const outputPath of options.outputPaths) {
