@@ -1,6 +1,7 @@
 import { PlusSignCircleIcon, SearchIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { useCommandMenu } from "@/components/app/command-menu";
 import { Kbd } from "@/components/ui/kbd";
@@ -25,27 +26,42 @@ export type NavMainItem = {
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const { open: openCommandMenu } = useCommandMenu();
+  const navigate = useNavigate();
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "n" && event.key !== "N") return;
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+
+      event.preventDefault();
+      if (isMobile) setOpenMobile(false);
+      void navigate({ to: "/invoices/new" });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isMobile, navigate, setOpenMobile]);
+
   return (
     <SidebarGroup>
-      <SidebarGroupContent className="flex flex-col gap-2">
+      <SidebarGroupContent>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip="Create Sale"
-              className="min-w-8 bg-primary text-primary-foreground duration-200 ease-linear hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground"
+              tooltip="New Sale"
+              aria-keyshortcuts="Control+N"
               render={<Link to="/invoices/new" onClick={closeMobileSidebar} />}
             >
               <HugeiconsIcon icon={PlusSignCircleIcon} />
-              <span>Create Sale</span>
+              <span>New Sale</span>
             </SidebarMenuButton>
+            <SidebarMenuBadge>
+              <Kbd>Ctrl+N</Kbd>
+            </SidebarMenuBadge>
           </SidebarMenuItem>
-        </SidebarMenu>
-        <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Search"
@@ -57,7 +73,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               <span>Search</span>
             </SidebarMenuButton>
             <SidebarMenuBadge>
-              <Kbd>Ctrl K</Kbd>
+              <Kbd>Ctrl+K</Kbd>
             </SidebarMenuBadge>
           </SidebarMenuItem>
           {items.map((item) => (
