@@ -21,7 +21,7 @@ export const startWeb = async () => {
   await completeGoogle(globalThis.location.href).catch(() => false);
 
   mountApp({
-    initialAuth: await bootstrapAuth(),
+    snapshot: await bootstrapAuth(),
     history: createBrowserHistory(),
     access: hostAccess(),
     inventory: {

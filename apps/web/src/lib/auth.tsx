@@ -5,13 +5,13 @@ import type {
   TokenSet,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
+import { unauthenticatedWorkspace } from "@store/contracts";
 import type { JsonApiResponse, JsonRequestInit } from "@store/workspace";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
-import { flushSync } from "react-dom";
 
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
-import { disposeInventoryCache } from "@/lib/inventory-db";
+import { refreshBoundWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
 export interface AuthSessionBridge {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
@@ -39,10 +39,6 @@ type AuthContextValue = {
 );
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
-const authScope = (snapshot: WorkspaceSnapshot | null): string | null =>
-  snapshot?.status === "authenticated" && snapshot.activeOrganization
-    ? `${snapshot.user.id}:${snapshot.activeOrganization.id}`
-    : null;
 
 let sessionBridge: AuthSessionBridge | undefined;
 
@@ -56,11 +52,6 @@ export const authSession = (): AuthSessionBridge => {
   return bridge;
 };
 
-export type InitialAuth =
-  | { readonly _tag: "Session"; readonly snapshot: WorkspaceSnapshot }
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Failed"; readonly error: string };
-
 export async function signOut() {
   try {
     await authSession().signOut();
@@ -69,132 +60,51 @@ export async function signOut() {
   }
 }
 
-export async function bootstrapAuth(): Promise<InitialAuth> {
+export async function bootstrapAuth(): Promise<WorkspaceSnapshot> {
   try {
-    return { _tag: "Session", snapshot: await authSession().getSession() };
+    return await authSession().getSession();
   } catch (cause) {
-    return { _tag: "Failed", error: storeErrorMessage(cause) };
+    return unauthenticatedWorkspace({
+      isOnline: false,
+      workspaceError: storeErrorMessage(cause),
+    });
   }
 }
 
-const initialSnapshot = (initial: InitialAuth): WorkspaceSnapshot | null =>
-  initial._tag === "Session" ? initial.snapshot : null;
+const fallbackSession = (): WorkspaceSession => ({
+  _tag: "Steady",
+  snapshot: unauthenticatedWorkspace({ isOnline: false }),
+});
 
-const initialError = (initial: InitialAuth): string | null => {
-  if (initial._tag === "Failed") return initial.error;
-  if (initial._tag === "Session") return initial.snapshot.workspaceError ?? null;
-  return null;
-};
-
-export function AuthProvider({
-  children,
-  initial,
-}: {
-  children: React.ReactNode;
-  initial: InitialAuth;
-}) {
+/**
+ * Subscriber of the live workspace session. Does not own writes, does not
+ * seed from a frozen bootstrap snapshot, and does not live as the admit path.
+ */
+export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(
-    initialSnapshot(initial),
-  );
-  const [loading, setLoading] = React.useState(initial._tag === "Loading");
-  const [error, setError] = React.useState<string | null>(initialError(initial));
-  const currentScopeRef = React.useRef(authScope(snapshot));
-  const pendingScopeRef = React.useRef<string | null | undefined>(undefined);
-  const transitionRef = React.useRef(0);
-
-  const apply = React.useCallback(
-    async (next: WorkspaceSnapshot) => {
-      const nextScope = authScope(next);
-      if (nextScope === pendingScopeRef.current) return;
-      if (nextScope === currentScopeRef.current && pendingScopeRef.current === undefined) {
-        setSnapshot(next);
-        setError(next.workspaceError ?? null);
-        setLoading(false);
-        router.update({
-          context: {
-            ...router.options.context,
-            sessionSnapshot: next,
-            sessionPending: false,
-          },
-        });
-        return;
-      }
-
-      const transition = transitionRef.current + 1;
-      transitionRef.current = transition;
-      pendingScopeRef.current = nextScope;
-      setError(next.workspaceError ?? null);
-      // Hide the shell so live queries unmount before replica teardown. Do not
-      // await PowerSync dispose — disconnectAndClear can hang, and that left
-      // logout stuck on the loading screen. Hash history still needs this
-      // gate so / and /sign-in cannot bounce (crbug.com/1038223).
-      flushSync(() => {
-        setLoading(true);
-      });
-
-      router.update({
-        context: {
-          ...router.options.context,
-          sessionSnapshot: next,
-          sessionPending: true,
-        },
-      });
-
-      try {
-        if (nextScope === null) {
-          router.clearCache();
-        } else {
-          await router.invalidate().catch(() => undefined);
-        }
-      } finally {
-        if (transition === transitionRef.current) {
-          currentScopeRef.current = nextScope;
-          pendingScopeRef.current = undefined;
-          setSnapshot(next);
-          setLoading(false);
-          router.update({
-            context: {
-              ...router.options.context,
-              sessionSnapshot: next,
-              sessionPending: false,
-            },
-          });
-        }
-      }
-
-      if (nextScope === null) {
-        void disposeInventoryCache().catch(() => undefined);
-      }
-    },
-    [router],
+  const session = router.options.context.session;
+  const current = React.useSyncExternalStore(
+    session.subscribe,
+    () => session.current() ?? fallbackSession(),
+    () => session.current() ?? fallbackSession(),
   );
 
   const refresh = React.useCallback(async () => {
-    if (!snapshot) setLoading(true);
-    setError(null);
     try {
-      await apply(await authSession().getSession());
+      await refreshBoundWorkspaceSession();
     } catch (cause) {
-      setError(storeErrorMessage(cause));
-      setLoading(false);
+      toastStoreError(cause);
     }
-  }, [apply, snapshot]);
+  }, []);
 
-  React.useEffect(() => {
-    const bridge = sessionBridge ?? window.auth;
-    if (!bridge) return;
-    const dispose = bridge.onSessionChange((next) => void apply(next));
-    return () => dispose();
-  }, [apply]);
-
-  const value: AuthContextValue = loading
-    ? { _tag: "Loading", snapshot, refresh }
-    : error
-      ? { _tag: "Error", snapshot, error, refresh }
-      : snapshot
-        ? { _tag: "Ready", snapshot, refresh }
-        : { _tag: "Loading", snapshot: null, refresh };
+  const snapshot = current.snapshot;
+  const error = snapshot.workspaceError ?? null;
+  const value: AuthContextValue =
+    current._tag === "Switching"
+      ? { _tag: "Loading", snapshot, refresh }
+      : error
+        ? { _tag: "Error", snapshot, error, refresh }
+        : { _tag: "Ready", snapshot, refresh };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

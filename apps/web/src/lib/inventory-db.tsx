@@ -1,7 +1,6 @@
 export {
   InventoryProvider,
   InventoryReady,
-  disposeInventoryCache,
   inventoryScopeId,
   useCatalogCategories,
   useCatalogIsReady,

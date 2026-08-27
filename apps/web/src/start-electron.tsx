@@ -72,7 +72,7 @@ export const startElectron = async () => {
     return undefined;
   });
   mountApp({
-    initialAuth: await bootstrapAuth(),
+    snapshot: await bootstrapAuth(),
     history: createHashHistory(),
     access: hostAccess(),
     inventory,

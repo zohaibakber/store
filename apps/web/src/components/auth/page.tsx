@@ -1,5 +1,5 @@
 import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from "@store/auth";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
 import { PasswordInput } from "@/components/auth/password-input";
@@ -303,7 +303,6 @@ function PasswordRegistration({
 }
 
 export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
-  const navigate = useNavigate();
   const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -316,10 +315,6 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
     window.addEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
     return () => window.removeEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
   }, []);
-
-  const finishSignedIn = async () => {
-    await navigate({ to: "/" });
-  };
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -369,7 +364,6 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
                 password: Password.make(password),
                 client: currentAuthClient(),
               });
-              await finishSignedIn();
             })
           }
         />
@@ -388,7 +382,6 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
                 code: OtpCode.make(code),
                 client: currentAuthClient(),
               });
-              await finishSignedIn();
             })
           }
         />
@@ -407,7 +400,6 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
                 password: Password.make(input.password),
                 client: currentAuthClient(),
               });
-              await finishSignedIn();
             })
           }
         />

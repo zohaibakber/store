@@ -1,29 +1,46 @@
+import type { WorkspaceSnapshot } from "@store/contracts";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import React from "react";
+import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
 
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
-import type { InitialAuth } from "@/lib/auth";
+import { authSession } from "@/lib/auth";
 import type { InventoryHost } from "@/lib/inventory-host";
+import { createAppCatalogLifetime } from "@/lib/inventory/lifetime";
 import { Sentry } from "@/lib/sentry";
+import { makeReplayChannel } from "@/replay-channel";
+import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
 import { getRouter } from "./router";
 
 export const mountApp = (input: {
-  readonly initialAuth: InitialAuth;
+  readonly snapshot: WorkspaceSnapshot;
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
-  /** When true, beforeLoad skips admit redirects until AuthProvider clears it. */
-  readonly sessionPending?: boolean;
   readonly inventory?: InventoryHost;
 }) => {
+  const session = makeReplayChannel<WorkspaceSession>();
+  session.publish({ _tag: "Steady", snapshot: input.snapshot });
+  const catalog = createAppCatalogLifetime();
+  const scope = input.access.inventoryScope(input.snapshot);
+  if (scope) catalog.claim(scope);
+
   const router = getRouter({
     history: input.history,
-    initialAuth: input.initialAuth,
+    session,
+    catalog,
     access: input.access,
-    sessionPending: input.sessionPending ?? false,
     inventory: input.inventory,
+  });
+  bindWorkspaceSession({
+    session,
+    catalog,
+    access: input.access,
+    bridge: authSession(),
+    invalidate: () => router.invalidate().then(() => undefined),
+    flush: flushSync,
   });
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(

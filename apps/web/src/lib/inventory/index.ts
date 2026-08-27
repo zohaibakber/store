@@ -3,7 +3,6 @@ export { inventoryScopeId } from "./open";
 export {
   InventoryProvider,
   InventoryReady,
-  disposeInventoryCache,
   useInventoryActions,
   useCatalogIsReady,
 } from "./provider";

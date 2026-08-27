@@ -34,4 +34,13 @@ describe("replay channel", () => {
 
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it("exposes the latest publication through current()", () => {
+    const channel = makeReplayChannel<string>();
+    expect(channel.current()).toBeUndefined();
+    channel.publish("authenticated");
+    expect(channel.current()).toBe("authenticated");
+    channel.publish("unauthenticated");
+    expect(channel.current()).toBe("unauthenticated");
+  });
 });

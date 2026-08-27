@@ -16,6 +16,7 @@ import {
   INVENTORY_HTTP_REQUEST_CHANNEL,
   type InventoryHttpBridge,
 } from "./inventory-http-channels";
+import { makeLastValueReplay } from "./last-value-replay";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
@@ -30,11 +31,30 @@ const inventoryHttp: InventoryHttpBridge = {
 
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
+const sessionReplay = makeLastValueReplay<WorkspaceSnapshot>();
+ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {
+  sessionReplay.publish(snapshot);
+});
+
 contextBridge.exposeInMainWorld("auth", {
-  getSession: () => invoke<WorkspaceSnapshot>("auth:get-session"),
-  adoptSession: (tokens: TokenSet | null) =>
-    invoke<WorkspaceSnapshot, [TokenSet | null]>("auth:adopt-session", tokens),
-  renewSession: () => invoke<WorkspaceSnapshot>("auth:renew-session"),
+  getSession: async () => {
+    const snapshot = await invoke<WorkspaceSnapshot>("auth:get-session");
+    sessionReplay.publish(snapshot);
+    return snapshot;
+  },
+  adoptSession: async (tokens: TokenSet | null) => {
+    const snapshot = await invoke<WorkspaceSnapshot, [TokenSet | null]>(
+      "auth:adopt-session",
+      tokens,
+    );
+    sessionReplay.publish(snapshot);
+    return snapshot;
+  },
+  renewSession: async () => {
+    const snapshot = await invoke<WorkspaceSnapshot>("auth:renew-session");
+    sessionReplay.publish(snapshot);
+    return snapshot;
+  },
   signOut: () => invoke<void>("auth:sign-out"),
   organizationRoster: () => invoke<OrganizationRoster>("auth:organization"),
   organize: (command: OrganizationCommand) =>
@@ -73,10 +93,7 @@ contextBridge.exposeInMainWorld("auth", {
     };
   },
   onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {
-    const listener = (_event: Electron.IpcRendererEvent, snapshot: WorkspaceSnapshot) =>
-      callback(snapshot);
-    ipcRenderer.on("auth:session-changed", listener);
-    return () => ipcRenderer.off("auth:session-changed", listener);
+    return sessionReplay.subscribe(callback);
   },
 });
 

@@ -1,28 +1,24 @@
-import type { WorkspaceSnapshot } from "@store/contracts";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
 import type { HostAccessPolicy } from "@/host-access";
-import type { InitialAuth } from "@/lib/auth";
 import type { InventoryHost } from "@/lib/inventory-host";
+import type { CatalogLifetime } from "@/lib/inventory/lifetime";
+import type { ReplayChannel } from "@/replay-channel";
 import { routeTree } from "@/routeTree.gen";
-
-const sessionSnapshotFromAuth = (initialAuth: InitialAuth): WorkspaceSnapshot | null =>
-  initialAuth._tag === "Session" ? initialAuth.snapshot : null;
+import type { WorkspaceSession } from "@/session/workspace-session";
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
-  readonly initialAuth: InitialAuth;
+  readonly session: ReplayChannel<WorkspaceSession>;
+  readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
-  readonly sessionPending?: boolean;
   readonly inventory?: InventoryHost;
 }) =>
   createRouter({
     routeTree,
     context: {
-      initialAuth: input.initialAuth,
-      /** Live workspace snapshot; updated on every session publish before invalidate. */
-      sessionSnapshot: sessionSnapshotFromAuth(input.initialAuth),
-      sessionPending: input.sessionPending ?? false,
+      session: input.session,
+      catalog: input.catalog,
       access: input.access,
       inventory: input.inventory ?? null,
     },

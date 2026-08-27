@@ -3,7 +3,10 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 
 import { hostAccess } from "../src/host-access";
+import { createAppCatalogLifetime } from "../src/lib/inventory/lifetime";
+import { makeReplayChannel } from "../src/replay-channel";
 import { getRouter } from "../src/router";
+import type { WorkspaceSession } from "../src/session/workspace-session";
 
 const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
 const authenticated = decodeAuthenticatedWorkspace({
@@ -14,78 +17,56 @@ const authenticated = decodeAuthenticatedWorkspace({
   organizations: [{ id: "o1", name: "Org", slug: "org", role: "owner" }],
 });
 
-describe("live sessionSnapshot admit", () => {
-  it("beforeLoad truth follows router.update, not frozen initialAuth", () => {
+const routerFor = (session: ReturnType<typeof makeReplayChannel<WorkspaceSession>>) =>
+  getRouter({
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+    session,
+    catalog: createAppCatalogLifetime(),
+    access: hostAccess(),
+  });
+
+describe("live session admit", () => {
+  it("beforeLoad truth follows the session channel, not a frozen bootstrap copy", () => {
     const access = hostAccess();
-    const router = getRouter({
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-      initialAuth: { _tag: "Session", snapshot: unauthenticated },
-      access,
-    });
+    const session = makeReplayChannel<WorkspaceSession>();
+    session.publish({ _tag: "Steady", snapshot: unauthenticated });
+    const router = routerFor(session);
 
     expect(
       access.admit({
         location: { pathname: "/" },
-        snapshot: router.options.context.sessionSnapshot,
+        snapshot: router.options.context.session.current()?.snapshot ?? null,
       }),
     ).toEqual({ _tag: "Redirect", to: "/sign-in", replace: true });
 
-    router.update({
-      context: {
-        ...router.options.context,
-        sessionSnapshot: authenticated,
-      },
-    });
+    session.publish({ _tag: "Steady", snapshot: authenticated });
 
-    expect(router.options.context.initialAuth).toMatchObject({
-      _tag: "Session",
-      snapshot: { status: "unauthenticated" },
-    });
     expect(
       access.admit({
         location: { pathname: "/" },
-        snapshot: router.options.context.sessionSnapshot,
+        snapshot: router.options.context.session.current()?.snapshot ?? null,
       }),
     ).toEqual({ _tag: "Allow" });
   });
 
-  it("sessionPending keeps cold-start admit from bouncing to sign-in", () => {
+  it("admits the destination snapshot while Switching, not a pending flag", () => {
     const access = hostAccess();
-    const router = getRouter({
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-      initialAuth: { _tag: "Loading" },
-      access,
-      sessionPending: true,
-    });
+    const session = makeReplayChannel<WorkspaceSession>();
+    session.publish({ _tag: "Switching", snapshot: unauthenticated });
+    const router = routerFor(session);
 
-    expect(router.options.context.sessionPending).toBe(true);
-    expect(router.options.context.sessionSnapshot).toBeNull();
-    // beforeLoad short-circuits when sessionPending; admit itself would redirect.
+    expect(router.options.context.session.current()?._tag).toBe("Switching");
     expect(
       access.admit({
         location: { pathname: "/" },
-        snapshot: router.options.context.sessionSnapshot,
+        snapshot: router.options.context.session.current()?.snapshot ?? null,
       }),
     ).toEqual({ _tag: "Redirect", to: "/sign-in", replace: true });
-  });
-
-  it("sessionPending holds admit while a live session is being published", () => {
-    const access = hostAccess();
-    const router = getRouter({
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-      initialAuth: { _tag: "Session", snapshot: authenticated },
-      access,
-    });
-
-    router.update({
-      context: {
-        ...router.options.context,
-        sessionSnapshot: unauthenticated,
-        sessionPending: true,
-      },
-    });
-
-    expect(router.options.context.sessionPending).toBe(true);
-    expect(router.options.context.sessionSnapshot?.status).toBe("unauthenticated");
+    expect(
+      access.admit({
+        location: { pathname: "/sign-in" },
+        snapshot: router.options.context.session.current()?.snapshot ?? null,
+      }),
+    ).toEqual({ _tag: "Allow" });
   });
 });
