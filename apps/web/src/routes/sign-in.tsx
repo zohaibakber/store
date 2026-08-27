@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { AuthScreen } from "@/components/auth/brand";
 import { AuthForm } from "@/components/auth/page";
+import { hasAuthenticatedWorkspace } from "@/host-access";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/sign-in")({
@@ -15,7 +16,7 @@ function SignInRoute() {
   const navigate = useNavigate();
 
   React.useEffect(() => {
-    if (auth.snapshot?.status === "authenticated") {
+    if (hasAuthenticatedWorkspace(auth.snapshot)) {
       void navigate({ to: "/" });
     }
   }, [auth.snapshot, navigate]);

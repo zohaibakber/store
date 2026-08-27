@@ -28,6 +28,24 @@ describe("hostAccess", () => {
     );
   });
 
+  it("keeps an authenticated user without an organization on sign-in", () => {
+    const authenticatedNoOrg = decodeAuthenticatedWorkspace({
+      status: "authenticated",
+      isOnline: true,
+      user: { id: "u1", name: "A", email: "a@b.c", image: null },
+      activeOrganization: null,
+      organizations: [],
+    });
+    expect(
+      access.admit({ location: { pathname: "/sign-in" }, snapshot: authenticatedNoOrg }),
+    ).toEqual({ _tag: "Allow" });
+    expect(access.admit({ location: { pathname: "/" }, snapshot: authenticatedNoOrg })).toEqual({
+      _tag: "Redirect",
+      to: "/sign-in",
+      replace: true,
+    });
+  });
+
   it("sends signed-in users away from sign-in", () => {
     expect(access.admit({ location: { pathname: "/sign-in" }, snapshot: authenticated })).toEqual({
       _tag: "Redirect",

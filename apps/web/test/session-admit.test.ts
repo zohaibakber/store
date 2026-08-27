@@ -68,4 +68,24 @@ describe("live sessionSnapshot admit", () => {
       }),
     ).toEqual({ _tag: "Redirect", to: "/sign-in", replace: true });
   });
+
+  it("sessionPending holds admit while a live session is being published", () => {
+    const access = hostAccess();
+    const router = getRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      initialAuth: { _tag: "Session", snapshot: authenticated },
+      access,
+    });
+
+    router.update({
+      context: {
+        ...router.options.context,
+        sessionSnapshot: unauthenticated,
+        sessionPending: true,
+      },
+    });
+
+    expect(router.options.context.sessionPending).toBe(true);
+    expect(router.options.context.sessionSnapshot?.status).toBe("unauthenticated");
+  });
 });

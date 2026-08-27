@@ -43,7 +43,8 @@ const PUBLIC_PATHS = new Set(["/sign-in"]);
 
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.has(pathname);
 
-const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
+/** Signed-in with an organization. Admit and sign-in must use the same check. */
+export const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
   snapshot?.status === "authenticated" && snapshot.activeOrganization != null;
 
 const remoteInventoryScope = (snapshot: WorkspaceSnapshot | null): HostInventoryScope | null => {

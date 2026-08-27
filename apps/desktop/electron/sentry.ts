@@ -17,6 +17,17 @@ export const initDesktopSentry = () => {
     environment: app.isPackaged ? "production" : "development",
     release: `tabaaq-desktop@${app.getVersion()}`,
     sendDefaultPii: false,
+    integrations: (defaults) =>
+      defaults.filter((integration) => {
+        // ANR pauses the renderer to collect JS stacks; that turns a short
+        // session-teardown stall into a frozen window.
+        if (integration.name === "RendererEventLoopBlock") return false;
+        // AppImage FUSE unmounts on quit/update leave crashpad mapped to a
+        // gone file. Linux then SIGBUS and KDE reports chrome_crashpad_handler
+        // as a fatal Tabaaq error.
+        if (process.platform === "linux" && integration.name === "SentryMinidump") return false;
+        return true;
+      }),
   });
 };
 

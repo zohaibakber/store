@@ -8,6 +8,7 @@ import type { WorkspaceSnapshot } from "@store/contracts";
 import type { JsonApiResponse, JsonRequestInit } from "@store/workspace";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
+import { flushSync } from "react-dom";
 
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { disposeInventoryCache } from "@/lib/inventory-db";
@@ -61,11 +62,6 @@ export type InitialAuth =
   | { readonly _tag: "Failed"; readonly error: string };
 
 export async function signOut() {
-  try {
-    await disposeInventoryCache();
-  } catch {
-    // Still drop the session if replica teardown fails.
-  }
   try {
     await authSession().signOut();
   } catch (error) {
@@ -129,16 +125,27 @@ export function AuthProvider({
       transitionRef.current = transition;
       pendingScopeRef.current = nextScope;
       setError(next.workspaceError ?? null);
+      // Hide the shell before replica teardown so live queries unmount first.
+      // Otherwise Electron's hash history bounces / ↔ /sign-in until Chromium
+      // throttles navigation and the renderer locks (crbug.com/1038223).
+      flushSync(() => {
+        setLoading(true);
+      });
 
       router.update({
         context: {
           ...router.options.context,
           sessionSnapshot: next,
-          sessionPending: false,
+          sessionPending: true,
         },
       });
 
       if (nextScope === null) {
+        try {
+          await disposeInventoryCache();
+        } catch {
+          // Still finish the session transition if replica teardown fails.
+        }
         router.clearCache();
       } else {
         await router.invalidate().catch(() => undefined);
@@ -149,6 +156,13 @@ export function AuthProvider({
       pendingScopeRef.current = undefined;
       setSnapshot(next);
       setLoading(false);
+      router.update({
+        context: {
+          ...router.options.context,
+          sessionSnapshot: next,
+          sessionPending: false,
+        },
+      });
     },
     [router],
   );
