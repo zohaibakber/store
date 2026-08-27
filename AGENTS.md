@@ -24,6 +24,10 @@ release. Add a tool name to select part of the graph. For example, run
 - [ ] Check if there are `vite.config.ts` tasks or `package.json` scripts necessary for validation, run via `vp run <script>`.
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
+## Commits
+
+Never commit until `vp check` passes from the repo root. CI's first verify step is `pnpm exec vp check`; a format/lint miss fails the whole job. If `vp check` reports formatting or lint issues, run `vp check --fix`, then run `vp check` again and only commit after it is clean. Do not skip this because the diff looks small.
+
 <!--VITE PLUS END-->
 
 ## Typography
