@@ -39,9 +39,7 @@
         {
           "fonts": [
             "./node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
-            "./node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf",
-            "./node_modules/@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf",
-            "./node_modules/@expo-google-fonts/geist-mono/500Medium/GeistMono_500Medium.ttf"
+            "./node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf"
           ]
         }
       ],

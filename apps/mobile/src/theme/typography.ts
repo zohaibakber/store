@@ -5,8 +5,6 @@ import type { TextStyle } from "react-native";
  * is no loading state to guard against.
  */
 const family = {
-  monoMedium: "GeistMono_500Medium",
-  monoRegular: "GeistMono_400Regular",
   regular: "Inter_400Regular",
   medium: "Inter_500Medium",
 } as const;
@@ -18,13 +16,13 @@ export const typography = {
   heading: { fontFamily: family.medium, fontSize: 18, lineHeight: 26 },
   label: { fontFamily: family.medium, fontSize: 12, lineHeight: 16 },
   mono: {
-    fontFamily: family.monoRegular,
+    fontFamily: family.regular,
     fontSize: 14,
     fontVariant: ["tabular-nums"],
     lineHeight: 20,
   },
   monoMedium: {
-    fontFamily: family.monoMedium,
+    fontFamily: family.medium,
     fontSize: 14,
     fontVariant: ["tabular-nums"],
     lineHeight: 20,

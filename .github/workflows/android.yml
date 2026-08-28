@@ -10,16 +10,22 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   VITE_GIT_HOOKS: "0"
 
 jobs:
-  development-apk:
+  release-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: Production
     env:
+      APP_VARIANT: production
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+      EXPO_PUBLIC_AUTH_URL: ${{ vars.EXPO_PUBLIC_AUTH_URL }}
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
       GRADLE_OPTS: >-
         -Dorg.gradle.parallel=false
         -Dorg.gradle.workers.max=2
@@ -54,10 +60,23 @@ jobs:
           "build-tools;36.0.0"
           "ndk;27.1.12297006"
 
-      - name: Build arm64 development client
+      - name: Check required configuration
+        run: |
+          for name in EXPO_PUBLIC_API_URL EXPO_PUBLIC_AUTH_URL EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::$name is empty." \
+                "Set it on the Production GitHub Environment."
+              exit 1
+            fi
+          done
+          echo "EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}"
+          echo "EXPO_PUBLIC_AUTH_URL=${EXPO_PUBLIC_AUTH_URL}"
+          echo "EXPO_PUBLIC_SENTRY_DSN=${EXPO_PUBLIC_SENTRY_DSN:+set}"
+
+      - name: Build arm64 release APK
         working-directory: apps/mobile/android
         run: >-
-          ./gradlew :app:assembleDebug
+          ./gradlew :app:assembleRelease
           --no-daemon
           --max-workers=2
           -Dorg.gradle.parallel=false
@@ -66,10 +85,17 @@ jobs:
       - name: Verify APK
         working-directory: apps/mobile/android
         run: |
-          apk="app/build/outputs/apk/debug/app-debug.apk"
+          apk="app/build/outputs/apk/release/app-release.apk"
           test -f "${apk}"
           "${ANDROID_HOME}/build-tools/36.0.0/apksigner" verify --verbose "${apk}"
-          "${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "${apk}" | head -n 1
+          badging="$("${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "${apk}")"
+          echo "${badging}" | head -n 1
+          echo "${badging}" | grep -F "name='com.tabaaq.mobile'"
+          echo "${badging}" | grep -F "versionName='0."
+          if echo "${badging}" | grep -q "versionName='.*-debug'"; then
+            echo "::error::Release APK must not use a -debug versionName."
+            exit 1
+          fi
           mapfile -t native_abis < <(
             unzip -Z1 "${apk}" |
               sed -n 's#^lib/\([^/]*\)/.*#\1#p' |
@@ -79,10 +105,44 @@ jobs:
           test "${native_abis[0]}" = "arm64-v8a"
           sha256sum "${apk}"
 
-      - name: Upload development APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: tabaaq-development-arm64-${{ github.sha }}
-          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: tabaaq-android-arm64-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
+
+      - name: Publish APK to GitHub Releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          apk="apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          asset="Tabaaq-Android-${version}.apk"
+          cp "${apk}" "${asset}"
+          tag="android"
+          notes_file="$(mktemp)"
+          {
+            echo "Sideload APK for Pixel and other arm64 devices (\`com.tabaaq.mobile\`)."
+            echo
+            echo "Commit: ${{ github.sha }}"
+            echo "Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo "Desktop auto-update keeps using the latest \`v*.*.*\` release."
+          } > "${notes_file}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" "${asset}" --clobber
+            gh release edit "${tag}" \
+              --title "Tabaaq Android v${version}" \
+              --notes-file "${notes_file}" \
+              --latest=false
+          else
+            gh release create "${tag}" "${asset}" \
+              --title "Tabaaq Android v${version}" \
+              --notes-file "${notes_file}" \
+              --latest=false
+          fi
