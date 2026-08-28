@@ -78,6 +78,13 @@ export const ApiLive = Api.make(
   Effect.gen(function* () {
     const inventoryMutations = yield* InventoryMutationDatabase;
     const ai = yield* Cloudflare.Workers.AI();
+    const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
+      "INVOICE_EXTRACTION_RATE_LIMIT",
+      {
+        namespaceId: 1002,
+        simple: { limit: 10, period: 60 },
+      },
+    );
     const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
       namespaceId: 1001,
       simple: { limit: 30, period: 60 },
@@ -159,6 +166,7 @@ export const ApiLive = Api.make(
       getSession: (headers) => authenticateHeaders(headers, jwtConfig),
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
+      limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
       powerSyncUrl: powerSyncUrl.trim().replace(/\/+$/u, ""),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),

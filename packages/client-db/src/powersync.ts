@@ -437,12 +437,26 @@ export type InventoryPowerSyncLifecycle = {
   close: () => Promise<void>;
 };
 
+export const runInventoryCleanupActions = async (actions: ReadonlyArray<() => Promise<void>>) => {
+  const failures: unknown[] = [];
+  for (const action of actions) {
+    try {
+      await action();
+    } catch (cause) {
+      failures.push(cause);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Inventory cleanup failed.");
+  }
+};
+
 /** Stops sync, wipes synced rows, then closes. Call on logout or org change. */
 export const disconnectAndClearInventoryPowerSync = async (
   powerSync: InventoryPowerSyncLifecycle,
 ) => {
-  await powerSync.disconnectAndClear();
-  await powerSync.close();
+  await runInventoryCleanupActions([() => powerSync.disconnectAndClear(), () => powerSync.close()]);
 };
 
 export const INVENTORY_FIRST_SYNC_TIMEOUT_MS = 300_000;

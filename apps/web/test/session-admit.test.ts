@@ -6,6 +6,7 @@ import { hostAccess } from "../src/host-access";
 import { createAppCatalogLifetime } from "../src/lib/inventory/lifetime";
 import { makeReplayChannel } from "../src/replay-channel";
 import { getRouter } from "../src/router";
+import { loadDeviceId } from "../src/session-host";
 import type { WorkspaceSession } from "../src/session/workspace-session";
 
 const unauthenticated = unauthenticatedWorkspace({ isOnline: true });
@@ -68,5 +69,20 @@ describe("live session admit", () => {
         snapshot: router.options.context.session.current()?.snapshot ?? null,
       }),
     ).toEqual({ _tag: "Allow" });
+  });
+});
+
+describe("browser device id", () => {
+  it("falls back to a process-local id when storage is blocked", () => {
+    const blockedStorage = {
+      getItem: () => {
+        throw new DOMException("Blocked", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("Blocked", "SecurityError");
+      },
+    };
+
+    expect(loadDeviceId(blockedStorage, () => "session-device")).toBe("session-device");
   });
 });

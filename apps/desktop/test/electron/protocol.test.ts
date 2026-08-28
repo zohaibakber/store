@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
+import { developmentRendererTarget } from "../../electron/protocol";
 import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
 
 const productionPolicy = () =>
@@ -20,6 +21,7 @@ describe("desktop content security policy", () => {
 
     expect(scriptSources).toContain("'wasm-unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-eval'");
+    expect(scriptSources).not.toContain("'unsafe-inline'");
   });
 
   it("permits production PowerSync Cloud and Sentry ingest connections", () => {
@@ -34,6 +36,23 @@ describe("desktop content security policy", () => {
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
+  });
+});
+
+describe("desktop development renderer target", () => {
+  it("keeps renderer requests on the configured development origin", () => {
+    expect(
+      developmentRendererTarget(
+        "http://127.0.0.1:5174",
+        new URL("com.tabaaq.desktop://app/assets/app.js?version=1"),
+      )?.href,
+    ).toBe("http://127.0.0.1:5174/assets/app.js?version=1");
+    expect(
+      developmentRendererTarget(
+        "http://127.0.0.1:5174",
+        new URL("com.tabaaq.desktop://app//attacker.example/payload"),
+      ),
+    ).toBeNull();
   });
 });
 

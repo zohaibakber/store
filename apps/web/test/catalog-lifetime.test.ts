@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { InventoryHost } from "../src/lib/inventory-host";
 import { createCatalogLifetime, StaleCatalogLease } from "../src/lib/inventory/lifetime";
@@ -60,5 +60,34 @@ describe("catalog lifetime", () => {
     const stale = catalog.claim(scope);
     catalog.claim(scope);
     await expect(catalog.open(stale, host)).rejects.toBeInstanceOf(StaleCatalogLease);
+  });
+
+  it("coalesces repeated opens for the same lease", async () => {
+    let opens = 0;
+    let disposals = 0;
+    const catalog = createCatalogLifetime({
+      open: async () => {
+        opens += 1;
+        return {
+          dispose: async () => {
+            disposals += 1;
+          },
+        };
+      },
+      databaseName: () => "org",
+    });
+    const lease = catalog.claim(scope);
+
+    const [first, second] = await Promise.all([
+      catalog.open(lease, host),
+      catalog.open(lease, host),
+    ]);
+    const third = await catalog.open(lease, host);
+
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+    expect(opens).toBe(1);
+    catalog.release();
+    await vi.waitFor(() => expect(disposals).toBe(1));
   });
 });

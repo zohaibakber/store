@@ -8,11 +8,19 @@ import { makeReplayChannel } from "./replay-channel";
 
 const DEVICE_ID_KEY = "tabaaq-web-device-id";
 
-const loadDeviceId = () => {
-  const stored = localStorage.getItem(DEVICE_ID_KEY)?.trim();
-  if (stored) return stored;
-  const created = crypto.randomUUID();
-  localStorage.setItem(DEVICE_ID_KEY, created);
+export const loadDeviceId = (
+  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+  createId: () => string = () => crypto.randomUUID(),
+) => {
+  const created = createId();
+  try {
+    const stored = storage.getItem(DEVICE_ID_KEY)?.trim();
+    if (stored) return stored;
+    storage.setItem(DEVICE_ID_KEY, created);
+  } catch {
+    // Storage can be blocked by browser policy. A process-local identifier
+    // preserves local-first writes for this session without blocking startup.
+  }
   return created;
 };
 

@@ -572,4 +572,28 @@ describe("disconnectAndClearInventoryPowerSync", () => {
       close.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
   });
+
+  it("still closes when clearing synced rows fails", async () => {
+    const disconnectAndClear = vi.fn(async () => {
+      throw new Error("clear failed");
+    });
+    const close = vi.fn(async () => undefined);
+    await expect(
+      disconnectAndClearInventoryPowerSync({ disconnectAndClear, close }),
+    ).rejects.toThrow("clear failed");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("reports both failures after attempting every cleanup", async () => {
+    const disconnectAndClear = vi.fn(async () => {
+      throw new Error("clear failed");
+    });
+    const close = vi.fn(async () => {
+      throw new Error("close failed");
+    });
+    await expect(
+      disconnectAndClearInventoryPowerSync({ disconnectAndClear, close }),
+    ).rejects.toBeInstanceOf(AggregateError);
+    expect(close).toHaveBeenCalledOnce();
+  });
 });

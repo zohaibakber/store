@@ -52,6 +52,13 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
   let opened:
     | { readonly lease: CatalogLease; readonly replica: Replica; readonly databaseName: string }
     | undefined;
+  let opening:
+    | {
+        readonly lease: CatalogLease;
+        readonly promise: Promise<Replica>;
+        readonly databaseName: string;
+      }
+    | undefined;
   const tailByDatabase = new Map<string, Promise<void>>();
 
   const enqueue = (databaseName: string, work: () => Promise<void>): Promise<void> => {
@@ -82,9 +89,19 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
       retireOpened();
       lease = null;
     },
-    open: (requested, host) =>
-      new Promise<Replica>((resolve, reject) => {
-        const databaseName = input.databaseName(host, requested.scope);
+    open: (requested, host) => {
+      if (requested.generation !== generation) return Promise.reject(new StaleCatalogLease());
+
+      const databaseName = input.databaseName(host, requested.scope);
+      if (opened?.lease.generation === requested.generation) return Promise.resolve(opened.replica);
+      if (
+        opening?.lease.generation === requested.generation &&
+        opening.databaseName === databaseName
+      ) {
+        return opening.promise;
+      }
+
+      const promise = new Promise<Replica>((resolve, reject) => {
         void enqueue(databaseName, async () => {
           if (requested.generation !== generation) {
             reject(new StaleCatalogLease());
@@ -99,7 +116,14 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
           opened = { lease: requested, replica, databaseName };
           resolve(replica);
         }).catch(reject);
-      }),
+      });
+      opening = { lease: requested, promise, databaseName };
+      const clearOpening = () => {
+        if (opening?.promise === promise) opening = undefined;
+      };
+      void promise.then(clearOpening, clearOpening);
+      return promise;
+    },
   };
 };
 

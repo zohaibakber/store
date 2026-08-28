@@ -17,6 +17,7 @@ import {
   type InventoryHttpBridge,
 } from "./inventory-http-channels";
 import { makeLastValueReplay } from "./last-value-replay";
+import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
@@ -106,6 +107,14 @@ contextBridge.exposeInMainWorld("serverApi", {
 contextBridge.exposeInMainWorld("electronTheme", {
   setSource(source: "dark" | "light" | "system") {
     ipcRenderer.send("theme:set-source", source);
+  },
+});
+
+contextBridge.exposeInMainWorld("desktopShell", {
+  onNewSale(callback: () => void) {
+    const listener = () => callback();
+    ipcRenderer.on(NEW_SALE_CHANNEL, listener);
+    return () => ipcRenderer.off(NEW_SALE_CHANNEL, listener);
   },
 });
 

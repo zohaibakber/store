@@ -1081,6 +1081,7 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
         and(
           eq(batches.organizationId, actor.organizationId),
           eq(batches.id, take.batchId),
+          eq(batches.productId, product.id),
           isNull(batches.deletedAt),
         ),
       )

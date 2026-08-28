@@ -86,9 +86,13 @@ function ScopedProductsProvider({ children, organizationId, userId }: ProductsPr
     let cancelled = false;
     let opened: MobileInventoryCollections | undefined;
     void openMobileCatalog(organizationId)
-      .then((next) => {
+      .then(async (next) => {
+        if (cancelled) {
+          await next.dispose();
+          return;
+        }
         opened = next;
-        if (!cancelled) setCatalog(next);
+        setCatalog(next);
       })
       .catch((cause: unknown) => {
         if (!cancelled) setOpenError(authErrorMessage(cause));

@@ -1,4 +1,5 @@
 import type { InvoiceAiClient } from "@store/services";
+import * as Effect from "effect/Effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { appFor } from "../lib/app";
@@ -65,6 +66,25 @@ describe("invoice upload authorization", () => {
   it("never reaches the model when the caller is unauthorized", async () => {
     const { ai, generate } = workingAi();
     await appFor(false).request("/api/uploads", invoiceForm([pdf()]), ai);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("rate limits invoice extraction before reading or converting attachments", async () => {
+    const { ai, generate } = workingAi();
+    const limitInvoiceExtraction = vi.fn(() => Effect.succeed({ success: false }));
+
+    const response = await appFor(true, { limitInvoiceExtraction }).request(
+      "/api/uploads",
+      invoiceForm([pdf()]),
+      ai,
+    );
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      error: { code: "INVOICE_EXTRACTION_RATE_LIMITED" },
+    });
+    expect(limitInvoiceExtraction).toHaveBeenCalledWith("org-1:user-1");
+    expect(ai.toMarkdown).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
 });

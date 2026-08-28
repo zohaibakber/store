@@ -54,6 +54,15 @@ const stripHopByHopHeaders = (headers: Headers) => {
   return next;
 };
 
+export const developmentRendererTarget = (developmentServerUrl: string, requestUrl: URL) => {
+  if (requestUrl.pathname.startsWith("//")) return null;
+  const target = new URL(developmentServerUrl);
+  target.pathname = requestUrl.pathname;
+  target.search = requestUrl.search;
+  target.hash = "";
+  return target;
+};
+
 export const registerDesktopProtocolHandler = (input: {
   readonly scheme: string;
   readonly rendererRoot: string;
@@ -67,10 +76,8 @@ export const registerDesktopProtocolHandler = (input: {
     }
 
     if (input.developmentServerUrl) {
-      const target = new URL(
-        `${requestUrl.pathname}${requestUrl.search}`,
-        input.developmentServerUrl,
-      );
+      const target = developmentRendererTarget(input.developmentServerUrl, requestUrl);
+      if (!target) return new Response(null, { status: 404 });
       const init: RequestInit = {
         method: request.method,
         headers: stripHopByHopHeaders(request.headers),

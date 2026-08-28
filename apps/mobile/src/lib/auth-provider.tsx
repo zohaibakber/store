@@ -152,10 +152,20 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
 
   const signOut = useCallback(
     async (everywhere = false) => {
-      await signOutMobile(everywhere);
-      await forgetGoogleAccount();
+      let failure: unknown;
+      try {
+        await signOutMobile(everywhere);
+      } catch (cause) {
+        failure = cause;
+      }
+      try {
+        await forgetGoogleAccount();
+      } catch (cause) {
+        failure ??= cause;
+      }
       setState(signedOut);
       router.replace("/auth");
+      if (failure !== undefined) throw failure;
     },
     [router],
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isOfflineCause, OfflineError } from "../src/lib/offline";
+import { isOfflineCause, networkProbeIsDefinitelyOffline, OfflineError } from "../src/lib/offline";
 
 describe("offline cause detection", () => {
   it("recognizes explicit offline and abort errors", () => {
@@ -18,5 +18,30 @@ describe("offline cause detection", () => {
   it("does not treat unrelated errors as offline", () => {
     expect(isOfflineCause(new Error("Sign in before changing inventory."))).toBe(false);
     expect(isOfflineCause("nope")).toBe(false);
+  });
+});
+
+describe("networkProbeIsDefinitelyOffline", () => {
+  it("only reports explicit disconnected states as offline", async () => {
+    await expect(
+      networkProbeIsDefinitelyOffline(async () => ({
+        isConnected: true,
+        isInternetReachable: null,
+      })),
+    ).resolves.toBe(false);
+    await expect(
+      networkProbeIsDefinitelyOffline(async () => ({
+        isConnected: true,
+        isInternetReachable: false,
+      })),
+    ).resolves.toBe(true);
+  });
+
+  it("treats a failed probe as unknown so the real request can run", async () => {
+    await expect(
+      networkProbeIsDefinitelyOffline(async () => {
+        throw new Error("Network state unavailable");
+      }),
+    ).resolves.toBe(false);
   });
 });

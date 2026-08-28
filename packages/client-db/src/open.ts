@@ -6,6 +6,7 @@ import type { InventoryFailure } from "./inventory-failure";
 import {
   disconnectAndClearInventoryPowerSync,
   makeInventoryPowerSyncConnector,
+  runInventoryCleanupActions,
   waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
 } from "./powersync";
@@ -39,10 +40,12 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
 ) => {
   const scopeId = inventoryReplicaScope(host.apiBaseUrl, organizationId);
   const powerSync = await host.openPowerSyncDatabase(inventoryReplicaDatabaseName(scopeId));
+  let cleanupCollections: (() => Promise<void>) | undefined;
   try {
     const collections = host.bindCollections(
       inventoryPowerSyncCollectionConfigs(powerSync, scopeId),
     );
+    cleanupCollections = collections.cleanupCollections;
 
     await Promise.all([
       collections.batches.preload(),
@@ -68,18 +71,27 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
       void firstSync.catch((cause: unknown) => host.onFirstSyncError?.(cause));
     }
 
-    const { cleanupCollections, ...tables } = collections;
+    const { cleanupCollections: cleanupBoundCollections, ...tables } = collections;
     return {
       ...tables,
       powerSync,
       waitForUploadDrain: () => waitForInventoryUploadDrain(powerSync),
       dispose: async () => {
-        await cleanupCollections();
-        await disconnectAndClearInventoryPowerSync(powerSync);
+        await runInventoryCleanupActions([
+          cleanupBoundCollections,
+          () => disconnectAndClearInventoryPowerSync(powerSync),
+        ]);
       },
     };
   } catch (cause) {
-    await powerSync.close();
+    try {
+      await runInventoryCleanupActions([
+        ...(cleanupCollections ? [cleanupCollections] : []),
+        () => powerSync.close(),
+      ]);
+    } catch (cleanupCause) {
+      throw new AggregateError([cause, cleanupCause], "Catalog startup and cleanup failed.");
+    }
     throw cause;
   }
 };

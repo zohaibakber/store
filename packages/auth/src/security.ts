@@ -76,11 +76,16 @@ const isLoopbackHost = (host: string) => {
     .replace(/:\d+$/, "")
     .replace(/^\[|\]$/g, "")
     .toLowerCase();
+  const ipv4 = hostname.split(".");
+  const isIpv4Loopback =
+    ipv4.length === 4 &&
+    ipv4[0] === "127" &&
+    ipv4.every((part) => /^\d{1,3}$/u.test(part) && Number(part) <= 255);
   return (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
     hostname === "::1" ||
-    hostname.startsWith("127.")
+    isIpv4Loopback
   );
 };
 

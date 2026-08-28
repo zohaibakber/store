@@ -57,7 +57,7 @@ const uploads = HttpApiGroup.make("uploads").add(
       }),
     ),
     success: InvoiceExtraction,
-    error: [BadRequest, PayloadTooLarge, UnsupportedMediaType, BadGateway],
+    error: [BadRequest, PayloadTooLarge, UnsupportedMediaType, TooManyRequests, BadGateway],
   }).middleware(OrganizationAuth),
 );
 

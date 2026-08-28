@@ -4,6 +4,7 @@ import * as Stream from "effect/Stream";
 import * as Multipart from "effect/unstable/http/Multipart";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
+import { CurrentOrganization } from "../auth/organization";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, StoreApi } from "../http/api";
 import {
   type BadRequest,
@@ -11,6 +12,7 @@ import {
   badGateway,
   badRequest,
   payloadTooLarge,
+  tooManyRequests,
   unsupportedMediaType,
 } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
@@ -71,6 +73,18 @@ export const UploadHandlers = HttpApiBuilder.group(
     return handlers.handle(
       "extract",
       Effect.fn("UploadHandlers.extract")(function* ({ payload }) {
+        const identity = yield* CurrentOrganization;
+        const rateLimit = yield* runtime
+          .limitInvoiceExtraction(`${identity.organizationId}:${identity.user.id}`)
+          .pipe(Effect.orDie);
+        if (!rateLimit.success)
+          return yield* Effect.fail(
+            tooManyRequests(
+              "INVOICE_EXTRACTION_RATE_LIMITED",
+              "Too many invoice uploads. Try again in a minute.",
+            ),
+          );
+
         const files = yield* collectFiles(payload);
         if (files.length === 0)
           return yield* Effect.fail(

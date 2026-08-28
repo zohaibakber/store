@@ -7,7 +7,6 @@ export const makeDesktopContentSecurityPolicy = (input: {
   const scriptSources = [
     "'self'",
     "'wasm-unsafe-eval'",
-    "'unsafe-inline'",
     ...(input.development ? ["'unsafe-eval'"] : []),
     "https://challenges.cloudflare.com",
   ];

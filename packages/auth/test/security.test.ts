@@ -151,6 +151,19 @@ describe("resolveAuthSecurity", () => {
     expect(production.trustedOrigins).not.toContain("http://localhost:5173");
   });
 
+  it("does not mistake a hostname beginning with 127 for a loopback address", () => {
+    const resolved = resolveAuthSecurity({
+      ...secureInput,
+      baseURL: "http://localhost:8787",
+      trustedOrigins: ["http://127.evil.example:5173"],
+    });
+
+    expect(resolved.rejectedSettings.map((rejected) => rejected.value)).toEqual([
+      "http://127.evil.example:5173",
+    ]);
+    expect(resolved.trustedOrigins).not.toContain("http://127.evil.example:5173");
+  });
+
   it("allows HTTP only for local development origins", () => {
     const resolved = resolveAuthSecurity({
       ...secureInput,

@@ -35,7 +35,17 @@ export function SettingsScreen() {
   const confirmSignOut = () => {
     NativeAlert.alert("Sign out?", "Tabaaq needs an account, so this returns you to sign-in.", [
       { style: "cancel", text: "Cancel" },
-      { onPress: () => void signOut(), style: "destructive", text: "Sign out" },
+      {
+        onPress: () =>
+          void signOut().catch(() => {
+            NativeAlert.alert(
+              "Signed out on this device",
+              "Tabaaq could not confirm remote sign-out. Other signed-in devices may remain active.",
+            );
+          }),
+        style: "destructive",
+        text: "Sign out",
+      },
     ]);
   };
 

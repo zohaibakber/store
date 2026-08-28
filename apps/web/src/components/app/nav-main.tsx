@@ -1,7 +1,6 @@
 import { PlusSignCircleIcon, SearchIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { Link } from "@tanstack/react-router";
 
 import { useCommandMenu } from "@/components/app/command-menu";
 import { Kbd } from "@/components/ui/kbd";
@@ -14,6 +13,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 
 type AppRoute = "/" | "/products" | "/invoices";
 
@@ -26,24 +26,12 @@ export type NavMainItem = {
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const { open: openCommandMenu } = useCommandMenu();
-  const navigate = useNavigate();
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "n" && event.key !== "N") return;
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-
-      event.preventDefault();
-      if (isMobile) setOpenMobile(false);
-      void navigate({ to: "/invoices/new" });
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isMobile, navigate, setOpenMobile]);
+  useNewSaleShortcut();
 
   return (
     <SidebarGroup>

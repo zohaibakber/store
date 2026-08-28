@@ -65,6 +65,7 @@ const testRuntimeContext = Context.make(RuntimeContext, {
 export interface AppOptions {
   readonly role?: "owner" | "admin" | "member";
   readonly powerSyncUrl?: string;
+  readonly limitInvoiceExtraction?: ServerRuntimeContract["limitInvoiceExtraction"];
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
@@ -107,6 +108,8 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
             : unauthenticated,
         ),
       invoiceAi: Effect.succeed(invoiceAi),
+      limitInvoiceExtraction:
+        options.limitInvoiceExtraction ?? (() => Effect.succeed({ success: true })),
       powerSyncUrl: options.powerSyncUrl ?? "https://powersync.example",
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),

@@ -24,6 +24,9 @@ declare global {
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };
+    desktopShell?: {
+      onNewSale: (callback: () => void) => () => void;
+    };
     auth?: {
       getSession: () => Promise<WorkspaceSnapshot>;
       adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;

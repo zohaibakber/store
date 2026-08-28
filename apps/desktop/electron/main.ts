@@ -1,4 +1,3 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,8 +12,10 @@ import * as Schema from "effect/Schema";
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
+import { loadDeviceId } from "./device-id";
 import { registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
+import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
 import {
   desktopRendererOrigin,
@@ -138,18 +139,6 @@ function registerRendererCsp() {
       },
     });
   });
-}
-
-async function loadDeviceId() {
-  const file = path.join(app.getPath("userData"), "device-id");
-  try {
-    return (await readFile(file, "utf8")).trim();
-  } catch {
-    const created = crypto.randomUUID();
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, created, { mode: 0o600 });
-    return created;
-  }
 }
 
 let authTransition: Promise<void> = Promise.resolve();
@@ -395,10 +384,11 @@ void app.whenReady().then(async () => {
   registerRendererCsp();
   denyAllSessionPermissionRequests(session.defaultSession);
   registerWebContentsSecurity(allowedRendererOrigins);
+  registerNewSaleAccelerator();
   registerAuthIpc();
   registerServerIpc();
   createWindow();
-  const deviceId = await loadDeviceId();
+  const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
     auth: authBroker,

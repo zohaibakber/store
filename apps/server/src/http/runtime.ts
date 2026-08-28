@@ -31,6 +31,9 @@ export interface ServerRuntimeContract {
   ) => Effect.Effect<WorkspaceSnapshot, AuthError, RuntimeContext | Scope.Scope>;
   readonly invoiceAi: Effect.Effect<InvoiceAiClient, never, RuntimeContext>;
   readonly productScanAi: Effect.Effect<ProductScanAiClient, never, RuntimeContext>;
+  readonly limitInvoiceExtraction: (
+    key: string,
+  ) => Effect.Effect<{ readonly success: boolean }, RateLimitError, RuntimeContext>;
   readonly limitProductScan: (
     key: string,
   ) => Effect.Effect<{ readonly success: boolean }, RateLimitError, RuntimeContext>;

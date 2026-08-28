@@ -1,13 +1,55 @@
 import { withSentry } from "@sentry/react-native/expo";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
+export const publicServiceUrl = (input: {
+  readonly environmentName: string;
+  readonly isProduction: boolean;
+  readonly value: string | undefined;
+}) => {
+  const value = input.value?.trim();
+  if (!value) {
+    if (input.isProduction) {
+      throw new Error(`${input.environmentName} is required for production mobile builds.`);
+    }
+    return undefined;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${input.environmentName} must be an absolute URL.`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${input.environmentName} must not contain URL credentials.`);
+  }
+  if (input.isProduction && url.protocol !== "https:") {
+    throw new Error(`${input.environmentName} must use HTTPS for production mobile builds.`);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(`${input.environmentName} must use HTTP or HTTPS.`);
+  }
+  return value;
+};
+
 const isProductionBuild =
   process.env.EAS_BUILD_PROFILE === "production" || process.env.APP_VARIANT === "production";
 
+const apiUrl = publicServiceUrl({
+  environmentName: "EXPO_PUBLIC_API_URL",
+  isProduction: isProductionBuild,
+  value: process.env.EXPO_PUBLIC_API_URL,
+});
+const authUrl = publicServiceUrl({
+  environmentName: "EXPO_PUBLIC_AUTH_URL",
+  isProduction: isProductionBuild,
+  value: process.env.EXPO_PUBLIC_AUTH_URL,
+});
+
 const extraFromEnv = Object.fromEntries(
   Object.entries({
-    EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
-    EXPO_PUBLIC_AUTH_URL: process.env.EXPO_PUBLIC_AUTH_URL,
+    EXPO_PUBLIC_API_URL: apiUrl,
+    EXPO_PUBLIC_AUTH_URL: authUrl,
     EXPO_PUBLIC_SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN,
   }).filter(([, value]) => Boolean(value?.trim())),
 );

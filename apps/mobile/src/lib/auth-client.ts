@@ -24,7 +24,7 @@ import * as SecureStore from "expo-secure-store";
 import Storage from "expo-sqlite/kv-store";
 
 import { usableAccessToken } from "@/lib/auth-tokens";
-import { isOfflineCause, OfflineError } from "@/lib/offline";
+import { isOfflineCause, networkProbeIsDefinitelyOffline, OfflineError } from "@/lib/offline";
 
 export { usableAccessToken } from "@/lib/auth-tokens";
 
@@ -107,8 +107,7 @@ export const restoreTokens = async () => {
 };
 
 export const isDeviceOffline = async () => {
-  const state = await Network.getNetworkStateAsync();
-  return state.isConnected === false || state.isInternetReachable === false;
+  return networkProbeIsDefinitelyOffline(Network.getNetworkStateAsync);
 };
 
 const refreshTokens = async () => {

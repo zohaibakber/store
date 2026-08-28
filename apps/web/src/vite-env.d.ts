@@ -68,6 +68,9 @@ declare global {
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };
+    desktopShell?: {
+      onNewSale: (callback: () => void) => () => void;
+    };
     updater?: {
       check: () => Promise<void>;
       download: () => Promise<void>;
