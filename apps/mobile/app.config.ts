@@ -32,6 +32,23 @@ export const publicServiceUrl = (input: {
   return value;
 };
 
+export const publicGoogleWebClientId = (input: {
+  readonly isProduction: boolean;
+  readonly value: string | undefined;
+}) => {
+  const value = input.value?.trim();
+  if (!value) {
+    if (input.isProduction) {
+      throw new Error("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is required for production mobile builds.");
+    }
+    return undefined;
+  }
+  if (!/^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/iu.test(value)) {
+    throw new Error("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID must be a Google OAuth web client ID.");
+  }
+  return value;
+};
+
 const isProductionBuild =
   process.env.EAS_BUILD_PROFILE === "production" || process.env.APP_VARIANT === "production";
 
@@ -44,6 +61,10 @@ const authUrl = publicServiceUrl({
   environmentName: "EXPO_PUBLIC_AUTH_URL",
   isProduction: isProductionBuild,
   value: process.env.EXPO_PUBLIC_AUTH_URL,
+});
+publicGoogleWebClientId({
+  isProduction: isProductionBuild,
+  value: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
 });
 
 const extraFromEnv = Object.fromEntries(

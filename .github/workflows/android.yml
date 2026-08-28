@@ -16,9 +16,14 @@ env:
   VITE_GIT_HOOKS: "0"
 
 jobs:
-  eas-build:
+  development-apk:
     runs-on: ubuntu-latest
     environment: Production
+    timeout-minutes: 45
+    env:
+      GRADLE_OPTS: >-
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v7
 
@@ -31,37 +36,58 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v5
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Skip EAS CLI when GitHub is not given a token
-        id: expo
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ -z "${EXPO_TOKEN}" ]; then
-            echo "EXPO_TOKEN is unset. Builds from the Expo GitHub app do not need it."
-            echo "run=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          echo "run=true" >> "${GITHUB_OUTPUT}"
+      - name: Install Android build tools
+        run: >-
+          sdkmanager
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;27.1.12297006"
 
-      - uses: expo/expo-github-action@v8
-        if: steps.expo.outputs.run == 'true'
-        with:
-          eas-version: latest
-          packager: pnpm
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Build Android on EAS
-        if: steps.expo.outputs.run == 'true'
-        working-directory: apps/mobile
+      - name: Build arm64 development client
+        working-directory: apps/mobile/android
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_AUTH_URL: ${{ vars.EXPO_PUBLIC_AUTH_URL }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
           EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
           EXPO_PUBLIC_SENTRY_DSN: ${{ vars.EXPO_PUBLIC_SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: eas build --platform android --profile production --non-interactive --no-wait
+        run: >-
+          ./gradlew :app:assembleDebug
+          --no-daemon
+          --max-workers=2
+          -Dorg.gradle.parallel=false
+          -PreactNativeArchitectures=arm64-v8a
+
+      - name: Verify APK
+        working-directory: apps/mobile/android
+        run: |
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "${apk}"
+          "${ANDROID_HOME}/build-tools/36.0.0/apksigner" verify --verbose "${apk}"
+          "${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "${apk}" | head -n 1
+          mapfile -t native_abis < <(
+            unzip -Z1 "${apk}" |
+              sed -n 's#^lib/\([^/]*\)/.*#\1#p' |
+              sort -u
+          )
+          test "${#native_abis[@]}" -eq 1
+          test "${native_abis[0]}" = "arm64-v8a"
+          sha256sum "${apk}"
+
+      - name: Upload development APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tabaaq-development-arm64-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 3
