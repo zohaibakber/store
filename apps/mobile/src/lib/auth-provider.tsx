@@ -72,7 +72,7 @@ const authenticatedState = async (
 };
 
 export function MobileAuthProvider({ children }: PropsWithChildren) {
-  const router = useRouter();
+  const { replace } = useRouter();
   const [state, setState] = useState<MobileAuthState>({
     _tag: "Loading",
     inventoryUserId: null,
@@ -140,8 +140,8 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
     }
     setState(await authenticatedState(workspace));
     hapticSuccess();
-    router.replace("/home");
-  }, [router]);
+    replace("/home");
+  }, [replace]);
 
   const signInWithGoogle = useCallback(async () => {
     const result = await signInWithGoogleAccount();
@@ -164,10 +164,10 @@ export function MobileAuthProvider({ children }: PropsWithChildren) {
         failure ??= cause;
       }
       setState(signedOut);
-      router.replace("/auth");
+      replace("/auth");
       if (failure !== undefined) throw failure;
     },
-    [router],
+    [replace],
   );
 
   const actions = useMemo(

@@ -77,14 +77,14 @@ const extraFromEnv = Object.fromEntries(
 
 /**
  * Google's iOS SDK returns to the app through the reversed client ID, so its
- * config plugin needs that scheme at prebuild time. Without an iOS client ID
- * the plugin throws, so the app builds without Google Sign-In instead.
+ * config plugin needs that scheme at prebuild time. Android autolinks Nitro
+ * without the plugin; omitting it avoids a prebuild error when iOS is unset.
  */
 const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
 const googleSignInPlugin: NonNullable<ExpoConfig["plugins"]> = googleIosClientId
   ? [
       [
-        "@react-native-google-signin/google-signin",
+        "react-native-nitro-google-signin",
         {
           iosUrlScheme: `com.googleusercontent.apps.${googleIosClientId.replace(
             /\.apps\.googleusercontent\.com$/u,

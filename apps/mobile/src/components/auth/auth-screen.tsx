@@ -22,22 +22,55 @@ const stepKey = (route: LoginRoute | null) => route?._tag ?? "Identifier";
 export function AuthScreen() {
   const { state } = useMobileAuth();
   const colors = useColors();
-  const flow = useAuthFlow();
+  const {
+    busy,
+    code,
+    continueWithEmail,
+    email,
+    errorMessage,
+    name,
+    password,
+    resendCode,
+    route,
+    setCode,
+    setEmail,
+    setName,
+    setPassword,
+    startGoogle,
+    startOver,
+    submit,
+  } = useAuthFlow();
 
   if (state._tag === "Loading") return <LoadingScreen />;
   if (state._tag === "Authenticated") return <Redirect href="/home" />;
 
   const continueWithGoogle = () => {
     hapticSelection();
-    void flow.startGoogle();
+    void startGoogle();
   };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <AuthShell>
-        {flow.errorMessage ? <ErrorLine message={flow.errorMessage} /> : null}
-        <Animated.View entering={STEP_IN} key={stepKey(flow.route)}>
-          <AuthStep flow={flow} onGoogle={continueWithGoogle} />
+        {errorMessage ? <ErrorLine message={errorMessage} /> : null}
+        <Animated.View entering={STEP_IN} key={stepKey(route)}>
+          <AuthStep
+            busy={busy}
+            code={code}
+            continueWithEmail={continueWithEmail}
+            email={email}
+            name={name}
+            onGoogle={continueWithGoogle}
+            password={password}
+            resendCode={resendCode}
+            route={route}
+            setCode={setCode}
+            setEmail={setEmail}
+            setName={setName}
+            setPassword={setPassword}
+            startOver={startOver}
+            submit={submit}
+          />
         </Animated.View>
       </AuthShell>
     </View>
@@ -45,21 +78,45 @@ export function AuthScreen() {
 }
 
 function AuthStep({
-  flow,
+  busy,
+  code,
+  continueWithEmail,
+  email,
+  name,
   onGoogle,
+  password,
+  resendCode,
+  route,
+  setCode,
+  setEmail,
+  setName,
+  setPassword,
+  startOver,
+  submit,
 }: {
-  readonly flow: ReturnType<typeof useAuthFlow>;
+  readonly busy: boolean;
+  readonly code: string;
+  readonly continueWithEmail: () => void;
+  readonly email: string;
+  readonly name: string;
   readonly onGoogle: () => void;
+  readonly password: string;
+  readonly resendCode: () => void;
+  readonly route: LoginRoute | null;
+  readonly setCode: (value: string) => void;
+  readonly setEmail: (value: string) => void;
+  readonly setName: (value: string) => void;
+  readonly setPassword: (value: string) => void;
+  readonly startOver: () => void;
+  readonly submit: () => void;
 }) {
-  const route = flow.route;
-
   if (!route) {
     return (
       <IdentifierStep
-        busy={flow.busy}
-        email={flow.email}
-        onContinue={() => void flow.continueWithEmail()}
-        onEmailChange={flow.setEmail}
+        busy={busy}
+        email={email}
+        onContinue={continueWithEmail}
+        onEmailChange={setEmail}
         onGoogle={onGoogle}
       />
     );
@@ -69,38 +126,38 @@ function AuthStep({
     case "Password":
       return (
         <PasswordStep
-          busy={flow.busy}
+          busy={busy}
           email={route.email}
-          onPasswordChange={flow.setPassword}
-          onStartOver={flow.startOver}
-          onSubmit={() => void flow.submit()}
-          password={flow.password}
+          onPasswordChange={setPassword}
+          onStartOver={startOver}
+          onSubmit={submit}
+          password={password}
         />
       );
     case "Otp":
       return (
         <OtpStep
-          busy={flow.busy}
-          code={flow.code}
+          busy={busy}
+          code={code}
           developmentCode={route.developmentCode}
           email={route.email}
-          onCodeChange={flow.setCode}
-          onResend={() => void flow.resendCode()}
-          onStartOver={flow.startOver}
-          onSubmit={() => void flow.submit()}
+          onCodeChange={setCode}
+          onResend={resendCode}
+          onStartOver={startOver}
+          onSubmit={submit}
         />
       );
     case "Registration":
       return (
         <RegistrationStep
-          busy={flow.busy}
+          busy={busy}
           email={route.email}
-          name={flow.name}
-          onNameChange={flow.setName}
-          onPasswordChange={flow.setPassword}
-          onStartOver={flow.startOver}
-          onSubmit={() => void flow.submit()}
-          password={flow.password}
+          name={name}
+          onNameChange={setName}
+          onPasswordChange={setPassword}
+          onStartOver={startOver}
+          onSubmit={submit}
+          password={password}
         />
       );
     default: {

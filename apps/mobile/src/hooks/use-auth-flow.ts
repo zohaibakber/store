@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth-client";
 import { useMobileAuth } from "@/lib/auth-provider";
 import { hapticError } from "@/lib/haptics";
+import { reportError } from "@/lib/report-error";
 
 const nativeClient = {
   _tag: "Native" as const,
@@ -16,9 +17,8 @@ const nativeClient = {
 };
 
 export function useAuthFlow() {
-  const {
-    actions: { completeAuthentication, signInWithGoogle },
-  } = useMobileAuth();
+  const { actions } = useMobileAuth();
+  const { completeAuthentication, signInWithGoogle } = actions;
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +33,9 @@ export function useAuthFlow() {
     try {
       await operation();
     } catch (cause) {
+      if (!isOfflineCause(cause)) {
+        reportError(cause, { op: "mobile-sign-in" });
+      }
       setErrorMessage(
         isOfflineCause(cause)
           ? "You're offline. Signing in needs a connection."
