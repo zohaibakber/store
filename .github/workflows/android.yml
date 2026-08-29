@@ -21,25 +21,15 @@ jobs:
     timeout-minutes: 45
     environment: Production
     env:
-      APP_VARIANT: production
-      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-      EXPO_PUBLIC_AUTH_URL: ${{ vars.EXPO_PUBLIC_AUTH_URL }}
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
-      EXPO_PUBLIC_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+      API_URL: ${{ vars.VITE_API_URL }}
+      AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+      GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+      POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
       GRADLE_OPTS: >-
         -Dorg.gradle.parallel=false
         -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.22.0
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
 
       - uses: actions/setup-java@v6
         with:
@@ -49,9 +39,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - uses: android-actions/setup-android@v4
         with:
@@ -64,40 +51,49 @@ jobs:
           path: |
             ${{ env.ANDROID_HOME }}/platforms
             ${{ env.ANDROID_HOME }}/build-tools
-            ${{ env.ANDROID_HOME }}/ndk
-          key: android-sdk-api36-build-tools-36.0.0-ndk-27.1.12297006
+          key: android-sdk-api37-build-tools-36.0.0
 
       - name: Install Android build tools
         if: steps.android-sdk.outputs.cache-hit != 'true'
         run: >-
           sdkmanager
-          "platforms;android-36"
+          "platforms;android-37.0"
           "build-tools;36.0.0"
-          "ndk;27.1.12297006"
 
       - name: Check required configuration
         run: |
-          for name in EXPO_PUBLIC_API_URL EXPO_PUBLIC_AUTH_URL EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID; do
+          for name in API_URL AUTH_URL GOOGLE_WEB_CLIENT_ID; do
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty." \
-                "Set it on the Production GitHub Environment."
+                "Set VITE_API_URL, VITE_AUTH_URL, and GOOGLE_OAUTH_CLIENT_ID" \
+                "on the Production GitHub Environment."
               exit 1
             fi
           done
-          echo "EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}"
-          echo "EXPO_PUBLIC_AUTH_URL=${EXPO_PUBLIC_AUTH_URL}"
-          echo "EXPO_PUBLIC_SENTRY_DSN=${EXPO_PUBLIC_SENTRY_DSN:+set}"
+          echo "API_URL=${API_URL}"
+          echo "AUTH_URL=${AUTH_URL}"
 
-      - name: Build arm64 release APK
-        working-directory: apps/mobile/android
+      - name: Write local.properties
+        working-directory: apps/android
+        run: |
+          {
+            echo "sdk.dir=${ANDROID_HOME}"
+            echo "API_URL=${API_URL}"
+            echo "AUTH_URL=${AUTH_URL}"
+            echo "GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}"
+            echo "POWERSYNC_URL=${POWERSYNC_URL:-}"
+            echo "NATIVE_ORIGIN=com.tabaaq.mobile://app"
+          } > local.properties
+
+      - name: Build release APK
+        working-directory: apps/android
         run: >-
           ./gradlew :app:assembleRelease
           --max-workers=2
           -Dorg.gradle.parallel=false
-          -PreactNativeArchitectures=arm64-v8a
 
       - name: Verify APK
-        working-directory: apps/mobile/android
+        working-directory: apps/android
         run: |
           apk="app/build/outputs/apk/release/app-release.apk"
           test -f "${apk}"
@@ -110,20 +106,13 @@ jobs:
             echo "::error::Release APK must not use a -debug versionName."
             exit 1
           fi
-          mapfile -t native_abis < <(
-            unzip -Z1 "${apk}" |
-              sed -n 's#^lib/\([^/]*\)/.*#\1#p' |
-              sort -u
-          )
-          test "${#native_abis[@]}" -eq 1
-          test "${native_abis[0]}" = "arm64-v8a"
           sha256sum "${apk}"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: tabaaq-android-arm64-${{ github.sha }}
-          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          name: tabaaq-android-${{ github.sha }}
+          path: apps/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -134,14 +123,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          version="$(node -p "require('./apps/mobile/app.json').expo.version")"
-          apk="apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          version="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apps/android/app/build.gradle.kts | head -n 1)"
+          apk="apps/android/app/build/outputs/apk/release/app-release.apk"
           asset="Tabaaq-Android-${version}.apk"
           cp "${apk}" "${asset}"
           tag="android"
           notes_file="$(mktemp)"
           {
-            echo "Sideload APK for Pixel and other arm64 devices (\`com.tabaaq.mobile\`)."
+            echo "Sideload APK for Android (\`com.tabaaq.mobile\`)."
             echo
             echo "Commit: ${{ github.sha }}"
             echo "Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

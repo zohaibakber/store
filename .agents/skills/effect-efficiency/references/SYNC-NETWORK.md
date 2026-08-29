@@ -14,7 +14,7 @@ Durable Object and no `/api/sync/live` path.
 - Postgres is the catalog authority. PowerSync replicates those rows into
   durable SQLite (`powersync-inventory-<hash>.sqlite`).
 - Web and Electron open `@powersync/web` plus wa-sqlite in the renderer.
-  Expo opens `@powersync/react-native`. Electron main does not run PowerSync.
+  Native Android opens `com.powersync:core`. Electron main does not run PowerSync.
   It proxies authenticated HTTP.
 - TanStack DB collections come from `@store/client-db` via
   `powerSyncCollectionOptions`. Hosts construct `PowerSyncDatabase` and

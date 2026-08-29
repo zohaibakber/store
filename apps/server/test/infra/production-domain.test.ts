@@ -45,7 +45,7 @@ describe("resolveProductionHostname", () => {
     expect(
       resolveProductionHostname({
         VITE_API_URL: "http://localhost:8787",
-        AUTH_TRUSTED_ORIGINS: "*.example.com, exp://*",
+        AUTH_TRUSTED_ORIGINS: "*.example.com, com.tabaaq.mobile://",
       }),
     ).toBeUndefined();
   });

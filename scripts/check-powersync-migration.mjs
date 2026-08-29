@@ -23,7 +23,6 @@ const packageManifests = [
   "package.json",
   "apps/auth/package.json",
   "apps/desktop/package.json",
-  "apps/mobile/package.json",
   "apps/server/package.json",
   "apps/web/package.json",
   "packages/auth/package.json",
@@ -65,7 +64,6 @@ const dependencyFields = [
 
 const runtimeSource = [
   ...sourceFiles("apps/web/src/"),
-  ...sourceFiles("apps/mobile/src/"),
   ...sourceFiles("apps/server/src/"),
   ...sourceFiles("packages/client-db/src/"),
 ].map((path) => readFileSync(path, "utf8"));

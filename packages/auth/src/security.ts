@@ -115,7 +115,7 @@ type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly
  * CORS and native clients never parse a configured trusted origin as a URL.
  * They pattern match it. Documented values therefore include forms `new URL`
  * rejects outright: bare hosts (`app.example.com`), host wildcards
- * (`*.example.com`), and native scheme patterns (`exp://192.168.*.*:*`).
+ * (`*.example.com`), and native scheme patterns (`com.tabaaq.mobile://`).
  * Classify an entry rather than parsing it, and drop what cannot be used, so
  * one unusable value can never throw out of Worker start-up.
  */
@@ -225,10 +225,6 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     electronOrigin,
     `${mobileProtocol}://`,
     `${DEFAULT_MOBILE_DEBUG_PROTOCOL}://`,
-    // Expo Go identifies the JavaScript bundle by its changing LAN origin.
-    // Trust that scheme only while the auth server itself is in local HTTP
-    // development; production never receives this wildcard.
-    ...(secureCookies ? [] : ["exp://*"]),
   ];
 
   return {

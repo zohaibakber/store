@@ -96,7 +96,7 @@ describe("resolveAuthSecurity", () => {
     ["*.example.com", "https://*.example.com"],
     ["preview-*.example.com", "https://preview-*.example.com"],
     ["myapp://", "myapp://"],
-    ["exp://192.168.*.*:*", "exp://192.168.*.*:*"],
+    ["com.tabaaq.mobile://", "com.tabaaq.mobile://"],
   ])("accepts documented origin forms: %s", (configured, expected) => {
     const resolved = resolveAuthSecurity({ ...secureInput, trustedOrigins: [configured] });
 
@@ -170,7 +170,7 @@ describe("resolveAuthSecurity", () => {
       baseURL: "http://localhost:8787",
     });
     expect(resolved.secureCookies).toBe(false);
-    expect(resolved.trustedOrigins).toContain("exp://*");
+    expect(resolved.trustedOrigins).toContain("com.tabaaq.mobile://");
   });
 
   it("always trusts the local Android debug package", () => {
@@ -202,8 +202,6 @@ describe("matchesTrustedOrigin", () => {
     ["https://example.com", "https://example.com", true],
     ["https://api.example.com", "https://example.com", false],
     ["http://example.com", "https://example.com", false],
-    ["exp://192.168.1.100:8081", "exp://192.168.*.*:*", true],
-    ["exp://10.0.0.29:8081", "exp://192.168.*.*:*", false],
     ["com.tabaaq.desktop://app", "com.tabaaq.desktop://app", true],
     ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
     ["com.tabaaq.mobile.debug://app", "com.tabaaq.mobile.debug://", true],

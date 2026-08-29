@@ -1,7 +1,7 @@
 # Store
 
 Bun workspace for offline-first inventory: a TanStack web app, an Electron
-desktop app, an Expo mobile app, and a Cloudflare Worker API. Postgres is the
+desktop app, a native Android app, and a Cloudflare Worker API. Postgres is the
 authoritative inventory database. PowerSync streams organization-scoped rows
 into durable SQLite-backed TanStack DB collections on each client.
 
@@ -11,6 +11,9 @@ into durable SQLite-backed TanStack DB collections on each client.
   Alchemy deploys it with `Cloudflare.Website.Vite` so the production hostname
   serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
   on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
+- `apps/android` is the native Kotlin + Jetpack Compose client (`com.tabaaq.mobile`).
+  First slice: sign-in, Home / Products / Settings, catalog writes, and label
+  scan. Setup is in `apps/android/README.md`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
   preload. It loads the web renderer with hash history and keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
@@ -40,8 +43,8 @@ shell, `components/shared` holds reusable application components, and
 
 Inventory reads come from TanStack DB live queries over PowerSync SQLite.
 Web and Electron open that database in the renderer with `@powersync/web`.
-Expo uses `@powersync/react-native`. Category, product, and batch mutations
-are durably queued offline, uploaded through authenticated
+Native Android uses `com.powersync:core`. Category, product, and batch
+mutations are durably queued offline, uploaded through authenticated
 `/api/inventory/*` commands, committed in Postgres, and streamed back by
 PowerSync. The signed organization claim defines every sync stream.
 
@@ -112,10 +115,6 @@ domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 - `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
   the auth hostname is `auth.<PRODUCTION_DOMAIN>`.
 - `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
-- `EXPO_PUBLIC_API_URL`. Same origin as `VITE_API_URL`. The mobile app reads it.
-- `EXPO_PUBLIC_AUTH_URL`. Same origin as `VITE_AUTH_URL`.
-  The EAS production profile uses the EAS `production` environment, not GitHub
-  vars.
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the
   Worker).
 
@@ -124,27 +123,22 @@ Configure the Google OAuth client callback as
 to the trusted web origin or native custom scheme after PKCE verification. Web
 and desktop use that redirect flow.
 
-Mobile does not. It signs in through Google's own SDK, which presents Google's
-account picker, and posts the resulting ID token to
+Android does not. It signs in through Google Identity Services, which presents
+Google's account picker, and posts the resulting ID token to
 `POST /v1/oauth/google/native`. The Worker verifies the token with Google and
 issues the same session as every other route. That needs:
 
-- OAuth clients of type iOS and Android in the same Google Cloud project, with
-  the mobile bundle ID / package name and the Android signing SHA-1.
-- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (the web client ID, so Google mints an ID
-  token) and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` at build time. The iOS client ID
-  becomes the reversed URL scheme when `expo prebuild` runs the config plugin.
-- A development build or a release build. The SDK is native code, so Expo Go
-  cannot run it. Without `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` the app builds fine
-  and hides the Google action.
+- An Android OAuth client in the same Google Cloud project, with package
+  `com.tabaaq.mobile` and the signing SHA-1.
+- `GOOGLE_WEB_CLIENT_ID` in `apps/android/local.properties` (the web client ID,
+  so Google mints an ID token). Without it the app builds and hides the Google
+  action. Release CI writes this from `GOOGLE_OAUTH_CLIENT_ID`.
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
-Android EAS builds run from `.github/workflows/android.yml` on a push to
-`main` and on `workflow_dispatch`, and from the Expo GitHub app if that is
-connected. They stay on Expo as an internal APK. Nothing is submitted to
-Google Play. GitHub Actions `eas` still needs repository secret `EXPO_TOKEN`;
-builds started by the Expo GitHub app do not.
+Android release APKs run from `.github/workflows/android.yml` on a push to
+`main` and on `workflow_dispatch`. They build the Gradle app in `apps/android`.
+Nothing is submitted to Google Play.
 
 Desktop releases run from CI after a successful production deploy on
 `main` via electron-builder (`electron-builder --publish always`). Each run

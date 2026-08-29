@@ -41,6 +41,13 @@ release
 .dev.vars.*
 !.dev.vars.example
 
+# Native Android (apps/android). Keep examples; never commit SDK paths or Firebase keys.
+apps/android/local.properties
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/app/google-services.json
+apps/android/.kotlin/
+
 .claude/worktrees/
 
 # Alchemy local state and credentials
