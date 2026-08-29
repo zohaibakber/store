@@ -91,7 +91,6 @@ fun ScanScreen(
                     }
                 },
                 expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
-                contentPadding = TopAppBarDefaults.ContentPadding,
             )
         },
     ) { padding ->

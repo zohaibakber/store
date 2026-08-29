@@ -59,7 +59,6 @@ fun ProductEditorScreen(
                     }
                 },
                 expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
-                contentPadding = TopAppBarDefaults.ContentPadding,
             )
         },
     ) { padding ->

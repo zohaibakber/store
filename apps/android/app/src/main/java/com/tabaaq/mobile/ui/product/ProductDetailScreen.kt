@@ -61,7 +61,6 @@ fun ProductDetailScreen(
                     }
                 },
                 expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
-                contentPadding = TopAppBarDefaults.ContentPadding,
             )
         },
     ) { padding ->
