@@ -36,7 +36,7 @@ Required SDK:
 - targetSdk 36
 - minSdk 26
 - Android Gradle Plugin 9.2.0
-- Gradle 9.3.1 (wrapper)
+- Gradle 9.4.1 (wrapper)
 - Kotlin 2.2.20
 - Compose BOM 2026.08.00
 

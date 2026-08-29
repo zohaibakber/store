@@ -123,34 +123,35 @@ class SignInViewModelTest {
 }
 
 private open class RecordingAuthRemote : AuthRemote {
-    override suspend fun identify(email: String): LoginRoute = error("identify")
+    override suspend fun identify(email: String): LoginRoute = throw UnsupportedOperationException("identify")
 
     override suspend fun signInPassword(
         email: String,
         password: String,
-    ) = error("password")
+    ): TokenSet = throw UnsupportedOperationException("password")
 
     override suspend fun signInOtp(
         challengeId: String,
         code: String,
-    ) = error("otp")
+    ): TokenSet = throw UnsupportedOperationException("otp")
 
     override suspend fun register(
         email: String,
         name: String,
         password: String,
-    ) = error("register")
+    ): TokenSet = throw UnsupportedOperationException("register")
 
-    override suspend fun exchangeGoogle(idToken: String) = error("google")
+    override suspend fun exchangeGoogle(idToken: String): TokenSet = throw UnsupportedOperationException("google")
 
-    override suspend fun refresh(refreshToken: String) = error("refresh")
+    override suspend fun refresh(refreshToken: String): TokenSet = throw UnsupportedOperationException("refresh")
 
     override suspend fun signOut(
         refreshToken: String?,
         everywhere: Boolean,
     ) = Unit
 
-    override suspend fun workspace(accessToken: String) = error("workspace")
+    override suspend fun workspace(accessToken: String): WorkspaceSnapshot =
+        throw UnsupportedOperationException("workspace")
 }
 
 private class MemoryTokenStore : TokenStore {

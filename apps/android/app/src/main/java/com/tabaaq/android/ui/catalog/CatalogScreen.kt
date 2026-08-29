@@ -85,12 +85,12 @@ fun CatalogScreen(
 private fun StatusBanner(ui: CatalogUiState) {
     when {
         ui.organizationMissing -> Text(stringResource(R.string.no_organization), color = MaterialTheme.colorScheme.error)
-        ui.workspaceError != null -> Text(ui.workspaceError, color = MaterialTheme.colorScheme.error)
+        ui.workspaceError != null -> Text(requireNotNull(ui.workspaceError), color = MaterialTheme.colorScheme.error)
         ui.offline -> {
             Text(stringResource(R.string.offline_title), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(R.string.offline_body), style = MaterialTheme.typography.bodySmall)
         }
-        ui.sync.error != null -> Text(ui.sync.error, color = MaterialTheme.colorScheme.error)
+        ui.sync.error != null -> Text(requireNotNull(ui.sync.error), color = MaterialTheme.colorScheme.error)
     }
 }
 

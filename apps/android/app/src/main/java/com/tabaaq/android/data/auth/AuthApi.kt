@@ -56,12 +56,12 @@ class AuthApi(
     private val authRoot get() = InventoryHttp.authRoot(http.config.authUrl)
     private val apiRoot get() = InventoryHttp.apiRoot(http.config.apiUrl)
 
-    suspend fun identify(email: String): LoginRoute =
+    override suspend fun identify(email: String): LoginRoute =
         postAuth("$authRoot/v1/identify", http.json.encodeToString(IdentifyBody.serializer(), IdentifyBody(email))) { text ->
             decodeLoginRoute(text)
         }
 
-    suspend fun signInPassword(
+    override suspend fun signInPassword(
         email: String,
         password: String,
     ): TokenSet =
@@ -70,7 +70,7 @@ class AuthApi(
             http.json.encodeToString(PasswordSignInBody.serializer(), PasswordSignInBody(email = email, password = password)),
         ) { http.json.decodeFromString(TokenSet.serializer(), it) }
 
-    suspend fun signInOtp(
+    override suspend fun signInOtp(
         challengeId: String,
         code: String,
     ): TokenSet =
@@ -79,7 +79,7 @@ class AuthApi(
             http.json.encodeToString(OtpSignInBody.serializer(), OtpSignInBody(challengeId = challengeId, code = code)),
         ) { http.json.decodeFromString(TokenSet.serializer(), it) }
 
-    suspend fun register(
+    override suspend fun register(
         email: String,
         name: String,
         password: String,
@@ -89,19 +89,19 @@ class AuthApi(
             http.json.encodeToString(RegisterBody.serializer(), RegisterBody(email = email, name = name, password = password)),
         ) { http.json.decodeFromString(TokenSet.serializer(), it) }
 
-    suspend fun exchangeGoogle(idToken: String): TokenSet =
+    override suspend fun exchangeGoogle(idToken: String): TokenSet =
         postAuth(
             "$authRoot/v1/oauth/google/native",
             http.json.encodeToString(GoogleNativeBody.serializer(), GoogleNativeBody(idToken = idToken)),
         ) { http.json.decodeFromString(TokenSet.serializer(), it) }
 
-    suspend fun refresh(refreshToken: String): TokenSet =
+    override suspend fun refresh(refreshToken: String): TokenSet =
         postAuth(
             "$authRoot/v1/session/refresh",
             http.json.encodeToString(RefreshBody.serializer(), RefreshBody(refreshToken)),
         ) { http.json.decodeFromString(TokenSet.serializer(), it) }
 
-    suspend fun signOut(
+    override suspend fun signOut(
         refreshToken: String?,
         everywhere: Boolean,
     ) {
@@ -111,7 +111,7 @@ class AuthApi(
         ) { }
     }
 
-    suspend fun workspace(accessToken: String): WorkspaceSnapshot =
+    override suspend fun workspace(accessToken: String): WorkspaceSnapshot =
         withContext(Dispatchers.IO) {
             val response = http.execute(http.request("$apiRoot/auth/session", accessToken = accessToken))
             if (response.code == 401 || response.code == 403) {

@@ -42,8 +42,8 @@ fun HomeScreen(
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text(stringResource(R.string.syncing), style = MaterialTheme.typography.bodySmall)
                 }
-                if (ui.workspaceError != null) {
-                    Text(ui.workspaceError, color = MaterialTheme.colorScheme.error)
+                ui.workspaceError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error)
                 }
                 if (ui.offline) {
                     Text(stringResource(R.string.offline_body), style = MaterialTheme.typography.bodyMedium)
