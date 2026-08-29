@@ -3,7 +3,7 @@ package com.tabaaq.mobile.di
 import android.content.Context
 import com.tabaaq.mobile.data.auth.AuthApi
 import com.tabaaq.mobile.data.auth.AuthRepository
-import com.tabaaq.mobile.data.auth.EncryptedTokenStore
+import com.tabaaq.mobile.data.auth.createAuthTokenStore
 import com.tabaaq.mobile.data.auth.GoogleSignIn
 import com.tabaaq.mobile.data.config.AppConfig
 import com.tabaaq.mobile.data.firebase.FirebaseAuthBridge
@@ -25,7 +25,7 @@ class AppContainer(
         }
     val config = AppConfig.fromBuildConfig()
     val http = HttpSupport(config, json)
-    val tokenStore = EncryptedTokenStore(context.applicationContext, json)
+    val tokenStore = createAuthTokenStore(context, json)
     val firebaseAuth = FirebaseAuthBridge()
     val authApi = AuthApi(http)
     val authRepository = AuthRepository(authApi, tokenStore, firebaseAuth)

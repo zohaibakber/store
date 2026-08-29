@@ -14,8 +14,7 @@ powersync = "1.14.1"
 firebaseBom = "34.2.0"
 credentials = "1.5.0"
 googleid = "1.1.1"
-datastore = "1.1.7"
-securityCrypto = "1.1.0"
+datastore = "1.2.1"
 junit = "4.13.2"
 truth = "1.4.4"
 robolectric = "4.16"
@@ -42,7 +41,6 @@ androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-mani
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
-androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
 androidx-credentials-play-services = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }

@@ -103,7 +103,8 @@ const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk })
 ```
 
 The host owns secure token storage. Electron uses `safeStorage`, Android uses
-EncryptedSharedPreferences, and the browser keeps the refresh credential in an HttpOnly
+Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
+browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
 scope for Postgres mutations and PowerSync streams. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.
