@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,6 +25,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -46,6 +49,8 @@ fun ProductDetailScreen(
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val product = ui.product
+    val quantitySheetState = rememberModalBottomSheetState()
+    val detailsSheetState = rememberModalBottomSheetState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -55,6 +60,8 @@ fun ProductDetailScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
+                expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
+                contentPadding = TopAppBarDefaults.ContentPadding,
             )
         },
     ) { padding ->
@@ -121,8 +128,17 @@ fun ProductDetailScreen(
         }
     }
     if (ui.quantityOpen) {
-        ModalBottomSheet(onDismissRequest = viewModel::closeSheets) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::closeSheets,
+            sheetState = quantitySheetState,
+            sheetGesturesEnabled = true,
+        ) {
+            Column(
+                Modifier
+                    .imePadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(stringResource(R.string.edit_quantity), style = MaterialTheme.typography.titleMedium)
                 if (product?.tracksPacks == true) {
                     OutlinedTextField(
@@ -147,8 +163,17 @@ fun ProductDetailScreen(
         }
     }
     if (ui.detailsOpen) {
-        ModalBottomSheet(onDismissRequest = viewModel::closeSheets) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::closeSheets,
+            sheetState = detailsSheetState,
+            sheetGesturesEnabled = true,
+        ) {
+            Column(
+                Modifier
+                    .imePadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(stringResource(R.string.edit_batch), style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(ui.batchNumber, viewModel::setBatchNumber, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.batch_number)) })
                 OutlinedTextField(ui.expiresOn, viewModel::setExpiresOn, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.expiry_date)) })
