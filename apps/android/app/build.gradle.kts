@@ -59,6 +59,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep local/device OAuth identity stable across developer machines.
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

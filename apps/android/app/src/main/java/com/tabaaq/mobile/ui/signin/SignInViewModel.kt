@@ -23,9 +23,17 @@ data class SignInUiState(
     val code: String = "",
     val route: LoginRoute? = null,
     val busy: Boolean = false,
+    val pending: SignInPending? = null,
     val error: String? = null,
     val googleConfigured: Boolean = false,
 )
+
+enum class SignInPending {
+    Google,
+    Email,
+    Submit,
+    Resend,
+}
 
 class SignInViewModel(
     private val auth: AuthRepository,
@@ -46,7 +54,7 @@ class SignInViewModel(
     fun startOver() = _ui.update { it.copy(route = null, password = "", code = "", name = "", error = null) }
 
     fun continueWithEmail() =
-        runOp {
+        runOp(SignInPending.Email) {
             val email = AuthValidation.normalizeEmail(_ui.value.email)
             if (!AuthValidation.isEmail(email)) {
                 _ui.update { it.copy(error = "Enter a valid email.") }
@@ -56,7 +64,7 @@ class SignInViewModel(
         }
 
     fun submit() =
-        runOp {
+        runOp(SignInPending.Submit) {
             when (val route = _ui.value.route) {
                 is LoginRoute.Password -> {
                     if (!AuthValidation.isPassword(_ui.value.password)) {
@@ -88,28 +96,36 @@ class SignInViewModel(
         }
 
     fun resendCode() =
-        runOp {
+        runOp(SignInPending.Resend) {
             val route = _ui.value.route as? LoginRoute.Otp ?: return@runOp
             _ui.update { it.copy(code = "", route = auth.identify(route.email)) }
         }
 
     fun continueWithGoogle(context: Context) =
-        runOp {
+        runOp(SignInPending.Google) {
             when (val result = googleSignIn.signIn(context)) {
                 GoogleSignInResult.Cancelled -> Unit
+                GoogleSignInResult.Unavailable -> {
+                    _ui.update {
+                        it.copy(error = "Google sign-in isn't available on this build. Continue with email.")
+                    }
+                }
                 is GoogleSignInResult.Signed -> auth.completeGoogle(result.idToken)
             }
         }
 
-    private fun runOp(block: suspend () -> Unit) {
+    private fun runOp(
+        pending: SignInPending,
+        block: suspend () -> Unit,
+    ) {
         viewModelScope.launch {
-            _ui.update { it.copy(busy = true, error = null) }
+            _ui.update { it.copy(busy = true, pending = pending, error = null) }
             try {
                 block()
             } catch (error: Exception) {
                 _ui.update { it.copy(error = messageFor(error)) }
             } finally {
-                _ui.update { it.copy(busy = false) }
+                _ui.update { it.copy(busy = false, pending = null) }
             }
         }
     }

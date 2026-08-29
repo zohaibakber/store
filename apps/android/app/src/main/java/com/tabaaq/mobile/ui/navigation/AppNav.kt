@@ -2,22 +2,29 @@ package com.tabaaq.mobile.ui.navigation
 
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -44,7 +51,7 @@ import com.tabaaq.mobile.ui.settings.SettingsScreen
 import com.tabaaq.mobile.ui.settings.SettingsViewModel
 import com.tabaaq.mobile.ui.signin.SignInScreen
 import com.tabaaq.mobile.ui.signin.SignInViewModel
-import com.tabaaq.mobile.ui.theme.Motion
+import com.tabaaq.mobile.ui.theme.AppMotion
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -85,7 +92,11 @@ fun TabaaqApp(container: AppContainer) {
         )
     val auth by session.authState.collectAsStateWithLifecycle()
     when (auth) {
-        AuthState.Loading -> Scaffold(Modifier.fillMaxSize()) { }
+        AuthState.Loading -> {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
         AuthState.SignedOut -> {
             val signIn =
                 viewModel<SignInViewModel>(
@@ -107,6 +118,8 @@ private fun SignedInShell(container: AppContainer) {
         )
     val backStack = rememberNavBackStack(AppRoute.Home)
     val current = backStack.last()
+    val spatialSpec = AppMotion.defaultSpatial<IntOffset>()
+    val effectsSpec = AppMotion.defaultEffects<Float>()
     val showTabs = current is AppRoute.Home || current is AppRoute.Products || current is AppRoute.Settings
     val catalog =
         viewModel<CatalogViewModel>(
@@ -129,6 +142,7 @@ private fun SignedInShell(container: AppContainer) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.surface,
         bottomBar = {
             if (showTabs) {
                 NavigationBar {
@@ -152,8 +166,18 @@ private fun SignedInShell(container: AppContainer) {
                     rememberSaveableStateHolderNavEntryDecorator(),
                     rememberViewModelStoreNavEntryDecorator(),
                 ),
-            transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
-            popTransitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
+            transitionSpec = {
+                (slideInHorizontally(spatialSpec) { it / 5 } + fadeIn(effectsSpec)) togetherWith
+                    (slideOutHorizontally(spatialSpec) { -it / 12 } + fadeOut(effectsSpec))
+            },
+            popTransitionSpec = {
+                (slideInHorizontally(spatialSpec) { -it / 5 } + fadeIn(effectsSpec)) togetherWith
+                    (slideOutHorizontally(spatialSpec) { it / 12 } + fadeOut(effectsSpec))
+            },
+            predictivePopTransitionSpec = { _ ->
+                (slideInHorizontally(spatialSpec) { -it / 5 } + fadeIn(effectsSpec)) togetherWith
+                    (slideOutHorizontally(spatialSpec) { it / 12 } + fadeOut(effectsSpec))
+            },
             entryProvider = { key ->
                 when (key) {
                     AppRoute.Home ->
@@ -164,7 +188,6 @@ private fun SignedInShell(container: AppContainer) {
                                 onOpenProduct = ::openProduct,
                                 onOpenProducts = { openTab(AppRoute.Products) },
                                 onScan = { backStack.add(AppRoute.Scan) },
-                                onAdd = { backStack.add(AppRoute.NewProduct()) },
                             )
                         }
                     AppRoute.Products ->
@@ -188,7 +211,11 @@ private fun SignedInShell(container: AppContainer) {
                                     key = key.id,
                                     factory = ProductDetailViewModel.factory(key.id, container.catalogRepository, container.powerSync),
                                 )
-                            ProductDetailScreen(detail, onBack = { backStack.removeLastOrNull() })
+                            ProductDetailScreen(
+                                detail,
+                                contentPadding = innerPadding,
+                                onBack = { backStack.removeLastOrNull() },
+                            )
                         }
                     is AppRoute.NewProduct ->
                         NavEntry(key) {

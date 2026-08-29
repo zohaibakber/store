@@ -21,12 +21,14 @@ data class ProductEditorUi(
     val name: String = "",
     val composition: String = "",
     val strength: String = "",
+    val strengthUnit: String = "mg",
     val aisle: String = "",
-    val unitsPerPack: String = "1",
+    val unitsPerPack: String = "",
     val packPrice: String = "",
     val unitPrice: String = "",
     val categoryId: String = "",
     val categories: List<CatalogCategory> = emptyList(),
+    val tracksPacks: Boolean = true,
     val saving: Boolean = false,
     val error: String? = null,
     val createdId: String? = null,
@@ -37,11 +39,13 @@ class ProductEditorViewModel(
     powerSync: PowerSyncSession,
     draft: ProductScanResult?,
 ) : ViewModel() {
+    private val parsedStrength = parseStrength(draft?.strength)
     private val name = MutableStateFlow(draft?.name.orEmpty())
     private val composition = MutableStateFlow(draft?.composition.orEmpty())
-    private val strength = MutableStateFlow(draft?.strength.orEmpty())
+    private val strength = MutableStateFlow(parsedStrength.first)
+    private val strengthUnit = MutableStateFlow(parsedStrength.second)
     private val aisle = MutableStateFlow("")
-    private val unitsPerPack = MutableStateFlow(draft?.unitsPerPack?.toString() ?: "1")
+    private val unitsPerPack = MutableStateFlow(draft?.unitsPerPack?.toString().orEmpty())
     private val packPrice = MutableStateFlow("")
     private val unitPrice = MutableStateFlow("")
     private val categoryId = MutableStateFlow("")
@@ -51,23 +55,26 @@ class ProductEditorViewModel(
 
     val ui: StateFlow<ProductEditorUi> =
         combine(
-            combine(name, composition, strength, aisle) { n, c, s, a -> listOf(n, c, s, a) },
+            combine(name, composition, strength, strengthUnit, aisle) { n, c, s, su, a -> listOf(n, c, s, su, a) },
             combine(unitsPerPack, packPrice, unitPrice, categoryId) { u, p, up, cat -> listOf(u, p, up, cat) },
             combine(powerSync.snapshot, saving, error, createdId) { snap, sv, err, id -> Triple(snap, sv to err, id) },
         ) { text, prices, rest ->
             val snapshot = rest.first
             val (sv, err) = rest.second
             val selected = prices[3].ifBlank { snapshot.categories.firstOrNull()?.id.orEmpty() }
+            val tracksPacks = snapshot.categories.find { it.id == selected }?.tracksPacks ?: true
             ProductEditorUi(
                 name = text[0],
                 composition = text[1],
                 strength = text[2],
-                aisle = text[3],
+                strengthUnit = text[3],
+                aisle = text[4],
                 unitsPerPack = prices[0],
                 packPrice = prices[1],
                 unitPrice = prices[2],
                 categoryId = selected,
                 categories = snapshot.categories,
+                tracksPacks = tracksPacks,
                 saving = sv,
                 error = err,
                 createdId = rest.third,
@@ -86,16 +93,22 @@ class ProductEditorViewModel(
         strength.value = value
     }
 
+    fun setStrengthUnit(value: String) {
+        strengthUnit.value = value
+    }
+
     fun setAisle(value: String) {
         aisle.value = value
     }
 
     fun setUnitsPerPack(value: String) {
         unitsPerPack.value = value
+        computedUnitPrice()?.let { unitPrice.value = it }
     }
 
     fun setPackPrice(value: String) {
         packPrice.value = value
+        computedUnitPrice()?.let { unitPrice.value = it }
     }
 
     fun setUnitPrice(value: String) {
@@ -109,22 +122,33 @@ class ProductEditorViewModel(
     fun save() {
         viewModelScope.launch {
             val current = ui.value
-            val tracksPacks = current.categories.find { it.id == current.categoryId }?.tracksPacks ?: true
-            val units = current.unitsPerPack.trim().toLongOrNull()
+            val tracksPacks = current.tracksPacks
+            val units = current.unitsPerPack.trim().ifBlank { "1" }.toLongOrNull()
             if (current.name.isBlank()) {
                 error.value = "Enter a product name."
                 return@launch
             }
             if (tracksPacks && (units == null || units < 1)) {
-                error.value = "Units per pack must be a positive whole number."
+                error.value = "Units per pack must be a whole number of 1 or more."
                 return@launch
             }
             val pack = CatalogValidation.priceInPaisa(current.packPrice)
             val unit = CatalogValidation.priceInPaisa(current.unitPrice)
-            if ((current.packPrice.isNotBlank() && pack == null) || (current.unitPrice.isNotBlank() && unit == null)) {
-                error.value = "Prices must be valid non-negative amounts."
+            if (tracksPacks && current.packPrice.isNotBlank() && pack == null) {
+                error.value = "Pack price must be a valid non-negative amount."
                 return@launch
             }
+            if (current.unitPrice.isNotBlank() && unit == null) {
+                error.value = "Price must be a valid non-negative amount."
+                return@launch
+            }
+            val strengthValue = current.strength.trim()
+            val strength =
+                if (strengthValue.isBlank()) {
+                    null
+                } else {
+                    "$strengthValue${current.strengthUnit}"
+                }
             saving.value = true
             error.value = null
             try {
@@ -137,7 +161,7 @@ class ProductEditorViewModel(
                             categoryId = current.categoryId.ifBlank { null },
                             aisle = current.aisle.trim().ifBlank { null },
                             composition = current.composition.trim().ifBlank { null },
-                            strength = current.strength.trim().ifBlank { null },
+                            strength = strength,
                             unitsPerPack = if (tracksPacks) units else 1,
                             packPrice = if (tracksPacks) pack else null,
                             unitPrice = unit,
@@ -151,7 +175,27 @@ class ProductEditorViewModel(
         }
     }
 
+    private fun computedUnitPrice(): String? {
+        val units = unitsPerPack.value.trim().ifBlank { "1" }.toDoubleOrNull() ?: return null
+        val pack = packPrice.value.trim().toDoubleOrNull() ?: return null
+        if (units < 1 || packPrice.value.isBlank()) return null
+        return kotlin.math.round(pack / units).toLong().toString()
+    }
+
     companion object {
+        val strengthUnits = listOf("mg", "mcg", "g", "ml", "l")
+
+        fun parseStrength(value: String?): Pair<String, String> {
+            val raw = value?.trim().orEmpty()
+            val match = STRENGTH.matchEntire(raw)
+            return if (match == null) {
+                raw to "mg"
+            } else {
+                match.groupValues[1] to match.groupValues[2].lowercase()
+            }
+        }
+
+        private val STRENGTH = Regex("""^([\d.]+)\s*(mg|mcg|g|ml|l)$""", RegexOption.IGNORE_CASE)
         fun factory(
             catalog: CatalogRepository,
             powerSync: PowerSyncSession,

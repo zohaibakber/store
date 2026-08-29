@@ -19,6 +19,8 @@ sealed interface GoogleSignInResult {
     ) : GoogleSignInResult
 
     data object Cancelled : GoogleSignInResult
+
+    data object Unavailable : GoogleSignInResult
 }
 
 class GoogleSignIn(
@@ -39,6 +41,8 @@ class GoogleSignIn(
             GoogleSignInResult.Signed(idTokenFrom(credential))
         } catch (_: GetCredentialCancellationException) {
             GoogleSignInResult.Cancelled
+        } catch (_: NoCredentialException) {
+            GoogleSignInResult.Unavailable
         }
     }
 

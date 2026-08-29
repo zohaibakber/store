@@ -23,13 +23,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class SyncUiState(
     val connected: Boolean = false,
     val connecting: Boolean = false,
     val downloading: Boolean = false,
     val hasSynced: Boolean? = null,
+    val lastSyncedAtMillis: Long? = null,
     val error: String? = null,
 )
 
@@ -71,6 +74,7 @@ class PowerSyncSession(
                                 connecting = status.connecting,
                                 downloading = status.downloading,
                                 hasSynced = status.hasSynced,
+                                lastSyncedAtMillis = status.lastSyncedAt?.toEpochMilliseconds(),
                                 error = status.anyError?.toString(),
                             )
                     }
@@ -162,6 +166,17 @@ class PowerSyncSession(
                 row.deletedAt,
             ),
         )
+    }
+
+    suspend fun refresh() {
+        val db = database ?: return
+        db.disconnect()
+        db.connect(connector)
+        withTimeoutOrNull(10_000) {
+            db.currentStatus.asFlow().first { status ->
+                status.connected && !status.connecting && !status.downloading
+            }
+        }
     }
 
     suspend fun persistProduct(

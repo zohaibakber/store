@@ -15,8 +15,11 @@ import com.tabaaq.mobile.data.powersync.SyncUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class CatalogUiState(
     val query: String = "",
@@ -33,10 +36,12 @@ data class CatalogUiState(
 
 class CatalogViewModel(
     auth: AuthRepository,
-    powerSync: PowerSyncSession,
+    private val powerSync: PowerSyncSession,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(StockFilter.All)
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     val ui: StateFlow<CatalogUiState> =
         combine(powerSync.snapshot, powerSync.sync, auth.state, query, filter) {
@@ -67,6 +72,19 @@ class CatalogViewModel(
 
     fun setFilter(value: StockFilter) {
         filter.value = value
+    }
+
+    fun refresh() {
+        if (_refreshing.value) return
+        viewModelScope.launch {
+            _refreshing.value = true
+            try {
+                powerSync.refresh()
+                delay(500)
+            } finally {
+                _refreshing.value = false
+            }
+        }
     }
 
     companion object {

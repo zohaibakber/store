@@ -1,5 +1,8 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.tabaaq.mobile.core.auth
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -53,38 +56,47 @@ data class IdentifyBody(
 
 @Serializable
 data class PasswordSignInBody(
+    @EncodeDefault
     val _tag: String = "Password",
     val email: String,
     val password: String,
+    @EncodeDefault
     val client: NativeClient = NativeClient(),
 )
 
 @Serializable
 data class OtpSignInBody(
+    @EncodeDefault
     val _tag: String = "Otp",
     val challengeId: String,
     val code: String,
+    @EncodeDefault
     val client: NativeClient = NativeClient(),
 )
 
 @Serializable
 data class RegisterBody(
+    @EncodeDefault
     val _tag: String = "RegisterPassword",
     val email: String,
     val name: String,
     val password: String,
+    @EncodeDefault
     val client: NativeClient = NativeClient(),
 )
 
 @Serializable
 data class NativeClient(
+    @EncodeDefault
     val _tag: String = "Native",
+    @EncodeDefault
     val deviceName: String = "Tabaaq Android",
 )
 
 @Serializable
 data class GoogleNativeBody(
     val idToken: String,
+    @EncodeDefault
     val client: NativeClient = NativeClient(),
 )
 

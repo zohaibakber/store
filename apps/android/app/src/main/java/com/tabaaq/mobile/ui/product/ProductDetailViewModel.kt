@@ -132,7 +132,12 @@ class ProductDetailViewModel(
                         productId = product.id,
                         batchId = selectedBatchId.value,
                         newBatchId = newBatchId.value,
-                        packQuantity = packQuantity.value.trim().toLongOrNull() ?: -1,
+                        packQuantity =
+                            if (product.tracksPacks) {
+                                packQuantity.value.trim().toLongOrNull() ?: -1
+                            } else {
+                                0
+                            },
                         unitQuantity = unitQuantity.value.trim().toLongOrNull() ?: -1,
                         batchNumber = batchNumber.value.ifBlank { null },
                         expiresAt = ScanNormalize.expiryTimestamp(expiresOn.value.ifBlank { null }),
