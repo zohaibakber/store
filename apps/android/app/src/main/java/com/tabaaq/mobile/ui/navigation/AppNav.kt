@@ -15,14 +15,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.tabaaq.mobile.R
 import com.tabaaq.mobile.core.scan.ProductScanResult
@@ -43,20 +45,29 @@ import com.tabaaq.mobile.ui.settings.SettingsViewModel
 import com.tabaaq.mobile.ui.signin.SignInScreen
 import com.tabaaq.mobile.ui.signin.SignInViewModel
 import com.tabaaq.mobile.ui.theme.Motion
+import kotlinx.serialization.Serializable
 
-private sealed interface AppRoute {
+@Serializable
+private sealed interface AppRoute : NavKey {
+    @Serializable
     data object SignIn : AppRoute
 
+    @Serializable
     data object Home : AppRoute
 
+    @Serializable
     data object Products : AppRoute
 
+    @Serializable
     data object Settings : AppRoute
 
+    @Serializable
     data class Product(val id: String) : AppRoute
 
+    @Serializable
     data class NewProduct(val draft: ProductScanResult? = null) : AppRoute
 
+    @Serializable
     data object Scan : AppRoute
 }
 
@@ -94,7 +105,7 @@ private fun SignedInShell(container: AppContainer) {
             Tab(AppRoute.Products, R.string.nav_products, Icons.Outlined.Inventory2),
             Tab(AppRoute.Settings, R.string.nav_settings, Icons.Outlined.Settings),
         )
-    val backStack = remember { mutableStateListOf<AppRoute>(AppRoute.Home) }
+    val backStack = rememberNavBackStack(AppRoute.Home)
     val current = backStack.last()
     val showTabs = current is AppRoute.Home || current is AppRoute.Products || current is AppRoute.Settings
     val catalog =
@@ -136,6 +147,11 @@ private fun SignedInShell(container: AppContainer) {
         NavDisplay(
             backStack = backStack,
             onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+            entryDecorators =
+                listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator(),
+                ),
             transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
             popTransitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
             entryProvider = { key ->
@@ -204,6 +220,7 @@ private fun SignedInShell(container: AppContainer) {
                             )
                         }
                     AppRoute.SignIn -> NavEntry(key) { }
+                    else -> error("Unknown route: $key")
                 }
             },
         )

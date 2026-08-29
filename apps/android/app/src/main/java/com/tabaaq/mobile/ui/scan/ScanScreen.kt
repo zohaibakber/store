@@ -4,15 +4,17 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
-import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.compose.CameraXViewfinder
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.camera.lifecycle.awaitInstance
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -35,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,6 +58,8 @@ import com.tabaaq.mobile.R
 import com.tabaaq.mobile.core.scan.ProductScanResult
 import com.tabaaq.mobile.ui.theme.EmphasizedTypography
 import com.tabaaq.mobile.ui.theme.Motion
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,6 +90,7 @@ fun ScanScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
+                expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
             )
         },
     ) { padding ->
@@ -157,33 +163,42 @@ private fun CameraPane(
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     val imageCapture = remember { ImageCapture.Builder().build() }
+    val surfaceRequests = remember { MutableStateFlow<SurfaceRequest?>(null) }
+    val surfaceRequest by surfaceRequests.collectAsStateWithLifecycle()
     DisposableEffect(Unit) {
         onDispose { executor.shutdown() }
     }
-    Box(Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-                val previewView =
-                    PreviewView(viewContext).apply {
-                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(viewContext)
-                cameraProviderFuture.addListener(
-                    {
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(lifecycleOwner, androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
-                    },
-                    ContextCompat.getMainExecutor(viewContext),
-                )
-                previewView
-            },
+    LaunchedEffect(lifecycleOwner) {
+        val cameraProvider = ProcessCameraProvider.awaitInstance(context)
+        val preview =
+            Preview.Builder().build().apply {
+                setSurfaceProvider { request -> surfaceRequests.value = request }
+            }
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+            lifecycleOwner,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            preview,
+            imageCapture,
         )
+        try {
+            awaitCancellation()
+        } finally {
+            cameraProvider.unbindAll()
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        surfaceRequest?.let { request ->
+            CameraXViewfinder(
+                surfaceRequest = request,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         Column(
-            Modifier.align(Alignment.BottomCenter).padding(24.dp),
+            Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
