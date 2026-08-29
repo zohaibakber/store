@@ -1,7 +1,10 @@
 # Tabaaq Android
 
-Native Kotlin + Jetpack Compose Material 3 client. This is the start of the
-migration off Expo (`apps/mobile`). Expo stays in the repo.
+Native Kotlin + Jetpack Compose Material 3 client. This replaces the Expo
+app (`apps/mobile`) on Android. Expo is still in the tree as a reference, but
+this APK uses Play application id `com.tabaaq.mobile` — the same as Expo —
+so they cannot both be installed. A future iOS app would use a separate bundle
+id; that does not conflict with this Android package.
 
 The first slice covers sign-in, a Home / Products / Settings shell, and a live
 product list from the PowerSync Kotlin SDK. Scan, invoices, catalog edits, and
@@ -18,9 +21,9 @@ Gemini label inference are still Expo-only.
 | Schema | `@store/client-db` | Mirrored in `InventorySchema` |
 | Upload | `/api/inventory/mutations` | Same path for catalog tables. Invoice upload is not in this slice. |
 
-The auth Worker still trusts `com.tabaaq.mobile://`. This app sends
-`expo-origin: com.tabaaq.mobile://app` so existing deployments accept it.
-`applicationId` is `com.tabaaq.android` so it can sit next to the Expo APK.
+Auth origin is `com.tabaaq.mobile://app` (`expo-origin`), which the Worker
+already trusts for Expo. `applicationId` is `com.tabaaq.mobile` so this build
+can take over the existing Play listing.
 
 ## Open in Android Studio
 
@@ -32,13 +35,14 @@ The auth Worker still trusts `com.tabaaq.mobile://`. This app sends
 
 Required SDK:
 
-- compileSdk 37
+- compileSdk 37 (sdkmanager package `platforms;android-37.0`)
 - targetSdk 36
 - minSdk 26
-- Android Gradle Plugin 9.2.0
+- Android Gradle Plugin 9.2.0 (built-in Kotlin; do not apply `kotlin-android`)
 - Gradle 9.4.1 (wrapper)
 - Kotlin 2.2.20
 - Compose BOM 2026.08.00
+- JDK 17 or 21. `:core` uses toolchain 21.
 
 ## Secrets
 
@@ -61,7 +65,7 @@ omits `endpoint`.
 ### Firebase
 
 Expo already talks to Firebase project `tabaaq-67ffc` for AI. User sessions do
-not. Register an Android app with package `com.tabaaq.android` in that project,
+not. Register an Android app with package `com.tabaaq.mobile` in that project,
 download `google-services.json`, and place it at `app/google-services.json`.
 `google-services.json.example` is a shape-only file with placeholders.
 
@@ -93,4 +97,3 @@ do.
 - Invoices and sales
 - Organization settings and invitations
 - Native Google SHA / Play signing for production
-- Auth Worker allowlist for `com.tabaaq.android://`

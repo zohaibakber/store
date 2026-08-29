@@ -13,7 +13,5 @@ POWERSYNC_URL=
 ## Must match EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / GOOGLE_OAUTH_CLIENT_ID.
 GOOGLE_WEB_CLIENT_ID=
 
-## Debug vs release native origin sent as expo-origin.
-## The auth Worker currently trusts com.tabaaq.mobile:// so this app reuses that
-## origin until ANDROID_PROTOCOL is added server-side.
+## Native origin sent as expo-origin. Same protocol Expo already uses.
 NATIVE_ORIGIN=com.tabaaq.mobile://app

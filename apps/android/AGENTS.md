@@ -1,6 +1,7 @@
 # Android app
 
-Native Compose client in `apps/android`. Expo remains in `apps/mobile`.
+Native Compose client in `apps/android`. Application id is `com.tabaaq.mobile`
+(same as Expo). Expo in `apps/mobile` is the outgoing client.
 
 - JDK 17, AGP 9.2, Gradle 9.4.1, compileSdk 37, Compose BOM 2026.08.00.
 - First-party JWT auth. Firebase Auth is optional and sits beside it.

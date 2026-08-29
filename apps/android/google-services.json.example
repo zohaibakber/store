@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:353317807467:android:REPLACE_AFTER_REGISTERING_ANDROID_APP",
         "android_client_info": {
-          "package_name": "com.tabaaq.android"
+          "package_name": "com.tabaaq.mobile"
         }
       },
       "oauth_client": [],

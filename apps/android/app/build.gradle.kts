@@ -18,11 +18,11 @@ fun localProperty(
 ): String = localProperties.getProperty(key, defaultValue).orEmpty()
 
 android {
-    namespace = "com.tabaaq.android"
+    namespace = "com.tabaaq.mobile"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.tabaaq.android"
+        applicationId = "com.tabaaq.mobile"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
