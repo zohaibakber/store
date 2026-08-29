@@ -22,20 +22,20 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260822.1",
+    "@cloudflare/workers-types": "^5.20260827.1",
     "@effect/platform-bun": "4.0.0-rc.111",
     "@effect/platform-node": "4.0.0-rc.111",
     "@oxlint/plugins": "1.79.0",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "alchemy": "catalog:",
     "cross-env": "^10.1.0",
     "effect": "4.0.0-rc.111",
     "oxlint": "1.79.0",
     "tsx": "^4.23.12",
-    "turbo": "^2.10.11",
+    "turbo": "^2.10.12",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
     "vite-plus": "^0.2.9",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.127.0"
   },
   "devEngines": {
     "packageManager": {
