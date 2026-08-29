@@ -22,9 +22,9 @@ Play listing.
 
 ## Open in Android Studio
 
-1. Install Android Studio (Narwhal Feature Drop or later). AGP 9.2 needs that.
+1. Install Android Studio (Narwhal Feature Drop or later). AGP 9.3 needs that.
 2. File → Open → `apps/android`.
-3. Use JDK 17 (the project toolchain is 17; this VM also has JDK 21).
+3. Use JDK 21 (`:app` and `:core` both use `jvmToolchain(21)`).
 4. Copy `local.properties.example` to `local.properties` and set `sdk.dir`.
 5. Sync Gradle. Run the `app` configuration.
 
@@ -33,11 +33,11 @@ Required SDK:
 - compileSdk 37 (sdkmanager package `platforms;android-37.0`)
 - targetSdk 36
 - minSdk 26
-- Android Gradle Plugin 9.2.0 (built-in Kotlin; do not apply `kotlin-android`)
-- Gradle 9.4.1 (wrapper)
-- Kotlin 2.2.20
+- Android Gradle Plugin 9.3.2 (built-in Kotlin; do not apply `kotlin-android`)
+- Gradle 9.5.0 (wrapper; AGP 9.3 minimum/default)
+- Kotlin 2.4.10
 - Compose BOM 2026.08.00
-- JDK 17 or 21. `:core` uses toolchain 21.
+- JDK 21 for `:app` and `:core`. Gradle itself can run on JDK 17+.
 
 ## Secrets
 
