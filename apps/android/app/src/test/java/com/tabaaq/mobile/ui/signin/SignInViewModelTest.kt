@@ -169,4 +169,6 @@ private class MemoryTokenStore : TokenStore {
     override suspend fun writeWorkspace(snapshot: WorkspaceSnapshot?) {
         workspace = snapshot
     }
+
+    override fun deviceId() = "device-test"
 }

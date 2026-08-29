@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Card
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -31,10 +34,14 @@ import com.tabaaq.mobile.core.catalog.StockFilter
 fun CatalogScreen(
     viewModel: CatalogViewModel,
     contentPadding: PaddingValues,
+    onOpenProduct: (String) -> Unit,
+    onScan: () -> Unit,
+    onAdd: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val narrowed = ui.query.isNotBlank() || ui.filter != StockFilter.All
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
@@ -75,9 +82,11 @@ fun CatalogScreen(
             }
         } else {
             items(ui.filtered, key = { it.id }) { product ->
-                ProductCard(product)
+                ProductCard(product, onClick = { onOpenProduct(product.id) })
             }
         }
+    }
+    InventoryFabs(onScan = onScan, onAdd = onAdd, modifier = Modifier.align(Alignment.BottomEnd).padding(contentPadding))
     }
 }
 
@@ -117,8 +126,11 @@ private fun EmptyCatalog(
 }
 
 @Composable
-private fun ProductCard(product: CatalogProduct) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+private fun ProductCard(
+    product: CatalogProduct,
+    onClick: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick)) {
         ListItem(
             headlineContent = { Text(product.name) },
             supportingContent = {

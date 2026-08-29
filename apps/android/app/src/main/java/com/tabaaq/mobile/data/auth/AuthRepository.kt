@@ -5,6 +5,7 @@ import com.tabaaq.mobile.core.auth.TokenSet
 import com.tabaaq.mobile.core.auth.WorkspaceSnapshot
 import com.tabaaq.mobile.core.auth.authenticatedUser
 import com.tabaaq.mobile.core.auth.organizationId
+import com.tabaaq.mobile.core.catalog.CatalogActor
 import com.tabaaq.mobile.data.firebase.FirebaseAuthSidecar
 import com.tabaaq.mobile.data.network.HttpException
 import com.tabaaq.mobile.data.network.needsRefresh
@@ -113,6 +114,13 @@ class AuthRepository(
         }
 
     fun currentOrganizationId(): String? = (state.value as? AuthState.SignedIn)?.workspace?.organizationId()
+
+    fun currentActor(): CatalogActor? {
+        val signed = state.value as? AuthState.SignedIn ?: return null
+        val organizationId = signed.workspace.organizationId() ?: return null
+        val userId = signed.workspace.authenticatedUser()?.id ?: return null
+        return CatalogActor(organizationId = organizationId, userId = userId, deviceId = store.deviceId())
+    }
 
     private suspend fun acceptTokens(next: TokenSet) {
         tokens = next

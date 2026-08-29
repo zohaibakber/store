@@ -140,6 +140,142 @@ class PowerSyncSession(
             }
     }
 
+    suspend fun persistCategory(row: CategoryRow) {
+        val db = database ?: error("Inventory is not open.")
+        db.execute(
+            """
+            INSERT INTO categories (id, name, tracksPacks, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion, createdAt, updatedAt, deletedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            listOf(
+                row.id,
+                row.name,
+                if (row.tracksPacks) 1L else 0L,
+                row.organizationId,
+                row.createdByUserId,
+                row.updatedByUserId,
+                row.deviceId,
+                row.operationId,
+                row.rowVersion,
+                row.createdAt,
+                row.updatedAt,
+                row.deletedAt,
+            ),
+        )
+    }
+
+    suspend fun persistProduct(
+        row: ProductRow,
+        insert: Boolean,
+    ) {
+        val db = database ?: error("Inventory is not open.")
+        if (insert) {
+            db.execute(
+                """
+                INSERT INTO products (id, name, categoryId, aisle, composition, strength, unitsPerPack, packPrice, unitPrice, visible, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion, createdAt, updatedAt, deletedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                productParams(row),
+            )
+        } else {
+            db.execute(
+                """
+                UPDATE products SET name = ?, categoryId = ?, aisle = ?, composition = ?, strength = ?, unitsPerPack = ?, packPrice = ?, unitPrice = ?, visible = ?, updatedByUserId = ?, deviceId = ?, operationId = ?, rowVersion = ?, updatedAt = ? WHERE id = ?
+                """.trimIndent(),
+                listOf(
+                    row.name,
+                    row.categoryId,
+                    row.aisle,
+                    row.composition,
+                    row.strength,
+                    row.unitsPerPack,
+                    row.packPrice,
+                    row.unitPrice,
+                    if (row.visible) 1L else 0L,
+                    row.updatedByUserId,
+                    row.deviceId,
+                    row.operationId,
+                    row.rowVersion,
+                    row.updatedAt,
+                    row.id,
+                ),
+            )
+        }
+    }
+
+    suspend fun persistBatch(
+        row: BatchRow,
+        insert: Boolean,
+    ) {
+        val db = database ?: error("Inventory is not open.")
+        if (insert) {
+            db.execute(
+                """
+                INSERT INTO batches (id, productId, batchNumber, expiresAt, packQuantity, unitQuantity, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion, createdAt, updatedAt, deletedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                listOf(
+                    row.id,
+                    row.productId,
+                    row.batchNumber,
+                    row.expiresAt,
+                    row.packQuantity,
+                    row.unitQuantity,
+                    row.organizationId,
+                    row.createdByUserId,
+                    row.updatedByUserId,
+                    row.deviceId,
+                    row.operationId,
+                    row.rowVersion,
+                    row.createdAt,
+                    row.updatedAt,
+                    row.deletedAt,
+                ),
+            )
+        } else {
+            db.execute(
+                """
+                UPDATE batches SET batchNumber = ?, expiresAt = ?, packQuantity = ?, unitQuantity = ?, updatedByUserId = ?, deviceId = ?, operationId = ?, rowVersion = ?, updatedAt = ? WHERE id = ?
+                """.trimIndent(),
+                listOf(
+                    row.batchNumber,
+                    row.expiresAt,
+                    row.packQuantity,
+                    row.unitQuantity,
+                    row.updatedByUserId,
+                    row.deviceId,
+                    row.operationId,
+                    row.rowVersion,
+                    row.updatedAt,
+                    row.id,
+                ),
+            )
+        }
+    }
+
+    private fun productParams(row: ProductRow) =
+        listOf(
+            row.id,
+            row.name,
+            row.categoryId,
+            row.aisle,
+            row.composition,
+            row.strength,
+            row.unitsPerPack,
+            row.packPrice,
+            row.unitPrice,
+            if (row.visible) 1L else 0L,
+            row.organizationId,
+            row.createdByUserId,
+            row.updatedByUserId,
+            row.deviceId,
+            row.operationId,
+            row.rowVersion,
+            row.createdAt,
+            row.updatedAt,
+            row.deletedAt,
+        )
+
     suspend fun stop() {
         watchJob?.cancel()
         watchJob = null

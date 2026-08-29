@@ -1,5 +1,8 @@
 package com.tabaaq.mobile.ui.navigation
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
@@ -22,16 +25,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import com.tabaaq.mobile.R
+import com.tabaaq.mobile.core.scan.ProductScanResult
 import com.tabaaq.mobile.data.auth.AuthState
 import com.tabaaq.mobile.di.AppContainer
 import com.tabaaq.mobile.ui.catalog.CatalogScreen
 import com.tabaaq.mobile.ui.catalog.CatalogViewModel
 import com.tabaaq.mobile.ui.home.HomeScreen
+import com.tabaaq.mobile.ui.product.ProductDetailScreen
+import com.tabaaq.mobile.ui.product.ProductDetailViewModel
+import com.tabaaq.mobile.ui.product.ProductEditorScreen
+import com.tabaaq.mobile.ui.product.ProductEditorViewModel
+import com.tabaaq.mobile.ui.scan.ScanScreen
+import com.tabaaq.mobile.ui.scan.ScanViewModel
 import com.tabaaq.mobile.ui.session.SessionViewModel
 import com.tabaaq.mobile.ui.settings.SettingsScreen
 import com.tabaaq.mobile.ui.settings.SettingsViewModel
 import com.tabaaq.mobile.ui.signin.SignInScreen
 import com.tabaaq.mobile.ui.signin.SignInViewModel
+import com.tabaaq.mobile.ui.theme.Motion
 
 private sealed interface AppRoute {
     data object SignIn : AppRoute
@@ -41,6 +52,12 @@ private sealed interface AppRoute {
     data object Products : AppRoute
 
     data object Settings : AppRoute
+
+    data class Product(val id: String) : AppRoute
+
+    data class NewProduct(val draft: ProductScanResult? = null) : AppRoute
+
+    data object Scan : AppRoute
 }
 
 private data class Tab(
@@ -79,6 +96,7 @@ private fun SignedInShell(container: AppContainer) {
         )
     val backStack = remember { mutableStateListOf<AppRoute>(AppRoute.Home) }
     val current = backStack.last()
+    val showTabs = current is AppRoute.Home || current is AppRoute.Products || current is AppRoute.Settings
     val catalog =
         viewModel<CatalogViewModel>(
             factory = CatalogViewModel.factory(container.authRepository, container.powerSync),
@@ -88,22 +106,29 @@ private fun SignedInShell(container: AppContainer) {
             factory = SettingsViewModel.factory(container.authRepository),
         )
 
+    fun openTab(route: AppRoute) {
+        backStack.clear()
+        backStack.add(route)
+    }
+
+    fun openProduct(id: String) {
+        backStack.removeAll { it is AppRoute.Product || it is AppRoute.NewProduct || it is AppRoute.Scan }
+        backStack.add(AppRoute.Product(id))
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            NavigationBar {
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = current == tab.route,
-                        onClick = {
-                            if (current != tab.route) {
-                                backStack.clear()
-                                backStack.add(tab.route)
-                            }
-                        },
-                        icon = { Icon(tab.icon, contentDescription = stringResource(tab.label)) },
-                        label = { Text(stringResource(tab.label)) },
-                    )
+            if (showTabs) {
+                NavigationBar {
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = current == tab.route,
+                            onClick = { if (current != tab.route) openTab(tab.route) },
+                            icon = { Icon(tab.icon, contentDescription = stringResource(tab.label)) },
+                            label = { Text(stringResource(tab.label)) },
+                        )
+                    }
                 }
             }
         },
@@ -111,13 +136,72 @@ private fun SignedInShell(container: AppContainer) {
         NavDisplay(
             backStack = backStack,
             onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+            transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
+            popTransitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
             entryProvider = { key ->
                 when (key) {
-                    AppRoute.Home -> NavEntry(key) { HomeScreen(catalog, innerPadding) }
-                    AppRoute.Products -> NavEntry(key) { CatalogScreen(catalog, innerPadding) }
+                    AppRoute.Home ->
+                        NavEntry(key) {
+                            HomeScreen(
+                                viewModel = catalog,
+                                contentPadding = innerPadding,
+                                onOpenProduct = ::openProduct,
+                                onOpenProducts = { openTab(AppRoute.Products) },
+                                onScan = { backStack.add(AppRoute.Scan) },
+                                onAdd = { backStack.add(AppRoute.NewProduct()) },
+                            )
+                        }
+                    AppRoute.Products ->
+                        NavEntry(key) {
+                            CatalogScreen(
+                                viewModel = catalog,
+                                contentPadding = innerPadding,
+                                onOpenProduct = ::openProduct,
+                                onScan = { backStack.add(AppRoute.Scan) },
+                                onAdd = { backStack.add(AppRoute.NewProduct()) },
+                            )
+                        }
                     AppRoute.Settings ->
                         NavEntry(key) {
                             SettingsScreen(container, catalog, innerPadding, settings::signOut)
+                        }
+                    is AppRoute.Product ->
+                        NavEntry(key) {
+                            val detail =
+                                viewModel<ProductDetailViewModel>(
+                                    key = key.id,
+                                    factory = ProductDetailViewModel.factory(key.id, container.catalogRepository, container.powerSync),
+                                )
+                            ProductDetailScreen(detail, onBack = { backStack.removeLastOrNull() })
+                        }
+                    is AppRoute.NewProduct ->
+                        NavEntry(key) {
+                            val editor =
+                                viewModel<ProductEditorViewModel>(
+                                    key = "new-${key.draft?.name}",
+                                    factory = ProductEditorViewModel.factory(container.catalogRepository, container.powerSync, key.draft),
+                                )
+                            ProductEditorScreen(
+                                editor,
+                                onBack = { backStack.removeLastOrNull() },
+                                onCreated = ::openProduct,
+                            )
+                        }
+                    AppRoute.Scan ->
+                        NavEntry(key) {
+                            val scan =
+                                viewModel<ScanViewModel>(
+                                    factory = ScanViewModel.factory(container.productScan, container.powerSync),
+                                )
+                            ScanScreen(
+                                viewModel = scan,
+                                onBack = { backStack.removeLastOrNull() },
+                                onCreateFromScan = { draft ->
+                                    backStack.removeLastOrNull()
+                                    backStack.add(AppRoute.NewProduct(draft))
+                                },
+                                onOpenProduct = ::openProduct,
+                            )
                         }
                     AppRoute.SignIn -> NavEntry(key) { }
                 }

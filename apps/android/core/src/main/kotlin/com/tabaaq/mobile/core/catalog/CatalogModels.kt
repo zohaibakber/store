@@ -46,6 +46,9 @@ data class CatalogProduct(
 data class CatalogSnapshot(
     val products: List<CatalogProduct>,
     val categories: List<CatalogCategory>,
+    val productRows: List<ProductRow> = emptyList(),
+    val categoryRows: List<CategoryRow> = emptyList(),
+    val batchRows: List<BatchRow> = emptyList(),
 )
 
 data class ProductRow(

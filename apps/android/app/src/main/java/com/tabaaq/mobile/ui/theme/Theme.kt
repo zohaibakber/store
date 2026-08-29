@@ -25,5 +25,10 @@ fun TabaaqTheme(
             darkTheme -> darkColorScheme()
             else -> lightColorScheme()
         }
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = TabaaqTypography,
+        shapes = TabaaqShapes,
+        content = content,
+    )
 }

@@ -15,6 +15,8 @@ interface TokenStore {
     suspend fun readWorkspace(): WorkspaceSnapshot?
 
     suspend fun writeWorkspace(snapshot: WorkspaceSnapshot?)
+
+    fun deviceId(): String
 }
 
 class EncryptedTokenStore(
@@ -40,6 +42,14 @@ class EncryptedTokenStore(
     override suspend fun writeWorkspace(snapshot: WorkspaceSnapshot?) =
         write(WORKSPACE, snapshot, WorkspaceSnapshot.serializer())
 
+    override fun deviceId(): String {
+        val existing = prefs.getString(DEVICE, null)
+        if (!existing.isNullOrBlank()) return existing
+        val created = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString(DEVICE, created).apply()
+        return created
+    }
+
     private fun <T> decode(
         raw: String?,
         serializer: kotlinx.serialization.DeserializationStrategy<T>,
@@ -62,5 +72,6 @@ class EncryptedTokenStore(
     private companion object {
         const val TOKENS = "tokens"
         const val WORKSPACE = "workspace"
+        const val DEVICE = "device-id"
     }
 }

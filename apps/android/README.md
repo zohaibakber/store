@@ -6,9 +6,9 @@ this APK uses Play application id `com.tabaaq.mobile` — the same as Expo —
 so they cannot both be installed. A future iOS app would use a separate bundle
 id; that does not conflict with this Android package.
 
-The first slice covers sign-in, a Home / Products / Settings shell, and a live
-product list from the PowerSync Kotlin SDK. Scan, invoices, catalog edits, and
-Gemini label inference are still Expo-only.
+Home, product list, create, detail, batch edits, and label scan are in this
+app. Scan uses Firebase AI Logic (Gemini 2.5 Flash), the same path as Expo —
+not a custom model. Invoices and org admin stay out of this client.
 
 ## How this sits next to Expo
 
@@ -16,7 +16,7 @@ Gemini label inference are still Expo-only.
 | --- | --- | --- |
 | UI | React Native + `@expo/ui` | Compose Material 3 |
 | Auth | First-party JWT (`@store/auth`) + Google ID token | Same HTTP routes in Kotlin |
-| Firebase | Gemini product scan only. Not user auth. | Optional Firebase Auth beside the JWT session, once `google-services.json` is present |
+| Firebase | Gemini product scan only. Not user auth. | Same: Firebase AI Logic for scan. Firebase Auth is not required and is not the inventory session. |
 | Sync | `@powersync/react-native` | `com.powersync:core` 1.14.1 |
 | Schema | `@store/client-db` | Mirrored in `InventorySchema` |
 | Upload | `/api/inventory/mutations` | Same path for catalog tables. Invoice upload is not in this slice. |
@@ -91,9 +91,8 @@ do.
 
 ## Remaining Expo work
 
-- Product create / edit / hide
-- Batch quantity edits
-- Camera scan + Firebase AI label parse
-- Invoices and sales
+- Invoices and sales (not on Expo mobile either)
 - Organization settings and invitations
 - Native Google SHA / Play signing for production
+- App Check on Firebase AI before production quota
+- Product hide / edit of catalog fields after create

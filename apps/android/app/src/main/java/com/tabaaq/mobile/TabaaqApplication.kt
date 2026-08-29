@@ -2,6 +2,7 @@ package com.tabaaq.mobile
 
 import android.app.Application
 import com.google.firebase.FirebaseApp
+import com.tabaaq.mobile.data.firebase.FirebaseBootstrap
 import com.tabaaq.mobile.di.AppContainer
 
 class TabaaqApplication : Application() {
@@ -11,6 +12,7 @@ class TabaaqApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         runCatching { FirebaseApp.initializeApp(this) }
+        FirebaseBootstrap.start(this)
         container = AppContainer(this)
     }
 }

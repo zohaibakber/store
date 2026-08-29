@@ -62,7 +62,13 @@ object CatalogMapping {
                     )
                 }.sortedBy { it.name.lowercase() }
 
-        return CatalogSnapshot(products = mappedProducts, categories = mappedCategories)
+        return CatalogSnapshot(
+            products = mappedProducts,
+            categories = mappedCategories,
+            productRows = products,
+            categoryRows = categories,
+            batchRows = batches,
+        )
     }
 
     private fun toCatalogBatch(batch: BatchRow) =
