@@ -11,6 +11,9 @@ into durable SQLite-backed TanStack DB collections on each client.
   Alchemy deploys it with `Cloudflare.Website.Vite` so the production hostname
   serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
   on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
+- `apps/android` is a native Kotlin + Jetpack Compose client. First slice: sign-in,
+  Home / Products / Settings, and a PowerSync-backed catalog. Expo stays in
+  `apps/mobile`. Setup is in `apps/android/README.md`.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
   preload. It loads the web renderer with hash history and keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated

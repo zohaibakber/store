@@ -1,0 +1,2 @@
+-keep class com.tabaaq.android.** { *; }
+-keep class com.powersync.** { *; }
