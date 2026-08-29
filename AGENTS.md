@@ -72,7 +72,7 @@ and `vp build` (Turborepo fans them out per package).
   Electron Fuses in electron-builder's `afterPack` hook and keep
   `sandbox: true`. `ERROR:dbus/...` lines in the log are harmless. Package with
   `vp run --filter @store/desktop build` (or `release`). Do not set
-  `nodeLinker: hoisted` — that duplicates React across web and Expo.
+  `nodeLinker: hoisted` — that duplicates React across packages.
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
   stores state remotely and binds real dev-stage D1, Hyperdrive, and Postgres.

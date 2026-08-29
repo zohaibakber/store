@@ -1,18 +1,17 @@
 # Tabaaq design system
 
 Shared tokens for three clients: web (`apps/web`, Tailwind v4 + coss),
-desktop (`apps/desktop`, the same renderer in Electron), and mobile
-(`apps/mobile`, React Native + `@expo/ui`).
+desktop (`apps/desktop`, the same renderer in Electron), and Android
+(`apps/android`, Jetpack Compose Material 3).
 
 Palette, type scale, radii, and component vocabulary live here once. Web and
-desktop read them as CSS custom properties in `apps/web/src/styles.css`. Mobile
-stores the same numbers as literals in `apps/mobile/src/theme/tokens.ts`. When
-the two disagree, `styles.css` wins and the mobile tokens are wrong.
+desktop read them as CSS custom properties in `apps/web/src/styles.css`. Android
+mirrors the same numbers in Compose. When the two disagree, `styles.css` wins.
 
 Component recipes come from [coss ui](https://coss.com/ui) (Base UI + Tailwind),
-which is already what `apps/web/src/components/ui` is. Mobile does not rebuild
+which is already what `apps/web/src/components/ui` is. Android does not rebuild
 coss. It reuses coss slot names, variants, and states, then paints them with
-native primitives.
+Compose.
 
 ---
 
@@ -39,9 +38,8 @@ native primitives.
 ### 2.1 Semantic tokens
 
 Light and dark, sourced from `apps/web/src/styles.css`. Hex columns are the
-resolved sRGB values that mobile uses (Tailwind v4 ships oklch; React Native
-cannot parse it, so the mobile token file stores the converted hex and the
-conversion is documented in that file).
+resolved sRGB values Android uses (Tailwind v4 ships oklch; Compose takes the
+converted hex).
 
 | Token                   | Web variable               | Light                   | Dark                    | Use                                     |
 | ----------------------- | -------------------------- | ----------------------- | ----------------------- | --------------------------------------- |
@@ -71,7 +69,7 @@ conversion is documented in that file).
 | `input`                 | `--input`                  | `#0000001a` (black 10%) | `#ffffff14` (white 8%)  | Control borders, switch off             |
 | `ring`                  | `--ring`                   | `#a1a1a1` (neutral-400) | `#737373` (neutral-500) | Focus ring                              |
 
-Mobile-only additions. Web has no camera, and expresses the third as a literal
+Android-only additions. Web has no camera, and expresses the third as a literal
 `text-white` rather than a variable:
 
 | Token        | Light       | Dark        | Use                                 |
@@ -88,7 +86,7 @@ feed, not a themed panel.
 
 Two derived helpers exist instead of extra tokens:
 
-- `alpha(token, fraction)`. Mobile stand-in for Tailwind's `/nn` opacity
+- `alpha(token, fraction)`. Android stand-in for Tailwind's `/nn` opacity
   suffix. `alpha(destructive, 0.08)` matches `bg-destructive/8`.
 - Status surfaces use exactly the coss Alert recipe: fill
   `alpha(status, 0.06)`, border `alpha(status, 0.32)`, icon `status`, title
@@ -108,32 +106,20 @@ These break the "same product on every platform" rule and must never appear:
 - Material `primaryContainer` / `tertiaryContainer` / `secondaryContainer`
   tinted icon chips as decoration.
 
-Instead: `Host seedColor={primary}` on every `@expo/ui` host. On Android that
-generates a neutral Material 3 palette (`SchemeTonalSpot` from our neutral seed)
-for anything Compose paints on its own: ripples, chips, indicators, search bar.
-On iOS the same prop becomes the SwiftUI tint, so native controls stop being
-blue. Everything else is painted explicitly from the token table.
-
-Native views outside an `@expo/ui` host have no seed to inherit, so they need
-every tint named. `NativeTabs` is the one that matters: left alone it is
-systemBlue on iOS and wallpaper-derived on Android, so `tintColor`, `iconColor`,
-`indicatorColor`, `rippleColor` and the label colors are all set from the
-palette. The same goes for React Navigation's theme, which ships iOS blue as
-`primary` and is rebuilt from the palette in `app/_layout.tsx`.
+On Android, seed Material 3 from the same neutral `primary` so ripples, chips,
+indicators, and search stay on the token table. Do not let Material You or
+system accent leak in.
 
 ### 2.3 Dark mode
 
-Follows the device; there is no in-app toggle
-(`apps/mobile/src/theme/appearance.ts` calls `Appearance.setColorScheme("unspecified")`).
-Every `@expo/ui` `Host` receives `colorScheme` so the native subtree flips with
-the JS tree instead of one frame later.
+Follows the device; there is no in-app toggle.
 
 ---
 
 ## 3. Typography
 
-- **Sans:** Inter. `Inter_400Regular` and `Inter_500Medium` on mobile,
-  `"Inter Variable"` via `@fontsource-variable/inter` on web.
+- **Sans:** Inter. `"Inter Variable"` via `@fontsource-variable/inter` on web;
+  the same family on Android.
 - **Mono:** Geist Mono (`GeistMono_400Regular`, `GeistMono_500Medium`;
   `"Geist Mono Variable"` on web). Use it for code, IDs, prices, and counts
   that should align in a column. JetBrains Mono is fine where a package already
@@ -142,16 +128,16 @@ the JS tree instead of one frame later.
 - **Scale:** 12 / 14 / 16 / 18 / 24. Body is 14, small is 12. Nothing else.
   Do not introduce 20, 22 or anything ≥ 28.
 
-| Role       | Size / line height | Weight | Web utility | Mobile variant |
-| ---------- | ------------------ | ------ | ----------- | -------------- |
-| Title      | 24 / 30            | 500    | `text-2xl`  | `title`        |
-| Heading    | 18 / 26            | 500    | `text-lg`   | `heading`      |
-| Subheading | 16 / 24            | 500    | `text-base` | `subheading`   |
-| Body       | 14 / 20            | 400    | `text-sm`   | `body`         |
-| Body med.  | 14 / 20            | 500    | `text-sm`   | `bodyMedium`   |
-| Caption    | 12 / 16            | 400    | `text-xs`   | `caption`      |
-| Label      | 12 / 16            | 500    | `text-xs`   | `label`        |
-| Mono       | 14 / 20            | 400    | `font-mono` | `mono`         |
+| Role       | Size / line height | Weight | Web utility | Android role |
+| ---------- | ------------------ | ------ | ----------- | ------------ |
+| Title      | 24 / 30            | 500    | `text-2xl`  | `title`      |
+| Heading    | 18 / 26            | 500    | `text-lg`   | `heading`    |
+| Subheading | 16 / 24            | 500    | `text-base` | `subheading` |
+| Body       | 14 / 20            | 400    | `text-sm`   | `body`       |
+| Body med.  | 14 / 20            | 500    | `text-sm`   | `bodyMedium` |
+| Caption    | 12 / 16            | 400    | `text-xs`   | `caption`    |
+| Label      | 12 / 16            | 500    | `text-xs`   | `label`      |
+| Mono       | 14 / 20            | 400    | `font-mono` | `mono`       |
 
 Rules: sentence case everywhere. No `textTransform: "uppercase"` and no
 letter-spaced micro-labels. They read as marketing chrome. Tabular numerals
@@ -176,8 +162,8 @@ matches `apps/web/src/styles.css`:
 | `3xl`  | `radius * 2.2` | 22  | Full-bleed media               |
 | `full` | fixed          | 999 | Pills, avatars, FABs           |
 
-React Native must set `borderCurve: "continuous"` wherever it sets
-`borderRadius`.
+Compose uses the same radii. Prefer continuous corners where the platform
+offers them.
 
 ### Spacing
 
@@ -201,37 +187,30 @@ React Native must set `borderCurve: "continuous"` wherever it sets
 | List row (two lines)           | 64                 |
 | Product row (avatar + 2 lines) | 68                 |
 
-Minimum touch target is 44 × 44. Extend with `hitSlop`, not with padding that
+Minimum touch target is 44 × 44. Extend the hit target, not padding that
 inflates the visual box.
 
 ### Borders and elevation
 
 Hairline `border` on the same surface; never a shadow to signal grouping. The
 only shadows in the product are the FAB and native sheets, both platform
-defaults. Where web uses `shadow-xs/5` + a 1 px inset highlight, mobile uses a
+defaults. Where web uses `shadow-xs/5` + a 1 px inset highlight, Android uses a
 1 px `border`/`input` hairline. Same edge, no fake light source.
 
 ### Motion
 
 - Press: scale `0.97`, 120 ms, `cubic-bezier(0.23, 1, 0.32, 1)`.
 - Enter / step change: fade + 8 px rise, 200 ms.
-- Reduced motion: dim to `0.72` opacity instead of scaling; honour
-  `useReducedMotion()` / `ReduceMotion.System`.
+- Reduced motion: dim to `0.72` opacity instead of scaling.
 - Animate `transform` and `opacity` only. Never height, width or margin.
-- Press state lives in a Reanimated shared value (`pressed`: 0 → 1); the scale is
-  `interpolate`d from it, so pressing never triggers a React render.
 
 ---
 
 ## 5. Component recipes
 
-Each recipe lists the coss anatomy, then how web/desktop and mobile realise it.
-Mobile primitives live in `apps/mobile/src/components/ui/`.
-
-That directory is the mobile end of this document, the same way
-`apps/web/src/components/ui` is the web end. A recipe below with no caller yet
-(`Switch`, `FieldError` at the time of writing) is inventory, not dead code.
-The next screen should not have to invent a control that already belongs here.
+Each recipe lists the coss anatomy, then how web/desktop and Android realise
+it. Web primitives live in `apps/web/src/components/ui`. Android paints the same
+slots in Compose.
 
 ### Button
 
@@ -249,18 +228,6 @@ coss: `Button` with `variant` × `size`, `loading`, and inline icons.
 Sizes: `default` 48, `sm` 40, `icon` 40 square. Radius `lg` (`md` for `sm`).
 Disabled is `opacity: 0.64`, never a different color. `loading` swaps the label
 for a spinner in the label's color and keeps the width.
-
-Mobile is a **compound** component, because a `Pressable` is not a text node:
-
-```tsx
-<Button variant="outline" size="sm" onPress={retry}>
-  <ButtonIcon name="refresh" />
-  <ButtonText>Retry</ButtonText>
-</Button>
-```
-
-`ButtonIcon` takes a name from the shared `ui/icon` set (§7), not a platform
-symbol name. The label and the glyph are drawn by the same renderer.
 
 No boolean props like `isPrimary` / `isDanger`. One `variant` union.
 
@@ -298,8 +265,7 @@ padding 14/12, `gap: 8`. Leading dot or icon in `status`. Title `bodyMedium`
 
 ### Badge
 
-coss: `Badge` with `variant` and `size`. Because a badge _is_ a text node, mobile
-implements it as a styled `Text` and accepts a string child.
+coss: `Badge` with `variant` and `size`. A badge is a text node.
 
 | Variant     | Fill                      | Text                    |
 | ----------- | ------------------------- | ----------------------- |
@@ -316,7 +282,7 @@ radius, no uppercase.
 ### Switch
 
 coss: track `primary` when checked, `input` when unchecked; thumb `background`.
-Mobile uses the platform `Switch` with exactly those three colors, so the
+Android uses the platform switch with exactly those three colors, so the
 gesture, size and animation stay native while the color is ours.
 
 ### Tabs
@@ -324,52 +290,29 @@ gesture, size and animation stay native while the color is ours.
 Web/desktop: coss `Tabs`. `ghost`-weight triggers, `foreground` when active,
 `mutedForeground` otherwise, 2 px `primary` indicator.
 
-Mobile: `expo-router` `NativeTabs`. A real `UITabBar` on iOS, a Material
-navigation bar on Android, one component for both. Painted as: `tintColor`
-`foreground` (this is what replaces systemBlue and Material You), icons
-`mutedForeground` → `foreground` when selected, labels `caption` 12 with the
-same pair, Android indicator and ripple `accent`, hairline `border`. A border,
-not an elevation shadow.
-
-The bar fill differs by platform. iOS keeps the `systemChromeMaterial` blur so
-a list stays visible scrolling under it. Android has no blur material, so it
-uses an opaque `card`. Blur is translucency, not a hue, so it does not add a
-color the palette did not pick.
-
-Selection should look different per platform. iOS swaps each outline SF Symbol
-for its filled twin. Material lacks a filled twin for two of the three glyphs,
-so Android carries selection in the indicator and icon color. Same palette,
-each platform's usual selection cues.
-
-Two things not to do. Don't draw the tab bar yourself. No floating pill, no
-Compose toolbar over a hidden `NativeTabs`, no JS fallback. And don't animate a
-tab change: selecting a tab is a switch, not a push, so the root screen of each
-tab stack sets `animation: "none"`.
+Android: Material navigation bar. Icons `mutedForeground` → `foreground` when
+selected, labels `caption` 12 with the same pair, indicator and ripple `accent`,
+hairline `border`. Opaque `card` fill. No floating pill and no wallpaper-derived
+Material You tint.
 
 ### List
 
 Web/desktop: coss `Table` for data, `Card` + `Separator` for settings groups.
 
-Mobile:
+Android:
 
-- Grouped settings and summaries → `RowGroup` + `Row`: one bordered `card`
-  surface with hairline separators, the same shape the web builds from `Card` +
-  `Separator`. Not `@expo/ui` `List`/`ListItem`. See §6.3 for why.
-- Long catalogs → `FlashList` with a token-painted `ProductRow` taking
-  primitives only.
+- Grouped settings and summaries → one bordered `card` surface with hairline
+  separators, the same shape the web builds from `Card` + `Separator`.
+- Long catalogs → a virtualized list with a token-painted product row.
 - Section header: `label` type, `mutedForeground`, sentence case, 16 gutter.
 - Rows separate with a hairline `border` inset past the leading slot.
-- The chevron is an explicit `RowChevron` in the trailing slot, not something
-  inferred from `onPress`. A row that reveals a value is tappable and goes
-  nowhere; it must not promise a screen.
 
 ### Sheet
 
 Web/desktop: coss `Sheet` / `Drawer` (`popover` surface, `ghost` close button in
 the footer).
 
-Mobile: native `Modal` with `presentationStyle="formSheet"` (iOS) /
-`"pageSheet"` (Android), not a JS bottom sheet. Surface `popover`, radius
+Android: a native modal sheet, not a custom scrim. Surface `popover`, radius
 `2xl`, 24 padding, title `heading`, body `body`/`mutedForeground`, actions
 stacked with the confirm as `default` and the dismiss as `ghost`.
 
@@ -409,40 +352,17 @@ padding, at most one action.
 
 ---
 
-## 6. Mobile structure rules
+## 6. Android structure rules
 
-1. Every `@expo/ui` tree is wrapped in `Host` with `colorScheme` **and**
-   `seedColor={primary}`. Missing `seedColor` is how wallpaper color leaks in.
-2. `@expo/ui/jetpack-compose` imports only in `*.android.tsx`;
-   `@expo/ui/swift-ui` only in `*.ios.tsx`. `Host` always comes from `@expo/ui`.
-3. **Native where the platform owns the interaction; shared everywhere else.**
-   Native structure is used for navigation chrome (`NativeTabs` and native
-   stacks), headers and large titles, FABs, sheets, switches, pull-to-refresh,
-   keyboard handling, and the camera. Screen _content_ is drawn by React Native
-   from the shared primitives in one file, so both platforms render the same
-   hierarchy.
-
-   The previous build had a `*.android.tsx` twin for every screen. Those twins
-   let Material You colors, a second type scale, and a different information
-   hierarchy into Android without anyone noticing. A platform split may differ
-   in structure. It may never differ in palette, type, radius, copy, or
-   hierarchy. If a split only changes colors, delete it.
-
-4. Scrolling: `contentInsetAdjustmentBehavior="automatic"` on the root scroller;
-   no `SafeAreaView` wrappers, no manual `insets.top` padding on iOS. Let the
-   tab bar inset the content itself. iOS insets its first scroll view
-   automatically and Android sits the content above the bar, so
-   `disableAutomaticContentInsets` should stay off and bottom padding should
-   only ever budget for what _we_ draw over the content. See
-   `hooks/use-overlay-insets`.
-5. Lists: virtualize everything (`FlashList`), pass primitives to rows, keep
-   rows free of queries and context, hoist callbacks to the list root.
-6. Never store scroll or press position in `useState`.
-7. React Compiler is enabled (`app.json` → `experiments.reactCompiler`), so skip
-   manual `memo`/`useCallback`, destructure functions from hooks at the top of
-   render, and use `.get()` / `.set()` on shared values.
-8. `Pressable`, never `TouchableOpacity`.
-9. Mobile is auth-required. There is no guest inventory and no unauthenticated
+1. Seed Material 3 from the same neutral `primary`. Missing seed is how
+   wallpaper color leaks in.
+2. Native structure for navigation chrome, headers, FABs, sheets, switches,
+   pull-to-refresh, keyboard handling, and the camera. Screen content uses the
+   same tokens as web.
+3. A platform split may differ in structure. It may never differ in palette,
+   type, radius, copy, or hierarchy.
+4. Virtualize long lists. Keep rows free of queries.
+5. Android is auth-required. There is no guest inventory and no unauthenticated
    surface other than the auth flow itself.
 
 ---
@@ -452,19 +372,10 @@ padding, at most one action.
 - **Web / desktop.** Hugeicons via `<HugeiconsIcon icon={…} />` from
   `@hugeicons/react` with `@hugeicons/core-free-icons`. No numeric `size` prop;
   size via `size-*` utilities. Decorative icons get `aria-hidden="true"`.
-- **Mobile.** Split by who draws the pixel.
-  - _Native chrome_ such as tab bars and FABs uses platform symbols, because the
-    platform owns the container: SF Symbols on iOS
-    (`sf={{ default, selected }}`), Material Symbols on Android (`md="…"`, glyph
-    names from `expo-symbols`). Compose components that take a drawable instead
-    read vector XML from `src/assets/icons`. Keep that directory to drawables
-    something actually imports; an unreferenced one still ships in the APK.
-  - _Everything React Native draws_ uses the shared `ui/icon` set: one stroke
-    family on a 24 grid at 1.5 weight, so a row on Android and the same row on
-    iOS match each other and the Hugeicons weight on web.
-- Either way the metrics are the same: **20 px** inline, **24 px** in a list
-  leading slot, tinted `foreground` or `mutedForeground`, never a platform
-  accent. Icons never carry information the label doesn't.
+- **Android.** Material Symbols or vector drawables at the same metrics: **20 px**
+  inline, **24 px** in a list leading slot, tinted `foreground` or
+  `mutedForeground`, never a platform accent. Icons never carry information the
+  label doesn't.
 - One icon per row maximum. Tinted icon chips as decoration are out.
 
 ---
@@ -478,8 +389,7 @@ Before shipping UI in any client:
 - [ ] `primary` is neutral. If something is blue, it is `info` and it means
       "information".
 - [ ] Font sizes are in {12, 14, 16, 18, 24}; weights in {400, 500}.
-- [ ] Radius comes from the scale, and `borderCurve: "continuous"` accompanies
-      it on native.
+- [ ] Radius comes from the scale.
 - [ ] Spacing is `gap` on parents, screen gutter 16.
 - [ ] One filled button per screen region; the rest `outline`/`ghost`.
 - [ ] Variant unions instead of boolean props; compound parts instead of
@@ -487,4 +397,4 @@ Before shipping UI in any client:
 - [ ] Empty, loading and error states exist and use `Empty` / `Spinner` /
       `Alert`.
 - [ ] Touch targets ≥ 44; reduced motion respected.
-- [ ] Android and iOS screenshots read as the same product as the web app.
+- [ ] Android screenshots read as the same product as the web app.

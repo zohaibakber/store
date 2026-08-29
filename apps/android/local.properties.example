@@ -1,7 +1,7 @@
 ## Copy to local.properties (gitignored). Android Studio also writes sdk.dir here.
 sdk.dir=/Users/YOU/Library/Android/sdk
 
-## First-party auth + inventory API. Same origins Expo reads from EXPO_PUBLIC_*.
+## First-party auth + inventory API. Same origins as VITE_AUTH_URL / VITE_API_URL.
 AUTH_URL=http://10.0.2.2:8788
 API_URL=http://10.0.2.2:8787
 
@@ -10,8 +10,8 @@ API_URL=http://10.0.2.2:8787
 POWERSYNC_URL=
 
 ## Google Identity Services web client ID. Required for the native Google button.
-## Must match EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / GOOGLE_OAUTH_CLIENT_ID.
+## Must match GOOGLE_OAUTH_CLIENT_ID.
 GOOGLE_WEB_CLIENT_ID=
 
-## Native origin sent as expo-origin. Same protocol Expo already uses.
+## Native origin sent as expo-origin. Worker trusts com.tabaaq.mobile://
 NATIVE_ORIGIN=com.tabaaq.mobile://app

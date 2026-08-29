@@ -4,7 +4,7 @@
   policy, and the shared Effect client.
 - `client-db`. Catalog replica open, catalog writes, PowerSync configuration,
   row models, and authenticated Postgres mutation clients for web, Electron,
-  and Expo.
+  and native Android.
 - `contracts`. Public data contracts grouped into `server`, `store`, and catalog
   write domains.
 - `db`. Drizzle schemas and migrations for authentication and authoritative
@@ -16,5 +16,5 @@ Package tests mirror the source domains under `test`.
 
 `@store/client-db` owns `openCatalog`. Hosts supply a PowerSync database factory
 and authenticated fetch. Web and Electron use `@powersync/web` plus wa-sqlite in
-the renderer. Expo uses `@powersync/react-native`. Electron's main process does
-not open the catalog database; it proxies HTTP.
+the renderer. Native Android uses `com.powersync:core`. Electron's main process
+does not open the catalog database; it proxies HTTP.

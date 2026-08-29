@@ -5,7 +5,7 @@
 Tabaaq used to delegate identity, sessions, organizations, UI state, and token
 refresh to Clerk. That kept the first release small, and it also spread vendor
 IDs and lifecycle rules through the API, Electron main process, React renderer,
-Expo app, synchronization, deployment config, and CSP.
+Android app, synchronization, deployment config, and CSP.
 
 First-party auth owns those concerns now. An authenticated organization ID
 still scopes the same Postgres rows, PowerSync streams, and local replica on
@@ -102,8 +102,8 @@ request path.
 const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk });
 ```
 
-The host owns secure token storage. Electron uses `safeStorage`, Expo uses
-SecureStore, and the browser keeps the refresh credential in an HttpOnly
+The host owns secure token storage. Electron uses `safeStorage`, Android uses
+EncryptedSharedPreferences, and the browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
 scope for Postgres mutations and PowerSync streams. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.

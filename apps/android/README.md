@@ -1,29 +1,24 @@
 # Tabaaq Android
 
-Native Kotlin + Jetpack Compose Material 3 client. This replaces the Expo
-app (`apps/mobile`) on Android. Expo is still in the tree as a reference, but
-this APK uses Play application id `com.tabaaq.mobile` — the same as Expo —
-so they cannot both be installed. A future iOS app would use a separate bundle
-id; that does not conflict with this Android package.
+Native Kotlin + Jetpack Compose Material 3 client. Application id is
+`com.tabaaq.mobile`. Auth origin is `com.tabaaq.mobile://app`, which the Worker
+already trusts.
 
 Home, product list, create, detail, batch edits, and label scan are in this
-app. Scan uses Firebase AI Logic (Gemini 2.5 Flash), the same path as Expo —
-not a custom model. Invoices and org admin stay out of this client.
+app. Scan uses Firebase AI Logic (Gemini 2.5 Flash). Invoices and org admin
+stay out of this client.
 
-## How this sits next to Expo
+| Concern  | This app                                          |
+| -------- | ------------------------------------------------- |
+| UI       | Compose Material 3                                |
+| Auth     | First-party JWT (`@store/auth`) + Google ID token |
+| Firebase | Gemini product scan only. Not user auth.          |
+| Sync     | `com.powersync:core` 1.14.1                       |
+| Schema   | Mirrored in `InventorySchema`                     |
+| Upload   | `/api/inventory/mutations` for catalog tables     |
 
-| Concern | Expo (`apps/mobile`) | This app |
-| --- | --- | --- |
-| UI | React Native + `@expo/ui` | Compose Material 3 |
-| Auth | First-party JWT (`@store/auth`) + Google ID token | Same HTTP routes in Kotlin |
-| Firebase | Gemini product scan only. Not user auth. | Same: Firebase AI Logic for scan. Firebase Auth is not required and is not the inventory session. |
-| Sync | `@powersync/react-native` | `com.powersync:core` 1.14.1 |
-| Schema | `@store/client-db` | Mirrored in `InventorySchema` |
-| Upload | `/api/inventory/mutations` | Same path for catalog tables. Invoice upload is not in this slice. |
-
-Auth origin is `com.tabaaq.mobile://app` (`expo-origin`), which the Worker
-already trusts for Expo. `applicationId` is `com.tabaaq.mobile` so this build
-can take over the existing Play listing.
+`applicationId` is `com.tabaaq.mobile` so this build can take over the existing
+Play listing.
 
 ## Open in Android Studio
 
@@ -59,21 +54,21 @@ The emulator reaches the host through `10.0.2.2`. A physical device needs the
 LAN IP of the machine running `vp run dev:web` (API `:8787`, auth `:8788`).
 
 PowerSync tokens come from `GET /api/powersync/credentials` with the same
-Bearer token Expo uses. `POWERSYNC_URL` is only a fallback when that response
-omits `endpoint`.
+Bearer token as web and desktop. `POWERSYNC_URL` is only a fallback when that
+response omits `endpoint`.
 
 ### Firebase
 
-Expo already talks to Firebase project `tabaaq-67ffc` for AI. User sessions do
-not. Register an Android app with package `com.tabaaq.mobile` in that project,
-download `google-services.json`, and place it at `app/google-services.json`.
-`google-services.json.example` is a shape-only file with placeholders.
+Register an Android app with package `com.tabaaq.mobile` in Firebase project
+`tabaaq-67ffc`, download `google-services.json`, and place it at
+`app/google-services.json`. `google-services.json.example` is a shape-only file
+with placeholders.
 
 Without that file the Google Services plugin is skipped. Custom auth still
 works. Firebase Auth signs in only after a successful Google ID token exchange,
 and never replaces the first-party session.
 
-Add this APK's SHA-1 to the Android OAuth client, the same as Expo.
+Add this APK's SHA-1 to the Android OAuth client.
 
 ## Tests
 
@@ -89,9 +84,9 @@ From `apps/android`:
 validation). It does not need the Android SDK. `:app:test` and `assembleDebug`
 do.
 
-## Remaining Expo work
+## Remaining work
 
-- Invoices and sales (not on Expo mobile either)
+- Invoices and sales
 - Organization settings and invitations
 - Native Google SHA / Play signing for production
 - App Check on Firebase AI before production quota
