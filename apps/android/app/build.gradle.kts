@@ -6,16 +6,22 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.inputStream().use(localProperties::load)
-}
+// Providers keep local.properties as a configuration-cache input.
+val localProperties: Map<String, String> =
+    providers
+        .fileContents(rootProject.layout.projectDirectory.file("local.properties"))
+        .asText
+        .map { text ->
+            val props = Properties()
+            props.load(text.reader())
+            props.stringPropertyNames().associateWith { props.getProperty(it).orEmpty() }
+        }.orElse(emptyMap())
+        .get()
 
 fun localProperty(
     key: String,
     defaultValue: String = "",
-): String = localProperties.getProperty(key, defaultValue).orEmpty()
+): String = localProperties[key] ?: defaultValue
 
 android {
     namespace = "com.tabaaq.mobile"
@@ -40,10 +46,23 @@ android {
         )
     }
 
+    // Sideload CI publishes assembleRelease. Without a signingConfig AGP writes
+    // app-release-unsigned.apk and the verify step cannot find app-release.apk.
+    // Same committed debug.keystore the Expo app used until Play signing exists.
+    signingConfigs {
+        create("release") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -85,8 +104,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.material)
     implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.googleid)
@@ -102,6 +121,7 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.compose)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
