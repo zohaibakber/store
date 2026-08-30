@@ -211,8 +211,9 @@ export const projectIssuedInvoice = (input: {
   };
 };
 
-export const replicaInvoiceNumber = (invoices: Iterable<{ readonly invoiceNumber: number }>) =>
-  nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
+export const replicaInvoiceNumber = (
+  invoices: Iterable<{ readonly deletedAt: number | null; readonly invoiceNumber: number }>,
+) => nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
 
 export type InventoryCrudEntry = Pick<
   CrudEntry,
