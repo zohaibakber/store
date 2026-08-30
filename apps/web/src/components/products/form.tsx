@@ -529,9 +529,7 @@ function UnitRetailField({ form }: { form: ReturnType<typeof useProductCreateFor
       name="unitPrice"
       children={(field) => (
         <FormField field={field} label="Retail price">
-          {(control) => (
-            <PriceInput control={control} field={field} fractionDigits={0} step={1} />
-          )}
+          {(control) => <PriceInput control={control} field={field} fractionDigits={0} step={1} />}
         </FormField>
       )}
     />
