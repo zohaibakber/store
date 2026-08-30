@@ -1,1 +1,1 @@
-DROP TABLE "invoice_counters";
+DROP TABLE IF EXISTS "invoice_counters";
