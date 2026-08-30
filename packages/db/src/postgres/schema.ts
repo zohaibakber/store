@@ -177,17 +177,6 @@ export const invoices = pgTable(
   ],
 );
 
-export const invoiceCounters = pgTable(
-  "invoice_counters",
-  {
-    organizationId: tenantId().primaryKey(),
-    lastInvoiceNumber: integer("last_invoice_number").notNull().default(0),
-  },
-  (table) => [
-    check("invoice_counters_last_invoice_number_nonnegative", sql`${table.lastInvoiceNumber} >= 0`),
-  ],
-);
-
 export const invoiceItems = pgTable(
   "invoice_items",
   {
