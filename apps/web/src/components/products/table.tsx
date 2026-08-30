@@ -92,12 +92,19 @@ const columns = columnHelper.columns([
     cell: ({ getValue }) => <span className="font-mono tabular-nums">{getValue()}</span>,
     meta: { label: "Units / pack" },
   }),
-  columnHelper.accessor("packPrice", {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Pack price" />,
+  columnHelper.accessor("purchasePrice", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Purchase price" />,
     cell: ({ getValue }) => (
       <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
     ),
-    meta: { label: "Pack price" },
+    meta: { label: "Purchase price" },
+  }),
+  columnHelper.accessor("retailPrice", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Retail price" />,
+    cell: ({ getValue }) => (
+      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
+    ),
+    meta: { label: "Retail price" },
   }),
   columnHelper.accessor("unitPrice", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Unit price" />,

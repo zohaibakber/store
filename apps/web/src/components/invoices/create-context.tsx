@@ -57,7 +57,7 @@ interface InvoiceCreateContextValue {
 const InvoiceCreateContext = createContext<InvoiceCreateContextValue | null>(null);
 
 const suggestedPrice = (product: Product, quantityUnit: SaleLine["quantityUnit"]) =>
-  quantityUnit === "pack" ? product.packPrice : product.unitPrice;
+  quantityUnit === "pack" ? product.retailPrice : product.unitPrice;
 
 const paisaToRupees = (paisa: number | null) => (paisa == null ? null : paisa / 100);
 

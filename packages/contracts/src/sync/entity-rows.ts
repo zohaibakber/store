@@ -33,7 +33,8 @@ const ProductRow = createSelectSchema(products, {
   name: NonEmptyString,
   categoryId: CategoryId,
   unitsPerPack: PositiveInteger,
-  packPrice: NullableNonNegativeInteger,
+  purchasePrice: NullableNonNegativeInteger,
+  retailPrice: NullableNonNegativeInteger,
   unitPrice: NullableNonNegativeInteger,
 });
 

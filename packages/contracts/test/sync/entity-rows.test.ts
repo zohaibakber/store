@@ -12,7 +12,8 @@ const productRow = {
   composition: null,
   strength: null,
   unitsPerPack: 10,
-  packPrice: 1000,
+  purchasePrice: 800,
+  retailPrice: 1000,
   unitPrice: 100,
   visible: true,
   createdAt: 1,
@@ -39,7 +40,7 @@ test("both directions reject the rows only the server used to reject", () => {
   for (const invalid of [
     { ...productRow, name: "" },
     { ...productRow, unitsPerPack: 0 },
-    { ...productRow, packPrice: -1 },
+    { ...productRow, retailPrice: -1 },
   ]) {
     expect(Result.isFailure(decodeApply(invalid))).toBe(true);
     expect(Result.isFailure(decodePush(invalid))).toBe(true);

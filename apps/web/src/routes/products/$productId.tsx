@@ -117,7 +117,7 @@ function ProductDetailContent({
   readonly onDelete: () => Promise<void>;
   readonly product: Product;
 }) {
-  // Pack size and pack price are meaningless for a category sold one at a time.
+  // Pack size and pack retail are meaningless for a category sold one at a time.
   const packDetails: Array<{ label: string; value: React.ReactNode }> = product.category.tracksPacks
     ? [
         {
@@ -125,8 +125,8 @@ function ProductDetailContent({
           value: <span className="font-mono tabular-nums">{product.unitsPerPack}</span>,
         },
         {
-          label: "Pack price",
-          value: <span className="font-mono tabular-nums">{formatPrice(product.packPrice)}</span>,
+          label: "Retail price",
+          value: <span className="font-mono tabular-nums">{formatPrice(product.retailPrice)}</span>,
         },
       ]
     : [];
@@ -135,9 +135,13 @@ function ProductDetailContent({
     { label: "Aisle", value: product.aisle ?? "—" },
     { label: "Composition", value: product.composition ?? "—" },
     { label: "Strength", value: product.strength ?? "—" },
+    {
+      label: "Purchase price",
+      value: <span className="font-mono tabular-nums">{formatPrice(product.purchasePrice)}</span>,
+    },
     ...packDetails,
     {
-      label: product.category.tracksPacks ? "Unit price" : "Price",
+      label: product.category.tracksPacks ? "Unit price" : "Retail price",
       value: <span className="font-mono tabular-nums">{formatPrice(product.unitPrice)}</span>,
     },
     {

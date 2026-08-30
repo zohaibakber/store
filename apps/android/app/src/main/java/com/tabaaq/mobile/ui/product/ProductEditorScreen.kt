@@ -189,26 +189,42 @@ fun ProductEditorScreen(
                     )
                 }
             }
+            if (ui.tracksPacks) {
+                OutlinedTextField(
+                    value = ui.unitsPerPack,
+                    onValueChange = viewModel::setUnitsPerPack,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.units_per_pack)) },
+                    placeholder = { Text("1") },
+                    supportingText = { Text(stringResource(R.string.units_per_pack_hint)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+            }
             EditorSection(
-                title = stringResource(if (ui.tracksPacks) R.string.pack_pricing else R.string.unit_pricing),
+                title = stringResource(R.string.purchase_price_section),
+                icon = Icons.Outlined.Payments,
+            ) {
+                OutlinedTextField(
+                    value = ui.purchasePrice,
+                    onValueChange = viewModel::setPurchasePrice,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.purchase_price)) },
+                    supportingText = { Text(stringResource(R.string.purchase_price_hint)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+            }
+            EditorSection(
+                title = stringResource(R.string.retail_price_section),
                 icon = Icons.Outlined.Payments,
             ) {
                 if (ui.tracksPacks) {
                     OutlinedTextField(
-                        value = ui.unitsPerPack,
-                        onValueChange = viewModel::setUnitsPerPack,
+                        value = ui.retailPrice,
+                        onValueChange = viewModel::setRetailPrice,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.units_per_pack)) },
-                        placeholder = { Text("1") },
-                        supportingText = { Text(stringResource(R.string.units_per_pack_hint)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = ui.packPrice,
-                        onValueChange = viewModel::setPackPrice,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.pack_price)) },
+                        label = { Text(stringResource(R.string.retail_price)) },
                         supportingText = { Text(stringResource(R.string.price_hint)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
@@ -227,7 +243,7 @@ fun ProductEditorScreen(
                         value = ui.unitPrice,
                         onValueChange = viewModel::setUnitPrice,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.price_label)) },
+                        label = { Text(stringResource(R.string.retail_price)) },
                         supportingText = { Text(stringResource(R.string.price_hint)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,

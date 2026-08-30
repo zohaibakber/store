@@ -364,7 +364,8 @@ const applyChange = Effect.fn("InventoryMutation.applyChange")(function* (
         composition: row.composition,
         strength: row.strength,
         unitsPerPack: row.unitsPerPack,
-        packPrice: row.packPrice,
+        purchasePrice: row.purchasePrice,
+        retailPrice: row.retailPrice,
         unitPrice: row.unitPrice,
         visible: row.visible,
         ...serverOwnedColumns(actor, write, change, row, current),
@@ -593,7 +594,7 @@ const validateInventoryImport = Effect.fn("InventoryCommand.validateImport")(fun
     );
   for (const line of command.input.lines) {
     const unitsPerPack = line.unitsPerPack ?? 1;
-    const packPrice = line.packPrice ?? null;
+    const purchasePrice = line.purchasePrice ?? null;
     const expiresAt = line.expiresAt ?? null;
     const packQuantity = line.packQuantity ?? 0;
     const unitQuantity = line.unitQuantity ?? 0;
@@ -605,10 +606,12 @@ const validateInventoryImport = Effect.fn("InventoryCommand.validateImport")(fun
     )
       return yield* Effect.fail(importError("Units per pack must be a whole number of 1 or more."));
     if (
-      packPrice !== null &&
-      (!Number.isSafeInteger(packPrice) || packPrice < 0 || packPrice > POSTGRES_INTEGER_MAX)
+      purchasePrice !== null &&
+      (!Number.isSafeInteger(purchasePrice) ||
+        purchasePrice < 0 ||
+        purchasePrice > POSTGRES_INTEGER_MAX)
     )
-      return yield* Effect.fail(importError("Pack prices cannot be negative."));
+      return yield* Effect.fail(importError("Purchase prices cannot be negative."));
     if (
       !Number.isSafeInteger(packQuantity) ||
       packQuantity < 0 ||
@@ -817,7 +820,8 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
             composition: null,
             strength: null,
             unitsPerPack,
-            packPrice: line.packPrice ?? null,
+            purchasePrice: line.purchasePrice ?? null,
+            retailPrice: null,
             unitPrice: null,
             visible: true,
             organizationId: actor.organizationId,
