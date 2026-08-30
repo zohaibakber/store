@@ -4,6 +4,7 @@ import {
   catalogWriteError,
   compareSyncEntityChanges,
   decodeInvoiceId,
+  nextInvoiceNumber,
   type CatalogWriteCommand,
   type ImportInventoryCommand,
   type ImportInventoryCommandResult,
@@ -78,6 +79,9 @@ const CatalogRowMeta = Schema.Struct({
   rowVersion: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
   deletedAt: Schema.NullOr(Schema.Number),
 });
+
+const DriverInvoiceNumber = Schema.Union([Schema.Number, Schema.NumberFromString]);
+const decodeDriverInvoiceNumber = Schema.decodeUnknownSync(DriverInvoiceNumber);
 
 type CatalogWrite = {
   readonly command: CatalogWriteCommand;
@@ -976,7 +980,7 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
       );
     return {
       invoiceId: decodeInvoiceId(invoice.id),
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: decodeDriverInvoiceNumber(invoice.invoiceNumber),
       txid,
     } satisfies IssueInvoiceResult;
   }
@@ -1036,13 +1040,20 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
   if (!invoice) {
     const [latest] = yield* tx
       .select({
-        lastInvoiceNumber: sql<number>`coalesce(max(${invoices.invoiceNumber}), 0)`,
+        lastInvoiceNumber: sql`coalesce(max(${invoices.invoiceNumber}), 0)`.mapWith(Number),
       })
       .from(invoices)
       .where(eq(invoices.organizationId, actor.organizationId));
     const [retry] = yield* tx
       .insert(invoices)
-      .values(invoiceValues((latest?.lastInvoiceNumber ?? 0) + 1))
+      .values(
+        invoiceValues(
+          nextInvoiceNumber([decodeDriverInvoiceNumber(latest?.lastInvoiceNumber ?? 0)]),
+        ),
+      )
+      .onConflictDoNothing({
+        target: [invoices.organizationId, invoices.invoiceNumber],
+      })
       .returning({ id: invoices.id, invoiceNumber: invoices.invoiceNumber });
     invoice = retry;
   }
@@ -1207,7 +1218,7 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
   });
   return {
     invoiceId: decodeInvoiceId(invoice.id),
-    invoiceNumber: invoice.invoiceNumber,
+    invoiceNumber: decodeDriverInvoiceNumber(invoice.invoiceNumber),
     txid,
   } satisfies IssueInvoiceResult;
 });
