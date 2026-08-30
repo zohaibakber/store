@@ -21,7 +21,6 @@ import {
   batches,
   categories,
   inventoryMutationReceipts,
-  invoiceCounters,
   invoiceItems,
   invoices,
   products,
@@ -997,16 +996,6 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
     return yield* Effect.fail(invoiceError("The sale allocations do not match the items."));
   }
 
-  yield* tx
-    .insert(invoiceCounters)
-    .values({ organizationId: actor.organizationId, lastInvoiceNumber: command.invoiceNumber })
-    .onConflictDoUpdate({
-      target: invoiceCounters.organizationId,
-      set: {
-        lastInvoiceNumber: sql`GREATEST(${invoiceCounters.lastInvoiceNumber}, ${command.invoiceNumber})`,
-      },
-    });
-
   const total = command.input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
   const [existingInvoice] = yield* tx
     .select({ operationId: invoices.operationId })
@@ -1045,17 +1034,15 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
     .returning({ id: invoices.id, invoiceNumber: invoices.invoiceNumber });
   let invoice = inserted[0];
   if (!invoice) {
-    const [bumped] = yield* tx
-      .update(invoiceCounters)
-      .set({ lastInvoiceNumber: sql`${invoiceCounters.lastInvoiceNumber} + 1` })
-      .where(eq(invoiceCounters.organizationId, actor.organizationId))
-      .returning({ invoiceNumber: invoiceCounters.lastInvoiceNumber });
-    if (!bumped) {
-      return yield* Effect.fail(invoiceError("The invoice number could not be allocated."));
-    }
+    const [latest] = yield* tx
+      .select({
+        lastInvoiceNumber: sql<number>`coalesce(max(${invoices.invoiceNumber}), 0)`,
+      })
+      .from(invoices)
+      .where(eq(invoices.organizationId, actor.organizationId));
     const [retry] = yield* tx
       .insert(invoices)
-      .values(invoiceValues(bumped.invoiceNumber))
+      .values(invoiceValues((latest?.lastInvoiceNumber ?? 0) + 1))
       .returning({ id: invoices.id, invoiceNumber: invoices.invoiceNumber });
     invoice = retry;
   }

@@ -2,7 +2,11 @@ import { UpdateType } from "@powersync/common";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
-import { classifyInventoryCrudTransaction, projectIssuedInvoice } from "../src/invoice-projection";
+import {
+  classifyInventoryCrudTransaction,
+  projectIssuedInvoice,
+  replicaInvoiceNumber,
+} from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
 import type {
   BatchRow,
@@ -117,6 +121,19 @@ const tables = (): InvoiceWriteTables => ({
   persist: async (work) => {
     work();
   },
+});
+
+describe("replicaInvoiceNumber", () => {
+  it("is one past the highest persisted number, including deleted invoices", () => {
+    expect(replicaInvoiceNumber([])).toBe(1);
+    expect(
+      replicaInvoiceNumber([
+        { invoiceNumber: 2, deletedAt: null },
+        { invoiceNumber: 4, deletedAt: 1 },
+        { invoiceNumber: 3, deletedAt: null },
+      ]),
+    ).toBe(5);
+  });
 });
 
 describe("makeInvoiceWrites", () => {
