@@ -340,8 +340,9 @@ private fun productDetailRows(product: com.tabaaq.mobile.core.catalog.CatalogPro
         product.strength?.let { add("Strength" to it) }
         product.aisle?.let { add("Aisle" to "Aisle $it") }
         if (product.tracksPacks) add("Units per pack" to product.unitsPerPack.toString())
-        if (product.tracksPacks) add("Pack price" to MoneyFormat.formatPaisa(product.packPrice))
-        add((if (product.tracksPacks) "Unit price" else "Price") to MoneyFormat.formatPaisa(product.unitPrice))
+        add("Purchase price" to MoneyFormat.formatPaisa(product.purchasePrice))
+        if (product.tracksPacks) add("Retail price" to MoneyFormat.formatPaisa(product.retailPrice))
+        add((if (product.tracksPacks) "Unit price" else "Retail price") to MoneyFormat.formatPaisa(product.unitPrice))
     }
 
 private fun batchStockLabel(

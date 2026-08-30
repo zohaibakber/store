@@ -24,7 +24,8 @@ data class ProductEditorUi(
     val strengthUnit: String = "mg",
     val aisle: String = "",
     val unitsPerPack: String = "",
-    val packPrice: String = "",
+    val purchasePrice: String = "",
+    val retailPrice: String = "",
     val unitPrice: String = "",
     val categoryId: String = "",
     val categories: List<CatalogCategory> = emptyList(),
@@ -46,7 +47,8 @@ class ProductEditorViewModel(
     private val strengthUnit = MutableStateFlow(parsedStrength.second)
     private val aisle = MutableStateFlow("")
     private val unitsPerPack = MutableStateFlow(draft?.unitsPerPack?.toString().orEmpty())
-    private val packPrice = MutableStateFlow("")
+    private val purchasePrice = MutableStateFlow("")
+    private val retailPrice = MutableStateFlow("")
     private val unitPrice = MutableStateFlow("")
     private val categoryId = MutableStateFlow("")
     private val saving = MutableStateFlow(false)
@@ -56,12 +58,14 @@ class ProductEditorViewModel(
     val ui: StateFlow<ProductEditorUi> =
         combine(
             combine(name, composition, strength, strengthUnit, aisle) { n, c, s, su, a -> listOf(n, c, s, su, a) },
-            combine(unitsPerPack, packPrice, unitPrice, categoryId) { u, p, up, cat -> listOf(u, p, up, cat) },
+            combine(unitsPerPack, purchasePrice, retailPrice, unitPrice, categoryId) { u, p, r, up, cat ->
+                listOf(u, p, r, up, cat)
+            },
             combine(powerSync.snapshot, saving, error, createdId) { snap, sv, err, id -> Triple(snap, sv to err, id) },
         ) { text, prices, rest ->
             val snapshot = rest.first
             val (sv, err) = rest.second
-            val selected = prices[3].ifBlank { snapshot.categories.firstOrNull()?.id.orEmpty() }
+            val selected = prices[4].ifBlank { snapshot.categories.firstOrNull()?.id.orEmpty() }
             val tracksPacks = snapshot.categories.find { it.id == selected }?.tracksPacks ?: true
             ProductEditorUi(
                 name = text[0],
@@ -70,8 +74,9 @@ class ProductEditorViewModel(
                 strengthUnit = text[3],
                 aisle = text[4],
                 unitsPerPack = prices[0],
-                packPrice = prices[1],
-                unitPrice = prices[2],
+                purchasePrice = prices[1],
+                retailPrice = prices[2],
+                unitPrice = prices[3],
                 categoryId = selected,
                 categories = snapshot.categories,
                 tracksPacks = tracksPacks,
@@ -106,8 +111,12 @@ class ProductEditorViewModel(
         computedUnitPrice()?.let { unitPrice.value = it }
     }
 
-    fun setPackPrice(value: String) {
-        packPrice.value = value
+    fun setPurchasePrice(value: String) {
+        purchasePrice.value = value
+    }
+
+    fun setRetailPrice(value: String) {
+        retailPrice.value = value
         computedUnitPrice()?.let { unitPrice.value = it }
     }
 
@@ -132,14 +141,19 @@ class ProductEditorViewModel(
                 error.value = "Units per pack must be a whole number of 1 or more."
                 return@launch
             }
-            val pack = CatalogValidation.priceInPaisa(current.packPrice)
+            val purchase = CatalogValidation.priceInPaisa(current.purchasePrice)
+            val retail = CatalogValidation.priceInPaisa(current.retailPrice)
             val unit = CatalogValidation.priceInPaisa(current.unitPrice)
-            if (tracksPacks && current.packPrice.isNotBlank() && pack == null) {
-                error.value = "Pack price must be a valid non-negative amount."
+            if (current.purchasePrice.isNotBlank() && purchase == null) {
+                error.value = "Purchase price must be a valid non-negative amount."
+                return@launch
+            }
+            if (tracksPacks && current.retailPrice.isNotBlank() && retail == null) {
+                error.value = "Retail price must be a valid non-negative amount."
                 return@launch
             }
             if (current.unitPrice.isNotBlank() && unit == null) {
-                error.value = "Price must be a valid non-negative amount."
+                error.value = "Retail price must be a valid non-negative amount."
                 return@launch
             }
             val strengthValue = current.strength.trim()
@@ -163,7 +177,8 @@ class ProductEditorViewModel(
                             composition = current.composition.trim().ifBlank { null },
                             strength = strength,
                             unitsPerPack = if (tracksPacks) units else 1,
-                            packPrice = if (tracksPacks) pack else null,
+                            purchasePrice = purchase,
+                            retailPrice = if (tracksPacks) retail else null,
                             unitPrice = unit,
                         ),
                     )
@@ -177,9 +192,9 @@ class ProductEditorViewModel(
 
     private fun computedUnitPrice(): String? {
         val units = unitsPerPack.value.trim().ifBlank { "1" }.toDoubleOrNull() ?: return null
-        val pack = packPrice.value.trim().toDoubleOrNull() ?: return null
-        if (units < 1 || packPrice.value.isBlank()) return null
-        return kotlin.math.round(pack / units).toLong().toString()
+        val retail = retailPrice.value.trim().toDoubleOrNull() ?: return null
+        if (units < 1 || retailPrice.value.isBlank()) return null
+        return kotlin.math.round(retail / units).toLong().toString()
     }
 
     companion object {

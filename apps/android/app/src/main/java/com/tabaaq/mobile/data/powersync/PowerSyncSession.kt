@@ -89,7 +89,8 @@ class PowerSyncSession(
                             composition = cursor.getStringOptional("composition"),
                             strength = cursor.getStringOptional("strength"),
                             unitsPerPack = cursor.getLong("unitsPerPack"),
-                            packPrice = cursor.getLongOptional("packPrice"),
+                            purchasePrice = cursor.getLongOptional("purchasePrice"),
+                            retailPrice = cursor.getLongOptional("retailPrice"),
                             unitPrice = cursor.getLongOptional("unitPrice"),
                             visible = cursor.getBoolean("visible"),
                             organizationId = cursor.getString("organizationId"),
@@ -187,15 +188,15 @@ class PowerSyncSession(
         if (insert) {
             db.execute(
                 """
-                INSERT INTO products (id, name, categoryId, aisle, composition, strength, unitsPerPack, packPrice, unitPrice, visible, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion, createdAt, updatedAt, deletedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO products (id, name, categoryId, aisle, composition, strength, unitsPerPack, purchasePrice, retailPrice, unitPrice, visible, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion, createdAt, updatedAt, deletedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 productParams(row),
             )
         } else {
             db.execute(
                 """
-                UPDATE products SET name = ?, categoryId = ?, aisle = ?, composition = ?, strength = ?, unitsPerPack = ?, packPrice = ?, unitPrice = ?, visible = ?, updatedByUserId = ?, deviceId = ?, operationId = ?, rowVersion = ?, updatedAt = ? WHERE id = ?
+                UPDATE products SET name = ?, categoryId = ?, aisle = ?, composition = ?, strength = ?, unitsPerPack = ?, purchasePrice = ?, retailPrice = ?, unitPrice = ?, visible = ?, updatedByUserId = ?, deviceId = ?, operationId = ?, rowVersion = ?, updatedAt = ? WHERE id = ?
                 """.trimIndent(),
                 listOf(
                     row.name,
@@ -204,7 +205,8 @@ class PowerSyncSession(
                     row.composition,
                     row.strength,
                     row.unitsPerPack,
-                    row.packPrice,
+                    row.purchasePrice,
+                    row.retailPrice,
                     row.unitPrice,
                     if (row.visible) 1L else 0L,
                     row.updatedByUserId,
@@ -277,7 +279,8 @@ class PowerSyncSession(
             row.composition,
             row.strength,
             row.unitsPerPack,
-            row.packPrice,
+            row.purchasePrice,
+            row.retailPrice,
             row.unitPrice,
             if (row.visible) 1L else 0L,
             row.organizationId,

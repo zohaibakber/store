@@ -85,7 +85,8 @@ export const Product = Schema.Struct({
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
   unitsPerPack: Schema.Number,
-  packPrice: Schema.NullOr(Schema.Number),
+  purchasePrice: Schema.NullOr(Schema.Number),
+  retailPrice: Schema.NullOr(Schema.Number),
   unitPrice: Schema.NullOr(Schema.Number),
   visible: Schema.Boolean,
   ...mutableEntityFields,
@@ -101,7 +102,8 @@ const createProductFields = {
   composition: Schema.optional(Schema.NullOr(Schema.String)),
   strength: Schema.optional(Schema.NullOr(Schema.String)),
   unitsPerPack: Schema.optional(Schema.Number),
-  packPrice: Schema.optional(Schema.NullOr(Schema.Number)),
+  purchasePrice: Schema.optional(Schema.NullOr(Schema.Number)),
+  retailPrice: Schema.optional(Schema.NullOr(Schema.Number)),
   unitPrice: Schema.optional(Schema.NullOr(Schema.Number)),
   visible: Schema.optional(Schema.Boolean),
 };
@@ -119,7 +121,7 @@ export const ImportInventoryLine = Schema.Struct({
   productId: Schema.NullOr(ProductId),
   name: createProductFields.name,
   unitsPerPack: createProductFields.unitsPerPack,
-  packPrice: createProductFields.packPrice,
+  purchasePrice: createProductFields.purchasePrice,
   ...batchLineFields,
 });
 export type ImportInventoryLine = typeof ImportInventoryLine.Type;

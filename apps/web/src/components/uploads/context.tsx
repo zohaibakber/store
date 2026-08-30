@@ -180,7 +180,7 @@ function UploadProvider({
           unitsPerPack: change.unitsPerPack,
           packQuantity: change.packQuantity,
           unitQuantity: change.unitQuantity,
-          packPrice: change.packPrice,
+          purchasePrice: change.packPrice,
           productId: change.productId ?? null,
         })),
       });

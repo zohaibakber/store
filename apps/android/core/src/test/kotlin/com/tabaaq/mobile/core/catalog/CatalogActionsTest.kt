@@ -20,7 +20,8 @@ class CatalogActionsTest {
                     composition = null,
                     strength = null,
                     unitsPerPack = 10,
-                    packPrice = 1000,
+                    purchasePrice = 800,
+                    retailPrice = 1000,
                     unitPrice = 100,
                 ),
             )
@@ -36,7 +37,7 @@ class CatalogActionsTest {
         val actions = CatalogActions(emptyList(), emptyList(), emptyList(), actor)
         try {
             actions.prepareProduct(
-                SaveProductInput(null, "p", "  ", null, null, null, null, 1, null, null),
+                SaveProductInput(null, "p", "  ", null, null, null, null, 1, null, null, null),
             )
             error("expected failure")
         } catch (error: IllegalStateException) {

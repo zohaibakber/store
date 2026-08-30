@@ -32,7 +32,8 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
         composition: product.composition,
         strength: product.strength,
         unitsPerPack: product.unitsPerPack,
-        packPrice: product.packPrice,
+        purchasePrice: product.purchasePrice,
+        retailPrice: product.retailPrice,
         unitPrice: product.unitPrice,
         visible: next,
       });

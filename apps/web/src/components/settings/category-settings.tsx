@@ -78,8 +78,9 @@ function PackTrackingField({
       <div className="min-w-0 flex-1">
         <FieldLabel htmlFor={id}>Sold in packs</FieldLabel>
         <FieldDescription>
-          Off for things sold one at a time: the product form drops pack size and pack price, and
-          stock arrives as a quantity with an expiry rather than a numbered batch.
+          Off for things sold one at a time: the product form drops pack size and pack retail, and
+          stock arrives as a quantity with an expiry rather than a numbered batch. Purchase price
+          is still the pack cost.
         </FieldDescription>
       </div>
       <Switch checked={checked} id={id} onCheckedChange={onChange} />

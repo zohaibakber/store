@@ -36,7 +36,8 @@ export const ProductRow = Schema.Struct({
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
   unitsPerPack: PositiveInteger,
-  packPrice: Schema.NullOr(NonNegativeInteger),
+  purchasePrice: Schema.NullOr(NonNegativeInteger),
+  retailPrice: Schema.NullOr(NonNegativeInteger),
   unitPrice: Schema.NullOr(NonNegativeInteger),
   visible: Schema.Boolean,
 });
