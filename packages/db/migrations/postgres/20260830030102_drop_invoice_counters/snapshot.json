@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "3416a53c-eb8f-443a-8caf-d8e96e7f09a6",
-  "prevIds": ["70c4ed5a-879f-4b28-8c44-47586f4ae00b"],
+  "id": "a1a1a017-8a4d-4023-9bb0-a43a20e97c00",
+  "prevIds": ["a1b2c3d4-e5f6-4789-a012-3456789abcde"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -1029,7 +1029,20 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "pack_price",
+      "name": "purchase_price",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "products"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "retail_price",
       "entityType": "columns",
       "schema": "public",
       "table": "products"
