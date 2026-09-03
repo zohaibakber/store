@@ -4,7 +4,7 @@ title: OSS patterns to copy
 
 # OSS
 
-Short citations. Pins differ from this repo (`effect@4.0.0-rc.110`). Copy
+Short citations. Pins differ from this repo (`effect@4.0.0-rc.112`). Copy
 patterns, not beta type names. Use `Schema.TaggedError` here, not
 `Schema.TaggedErrorClass`.
 

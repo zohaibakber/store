@@ -10,7 +10,7 @@ compatibility: Requires Effect v4. Examples are reviewed against the version doc
 
 Use current Effect v4 APIs and the production defaults in this skill. Established project conventions still take precedence unless the task is explicitly changing them.
 
-This monorepo pins `effect` / `@effect/*` at **`4.0.0-rc.110`** (see root `package.json` catalog). Prefer the installed package source and Effect v4 docs (`effect.website` v4 / migration guides) over Effect v3 muscle memory.
+This monorepo pins `effect` / `@effect/*` at **`4.0.0-rc.112`** (see `pnpm-workspace.yaml` catalog). That is the published npm `rc` dist-tag; do not pin an unpublished changeset (e.g. rc.113). Prefer the installed package source and Effect v4 docs (`effect.website` v4 / migration guides) over Effect v3 muscle memory.
 
 ## Source Rule
 
@@ -27,8 +27,11 @@ Check these before guessing:
 - **Typed errors:** `Schema.TaggedError<Self>()("Tag", { fields })` (schema-backed, yieldable). `Data.TaggedError` is fine for lightweight non-schema errors. There is **no** `Schema.TaggedErrorClass` in Effect v4.
 - **Schemas:** `Schema` lives in `effect` (not `@effect/schema`). Prefer `Schema.Struct` + same-name `interface`; tagged unions via `Schema.TaggedUnion` / `Schema.TaggedStruct`.
 - **Ops:** `Effect.fn("Domain.op")` for public / non-trivial methods (spans + stack frames). Prefer `Effect.gen`.
-- **Unstable modules:** still under `effect/unstable/*` (http, httpapi, cluster, workflow, ai) until promoted — breaking changes allowed in minor RCs. Prefer them for HTTP/API when the codebase already does; do not treat “unstable” as “avoid”.
+- **Unstable modules:** still under `effect/unstable/*` (http, httpapi, rpc, persistence, cluster, workflow, ai, sql, socket, reactivity, eventlog, observability, encoding) until promoted — breaking changes allowed in minor RCs. Prefer them when they fit; do not treat “unstable” as “avoid”.
 - **HTTP:** `effect/unstable/http/HttpClient` (+ Request/Response). FiberRef-style HttpClient knobs moved toward `Context.Reference` in v4 — provide references explicitly rather than deleted convenience FiberRefs.
+- **RPC:** `effect/unstable/rpc` (`Rpc.make`, `RpcGroup`) for typed procedures. Serialization is schema-aware (`codecFor` on the transport). Prefer `SchemaBinary` (`effect/unstable/encoding`) for Effect RPC/cluster wires; this repo’s public inventory surface stays HttpApi JSON. RPC is a transport adapter, not a second catalog.
+- **Persistence:** `PersistedQueue` for durable outboxes, `KeyValueStore` (+ `toSchemaStore`) for replica snapshots. v3 `Mailbox` is v4 `Queue`.
+- **Pools / maps:** `Pool.use` borrows a pooled item for one effect without a `Scope`. `RcMap.getOption` / `LayerMap.contextEffectOption` retain a cached entry only if it already exists.
 - **Cache / schedule / stream:** prefer `effect/Cache`, `Schedule`, `Stream` over hand-rolled Map/TTL/dedupe and sleep loops.
 
 ## Branch Chooser
@@ -42,6 +45,8 @@ Read only the branch references that match the task.
 - Memoization, per-key TTL caches, deduplicating concurrent lookups, or request batching: read `references/CACHING.md`.
 - Streams, event sources, async iterables, queues/pubsubs, pagination, backpressure, or stream consumers: read `references/STREAMS.md`.
 - Outgoing HTTP calls, Effect HttpClient, status handling, or HTTP rate limiting: read `references/HTTP_CLIENTS.md`.
+- Durable outbox, KeyValueStore, PersistedQueue, PersistedCache, or browser vs native replica storage: read `references/PERSISTENCE.md`.
+- Effect RPC vs HttpApi, RpcGroup, or Cluster entities: read `references/RPC.md`.
 - Effect tests, time, sleeps, concurrency synchronization, or fakes: read `references/TESTING.md`.
 
 If a task spans several branches, read all matching files before editing.
@@ -76,7 +81,12 @@ If a task spans several branches, read all matching files before editing.
 - Public or non-trivial internal service method: `Effect.fn("Domain.operation")`.
 - Runtime configuration: `Config` recipes read in layers; override with `ConfigProvider` in tests.
 - Event source: `Stream` consumed with `Stream.runForEach(...)` and forked with `Effect.forkScoped` in the owning layer.
-- Queue-backed event source: `Queue` for the producer boundary, `Stream.fromQueue(...)` for consumers.
+- Queue-backed event source: `Queue` for the producer boundary, `Stream.fromQueue(...)` for consumers. v3 `Mailbox` is this `Queue`.
+- Durable outbox / background jobs: `PersistedQueue.make` + a store layer (`layerStoreMemory` / `layerStoreSql` / `layerStoreRedis`).
+- Lightweight durable state (replica snapshot, cursor): `KeyValueStore` (`layerMemory`, `layerFileSystem`, IndexedDB `makeStringOnly` adapter, then `toSchemaStore` for typed JSON). Never SQLite in the browser.
+- Compact Effect RPC / cluster payloads: `SchemaBinary` from `effect/unstable/encoding`. HttpApi stays JSON.
+- Partial tagged-union match: `Schema.TaggedUnion.matchOrElse`.
+- Borrow a pooled resource for one effect: `Pool.use` (does not require `Scope`).
 - Broadcast event source: `PubSub` / `Stream.fromPubSub(...)` or `SubscriptionRef` for latest-value state.
 - Polling worker: `runPass().pipe(Effect.repeat(Schedule.spaced(...)))`, with typed pass failures handled before repeat.
 - Retry transient operation: `Effect.retry(...)` / `Effect.retryOrElse(...)` with a bounded `Schedule`.
@@ -110,3 +120,6 @@ If a task spans several branches, read all matching files before editing.
 - Do not hide required application authority, credentials, persistence, transports, or external services behind `Context.Reference` defaults.
 - Do not add arbitrary `Effect.sleep(...)` to tests when a deterministic synchronization primitive is available.
 - Do not hand-roll Map/TTL/prune caches or in-flight dedupe when `effect/Cache` fits.
+- Do not hand-roll SQL job tables or IndexedDB queues when `PersistedQueue` fits.
+- Do not load SQLite, wa-sqlite, OPFS database drivers, or `PersistedQueue.layerStoreSql` in the web renderer or a browser worker.
+- Do not use `Mailbox` — it is `Queue` in v4.

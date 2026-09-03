@@ -17,7 +17,7 @@ Cost and concurrency judgment for Effect work in this repo. API defaults live in
 [`effect`](../effect/SKILL.md). This skill owns when work runs, how much it
 fans out, and what blocks first paint.
 
-Pin: `effect@4.0.0-rc.110`. Typed errors use `Schema.TaggedError`, not beta's
+Pin: `effect@4.0.0-rc.112`. Typed errors use `Schema.TaggedError`, not beta's
 `Schema.TaggedErrorClass`.
 
 ## When to use

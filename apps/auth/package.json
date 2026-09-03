@@ -8,7 +8,7 @@
     "test": "vitest run --root ../.. apps/auth/test"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.0-rc.111",
+    "@effect/sql-d1": "4.0.0-rc.112",
     "@store/auth": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
