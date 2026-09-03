@@ -42,7 +42,11 @@ export const CatalogPullRequest = Schema.Struct({
   cursor: CatalogCursor,
   slices: Schema.Array(CatalogSlice).check(Schema.isMinLength(1)),
   waitMs: Schema.optionalKey(
-    Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(25_000)),
+    Schema.Number.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(25_000),
+    ),
   ),
 });
 export interface CatalogPullRequest extends Schema.Schema.Type<typeof CatalogPullRequest> {}

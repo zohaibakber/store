@@ -8,14 +8,23 @@ import {
   ImportInventoryCommandResult,
   IssueInvoiceCommand,
   IssueInvoiceResult,
-} from "@store/contracts"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
-import { CatalogError } from "./errors"
-import { CatalogTransport } from "./transport"
+} from "@store/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
-const decodeJson = <A, I>(schema: Schema.Codec<A, I>, body: unknown) =>
+import { CatalogError } from "./errors";
+import { CatalogTransport } from "./transport";
+
+type CatalogJson = typeof Schema.Json.Type;
+type CatalogRequestBody =
+  | CatalogPullRequest
+  | CatalogSnapshotRequest
+  | CatalogWriteCommand
+  | IssueInvoiceCommand
+  | ImportInventoryCommand;
+
+const decodeJson = <A, I>(schema: Schema.Codec<A, I>, body: CatalogJson) =>
   Schema.decodeUnknownEffect(schema)(body).pipe(
     Effect.mapError(
       (cause) =>
@@ -24,27 +33,33 @@ const decodeJson = <A, I>(schema: Schema.Codec<A, I>, body: unknown) =>
           message: cause.message,
         }),
     ),
-  )
+  );
+
+const requestHeaders = (headers: HeadersInit) => {
+  const next = new Headers(headers);
+  next.set("content-type", "application/json");
+  return next;
+};
 
 const requestJson = Effect.fn("CatalogTransport.request")(function* (
   url: URL,
   headers: HeadersInit,
-  body: unknown,
+  body: CatalogRequestBody,
   fetchImpl: typeof fetch,
 ) {
   const response = yield* Effect.tryPromise({
     try: () =>
       fetchImpl(url, {
         method: "POST",
-        headers: { "content-type": "application/json", ...headers },
+        headers: requestHeaders(headers),
         body: JSON.stringify(body),
       }),
     catch: (cause) => new CatalogError({ reason: "transport", message: String(cause) }),
-  })
+  });
   const payload = yield* Effect.tryPromise({
-    try: () => response.json() as Promise<unknown>,
+    try: () => response.json(),
     catch: (cause) => new CatalogError({ reason: "rejected", message: String(cause) }),
-  })
+  });
   if (!response.ok) {
     const reason =
       response.status === 401
@@ -55,21 +70,29 @@ const requestJson = Effect.fn("CatalogTransport.request")(function* (
             ? ("transient" as const)
             : response.status >= 400
               ? ("rejected" as const)
-              : ("transport" as const)
+              : ("transport" as const);
     return yield* new CatalogError({
       reason,
       message: `catalog ${String(response.status)}`,
-    })
+    });
   }
-  return payload
-})
+  return yield* Schema.decodeUnknownEffect(Schema.Json)(payload).pipe(
+    Effect.mapError(
+      (cause) =>
+        new CatalogError({
+          reason: "rejected",
+          message: cause.message,
+        }),
+    ),
+  );
+});
 
 export const CatalogHttpTransport = (options: {
-  readonly apiUrl: string
-  readonly headers: () => HeadersInit
-  readonly fetch?: typeof fetch
+  readonly apiUrl: string;
+  readonly headers: () => HeadersInit;
+  readonly fetch?: typeof fetch;
 }) => {
-  const fetchImpl = options.fetch ?? fetch
+  const fetchImpl = options.fetch ?? fetch;
   return Layer.succeed(
     CatalogTransport,
     CatalogTransport.of({
@@ -79,19 +102,17 @@ export const CatalogHttpTransport = (options: {
           options.headers(),
           request,
           fetchImpl,
-        )
-        return yield* decodeJson(CatalogPullResult, payload)
+        );
+        return yield* decodeJson(CatalogPullResult, payload);
       }),
-      snapshot: Effect.fn("CatalogTransport.snapshot")(function* (
-        request: CatalogSnapshotRequest,
-      ) {
+      snapshot: Effect.fn("CatalogTransport.snapshot")(function* (request: CatalogSnapshotRequest) {
         const payload = yield* requestJson(
           new URL("/api/inventory/snapshot", options.apiUrl),
           options.headers(),
           request,
           fetchImpl,
-        )
-        return yield* decodeJson(CatalogSnapshotResult, payload)
+        );
+        return yield* decodeJson(CatalogSnapshotResult, payload);
       }),
       write: Effect.fn("CatalogTransport.write")(function* (command: CatalogWriteCommand) {
         const payload = yield* requestJson(
@@ -99,13 +120,13 @@ export const CatalogHttpTransport = (options: {
           options.headers(),
           command,
           fetchImpl,
-        )
+        );
         return yield* decodeJson(
           Schema.Struct({
             txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
           }),
           payload,
-        )
+        );
       }),
       issueInvoice: Effect.fn("CatalogTransport.issueInvoice")(function* (
         command: IssueInvoiceCommand,
@@ -115,8 +136,8 @@ export const CatalogHttpTransport = (options: {
           options.headers(),
           command,
           fetchImpl,
-        )
-        return yield* decodeJson(IssueInvoiceResult, payload)
+        );
+        return yield* decodeJson(IssueInvoiceResult, payload);
       }),
       importInventory: Effect.fn("CatalogTransport.importInventory")(function* (
         command: ImportInventoryCommand,
@@ -126,9 +147,9 @@ export const CatalogHttpTransport = (options: {
           options.headers(),
           command,
           fetchImpl,
-        )
-        return yield* decodeJson(ImportInventoryCommandResult, payload)
+        );
+        return yield* decodeJson(ImportInventoryCommandResult, payload);
       }),
     }),
-  )
-}
+  );
+};

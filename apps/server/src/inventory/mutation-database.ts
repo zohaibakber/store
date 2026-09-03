@@ -43,12 +43,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ConstraintError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
+import { appendCatalogChanges, pullCatalogChanges, snapshotCatalog } from "./catalog-log";
 import {
   InventoryDatabaseError,
   InventoryProtocolError,
   inventoryProtocolError as protocolError,
 } from "./errors";
-import { appendCatalogChanges, pullCatalogChanges, snapshotCatalog } from "./catalog-log";
 import type { InventoryActor } from "./model";
 import { decodeEntityRow, serverOwnedColumns, type CatalogWriteStamp } from "./row-validation";
 
@@ -179,7 +179,9 @@ const changesForOperation = Effect.fn("InventoryMutation.changesForOperation")(f
   const categoryRows = yield* tx
     .select()
     .from(categories)
-    .where(and(eq(categories.organizationId, organizationId), eq(categories.operationId, operationId)));
+    .where(
+      and(eq(categories.organizationId, organizationId), eq(categories.operationId, operationId)),
+    );
   for (const row of categoryRows) {
     collected.push({
       entity: "category",
@@ -232,7 +234,10 @@ const changesForOperation = Effect.fn("InventoryMutation.changesForOperation")(f
     .select()
     .from(invoiceItems)
     .where(
-      and(eq(invoiceItems.organizationId, organizationId), eq(invoiceItems.operationId, operationId)),
+      and(
+        eq(invoiceItems.organizationId, organizationId),
+        eq(invoiceItems.operationId, operationId),
+      ),
     );
   for (const row of itemRows) {
     collected.push({

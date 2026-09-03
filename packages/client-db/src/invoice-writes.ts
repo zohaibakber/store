@@ -1,4 +1,8 @@
-import type { CreateInvoiceInput, IssueInvoiceCommand, IssueInvoiceResult } from "@store/contracts/store.schema";
+import type {
+  CreateInvoiceInput,
+  IssueInvoiceCommand,
+  IssueInvoiceResult,
+} from "@store/contracts/store.schema";
 
 import {
   type CatalogActor,

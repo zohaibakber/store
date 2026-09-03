@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vitest";
 
 import {
   applyChanges,
   commandChanges,
   diffFromChanges,
   emptyReplicaSnapshot,
-} from "../src/replica"
+} from "../src/replica";
 
 const category = {
   id: "cat-1",
@@ -20,7 +20,7 @@ const category = {
   createdAt: 100,
   updatedAt: 100,
   deletedAt: null,
-}
+};
 
 describe("catalog replica", () => {
   it("upserts and deletes rows by entity id", () => {
@@ -32,8 +32,8 @@ describe("catalog replica", () => {
         rowVersion: 1,
         row: category,
       },
-    ])
-    expect(inserted.rows.category).toEqual([category])
+    ]);
+    expect(inserted.rows.category).toEqual([category]);
 
     const deleted = applyChanges(inserted, [
       {
@@ -43,9 +43,9 @@ describe("catalog replica", () => {
         rowVersion: 2,
         row: null,
       },
-    ])
-    expect(deleted.rows.category).toEqual([])
-  })
+    ]);
+    expect(deleted.rows.category).toEqual([]);
+  });
 
   it("groups diffs by entity", () => {
     const diffs = diffFromChanges([
@@ -63,15 +63,15 @@ describe("catalog replica", () => {
         rowVersion: 1,
         row: null,
       },
-    ])
+    ]);
     expect(diffs).toEqual([
       {
         entity: "product",
         upserts: [{ id: "p1", row: { id: "p1" } }],
         deletes: ["p2"],
       },
-    ])
-  })
+    ]);
+  });
 
   it("reads catalog write rows as replica changes", () => {
     expect(
@@ -92,6 +92,6 @@ describe("catalog replica", () => {
         rowVersion: 1,
         row: category,
       },
-    ])
-  })
-})
+    ]);
+  });
+});

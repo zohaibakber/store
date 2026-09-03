@@ -1,4 +1,4 @@
-import type { CatalogWriteCommand, CatalogWriteEntity } from "@store/contracts/catalog-write"
+import type { CatalogWriteCommand, CatalogWriteEntity } from "@store/contracts/catalog-write";
 import {
   Catalog,
   CatalogError,
@@ -7,39 +7,43 @@ import {
   DurableStore,
   layerIndexedDb,
   type ReplicaDiff,
-} from "@store/sync"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as ManagedRuntime from "effect/ManagedRuntime"
-import * as PubSub from "effect/PubSub"
+} from "@store/sync";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as PubSub from "effect/PubSub";
 
-import { catalogMemoryCollectionConfigs, type CatalogCollectionConfigs } from "./collections"
-import { inventoryReplicaDatabaseName, inventoryReplicaScope, inventorySourceId } from "./inventory"
-import { failureFromUnknown, InventoryFailure } from "./inventory-failure"
-import { inventoryApiRoot } from "./mutations"
-import type { BatchRow, CategoryRow, ProductRow } from "./rows"
+import { catalogMemoryCollectionConfigs, type CatalogCollectionConfigs } from "./collections";
+import {
+  inventoryReplicaDatabaseName,
+  inventoryReplicaScope,
+  inventorySourceId,
+} from "./inventory";
+import { failureFromUnknown, InventoryFailure } from "./inventory-failure";
+import { inventoryApiRoot } from "./mutations";
+import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
-export type { CatalogCollectionConfigs }
+export type { CatalogCollectionConfigs };
 
 export type CatalogBoundTables = {
-  readonly batches: { preload?: () => Promise<void> }
-  readonly categories: { preload?: () => Promise<void> }
-  readonly products: { preload?: () => Promise<void> }
-  readonly invoices: { preload?: () => Promise<void> }
-  readonly invoiceItems: { preload?: () => Promise<void> }
-  readonly stockMovements: { preload?: () => Promise<void> }
-}
+  readonly batches: { preload?: () => Promise<void> };
+  readonly categories: { preload?: () => Promise<void> };
+  readonly products: { preload?: () => Promise<void> };
+  readonly invoices: { preload?: () => Promise<void> };
+  readonly invoiceItems: { preload?: () => Promise<void> };
+  readonly stockMovements: { preload?: () => Promise<void> };
+};
 
 export type CatalogOpenHost<Tables extends CatalogBoundTables> = {
-  readonly apiBaseUrl: string
-  readonly authenticatedFetch: typeof fetch
-  readonly deviceId: string
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+  readonly deviceId: string;
   readonly bindCollections: (configs: CatalogCollectionConfigs) => Tables & {
-    readonly cleanupCollections: () => Promise<void>
-  }
-  readonly onUploadHalt?: (failure: InventoryFailure) => void
-  readonly onFirstSyncError?: (cause: unknown) => void
-}
+    readonly cleanupCollections: () => Promise<void>;
+  };
+  readonly onUploadHalt?: (failure: InventoryFailure) => void;
+  readonly onFirstSyncError?: (cause: unknown) => void;
+};
 
 const failureFromCatalog = (cause: unknown) => {
   if (cause instanceof CatalogError) {
@@ -51,21 +55,21 @@ const failureFromCatalog = (cause: unknown) => {
           : cause.reason === "rejected"
             ? { _tag: "rejected", code: cause.code ?? "CATALOG_REJECTED" }
             : { _tag: cause.reason },
-    })
+    });
   }
-  return failureFromUnknown(cause)
-}
+  return failureFromUnknown(cause);
+};
 
-export const INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE = "The first sync did not finish in time."
+export const INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE = "The first sync did not finish in time.";
 
 export const openCatalog = async <Tables extends CatalogBoundTables>(
   host: CatalogOpenHost<Tables>,
   organizationId: string,
 ) => {
-  const scopeId = inventoryReplicaScope(host.apiBaseUrl, organizationId)
-  const apiRoot = inventoryApiRoot(host.apiBaseUrl)
-  const apiUrl = apiRoot.endsWith("/api") ? apiRoot.slice(0, -4) : apiRoot
-  const listeners = new Set<(diff: ReplicaDiff) => void>()
+  const scopeId = inventoryReplicaScope(host.apiBaseUrl, organizationId);
+  const apiRoot = inventoryApiRoot(host.apiBaseUrl);
+  const apiUrl = apiRoot.endsWith("/api") ? apiRoot.slice(0, -4) : apiRoot;
+  const listeners = new Set<(diff: ReplicaDiff) => void>();
   const catalogLayer = CatalogLive({
     organizationId,
     deviceId: host.deviceId,
@@ -83,28 +87,30 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
         Layer.provide(layerIndexedDb(inventoryReplicaDatabaseName(scopeId))),
       ),
     ),
-  )
-  const runtime = ManagedRuntime.make(catalogLayer)
-  let cleanupCollections: (() => Promise<void>) | undefined
+  );
+  const runtime = ManagedRuntime.make(catalogLayer);
+  let cleanupCollections: (() => Promise<void>) | undefined;
   try {
-    const catalog = await runtime.runPromise(Effect.gen(function* () {
-      return yield* Catalog
-    }))
+    const catalog = await runtime.runPromise(
+      Effect.gen(function* () {
+        return yield* Catalog;
+      }),
+    );
     runtime.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(catalog.changes)
+          const subscription = yield* PubSub.subscribe(catalog.changes);
           yield* PubSub.take(subscription).pipe(
             Effect.tap((diff: ReplicaDiff) =>
               Effect.sync(() => {
-                for (const listener of listeners) listener(diff)
+                for (const listener of listeners) listener(diff);
               }),
             ),
             Effect.forever,
-          )
+          );
         }),
       ),
-    )
+    );
     const persistCatalog = async (
       entity: CatalogWriteEntity,
       row: CategoryRow | ProductRow | BatchRow,
@@ -117,27 +123,27 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
         occurredAt: row.updatedAt,
         entity,
         rows: [row],
-      }
+      };
       await runtime.runPromise(catalog.write(command)).catch((cause: unknown) => {
-        const failure = failureFromCatalog(cause)
-        host.onUploadHalt?.(failure)
-        throw failure
-      })
-    }
+        const failure = failureFromCatalog(cause);
+        host.onUploadHalt?.(failure);
+        throw failure;
+      });
+    };
     const collections = host.bindCollections(
       catalogMemoryCollectionConfigs({
         scopeId,
         snapshot: () => runtime.runPromise(catalog.snapshot),
         subscribe: (listener) => {
-          listeners.add(listener)
+          listeners.add(listener);
           return () => {
-            listeners.delete(listener)
-          }
+            listeners.delete(listener);
+          };
         },
         persistCatalog,
       }),
-    )
-    cleanupCollections = collections.cleanupCollections
+    );
+    cleanupCollections = collections.cleanupCollections;
     await Promise.all([
       collections.batches.preload?.(),
       collections.categories.preload?.(),
@@ -145,33 +151,33 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
       collections.invoices.preload?.(),
       collections.products.preload?.(),
       collections.stockMovements.preload?.(),
-    ])
-    const { cleanupCollections: cleanupBoundCollections, ...tables } = collections
+    ]);
+    const { cleanupCollections: cleanupBoundCollections, ...tables } = collections;
     return {
       ...tables,
       waitForUploadDrain: () =>
         runtime.runPromise(catalog.waitForIdle).catch((cause: unknown) => {
-          throw failureFromCatalog(cause)
+          throw failureFromCatalog(cause);
         }),
       enqueueInvoice: (command: Parameters<typeof catalog.issueInvoice>[0]) =>
         runtime.runPromise(catalog.issueInvoice(command)).catch((cause: unknown) => {
-          const failure = failureFromCatalog(cause)
-          host.onUploadHalt?.(failure)
-          throw failure
+          const failure = failureFromCatalog(cause);
+          host.onUploadHalt?.(failure);
+          throw failure;
         }),
       poke: () => runtime.runPromise(catalog.poke),
       dispose: async () => {
-        await cleanupBoundCollections().catch(() => undefined)
-        await runtime.dispose()
+        await cleanupBoundCollections().catch(() => undefined);
+        await runtime.dispose();
       },
-    }
+    };
   } catch (cause) {
     try {
-      await cleanupCollections?.()
-      await runtime.dispose()
+      await cleanupCollections?.();
+      await runtime.dispose();
     } catch {
       // Keep the original startup failure.
     }
-    throw cause
+    throw cause;
   }
-}
+};

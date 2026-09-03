@@ -5,6 +5,7 @@ import {
   classifyInventoryCrudTransaction,
   projectIssuedInvoice,
   replicaInvoiceNumber,
+  type InventoryCrudEntry,
 } from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
 import type {
@@ -184,31 +185,31 @@ describe("makeInvoiceWrites", () => {
       batches: inventory.batches,
       ids,
     });
-    const crud = [
+    const crud: InventoryCrudEntry[] = [
       {
         id: projection.invoice.id,
         table: "invoices",
         op: "PUT",
-        opData: { ...projection.invoice },
+        opData: projection.invoice,
       },
       ...projection.items.map((item) => ({
         id: item.id,
         table: "invoice_items",
-        op: "PUT",
-        opData: { ...item },
+        op: "PUT" as const,
+        opData: item,
       })),
       ...projection.batchUpdates.map((row) => ({
         id: row.id,
         table: "batches",
-        op: "PATCH",
+        op: "PATCH" as const,
         opData: { packQuantity: row.packQuantity, unitQuantity: row.unitQuantity },
-        previousValues: { ...batch() },
+        previousValues: batch(),
       })),
       ...projection.movements.map((movement) => ({
         id: movement.id,
         table: "stock_movements",
-        op: "PUT",
-        opData: { ...movement },
+        op: "PUT" as const,
+        opData: movement,
       })),
     ];
     expect(classifyInventoryCrudTransaction(crud)).toEqual({

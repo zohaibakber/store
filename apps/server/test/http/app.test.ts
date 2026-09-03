@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { appFor } from "../lib/app";
@@ -18,7 +19,12 @@ describe("HTTP auth and CORS", () => {
   it("lists catalog replica routes on the landing page", async () => {
     const response = await appFor(true).request("/");
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { service?: string; endpoints?: string[] };
+    const body = Schema.decodeUnknownSync(
+      Schema.Struct({
+        service: Schema.String,
+        endpoints: Schema.Array(Schema.String),
+      }),
+    )(await response.json());
     expect(body).toMatchObject({ service: "Store Invoice API" });
     expect(body.endpoints).toContain("/api/inventory/*");
     expect(body.endpoints).not.toContain("/api/powersync/credentials");

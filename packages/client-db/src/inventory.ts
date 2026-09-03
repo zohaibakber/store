@@ -34,5 +34,4 @@ export const inventorySourceId = (apiBaseUrl: string) => {
 export const inventoryReplicaScope = (apiBaseUrl: string, organizationId: string) =>
   `${inventorySourceId(apiBaseUrl)}:${organizationId}`;
 
-export const inventoryReplicaDatabaseName = (scopeId: string) =>
-  `catalog-${fnv1a(scopeId)}`;
+export const inventoryReplicaDatabaseName = (scopeId: string) => `catalog-${fnv1a(scopeId)}`;

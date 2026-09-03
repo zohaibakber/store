@@ -11,6 +11,7 @@ import type {
   InvoiceAllocation,
   IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { CatalogActor, CatalogWriteIds } from "./catalog-writes";
@@ -220,8 +221,8 @@ export type InventoryCrudEntry = {
   readonly id: string;
   readonly table: string;
   readonly op: InventoryCrudOp;
-  readonly opData?: Record<string, unknown> | null;
-  readonly previousValues?: Record<string, unknown> | null;
+  readonly opData?: typeof Schema.Json.Type | null;
+  readonly previousValues?: typeof Schema.Json.Type | null;
 };
 
 export type ClassifiedInventoryCrud =
@@ -231,11 +232,15 @@ export type ClassifiedInventoryCrud =
 const CATALOG_TABLES = new Set(["categories", "products", "batches"]);
 const SALE_TABLES = new Set(["invoices", "invoice_items", "stock_movements", "batches"]);
 
+const crudObject = Schema.Record(Schema.String, Schema.Json);
+const crudExtras = (payload: InventoryCrudEntry["opData"]) =>
+  Schema.decodeUnknownOption(crudObject)(payload).pipe(Option.getOrNull) ?? {};
+
 const decodeInvoicePut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(InvoiceRow)({
     customerName: null,
     deletedAt: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
@@ -243,7 +248,7 @@ const decodeInvoiceItemPut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(InvoiceItemRow)({
     batchNumber: null,
     deletedAt: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
@@ -251,7 +256,7 @@ const decodeStockMovementPut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(StockMovementRow)({
     invoiceId: null,
     note: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
