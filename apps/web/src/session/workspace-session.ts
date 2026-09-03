@@ -48,7 +48,7 @@ export type ApplyWorkspaceSnapshotPorts = {
 
 /**
  * The only writer of WorkspaceSession. Does not navigate, admit, or await
- * PowerSync dispose.
+ * catalog replica dispose.
  */
 export const applyWorkspaceSnapshot = async (
   ports: ApplyWorkspaceSnapshotPorts,

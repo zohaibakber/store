@@ -15,29 +15,13 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toMatchObject({ status: "unauthenticated" });
   });
 
-  it("passes the current access token to PowerSync", async () => {
-    const response = await appFor(true).request("/api/powersync/credentials", {
-      headers: { authorization: "Bearer access-token" },
-    });
-
+  it("lists catalog replica routes on the landing page", async () => {
+    const response = await appFor(true).request("/");
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      endpoint: "https://powersync.example",
-      token: "access-token",
-    });
-  });
-
-  it("does not mint PowerSync credentials without a bearer token", async () => {
-    const response = await appFor(true).request("/api/powersync/credentials");
-    expect(response.status).toBe(401);
-  });
-
-  it("fails closed when a stage has no PowerSync endpoint", async () => {
-    const response = await appFor(true, { powerSyncUrl: "" }).request(
-      "/api/powersync/credentials",
-      { headers: { authorization: "Bearer access-token" } },
-    );
-    expect(response.status).toBe(503);
+    const body = (await response.json()) as { service?: string; endpoints?: string[] };
+    expect(body).toMatchObject({ service: "Store Invoice API" });
+    expect(body.endpoints).toContain("/api/inventory/*");
+    expect(body.endpoints).not.toContain("/api/powersync/credentials");
   });
 
   it("adds CORS headers on API routes for a trusted origin", async () => {

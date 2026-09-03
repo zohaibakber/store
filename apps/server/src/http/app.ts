@@ -1,4 +1,4 @@
-import { bearerToken, isTrustedOrigin } from "@store/auth";
+import { isTrustedOrigin } from "@store/auth";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,7 +8,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
+import { OrganizationAuthLive } from "../auth/organization";
 import { InventoryMutationHandlers } from "../routes/inventory-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { UploadHandlers } from "../routes/uploads";
@@ -41,39 +41,6 @@ const RawRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", "/api/auth/session", handleSessionRequest);
     yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
-    yield* router.add(
-      "GET",
-      "/api/powersync/credentials",
-      Effect.fn("PowerSync.credentials")(function* () {
-        const identity = yield* authenticateCurrentOrganization(runtime);
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const token = bearerToken(request.headers.authorization);
-        if (!token) {
-          return HttpServerResponse.jsonUnsafe(
-            publicError("UNAUTHENTICATED", "Sign in required."),
-            { status: 401 },
-          );
-        }
-        if (!runtime.powerSyncUrl) {
-          return HttpServerResponse.jsonUnsafe(
-            publicError("POWERSYNC_NOT_CONFIGURED", "PowerSync is not configured."),
-            { status: 503 },
-          );
-        }
-        return HttpServerResponse.jsonUnsafe({
-          endpoint: runtime.powerSyncUrl,
-          token,
-          expiresAt: identity.session.expiresAt,
-        });
-      })().pipe(
-        Effect.catchTags({
-          Unauthenticated: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
-          Forbidden: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
-        }),
-      ),
-    );
   }),
 );
 

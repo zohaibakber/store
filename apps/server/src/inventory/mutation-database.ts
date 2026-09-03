@@ -5,6 +5,10 @@ import {
   compareSyncEntityChanges,
   decodeInvoiceId,
   nextInvoiceNumber,
+  type CatalogPullRequest,
+  type CatalogPullResult,
+  type CatalogSnapshotRequest,
+  type CatalogSnapshotResult,
   type CatalogWriteCommand,
   type ImportInventoryCommand,
   type ImportInventoryCommandResult,
@@ -44,6 +48,7 @@ import {
   InventoryProtocolError,
   inventoryProtocolError as protocolError,
 } from "./errors";
+import { appendCatalogChanges, pullCatalogChanges, snapshotCatalog } from "./catalog-log";
 import type { InventoryActor } from "./model";
 import { decodeEntityRow, serverOwnedColumns, type CatalogWriteStamp } from "./row-validation";
 
@@ -55,7 +60,7 @@ export const makePostgresDrizzle = (client: PgClient.PgClient) =>
   PgDrizzle.makeWithDefaults().pipe(Effect.provideService(PgClient.PgClient, client));
 
 export type PostgresDrizzle = Effect.Success<ReturnType<typeof makePostgresDrizzle>>;
-type PostgresTransaction = Parameters<Parameters<PostgresDrizzle["transaction"]>[0]>[0];
+export type PostgresTransaction = Parameters<Parameters<PostgresDrizzle["transaction"]>[0]>[0];
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
@@ -165,19 +170,107 @@ const decodeCatalogWrite = Effect.fn("InventoryMutation.decodeCatalogWrite")(fun
   } satisfies CatalogWrite;
 });
 
+const changesForOperation = Effect.fn("InventoryMutation.changesForOperation")(function* (
+  tx: PostgresTransaction,
+  organizationId: string,
+  operationId: string,
+) {
+  const collected: Array<SyncEntityChange> = [];
+  const categoryRows = yield* tx
+    .select()
+    .from(categories)
+    .where(and(eq(categories.organizationId, organizationId), eq(categories.operationId, operationId)));
+  for (const row of categoryRows) {
+    collected.push({
+      entity: "category",
+      action: row.deletedAt == null ? "upsert" : "delete",
+      entityId: row.id,
+      rowVersion: row.rowVersion,
+      row,
+    });
+  }
+  const productRows = yield* tx
+    .select()
+    .from(products)
+    .where(and(eq(products.organizationId, organizationId), eq(products.operationId, operationId)));
+  for (const row of productRows) {
+    collected.push({
+      entity: "product",
+      action: row.deletedAt == null ? "upsert" : "delete",
+      entityId: row.id,
+      rowVersion: row.rowVersion,
+      row,
+    });
+  }
+  const batchRows = yield* tx
+    .select()
+    .from(batches)
+    .where(and(eq(batches.organizationId, organizationId), eq(batches.operationId, operationId)));
+  for (const row of batchRows) {
+    collected.push({
+      entity: "batch",
+      action: row.deletedAt == null ? "upsert" : "delete",
+      entityId: row.id,
+      rowVersion: row.rowVersion,
+      row,
+    });
+  }
+  const invoiceRows = yield* tx
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, organizationId), eq(invoices.operationId, operationId)));
+  for (const row of invoiceRows) {
+    collected.push({
+      entity: "invoice",
+      action: row.deletedAt == null ? "upsert" : "delete",
+      entityId: row.id,
+      rowVersion: row.rowVersion,
+      row,
+    });
+  }
+  const itemRows = yield* tx
+    .select()
+    .from(invoiceItems)
+    .where(
+      and(eq(invoiceItems.organizationId, organizationId), eq(invoiceItems.operationId, operationId)),
+    );
+  for (const row of itemRows) {
+    collected.push({
+      entity: "invoiceItem",
+      action: row.deletedAt == null ? "upsert" : "delete",
+      entityId: row.id,
+      rowVersion: row.rowVersion,
+      row,
+    });
+  }
+  const movementRows = yield* tx
+    .select()
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.organizationId, organizationId),
+        eq(stockMovements.operationId, operationId),
+      ),
+    );
+  for (const row of movementRows) {
+    collected.push({
+      entity: "stockMovement",
+      action: "upsert",
+      entityId: row.id,
+      rowVersion: 1,
+      row,
+    });
+  }
+  return collected;
+});
+
 const currentTransactionId = Effect.fn("InventoryMutation.currentTransactionId")(function* (
   tx: PostgresTransaction,
+  organizationId: string,
+  changes: ReadonlyArray<SyncEntityChange>,
+  receivedAt: number,
 ) {
-  const [row] = yield* tx.execute<{ value: string }>(
-    sql`select pg_current_xact_id()::xid::text as value`,
-    "objects",
-  );
-  const txid = Number(row?.value);
-  if (!Number.isSafeInteger(txid) || txid < 1)
-    return yield* Effect.fail(
-      InventoryDatabaseError.make({ message: "Postgres did not return a valid transaction id." }),
-    );
-  return txid;
+  return yield* appendCatalogChanges(tx, organizationId, changes, receivedAt);
 });
 
 const touchMutationTarget = Effect.fn("InventoryMutation.touchTarget")(function* (
@@ -489,7 +582,10 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
     ])}, 0))`,
   );
   const [receipt] = yield* tx
-    .select({ payloadHash: inventoryMutationReceipts.payloadHash })
+    .select({
+      payloadHash: inventoryMutationReceipts.payloadHash,
+      transactionId: inventoryMutationReceipts.transactionId,
+    })
     .from(inventoryMutationReceipts)
     .where(
       and(
@@ -499,7 +595,6 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
     )
     .limit(1);
 
-  const txid = yield* currentTransactionId(tx);
   if (receipt) {
     if (receipt.payloadHash !== payloadHash)
       return yield* Effect.fail(
@@ -515,16 +610,7 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
       return yield* Effect.fail(
         protocolError("ENTITY_WRITE_FAILED", "Could not acknowledge the replayed mutation."),
       );
-    yield* tx
-      .update(inventoryMutationReceipts)
-      .set({ transactionId: txid })
-      .where(
-        and(
-          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
-          eq(inventoryMutationReceipts.operationId, command.operationId),
-        ),
-      );
-    return { txid } satisfies InventoryMutationResult;
+    return { txid: receipt.transactionId } satisfies InventoryMutationResult;
   }
 
   const stamp = writeStamp(command);
@@ -539,6 +625,7 @@ const applyOperation = Effect.fn("InventoryMutation.applyOperation")(function* (
     );
   for (const change of canonicalChanges) yield* applyChange(tx, actor, stamp, change);
 
+  const txid = yield* currentTransactionId(tx, actor.organizationId, canonicalChanges, receivedAt);
   yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: command.operationId,
@@ -649,6 +736,7 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     .select({
       payloadHash: inventoryMutationReceipts.payloadHash,
       commandResult: inventoryMutationReceipts.commandResult,
+      transactionId: inventoryMutationReceipts.transactionId,
     })
     .from(inventoryMutationReceipts)
     .where(
@@ -658,7 +746,6 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
       ),
     )
     .limit(1);
-  const txid = yield* currentTransactionId(tx);
 
   if (receipt) {
     if (receipt.payloadHash !== payloadHash)
@@ -698,19 +785,10 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
           protocolError("ENTITY_WRITE_FAILED", "The saved import could not be acknowledged."),
         );
     }
-    yield* tx
-      .update(inventoryMutationReceipts)
-      .set({ transactionId: txid })
-      .where(
-        and(
-          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
-          eq(inventoryMutationReceipts.operationId, command.commandId),
-        ),
-      );
     return {
       createdProducts: saved.createdProducts,
       createdBatches: saved.createdBatches,
-      txid,
+      txid: receipt.transactionId,
     } satisfies ImportInventoryCommandResult;
   }
 
@@ -899,6 +977,8 @@ const importInventory = Effect.fn("InventoryCommand.importInventory")(function* 
     observerProductId,
     observerBatchId,
   };
+  const changes = yield* changesForOperation(tx, actor.organizationId, command.commandId);
+  const txid = yield* currentTransactionId(tx, actor.organizationId, changes, receivedAt);
   yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: command.commandId,
@@ -929,7 +1009,10 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
   );
 
   const [receipt] = yield* tx
-    .select({ payloadHash: inventoryMutationReceipts.payloadHash })
+    .select({
+      payloadHash: inventoryMutationReceipts.payloadHash,
+      transactionId: inventoryMutationReceipts.transactionId,
+    })
     .from(inventoryMutationReceipts)
     .where(
       and(
@@ -938,7 +1021,6 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
       ),
     )
     .limit(1);
-  const txid = yield* currentTransactionId(tx);
   if (receipt) {
     if (receipt.payloadHash !== payloadHash) {
       return yield* Effect.fail(
@@ -969,19 +1051,10 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
           eq(invoiceItems.invoiceId, invoice.id),
         ),
       );
-    yield* tx
-      .update(inventoryMutationReceipts)
-      .set({ transactionId: txid })
-      .where(
-        and(
-          eq(inventoryMutationReceipts.organizationId, actor.organizationId),
-          eq(inventoryMutationReceipts.operationId, command.commandId),
-        ),
-      );
     return {
       invoiceId: decodeInvoiceId(invoice.id),
       invoiceNumber: decodeDriverInvoiceNumber(invoice.invoiceNumber),
-      txid,
+      txid: receipt.transactionId,
     } satisfies IssueInvoiceResult;
   }
 
@@ -1206,6 +1279,8 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
     });
   }
 
+  const changes = yield* changesForOperation(tx, actor.organizationId, command.commandId);
+  const txid = yield* currentTransactionId(tx, actor.organizationId, changes, receivedAt);
   yield* tx.insert(inventoryMutationReceipts).values({
     organizationId: actor.organizationId,
     operationId: command.commandId,
@@ -1271,8 +1346,21 @@ export class InventoryMutationDatabase extends Context.Service<
     readonly write: InventoryMutationWriter;
     readonly importInventory: ReturnType<typeof makeInventoryImportCommandDatabase>;
     readonly issueInvoice: ReturnType<typeof makeInvoiceCommandDatabase>;
+    readonly pull: (
+      organizationId: string,
+      request: CatalogPullRequest,
+    ) => Effect.Effect<CatalogPullResult, InventoryDatabaseError>;
+    readonly snapshot: (
+      organizationId: string,
+      request: CatalogSnapshotRequest,
+    ) => Effect.Effect<CatalogSnapshotResult, InventoryDatabaseError>;
   }
 >()("@store/server/InventoryMutationDatabase") {}
+
+const catalogReadError = (cause: unknown) =>
+  cause instanceof InventoryDatabaseError
+    ? cause
+    : InventoryDatabaseError.make({ message: messageOf(cause), cause });
 
 export const InventoryMutationDatabaseLive = Layer.effect(
   InventoryMutationDatabase,
@@ -1289,6 +1377,22 @@ export const InventoryMutationDatabaseLive = Layer.effect(
       write: makeInventoryMutationDatabase(db),
       importInventory: makeInventoryImportCommandDatabase(db),
       issueInvoice: makeInvoiceCommandDatabase(db),
+      pull: Effect.fn("InventoryMutationDatabase.pull")(function* (
+        organizationId: string,
+        request: CatalogPullRequest,
+      ) {
+        return yield* pullCatalogChanges(db, organizationId, request).pipe(
+          Effect.mapError(catalogReadError),
+        );
+      }),
+      snapshot: Effect.fn("InventoryMutationDatabase.snapshot")(function* (
+        organizationId: string,
+        request: CatalogSnapshotRequest,
+      ) {
+        return yield* snapshotCatalog(db, organizationId, request).pipe(
+          Effect.mapError(catalogReadError),
+        );
+      }),
     });
   }),
 );

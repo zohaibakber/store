@@ -2,8 +2,9 @@
 
 Bun workspace for offline-first inventory: a TanStack web app, an Electron
 desktop app, a native Android app, and a Cloudflare Worker API. Postgres is the
-authoritative inventory database. PowerSync streams organization-scoped rows
-into durable SQLite-backed TanStack DB collections on each client.
+authoritative inventory database. Each web and Electron client keeps a catalog
+replica (IndexedDB HashMap plus TanStack memory collections) and syncs through
+push, pull, and snapshot HTTP.
 
 ## Workspace boundaries
 
@@ -17,16 +18,18 @@ into durable SQLite-backed TanStack DB collections on each client.
 - `apps/desktop` is the Electron shell. `electron` holds the main process and
   preload. It loads the web renderer with hash history and keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
-  inventory HTTP. Live inventory SQLite is `@powersync/web` plus wa-sqlite in
-  the renderer, the same engine as the browser. There is no main-process
-  PowerSync. Desktop requires sign-in before inventory.
+  inventory HTTP. The catalog replica lives in IndexedDB in the renderer, the
+  same engine as the browser. There is no SQLite in the renderer. Desktop
+  requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It writes inventory commands to Postgres
-  through Hyperdrive and issues authenticated PowerSync connection credentials.
+  through Hyperdrive and serves catalog pull and snapshot for the replica.
 - `packages/contracts` owns shared store and server contracts.
-- `packages/client-db` owns the catalog replica (`openCatalog`), catalog writes,
-  PowerSync schema and connector, row models, and Postgres mutation clients.
+- `packages/sync` owns the catalog replica engine, IndexedDB KeyValueStore
+  adapter, and push/pull HTTP transport.
+- `packages/client-db` owns `openCatalog`, catalog writes, row models, and
+  TanStack memory projection.
 - `packages/db` owns the authentication and Postgres schemas.
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
@@ -41,12 +44,12 @@ Web components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Inventory reads come from TanStack DB live queries over PowerSync SQLite.
-Web and Electron open that database in the renderer with `@powersync/web`.
-Native Android uses `com.powersync:core`. Category, product, and batch
-mutations are durably queued offline, uploaded through authenticated
-`/api/inventory/*` commands, committed in Postgres, and streamed back by
-PowerSync. The signed organization claim defines every sync stream.
+Inventory reads come from TanStack DB live queries over the in-memory catalog
+projection. Web and Electron hydrate that projection from IndexedDB and HTTP
+pull/snapshot. Category, product, and batch mutations are queued in the replica
+outbox, uploaded through authenticated `/api/inventory/*` commands, committed
+in Postgres, and pulled back through the catalog change log. The signed
+organization claim defines every replica scope.
 
 ## Run locally
 
@@ -97,7 +100,6 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
-- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.

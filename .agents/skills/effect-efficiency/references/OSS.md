@@ -19,7 +19,7 @@ Copy:
 - HttpClient pipe: `retryTransient` → `filterStatusOk` →
   `schemaBodyJson`.
 - Token refresh dedupe via `Cache.make` with `timeToLive: Duration.zero`
-  (in-flight only) so PowerSync `fetchCredentials` does not stampede.
+  (in-flight only) so replica credential refresh does not stampede.
 - Keyed mutex: map of `Semaphore` per path.
 - Bootstrap `init()` via `Effect.forkDetach`; do not fork inside state
   `make` that should stay sync.
@@ -75,17 +75,17 @@ Copy:
 
 Skip:
 
-- Assuming a second sync client besides PowerSync; only the contract split
-  and pin discipline matter for store.
+- Assuming a second sync client besides the catalog replica; only the
+  contract split and pin discipline matter for store.
 
 ## This repo (already aligned)
 
 - HttpApi server: `apps/server/src/http/api.ts`.
 - ManagedRuntime hosts: `apps/server` Worker runtime,
   `apps/desktop/electron/main.ts`.
-- Inventory client: `@store/client-db` PowerSync connector and collection
-  factory; hosts construct `PowerSyncDatabase` only.
+- Inventory client: `@store/sync` catalog module + `@store/client-db`
+  TanStack memory projection. Hosts construct `DbClient` only.
 - Named `Context.Service` classes (`AuthClient`); follow local style over
   OpenCode `export * as Foo` self-exports.
-- Thin raw `fetch` in `packages/auth` / session HTTP adapters only. The
-  PowerSync connector also uses host `fetch` for credentials and uploads.
+- Thin raw `fetch` in `packages/auth` / session HTTP adapters only. Catalog
+  HTTP uses host `fetch` through `CatalogHttpTransport`.

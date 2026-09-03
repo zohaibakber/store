@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -36,6 +37,28 @@ const mutableMetadata = {
   operationId: text("operation_id").notNull(),
   rowVersion: epochMilliseconds("row_version").notNull().default(1),
 };
+
+export const catalogChangeLog = pgTable(
+  "catalog_change_log",
+  {
+    id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity().primaryKey(),
+    organizationId: tenantId(),
+    entity: text("entity").notNull(),
+    action: text("action").notNull(),
+    entityId: text("entity_id").notNull(),
+    rowVersion: epochMilliseconds("row_version").notNull(),
+    row: jsonb("row"),
+    recordedAt: epochMilliseconds("recorded_at").notNull(),
+  },
+  (table) => [
+    index("catalog_change_log_organization_id_id_idx").on(table.organizationId, table.id),
+    index("catalog_change_log_organization_entity_idx").on(
+      table.organizationId,
+      table.entity,
+      table.entityId,
+    ),
+  ],
+);
 
 /**
  * Durable acknowledgement for an inventory command.

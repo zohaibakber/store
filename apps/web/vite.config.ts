@@ -63,9 +63,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       tsconfigPaths: true,
     },
-    optimizeDeps: {
-      exclude: ["@powersync/web", "@journeyapps/wa-sqlite"],
-    },
     worker: {
       format: "es",
     },

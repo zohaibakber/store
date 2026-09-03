@@ -1,5 +1,9 @@
 import type { AuthSession } from "@store/auth";
 import type {
+  CatalogPullRequest,
+  CatalogPullResult,
+  CatalogSnapshotRequest,
+  CatalogSnapshotResult,
   CatalogWriteCommand,
   ImportInventoryCommand,
   ImportInventoryCommandResult,
@@ -21,7 +25,6 @@ import type { InventoryMutationResult } from "../inventory/mutation-database";
 
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
-  readonly powerSyncUrl: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
     headers: Headers,
@@ -61,6 +64,14 @@ export interface ServerRuntimeContract {
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
+  readonly pullCatalog: (
+    organizationId: string,
+    request: CatalogPullRequest,
+  ) => Effect.Effect<CatalogPullResult, InventoryDatabaseError, RuntimeContext | Scope.Scope>;
+  readonly snapshotCatalog: (
+    organizationId: string,
+    request: CatalogSnapshotRequest,
+  ) => Effect.Effect<CatalogSnapshotResult, InventoryDatabaseError, RuntimeContext | Scope.Scope>;
 }
 
 export class ServerRuntime extends Context.Service<ServerRuntime, ServerRuntimeContract>()(

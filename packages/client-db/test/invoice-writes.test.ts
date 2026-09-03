@@ -1,4 +1,3 @@
-import { UpdateType } from "@powersync/common";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
@@ -121,6 +120,7 @@ const tables = (): InvoiceWriteTables => ({
   persist: async (work) => {
     work();
   },
+  submitInvoice: async () => undefined,
 });
 
 describe("replicaInvoiceNumber", () => {
@@ -188,26 +188,26 @@ describe("makeInvoiceWrites", () => {
       {
         id: projection.invoice.id,
         table: "invoices",
-        op: UpdateType.PUT,
+        op: "PUT",
         opData: { ...projection.invoice },
       },
       ...projection.items.map((item) => ({
         id: item.id,
         table: "invoice_items",
-        op: UpdateType.PUT,
+        op: "PUT",
         opData: { ...item },
       })),
       ...projection.batchUpdates.map((row) => ({
         id: row.id,
         table: "batches",
-        op: UpdateType.PATCH,
+        op: "PATCH",
         opData: { packQuantity: row.packQuantity, unitQuantity: row.unitQuantity },
         previousValues: { ...batch() },
       })),
       ...projection.movements.map((movement) => ({
         id: movement.id,
         table: "stock_movements",
-        op: UpdateType.PUT,
+        op: "PUT",
         opData: { ...movement },
       })),
     ];

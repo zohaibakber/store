@@ -426,15 +426,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@journeyapps/wa-sqlite':
-        specifier: ^1.7.2
-        version: 1.7.2
-      '@powersync/common':
-        specifier: 1.57.3
-        version: 1.57.3
-      '@powersync/web':
-        specifier: 1.39.1
-        version: 1.39.1(@journeyapps/wa-sqlite@1.7.2)(@powersync/common@1.57.3)
       '@sentry/react':
         specifier: 10.73.0
         version: 10.73.0(react@19.2.8)
@@ -444,9 +435,6 @@ importers:
       '@tanstack/charts':
         specifier: ^0.14.0
         version: 0.14.0(react-dom@19.2.8(react@19.2.8))(react-native-svg@15.15.4(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8))(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)
-      '@tanstack/powersync-db-collection':
-        specifier: 0.1.62
-        version: 0.1.62(@powersync/common@1.57.3)(supports-color@10.2.2)(typescript@7.0.2)
       '@tanstack/react-db':
         specifier: 'catalog:'
         version: 0.3.7(react@19.2.8)(typescript@7.0.2)
@@ -587,15 +575,12 @@ importers:
 
   packages/client-db:
     dependencies:
-      '@powersync/common':
-        specifier: 1.57.3
-        version: 1.57.3
       '@store/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tanstack/powersync-db-collection':
-        specifier: 0.1.62
-        version: 0.1.62(@powersync/common@1.57.3)(supports-color@10.2.2)(typescript@7.0.2)
+      '@store/sync':
+        specifier: workspace:*
+        version: link:../sync
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112
@@ -691,6 +676,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(@vitest/browser-preview@4.1.10)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0))(happy-dom@20.11.6)
 
   packages/workspace:
     dependencies:
@@ -2558,9 +2546,6 @@ packages:
     resolution: {integrity: sha512-u3UPsIilWKOM3F9CXtrG8LEJmNxwoCQC/XVj4IKYXvvpx7QIi/Kg1LI5uDmDpKlac62NUtX7eLjRh+jVZcLOzw==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
-  '@journeyapps/wa-sqlite@1.7.2':
-    resolution: {integrity: sha512-EVRMzqHtHgJBFcTGOgQ5/YlxrYFSXLFFztC5yo6+jQx2mqFR+a1kkLV4IirquiBzIonjmYXfBtvZ26fmI8r9Nw==}
-
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -3405,16 +3390,6 @@ packages:
 
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
-
-  '@powersync/common@1.57.3':
-    resolution: {integrity: sha512-gzXcdfO1EnwXNBITDbnx7oN23d91HjoumS/XzPmVZEwV6S/IBcao/Unv4+aQDvijQVzTtXI+jTl98i9v+TrODQ==}
-
-  '@powersync/web@1.39.1':
-    resolution: {integrity: sha512-mu01OE3sQrulRgvDOWw1xRbRbPhJMOfz5sIVIQ2lENGDkqgWdlRhpkHVfeVi80tCZoP/AFYkQAFRszCgzqFUxQ==}
-    hasBin: true
-    peerDependencies:
-      '@journeyapps/wa-sqlite': ^1.5.0
-      '@powersync/common': ^1.57.3
 
   '@prisma/debug@7.2.0':
     resolution: {integrity: sha512-YSGTiSlBAVJPzX4ONZmMotL+ozJwQjRmZweQNIq/ER0tQJKJynNkRB3kyvt37eOfsbMCXk3gnLF6J9OJ4QWftw==}
@@ -4427,11 +4402,6 @@ packages:
   '@tanstack/pacer-lite@0.2.2':
     resolution: {integrity: sha512-eQ1MyLKCHyXiH7NbdmB80W77OhiMgGBUb+qDx/8WMGbwg5Lf/NlfD0TfNYAqY77i8V3AxoDoYdICrQE5ADw4Yw==}
     engines: {node: '>=18'}
-
-  '@tanstack/powersync-db-collection@0.1.62':
-    resolution: {integrity: sha512-hDa69WuQMWChtWoy3QB3aPsoRB1vYHB3tHbxytwRpBjpIXi0KE2P0pwX6r4cJjaLQyHRPL0VTy/TOOSu5GF3tQ==}
-    peerDependencies:
-      '@powersync/common': ^1.41.0
 
   '@tanstack/react-db@0.3.7':
     resolution: {integrity: sha512-u0AmiKNyyZoYcTVWEFJ5NG+6mQ6mFKzxwQNeljW8mLPzM7vIBZMVfD5QxUDg7j/54ggsVNkp+MIFisaWEXxVug==}
@@ -5764,9 +5734,6 @@ packages:
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
-
-  comlink@4.4.2:
-    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
 
   commander@11.1.0:
     resolution: {integrity: sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ==}
@@ -7281,9 +7248,6 @@ packages:
   js-base64@3.9.3:
     resolution: {integrity: sha512-uwYQp+VJ38FVvtim6qNbit6e9uT6dwWQ4Y1+H9TxhW5hcHjpHwoxlR0nMpqUmIFOmu4VqMxwdJA88gIVuZJQ/g==}
 
-  js-logger@1.6.1:
-    resolution: {integrity: sha512-yTgMCPXVjhmg28CuUH8CKjU+cIKL/G+zTu4Fn4lQxs8mRFH/03QTNvEFngcxfg/gRDiQAOoyCKmMTOm9ayOzXA==}
-
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -8065,10 +8029,6 @@ packages:
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
     engines: {node: '>=8'}
-
-  p-defer@4.0.1:
-    resolution: {integrity: sha512-Mr5KC5efvAK5VUptYEIopP1bakB85k2IWXaRC0rsh1uwn1L6M0LVml8OIQ4Gudg4oyZakf7FmeRLkMMtZW1i5A==}
-    engines: {node: '>=12'}
 
   p-limit@2.3.0:
     resolution: {integrity: sha512-//88mFWSJx8lxCzwdAABTJL2MyWB12+eIY7MDL2SqLmAkeKU9qxRvWuSyTjm3FUmpBEMuFfckAIqEaVGUDxb6w==}
@@ -11775,8 +11735,6 @@ snapshots:
       chalk: 4.1.2
     optional: true
 
-  '@journeyapps/wa-sqlite@1.7.2': {}
-
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
@@ -12365,17 +12323,6 @@ snapshots:
       supports-color: 10.2.2
 
   '@poppinss/exception@1.2.3': {}
-
-  '@powersync/common@1.57.3':
-    dependencies:
-      js-logger: 1.6.1
-
-  '@powersync/web@1.39.1(@journeyapps/wa-sqlite@1.7.2)(@powersync/common@1.57.3)':
-    dependencies:
-      '@journeyapps/wa-sqlite': 1.7.2
-      '@powersync/common': 1.57.3
-      comlink: 4.4.2
-      commander: 12.1.0
 
   '@prisma/debug@7.2.0': {}
 
@@ -13271,18 +13218,6 @@ snapshots:
   '@tanstack/pacer-lite@0.1.1': {}
 
   '@tanstack/pacer-lite@0.2.2': {}
-
-  '@tanstack/powersync-db-collection@0.1.62(@powersync/common@1.57.3)(supports-color@10.2.2)(typescript@7.0.2)':
-    dependencies:
-      '@powersync/common': 1.57.3
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/db': 0.8.7(typescript@7.0.2)
-      '@tanstack/store': 0.9.3
-      debug: 4.4.3(supports-color@10.2.2)
-      p-defer: 4.0.1
-    transitivePeerDependencies:
-      - supports-color
-      - typescript
 
   '@tanstack/react-db@0.3.7(react@19.2.8)(typescript@7.0.2)':
     dependencies:
@@ -14876,11 +14811,10 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
-  comlink@4.4.2: {}
-
   commander@11.1.0: {}
 
-  commander@12.1.0: {}
+  commander@12.1.0:
+    optional: true
 
   commander@14.0.3: {}
 
@@ -16500,8 +16434,6 @@ snapshots:
 
   js-base64@3.9.3: {}
 
-  js-logger@1.6.1: {}
-
   js-tokens@4.0.0: {}
 
   js-yaml@4.3.1:
@@ -17430,8 +17362,6 @@ snapshots:
       vite-plus: 0.2.9(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0))(esbuild@0.28.2)(happy-dom@20.11.6)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0)
 
   p-cancelable@2.1.1: {}
-
-  p-defer@4.0.1: {}
 
   p-limit@2.3.0:
     dependencies:

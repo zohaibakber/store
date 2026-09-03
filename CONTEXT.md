@@ -16,7 +16,7 @@ movements as one business record, not a bag of replica internals.
 _Avoid_: Inventory bag, collections, PowerSync database
 
 **Catalog replica.**
-The local SQLite copy of the catalog streamed from Postgres. Clients read it;
+The local IndexedDB copy of the catalog pulled from Postgres. Clients read it;
 they do not treat it as authority.
 _Avoid_: Local database, client DB, live inventory
 

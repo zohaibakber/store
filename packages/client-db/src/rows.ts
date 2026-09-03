@@ -97,7 +97,7 @@ export type StockMovementRow = typeof StockMovementRow.Type;
 
 const VIRTUAL_ROW_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
 
-/** TanStack DB attaches these to `collection.state` rows. PowerSync must not persist them. */
+/** TanStack DB attaches these to `collection.state` rows. Do not persist them. */
 export const persistableRow = <T extends object>(row: T): T => {
   const copy = { ...row };
   for (const key of VIRTUAL_ROW_KEYS) {

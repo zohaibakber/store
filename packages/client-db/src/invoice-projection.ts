@@ -1,4 +1,3 @@
-import type { CrudEntry } from "@powersync/common";
 import {
   allocationsCoverInput,
   allocateInvoiceLine,
@@ -215,10 +214,15 @@ export const replicaInvoiceNumber = (
   invoices: Iterable<{ readonly deletedAt: number | null; readonly invoiceNumber: number }>,
 ) => nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
 
-export type InventoryCrudEntry = Pick<
-  CrudEntry,
-  "id" | "table" | "op" | "opData" | "previousValues"
->;
+export type InventoryCrudOp = "PUT" | "PATCH" | "DELETE";
+
+export type InventoryCrudEntry = {
+  readonly id: string;
+  readonly table: string;
+  readonly op: InventoryCrudOp;
+  readonly opData?: Record<string, unknown> | null;
+  readonly previousValues?: Record<string, unknown> | null;
+};
 
 export type ClassifiedInventoryCrud =
   | { readonly _tag: "catalog"; readonly entries: ReadonlyArray<InventoryCrudEntry> }
@@ -329,7 +333,7 @@ export const classifyInventoryCrudTransaction = (
   crud: ReadonlyArray<InventoryCrudEntry>,
 ): ClassifiedInventoryCrud => {
   if (crud.length === 0) {
-    throw new Error("PowerSync queued an empty inventory transaction.");
+    throw new Error("Queued an empty inventory transaction.");
   }
   const tables = new Set(crud.map((entry) => entry.table));
   const isCatalog = [...tables].every((table) => CATALOG_TABLES.has(table));
@@ -353,5 +357,5 @@ export const classifyInventoryCrudTransaction = (
     return { _tag: "sale", command: reconstructIssueInvoiceCommand(crud) };
   }
   if (isCatalog) return { _tag: "catalog", entries: crud };
-  throw new Error("PowerSync queued mixed catalog and invoice writes.");
+  throw new Error("Queued mixed catalog and invoice writes.");
 };

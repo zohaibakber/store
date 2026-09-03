@@ -1,4 +1,8 @@
 import {
+  CatalogPullRequest,
+  CatalogPullResult,
+  CatalogSnapshotRequest,
+  CatalogSnapshotResult,
   CatalogWriteCommand,
   ImportInventoryCommand,
   ImportInventoryCommandResult,
@@ -93,6 +97,20 @@ const inventoryMutations = HttpApiGroup.make("inventoryMutations")
       payload: IssueInvoiceCommand,
       success: IssueInvoiceResult,
       error: [BadRequest, Forbidden, Conflict],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("pull", "/api/inventory/pull", {
+      payload: CatalogPullRequest,
+      success: CatalogPullResult,
+      error: [BadRequest, Forbidden],
+    }).middleware(OrganizationAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("snapshot", "/api/inventory/snapshot", {
+      payload: CatalogSnapshotRequest,
+      success: CatalogSnapshotResult,
+      error: [BadRequest, Forbidden],
     }).middleware(OrganizationAuth),
   );
 
