@@ -1,4 +1,4 @@
-export { Catalog, CatalogScope, CatalogStatus } from "./catalog";
+export { Catalog, CatalogScope, CatalogStatus, type CatalogFailure } from "./catalog";
 export { CatalogError } from "./errors";
 export { CatalogLive, makeCatalog } from "./engine";
 export { CatalogHttpTransport } from "./http";

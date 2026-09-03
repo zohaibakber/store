@@ -174,6 +174,12 @@ export const snapshotCatalog = Effect.fn("CatalogLog.snapshot")(function* (
 ) {
   const entities = new Set(sliceEntities(request.slices));
   const changes: Array<SyncEntityChange> = [];
+  const [cursorRow] = yield* db
+    .select({ id: catalogChangeLog.id })
+    .from(catalogChangeLog)
+    .where(eq(catalogChangeLog.organizationId, organizationId))
+    .orderBy(sql`${catalogChangeLog.id} desc`)
+    .limit(1);
   if (entities.has("category")) {
     const rows = yield* db
       .select()
@@ -224,12 +230,6 @@ export const snapshotCatalog = Effect.fn("CatalogLog.snapshot")(function* (
       })),
     );
   }
-  const [cursorRow] = yield* db
-    .select({ id: catalogChangeLog.id })
-    .from(catalogChangeLog)
-    .where(eq(catalogChangeLog.organizationId, organizationId))
-    .orderBy(sql`${catalogChangeLog.id} desc`)
-    .limit(1);
   return {
     cursor: cursorRow?.id ?? 0,
     changes,

@@ -1,4 +1,10 @@
-import { CatalogWriteCommand, ImportInventoryCommand, IssueInvoiceCommand } from "@store/contracts";
+import {
+  CatalogWriteCommand,
+  ImportInventoryCommand,
+  IssueInvoiceCommand,
+  type SyncEntityChange,
+} from "@store/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,7 +16,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { Catalog, type CatalogScope, type CatalogStatus } from "./catalog";
+import { Catalog, type CatalogFailure, type CatalogScope, type CatalogStatus } from "./catalog";
 import { CatalogError } from "./errors";
 import {
   OutboxEntry as OutboxEntrySchema,
@@ -23,7 +29,6 @@ import {
   importCommandEntry,
   invoiceCommandEntry,
   replicaScopeKey,
-  snapshotAsChanges,
   type OutboxEntry,
   type ReplicaDiff,
   type ReplicaSnapshot,
@@ -32,7 +37,7 @@ import { DurableStore, type DurableStoreApi } from "./store";
 import { CatalogTransport } from "./transport";
 
 const snapshotKey = (scopeKey: string) => `${scopeKey}:snapshot`;
-const outboxKey = (scopeKey: string) => `${scopeKey}:outbox`;
+const legacyOutboxKey = (scopeKey: string) => `${scopeKey}:outbox`;
 
 const decodeSnapshot = (raw: string | undefined) =>
   Effect.sync((): ReplicaSnapshot => {
@@ -61,25 +66,29 @@ const decodeOutbox = (raw: string | undefined) =>
     }
   });
 
-const loadSnapshot = Effect.fn("Catalog.loadSnapshot")(function* (
+const saveState = (store: DurableStoreApi, scopeKey: string, state: ReplicaSnapshot) =>
+  store.set(snapshotKey(scopeKey), JSON.stringify(state));
+
+const outboxIdentity = (entry: OutboxEntry) => `${entry.kind}:${entry.id}`;
+
+const loadState = Effect.fn("Catalog.loadState")(function* (
   store: DurableStoreApi,
   scopeKey: string,
 ) {
-  return yield* decodeSnapshot(yield* store.get(snapshotKey(scopeKey)));
+  const snapshot = yield* decodeSnapshot(yield* store.get(snapshotKey(scopeKey)));
+  const legacyOutbox = yield* decodeOutbox(yield* store.get(legacyOutboxKey(scopeKey)));
+  if (legacyOutbox.length === 0) return snapshot;
+
+  const known = new Set(snapshot.outbox.map(outboxIdentity));
+  const outbox = [
+    ...snapshot.outbox,
+    ...legacyOutbox.filter((entry) => !known.has(outboxIdentity(entry))),
+  ];
+  const migrated = { ...snapshot, outbox };
+  yield* saveState(store, scopeKey, migrated);
+  yield* store.remove(legacyOutboxKey(scopeKey));
+  return migrated;
 });
-
-const loadOutbox = Effect.fn("Catalog.loadOutbox")(function* (
-  store: DurableStoreApi,
-  scopeKey: string,
-) {
-  return yield* decodeOutbox(yield* store.get(outboxKey(scopeKey)));
-});
-
-const saveSnapshot = (store: DurableStoreApi, scopeKey: string, snapshot: ReplicaSnapshot) =>
-  store.set(snapshotKey(scopeKey), JSON.stringify(snapshot));
-
-const saveOutbox = (store: DurableStoreApi, scopeKey: string, outbox: ReadonlyArray<OutboxEntry>) =>
-  store.set(outboxKey(scopeKey), JSON.stringify(outbox));
 
 const publishDiffs = Effect.fn("Catalog.publishDiffs")(function* (
   changes: PubSub.PubSub<ReplicaDiff>,
@@ -104,10 +113,11 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
 
   const status = yield* SubscriptionRef.make<CatalogStatus>("hydrating");
   const changes = yield* PubSub.unbounded<ReplicaDiff>();
-  const snapshotRef = yield* Ref.make(emptyReplicaSnapshot());
-  const outboxRef = yield* Ref.make<ReadonlyArray<OutboxEntry>>([]);
+  const failures = yield* Queue.unbounded<CatalogFailure>();
+  const stateRef = yield* Ref.make(emptyReplicaSnapshot());
   const pushWake = yield* Queue.unbounded<void>();
   const pullWake = yield* Queue.unbounded<void>();
+  const hydrated = yield* Deferred.make<void>();
   const lock = yield* Queue.bounded<void>(1);
   yield* Queue.offer(lock, undefined);
 
@@ -118,23 +128,42 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
       () => Queue.offer(lock, undefined),
     );
 
-  const recoverOffline = <A, R>(effect: Effect.Effect<A, CatalogError, R>) =>
-    effect.pipe(Effect.catchTag("CatalogError", () => markOffline(status)));
+  const isRetryable = (error: CatalogError) =>
+    error.reason === "transport" || error.reason === "transient";
 
-  const snapshot = yield* loadSnapshot(store, scopeKey);
-  const outbox = yield* loadOutbox(store, scopeKey);
-  yield* Ref.set(snapshotRef, snapshot);
-  yield* Ref.set(outboxRef, outbox);
-  if (snapshot.cursor > 0) {
-    yield* publishDiffs(changes, diffFromChanges(snapshotAsChanges(snapshot, slices)));
-    yield* SubscriptionRef.set(status, outbox.length > 0 ? "syncing" : "ready");
+  const retryTransient = <A, R>(effect: Effect.Effect<A, CatalogError, R>) =>
+    effect.pipe(
+      Effect.tapError(() => markOffline(status)),
+      Effect.retry({
+        while: isRetryable,
+        schedule: Schedule.exponential(Duration.millis(250)).pipe(
+          Schedule.jittered,
+          Schedule.modifyDelay(({ duration }) =>
+            Effect.succeed(Duration.min(duration, Duration.seconds(30))),
+          ),
+        ),
+      }),
+    );
+
+  const retrySync = <A, R>(effect: Effect.Effect<A, CatalogError, R>) =>
+    retryTransient(
+      effect.pipe(
+        Effect.tapError((error) =>
+          Queue.offer(failures, { _tag: "sync", error } satisfies CatalogFailure).pipe(
+            Effect.asVoid,
+          ),
+        ),
+      ),
+    );
+
+  const state = yield* loadState(store, scopeKey);
+  yield* Ref.set(stateRef, state);
+  if (state.cursor > 0) {
+    yield* Deferred.succeed(hydrated, undefined);
+    yield* SubscriptionRef.set(status, state.outbox.length > 0 ? "syncing" : "ready");
   }
 
-  const pushOnce = Effect.fn("Catalog.pushOnce")(function* () {
-    const pending = yield* Ref.get(outboxRef);
-    const entry = pending[0];
-    if (!entry) return;
-    yield* SubscriptionRef.set(status, "syncing");
+  const pushEntry = Effect.fn("Catalog.pushEntry")(function* (entry: OutboxEntry) {
     if (entry.kind === "catalogWrite") {
       yield* transport.write(entry.command);
     } else if (entry.kind === "issueInvoice") {
@@ -142,97 +171,168 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     } else {
       yield* transport.importInventory(entry.command);
     }
-    const rest = pending.slice(1);
-    yield* Ref.set(outboxRef, rest);
-    yield* saveOutbox(store, scopeKey, rest);
-    yield* SubscriptionRef.set(status, rest.length > 0 ? "syncing" : "ready");
-    yield* Queue.offer(pullWake, undefined);
+  });
+
+  const applyPendingWrites = (current: ReplicaSnapshot) =>
+    applyChanges(
+      current,
+      current.outbox.flatMap((entry) =>
+        entry.kind === "catalogWrite" ? commandChanges(entry.command) : [],
+      ),
+    );
+
+  const drainOutbox = Effect.fn("Catalog.drainOutbox")(function* () {
+    while (true) {
+      const current = yield* Ref.get(stateRef);
+      const entry = current.outbox[0];
+      if (!entry) {
+        yield* SubscriptionRef.set(status, "ready");
+        return;
+      }
+
+      yield* SubscriptionRef.set(status, "syncing");
+      yield* retryTransient(pushEntry(entry)).pipe(
+        Effect.catchTag("CatalogError", (error) =>
+          entry.kind === "catalogWrite" && error.reason === "conflict"
+            ? Effect.void
+            : Effect.fail(error),
+        ),
+      );
+      yield* exclusive(
+        Effect.gen(function* () {
+          const latest = yield* Ref.get(stateRef);
+          const head = latest.outbox[0];
+          if (!head || outboxIdentity(head) !== outboxIdentity(entry)) return;
+          const next = { ...latest, outbox: latest.outbox.slice(1) };
+          yield* saveState(store, scopeKey, next);
+          yield* Ref.set(stateRef, next);
+        }),
+      );
+      yield* Queue.offer(pullWake, undefined);
+    }
   });
 
   const pullOnce = Effect.fn("Catalog.pullOnce")(function* (waitMs: number) {
-    yield* exclusive(
+    const before = yield* Ref.get(stateRef);
+    const result = yield* transport.pull({
+      cursor: before.cursor,
+      slices: [...slices],
+      waitMs,
+    });
+    const applied = yield* exclusive(
       Effect.gen(function* () {
-        const current = yield* Ref.get(snapshotRef);
-        const result = yield* transport.pull({
-          cursor: current.cursor,
-          slices: [...slices],
-          waitMs,
-        });
-        if (result.changes.length === 0 && result.cursor === current.cursor) return;
-        const next = applyChanges(
-          {
-            cursor: result.cursor,
-            outbox: current.outbox,
-            rows: current.rows,
-          },
-          result.changes,
+        const current = yield* Ref.get(stateRef);
+        if (result.cursor <= current.cursor) return false;
+        const next = applyPendingWrites(
+          applyChanges(
+            {
+              cursor: result.cursor,
+              outbox: current.outbox,
+              rows: current.rows,
+            },
+            result.changes,
+          ),
         );
-        yield* Ref.set(snapshotRef, next);
-        yield* saveSnapshot(store, scopeKey, next);
-        yield* publishDiffs(changes, diffFromChanges(result.changes));
+        yield* saveState(store, scopeKey, next);
+        yield* Ref.set(stateRef, next);
+        return true;
       }),
     );
+    if (applied) yield* publishDiffs(changes, diffFromChanges(result.changes));
+    const latest = yield* Ref.get(stateRef);
+    yield* SubscriptionRef.set(status, latest.outbox.length > 0 ? "syncing" : "ready");
   });
 
   const hydrate = Effect.fn("Catalog.hydrate")(function* () {
-    const current = yield* Ref.get(snapshotRef);
-    if (current.cursor !== 0) return;
     const result = yield* transport.snapshot({ slices: [...slices] });
-    yield* exclusive(
+    const applied = yield* exclusive(
       Effect.gen(function* () {
+        const current = yield* Ref.get(stateRef);
+        if (current.cursor !== 0) return false;
         const empty = emptyReplicaSnapshot();
-        const next = applyChanges(
-          {
-            cursor: result.cursor,
-            outbox: empty.outbox,
-            rows: empty.rows,
-          },
-          result.changes,
+        const next = applyPendingWrites(
+          applyChanges(
+            {
+              cursor: result.cursor,
+              outbox: current.outbox,
+              rows: empty.rows,
+            },
+            result.changes,
+          ),
         );
-        yield* Ref.set(snapshotRef, next);
-        yield* saveSnapshot(store, scopeKey, next);
-        yield* publishDiffs(changes, diffFromChanges(result.changes));
-        const pending = yield* Ref.get(outboxRef);
-        yield* SubscriptionRef.set(status, pending.length > 0 ? "syncing" : "ready");
+        yield* saveState(store, scopeKey, next);
+        yield* Ref.set(stateRef, next);
+        return true;
       }),
     );
+    if (applied) yield* publishDiffs(changes, diffFromChanges(result.changes));
+    const latest = yield* Ref.get(stateRef);
+    yield* SubscriptionRef.set(status, latest.outbox.length > 0 ? "syncing" : "ready");
   });
 
-  yield* recoverOffline(hydrate()).pipe(Effect.forkScoped);
   yield* Queue.take(pushWake).pipe(
-    Effect.andThen(() => recoverOffline(pushOnce())),
-    Effect.forever,
-    Effect.forkScoped,
-  );
-  yield* pullOnce(25_000).pipe(
-    Effect.catchTag("CatalogError", () =>
-      markOffline(status).pipe(Effect.andThen(Effect.sleep(Duration.seconds(2)))),
+    Effect.andThen(() =>
+      drainOutbox().pipe(
+        Effect.catchTag("CatalogError", (error) =>
+          Queue.offer(failures, { _tag: "upload", error } satisfies CatalogFailure).pipe(
+            Effect.andThen(markOffline(status)),
+            Effect.asVoid,
+          ),
+        ),
+      ),
     ),
     Effect.forever,
     Effect.forkScoped,
   );
+  yield* Effect.gen(function* () {
+    const current = yield* Ref.get(stateRef);
+    if (current.cursor === 0) yield* retrySync(hydrate());
+    yield* Deferred.succeed(hydrated, undefined);
+    yield* retrySync(pullOnce(25_000)).pipe(Effect.forever);
+  }).pipe(
+    Effect.catchTag("CatalogError", () => markOffline(status)),
+    Effect.forkScoped,
+  );
   yield* Queue.take(pullWake).pipe(
-    Effect.andThen(() => recoverOffline(pullOnce(0))),
+    Effect.andThen(() =>
+      Deferred.await(hydrated).pipe(
+        Effect.andThen(retrySync(pullOnce(0))),
+        Effect.catchTag("CatalogError", () => markOffline(status)),
+      ),
+    ),
     Effect.forever,
     Effect.forkScoped,
   );
 
-  if (outbox.length > 0) yield* Queue.offer(pushWake, undefined);
+  if (state.outbox.length > 0) yield* Queue.offer(pushWake, undefined);
 
-  const enqueue = Effect.fn("Catalog.enqueue")(function* (entry: OutboxEntry) {
-    const next = yield* Ref.updateAndGet(outboxRef, (current) => [...current, entry]);
-    yield* saveOutbox(store, scopeKey, next);
+  const enqueue = Effect.fn("Catalog.enqueue")(function* (
+    entry: OutboxEntry,
+    optimisticChanges: ReadonlyArray<SyncEntityChange>,
+  ) {
+    yield* exclusive(
+      Effect.gen(function* () {
+        const current = yield* Ref.get(stateRef);
+        const next = applyChanges(
+          { ...current, outbox: [...current.outbox, entry] },
+          optimisticChanges,
+        );
+        yield* saveState(store, scopeKey, next);
+        yield* Ref.set(stateRef, next);
+      }),
+    );
     yield* Queue.offer(pushWake, undefined);
   });
 
   return Catalog.of({
     status,
     changes,
-    snapshot: Ref.get(snapshotRef),
+    failures,
+    snapshot: Ref.get(stateRef),
     poke: Queue.offer(pullWake, undefined).pipe(Effect.asVoid),
     waitForIdle: Effect.gen(function* () {
-      const pending = yield* Ref.get(outboxRef);
-      if (pending.length === 0) return;
+      const pending = yield* Ref.get(stateRef);
+      if (pending.outbox.length === 0) return;
       const current = yield* SubscriptionRef.get(status);
       if (current === "offline") {
         return yield* new CatalogError({
@@ -240,9 +340,9 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
           message: "Wait until catalog changes finish uploading before continuing.",
         });
       }
-      yield* Ref.get(outboxRef).pipe(
+      yield* Ref.get(stateRef).pipe(
         Effect.repeat({
-          until: (entries) => entries.length === 0,
+          until: (next) => next.outbox.length === 0,
           schedule: Schedule.spaced(Duration.millis(50)),
         }),
         Effect.timeout(Duration.seconds(15)),
@@ -256,23 +356,15 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
       );
     }),
     write: Effect.fn("Catalog.write")(function* (command: CatalogWriteCommand) {
-      yield* exclusive(
-        Effect.gen(function* () {
-          const before = yield* Ref.get(snapshotRef);
-          const next = applyChanges(before, commandChanges(command));
-          yield* Ref.set(snapshotRef, next);
-          yield* saveSnapshot(store, scopeKey, next);
-        }),
-      );
-      yield* enqueue(catalogCommandEntry(command));
+      yield* enqueue(catalogCommandEntry(command), commandChanges(command));
     }),
     issueInvoice: Effect.fn("Catalog.issueInvoice")(function* (command: IssueInvoiceCommand) {
-      yield* enqueue(invoiceCommandEntry(command));
+      yield* enqueue(invoiceCommandEntry(command), []);
     }),
     importInventory: Effect.fn("Catalog.importInventory")(function* (
       command: ImportInventoryCommand,
     ) {
-      yield* enqueue(importCommandEntry(command));
+      yield* enqueue(importCommandEntry(command), []);
     }),
   });
 });

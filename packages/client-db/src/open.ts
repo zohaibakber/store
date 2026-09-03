@@ -6,12 +6,14 @@ import {
   CatalogLive,
   DurableStore,
   layerIndexedDb,
+  type CatalogFailure,
   type ReplicaDiff,
 } from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 
 import { catalogMemoryCollectionConfigs, type CatalogCollectionConfigs } from "./collections";
 import {
@@ -70,6 +72,16 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
   const apiRoot = inventoryApiRoot(host.apiBaseUrl);
   const apiUrl = apiRoot.endsWith("/api") ? apiRoot.slice(0, -4) : apiRoot;
   const listeners = new Set<(diff: ReplicaDiff) => void>();
+  let firstSyncFailureReported = false;
+  const reportCatalogFailure = (failure: CatalogFailure) => {
+    const mapped = failureFromCatalog(failure.error);
+    if (failure._tag === "upload") {
+      host.onUploadHalt?.(mapped);
+    } else if (!firstSyncFailureReported) {
+      firstSyncFailureReported = true;
+      host.onFirstSyncError?.(mapped);
+    }
+  };
   const catalogLayer = CatalogLive({
     organizationId,
     deviceId: host.deviceId,
@@ -99,12 +111,19 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
     runtime.runFork(
       Effect.scoped(
         Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(catalog.changes);
-          yield* PubSub.take(subscription).pipe(
+          const changesSubscription = yield* PubSub.subscribe(catalog.changes);
+          yield* PubSub.take(changesSubscription).pipe(
             Effect.tap((diff: ReplicaDiff) =>
               Effect.sync(() => {
                 for (const listener of listeners) listener(diff);
               }),
+            ),
+            Effect.forever,
+            Effect.forkScoped,
+          );
+          yield* Queue.take(catalog.failures).pipe(
+            Effect.tap((failure: CatalogFailure) =>
+              Effect.sync(() => reportCatalogFailure(failure)),
             ),
             Effect.forever,
           );

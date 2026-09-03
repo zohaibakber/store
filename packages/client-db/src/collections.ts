@@ -118,7 +118,12 @@ const memoryCollection = <Row extends { readonly id: string }>(input: {
     getKey: (row) => row.id,
     sync: {
       sync: ({ begin, write, commit, markReady }) => {
-        const unsubscribe = input.host.subscribe((diff) => apply({ begin, write, commit }, diff));
+        let hydrating = true;
+        const buffered: Array<ReplicaDiff> = [];
+        const unsubscribe = input.host.subscribe((diff) => {
+          if (hydrating) buffered.push(diff);
+          else apply({ begin, write, commit }, diff);
+        });
         void input.host.snapshot().then((snapshot) => {
           const rows = snapshot.rows[input.entity] ?? [];
           begin();
@@ -129,6 +134,9 @@ const memoryCollection = <Row extends { readonly id: string }>(input: {
             keys.add(row.id);
           }
           commit();
+          for (const diff of buffered) apply({ begin, write, commit }, diff);
+          buffered.length = 0;
+          hydrating = false;
           markReady();
         });
         return unsubscribe;

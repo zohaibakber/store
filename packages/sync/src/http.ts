@@ -48,17 +48,14 @@ const requestJson = Effect.fn("CatalogTransport.request")(function* (
   fetchImpl: typeof fetch,
 ) {
   const response = yield* Effect.tryPromise({
-    try: () =>
+    try: (signal) =>
       fetchImpl(url, {
         method: "POST",
         headers: requestHeaders(headers),
         body: JSON.stringify(body),
+        signal,
       }),
     catch: (cause) => new CatalogError({ reason: "transport", message: String(cause) }),
-  });
-  const payload = yield* Effect.tryPromise({
-    try: () => response.json(),
-    catch: (cause) => new CatalogError({ reason: "rejected", message: String(cause) }),
   });
   if (!response.ok) {
     const reason =
@@ -76,6 +73,10 @@ const requestJson = Effect.fn("CatalogTransport.request")(function* (
       message: `catalog ${String(response.status)}`,
     });
   }
+  const payload = yield* Effect.tryPromise({
+    try: () => response.json(),
+    catch: (cause) => new CatalogError({ reason: "rejected", message: String(cause) }),
+  });
   return yield* Schema.decodeUnknownEffect(Schema.Json)(payload).pipe(
     Effect.mapError(
       (cause) =>
