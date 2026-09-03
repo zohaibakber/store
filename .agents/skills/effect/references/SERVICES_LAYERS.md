@@ -104,6 +104,19 @@ Guidance:
 - Do not run forever work inline during layer acquisition.
 - Do not expose public `start` methods unless the domain explicitly needs manual lifecycle control.
 
+## Pools And Reference-Counted Maps
+
+- `Pool.use(pool, (item) => effect)` borrows one item for the duration of
+  `effect` and returns it on any exit. Unlike `Effect.scoped(Pool.get(pool))`,
+  it does not require a `Scope`.
+- `RcMap.getOption` and `LayerMap.contextEffectOption` atomically retain an
+  entry only when it is already cached. Use them when missing should stay
+  missing rather than constructing.
+
+`Pool.State` / `Pool.PoolItem` and `Scope.State.Open` changed in rc.112
+(incremental usage, intrusive FIFO, first finalizer stored inline). Do not
+copy old Pool state shapes from pre-rc.112 code.
+
 ## Runtime Wiring
 
 - Use `Layer.provide(...)` to hide an implementation dependency.

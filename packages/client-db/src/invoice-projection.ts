@@ -1,4 +1,3 @@
-import type { CrudEntry } from "@powersync/common";
 import {
   allocationsCoverInput,
   allocateInvoiceLine,
@@ -12,6 +11,7 @@ import type {
   InvoiceAllocation,
   IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { CatalogActor, CatalogWriteIds } from "./catalog-writes";
@@ -215,10 +215,15 @@ export const replicaInvoiceNumber = (
   invoices: Iterable<{ readonly deletedAt: number | null; readonly invoiceNumber: number }>,
 ) => nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
 
-export type InventoryCrudEntry = Pick<
-  CrudEntry,
-  "id" | "table" | "op" | "opData" | "previousValues"
->;
+export type InventoryCrudOp = "PUT" | "PATCH" | "DELETE";
+
+export type InventoryCrudEntry = {
+  readonly id: string;
+  readonly table: string;
+  readonly op: InventoryCrudOp;
+  readonly opData?: typeof Schema.Json.Type | null;
+  readonly previousValues?: typeof Schema.Json.Type | null;
+};
 
 export type ClassifiedInventoryCrud =
   | { readonly _tag: "catalog"; readonly entries: ReadonlyArray<InventoryCrudEntry> }
@@ -227,11 +232,15 @@ export type ClassifiedInventoryCrud =
 const CATALOG_TABLES = new Set(["categories", "products", "batches"]);
 const SALE_TABLES = new Set(["invoices", "invoice_items", "stock_movements", "batches"]);
 
+const crudObject = Schema.Record(Schema.String, Schema.Json);
+const crudExtras = (payload: InventoryCrudEntry["opData"]) =>
+  Schema.decodeUnknownOption(crudObject)(payload).pipe(Option.getOrNull) ?? {};
+
 const decodeInvoicePut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(InvoiceRow)({
     customerName: null,
     deletedAt: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
@@ -239,7 +248,7 @@ const decodeInvoiceItemPut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(InvoiceItemRow)({
     batchNumber: null,
     deletedAt: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
@@ -247,7 +256,7 @@ const decodeStockMovementPut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(StockMovementRow)({
     invoiceId: null,
     note: null,
-    ...entry.opData,
+    ...crudExtras(entry.opData),
     id: entry.id,
   });
 
@@ -329,7 +338,7 @@ export const classifyInventoryCrudTransaction = (
   crud: ReadonlyArray<InventoryCrudEntry>,
 ): ClassifiedInventoryCrud => {
   if (crud.length === 0) {
-    throw new Error("PowerSync queued an empty inventory transaction.");
+    throw new Error("Queued an empty inventory transaction.");
   }
   const tables = new Set(crud.map((entry) => entry.table));
   const isCatalog = [...tables].every((table) => CATALOG_TABLES.has(table));
@@ -353,5 +362,5 @@ export const classifyInventoryCrudTransaction = (
     return { _tag: "sale", command: reconstructIssueInvoiceCommand(crud) };
   }
   if (isCatalog) return { _tag: "catalog", entries: crud };
-  throw new Error("PowerSync queued mixed catalog and invoice writes.");
+  throw new Error("Queued mixed catalog and invoice writes.");
 };

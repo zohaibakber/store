@@ -58,10 +58,6 @@ const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
     apiBaseUrl: config.apiBaseUrl,
     authenticatedFetch: electronAuthenticatedFetch(http),
     deviceId: config.deviceId,
-    openPowerSyncDatabase: async (databaseName: string) => {
-      const { openWebInventoryPowerSync } = await import("@/lib/inventory-powersync.web");
-      return openWebInventoryPowerSync(databaseName);
-    },
   };
 };
 

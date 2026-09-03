@@ -81,6 +81,24 @@ export const InventoryMutationHandlers = HttpApiBuilder.group(
               Effect.catchTag("InventoryDatabaseError", Effect.die),
             );
         }),
+      )
+      .handle(
+        "pull",
+        Effect.fn("InventoryMutationHandlers.pull")(function* ({ payload }) {
+          const identity = yield* CurrentOrganization;
+          return yield* runtime
+            .pullCatalog(identity.organizationId, payload)
+            .pipe(Effect.catchTag("InventoryDatabaseError", Effect.die));
+        }),
+      )
+      .handle(
+        "snapshot",
+        Effect.fn("InventoryMutationHandlers.snapshot")(function* ({ payload }) {
+          const identity = yield* CurrentOrganization;
+          return yield* runtime
+            .snapshotCatalog(identity.organizationId, payload)
+            .pipe(Effect.catchTag("InventoryDatabaseError", Effect.die));
+        }),
       );
   }),
 );

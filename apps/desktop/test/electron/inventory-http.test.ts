@@ -28,15 +28,27 @@ describe("desktop inventory HTTP allowlist", () => {
         url: "https://api.tabaaq.app/api/inventory/invoices",
       }),
     ).toBe("https://api.tabaaq.app/api/inventory/invoices");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/inventory/pull",
+      }),
+    ).toBe("https://api.tabaaq.app/api/inventory/pull");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/inventory/snapshot",
+      }),
+    ).toBe("https://api.tabaaq.app/api/inventory/snapshot");
   });
 
-  it("allows PowerSync credential fetches", () => {
-    expect(
+  it("rejects leftover credential fetches", () => {
+    expect(() =>
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
         url: "https://api.tabaaq.app/api/powersync/credentials",
       }),
-    ).toBe("https://api.tabaaq.app/api/powersync/credentials");
+    ).toThrow("The inventory request is outside the configured inventory API.");
   });
 
   it.each([

@@ -1,4 +1,8 @@
-import type { CreateInvoiceInput, IssueInvoiceResult } from "@store/contracts/store.schema";
+import type {
+  CreateInvoiceInput,
+  IssueInvoiceCommand,
+  IssueInvoiceResult,
+} from "@store/contracts/store.schema";
 
 import {
   type CatalogActor,
@@ -14,6 +18,7 @@ export type InvoiceWriteTables = CatalogWriteTables & {
   readonly invoiceItems: PersistableCollection<InvoiceItemRow>;
   readonly stockMovements: PersistableCollection<StockMovementRow>;
   readonly persist: (work: () => void) => Promise<void>;
+  readonly submitInvoice: (command: IssueInvoiceCommand) => Promise<void>;
 };
 
 const defaultIds: CatalogWriteIds = {
@@ -49,6 +54,7 @@ export const makeInvoiceWrites = (
         tables.batches.update(batch.id, (draft) => Object.assign(draft, batch));
       }
     });
+    await tables.submitInvoice(projection.command);
     return {
       invoiceId: projection.invoice.id,
       invoiceNumber: projection.invoice.invoiceNumber,

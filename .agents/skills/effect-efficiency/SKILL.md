@@ -4,9 +4,9 @@ description: >
   Cuts Effect runtime, network, sync, and cold-start cost in this monorepo.
   Covers ManagedRuntime reuse, Semaphore/SubscriptionRef/Cache/Stream fiber
   choices, HttpApi vs raw fetch, sync coalesce and partial sync, and web
-  boot that must not block #boot-shell on waitForFirstSync. Use when
+  boot that must not block #boot-shell on first catalog snapshot. Use when
   optimizing latency, bandwidth, concurrency, startup paint,
-  PowerSync connect/upload, or when choosing Effect concurrency/caching APIs.
+  catalog replica connect/upload, or when choosing Effect concurrency/caching APIs.
   For general Effect services, Schema, Schedule, and tests, use the effect
   skill instead.
 ---
@@ -17,7 +17,7 @@ Cost and concurrency judgment for Effect work in this repo. API defaults live in
 [`effect`](../effect/SKILL.md). This skill owns when work runs, how much it
 fans out, and what blocks first paint.
 
-Pin: `effect@4.0.0-rc.110`. Typed errors use `Schema.TaggedError`, not beta's
+Pin: `effect@4.0.0-rc.112`. Typed errors use `Schema.TaggedError`, not beta's
 `Schema.TaggedErrorClass`.
 
 ## When to use
@@ -25,7 +25,7 @@ Pin: `effect@4.0.0-rc.110`. Typed errors use `Schema.TaggedError`, not beta's
 - Choosing ManagedRuntime, Semaphore, SubscriptionRef, Cache, Stream, or fork
   variants for load or latency.
 - Wiring HttpApi / HttpClient vs raw `fetch`.
-- Changing PowerSync connect/upload or inventory HTTP.
+- Changing catalog replica connect/upload or inventory HTTP.
 - Touching web/desktop bootstrap so the logo or shell paints sooner.
 
 Skip this skill for Schema modeling, Layer shape, Schedule recipes, or vitest
@@ -63,26 +63,23 @@ setup. Use [`effect`](../effect/SKILL.md).
 
 ## Sync vs fibers
 
-Live inventory: Postgres + PowerSync streams + in-process TanStack DB.
-`connect()` is fire-and-forget; readiness is `waitForFirstSync()`. Catalog
-uploads use `getNextCrudTransaction()` and `complete()` on success. See
+Live inventory: Postgres + catalog replica (IndexedDB HashMap) + in-process
+TanStack DB. Hydrate is fire-and-forget; readiness is replica `status`.
+Catalog uploads drain the IndexedDB outbox. See
 [SYNC-NETWORK.md](references/SYNC-NETWORK.md).
 
 Rules:
 
-1. Do not await `connect()`. Overlap collection preload with first sync.
-2. Refresh auth before `fetchCredentials` so connect does not start with an
-   expired token.
-3. Drain the upload queue before multi-table HTTP commands. Skip
-   `ENTITY_CONFLICT`; do not `complete()` on halt.
-4. On logout or org change, `disconnectAndClear()` then `close()`. Drop the
-   cached database. `close()` alone is not enough.
-5. Keep `waitForFirstSync()` off the critical path for first paint
+1. Do not await first snapshot. Overlap collection hydrate with pull.
+2. Refresh auth before replica HTTP so pull does not start with an expired token.
+3. Drain the outbox before multi-table HTTP commands.
+4. On logout or org change, dispose the catalog runtime. Drop the cached replica.
+5. Keep first snapshot off the critical path for first paint
    (next section).
 
 ## Batching and caching
 
-- Batch catalog rows in one PowerSync CRUD transaction when they share an
+- Batch catalog rows in one outbox command when they share an
   operation.
 - Dedupe token refresh with `Cache` (capacity + `timeToLive: Duration.zero`
   for in-flight-only dedupe is an OpenCode pattern).
@@ -97,11 +94,11 @@ Incorrect: domain service calls raw `fetch` and parses JSON by hand while
 Correct: server and clients share HttpApi schemas; client uses
 `HttpApiClient.make`. Thin browser cookie/session adapters may keep `fetch`.
 
-Incorrect: `await database.connect()` or `waitForFirstSync()` inside startup
+Incorrect: `await waitForFirstSync()` inside startup
 before `mountApp` replaces `#boot-shell`.
 
-Correct: mount UI first; open PowerSync after paint; `void connect()` and wait
-for first sync in the inventory provider; skip forced cookie refresh when the
+Correct: mount UI first; open the catalog replica after paint; hydrate in
+the background; skip forced cookie refresh when the
 browser is unsigned.
 
 ## Store cold start
@@ -111,10 +108,10 @@ bootstrap only, then mount.
 
 Do this instead:
 
-1. Do not block `#boot-shell` / first paint on `waitForFirstSync()` or
+1. Do not block `#boot-shell` / first paint on first snapshot or
    compatibility live WS.
-2. Defer PowerSync `connect()` past paint. Collections can preload from local
-   SQLite while the first sync runs.
+2. Defer catalog replica hydrate past paint. Collections can preload from
+   IndexedDB while snapshot/pull runs.
 3. Skip forced `ensureFreshAccess(true)` when unsigned; fail fast offline.
 4. Keep loaders tolerant of empty-until-live, or soft-block only route loaders
    that need rows.
@@ -134,7 +131,7 @@ Detail and ranked causes: [SYNC-NETWORK.md](references/SYNC-NETWORK.md).
   `Semaphore`.
 - Do not put raw `fetch` in Effect domain layers that already have HttpApi.
 - Do not cargo-cult Zero's online-only writes. Catalog edits stay on the
-  PowerSync upload queue.
+  replica outbox.
 - Do not treat anything other than Postgres as inventory truth.
 
 - Do not write `Schema.TaggedErrorClass` on this pin; use `Schema.TaggedError`.
@@ -147,7 +144,7 @@ Detail and ranked causes: [SYNC-NETWORK.md](references/SYNC-NETWORK.md).
 Read only what matches:
 
 - API pick (runtime, semaphore, cache, stream, HTTP): [WHEN.md](references/WHEN.md)
-- Sync protocol, Zero/PowerSync lessons, cold-start rules: [SYNC-NETWORK.md](references/SYNC-NETWORK.md)
+- Sync protocol, Zero/replica lessons, cold-start rules: [SYNC-NETWORK.md](references/SYNC-NETWORK.md)
 - What to copy from OpenCode / t3code / Maple: [OSS.md](references/OSS.md)
 - General Effect defaults: [`effect`](../effect/SKILL.md)
 
@@ -157,6 +154,6 @@ Read only what matches:
 - [ ] Hot-path concurrency bounded by Semaphore; invalidations coalesced.
 - [ ] Latest sync/auth UI state via SubscriptionRef or equivalent, not poll.
 - [ ] HttpApiClient or HttpClient in Effect domains; fetch only at thin adapters.
-- [ ] First paint not awaiting `waitForFirstSync()`.
+- [ ] First paint not awaiting first catalog snapshot.
 - [ ] Unsigned boot skips forced refresh.
 - [ ] Errors are `Schema.TaggedError` on rc.110.

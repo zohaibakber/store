@@ -20,7 +20,7 @@ const fnv1a = (value: string) => {
  * Members of the same organization therefore reuse the same local catalog on
  * a device while separate API deployments remain isolated.
  */
-const inventorySourceId = (apiBaseUrl: string) => {
+export const inventorySourceId = (apiBaseUrl: string) => {
   const normalized = apiBaseUrl.replace(/\/+$/u, "");
   try {
     return new URL(normalized).origin;
@@ -34,5 +34,4 @@ const inventorySourceId = (apiBaseUrl: string) => {
 export const inventoryReplicaScope = (apiBaseUrl: string, organizationId: string) =>
   `${inventorySourceId(apiBaseUrl)}:${organizationId}`;
 
-export const inventoryReplicaDatabaseName = (scopeId: string) =>
-  `powersync-inventory-${fnv1a(scopeId)}.sqlite`;
+export const inventoryReplicaDatabaseName = (scopeId: string) => `catalog-${fnv1a(scopeId)}`;

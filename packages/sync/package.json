@@ -1,0 +1,22 @@
+{
+  "name": "@store/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./indexed-db": "./src/indexed-db.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/sync/test"
+  },
+  "dependencies": {
+    "@store/contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
+  }
+}

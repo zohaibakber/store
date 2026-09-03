@@ -3,13 +3,13 @@
 Vite + TanStack Router SPA for Tabaaq, deployed with
 [`Cloudflare.Website.Vite`](https://alchemy.run/cloudflare/frontend/vite-spa/).
 This app owns the renderer. Electron loads the same routes (hash history +
-Electron preload bridge) and the same `@powersync/web` plus wa-sqlite catalog
-in the renderer. The Electron main process does not run PowerSync. It proxies
+Electron preload bridge) and the same IndexedDB catalog replica in the
+renderer. The Electron main process does not open the replica. It proxies
 authenticated HTTP. TanStack DB supplies live queries and optimistic
-mutations over that in-process PowerSync database.
+mutations over in-memory collections projected from that replica.
 
 Routes read the catalog through query and action hooks. They do not open
-PowerSync or inspect replica internals.
+storage engines or inspect replica internals.
 
 ## Local development
 
@@ -38,6 +38,4 @@ The production site hostname comes from `PRODUCTION_DOMAIN`. The API lives on
 `api.<PRODUCTION_DOMAIN>` (`VITE_API_URL`). Local `vp run dev` still proxies
 `/api/*` to `:8787`. Auth lives at `auth.<PRODUCTION_DOMAIN>`
 (`VITE_AUTH_URL`). Production browsers call the API with short-lived
-first-party access tokens. CORS and OAuth redirects allow the site origin via
-`AUTH_TRUSTED_ORIGINS`. The same access token authenticates `/api/inventory/*`
-mutations and the PowerSync connection returned by `/api/powersync/credentials`.
+access tokens. Catalog pull and snapshot use the same bearer session.

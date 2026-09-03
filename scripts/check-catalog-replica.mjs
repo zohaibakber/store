@@ -30,6 +30,7 @@ const packageManifests = [
   "packages/contracts/package.json",
   "packages/db/package.json",
   "packages/services/package.json",
+  "packages/sync/package.json",
   "packages/workspace/package.json",
 ];
 
@@ -52,9 +53,13 @@ const forbiddenPackages = [
   "@electric-sql/client",
   "@electric-sql/react",
   "@tanstack/electric-db-collection",
+  "@powersync/common",
+  "@powersync/web",
+  "@journeyapps/wa-sqlite",
+  "@tanstack/powersync-db-collection",
 ];
 const forbiddenPackagePrefix = "@clerk/";
-const leftoverEnvName = /\b(?:CLERK_|ELECTRIC_|VITE_CLERK|EXPO_PUBLIC_CLERK)[A-Z0-9_]*/u;
+const leftoverEnvName = /\b(?:CLERK_|ELECTRIC_|VITE_CLERK|EXPO_PUBLIC_CLERK|POWERSYNC_)[A-Z0-9_]*/u;
 const dependencyFields = [
   "dependencies",
   "devDependencies",
@@ -66,9 +71,16 @@ const runtimeSource = [
   ...sourceFiles("apps/web/src/"),
   ...sourceFiles("apps/server/src/"),
   ...sourceFiles("packages/client-db/src/"),
+  ...sourceFiles("packages/sync/src/"),
 ].map((path) => readFileSync(path, "utf8"));
 
-for (const forbidden of [...forbiddenPackages, forbiddenPackagePrefix]) {
+for (const forbidden of [
+  ...forbiddenPackages,
+  forbiddenPackagePrefix,
+  "wa-sqlite",
+  "PowerSyncDatabase",
+  "powerSyncCollectionOptions",
+]) {
   if (runtimeSource.some((source) => source.includes(forbidden))) {
     throw new Error(`Runtime source still imports ${forbidden}.`);
   }
@@ -97,25 +109,16 @@ for (const [label, text] of configTexts) {
   }
 }
 
-const syncConfig = read("powersync/sync-config.yaml");
-for (const table of [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-]) {
-  requireText(syncConfig, `FROM ${table}`, "PowerSync sync config");
-}
-requireText(syncConfig, "auth.parameter('org')", "PowerSync organization isolation");
-
-const server = read("apps/server/src/http/app.ts");
-requireText(server, '"/api/powersync/credentials"', "server credential route");
-forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
+const serverApi = read("apps/server/src/http/api.ts");
+requireText(serverApi, '"/api/inventory/pull"', "catalog pull");
+requireText(serverApi, '"/api/inventory/snapshot"', "catalog snapshot");
+forbidText(serverApi, '"/api/inventory/legacy-migrations"', "server API");
+forbidText(read("apps/server/src/http/app.ts"), "/api/powersync/credentials", "server app");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
-forbidText(read("apps/web/src/lib/inventory-db.tsx"), "migrateLegacyCatalog", "inventory database");
+forbidText(read("apps/server/infra.ts"), "POWERSYNC_URL", "API infra");
+requireText(read("packages/db/src/postgres/schema.ts"), "catalog_change_log", "change log table");
+requireText(read("packages/sync/src/indexed-db.ts"), "indexedDB", "IndexedDB adapter");
+forbidText(read("packages/sync/src/engine.ts"), "wa-sqlite", "catalog engine");
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
-requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
 
-console.log("PowerSync migration invariants are present.");
+console.log("Catalog replica invariants are present.");

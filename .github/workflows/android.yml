@@ -24,7 +24,6 @@ jobs:
       API_URL: ${{ vars.VITE_API_URL }}
       AUTH_URL: ${{ vars.VITE_AUTH_URL }}
       GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
-      POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
       GRADLE_OPTS: >-
         -Dorg.gradle.parallel=false
         -Dorg.gradle.workers.max=2
@@ -81,7 +80,6 @@ jobs:
             echo "API_URL=${API_URL}"
             echo "AUTH_URL=${AUTH_URL}"
             echo "GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}"
-            echo "POWERSYNC_URL=${POWERSYNC_URL:-}"
             echo "NATIVE_ORIGIN=com.tabaaq.mobile://app"
           } > local.properties
 

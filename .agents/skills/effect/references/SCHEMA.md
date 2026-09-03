@@ -95,6 +95,10 @@ const label = Event.match(event, {
   Started: ({ runId }) => `started ${runId}`,
   Finished: ({ runId }) => `finished ${runId}`,
 });
+const kind = Event.matchOrElse(event, {
+  Started: () => "started",
+  OrElse: () => "other",
+});
 ```
 
 Guidance:
@@ -102,6 +106,9 @@ Guidance:
 - Use `Data.TaggedEnum` for internal control-flow algebras; it provides constructors, `$is`, and exhaustive `$match`. Do not add a Schema solely to obtain these utilities.
 - Use `Schema.TaggedStruct` for the ordinary Effect-owned `_tag` variant.
 - Use `Schema.TaggedUnion` when the union needs decoding, encoding, persistence, wire validation, JSON Schema derivation, or schema composition.
+- Use `Schema.TaggedUnion.matchOrElse` for partial case matching with a typed fallback (`OrElse`).
+- Compact binary encode/decode for Effect RPC/cluster: `SchemaBinary` from `effect/unstable/encoding`. Do not use it for HttpApi JSON.
+- Standard Schema V1 lives in Effect as `StandardSchema` — do not add `@standard-schema/spec`.
 - Prefer a principled split over forcing one representation everywhere: Data internally, Schema at boundaries.
 - Use `Schema.tag(...)` when an external contract has a custom discriminator field such as `type` or `kind`; combine those structs with `Schema.toTaggedUnion("type")` when union helpers are needed.
 - If the encoded contract omits the discriminant, use `Schema.tagDefaultOmit(...)` deliberately.

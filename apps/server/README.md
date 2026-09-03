@@ -4,10 +4,11 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 
 - `GET /api/health`
 - `GET /api/auth/session` and `GET /api/auth/get-session`
-- `GET /api/powersync/credentials`
 - `POST /api/inventory/mutations`
 - `POST /api/inventory/imports`
 - `POST /api/inventory/invoices`
+- `POST /api/inventory/pull`
+- `POST /api/inventory/snapshot`
 - `POST /api/uploads`
 - `POST /api/product-scans`
 
@@ -18,9 +19,9 @@ live in D1.
 
 Inventory is authoritative in Neon Postgres. The Worker authenticates and
 validates catalog write commands, commits each command in one Postgres
-transaction, and returns that transaction ID. PowerSync publishes
-organization-scoped table changes to TanStack DB clients. There is no
-organization Durable Object and no `/api/sync/live` route.
+transaction, appends `catalog_change_log` rows, and returns that log cursor.
+Clients pull and snapshot over HTTP. There is no organization Durable Object
+and no `/api/sync/live` route.
 
 ## Infrastructure
 
@@ -30,8 +31,8 @@ The Worker, its bindings, and the local dev port live in `infra.ts`.
 Postgres project into one stack.
 
 Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,
-and a product-scan rate limiter. PowerSync receives the direct Neon connection;
-Worker commands use Hyperdrive for pooled Postgres access.
+and a product-scan rate limiter. Worker commands use Hyperdrive for pooled
+Postgres access.
 
 Run deployments from the repository root and always pass a stage:
 
@@ -43,9 +44,7 @@ pnpm run deploy:prod
 ```
 
 Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
-JWT keys and peppers for each stage. Set `POWERSYNC_URL` to that stage's
-PowerSync endpoint; configure its source with the direct Neon connection, the
-auth Worker's JWKS URL, and audience `tabaaq-api`.
+JWT keys and peppers for each stage.
 
 ## Local development
 
@@ -66,12 +65,11 @@ Drizzle schemas are `packages/db/src/auth/schema.ts` and
 
 ## Data flow
 
-PowerSync credentials reuse the short-lived access token. The checked-in sync
-config filters every query by its signed `org` claim; clients cannot supply the
-source credentials or replace the tenant filter.
+Catalog pull and snapshot reuse the short-lived access token. Every query is
+scoped to the signed organization claim.
 
 Inventory writes go through typed catalog commands. The server derives
 organization and actor metadata from the session, records an idempotency
-receipt, and obtains `pg_current_xact_id()` inside the same transaction as the
-domain writes. PowerSync durably queues simple catalog changes and streams
-canonical Postgres rows back into TanStack DB.
+receipt, and appends change-log rows inside the same transaction as the domain
+writes. Clients drain an IndexedDB outbox and pull canonical Postgres rows
+into TanStack DB.
