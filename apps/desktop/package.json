@@ -21,7 +21,7 @@
     "@effect/vitest": "catalog:",
     "@electron/asar": "^4.3.0",
     "@electron/fuses": "^1.8.0",
-    "@sentry/electron": "7.17.0",
+    "@sentry/electron": "7.18.0",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/workspace": "workspace:*",
