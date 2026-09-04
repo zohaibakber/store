@@ -19,44 +19,49 @@ import {
   stockMovements,
 } from "@store/db/postgres/schema";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
 
 import type { PostgresDrizzle, PostgresTransaction } from "./mutation-database";
 
-const PULL_LIMIT = 500;
+const PULL_LIMIT = 50;
 
 const sliceEntities = (slices: ReadonlyArray<CatalogSlice>) => [
   ...new Set(slices.flatMap((slice) => catalogSliceEntities[slice])),
 ];
 
-const LoggedChange = Schema.Struct({
-  entity: SyncEntity,
-  action: SyncAction,
-  entityId: Schema.String,
-  rowVersion: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  row: Schema.NullOr(Schema.Json),
-});
+const isSyncEntity = (value: string): value is SyncEntity =>
+  value === "category" ||
+  value === "product" ||
+  value === "batch" ||
+  value === "invoice" ||
+  value === "invoiceItem" ||
+  value === "stockMovement";
+
+const isSyncAction = (value: string): value is SyncAction =>
+  value === "upsert" || value === "delete";
 
 const toChange = (row: {
   readonly entity: string;
   readonly action: string;
   readonly entityId: string;
   readonly rowVersion: number;
-  readonly row: typeof Schema.Json.Type | null;
+  readonly row: unknown;
 }): SyncEntityChange | undefined => {
-  const decoded = Schema.decodeUnknownOption(LoggedChange)(row).pipe(Option.getOrNull);
-  if (!decoded) return undefined;
+  if (
+    !isSyncEntity(row.entity) ||
+    !isSyncAction(row.action) ||
+    !Number.isInteger(row.rowVersion) ||
+    row.rowVersion < 1
+  ) {
+    return undefined;
+  }
   return {
-    entity: decoded.entity,
-    action: decoded.action,
-    entityId: decoded.entityId,
-    rowVersion: decoded.rowVersion,
-    row: decoded.row,
+    entity: row.entity,
+    action: row.action,
+    entityId: row.entityId,
+    rowVersion: row.rowVersion,
+    row: row.row,
   };
 };
 
@@ -99,7 +104,14 @@ const pullPage = Effect.fn("CatalogLog.pullPage")(function* (
 ) {
   const entities = sliceEntities(request.slices);
   const rows = yield* db
-    .select()
+    .select({
+      id: catalogChangeLog.id,
+      entity: catalogChangeLog.entity,
+      action: catalogChangeLog.action,
+      entityId: catalogChangeLog.entityId,
+      rowVersion: catalogChangeLog.rowVersion,
+      row: catalogChangeLog.row,
+    })
     .from(catalogChangeLog)
     .where(
       and(
@@ -116,17 +128,7 @@ const pullPage = Effect.fn("CatalogLog.pullPage")(function* (
   return {
     cursor: last?.id ?? request.cursor,
     changes: page.flatMap((row) => {
-      const payload = Schema.decodeUnknownOption(Schema.NullOr(Schema.Json))(row.row).pipe(
-        Option.getOrUndefined,
-      );
-      if (payload === undefined) return [];
-      const change = toChange({
-        entity: row.entity,
-        action: row.action,
-        entityId: row.entityId,
-        rowVersion: row.rowVersion,
-        row: payload,
-      });
+      const change = toChange(row);
       return change ? [change] : [];
     }),
     hasMore,
@@ -142,17 +144,8 @@ export const pullCatalogChanges = Effect.fn("CatalogLog.pull")(function* (
   if (first.changes.length > 0 || request.waitMs === undefined || request.waitMs === 0) {
     return first;
   }
-  const deadline = (yield* Clock.currentTimeMillis) + request.waitMs;
-  return yield* pullPage(db, organizationId, request).pipe(
-    Effect.repeat({
-      until: (page) =>
-        Effect.gen(function* () {
-          if (page.changes.length > 0) return true;
-          return (yield* Clock.currentTimeMillis) >= deadline;
-        }),
-      schedule: Schedule.spaced(Duration.millis(200)),
-    }),
-  );
+  yield* Effect.sleep(Duration.millis(request.waitMs));
+  return first;
 });
 
 const rowsAsChanges = (

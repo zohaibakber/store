@@ -34,9 +34,6 @@ export const UpdateCategoryInput = Schema.Struct({
 });
 export type UpdateCategoryInput = typeof UpdateCategoryInput.Type;
 
-export const CategoryIdInput = Schema.Struct({ id: CategoryId });
-export type CategoryIdInput = typeof CategoryIdInput.Type;
-
 export const Batch = Schema.Struct({
   id: BatchId,
   productId: ProductId,
@@ -138,15 +135,6 @@ export const ImportInventoryResult = Schema.Struct({
 });
 export type ImportInventoryResult = typeof ImportInventoryResult.Type;
 
-export const ProductIdInput = Schema.Struct({ id: ProductId });
-export type ProductIdInput = typeof ProductIdInput.Type;
-
-export const SearchProductsInput = Schema.Struct({
-  query: Schema.String,
-  limit: Schema.optional(Schema.Number),
-});
-export type SearchProductsInput = typeof SearchProductsInput.Type;
-
 const InvoiceItemRow = Schema.Struct({
   id: InvoiceItemId,
   invoiceId: InvoiceId,
@@ -236,9 +224,6 @@ export const IssueInvoiceResult = Schema.Struct({
   txid: Schema.optionalKey(PositiveTimestamp),
 });
 export type IssueInvoiceResult = typeof IssueInvoiceResult.Type;
-
-export const InvoiceIdInput = Schema.Struct({ id: InvoiceId });
-export type InvoiceIdInput = typeof InvoiceIdInput.Type;
 
 export const StockMovement = Schema.Struct({
   id: Schema.String,

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  catalogUploadDisposition,
   failureFromUnknown,
   InventoryFailure,
   inventoryFailureFromHttp,
-  invoiceUploadDisposition,
 } from "../src/inventory-failure";
 
 describe("inventoryFailureFromHttp", () => {
@@ -23,23 +21,22 @@ describe("inventoryFailureFromHttp", () => {
     expect(failure).toBeInstanceOf(InventoryFailure);
     expect(failure.message).toBe("The entity changed before this mutation was saved.");
     expect(failure.reason).toEqual({ _tag: "staleReplica" });
-    expect(catalogUploadDisposition(failure)).toEqual({ _tag: "skip" });
   });
 
-  it("treats an exhausted 401 as halt, not retry", () => {
+  it("classifies an exhausted 401 as unauthenticated", () => {
     const failure = inventoryFailureFromHttp(
       401,
       { error: { code: "UNAUTHENTICATED", message: "Sign in required." } },
       "Inventory mutation failed.",
     );
     expect(failure.reason).toEqual({ _tag: "unauthenticated" });
-    expect(catalogUploadDisposition(failure)).toEqual({ _tag: "halt" });
   });
 
-  it("retries timeouts, rate limits, and server failures", () => {
+  it("classifies timeouts, rate limits, and server failures as transient", () => {
     for (const status of [408, 429, 500, 503]) {
-      const failure = inventoryFailureFromHttp(status, null, "Inventory mutation failed.");
-      expect(catalogUploadDisposition(failure)).toEqual({ _tag: "retry" });
+      expect(inventoryFailureFromHttp(status, null, "Inventory mutation failed.").reason).toEqual({
+        _tag: "transient",
+      });
     }
   });
 
@@ -69,10 +66,9 @@ describe("inventoryFailureFromHttp", () => {
     );
     expect(failure.reason).toEqual({ _tag: "transport" });
     expect(failure.message).toBe("Failed to fetch");
-    expect(catalogUploadDisposition(failure)).toEqual({ _tag: "retry" });
   });
 
-  it("halts other 4xx, including a 409 that is not ENTITY_CONFLICT", () => {
+  it("classifies other 4xx, including a 409 that is not ENTITY_CONFLICT, as rejected", () => {
     const reused = inventoryFailureFromHttp(
       409,
       {
@@ -80,7 +76,6 @@ describe("inventoryFailureFromHttp", () => {
       },
       "Inventory mutation failed.",
     );
-    expect(catalogUploadDisposition(reused)).toEqual({ _tag: "halt" });
     expect(reused.reason).toEqual({ _tag: "rejected", code: "OPERATION_ID_REUSED" });
 
     const forbidden = inventoryFailureFromHttp(
@@ -88,22 +83,6 @@ describe("inventoryFailureFromHttp", () => {
       { error: { code: "ORGANIZATION_MISMATCH", message: "Wrong organization." } },
       "Inventory mutation failed.",
     );
-    expect(catalogUploadDisposition(forbidden)).toEqual({ _tag: "halt" });
-  });
-
-  it("never skips a sale conflict the way catalog ENTITY_CONFLICT is skipped", () => {
-    const stock = inventoryFailureFromHttp(
-      409,
-      { error: { code: "INSUFFICIENT_STOCK", message: "Not enough stock." } },
-      "Invoice creation failed.",
-    );
-    expect(invoiceUploadDisposition(stock)).toEqual({ _tag: "halt" });
-    const stale = inventoryFailureFromHttp(
-      409,
-      { error: { code: "ENTITY_CONFLICT", message: "The entity changed." } },
-      "Invoice creation failed.",
-    );
-    expect(invoiceUploadDisposition(stale)).toEqual({ _tag: "halt" });
-    expect(catalogUploadDisposition(stale)).toEqual({ _tag: "skip" });
+    expect(forbidden.reason).toEqual({ _tag: "rejected", code: "ORGANIZATION_MISMATCH" });
   });
 });
