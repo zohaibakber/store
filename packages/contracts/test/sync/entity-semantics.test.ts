@@ -1,8 +1,5 @@
 import type { SyncEntity, SyncEntityChange } from "@store/contracts";
-import {
-  compareSyncEntityChanges,
-  syncEntityChangeKey,
-} from "@store/contracts";
+import { compareSyncEntityChanges, syncEntityChangeKey } from "@store/contracts";
 import { expect, test } from "vitest";
 
 const change = (entity: SyncEntity, entityId: string): SyncEntityChange => ({

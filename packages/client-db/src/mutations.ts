@@ -89,7 +89,7 @@ const submitInventoryCommand = async <Result>(input: {
     body: input.command,
     decode: input.decode,
     failureLabel: input.failureLabel,
-});
+  });
 
 export const submitImportInventory = async (input: {
   readonly apiBaseUrl: string;

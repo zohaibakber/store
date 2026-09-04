@@ -1,9 +1,7 @@
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
-import {
-  replicaInvoiceNumber,
-} from "../src/invoice-projection";
+import { replicaInvoiceNumber } from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
 import type {
   BatchRow,
@@ -157,5 +155,4 @@ describe("makeInvoiceWrites", () => {
     expect([...inventory.invoiceItems.state.values()]).toHaveLength(1);
     expect(inventory.batches.state.get("batch-1")?.packQuantity).toBe(1);
   });
-
 });

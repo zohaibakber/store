@@ -288,7 +288,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     const current = yield* Ref.get(stateRef);
     if (current.cursor === 0) yield* retrySync(hydrate());
     yield* Deferred.succeed(hydrated, undefined);
-    yield* retrySync(pullOnce(25_000)).pipe(Effect.forever);
+    yield* retrySync(pullOnce(0)).pipe(Effect.repeat(Schedule.spaced(Duration.seconds(1))));
   }).pipe(
     Effect.catchTag("CatalogError", () => markOffline(status)),
     Effect.forkScoped,

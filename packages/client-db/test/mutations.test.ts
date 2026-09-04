@@ -1,12 +1,7 @@
-import {
-  decodeCategoryId,
-} from "@store/contracts/ids";
+import { decodeCategoryId } from "@store/contracts/ids";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  inventoryApiRoot,
-  submitImportInventory,
-} from "../src/mutations";
+import { inventoryApiRoot, submitImportInventory } from "../src/mutations";
 import type { CategoryRow } from "../src/rows";
 
 const category: CategoryRow = {
