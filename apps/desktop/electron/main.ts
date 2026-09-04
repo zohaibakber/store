@@ -25,7 +25,12 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { forwardRendererLogs } from "./report-renderer-logs";
-import { initDesktopSentry, reportDesktopError } from "./sentry";
+import {
+  disposeDesktopEffectRuntime,
+  initDesktopSentry,
+  reportDesktopError,
+  runDesktopEffect,
+} from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { makeShutdownCoordinator } from "./shutdown";
 import { setupUpdater } from "./updater";
@@ -237,7 +242,7 @@ function registerServerIpc() {
       body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
     }
     const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
-    return await Effect.runPromise(
+    return await runDesktopEffect(
       Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
         Effect.mapError(() => new Error("Invoice analysis returned an unexpected response.")),
       ),
@@ -339,6 +344,7 @@ const shutdown = makeShutdownCoordinator({
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
+    await disposeDesktopEffectRuntime();
     if (failures[0]) throw failures[0].reason;
   },
   quit: () => app.quit(),

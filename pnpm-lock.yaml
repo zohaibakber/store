@@ -335,6 +335,9 @@ importers:
       '@electron/fuses':
         specifier: ^1.8.0
         version: 1.8.0
+      '@sentry/effect':
+        specifier: 10.73.0
+        version: 10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(effect@4.0.0-rc.112)
       '@sentry/electron':
         specifier: 7.18.0
         version: 7.18.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
@@ -417,6 +420,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@sentry/effect':
+        specifier: 10.73.0
+        version: 10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(effect@4.0.0-rc.112)
       '@sentry/react':
         specifier: 10.73.0
         version: 10.73.0(react@19.2.8)
@@ -4080,6 +4086,12 @@ packages:
   '@sentry/core@10.73.0':
     resolution: {integrity: sha512-FLO1UgH19RyasVpofu612WCOgb2nEH0dZy+R72d7p65XU9i0wxlMKm3+sgfwKmiSJp1Qhilaaxs4Jg6BbiM5HA==}
     engines: {node: '>=18'}
+
+  '@sentry/effect@10.73.0':
+    resolution: {integrity: sha512-QC0K8x7/4BIK5YGn/c1bSMVJgbSoEoqbeco6kaZ7y5V4Pd1/UCGCsY7BErWn0linubQMG6/TLxF9pkCoRwyrdA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      effect: ^3.0.0 || ^4.0.0-beta.50
 
   '@sentry/electron@7.18.0':
     resolution: {integrity: sha512-0urgVmB4APMVbA8SedNKBghddmWvaRLXlRPUj7PSS4o+fZJBWY7DbqbmjQhe1T2jwNvLZpNb1xkq7MxDdTe3DQ==}
@@ -12927,6 +12939,19 @@ snapshots:
   '@sentry/core@10.73.0':
     dependencies:
       '@sentry/conventions': 0.16.0
+
+  '@sentry/effect@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(effect@4.0.0-rc.112)':
+    dependencies:
+      '@sentry/browser': 10.73.0
+      '@sentry/core': 10.73.0
+      '@sentry/node-core': 10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))
+      effect: 4.0.0-rc.112
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - '@opentelemetry/core'
+      - '@opentelemetry/exporter-trace-otlp-http'
+      - '@opentelemetry/instrumentation'
+      - '@opentelemetry/sdk-trace-base'
 
   '@sentry/electron@7.18.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)':
     dependencies:

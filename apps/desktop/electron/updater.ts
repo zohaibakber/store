@@ -8,6 +8,7 @@ import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
 
 import { assertTrustedIpcSender } from "./ipc-sender";
+import { runDesktopEffect, runDesktopEffectSync } from "./sentry";
 import {
   makeUpdaterWorkflow,
   type UpdaterProvider,
@@ -129,7 +130,7 @@ export async function setupUpdater(
     quitAndInstall: () => autoUpdater.quitAndInstall(),
     subscribe,
   };
-  const workflow = await Effect.runPromise(
+  const workflow = await runDesktopEffect(
     makeUpdaterWorkflow(
       provider,
       (event) => getWindow()?.webContents.send("updater:event", event),
@@ -147,15 +148,15 @@ export async function setupUpdater(
   // the workflow (electron-updater's checkForUpdatesAndNotify equivalent).
   ipcMain.handle("updater:check", (event) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    return Effect.runPromise(workflow.check(true));
+    return runDesktopEffect(workflow.check(true));
   });
   ipcMain.handle("updater:download", (event) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    return Effect.runPromise(workflow.download);
+    return runDesktopEffect(workflow.download);
   });
   const install = (event: IpcMainEvent) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    Effect.runSync(workflow.install);
+    runDesktopEffectSync(workflow.install);
   };
   ipcMain.on("updater:install", install);
 
@@ -163,6 +164,6 @@ export async function setupUpdater(
     ipcMain.removeHandler("updater:check");
     ipcMain.removeHandler("updater:download");
     ipcMain.off("updater:install", install);
-    await Effect.runPromise(workflow.dispose);
+    await runDesktopEffect(workflow.dispose);
   };
 }

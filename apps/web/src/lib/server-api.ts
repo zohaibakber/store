@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { RequestError } from "@/auth";
 import { authSession } from "@/lib/auth";
+import { runClientEffect } from "@/lib/sentry";
 
 export const analyseInvoices = async (
   files: ReadonlyArray<{
@@ -30,7 +31,7 @@ export const analyseInvoices = async (
     throw cause instanceof Error ? cause : new Error("Invoice analysis failed.");
   }
 
-  return Effect.runPromise(
+  return runClientEffect(
     Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
       Effect.mapError(() => new Error("Unexpected response from invoice analysis.")),
     ),
