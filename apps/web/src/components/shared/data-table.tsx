@@ -203,16 +203,6 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   );
 }
 
-function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      className={cn("flex flex-wrap items-center gap-2 py-2", className)}
-      data-slot="data-table-header"
-      {...props}
-    />
-  );
-}
-
 function DataTableFooter({ className, ...props }: React.ComponentProps<"footer">) {
   return <FrameFooter className={cn("p-2", className)} data-slot="data-table-footer" {...props} />;
 }
@@ -581,7 +571,6 @@ export {
   DataTableFilterOption,
   DataTableFooter,
   DataTableFilter,
-  DataTableHeader,
   DataTablePagination,
   DataTableViewOptions,
   useDataTable,
