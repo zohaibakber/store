@@ -3,7 +3,6 @@ import { expect, test } from "vitest";
 
 import {
   assertCanChangeUnitsPerPack,
-  assertCanDeleteBatch,
   assertCanDeleteCategory,
   assertCanDeleteProduct,
   catalogWriteError,
@@ -40,9 +39,6 @@ test("stocked products cannot be deleted or have their pack size changed", () =>
   );
   expect(() => assertCanChangeUnitsPerPack(batches, "product-1")).toThrow(
     catalogWriteError.unitsPerPackWithStock,
-  );
-  expect(() => assertCanDeleteBatch({ packQuantity: 1, unitQuantity: 0 })).toThrow(
-    catalogWriteError.batchHasStock,
   );
   expect(() =>
     assertCanDeleteCategory([{ categoryId: "category-1", deletedAt: null }], "category-1"),

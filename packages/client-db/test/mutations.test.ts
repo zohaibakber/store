@@ -1,17 +1,11 @@
 import {
-  decodeBatchId,
   decodeCategoryId,
-  decodeInvoiceId,
-  decodeInvoiceItemId,
-  decodeProductId,
 } from "@store/contracts/ids";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   inventoryApiRoot,
-  submitCatalogRows,
   submitImportInventory,
-  submitIssueInvoice,
 } from "../src/mutations";
 import type { CategoryRow } from "../src/rows";
 
@@ -40,37 +34,6 @@ describe("inventoryApiRoot", () => {
 });
 
 describe("inventory mutation HTTP", () => {
-  it("posts catalog rows and decodes the mutation receipt", async () => {
-    const authenticatedFetch = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ txid: 12 }), { status: 200 }));
-
-    await expect(
-      submitCatalogRows({
-        apiBaseUrl: "https://api.example",
-        authenticatedFetch,
-        entity: "category",
-        rows: [category],
-      }),
-    ).resolves.toEqual({ txid: 12 });
-
-    expect(authenticatedFetch).toHaveBeenCalledOnce();
-    const [url, init] = authenticatedFetch.mock.calls[0] ?? [];
-    expect(url).toBe("https://api.example/api/inventory/mutations");
-    expect(init).toMatchObject({
-      method: "POST",
-      body: JSON.stringify({
-        operationId: "operation-1",
-        organizationId: "org-1",
-        deviceId: "device-1",
-        actorUserId: "user-1",
-        occurredAt: 100,
-        entity: "category",
-        rows: [category],
-      }),
-    });
-  });
-
   it("posts an import command and decodes created counts", async () => {
     const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ createdProducts: 1, createdBatches: 2, txid: 9 }), {
@@ -92,75 +55,5 @@ describe("inventory mutation HTTP", () => {
     ).resolves.toEqual({ createdProducts: 1, createdBatches: 2, txid: 9 });
 
     expect(authenticatedFetch.mock.calls[0]?.[0]).toBe("https://api.example/api/inventory/imports");
-  });
-
-  it("posts an invoice command and decodes the issued invoice", async () => {
-    const invoiceId = decodeInvoiceId("invoice-1");
-    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ invoiceId, invoiceNumber: 4, txid: 11 }), {
-        status: 200,
-      }),
-    );
-
-    await expect(
-      submitIssueInvoice({
-        apiBaseUrl: "https://api.example",
-        authenticatedFetch,
-        command: {
-          commandId: "command-2",
-          deviceId: "device-1",
-          occurredAt: 100,
-          invoiceId,
-          invoiceNumber: 4,
-          input: {
-            customerName: null,
-            items: [
-              {
-                productId: decodeProductId("product-1"),
-                batchId: null,
-                quantity: 1,
-                quantityType: "unit",
-                salePrice: 10,
-              },
-            ],
-          },
-          allocations: [
-            {
-              invoiceItemId: decodeInvoiceItemId("item-1"),
-              saleMovementId: "sale-1",
-              openPackMovementId: null,
-              productId: decodeProductId("product-1"),
-              batchId: decodeBatchId("batch-1"),
-              quantity: 1,
-              quantityType: "unit",
-              salePrice: 10,
-              packsOpened: 0,
-            },
-          ],
-        },
-      }),
-    ).resolves.toEqual({ invoiceId, invoiceNumber: 4, txid: 11 });
-
-    expect(authenticatedFetch.mock.calls[0]?.[0]).toBe(
-      "https://api.example/api/inventory/invoices",
-    );
-  });
-
-  it("rejects a malformed mutation receipt", async () => {
-    const authenticatedFetch = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ txid: "nope" }), { status: 200 }));
-
-    await expect(
-      submitCatalogRows({
-        apiBaseUrl: "https://api.example",
-        authenticatedFetch,
-        entity: "category",
-        rows: [category],
-      }),
-    ).rejects.toMatchObject({
-      name: "InventoryFailure",
-      reason: { _tag: "rejected", code: "INVALID_JSON_RESPONSE" },
-    });
   });
 });

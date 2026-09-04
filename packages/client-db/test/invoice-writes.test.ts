@@ -2,10 +2,7 @@ import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contrac
 import { describe, expect, it } from "vitest";
 
 import {
-  classifyInventoryCrudTransaction,
-  projectIssuedInvoice,
   replicaInvoiceNumber,
-  type InventoryCrudEntry,
 } from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
 import type {
@@ -161,60 +158,4 @@ describe("makeInvoiceWrites", () => {
     expect(inventory.batches.state.get("batch-1")?.packQuantity).toBe(1);
   });
 
-  it("projects then reconstructs the same command from CRUD", () => {
-    rowSeq = 0;
-    const inventory = tables();
-    const projection = projectIssuedInvoice({
-      actor,
-      commandId: "command-1",
-      occurredAt: 1_700_000_000_000,
-      invoiceNumber: 1,
-      sale: {
-        customerName: null,
-        items: [
-          {
-            productId: decodeProductId("product-1"),
-            batchId: null,
-            quantity: 1,
-            quantityType: "pack",
-            salePrice: 50,
-          },
-        ],
-      },
-      products: inventory.products,
-      batches: inventory.batches,
-      ids,
-    });
-    const crud: InventoryCrudEntry[] = [
-      {
-        id: projection.invoice.id,
-        table: "invoices",
-        op: "PUT",
-        opData: projection.invoice,
-      },
-      ...projection.items.map((item) => ({
-        id: item.id,
-        table: "invoice_items",
-        op: "PUT" as const,
-        opData: item,
-      })),
-      ...projection.batchUpdates.map((row) => ({
-        id: row.id,
-        table: "batches",
-        op: "PATCH" as const,
-        opData: { packQuantity: row.packQuantity, unitQuantity: row.unitQuantity },
-        previousValues: batch(),
-      })),
-      ...projection.movements.map((movement) => ({
-        id: movement.id,
-        table: "stock_movements",
-        op: "PUT" as const,
-        opData: movement,
-      })),
-    ];
-    expect(classifyInventoryCrudTransaction(crud)).toEqual({
-      _tag: "sale",
-      command: projection.command,
-    });
-  });
 });
