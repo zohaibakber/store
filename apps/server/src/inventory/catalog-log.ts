@@ -3,14 +3,15 @@ import {
   SYNC_PAGE_ROWS,
   SYNC_PAGE_BYTES,
   catalogSliceEntities,
+  SyncEntityChange,
   type CatalogPullRequest,
   type CatalogPullResult,
   type CatalogSlice,
-  SyncEntityChange,
 } from "@store/contracts";
 import { catalogChangeLog, catalogNotificationOutbox } from "@store/db/postgres/schema";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
@@ -113,15 +114,18 @@ const pullPage = Effect.fn("CatalogLog.pullPage")(function* (
         ? last.transactionEnd
         : (last?.id ?? request.cursor),
     cursor: last?.id ?? request.cursor,
-    changes: yield* Effect.forEach(page, (row) =>
-      Schema.decodeUnknownEffect(SyncEntityChange)({
-        entity: row.entity,
-        action: row.action,
-        entityId: row.entityId,
-        rowVersion: row.rowVersion,
-        row: row.row,
-      }),
-    ),
+    changes: page.flatMap((row) => {
+      const change = Option.getOrUndefined(
+        Schema.decodeUnknownOption(SyncEntityChange)({
+          entity: row.entity,
+          action: row.action,
+          entityId: row.entityId,
+          rowVersion: row.rowVersion,
+          row: row.row,
+        }),
+      );
+      return change ? [change] : [];
+    }),
     hasMore,
   } satisfies CatalogPullResult;
 });

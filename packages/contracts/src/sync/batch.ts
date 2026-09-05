@@ -5,7 +5,7 @@ import { ImportInventoryCommand, IssueInvoiceCommand } from "../store/schema";
 import { CatalogCursor } from "./schema";
 
 export const SYNC_EPOCH = 2;
-export const SYNC_PAGE_ROWS = 500;
+export const SYNC_PAGE_ROWS = 50;
 export const SYNC_PAGE_BYTES = 512 * 1024;
 export const SYNC_BATCH_BYTES = 256 * 1024;
 export const CatalogBatchCommand = Schema.Union([

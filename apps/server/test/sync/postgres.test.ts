@@ -124,7 +124,7 @@ describe.skipIf(!url)("Postgres sync protocol", () => {
       Effect.gen(function* () {
         const db = yield* makePostgresDrizzle(yield* PgClient.PgClient);
         const organizationId = crypto.randomUUID();
-        const rows = Array.from({ length: 501 }, (_, index) => ({
+        const rows = Array.from({ length: SYNC_PAGE_ROWS + 1 }, (_, index) => ({
           id: `category-${index}`,
           name: `Category ${index}`,
           tracksPacks: true,
@@ -142,7 +142,7 @@ describe.skipIf(!url)("Postgres sync protocol", () => {
           epoch: 2,
           slices: ["catalog", "sales"],
         });
-        expect(first.changes).toHaveLength(500);
+        expect(first.changes).toHaveLength(SYNC_PAGE_ROWS);
         expect(first.changes[0]?.row).toMatchObject({
           createdAt: 1,
           organizationId,
@@ -155,7 +155,10 @@ describe.skipIf(!url)("Postgres sync protocol", () => {
           .update(categories)
           .set({ name: "Changed after snapshot" })
           .where(
-            and(eq(categories.organizationId, organizationId), eq(categories.id, "category-500")),
+            and(
+              eq(categories.organizationId, organizationId),
+              eq(categories.id, `category-${SYNC_PAGE_ROWS}`),
+            ),
           );
         const request = {
           epoch: 2,

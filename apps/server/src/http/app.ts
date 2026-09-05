@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -77,13 +78,15 @@ export const recoverUnexpected = <E, R>(
   effect.pipe(
     Effect.catchCause((cause) => {
       if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
-      return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
-        Effect.as(
-          HttpServerResponse.jsonUnsafe(
+      return HttpServerError.causeResponse(cause).pipe(
+        Effect.map(([response]) => {
+          if (response.status < 500) return response;
+          reportError("worker.request_failed", Cause.pretty(cause));
+          return HttpServerResponse.jsonUnsafe(
             publicError("INTERNAL_SERVER_ERROR", "Something went wrong."),
             { status: 500 },
-          ),
-        ),
+          );
+        }),
       );
     }),
   );

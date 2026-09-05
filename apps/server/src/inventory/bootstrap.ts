@@ -20,6 +20,7 @@ import {
 } from "@store/db/postgres/schema";
 import { and, asc, desc, eq, getTableColumns, gt, isNull, lt, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
@@ -120,11 +121,15 @@ export const bootstrapCatalog = Effect.fn("CatalogBootstrap.snapshot")(function*
   let nextOffset = request.bootstrap?.offset ?? 0;
   let bytes = 0;
   for (const entry of rows.slice(0, SYNC_PAGE_ROWS)) {
-    const change = yield* Schema.decodeUnknownEffect(SyncEntityChange)(entry.change);
-    const size = new TextEncoder().encode(JSON.stringify(change)).byteLength;
-    if (changes.length > 0 && bytes + size > SYNC_PAGE_BYTES) break;
-    changes.push(change);
-    bytes += size;
+    const change = Option.getOrUndefined(
+      Schema.decodeUnknownOption(SyncEntityChange)(entry.change),
+    );
+    const size = change ? new TextEncoder().encode(JSON.stringify(change)).byteLength : 0;
+    if (change && changes.length > 0 && bytes + size > SYNC_PAGE_BYTES) break;
+    if (change) {
+      changes.push(change);
+      bytes += size;
+    }
     nextOffset = entry.id;
   }
   return {
