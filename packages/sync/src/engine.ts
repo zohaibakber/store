@@ -173,13 +173,17 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     }
   });
 
-  const applyPendingWrites = (current: ReplicaSnapshot) =>
-    applyChanges(
-      current,
-      current.outbox.flatMap((entry) =>
-        entry.kind === "catalogWrite" ? commandChanges(entry.command) : [],
-      ),
+  const pendingChanges = (current: ReplicaSnapshot) =>
+    current.outbox.flatMap((entry) =>
+      entry.kind === "catalogWrite"
+        ? commandChanges(entry.command)
+        : entry.kind === "issueInvoice"
+          ? (entry.changes ?? [])
+          : [],
     );
+
+  const applyPendingWrites = (current: ReplicaSnapshot) =>
+    applyChanges(current, pendingChanges(current));
 
   const drainOutbox = Effect.fn("Catalog.drainOutbox")(function* () {
     while (true) {
@@ -222,7 +226,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     const applied = yield* exclusive(
       Effect.gen(function* () {
         const current = yield* Ref.get(stateRef);
-        if (result.cursor <= current.cursor) return false;
+        if (result.cursor <= current.cursor) return [];
         const next = applyPendingWrites(
           applyChanges(
             {
@@ -235,10 +239,10 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
         );
         yield* saveState(store, scopeKey, next);
         yield* Ref.set(stateRef, next);
-        return true;
+        return [...result.changes, ...pendingChanges(next)];
       }),
     );
-    if (applied) yield* publishDiffs(changes, diffFromChanges(result.changes));
+    yield* publishDiffs(changes, diffFromChanges(applied));
     const latest = yield* Ref.get(stateRef);
     yield* SubscriptionRef.set(status, latest.outbox.length > 0 ? "syncing" : "ready");
   });
@@ -248,7 +252,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     const applied = yield* exclusive(
       Effect.gen(function* () {
         const current = yield* Ref.get(stateRef);
-        if (current.cursor !== 0) return false;
+        if (current.cursor !== 0) return [];
         const empty = emptyReplicaSnapshot();
         const next = applyPendingWrites(
           applyChanges(
@@ -262,10 +266,10 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
         );
         yield* saveState(store, scopeKey, next);
         yield* Ref.set(stateRef, next);
-        return true;
+        return [...result.changes, ...pendingChanges(next)];
       }),
     );
-    if (applied) yield* publishDiffs(changes, diffFromChanges(result.changes));
+    yield* publishDiffs(changes, diffFromChanges(applied));
     const latest = yield* Ref.get(stateRef);
     yield* SubscriptionRef.set(status, latest.outbox.length > 0 ? "syncing" : "ready");
   });
@@ -358,8 +362,11 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     write: Effect.fn("Catalog.write")(function* (command: CatalogWriteCommand) {
       yield* enqueue(catalogCommandEntry(command), commandChanges(command));
     }),
-    issueInvoice: Effect.fn("Catalog.issueInvoice")(function* (command: IssueInvoiceCommand) {
-      yield* enqueue(invoiceCommandEntry(command), []);
+    issueInvoice: Effect.fn("Catalog.issueInvoice")(function* (
+      command: IssueInvoiceCommand,
+      changes: ReadonlyArray<SyncEntityChange>,
+    ) {
+      yield* enqueue(invoiceCommandEntry(command, changes), changes);
     }),
     importInventory: Effect.fn("Catalog.importInventory")(function* (
       command: ImportInventoryCommand,

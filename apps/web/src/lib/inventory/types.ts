@@ -6,7 +6,7 @@ import type {
   ProductRow,
   StockMovementRow,
 } from "@store/client-db";
-import type { IssueInvoiceCommand } from "@store/contracts";
+import type { IssueInvoiceCommand, SyncEntityChange } from "@store/contracts";
 import type {
   CreateBatchInput,
   CreateCategoryInput,
@@ -32,7 +32,10 @@ export type Inventory = {
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
   readonly waitForUploadDrain: () => Promise<void>;
-  readonly enqueueInvoice: (command: IssueInvoiceCommand) => Promise<void>;
+  readonly enqueueInvoice: (
+    command: IssueInvoiceCommand,
+    changes: ReadonlyArray<SyncEntityChange>,
+  ) => Promise<void>;
   readonly poke: () => Promise<void>;
   readonly dispose: () => Promise<void>;
 };

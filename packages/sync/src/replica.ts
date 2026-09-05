@@ -5,7 +5,7 @@ import {
   catalogSliceEntities,
   type CatalogSlice,
   type SyncEntity,
-  type SyncEntityChange,
+  SyncEntityChange,
 } from "@store/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -26,6 +26,7 @@ export const InvoiceOutbox = Schema.Struct({
   lane: Schema.Literal("invoice"),
   kind: Schema.Literal("issueInvoice"),
   command: IssueInvoiceCommand,
+  changes: Schema.optionalKey(Schema.Array(SyncEntityChange)),
 });
 export type InvoiceOutbox = typeof InvoiceOutbox.Type;
 
@@ -190,11 +191,15 @@ export const commandChanges = (command: CatalogWriteCommand): ReadonlyArray<Sync
     ];
   });
 
-export const invoiceCommandEntry = (command: IssueInvoiceCommand): InvoiceOutbox => ({
+export const invoiceCommandEntry = (
+  command: IssueInvoiceCommand,
+  changes: ReadonlyArray<SyncEntityChange>,
+): InvoiceOutbox => ({
   id: command.commandId,
   lane: "invoice",
   kind: "issueInvoice",
   command,
+  changes,
 });
 
 export const catalogCommandEntry = (command: CatalogWriteCommand): CatalogWriteOutbox => ({

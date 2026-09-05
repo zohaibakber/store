@@ -4,6 +4,7 @@ import {
   CatalogError,
   CatalogHttpTransport,
   CatalogLive,
+  diffFromChanges,
   DurableStore,
   layerIndexedDb,
   type CatalogFailure,
@@ -178,12 +179,16 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
         runtime.runPromise(catalog.waitForIdle).catch((cause: unknown) => {
           throw failureFromCatalog(cause);
         }),
-      enqueueInvoice: (command: Parameters<typeof catalog.issueInvoice>[0]) =>
-        runtime.runPromise(catalog.issueInvoice(command)).catch((cause: unknown) => {
+      enqueueInvoice: async (...args: Parameters<typeof catalog.issueInvoice>) => {
+        await runtime.runPromise(catalog.issueInvoice(...args)).catch((cause: unknown) => {
           const failure = failureFromCatalog(cause);
           host.onUploadHalt?.(failure);
           throw failure;
-        }),
+        });
+        for (const diff of diffFromChanges(args[1])) {
+          for (const listener of listeners) listener(diff);
+        }
+      },
       poke: () => runtime.runPromise(catalog.poke),
       dispose: async () => {
         await cleanupBoundCollections().catch(() => undefined);

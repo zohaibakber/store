@@ -5,16 +5,6 @@ import type { InventoryHost } from "@/lib/inventory-host";
 
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
-const persistSale = (inventory: Inventory) => async (work: () => void) => {
-  const transaction = inventory.dbClient.createTransaction({
-    autoCommit: false,
-    mutationFn: async () => undefined,
-  });
-  transaction.mutate(work);
-  await transaction.commit();
-  await transaction.isPersisted.promise;
-};
-
 export const makeInventoryActions = (
   inventory: Inventory,
   host: InventoryHost,
@@ -24,7 +14,6 @@ export const makeInventoryActions = (
   const invoices = makeInvoiceWrites(
     {
       ...inventory,
-      persist: persistSale(inventory),
       submitInvoice: inventory.enqueueInvoice,
     },
     actor,

@@ -115,7 +115,14 @@ const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
+const authBroker = new AuthBroker(
+  API_BASE_URL,
+  AUTH_BASE_URL,
+  `${ELECTRON_PROTOCOL}://app`,
+  (snapshot) => {
+    publishSession(snapshot);
+  },
+);
 const oauthCallbacks = makeOAuthCallbackMailbox(ELECTRON_PROTOCOL, () => {
   win?.webContents.send("auth:oauth-callback-available");
 });
@@ -190,17 +197,16 @@ function registerAuthIpc() {
   ipcMain.handle("auth:adopt-session", async (event, input) => {
     assertRendererIpc(event.senderFrame);
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
-    return serializeAuthTransition(() => authBroker.adoptSession(tokens).then(publishSession));
+    return serializeAuthTransition(() => authBroker.adoptSession(tokens));
   });
   ipcMain.handle("auth:renew-session", (event) => {
     assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(() => authBroker.renewSession().then(publishSession));
+    return serializeAuthTransition(() => authBroker.renewSession());
   });
   ipcMain.handle("auth:sign-out", (event) => {
     assertRendererIpc(event.senderFrame);
     return serializeAuthTransition(async () => {
       await authBroker.signOut();
-      publishSession(authBroker.snapshot);
     });
   });
   ipcMain.handle("auth:organization", (event) => {

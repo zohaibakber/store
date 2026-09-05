@@ -1,5 +1,5 @@
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { replicaInvoiceNumber } from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
@@ -113,9 +113,6 @@ const tables = (): InvoiceWriteTables => ({
   invoices: memoryCollection<InvoiceRow>(),
   invoiceItems: memoryCollection<InvoiceItemRow>(),
   stockMovements: memoryCollection<StockMovementRow>(),
-  persist: async (work) => {
-    work();
-  },
   submitInvoice: async () => undefined,
 });
 
@@ -135,7 +132,8 @@ describe("replicaInvoiceNumber", () => {
 describe("makeInvoiceWrites", () => {
   it("persists an invoice locally without waiting for the network", async () => {
     rowSeq = 0;
-    const inventory = tables();
+    const submitted = vi.fn<InvoiceWriteTables["submitInvoice"]>().mockResolvedValue(undefined);
+    const inventory = { ...tables(), submitInvoice: submitted };
     const writes = makeInvoiceWrites(inventory, actor, ids);
     const result = await writes.issueInvoice({
       customerName: "Walk-in",
@@ -151,8 +149,16 @@ describe("makeInvoiceWrites", () => {
     });
 
     expect(result).toEqual({ invoiceId: "command-1", invoiceNumber: 1 });
-    expect([...inventory.invoices.state.values()]).toHaveLength(1);
-    expect([...inventory.invoiceItems.state.values()]).toHaveLength(1);
-    expect(inventory.batches.state.get("batch-1")?.packQuantity).toBe(1);
+    expect(submitted).toHaveBeenCalledOnce();
+    expect(submitted.mock.calls[0]?.[1]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ entity: "invoice", entityId: "command-1" }),
+        expect.objectContaining({ entity: "invoiceItem" }),
+        expect.objectContaining({
+          entity: "batch",
+          row: expect.objectContaining({ packQuantity: 1 }),
+        }),
+      ]),
+    );
   });
 });

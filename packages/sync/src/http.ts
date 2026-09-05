@@ -70,7 +70,10 @@ const requestJson = Effect.fn("CatalogTransport.request")(function* (
               : ("transport" as const);
     return yield* new CatalogError({
       reason,
-      message: `catalog ${String(response.status)}`,
+      message:
+        response.status === 401
+          ? "Your session expired. Sign in again to upload saved changes."
+          : `catalog ${String(response.status)}`,
     });
   }
   const payload = yield* Effect.tryPromise({

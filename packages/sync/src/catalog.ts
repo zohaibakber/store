@@ -2,6 +2,7 @@ import type {
   CatalogWriteCommand,
   ImportInventoryCommand,
   IssueInvoiceCommand,
+  SyncEntityChange,
 } from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -36,7 +37,10 @@ export class Catalog extends Context.Service<
     readonly failures: Queue.Queue<CatalogFailure>;
     readonly snapshot: Effect.Effect<ReplicaSnapshot>;
     readonly write: (command: CatalogWriteCommand) => Effect.Effect<void, CatalogError>;
-    readonly issueInvoice: (command: IssueInvoiceCommand) => Effect.Effect<void, CatalogError>;
+    readonly issueInvoice: (
+      command: IssueInvoiceCommand,
+      changes: ReadonlyArray<SyncEntityChange>,
+    ) => Effect.Effect<void, CatalogError>;
     readonly importInventory: (
       command: ImportInventoryCommand,
     ) => Effect.Effect<void, CatalogError>;
