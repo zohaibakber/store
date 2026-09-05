@@ -116,8 +116,9 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
       issueInvoice:
         options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
-      pullCatalog: () => Effect.succeed({ cursor: 0, changes: [], hasMore: false }),
-      snapshotCatalog: () => Effect.succeed({ cursor: 0, changes: [] }),
+      notifyCatalog: () => Effect.void,
+      pullCatalog: () => Effect.succeed({ epoch: 2, cursor: 0, changes: [], hasMore: false }),
+      snapshotCatalog: () => Effect.succeed({ epoch: 2, cursor: 0, changes: [] }),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

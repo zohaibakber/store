@@ -8,50 +8,53 @@ One opinionated application-module style uses file-local role names and one cano
 
 ```ts
 export interface Interface {
-  readonly get: (id: UserId) => Effect.Effect<User, NotFound | PersistenceError>;
+  readonly get: (id: UserId) => Effect.Effect<User, NotFound | PersistenceError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@app/UserRepo") {}
+export class Service extends Context.Service<Service, Interface>()(
+  "@app/UserRepo",
+) {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
+    const sql = yield* SqlClient.SqlClient
 
     const get = Effect.fn("UserRepo.get")(function* (id: UserId) {
       // ...
-    });
+    })
 
-    return Service.of({ get });
+    return Service.of({ get })
   }),
-);
+)
 
-export class NotFound extends Schema.TaggedError<NotFound>()("UserRepo.NotFound", {
-  id: UserId,
-}) {}
+export class NotFound extends Schema.TaggedError<NotFound>()(
+  "UserRepo.NotFound",
+  { id: UserId },
+) {}
 
-export * as UserRepo from "./user-repo.js";
+export * as UserRepo from "./user-repo.js"
 ```
 
 Consumers use the module namespace.
 
 ```ts
-import { UserRepo } from "./user-repo.js";
+import { UserRepo } from "./user-repo.js"
 
 const program = Effect.gen(function* () {
-  const repo = yield* UserRepo.Service;
-  return yield* repo.get(id);
-});
+  const repo = yield* UserRepo.Service
+  return yield* repo.get(id)
+})
 ```
 
 The self-export is deliberate. It lets the file remain the module while giving every consumer the same domain-first name, without a TypeScript `namespace`, wrapper object, or repeated consumer-side aliases.
 
 ```ts
 // Sibling module: import the owning leaf directly.
-import { UserRepo } from "./user-repo.js";
+import { UserRepo } from "./user-repo.js"
 
 // Folder or package barrel: relay the identity established by the leaf.
-export { UserRepo } from "./user-repo.js";
+export { UserRepo } from "./user-repo.js"
 ```
 
 Guidance:
@@ -64,16 +67,15 @@ Guidance:
 - Export only intentional surface; keep local schemas, row codecs, helpers, and implementation details unexported.
 - Do not introduce TypeScript `namespace` declarations for organization.
 - Use a named service class such as `class UserRepo extends Context.Service...` when an external library or existing codebase does not use module namespace style.
-- Effect v4 also allows `Context.Service` with a `make` effect and an explicit `static layer = Layer.effect(this, this.make).pipe(Layer.provide(...))`. Prefer that when a service owns its construction; do not expect `make` to auto-create a layer.
 
 ## Layer Constructors
 
 Choose the layer constructor that matches the thing produced.
 
 ```ts
-Layer.succeed(Service, impl); // already-built service
-Layer.sync(Service, () => impl); // lazy synchronous service
-Layer.effect(Service, makeEffect); // effectful service acquisition
+Layer.succeed(Service, impl)       // already-built service
+Layer.sync(Service, () => impl)    // lazy synchronous service
+Layer.effect(Service, makeEffect)  // effectful service acquisition
 ```
 
 Guidance:
@@ -91,11 +93,14 @@ A layer that starts a stream, listener, worker, subscription, or forever loop mu
 ```ts
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const events = yield* Events.Service;
+    const events = yield* Events.Service
 
-    yield* events.stream.pipe(Stream.runForEach(handleEvent), Effect.forkScoped);
+    yield* events.stream.pipe(
+      Stream.runForEach(handleEvent),
+      Effect.forkScoped,
+    )
   }),
-);
+)
 ```
 
 Guidance:
@@ -103,19 +108,6 @@ Guidance:
 - Use `Effect.forkScoped`, `FiberSet`, or `FiberMap` for scoped background work.
 - Do not run forever work inline during layer acquisition.
 - Do not expose public `start` methods unless the domain explicitly needs manual lifecycle control.
-
-## Pools And Reference-Counted Maps
-
-- `Pool.use(pool, (item) => effect)` borrows one item for the duration of
-  `effect` and returns it on any exit. Unlike `Effect.scoped(Pool.get(pool))`,
-  it does not require a `Scope`.
-- `RcMap.getOption` and `LayerMap.contextEffectOption` atomically retain an
-  entry only when it is already cached. Use them when missing should stay
-  missing rather than constructing.
-
-`Pool.State` / `Pool.PoolItem` and `Scope.State.Open` changed in rc.112
-(incremental usage, intrusive FIFO, first finalizer stored inline). Do not
-copy old Pool state shapes from pre-rc.112 code.
 
 ## Runtime Wiring
 
@@ -133,10 +125,13 @@ Use extra `Effect.fn(...)` arguments for wrappers that apply to the whole functi
 ```ts
 const readAttachment = Effect.fn("Attachment.read")(
   function* (ref: AttachmentRef) {
-    return yield* api.read(ref);
+    return yield* api.read(ref)
   },
-  (effect, ref) => effect.pipe(attachmentError("Attachment.read", { attachmentId: ref.id })),
-);
+  (effect, ref) =>
+    effect.pipe(
+      attachmentError("Attachment.read", { attachmentId: ref.id }),
+    ),
+)
 ```
 
 Good whole-function transforms:
@@ -163,9 +158,11 @@ Guidance:
 For boundary errors with operation labels, prefer a shared curried `mapError` helper over hand-writing wrappers in every module.
 
 ```ts
-const persistenceError = operationError(PersistenceError.make);
+const persistenceError = operationError(PersistenceError.make)
 
-const row = yield * query.pipe(persistenceError("UserRepository.findById"));
+const row = yield* query.pipe(
+  persistenceError("UserRepository.findById"),
+)
 ```
 
 Name the local helper after the error it produces, such as `persistenceError`, `projectionError`, or `processingError`. Use `Effect.fn(...)` and spans for observability in addition to payload labels, not instead of them.

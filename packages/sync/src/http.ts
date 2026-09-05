@@ -1,159 +1,138 @@
 import {
-  CatalogPullRequest,
+  CatalogBatchResult,
+  CatalogLiveTicket,
+  CatalogNotification,
   CatalogPullResult,
-  CatalogSnapshotRequest,
   CatalogSnapshotResult,
-  CatalogWriteCommand,
-  ImportInventoryCommand,
-  ImportInventoryCommandResult,
-  IssueInvoiceCommand,
-  IssueInvoiceResult,
+  SYNC_EPOCH,
+  type CatalogPullRequest,
+  type CatalogSnapshotRequest,
+  type CatalogBatchCommand,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as Socket from "effect/unstable/socket/Socket";
 
 import { CatalogError } from "./errors";
-import { CatalogTransport } from "./transport";
+import { CatalogTransport, type CatalogLiveHint } from "./transport";
 
-type CatalogJson = typeof Schema.Json.Type;
-type CatalogRequestBody =
-  | CatalogPullRequest
-  | CatalogSnapshotRequest
-  | CatalogWriteCommand
-  | IssueInvoiceCommand
-  | ImportInventoryCommand;
-
-const decodeJson = <A, I>(schema: Schema.Codec<A, I>, body: CatalogJson) =>
-  Schema.decodeUnknownEffect(schema)(body).pipe(
-    Effect.mapError(
-      (cause) =>
-        new CatalogError({
-          reason: "rejected",
-          message: cause.message,
-        }),
-    ),
-  );
-
-const requestHeaders = (headers: HeadersInit) => {
-  const next = new Headers(headers);
-  next.set("content-type", "application/json");
-  return next;
+export const retryAfterDelay = (value: string | undefined, now = Date.now()) => {
+  if (!value) return 0;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
+  return Number.isFinite(delay) ? Math.max(0, delay) : 0;
 };
 
-const requestJson = Effect.fn("CatalogTransport.request")(function* (
-  url: URL,
-  headers: HeadersInit,
-  body: CatalogRequestBody,
-  fetchImpl: typeof fetch,
-) {
-  const response = yield* Effect.tryPromise({
-    try: (signal) =>
-      fetchImpl(url, {
-        method: "POST",
-        headers: requestHeaders(headers),
-        body: JSON.stringify(body),
-        signal,
-      }),
-    catch: (cause) => new CatalogError({ reason: "transport", message: String(cause) }),
-  });
-  if (!response.ok) {
-    const reason =
-      response.status === 401
-        ? ("unauthenticated" as const)
-        : response.status === 409
-          ? ("conflict" as const)
-          : response.status >= 500
-            ? ("transient" as const)
-            : response.status >= 400
-              ? ("rejected" as const)
-              : ("transport" as const);
-    return yield* new CatalogError({
-      reason,
-      message:
-        response.status === 401
-          ? "Your session expired. Sign in again to upload saved changes."
-          : `catalog ${String(response.status)}`,
-    });
-  }
-  const payload = yield* Effect.tryPromise({
-    try: () => response.json(),
-    catch: (cause) => new CatalogError({ reason: "rejected", message: String(cause) }),
-  });
-  return yield* Schema.decodeUnknownEffect(Schema.Json)(payload).pipe(
-    Effect.mapError(
-      (cause) =>
-        new CatalogError({
-          reason: "rejected",
-          message: cause.message,
-        }),
-    ),
-  );
-});
+type CatalogRequest =
+  | CatalogPullRequest
+  | CatalogSnapshotRequest
+  | { readonly commands: ReadonlyArray<CatalogBatchCommand> }
+  | Record<string, never>;
 
 export const CatalogHttpTransport = (options: {
   readonly apiUrl: string;
   readonly headers: () => HeadersInit;
   readonly fetch?: typeof fetch;
-}) => {
-  const fetchImpl = options.fetch ?? fetch;
-  return Layer.succeed(
+}) =>
+  Layer.effect(
     CatalogTransport,
-    CatalogTransport.of({
-      pull: Effect.fn("CatalogTransport.pull")(function* (request: CatalogPullRequest) {
-        const payload = yield* requestJson(
-          new URL("/api/inventory/pull", options.apiUrl),
-          options.headers(),
-          request,
-          fetchImpl,
-        );
-        return yield* decodeJson(CatalogPullResult, payload);
-      }),
-      snapshot: Effect.fn("CatalogTransport.snapshot")(function* (request: CatalogSnapshotRequest) {
-        const payload = yield* requestJson(
-          new URL("/api/inventory/snapshot", options.apiUrl),
-          options.headers(),
-          request,
-          fetchImpl,
-        );
-        return yield* decodeJson(CatalogSnapshotResult, payload);
-      }),
-      write: Effect.fn("CatalogTransport.write")(function* (command: CatalogWriteCommand) {
-        const payload = yield* requestJson(
-          new URL("/api/inventory/mutations", options.apiUrl),
-          options.headers(),
-          command,
-          fetchImpl,
-        );
-        return yield* decodeJson(
-          Schema.Struct({
-            txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-          }),
-          payload,
-        );
-      }),
-      issueInvoice: Effect.fn("CatalogTransport.issueInvoice")(function* (
-        command: IssueInvoiceCommand,
+    Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
+      const request = Effect.fn("CatalogTransport.request")(function* <A, I>(
+        path: string,
+        body: CatalogRequest,
+        schema: Schema.Codec<A, I>,
       ) {
-        const payload = yield* requestJson(
-          new URL("/api/inventory/invoices", options.apiUrl),
-          options.headers(),
-          command,
-          fetchImpl,
+        const request = yield* HttpClientRequest.post(new URL(path, options.apiUrl).href).pipe(
+          HttpClientRequest.setHeaders(new Headers(options.headers())),
+          HttpClientRequest.bodyJson(body),
+          Effect.mapError(
+            (error) => new CatalogError({ reason: "rejected", message: error.message }),
+          ),
         );
-        return yield* decodeJson(IssueInvoiceResult, payload);
-      }),
-      importInventory: Effect.fn("CatalogTransport.importInventory")(function* (
-        command: ImportInventoryCommand,
-      ) {
-        const payload = yield* requestJson(
-          new URL("/api/inventory/imports", options.apiUrl),
-          options.headers(),
-          command,
-          fetchImpl,
+        const response = yield* client.execute(request).pipe(
+          Effect.timeout("30 seconds"),
+          Effect.mapError(
+            (error) => new CatalogError({ reason: "transport", message: error.message }),
+          ),
         );
-        return yield* decodeJson(ImportInventoryCommandResult, payload);
-      }),
+        if (response.status < 200 || response.status >= 300) {
+          return yield* new CatalogError({
+            reason:
+              response.status === 401
+                ? "unauthenticated"
+                : response.status === 409
+                  ? "conflict"
+                  : response.status === 408 || response.status === 429 || response.status >= 500
+                    ? "transient"
+                    : "rejected",
+            retryAfterMs: retryAfterDelay(response.headers["retry-after"]),
+            message:
+              response.status === 401
+                ? "Your session expired. Sign in again to sync saved changes."
+                : `Catalog request failed (${response.status}).`,
+          });
+        }
+        return yield* HttpClientResponse.schemaBodyJson(schema)(response).pipe(
+          Effect.mapError(
+            (error) => new CatalogError({ reason: "rejected", message: error.message }),
+          ),
+        );
+      });
+
+      const live = Stream.callback<CatalogLiveHint, CatalogError>(
+        (queue) =>
+          Effect.gen(function* () {
+            const ticket = yield* request("/api/inventory/live-ticket", {}, CatalogLiveTicket);
+            const url = new URL("/api/inventory/live", options.apiUrl);
+            url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+            url.searchParams.set("organizationId", ticket.organizationId);
+            url.searchParams.set("ticket", ticket.ticket);
+            const socket = yield* Socket.makeWebSocket(url.href, { openTimeout: "10 seconds" });
+            yield* socket
+              .runString(
+                (frame) =>
+                  Schema.decodeUnknownEffect(Schema.fromJsonString(CatalogNotification))(
+                    frame,
+                  ).pipe(
+                    Effect.flatMap((hint) => Queue.offer(queue, hint)),
+                    Effect.mapError(
+                      (error) => new CatalogError({ reason: "rejected", message: error.message }),
+                    ),
+                  ),
+                {
+                  onOpen: Queue.offer(queue, { epoch: SYNC_EPOCH, cursor: 0 }).pipe(Effect.asVoid),
+                },
+              )
+              .pipe(
+                Effect.mapError(
+                  (error) => new CatalogError({ reason: "transport", message: error.message }),
+                ),
+                Effect.catch((error) => Queue.fail(queue, error)),
+                Effect.forkScoped,
+              );
+          }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
+        { bufferSize: 1, strategy: "sliding" },
+      );
+
+      return CatalogTransport.of({
+        pull: (payload) => request("/api/inventory/pull", payload, CatalogPullResult),
+        snapshot: (payload) => request("/api/inventory/snapshot", payload, CatalogSnapshotResult),
+        batch: (commands) => request("/api/inventory/batch", { commands }, CatalogBatchResult),
+        live,
+      });
     }),
+  ).pipe(
+    Layer.provide(
+      FetchHttpClient.layer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch)),
+      ),
+    ),
   );
-};

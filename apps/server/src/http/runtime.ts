@@ -19,9 +19,9 @@ import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 
 import type { AuthError } from "../auth/session";
+import type { InventoryMutationResult } from "../inventory/catalog-write";
 import type { InventoryDatabaseError, InventoryProtocolError } from "../inventory/errors";
 import type { InventoryActor } from "../inventory/model";
-import type { InventoryMutationResult } from "../inventory/mutation-database";
 
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
@@ -64,6 +64,10 @@ export interface ServerRuntimeContract {
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
+  readonly notifyCatalog: (
+    organizationId: string,
+    cursor: number,
+  ) => Effect.Effect<void, never, RuntimeContext>;
   readonly pullCatalog: (
     organizationId: string,
     request: CatalogPullRequest,

@@ -4,12 +4,14 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
 import {
   CatalogError,
   CatalogTransport,
-  DurableStore,
+  ReplicaStore,
+  makeMemoryReplicaStore,
   makeCatalog,
   replicaScopeKey,
   type ReplicaSnapshot,
@@ -46,14 +48,9 @@ const command = (id: string): CatalogWriteCommand => ({
   rows: [category(id, `operation-${id}`)],
 });
 
-const makeStore = (seed: Readonly<Record<string, string>> = {}) => {
-  const values = new Map(Object.entries(seed));
-  const service = DurableStore.of({
-    get: (key) => Effect.sync(() => values.get(key)),
-    set: (key, value) => Effect.sync(() => void values.set(key, value)),
-    remove: (key) => Effect.sync(() => void values.delete(key)),
-  });
-  return { values, layer: Layer.succeed(DurableStore, service) };
+const makeStore = (seed: Readonly<Record<string, ReplicaSnapshot>> = {}) => {
+  const service = makeMemoryReplicaStore(seed);
+  return { service, layer: Layer.succeed(ReplicaStore, service) };
 };
 
 const transportLayer = (
@@ -63,10 +60,19 @@ const transportLayer = (
     CatalogTransport,
     CatalogTransport.of({
       pull: () => Effect.never,
-      snapshot: () => Effect.succeed({ cursor: 1, changes: [] }),
-      write,
-      issueInvoice: () => Effect.die("unexpected invoice push"),
-      importInventory: () => Effect.die("unexpected import push"),
+      snapshot: () => Effect.never,
+      live: Stream.never,
+      batch: (commands) =>
+        Effect.forEach(commands, (entry) => {
+          if (entry.kind !== "catalogWrite") return Effect.die("Unexpected command");
+          return write(entry.command).pipe(
+            Effect.map(({ txid }) => ({
+              status: "accepted" as const,
+              id: entry.command.operationId,
+              txid,
+            })),
+          );
+        }).pipe(Effect.map((results) => ({ results }))),
     }),
   );
 
@@ -135,8 +141,8 @@ describe("catalog engine", () => {
         { id: second.operationId, lane: "catalog", kind: "catalogWrite", command: second },
       ],
     };
-    const stateKey = `${replicaScopeKey(scope.apiOrigin, scope.organizationId)}:snapshot`;
-    const store = makeStore({ [stateKey]: JSON.stringify(state) });
+    const stateKey = replicaScopeKey(scope.apiOrigin, scope.organizationId);
+    const store = makeStore({ [stateKey]: state });
     const pushed: Array<string> = [];
 
     await Effect.runPromise(
@@ -158,9 +164,8 @@ describe("catalog engine", () => {
           expect(pushed).toEqual(["operation-one", "operation-two"]);
           expect((yield* catalog.snapshot).outbox).toEqual([]);
 
-          const persisted = store.values.get(stateKey);
-          expect(persisted).toBeDefined();
-          expect(JSON.parse(persisted ?? "{}").outbox).toEqual([]);
+          const persisted = yield* store.service.load(stateKey);
+          expect(persisted.outbox).toEqual([]);
         }),
       ),
     );

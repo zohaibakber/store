@@ -47,15 +47,14 @@ Do not commit `local.properties` or `app/google-services.json`.
 AUTH_URL=http://10.0.2.2:8788
 API_URL=http://10.0.2.2:8787
 GOOGLE_WEB_CLIENT_ID=123-abc.apps.googleusercontent.com
-POWERSYNC_URL=          # optional fallback; the API usually returns this
 ```
 
 The emulator reaches the host through `10.0.2.2`. A physical device needs the
 LAN IP of the machine running `vp run dev:web` (API `:8787`, auth `:8788`).
 
-PowerSync tokens come from `GET /api/powersync/credentials` with the same
-Bearer token as web and desktop. `POWERSYNC_URL` is only a fallback when that
-response omits `endpoint`.
+Inventory uses a local SQLite replica and a durable outbox. Batched uploads and
+cursor pulls use the authenticated inventory API. A one-use ticket connects
+`/api/inventory/live` for change notifications; reconnects resume from the saved cursor.
 
 ### Firebase
 

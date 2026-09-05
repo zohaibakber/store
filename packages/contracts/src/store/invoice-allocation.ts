@@ -1,3 +1,6 @@
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
@@ -38,13 +41,51 @@ export const compareBatchesFefo = (left: AllocatableBatch, right: AllocatableBat
 };
 
 const availableForLine = (
-  batch: AllocatableBatch,
+  batch: Pick<AllocatableBatch, "packQuantity" | "unitQuantity">,
   product: { readonly unitsPerPack: number },
   quantityType: CreateInvoiceLineInput["quantityType"],
 ) =>
   quantityType === "pack"
     ? batch.packQuantity
     : batch.packQuantity * product.unitsPerPack + batch.unitQuantity;
+
+export class InsufficientBatchStock extends Schema.TaggedError<InsufficientBatchStock>()(
+  "InsufficientBatchStock",
+  { available: Schema.Number, requested: Schema.Number },
+) {}
+
+export const takeBatchStock = ({
+  stock,
+  unitsPerPack,
+  quantity,
+  quantityType,
+}: {
+  readonly stock: Pick<AllocatableBatch, "packQuantity" | "unitQuantity">;
+  readonly unitsPerPack: number;
+  readonly quantity: number;
+  readonly quantityType: CreateInvoiceLineInput["quantityType"];
+}): Result.Result<
+  Pick<InvoiceLineTake, "packsOpened" | "nextPackQuantity" | "nextUnitQuantity">,
+  InsufficientBatchStock
+> => {
+  const available = availableForLine(stock, { unitsPerPack }, quantityType);
+  if (available < quantity) {
+    return Result.fail(new InsufficientBatchStock({ available, requested: quantity }));
+  }
+  const packsOpened =
+    quantityType === "unit"
+      ? Math.max(0, Math.ceil((quantity - stock.unitQuantity) / unitsPerPack))
+      : 0;
+  return Result.succeed({
+    packsOpened,
+    nextPackQuantity:
+      quantityType === "pack" ? stock.packQuantity - quantity : stock.packQuantity - packsOpened,
+    nextUnitQuantity:
+      quantityType === "pack"
+        ? stock.unitQuantity
+        : stock.unitQuantity + packsOpened * unitsPerPack - quantity,
+  });
+};
 
 export const allocateInvoiceLine = (
   line: CreateInvoiceLineInput,
@@ -88,22 +129,22 @@ export const allocateInvoiceLine = (
     if (remaining === 0) break;
     const stock = remainingById.get(batch.id);
     if (!stock) continue;
-    const batchAvailable =
-      line.quantityType === "pack"
-        ? stock.packQuantity
-        : stock.packQuantity * product.unitsPerPack + stock.unitQuantity;
+    const batchAvailable = availableForLine(stock, product, line.quantityType);
     const taken = Math.min(batchAvailable, remaining);
     remaining -= taken;
-    const packsOpened =
-      line.quantityType === "unit"
-        ? Math.max(0, Math.ceil((taken - stock.unitQuantity) / product.unitsPerPack))
-        : 0;
-    const nextPackQuantity =
-      line.quantityType === "pack" ? stock.packQuantity - taken : stock.packQuantity - packsOpened;
-    const nextUnitQuantity =
-      line.quantityType === "pack"
-        ? stock.unitQuantity
-        : stock.unitQuantity + packsOpened * product.unitsPerPack - taken;
+    const { packsOpened, nextPackQuantity, nextUnitQuantity } = takeBatchStock({
+      stock,
+      unitsPerPack: product.unitsPerPack,
+      quantity: taken,
+      quantityType: line.quantityType,
+    }).pipe(
+      Result.getOrThrowWith(
+        ({ available, requested }) =>
+          new Error(
+            `Not enough stock for ${product.name}: ${available} available, ${requested} requested.`,
+          ),
+      ),
+    );
     remainingById.set(batch.id, {
       packQuantity: nextPackQuantity,
       unitQuantity: nextUnitQuantity,

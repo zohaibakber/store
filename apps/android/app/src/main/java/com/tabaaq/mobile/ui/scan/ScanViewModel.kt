@@ -9,7 +9,7 @@ import com.tabaaq.mobile.core.scan.ProductMatch
 import com.tabaaq.mobile.core.scan.ProductScanMode
 import com.tabaaq.mobile.core.scan.ProductScanResult
 import com.tabaaq.mobile.data.firebase.FirebaseProductScan
-import com.tabaaq.mobile.data.powersync.PowerSyncSession
+import com.tabaaq.mobile.data.sync.CatalogSyncSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -24,7 +24,7 @@ data class ScanUi(
 
 class ScanViewModel(
     private val scan: FirebaseProductScan,
-    private val powerSync: PowerSyncSession,
+    private val catalogSync: CatalogSyncSession,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ScanUi())
     val ui: StateFlow<ScanUi> = _ui
@@ -34,7 +34,7 @@ class ScanViewModel(
             _ui.update { it.copy(busy = true, error = null) }
             try {
                 val result = scan.infer(bitmap, ProductScanMode.Product)
-                val match = ProductMatch.find(powerSync.snapshot.value.products, result, result.name.orEmpty())
+                val match = ProductMatch.find(catalogSync.snapshot.value.products, result, result.name.orEmpty())
                 _ui.update { it.copy(busy = false, result = result, match = match) }
             } catch (cause: Exception) {
                 _ui.update {
@@ -54,10 +54,10 @@ class ScanViewModel(
     companion object {
         fun factory(
             scan: FirebaseProductScan,
-            powerSync: PowerSyncSession,
+            catalogSync: CatalogSyncSession,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = ScanViewModel(scan, powerSync) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = ScanViewModel(scan, catalogSync) as T
         }
     }
 }

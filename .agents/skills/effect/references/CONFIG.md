@@ -5,18 +5,23 @@ Use this when reading runtime configuration, env vars, `.env` files, provider-sp
 Read runtime configuration through Effect `Config` recipes and provider layers, not direct `process.env` access inside application logic.
 
 ```ts
-export const dataDirectoryConfig = Config.schema(AbsolutePath, "APP_DATA_DIR");
+export const dataDirectoryConfig = Config.schema(
+  AbsolutePath,
+  "APP_DATA_DIR",
+)
 
 export const layerFromEnvironment = Layer.effect(
   Configuration.Service,
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
-    const optionalModel = yield* Config.option(Config.string("MODEL"));
-    const enabled = yield* Config.boolean("FEATURE_ENABLED").pipe(Config.withDefault(false));
+    const apiKey = yield* Config.redacted("API_KEY")
+    const optionalModel = yield* Config.option(Config.string("MODEL"))
+    const enabled = yield* Config.boolean("FEATURE_ENABLED").pipe(
+      Config.withDefault(false),
+    )
 
-    return Configuration.Service.of({ apiKey, optionalModel, enabled });
+    return Configuration.Service.of({ apiKey, optionalModel, enabled })
   }),
-);
+)
 ```
 
 ## Config Recipes
@@ -45,14 +50,16 @@ export const layerFromEnvironment = Layer.effect(
 Library-style layers often expose both concrete `layer(options)` and config-backed `layerConfig(options: Config.Wrap<Options>)`.
 
 ```ts
-export const layerConfig = (config: Config.Wrap<ClientOptions>) =>
+export const layerConfig = (
+  config: Config.Wrap<ClientOptions>,
+) =>
   Layer.effect(
     Client.Service,
     Config.unwrap(config).pipe(
       Effect.flatMap(makeClient),
       Effect.map((client) => Client.Service.of(client)),
     ),
-  );
+  )
 ```
 
 Use this pattern when a service naturally supports runtime config while still allowing tests to pass concrete values.

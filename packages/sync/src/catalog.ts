@@ -6,10 +6,8 @@ import type {
 } from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
-import type * as PubSub from "effect/PubSub";
-import type * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
-import type * as SubscriptionRef from "effect/SubscriptionRef";
+import type * as Stream from "effect/Stream";
 
 import { CatalogError } from "./errors";
 import type { ReplicaDiff, ReplicaSnapshot } from "./replica";
@@ -32,9 +30,9 @@ export type CatalogFailure =
 export class Catalog extends Context.Service<
   Catalog,
   {
-    readonly status: SubscriptionRef.SubscriptionRef<CatalogStatus>;
-    readonly changes: PubSub.PubSub<ReplicaDiff>;
-    readonly failures: Queue.Queue<CatalogFailure>;
+    readonly status: Stream.Stream<CatalogStatus>;
+    readonly changes: Stream.Stream<ReplicaDiff>;
+    readonly failures: Stream.Stream<CatalogFailure>;
     readonly snapshot: Effect.Effect<ReplicaSnapshot>;
     readonly write: (command: CatalogWriteCommand) => Effect.Effect<void, CatalogError>;
     readonly issueInvoice: (

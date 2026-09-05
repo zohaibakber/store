@@ -74,31 +74,16 @@ export const inventoryRequest = async <Result>(input: {
   }
 };
 
-const submitInventoryCommand = async <Result>(input: {
-  readonly apiBaseUrl: string;
-  readonly authenticatedFetch: typeof fetch;
-  readonly path: "imports";
-  readonly command: ImportInventoryCommand;
-  readonly decode: (payload: InventoryHttpPayload) => Result;
-  readonly failureLabel: string;
-}) =>
-  inventoryRequest({
-    apiBaseUrl: input.apiBaseUrl,
-    authenticatedFetch: input.authenticatedFetch,
-    path: `/inventory/${input.path}`,
-    body: input.command,
-    decode: input.decode,
-    failureLabel: input.failureLabel,
-  });
-
 export const submitImportInventory = async (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
   readonly command: ImportInventoryCommand;
 }) =>
-  submitInventoryCommand({
-    ...input,
-    path: "imports",
+  inventoryRequest({
+    apiBaseUrl: input.apiBaseUrl,
+    authenticatedFetch: input.authenticatedFetch,
+    path: "/inventory/imports",
+    body: input.command,
     decode: Schema.decodeUnknownSync(ImportInventoryCommandResult),
     failureLabel: "Inventory import failed.",
   });
