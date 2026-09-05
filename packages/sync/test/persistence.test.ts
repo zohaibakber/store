@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { makeMemoryReplicaStore, visibleRowsForStore } from "../src/persistence";
 
 const row = (id: string, name: string) => ({ id, name, rowVersion: 1 });
-const change = (id: string, value: Record<string, unknown>) => ({
+const change = (id: string, value: ReturnType<typeof row>) => ({
   entity: "category" as const,
   action: "upsert" as const,
   entityId: id,
