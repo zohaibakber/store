@@ -116,7 +116,6 @@ class SignInViewModelTest {
         AppConfig(
             authUrl = "http://auth",
             apiUrl = "http://api",
-            powerSyncUrlFallback = "",
             googleWebClientId = "",
             nativeOrigin = "com.tabaaq.mobile://app",
         )

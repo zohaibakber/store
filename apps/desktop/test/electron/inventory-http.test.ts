@@ -42,15 +42,6 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe("https://api.tabaaq.app/api/inventory/snapshot");
   });
 
-  it("rejects leftover credential fetches", () => {
-    expect(() =>
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: "https://api.tabaaq.app/api/powersync/credentials",
-      }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
-  });
-
   it.each([
     "https://api.tabaaq.app/api/inventory/legacy-migrations",
     "https://api.tabaaq.app/api/inventory/legacy-migrations/job-123",

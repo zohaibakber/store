@@ -1,2 +1,1 @@
 -keep class com.tabaaq.mobile.** { *; }
--keep class com.powersync.** { *; }

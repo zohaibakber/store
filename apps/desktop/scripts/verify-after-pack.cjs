@@ -3,7 +3,7 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Live inventory is `@powersync/web` + wa-sqlite in the renderer (IndexedDB VFS).
+// Live inventory is the catalog replica in IndexedDB.
 // OPFS worker assets stay banned because this build has not switched to the OPFS VFS.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 

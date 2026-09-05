@@ -13,8 +13,7 @@ stay out of this client.
 | UI       | Compose Material 3                                |
 | Auth     | First-party JWT (`@store/auth`) + Google ID token |
 | Firebase | Gemini product scan only. Not user auth.          |
-| Sync     | `com.powersync:core` 1.14.1                       |
-| Schema   | Mirrored in `InventorySchema`                     |
+| Sync     | Local SQLite replica and durable outbox           |
 | Upload   | `/api/inventory/mutations` for catalog tables     |
 
 `applicationId` is `com.tabaaq.mobile` so this build can take over the existing

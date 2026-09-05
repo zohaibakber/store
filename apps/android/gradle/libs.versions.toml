@@ -10,7 +10,6 @@ lifecycleViewmodelNav3 = "2.11.0"
 kotlinxSerialization = "1.11.0"
 kotlinxCoroutines = "1.11.0"
 okhttp = "5.5.0"
-powersync = "1.14.1"
 firebaseBom = "34.18.0"
 credentials = "1.6.0"
 googleid = "1.2.0"
@@ -52,8 +51,6 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
-powersync-core = { module = "com.powersync:core", version.ref = "powersync" }
-powersync-compose = { module = "com.powersync:compose", version.ref = "powersync" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-ai = { module = "com.google.firebase:firebase-ai" }

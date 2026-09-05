@@ -8,7 +8,6 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.tabaaq.mobile.core.catalog.BatchRow
 import com.tabaaq.mobile.core.catalog.CategoryRow
 import com.tabaaq.mobile.core.catalog.ProductRow
-import com.tabaaq.mobile.core.inventory.InventoryTables
 import com.tabaaq.mobile.core.inventory.ReplicaName
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement

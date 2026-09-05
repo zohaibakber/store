@@ -8,7 +8,7 @@ IDs and lifecycle rules through the API, Electron main process, React renderer,
 Android app, synchronization, deployment config, and CSP.
 
 First-party auth owns those concerns now. An authenticated organization ID
-still scopes the same Postgres rows, PowerSync streams, and local replica on
+still scopes the same Postgres rows and catalog replica on
 every client.
 
 ## Usage (caller's view)
@@ -106,7 +106,7 @@ The host owns secure token storage. Electron uses `safeStorage`, Android uses
 Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
 browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
-scope for Postgres mutations and PowerSync streams. TanStack DB owns each
+scope for Postgres mutations and the catalog replica. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.
 
 ## Shape
@@ -222,10 +222,10 @@ encode.
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
 - A new user gets one organization in the same D1 batch. The organization ID
-  directly scopes inventory rows and PowerSync streams.
+  directly scopes inventory rows and the catalog replica.
 - Postgres is the authoritative inventory database. Authenticated
-  `/api/inventory/*` requests write to Postgres. PowerSync validates the same
-  JWT and filters every TanStack DB stream by its signed organization claim.
+  `/api/inventory/*` requests write to Postgres. Clients pull the same
+  organization-scoped rows into a local catalog replica.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in
   platform secure storage.

@@ -27,7 +27,6 @@ describe("HTTP auth and CORS", () => {
     )(await response.json());
     expect(body).toMatchObject({ service: "Store Invoice API" });
     expect(body.endpoints).toContain("/api/inventory/*");
-    expect(body.endpoints).not.toContain("/api/powersync/credentials");
   });
 
   it("adds CORS headers on API routes for a trusted origin", async () => {

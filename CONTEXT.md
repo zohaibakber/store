@@ -13,7 +13,7 @@ _Avoid_: Session, active organization
 **Catalog.**
 The organization's products, categories, batches, invoices, and stock
 movements as one business record, not a bag of replica internals.
-_Avoid_: Inventory bag, collections, PowerSync database
+_Avoid_: Inventory bag, collections
 
 **Catalog replica.**
 A device's local copy of an organization's catalog, including changes awaiting

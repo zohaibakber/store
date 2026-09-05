@@ -28,4 +28,4 @@ Preconditions:
 ## Gotchas
 
 - Unauthenticated visits redirect to `/sign-in`. That is `sign-in-no-guest`, not a dashboard failure.
-- Inventory tiles depend on PowerSync/local SQLite. An empty new organization can look sparse; the chrome and the absence of the storage-unavailable paragraph are still proof the route admitted.
+- Inventory tiles depend on the catalog replica. An empty new organization can look sparse; the chrome and the absence of the storage-unavailable paragraph are still proof the route admitted.
