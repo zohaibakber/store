@@ -141,7 +141,6 @@ const identityOf = (row: typeof Schema.Json.Type) =>
 
 const replicaEntities = [...catalogSliceEntities.catalog, ...catalogSliceEntities.sales];
 
-/** Apply a transaction without copying entity collections it does not touch. */
 export const applyRowChanges = (
   current: ReplicaRows,
   changes: ReadonlyArray<SyncEntityChange>,
@@ -175,7 +174,6 @@ export const applyChanges = (
 ): ReplicaSnapshot =>
   changes.length === 0 ? snapshot : { ...snapshot, rows: applyRowChanges(snapshot.rows, changes) };
 
-/** Persistence rejects rows without identities instead of silently dropping them. */
 export const diffReplicaRows = (
   before: ReplicaRows,
   after: ReplicaRows,

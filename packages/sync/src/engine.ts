@@ -73,7 +73,6 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     yield* Queue.offer(pullWake, undefined);
   });
   const lock = yield* Semaphore.make(1);
-  // Once a local commit begins, publish its projection before honoring interruption.
   const exclusive = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
     lock.withPermits(1)(Effect.uninterruptible(operation));
 

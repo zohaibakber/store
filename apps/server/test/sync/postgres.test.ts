@@ -17,7 +17,6 @@ import { appendCatalogChanges, pullCatalogChanges } from "../../src/inventory/ca
 import { withCatalogTransaction } from "../../src/inventory/catalog-transaction";
 import { makePostgresDrizzle } from "../../src/inventory/postgres";
 
-// Use only a disposable database with repository migrations already applied.
 const url = process.env.STORE_SYNC_TEST_DATABASE_URL;
 const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient>) =>
   Effect.runPromise(
@@ -103,7 +102,6 @@ describe.skipIf(!url)("Postgres sync protocol", () => {
             slices: ["catalog"],
           });
           expect(before.changes).toEqual([]);
-          // Another organization can commit while the first organization is held.
           yield* withCatalogTransaction(db, crypto.randomUUID(), (tx) =>
             appendCatalogChanges(tx, "unrelated", [change("third")], Date.now()),
           );
