@@ -135,4 +135,30 @@ describe("HTTP auth and CORS", () => {
       error: { code: "INTERNAL_SERVER_ERROR" },
     });
   });
+
+  it("adds CORS headers on a valid catalog snapshot", async () => {
+    const response = await appFor(true).request("/api/inventory/snapshot", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:5173",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ epoch: 2, slices: ["catalog"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
+
+  it("answers an invalid catalog snapshot as 400 with CORS headers", async () => {
+    const response = await appFor(true).request("/api/inventory/snapshot", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:5173",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ slices: ["catalog"] }),
+    });
+    expect(response.status).toBe(400);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
 });
