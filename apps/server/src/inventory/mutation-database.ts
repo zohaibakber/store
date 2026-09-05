@@ -22,6 +22,7 @@ import {
 import { syncEntityChangeKey } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import { InventoryHyperdrive } from "@store/db/postgres/infra";
+import { catalogNotificationOutbox } from "@store/db/postgres/schema";
 import {
   batches,
   categories,
@@ -43,7 +44,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ConstraintError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
-import { appendCatalogChanges, pullCatalogChanges, snapshotCatalog } from "./catalog-log";
+import { bootstrapCatalog, expireBootstraps } from "./bootstrap";
+import { appendCatalogChanges, pullCatalogChanges } from "./catalog-log";
+import { withCatalogTransaction } from "./catalog-transaction";
 import {
   InventoryDatabaseError,
   InventoryProtocolError,
@@ -1308,7 +1311,9 @@ export const makeInventoryMutationDatabase = (db: PostgresDrizzle) =>
     function* (actor: InventoryActor, command: CatalogWriteCommand) {
       const write = yield* decodeCatalogWrite(actor, command);
       const receivedAt = yield* Clock.currentTimeMillis;
-      return yield* db.transaction((tx) => applyOperation(tx, actor, write, receivedAt));
+      return yield* withCatalogTransaction(db, actor.organizationId, (tx) =>
+        applyOperation(tx, actor, write, receivedAt),
+      );
     },
     Effect.mapError((cause) =>
       cause instanceof InventoryProtocolError || cause instanceof InventoryDatabaseError
@@ -1321,7 +1326,9 @@ export const makeInvoiceCommandDatabase = (db: PostgresDrizzle) =>
   Effect.fn("InventoryCommandDatabase.issueInvoice")(
     function* (actor: InventoryActor, command: IssueInvoiceCommand) {
       const receivedAt = yield* Clock.currentTimeMillis;
-      return yield* db.transaction((tx) => issueInvoice(tx, actor, command, receivedAt));
+      return yield* withCatalogTransaction(db, actor.organizationId, (tx) =>
+        issueInvoice(tx, actor, command, receivedAt),
+      );
     },
     Effect.mapError((cause) =>
       cause instanceof InventoryProtocolError || cause instanceof InventoryDatabaseError
@@ -1334,7 +1341,9 @@ export const makeInventoryImportCommandDatabase = (db: PostgresDrizzle) =>
   Effect.fn("InventoryCommandDatabase.importInventory")(
     function* (actor: InventoryActor, command: ImportInventoryCommand) {
       const receivedAt = yield* Clock.currentTimeMillis;
-      return yield* db.transaction((tx) => importInventory(tx, actor, command, receivedAt));
+      return yield* withCatalogTransaction(db, actor.organizationId, (tx) =>
+        importInventory(tx, actor, command, receivedAt),
+      );
     },
     Effect.mapError((cause) =>
       cause instanceof InventoryProtocolError || cause instanceof InventoryDatabaseError
@@ -1348,6 +1357,15 @@ export type InventoryMutationWriter = ReturnType<typeof makeInventoryMutationDat
 export class InventoryMutationDatabase extends Context.Service<
   InventoryMutationDatabase,
   {
+    readonly expireBootstraps: Effect.Effect<void, InventoryDatabaseError>;
+    readonly pendingNotifications: Effect.Effect<
+      ReadonlyArray<{ organizationId: string; cursor: number }>,
+      InventoryDatabaseError
+    >;
+    readonly acknowledgeNotification: (
+      organizationId: string,
+      cursor: number,
+    ) => Effect.Effect<void, InventoryDatabaseError>;
     readonly write: InventoryMutationWriter;
     readonly importInventory: ReturnType<typeof makeInventoryImportCommandDatabase>;
     readonly issueInvoice: ReturnType<typeof makeInvoiceCommandDatabase>;
@@ -1379,6 +1397,24 @@ export const InventoryMutationDatabaseLive = Layer.effect(
     });
     const db = yield* makePostgresDrizzle(postgres);
     return InventoryMutationDatabase.of({
+      expireBootstraps: Effect.suspend(() => expireBootstraps(db)).pipe(
+        Effect.mapError(catalogReadError),
+      ),
+      pendingNotifications: db
+        .select()
+        .from(catalogNotificationOutbox)
+        .limit(100)
+        .pipe(Effect.mapError(catalogReadError)),
+      acknowledgeNotification: (organizationId, cursor) =>
+        db
+          .delete(catalogNotificationOutbox)
+          .where(
+            and(
+              eq(catalogNotificationOutbox.organizationId, organizationId),
+              eq(catalogNotificationOutbox.cursor, cursor),
+            ),
+          )
+          .pipe(Effect.asVoid, Effect.mapError(catalogReadError)),
       write: makeInventoryMutationDatabase(db),
       importInventory: makeInventoryImportCommandDatabase(db),
       issueInvoice: makeInvoiceCommandDatabase(db),
@@ -1394,7 +1430,7 @@ export const InventoryMutationDatabaseLive = Layer.effect(
         organizationId: string,
         request: CatalogSnapshotRequest,
       ) {
-        return yield* snapshotCatalog(db, organizationId, request).pipe(
+        return yield* bootstrapCatalog(db, organizationId, request).pipe(
           Effect.mapError(catalogReadError),
         );
       }),

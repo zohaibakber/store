@@ -8,7 +8,7 @@ import com.tabaaq.mobile.core.catalog.CatalogValidation
 import com.tabaaq.mobile.core.catalog.SaveProductInput
 import com.tabaaq.mobile.core.scan.ProductScanResult
 import com.tabaaq.mobile.data.catalog.CatalogRepository
-import com.tabaaq.mobile.data.powersync.PowerSyncSession
+import com.tabaaq.mobile.data.sync.CatalogSyncSession
 import com.tabaaq.mobile.core.catalog.MutationIds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,7 +37,7 @@ data class ProductEditorUi(
 
 class ProductEditorViewModel(
     private val catalog: CatalogRepository,
-    powerSync: PowerSyncSession,
+    catalogSync: CatalogSyncSession,
     draft: ProductScanResult?,
 ) : ViewModel() {
     private val parsedStrength = parseStrength(draft?.strength)
@@ -61,7 +61,7 @@ class ProductEditorViewModel(
             combine(unitsPerPack, purchasePrice, retailPrice, unitPrice, categoryId) { u, p, r, up, cat ->
                 listOf(u, p, r, up, cat)
             },
-            combine(powerSync.snapshot, saving, error, createdId) { snap, sv, err, id -> Triple(snap, sv to err, id) },
+            combine(catalogSync.snapshot, saving, error, createdId) { snap, sv, err, id -> Triple(snap, sv to err, id) },
         ) { text, prices, rest ->
             val snapshot = rest.first
             val (sv, err) = rest.second
@@ -213,11 +213,11 @@ class ProductEditorViewModel(
         private val STRENGTH = Regex("""^([\d.]+)\s*(mg|mcg|g|ml|l)$""", RegexOption.IGNORE_CASE)
         fun factory(
             catalog: CatalogRepository,
-            powerSync: PowerSyncSession,
+            catalogSync: CatalogSyncSession,
             draft: ProductScanResult?,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = ProductEditorViewModel(catalog, powerSync, draft) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = ProductEditorViewModel(catalog, catalogSync, draft) as T
         }
     }
 }

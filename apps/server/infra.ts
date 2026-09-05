@@ -35,6 +35,8 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 import { reportRejectedAuthSettings } from "./src/runtime/worker";
+import { CatalogNotifications } from "./src/sync/notifications";
+import { notificationRoutes } from "./src/sync/routes";
 
 export {
   requireProductionApiHostname,
@@ -45,7 +47,7 @@ export {
 
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}, CatalogNotifications>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -77,6 +79,36 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const inventoryMutations = yield* InventoryMutationDatabase;
+    const notifications = yield* CatalogNotifications;
+    const execution = yield* Cloudflare.Workers.WorkerExecutionContext;
+    const notify = (organizationId: string, cursor: number) =>
+      notifications
+        .getByName(organizationId)
+        .notify(cursor)
+        .pipe(Effect.andThen(inventoryMutations.acknowledgeNotification(organizationId, cursor)));
+    const notifyAfterCommit = (organizationId: string, cursor: number) =>
+      notify(organizationId, cursor).pipe(
+        Effect.timeout("2 seconds"),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Catalog notification deferred to durable relay", cause),
+        ),
+      );
+    yield* Cloudflare.Workers.cron("* * * * *", () =>
+      Effect.gen(function* () {
+        yield* Effect.forEach(
+          yield* inventoryMutations.pendingNotifications,
+          (pending) =>
+            notify(pending.organizationId, pending.cursor).pipe(
+              Effect.timeout("5 seconds"),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Catalog notification relay failed", cause),
+              ),
+            ),
+          { concurrency: 8, discard: true },
+        );
+        yield* inventoryMutations.expireBootstraps;
+      }),
+    );
     const ai = yield* Cloudflare.Workers.AI();
     const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
@@ -171,13 +203,19 @@ export const ApiLive = Api.make(
       writeInventoryMutation: inventoryMutations.write,
       importInventory: inventoryMutations.importInventory,
       issueInvoice: inventoryMutations.issueInvoice,
+      notifyCatalog: (organizationId, cursor) =>
+        execution.waitUntil(Effect.scoped(notifyAfterCommit(organizationId, cursor))),
       pullCatalog: inventoryMutations.pull,
       snapshotCatalog: inventoryMutations.snapshot,
     });
-    const routes = ServerRoutes.pipe(
-      Layer.provide(RuntimeLive),
-      Layer.provide(HttpServer.layerServices),
-    );
+    const routes = Layer.merge(
+      ServerRoutes,
+      notificationRoutes(
+        notifications,
+        (headers) => authenticateHeaders(headers, jwtConfig),
+        security.trustedOrigins,
+      ),
+    ).pipe(Layer.provide(RuntimeLive), Layer.provide(HttpServer.layerServices));
 
     return {
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
@@ -185,6 +223,7 @@ export const ApiLive = Api.make(
   }).pipe(
     Effect.provide(InventoryMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
+    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
     Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
   ),

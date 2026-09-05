@@ -1,4 +1,6 @@
 import {
+  CatalogBatchRequest,
+  CatalogBatchResult,
   CatalogPullRequest,
   CatalogPullResult,
   CatalogSnapshotRequest,
@@ -78,6 +80,13 @@ const InventoryMutationResult = Schema.Struct({
 });
 
 const inventoryMutations = HttpApiGroup.make("inventoryMutations")
+  .add(
+    HttpApiEndpoint.post("batch", "/api/inventory/batch", {
+      payload: CatalogBatchRequest,
+      success: CatalogBatchResult,
+      error: [BadRequest, Forbidden, PayloadTooLarge],
+    }).middleware(OrganizationAuth),
+  )
   .add(
     HttpApiEndpoint.post("write", "/api/inventory/mutations", {
       payload: CatalogWriteCommand,

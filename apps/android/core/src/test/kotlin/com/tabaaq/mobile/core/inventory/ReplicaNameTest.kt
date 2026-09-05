@@ -7,11 +7,11 @@ class ReplicaNameTest {
     @Test
     fun matchesJavascriptClientDbHashes() {
         assertThat(ReplicaName.databaseFile("https://api.example:org-1"))
-            .isEqualTo("powersync-inventory-0b48b550.sqlite")
+            .isEqualTo("inventory-replica-0b48b550.sqlite")
         assertThat(ReplicaName.databaseFile("https://api.example:org-2"))
-            .isEqualTo("powersync-inventory-0e48ba09.sqlite")
+            .isEqualTo("inventory-replica-0e48ba09.sqlite")
         assertThat(ReplicaName.databaseFile("https://api.tabaaq.app:org-abc"))
-            .isEqualTo("powersync-inventory-653c9f2c.sqlite")
+            .isEqualTo("inventory-replica-653c9f2c.sqlite")
     }
 
     @Test

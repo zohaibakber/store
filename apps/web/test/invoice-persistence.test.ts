@@ -5,7 +5,8 @@ import { collectionOptions, DbClient } from "@tanstack/react-db";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Queue from "effect/Queue";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
 import { catalogMemoryCollectionConfigs } from "../../../packages/client-db/src/collections";
@@ -14,7 +15,9 @@ import {
   CatalogLive,
   CatalogError,
   CatalogTransport,
-  DurableStore,
+  ReplicaStore,
+  makeMemoryReplicaStore,
+  replicaScopeKey,
 } from "../../../packages/sync/src";
 import {
   diffFromChanges,
@@ -98,38 +101,24 @@ describe("invoice persistence", () => {
         batch: [batch()],
       },
     };
-    const values = new Map<string, string>();
+    const store = makeMemoryReplicaStore({
+      [replicaScopeKey("https://inventory.example", actor.organizationId)]: snapshot,
+    });
     const layer = CatalogLive({
       organizationId: actor.organizationId,
       deviceId: actor.deviceId,
       apiOrigin: "https://inventory.example",
     }).pipe(
-      Layer.provide(
-        Layer.succeed(
-          DurableStore,
-          DurableStore.of({
-            get: (key) => Effect.sync(() => values.get(key) ?? JSON.stringify(snapshot)),
-            set: (key, value) =>
-              Effect.sync(() => {
-                values.set(key, value);
-              }),
-            remove: (key) =>
-              Effect.sync(() => {
-                values.delete(key);
-              }),
-          }),
-        ),
-      ),
+      Layer.provide(Layer.succeed(ReplicaStore, store)),
       Layer.provide(
         Layer.succeed(
           CatalogTransport,
           CatalogTransport.of({
             pull: () => Effect.never,
             snapshot: () => Effect.never,
-            write: () => Effect.never,
-            issueInvoice: () =>
+            live: Stream.never,
+            batch: () =>
               Effect.fail(new CatalogError({ reason: "unauthenticated", message: "catalog 401" })),
-            importInventory: () => Effect.never,
           }),
         ),
       ),
@@ -200,7 +189,9 @@ describe("invoice persistence", () => {
       });
       expect(inventory.invoices.state.get(result.invoiceId)).toBeDefined();
       expect(inventory.batches.state.get(batch().id)?.packQuantity).toBe(1);
-      const failure = await runtime.runPromise(Queue.take(catalog.failures));
+      const failure = await runtime.runPromise(
+        catalog.failures.pipe(Stream.runHead, Effect.map(Option.getOrThrow)),
+      );
       expect(failure.error.reason).toBe("unauthenticated");
       await runtime.dispose();
       const reopened = ManagedRuntime.make(layer);

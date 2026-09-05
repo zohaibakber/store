@@ -9,7 +9,7 @@ import com.tabaaq.mobile.core.catalog.SaveBatchDetailsInput
 import com.tabaaq.mobile.core.catalog.UpdateBatchQuantityInput
 import com.tabaaq.mobile.core.scan.ScanNormalize
 import com.tabaaq.mobile.data.catalog.CatalogRepository
-import com.tabaaq.mobile.data.powersync.PowerSyncSession
+import com.tabaaq.mobile.data.sync.CatalogSyncSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +34,7 @@ data class ProductDetailUi(
 class ProductDetailViewModel(
     private val productId: String,
     private val catalog: CatalogRepository,
-    powerSync: PowerSyncSession,
+    catalogSync: CatalogSyncSession,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
     private val notice = MutableStateFlow<String?>(null)
@@ -49,7 +49,7 @@ class ProductDetailViewModel(
     private val newBatchId = MutableStateFlow(MutationIds.rowId())
 
     val ui: StateFlow<ProductDetailUi> =
-        combine(powerSync.snapshot, error, notice, pending) { snapshot, err, note, busy ->
+        combine(catalogSync.snapshot, error, notice, pending) { snapshot, err, note, busy ->
             ProductDetailUi(
                 product = snapshot.products.find { it.id == productId },
                 error = err,
@@ -185,10 +185,10 @@ class ProductDetailViewModel(
         fun factory(
             productId: String,
             catalog: CatalogRepository,
-            powerSync: PowerSyncSession,
+            catalogSync: CatalogSyncSession,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = ProductDetailViewModel(productId, catalog, powerSync) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = ProductDetailViewModel(productId, catalog, catalogSync) as T
         }
     }
 }

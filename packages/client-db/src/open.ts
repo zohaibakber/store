@@ -5,16 +5,14 @@ import {
   CatalogHttpTransport,
   CatalogLive,
   diffFromChanges,
-  DurableStore,
-  layerIndexedDb,
+  layerIndexedDbReplica,
   type CatalogFailure,
   type ReplicaDiff,
 } from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as PubSub from "effect/PubSub";
-import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import { catalogMemoryCollectionConfigs, type CatalogCollectionConfigs } from "./collections";
 import {
@@ -95,11 +93,7 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
         fetch: host.authenticatedFetch,
       }),
     ),
-    Layer.provide(
-      DurableStore.fromKeyValueStore.pipe(
-        Layer.provide(layerIndexedDb(inventoryReplicaDatabaseName(scopeId))),
-      ),
-    ),
+    Layer.provide(layerIndexedDbReplica(inventoryReplicaDatabaseName(scopeId))),
   );
   const runtime = ManagedRuntime.make(catalogLayer);
   let cleanupCollections: (() => Promise<void>) | undefined;
@@ -110,25 +104,20 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
       }),
     );
     runtime.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const changesSubscription = yield* PubSub.subscribe(catalog.changes);
-          yield* PubSub.take(changesSubscription).pipe(
-            Effect.tap((diff: ReplicaDiff) =>
+      Effect.all(
+        [
+          catalog.changes.pipe(
+            Stream.runForEach((diff) =>
               Effect.sync(() => {
                 for (const listener of listeners) listener(diff);
               }),
             ),
-            Effect.forever,
-            Effect.forkScoped,
-          );
-          yield* Queue.take(catalog.failures).pipe(
-            Effect.tap((failure: CatalogFailure) =>
-              Effect.sync(() => reportCatalogFailure(failure)),
-            ),
-            Effect.forever,
-          );
-        }),
+          ),
+          catalog.failures.pipe(
+            Stream.runForEach((failure) => Effect.sync(() => reportCatalogFailure(failure))),
+          ),
+        ],
+        { concurrency: 2 },
       ),
     );
     const persistCatalog = async (

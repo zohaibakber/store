@@ -64,6 +64,10 @@ export interface ServerRuntimeContract {
     InventoryProtocolError | InventoryDatabaseError,
     RuntimeContext | Scope.Scope
   >;
+  readonly notifyCatalog: (
+    organizationId: string,
+    cursor: number,
+  ) => Effect.Effect<void, never, RuntimeContext>;
   readonly pullCatalog: (
     organizationId: string,
     request: CatalogPullRequest,

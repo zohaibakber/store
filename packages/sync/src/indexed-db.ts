@@ -1,66 +1,334 @@
+import { SyncEntity, SyncEntityChange } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { KeyValueStore } from "effect/unstable/persistence";
 
-const STORE = "kv";
+import { CatalogError } from "./errors";
+import { applyReplicaTransaction } from "./persistence";
+import type { ReplicaStoreTransaction } from "./persistence";
+import {
+  emptyReplicaRows,
+  OutboxEntry,
+  ReplicaBootstrap,
+  ReplicaRowIdentity,
+  type ReplicaSnapshot as ReplicaSnapshotValue,
+} from "./replica";
+import { ReplicaStore } from "./store";
 
-const openDatabase = (name: string) =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(name, 1);
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error("indexedDB.open failed"));
-      }),
-    catch: (cause) => cause,
+const META = "meta";
+const ROWS = "rows";
+const OUTBOX = "outbox";
+const OVERLAYS = "overlays";
+const BOOTSTRAP_ROWS = "bootstrapRows";
+const VERSION = 2;
+
+const RowRecord = Schema.Struct({
+  scopeKey: Schema.String,
+  entity: SyncEntity,
+  id: Schema.String,
+  row: Schema.Json,
+});
+type RowRecord = typeof RowRecord.Type;
+const BootstrapRowRecord = Schema.Struct({ ...RowRecord.fields, generation: Schema.String });
+type BootstrapRowRecord = typeof BootstrapRowRecord.Type;
+const OutboxRecord = Schema.Struct({
+  scopeKey: Schema.String,
+  identity: Schema.String,
+  sequence: Schema.String,
+  entry: OutboxEntry,
+});
+const OverlayRecord = Schema.Struct({
+  scopeKey: Schema.String,
+  txid: Schema.Number,
+  changes: Schema.Array(SyncEntityChange),
+});
+const MetaRecord = Schema.Struct({
+  scopeKey: Schema.String,
+  revision: Schema.optionalKey(Schema.String),
+  initialized: Schema.optionalKey(Schema.Boolean),
+  cursor: Schema.optionalKey(Schema.Number),
+  bootstrap: Schema.optionalKey(ReplicaBootstrap),
+});
+
+const storageError = (message: string) =>
+  new CatalogError({ reason: "rejected", code: "REPLICA_STORAGE", message });
+
+const openDatabase = Effect.fn("ReplicaStore.open")((name: string) =>
+  Effect.callback<IDBDatabase, CatalogError>((resume) => {
+    const request = indexedDB.open(name, VERSION);
+    let cancelled = false;
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+      if (!db.objectStoreNames.contains(ROWS))
+        db.createObjectStore(ROWS, { keyPath: ["scopeKey", "entity", "id"] });
+      if (!db.objectStoreNames.contains(OUTBOX))
+        db.createObjectStore(OUTBOX, { keyPath: ["scopeKey", "identity"] });
+      if (!db.objectStoreNames.contains(OVERLAYS))
+        db.createObjectStore(OVERLAYS, { keyPath: ["scopeKey", "txid"] });
+      if (!db.objectStoreNames.contains(BOOTSTRAP_ROWS))
+        db.createObjectStore(BOOTSTRAP_ROWS, {
+          keyPath: ["scopeKey", "generation", "entity", "id"],
+        });
+    };
+    request.onsuccess = () => {
+      if (cancelled) request.result.close();
+      else resume(Effect.succeed(request.result));
+    };
+    request.onerror = () =>
+      resume(
+        Effect.fail(storageError(request.error?.message ?? "Unable to open the local replica.")),
+      );
+    return Effect.sync(() => {
+      cancelled = true;
+    });
+  }),
+);
+
+const transactionToEffect = <A>(
+  db: IDBDatabase,
+  names: ReadonlyArray<string>,
+  mode: IDBTransactionMode,
+  run: (tx: IDBTransaction, complete: (result: A) => void) => void,
+) =>
+  Effect.callback<A, CatalogError>((resume) => {
+    const tx = db.transaction([...names], mode);
+    let result: A;
+    let active = true;
+    tx.oncomplete = () => {
+      active = false;
+      resume(Effect.succeed(result));
+    };
+    tx.onabort = () => {
+      active = false;
+      resume(Effect.fail(storageError(tx.error?.message ?? "Local replica transaction aborted.")));
+    };
+    try {
+      run(tx, (value) => {
+        result = value;
+      });
+    } catch {
+      tx.abort();
+    }
+    return Effect.sync(() => {
+      if (active) tx.abort();
+    });
   });
 
-const requestToEffect = <T>(run: () => IDBRequest<T>) =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<T>((resolve, reject) => {
-        const request = run();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error("indexedDB request failed"));
-      }),
-    catch: (cause) => cause,
-  });
+const rowsFromRecords = (records: ReadonlyArray<RowRecord>): ReplicaSnapshotValue["rows"] => {
+  const rows = {
+    category: [...emptyReplicaRows().category],
+    product: [...emptyReplicaRows().product],
+    batch: [...emptyReplicaRows().batch],
+    invoice: [...emptyReplicaRows().invoice],
+    invoiceItem: [...emptyReplicaRows().invoiceItem],
+    stockMovement: [...emptyReplicaRows().stockMovement],
+  };
+  for (const record of records) {
+    rows[record.entity].push(record.row);
+  }
+  return rows;
+};
 
-export const layerIndexedDb = (name: string) =>
+const bootstrapRowsFromRecords = (records: ReadonlyArray<BootstrapRowRecord>) =>
+  rowsFromRecords(records.map(({ scopeKey, entity, id, row }) => ({ scopeKey, entity, id, row })));
+
+const rowMap = (rows: ReplicaSnapshotValue["rows"]) => {
+  const result = new Map<string, unknown>();
+  for (const [entity, values] of Object.entries(rows))
+    for (const row of values) {
+      const identity = Schema.decodeUnknownSync(ReplicaRowIdentity)(row);
+      result.set(`${entity}:${identity.id}`, row);
+    }
+  return result;
+};
+
+type CachedReplica = { revision: string; snapshot: ReplicaSnapshotValue };
+
+const readState = (
+  tx: IDBTransaction,
+  scopeKey: string,
+  cache: Map<string, CachedReplica>,
+  loaded: (snapshot: ReplicaSnapshotValue, revision: string) => void,
+) => {
+  const state = tx.objectStore(META).get(`state:${scopeKey}`);
+  state.onsuccess = () => {
+    try {
+      const meta = Schema.decodeUnknownSync(Schema.UndefinedOr(MetaRecord))(state.result);
+      const revision = meta?.revision ?? "";
+      const cached = cache.get(scopeKey);
+      if (cached?.revision === revision) {
+        loaded(cached.snapshot, revision);
+        return;
+      }
+      const range = IDBKeyRange.bound([scopeKey], [scopeKey, []]);
+      const rows = tx.objectStore(ROWS).getAll(range);
+      const outbox = tx.objectStore(OUTBOX).getAll(range);
+      const overlays = tx.objectStore(OVERLAYS).getAll(range);
+      const bootstrapRows = tx.objectStore(BOOTSTRAP_ROWS).getAll(range);
+      bootstrapRows.onsuccess = () => {
+        try {
+          const bootstrap = meta?.bootstrap;
+          loaded(
+            {
+              cursor: meta?.cursor ?? 0,
+              initialized: meta?.initialized ?? false,
+              rows: rowsFromRecords(Schema.decodeUnknownSync(Schema.Array(RowRecord))(rows.result)),
+              outbox: [...Schema.decodeUnknownSync(Schema.Array(OutboxRecord))(outbox.result)]
+                .sort((a, b) => a.sequence.localeCompare(b.sequence))
+                .map((entry) => entry.entry),
+              overlays: [...Schema.decodeUnknownSync(Schema.Array(OverlayRecord))(overlays.result)]
+                .sort((a, b) => a.txid - b.txid)
+                .map((entry) => ({ txid: entry.txid, changes: entry.changes })),
+              bootstrap: bootstrap
+                ? {
+                    ...bootstrap,
+                    rows: bootstrapRowsFromRecords(
+                      Schema.decodeUnknownSync(Schema.Array(BootstrapRowRecord))(
+                        bootstrapRows.result,
+                      ).filter((entry) => entry.generation === bootstrap.generation),
+                    ),
+                  }
+                : undefined,
+            },
+            revision,
+          );
+        } catch {
+          tx.abort();
+        }
+      };
+    } catch {
+      tx.abort();
+    }
+  };
+};
+
+const writeDiff = (
+  tx: IDBTransaction,
+  scopeKey: string,
+  before: ReplicaSnapshotValue,
+  after: ReplicaSnapshotValue,
+  revision: string,
+) => {
+  const rows = tx.objectStore(ROWS);
+  const changedBefore = { ...emptyReplicaRows() };
+  const changedAfter = { ...emptyReplicaRows() };
+  for (const entity of [
+    "category",
+    "product",
+    "batch",
+    "invoice",
+    "invoiceItem",
+    "stockMovement",
+  ] as const) {
+    if (before.rows[entity] === after.rows[entity]) continue;
+    changedBefore[entity] = before.rows[entity];
+    changedAfter[entity] = after.rows[entity];
+  }
+  const oldRows = rowMap(changedBefore);
+  const newRows = rowMap(changedAfter);
+  for (const [key, row] of newRows) {
+    if (oldRows.get(key) === row) continue;
+    const entity = key.slice(0, key.indexOf(":"));
+    const id = key.slice(key.indexOf(":") + 1);
+    rows.put({ scopeKey, entity, id, row });
+  }
+  for (const key of oldRows.keys())
+    if (!newRows.has(key)) {
+      const entity = key.slice(0, key.indexOf(":"));
+      const id = key.slice(key.indexOf(":") + 1);
+      rows.delete([scopeKey, entity, id]);
+    }
+  const oldOutbox = new Map(before.outbox.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+  const newOutbox = new Map(after.outbox.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+  const outbox = tx.objectStore(OUTBOX);
+  for (const [index, entry] of after.outbox.entries()) {
+    if (before.outbox[index] === entry) continue;
+    outbox.put({
+      scopeKey,
+      identity: `${entry.kind}:${entry.id}`,
+      sequence: String(index).padStart(16, "0"),
+      entry,
+    });
+  }
+  for (const identity of oldOutbox.keys())
+    if (!newOutbox.has(identity)) outbox.delete([scopeKey, identity]);
+  const oldOverlays = new Map((before.overlays ?? []).map((overlay) => [overlay.txid, overlay]));
+  const newOverlays = new Map((after.overlays ?? []).map((overlay) => [overlay.txid, overlay]));
+  const overlays = tx.objectStore(OVERLAYS);
+  for (const [txid, overlay] of newOverlays)
+    if (!oldOverlays.has(txid)) overlays.put({ scopeKey, txid, changes: overlay.changes });
+  for (const txid of oldOverlays.keys())
+    if (!newOverlays.has(txid)) overlays.delete([scopeKey, txid]);
+  tx.objectStore(META).put(
+    {
+      scopeKey,
+      revision,
+      initialized: after.initialized ?? false,
+      cursor: after.cursor,
+      bootstrap: after.bootstrap ? { ...after.bootstrap, rows: undefined } : undefined,
+    },
+    `state:${scopeKey}`,
+  );
+  const bootstrapRows = tx.objectStore(BOOTSTRAP_ROWS);
+  const oldBootstrap = before.bootstrap;
+  const newBootstrap = after.bootstrap;
+  if (oldBootstrap && (!newBootstrap || oldBootstrap.generation !== newBootstrap.generation)) {
+    const oldStaged = rowMap(oldBootstrap.rows ?? emptyReplicaRows());
+    for (const key of oldStaged.keys()) {
+      const entity = key.slice(0, key.indexOf(":"));
+      const id = key.slice(key.indexOf(":") + 1);
+      bootstrapRows.delete([scopeKey, oldBootstrap.generation, entity, id]);
+    }
+  }
+  if (newBootstrap && newBootstrap !== oldBootstrap) {
+    const oldStaged =
+      oldBootstrap?.generation === newBootstrap.generation
+        ? rowMap(oldBootstrap.rows ?? emptyReplicaRows())
+        : new Map<string, unknown>();
+    const newStaged = rowMap(newBootstrap.rows ?? emptyReplicaRows());
+    for (const [key, row] of newStaged) {
+      if (oldStaged.get(key) === row) continue;
+      const entity = key.slice(0, key.indexOf(":"));
+      const id = key.slice(key.indexOf(":") + 1);
+      bootstrapRows.put({ scopeKey, generation: newBootstrap.generation, entity, id, row });
+    }
+  }
+};
+
+export const layerIndexedDbReplica = (name: string) =>
   Layer.effect(
-    KeyValueStore.KeyValueStore,
+    ReplicaStore,
     Effect.gen(function* () {
       const db = yield* Effect.acquireRelease(openDatabase(name), (handle) =>
         Effect.sync(() => handle.close()),
       );
-      return KeyValueStore.makeStringOnly({
-        get: (key) =>
-          requestToEffect(() => db.transaction(STORE, "readonly").objectStore(STORE).get(key)).pipe(
-            Effect.map((value) =>
-              Schema.decodeUnknownOption(Schema.String)(value).pipe(Option.getOrUndefined),
-            ),
-            Effect.orDie,
-          ),
-        set: (key, value) =>
-          requestToEffect(() =>
-            db.transaction(STORE, "readwrite").objectStore(STORE).put(value, key),
-          ).pipe(Effect.asVoid, Effect.orDie),
-        remove: (key) =>
-          requestToEffect(() =>
-            db.transaction(STORE, "readwrite").objectStore(STORE).delete(key),
-          ).pipe(Effect.asVoid, Effect.orDie),
-        clear: requestToEffect(() =>
-          db.transaction(STORE, "readwrite").objectStore(STORE).clear(),
-        ).pipe(Effect.asVoid, Effect.orDie),
-        size: requestToEffect(() =>
-          db.transaction(STORE, "readonly").objectStore(STORE).count(),
-        ).pipe(Effect.orDie),
-      });
+      const stores = [META, ROWS, OUTBOX, OVERLAYS, BOOTSTRAP_ROWS];
+      const cache = new Map<string, CachedReplica>();
+      const load = Effect.fn("ReplicaStore.load")((scopeKey: string) =>
+        transactionToEffect<CachedReplica>(db, stores, "readonly", (tx, complete) => {
+          readState(tx, scopeKey, cache, (snapshot, revision) => complete({ snapshot, revision }));
+        }).pipe(
+          Effect.tap((value) => Effect.sync(() => cache.set(scopeKey, value))),
+          Effect.map((value) => value.snapshot),
+        ),
+      );
+      const transaction = Effect.fn("ReplicaStore.transaction")(
+        <A>(scopeKey: string, update: (transaction: ReplicaStoreTransaction) => A) =>
+          transactionToEffect<CachedReplica & { result: A }>(
+            db,
+            stores,
+            "readwrite",
+            (tx, complete) => {
+              readState(tx, scopeKey, cache, (before) => {
+                const { result, snapshot } = applyReplicaTransaction(before, update);
+                const revision = crypto.randomUUID();
+                writeDiff(tx, scopeKey, before, snapshot, revision);
+                complete({ result, snapshot, revision });
+              });
+            },
+          ).pipe(Effect.tap((value) => Effect.sync(() => cache.set(scopeKey, value)))),
+      );
+      return ReplicaStore.of({ load, transaction });
     }),
   );

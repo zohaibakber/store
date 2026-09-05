@@ -10,7 +10,7 @@ object ReplicaName {
         organizationId: String,
     ): String = "${sourceId(apiBaseUrl)}:$organizationId"
 
-    fun databaseFile(scopeId: String): String = "powersync-inventory-${fnv1a(scopeId)}.sqlite"
+    fun databaseFile(scopeId: String): String = "inventory-replica-${fnv1a(scopeId)}.sqlite"
 
     fun sourceId(apiBaseUrl: String): String {
         val normalized = apiBaseUrl.trimEnd('/')

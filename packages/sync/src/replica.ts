@@ -60,10 +60,30 @@ export const ReplicaRows = Schema.Struct({
 });
 export type ReplicaRows = typeof ReplicaRows.Type;
 
+export const ReplicaOverlay = Schema.Struct({
+  txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  changes: Schema.Array(SyncEntityChange),
+});
+export type ReplicaOverlay = typeof ReplicaOverlay.Type;
+
+export const ReplicaBootstrap = Schema.Struct({
+  id: Schema.String,
+  generation: Schema.String,
+  cursor: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  offset: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  done: Schema.Boolean,
+  expiresAt: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  rows: Schema.optionalKey(ReplicaRows),
+});
+export type ReplicaBootstrap = typeof ReplicaBootstrap.Type;
+
 export const ReplicaSnapshot = Schema.Struct({
+  initialized: Schema.optionalKey(Schema.Boolean),
   cursor: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
   outbox: Schema.Array(OutboxEntry),
   rows: ReplicaRows,
+  overlays: Schema.optionalKey(Schema.Array(ReplicaOverlay)),
+  bootstrap: Schema.optionalKey(ReplicaBootstrap),
 });
 export type ReplicaSnapshot = typeof ReplicaSnapshot.Type;
 
@@ -80,7 +100,23 @@ export const emptyReplicaSnapshot = (): ReplicaSnapshot => ({
   cursor: 0,
   outbox: [],
   rows: emptyReplicaRows(),
+  overlays: [],
 });
+
+export const changesForOutboxEntry = (entry: OutboxEntry): ReadonlyArray<SyncEntityChange> =>
+  entry.kind === "catalogWrite"
+    ? commandChanges(entry.command)
+    : entry.kind === "issueInvoice"
+      ? (entry.changes ?? [])
+      : [];
+
+export const overlayChanges = (snapshot: ReplicaSnapshot): ReadonlyArray<SyncEntityChange> =>
+  (snapshot.overlays ?? []).flatMap((overlay) => overlay.changes);
+
+export const visibleReplicaSnapshot = (snapshot: ReplicaSnapshot): ReplicaSnapshot => {
+  const pending = [...overlayChanges(snapshot), ...snapshot.outbox.flatMap(changesForOutboxEntry)];
+  return pending.length === 0 ? snapshot : applyChanges(snapshot, pending);
+};
 
 export const replicaScopeKey = (apiOrigin: string, organizationId: string) =>
   `catalog:${apiOrigin}:${organizationId}`;
@@ -101,8 +137,7 @@ const withRows = (
   entity: SyncEntity,
   rows: ReplicaRows[SyncEntity],
 ): ReplicaSnapshot => ({
-  cursor: snapshot.cursor,
-  outbox: snapshot.outbox,
+  ...snapshot,
   rows: {
     category: entity === "category" ? rows : snapshot.rows.category,
     product: entity === "product" ? rows : snapshot.rows.product,
@@ -126,8 +161,33 @@ export const applyChange = (
   return withRows(snapshot, change.entity, next);
 };
 
-export const applyChanges = (snapshot: ReplicaSnapshot, changes: ReadonlyArray<SyncEntityChange>) =>
-  changes.reduce(applyChange, snapshot);
+export const applyChanges = (
+  snapshot: ReplicaSnapshot,
+  changes: ReadonlyArray<SyncEntityChange>,
+) => {
+  let next = snapshot;
+  for (const entity of Object.keys(catalogSliceEntities).flatMap((slice) =>
+    slice === "catalog" ? catalogSliceEntities.catalog : catalogSliceEntities.sales,
+  )) {
+    const updates = changes.filter((change) => change.entity === entity);
+    if (updates.length === 0) continue;
+    const rows = new Map(
+      rowsFor(snapshot, entity).flatMap((row) => {
+        const identity = identityOf(row);
+        return identity ? [[identity.id, row] as const] : [];
+      }),
+    );
+    for (const change of updates) {
+      if (change.action === "delete") rows.delete(change.entityId);
+      else {
+        const row = Schema.decodeUnknownOption(Schema.Json)(change.row).pipe(Option.getOrNull);
+        if (row) rows.set(change.entityId, row);
+      }
+    }
+    next = withRows(next, entity, [...rows.values()]);
+  }
+  return next;
+};
 
 export const snapshotAsChanges = (
   snapshot: ReplicaSnapshot,
@@ -158,7 +218,8 @@ export const diffFromChanges = (
     SyncEntity,
     { upserts: Array<{ id: string; row: typeof Schema.Json.Type }>; deletes: Array<string> }
   >();
-  for (const change of changes) {
+  const latest = new Map(changes.map((change) => [`${change.entity}:${change.entityId}`, change]));
+  for (const change of latest.values()) {
     const bucket = byEntity.get(change.entity) ?? { upserts: [], deletes: [] };
     if (change.action === "delete") bucket.deletes.push(change.entityId);
     else {

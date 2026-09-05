@@ -2,7 +2,7 @@ export { Catalog, CatalogScope, CatalogStatus, type CatalogFailure } from "./cat
 export { CatalogError } from "./errors";
 export { CatalogLive, makeCatalog } from "./engine";
 export { CatalogHttpTransport } from "./http";
-export { layerIndexedDb } from "./indexed-db";
+export { layerIndexedDbReplica } from "./indexed-db";
 export {
   applyChange,
   applyChanges,
@@ -15,5 +15,5 @@ export {
   type ReplicaDiff,
   type ReplicaSnapshot,
 } from "./replica";
-export { DurableStore, type DurableStoreApi } from "./store";
+export { ReplicaStore, makeMemoryReplicaStore, type ReplicaStoreApi } from "./store";
 export { CatalogTransport, type InventoryMutationAck } from "./transport";

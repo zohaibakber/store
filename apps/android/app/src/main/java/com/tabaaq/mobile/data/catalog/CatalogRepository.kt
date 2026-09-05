@@ -5,36 +5,36 @@ import com.tabaaq.mobile.core.catalog.SaveBatchDetailsInput
 import com.tabaaq.mobile.core.catalog.SaveProductInput
 import com.tabaaq.mobile.core.catalog.UpdateBatchQuantityInput
 import com.tabaaq.mobile.data.auth.AuthRepository
-import com.tabaaq.mobile.data.powersync.PowerSyncSession
+import com.tabaaq.mobile.data.sync.CatalogSyncSession
 
 class CatalogRepository(
     private val auth: AuthRepository,
-    private val powerSync: PowerSyncSession,
+    private val catalogSync: CatalogSyncSession,
 ) {
     suspend fun saveProduct(input: SaveProductInput): String {
         val (category, product) = actions().prepareProduct(input)
         if (category != null && category.insert) {
-            powerSync.persistCategory(category.row)
+            catalogSync.persistCategory(category.row)
         }
-        powerSync.persistProduct(product.row, product.insert)
+        catalogSync.persistProduct(product.row, product.insert)
         return product.row.id
     }
 
     suspend fun saveBatchDetails(input: SaveBatchDetailsInput): String {
         val prepared = actions().prepareBatchDetails(input)
-        powerSync.persistBatch(prepared.row, prepared.insert)
+        catalogSync.persistBatch(prepared.row, prepared.insert)
         return prepared.row.id
     }
 
     suspend fun updateBatchQuantity(input: UpdateBatchQuantityInput): String {
         val prepared = actions().prepareQuantity(input)
-        powerSync.persistBatch(prepared.row, prepared.insert)
+        catalogSync.persistBatch(prepared.row, prepared.insert)
         return prepared.row.id
     }
 
     private fun actions(): CatalogActions {
         val actor = auth.currentActor() ?: error("Sign in and join a store before editing inventory.")
-        val snapshot = powerSync.snapshot.value
+        val snapshot = catalogSync.snapshot.value
         return CatalogActions(snapshot.productRows, snapshot.categoryRows, snapshot.batchRows, actor)
     }
 }
