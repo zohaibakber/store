@@ -103,6 +103,8 @@ export const emptyReplicaSnapshot = (): ReplicaSnapshot => ({
   overlays: [],
 });
 
+export const outboxEntryIdentity = (entry: OutboxEntry) => `${entry.kind}:${entry.id}`;
+
 export const changesForOutboxEntry = (entry: OutboxEntry): ReadonlyArray<SyncEntityChange> =>
   entry.kind === "catalogWrite"
     ? commandChanges(entry.command)
@@ -113,8 +115,15 @@ export const changesForOutboxEntry = (entry: OutboxEntry): ReadonlyArray<SyncEnt
 export const overlayChanges = (snapshot: ReplicaSnapshot): ReadonlyArray<SyncEntityChange> =>
   (snapshot.overlays ?? []).flatMap((overlay) => overlay.changes);
 
+export const pendingReplicaChanges = (
+  snapshot: ReplicaSnapshot,
+): ReadonlyArray<SyncEntityChange> => [
+  ...overlayChanges(snapshot),
+  ...snapshot.outbox.flatMap(changesForOutboxEntry),
+];
+
 export const visibleReplicaSnapshot = (snapshot: ReplicaSnapshot): ReplicaSnapshot => {
-  const pending = [...overlayChanges(snapshot), ...snapshot.outbox.flatMap(changesForOutboxEntry)];
+  const pending = pendingReplicaChanges(snapshot);
   return pending.length === 0 ? snapshot : applyChanges(snapshot, pending);
 };
 
@@ -130,49 +139,20 @@ export type ReplicaDiff = {
 const identityOf = (row: typeof Schema.Json.Type) =>
   Schema.decodeUnknownOption(ReplicaRowIdentity)(row).pipe(Option.getOrNull);
 
-const rowsFor = (snapshot: ReplicaSnapshot, entity: SyncEntity) => snapshot.rows[entity];
+const replicaEntities = [...catalogSliceEntities.catalog, ...catalogSliceEntities.sales];
 
-const withRows = (
-  snapshot: ReplicaSnapshot,
-  entity: SyncEntity,
-  rows: ReplicaRows[SyncEntity],
-): ReplicaSnapshot => ({
-  ...snapshot,
-  rows: {
-    category: entity === "category" ? rows : snapshot.rows.category,
-    product: entity === "product" ? rows : snapshot.rows.product,
-    batch: entity === "batch" ? rows : snapshot.rows.batch,
-    invoice: entity === "invoice" ? rows : snapshot.rows.invoice,
-    invoiceItem: entity === "invoiceItem" ? rows : snapshot.rows.invoiceItem,
-    stockMovement: entity === "stockMovement" ? rows : snapshot.rows.stockMovement,
-  },
-});
-
-export const applyChange = (
-  snapshot: ReplicaSnapshot,
-  change: SyncEntityChange,
-): ReplicaSnapshot => {
-  const current = rowsFor(snapshot, change.entity);
-  const next = current.filter((row) => identityOf(row)?.id !== change.entityId);
-  if (change.action === "upsert") {
-    const row = Schema.decodeUnknownOption(Schema.Json)(change.row).pipe(Option.getOrNull);
-    if (row) next.push(row);
-  }
-  return withRows(snapshot, change.entity, next);
-};
-
-export const applyChanges = (
-  snapshot: ReplicaSnapshot,
+/** Apply a transaction without copying entity collections it does not touch. */
+export const applyRowChanges = (
+  current: ReplicaRows,
   changes: ReadonlyArray<SyncEntityChange>,
-) => {
-  let next = snapshot;
-  for (const entity of Object.keys(catalogSliceEntities).flatMap((slice) =>
-    slice === "catalog" ? catalogSliceEntities.catalog : catalogSliceEntities.sales,
-  )) {
+): ReplicaRows => {
+  if (changes.length === 0) return current;
+  const next = { ...current };
+  for (const entity of replicaEntities) {
     const updates = changes.filter((change) => change.entity === entity);
     if (updates.length === 0) continue;
     const rows = new Map(
-      rowsFor(snapshot, entity).flatMap((row) => {
+      current[entity].flatMap((row) => {
         const identity = identityOf(row);
         return identity ? [[identity.id, row] as const] : [];
       }),
@@ -184,9 +164,36 @@ export const applyChanges = (
         if (row) rows.set(change.entityId, row);
       }
     }
-    next = withRows(next, entity, [...rows.values()]);
+    next[entity] = [...rows.values()];
   }
   return next;
+};
+
+export const applyChanges = (
+  snapshot: ReplicaSnapshot,
+  changes: ReadonlyArray<SyncEntityChange>,
+): ReplicaSnapshot =>
+  changes.length === 0 ? snapshot : { ...snapshot, rows: applyRowChanges(snapshot.rows, changes) };
+
+/** Persistence rejects rows without identities instead of silently dropping them. */
+export const diffReplicaRows = (
+  before: ReplicaRows,
+  after: ReplicaRows,
+): ReadonlyArray<ReplicaDiff> => {
+  const diffs: Array<ReplicaDiff> = [];
+  const indexRows = (rows: ReplicaRows[SyncEntity]) =>
+    new Map(rows.map((row) => [Schema.decodeUnknownSync(ReplicaRowIdentity)(row).id, row]));
+  for (const entity of replicaEntities) {
+    if (before[entity] === after[entity]) continue;
+    const previous = indexRows(before[entity]);
+    const current = indexRows(after[entity]);
+    const upserts = [...current]
+      .filter(([id, row]) => previous.get(id) !== row)
+      .map(([id, row]) => ({ id, row }));
+    const deletes = [...previous.keys()].filter((id) => !current.has(id));
+    if (upserts.length > 0 || deletes.length > 0) diffs.push({ entity, upserts, deletes });
+  }
+  return diffs;
 };
 
 export const snapshotAsChanges = (
@@ -196,7 +203,7 @@ export const snapshotAsChanges = (
   const entities = new Set(slices.flatMap((slice) => catalogSliceEntities[slice]));
   const changes: Array<SyncEntityChange> = [];
   for (const entity of entities) {
-    for (const row of rowsFor(snapshot, entity)) {
+    for (const row of snapshot.rows[entity]) {
       const identity = identityOf(row);
       if (!identity) continue;
       changes.push({

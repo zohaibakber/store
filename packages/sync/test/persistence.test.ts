@@ -1,10 +1,7 @@
-import { describe, expect, it } from "vitest";
 import * as Effect from "effect/Effect";
+import { describe, expect, it } from "vitest";
 
-import {
-  makeMemoryReplicaStore,
-  visibleRowsForStore,
-} from "../src/persistence";
+import { makeMemoryReplicaStore, visibleRowsForStore } from "../src/persistence";
 
 const row = (id: string, name: string) => ({ id, name, rowVersion: 1 });
 const change = (id: string, value: Record<string, unknown>) => ({
@@ -34,7 +31,7 @@ describe("replica persistence operations", () => {
     const store = makeMemoryReplicaStore();
     const result = await Effect.runPromise(
       store.transaction("scope", (transaction) => {
-        transaction.appendOutbox(entry("one"), [change("one", row("one", "local"))]);
+        transaction.appendOutbox(entry("one"));
         return "queued";
       }),
     );
@@ -47,19 +44,25 @@ describe("replica persistence operations", () => {
 
   it("moves an acknowledged command to an overlay and clears it at the transaction end", async () => {
     const store = makeMemoryReplicaStore();
-    await Effect.runPromise(store.transaction("scope", (transaction) => {
-      transaction.appendOutbox(entry("one"));
-    }));
-    const acknowledged = await Effect.runPromise(store.transaction("scope", (transaction) => {
-      transaction.acknowledgeOutbox("catalogWrite:one", 7, [change("one", row("one", "local"))]);
-    }));
+    await Effect.runPromise(
+      store.transaction("scope", (transaction) => {
+        transaction.appendOutbox(entry("one"));
+      }),
+    );
+    const acknowledged = await Effect.runPromise(
+      store.transaction("scope", (transaction) => {
+        transaction.acknowledgeOutbox("catalogWrite:one", 7, [change("one", row("one", "local"))]);
+      }),
+    );
     expect(acknowledged.snapshot.outbox).toEqual([]);
     expect(acknowledged.snapshot.overlays).toHaveLength(1);
     expect(visibleRowsForStore(acknowledged.snapshot).category).toEqual([row("one", "local")]);
 
-    const committed = await Effect.runPromise(store.transaction("scope", (transaction) => {
-      transaction.commitPull(7, [change("one", row("one", "server"))], 7);
-    }));
+    const committed = await Effect.runPromise(
+      store.transaction("scope", (transaction) => {
+        transaction.commitPull(7, [change("one", row("one", "server"))], 7);
+      }),
+    );
     expect(committed.snapshot.overlays).toEqual([]);
     expect(committed.snapshot.rows.category).toEqual([row("one", "server")]);
   });
@@ -74,13 +77,22 @@ describe("replica persistence operations", () => {
       done: false,
       expiresAt: 100,
     };
-    await Effect.runPromise(store.transaction("scope", (transaction) => {
-      transaction.beginBootstrap(bootstrap);
-      transaction.stageBootstrapPage("generation", [change("one", row("one", "server"))], 1, true);
-    }));
-    const active = await Effect.runPromise(store.transaction("scope", (transaction) => {
-      transaction.activateBootstrap("generation");
-    }));
+    await Effect.runPromise(
+      store.transaction("scope", (transaction) => {
+        transaction.beginBootstrap(bootstrap);
+        transaction.stageBootstrapPage(
+          "generation",
+          [change("one", row("one", "server"))],
+          1,
+          true,
+        );
+      }),
+    );
+    const active = await Effect.runPromise(
+      store.transaction("scope", (transaction) => {
+        transaction.activateBootstrap("generation");
+      }),
+    );
     expect(active.snapshot.cursor).toBe(11);
     expect(active.snapshot.bootstrap).toBeUndefined();
     expect(active.snapshot.rows.category).toEqual([row("one", "server")]);

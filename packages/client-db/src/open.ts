@@ -4,14 +4,15 @@ import {
   CatalogError,
   CatalogHttpTransport,
   CatalogLive,
-  diffFromChanges,
   layerIndexedDbReplica,
   type CatalogFailure,
   type ReplicaDiff,
 } from "@store/sync";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import { catalogMemoryCollectionConfigs, type CatalogCollectionConfigs } from "./collections";
@@ -46,22 +47,117 @@ export type CatalogOpenHost<Tables extends CatalogBoundTables> = {
   readonly onFirstSyncError?: (cause: unknown) => void;
 };
 
-const failureFromCatalog = (cause: unknown) => {
-  if (cause instanceof CatalogError) {
-    return new InventoryFailure({
-      message: cause.message,
-      reason:
-        cause.reason === "conflict"
-          ? { _tag: "staleReplica" }
-          : cause.reason === "rejected"
-            ? { _tag: "rejected", code: cause.code ?? "CATALOG_REJECTED" }
-            : { _tag: cause.reason },
-    });
-  }
-  return failureFromUnknown(cause);
-};
+const failureFromCatalog = (cause: CatalogError) =>
+  new InventoryFailure({
+    message: cause.message,
+    reason:
+      cause.reason === "conflict"
+        ? { _tag: "staleReplica" }
+        : cause.reason === "rejected"
+          ? { _tag: "rejected", code: cause.code ?? "CATALOG_REJECTED" }
+          : { _tag: cause.reason },
+  });
 
 export const INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE = "The first sync did not finish in time.";
+
+const acquireCatalogReplica = Effect.fn("CatalogReplica.acquire")(function* <
+  Tables extends CatalogBoundTables,
+>(host: CatalogOpenHost<Tables>, scopeId: string) {
+  const catalog = yield* Catalog;
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<Catalog>());
+  const listeners = new Set<(diff: ReplicaDiff) => void>();
+  const firstSyncFailureReported = yield* Ref.make(false);
+  const publish = (diff: ReplicaDiff) => {
+    for (const listener of listeners) listener(diff);
+  };
+  const reportFailure = Effect.fn("CatalogReplica.reportFailure")(function* (
+    failure: CatalogFailure,
+  ) {
+    const mapped = failureFromCatalog(failure.error);
+    if (failure._tag === "upload") {
+      host.onUploadHalt?.(mapped);
+    } else if (!(yield* Ref.getAndSet(firstSyncFailureReported, true))) {
+      host.onFirstSyncError?.(mapped);
+    }
+  });
+  const persist = <A>(operation: Effect.Effect<A, CatalogError>) =>
+    operation.pipe(
+      Effect.mapError(failureFromCatalog),
+      Effect.tapError((failure) => Effect.sync(() => host.onUploadHalt?.(failure))),
+    );
+
+  yield* catalog.changes.pipe(
+    Stream.runForEach((diff) => Effect.sync(() => publish(diff))),
+    Effect.forkScoped({ startImmediately: true }),
+  );
+  yield* catalog.failures.pipe(
+    Stream.runForEach(reportFailure),
+    Effect.forkScoped({ startImmediately: true }),
+  );
+
+  const persistCatalog = (entity: CatalogWriteEntity, row: CategoryRow | ProductRow | BatchRow) => {
+    const command: CatalogWriteCommand = {
+      operationId: row.operationId,
+      organizationId: row.organizationId,
+      deviceId: row.deviceId,
+      actorUserId: row.updatedByUserId,
+      occurredAt: row.updatedAt,
+      entity,
+      rows: [row],
+    };
+    return runPromise(persist(catalog.write(command)));
+  };
+  const bound = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      host.bindCollections(
+        catalogMemoryCollectionConfigs({
+          scopeId,
+          snapshot: () => runPromise(catalog.snapshot),
+          subscribe: (listener) => {
+            listeners.add(listener);
+            return () => {
+              listeners.delete(listener);
+            };
+          },
+          persistCatalog,
+        }),
+      ),
+    ),
+    (collections) =>
+      Effect.tryPromise({
+        try: () => collections.cleanupCollections(),
+        catch: failureFromUnknown,
+      }).pipe(
+        Effect.catch((failure) => Effect.logWarning("Catalog replica cleanup failed", failure)),
+        Effect.ensuring(Effect.sync(() => listeners.clear())),
+      ),
+  );
+  const { cleanupCollections: _cleanupCollections, ...tables } = bound;
+  yield* Effect.forEach(
+    [
+      tables.batches,
+      tables.categories,
+      tables.invoiceItems,
+      tables.invoices,
+      tables.products,
+      tables.stockMovements,
+    ],
+    (table) =>
+      Effect.tryPromise({
+        try: () => table.preload?.() ?? Promise.resolve(),
+        catch: failureFromUnknown,
+      }),
+    { concurrency: "unbounded", discard: true },
+  );
+
+  return {
+    ...tables,
+    waitForUploadDrain: catalog.waitForIdle.pipe(Effect.mapError(failureFromCatalog)),
+    enqueueInvoice: (...args: Parameters<typeof catalog.issueInvoice>) =>
+      persist(catalog.issueInvoice(...args)),
+    poke: catalog.poke,
+  };
+});
 
 export const openCatalog = async <Tables extends CatalogBoundTables>(
   host: CatalogOpenHost<Tables>,
@@ -70,17 +166,6 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
   const scopeId = inventoryReplicaScope(host.apiBaseUrl, organizationId);
   const apiRoot = inventoryApiRoot(host.apiBaseUrl);
   const apiUrl = apiRoot.endsWith("/api") ? apiRoot.slice(0, -4) : apiRoot;
-  const listeners = new Set<(diff: ReplicaDiff) => void>();
-  let firstSyncFailureReported = false;
-  const reportCatalogFailure = (failure: CatalogFailure) => {
-    const mapped = failureFromCatalog(failure.error);
-    if (failure._tag === "upload") {
-      host.onUploadHalt?.(mapped);
-    } else if (!firstSyncFailureReported) {
-      firstSyncFailureReported = true;
-      host.onFirstSyncError?.(mapped);
-    }
-  };
   const catalogLayer = CatalogLive({
     organizationId,
     deviceId: host.deviceId,
@@ -95,102 +180,25 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
     ),
     Layer.provide(layerIndexedDbReplica(inventoryReplicaDatabaseName(scopeId))),
   );
-  const runtime = ManagedRuntime.make(catalogLayer);
-  let cleanupCollections: (() => Promise<void>) | undefined;
+  const acquisition = acquireCatalogReplica(host, scopeId);
+  const CatalogReplica =
+    Context.Service<Effect.Success<typeof acquisition>>("store/CatalogReplica");
+  const runtime = ManagedRuntime.make(
+    Layer.effect(CatalogReplica, acquisition).pipe(Layer.provide(catalogLayer)),
+  );
   try {
-    const catalog = await runtime.runPromise(
-      Effect.gen(function* () {
-        return yield* Catalog;
-      }),
-    );
-    runtime.runFork(
-      Effect.all(
-        [
-          catalog.changes.pipe(
-            Stream.runForEach((diff) =>
-              Effect.sync(() => {
-                for (const listener of listeners) listener(diff);
-              }),
-            ),
-          ),
-          catalog.failures.pipe(
-            Stream.runForEach((failure) => Effect.sync(() => reportCatalogFailure(failure))),
-          ),
-        ],
-        { concurrency: 2 },
-      ),
-    );
-    const persistCatalog = async (
-      entity: CatalogWriteEntity,
-      row: CategoryRow | ProductRow | BatchRow,
-    ) => {
-      const command: CatalogWriteCommand = {
-        operationId: row.operationId,
-        organizationId: row.organizationId,
-        deviceId: row.deviceId,
-        actorUserId: row.updatedByUserId,
-        occurredAt: row.updatedAt,
-        entity,
-        rows: [row],
-      };
-      await runtime.runPromise(catalog.write(command)).catch((cause: unknown) => {
-        const failure = failureFromCatalog(cause);
-        host.onUploadHalt?.(failure);
-        throw failure;
-      });
-    };
-    const collections = host.bindCollections(
-      catalogMemoryCollectionConfigs({
-        scopeId,
-        snapshot: () => runtime.runPromise(catalog.snapshot),
-        subscribe: (listener) => {
-          listeners.add(listener);
-          return () => {
-            listeners.delete(listener);
-          };
-        },
-        persistCatalog,
-      }),
-    );
-    cleanupCollections = collections.cleanupCollections;
-    await Promise.all([
-      collections.batches.preload?.(),
-      collections.categories.preload?.(),
-      collections.invoiceItems.preload?.(),
-      collections.invoices.preload?.(),
-      collections.products.preload?.(),
-      collections.stockMovements.preload?.(),
-    ]);
-    const { cleanupCollections: cleanupBoundCollections, ...tables } = collections;
+    const { waitForUploadDrain, enqueueInvoice, poke, ...tables } =
+      await runtime.runPromise(CatalogReplica);
     return {
       ...tables,
-      waitForUploadDrain: () =>
-        runtime.runPromise(catalog.waitForIdle).catch((cause: unknown) => {
-          throw failureFromCatalog(cause);
-        }),
-      enqueueInvoice: async (...args: Parameters<typeof catalog.issueInvoice>) => {
-        await runtime.runPromise(catalog.issueInvoice(...args)).catch((cause: unknown) => {
-          const failure = failureFromCatalog(cause);
-          host.onUploadHalt?.(failure);
-          throw failure;
-        });
-        for (const diff of diffFromChanges(args[1])) {
-          for (const listener of listeners) listener(diff);
-        }
-      },
-      poke: () => runtime.runPromise(catalog.poke),
-      dispose: async () => {
-        await cleanupBoundCollections().catch(() => undefined);
-        await runtime.dispose();
-      },
+      waitForUploadDrain: () => runtime.runPromise(waitForUploadDrain),
+      enqueueInvoice: (...args: Parameters<typeof enqueueInvoice>) =>
+        runtime.runPromise(enqueueInvoice(...args)),
+      poke: () => runtime.runPromise(poke),
+      dispose: () => runtime.dispose(),
     };
   } catch (cause) {
-    try {
-      await cleanupCollections?.();
-      await runtime.dispose();
-    } catch {
-      // Keep the original startup failure.
-    }
+    await runtime.dispose();
     throw cause;
   }
 };

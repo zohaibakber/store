@@ -6,7 +6,6 @@ import {
   SYNC_BATCH_BYTES,
   type SyncEntityChange,
 } from "@store/contracts";
-import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -23,7 +22,8 @@ import { Catalog, type CatalogFailure, type CatalogScope, type CatalogStatus } f
 import { CatalogError } from "./errors";
 import {
   catalogCommandEntry,
-  commandChanges,
+  outboxEntryIdentity,
+  pendingReplicaChanges,
   changesForOutboxEntry,
   diffFromChanges,
   emptyReplicaSnapshot,
@@ -38,8 +38,6 @@ import {
 } from "./replica";
 import { ReplicaStore } from "./store";
 import { CatalogTransport, type CatalogBatchCommand } from "./transport";
-
-const outboxIdentity = (entry: OutboxEntry) => `${entry.kind}:${entry.id}`;
 
 const publishDiffs = Effect.fn("Catalog.publishDiffs")(function* (
   changes: PubSub.PubSub<ReplicaDiff>,
@@ -74,9 +72,10 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
   const offerPullWake = Effect.fn("Catalog.offerPullWake")(function* () {
     yield* Queue.offer(pullWake, undefined);
   });
-  const hydrated = yield* Deferred.make<void>();
   const lock = yield* Semaphore.make(1);
-  const exclusive = lock.withPermits(1);
+  // Once a local commit begins, publish its projection before honoring interruption.
+  const exclusive = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+    lock.withPermits(1)(Effect.uninterruptible(operation));
 
   const isRetryable = (error: CatalogError) =>
     error.reason === "transport" || error.reason === "transient";
@@ -120,7 +119,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
       Effect.gen(function* () {
         const committed = yield* replicaStore.transaction(scopeKey, (transaction) => {
           for (const { entry, txid } of entries) {
-            transaction.acknowledgeOutbox(outboxIdentity(entry), txid);
+            transaction.acknowledgeOutbox(outboxEntryIdentity(entry), txid);
           }
         });
         const after = visibleReplicaSnapshot(committed.snapshot);
@@ -227,16 +226,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
         });
         const after = visibleReplicaSnapshot(committed.snapshot);
         yield* SubscriptionRef.set(stateRef, after);
-        const local = [
-          ...(after.overlays ?? []).flatMap((overlay) => overlay.changes),
-          ...after.outbox.flatMap((entry) =>
-            entry.kind === "catalogWrite"
-              ? commandChanges(entry.command)
-              : entry.kind === "issueInvoice"
-                ? (entry.changes ?? [])
-                : [],
-          ),
-        ];
+        const local = pendingReplicaChanges(after);
         yield* publishDiffs(changes, diffFromChanges([...pulled, ...local]));
       }),
     );
@@ -362,25 +352,20 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     Effect.forkScoped,
   );
 
-  yield* Effect.gen(function* () {
-    if (!state.initialized) yield* retrySync(hydrate());
-    yield* Deferred.succeed(hydrated, undefined);
-    yield* offerPullWake();
-    yield* Stream.fromQueue(pullWake).pipe(
-      Stream.runForEach(() =>
-        retrySync(pullOnce()).pipe(
-          Effect.tap(() =>
-            SubscriptionRef.get(stateRef).pipe(
-              Effect.flatMap((current) =>
-                SubscriptionRef.set(status, current.outbox.length > 0 ? "syncing" : "ready"),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }).pipe(
-    Effect.catchTag("CatalogError", () => markOffline(status)),
+  const synchronize = Effect.fn("Catalog.synchronize")(function* () {
+    const current = yield* SubscriptionRef.get(stateRef);
+    if (!current.initialized) {
+      yield* SubscriptionRef.set(status, "hydrating");
+      yield* hydrate();
+    }
+    yield* pullOnce();
+    const after = yield* SubscriptionRef.get(stateRef);
+    yield* SubscriptionRef.set(status, after.outbox.length > 0 ? "syncing" : "ready");
+  });
+  yield* Stream.fromQueue(pullWake).pipe(
+    Stream.runForEach(() =>
+      retrySync(synchronize()).pipe(Effect.catchTag("CatalogError", () => markOffline(status))),
+    ),
     Effect.forkScoped,
   );
 
@@ -391,26 +376,19 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
       ),
     ),
   );
-  yield* Deferred.await(hydrated).pipe(
-    Effect.andThen(
-      Stream.fromSchedule(reconcileSchedule).pipe(Stream.runForEach(() => offerPullWake())),
-    ),
-    Effect.forkScoped,
-  );
+  yield* offerPullWake().pipe(Effect.repeat(reconcileSchedule), Effect.forkScoped);
 
   if (state.outbox.length > 0) yield* offerPushWake();
 
-  const enqueue = Effect.fn("Catalog.enqueue")(function* (
-    entry: OutboxEntry,
-    optimisticChanges: ReadonlyArray<SyncEntityChange>,
-  ) {
+  const enqueue = Effect.fn("Catalog.enqueue")(function* (entry: OutboxEntry) {
+    const optimisticChanges = changesForOutboxEntry(entry);
     yield* exclusive(
       Effect.gen(function* () {
         const committed = yield* replicaStore.transaction(scopeKey, (transaction) => {
-          transaction.appendOutbox(entry, optimisticChanges);
+          return transaction.appendOutbox(entry);
         });
         yield* SubscriptionRef.set(stateRef, visibleReplicaSnapshot(committed.snapshot));
-        yield* publishDiffs(changes, diffFromChanges(optimisticChanges));
+        if (committed.result) yield* publishDiffs(changes, diffFromChanges(optimisticChanges));
       }),
     );
     yield* offerPushWake();
@@ -421,7 +399,7 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
     changes: Stream.fromPubSub(changes),
     failures: Stream.fromQueue(failures),
     snapshot: SubscriptionRef.get(stateRef),
-    poke: offerPullWake(),
+    poke: Effect.all([offerPullWake(), offerPushWake()], { discard: true }),
     waitForIdle: Effect.gen(function* () {
       const pending = yield* SubscriptionRef.get(stateRef);
       if (pending.outbox.length === 0) return;
@@ -446,18 +424,18 @@ export const makeCatalog = Effect.fn("Catalog.make")(function* (scope: CatalogSc
       );
     }),
     write: Effect.fn("Catalog.write")(function* (command: CatalogWriteCommand) {
-      yield* enqueue(catalogCommandEntry(command), commandChanges(command));
+      yield* enqueue(catalogCommandEntry(command));
     }),
     issueInvoice: Effect.fn("Catalog.issueInvoice")(function* (
       command: IssueInvoiceCommand,
       changes: ReadonlyArray<SyncEntityChange>,
     ) {
-      yield* enqueue(invoiceCommandEntry(command, changes), changes);
+      yield* enqueue(invoiceCommandEntry(command, changes));
     }),
     importInventory: Effect.fn("Catalog.importInventory")(function* (
       command: ImportInventoryCommand,
     ) {
-      yield* enqueue(importCommandEntry(command), []);
+      yield* enqueue(importCommandEntry(command));
     }),
   });
 });

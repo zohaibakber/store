@@ -22,7 +22,7 @@ import { and, asc, desc, eq, getTableColumns, gt, isNull, lt, sql } from "drizzl
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { PostgresDrizzle, PostgresTransaction } from "./mutation-database";
+import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
 
 const tableSources = [
   { entity: "category", table: categories },

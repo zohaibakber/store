@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { PostgresDrizzle, PostgresTransaction } from "./mutation-database";
+import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
 
 export const withCatalogTransaction = <A, E, R>(
   db: PostgresDrizzle,

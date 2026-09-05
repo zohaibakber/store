@@ -86,60 +86,54 @@ const memoryCollection = <Row extends { readonly id: string }>(input: {
   readonly host: CatalogMemoryCollectionHost;
   readonly decodeRow: (row: JsonValue) => Row | null;
 }): CatalogMemoryCollectionConfig<Row> => {
-  const keys = new Set<string>();
-  const apply = (
-    helpers: {
-      readonly begin: () => void;
-      readonly write: SyncWriter<Row>;
-      readonly commit: () => void;
-    },
-    diff: ReplicaDiff,
-  ) => {
-    if (diff.entity !== input.entity) return;
-    helpers.begin();
-    for (const id of diff.deletes) {
-      helpers.write({ type: "delete", key: id });
-      keys.delete(id);
-    }
-    for (const upsert of diff.upserts) {
-      const row = input.decodeRow(upsert.row);
-      if (!row) continue;
-      helpers.write({
-        type: keys.has(upsert.id) ? "update" : "insert",
-        value: row,
-      });
-      keys.add(upsert.id);
-    }
-    helpers.commit();
-  };
-
   return {
     id: input.id,
     getKey: (row) => row.id,
     sync: {
       sync: ({ begin, write, commit, markReady }) => {
-        let hydrating = true;
+        const keys = new Set<string>();
         const buffered: Array<ReplicaDiff> = [];
+        let phase: "hydrating" | "ready" | "disposed" = "hydrating";
+        const apply = (diff: ReplicaDiff) => {
+          begin();
+          for (const id of diff.deletes) {
+            write({ type: "delete", key: id });
+            keys.delete(id);
+          }
+          for (const upsert of diff.upserts) {
+            const row = input.decodeRow(upsert.row);
+            if (!row) continue;
+            write({ type: keys.has(upsert.id) ? "update" : "insert", value: row });
+            keys.add(upsert.id);
+          }
+          commit();
+        };
         const unsubscribe = input.host.subscribe((diff) => {
-          if (hydrating) buffered.push(diff);
-          else apply({ begin, write, commit }, diff);
+          if (diff.entity !== input.entity || phase === "disposed") return;
+          if (phase === "hydrating") buffered.push(diff);
+          else apply(diff);
         });
         void input.host.snapshot().then((snapshot) => {
-          const rows = snapshot.rows[input.entity] ?? [];
+          if (phase === "disposed") return;
           begin();
-          for (const stored of rows) {
+          for (const stored of snapshot.rows[input.entity]) {
             const row = input.decodeRow(stored);
             if (!row) continue;
             write({ type: "insert", value: row });
             keys.add(row.id);
           }
           commit();
-          for (const diff of buffered) apply({ begin, write, commit }, diff);
+          for (const diff of buffered) apply(diff);
           buffered.length = 0;
-          hydrating = false;
+          phase = "ready";
           markReady();
         });
-        return unsubscribe;
+        return () => {
+          phase = "disposed";
+          buffered.length = 0;
+          keys.clear();
+          unsubscribe();
+        };
       },
     },
   };

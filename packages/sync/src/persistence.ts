@@ -3,7 +3,9 @@ import * as Effect from "effect/Effect";
 
 import type { CatalogError } from "./errors";
 import {
-  applyChanges,
+  applyRowChanges,
+  emptyReplicaSnapshot,
+  outboxEntryIdentity,
   changesForOutboxEntry,
   emptyReplicaRows,
   visibleReplicaSnapshot,
@@ -16,10 +18,7 @@ import {
 export type ReplicaStoreSnapshot = ReplicaSnapshot;
 
 export type ReplicaStoreTransaction = {
-  readonly appendOutbox: (
-    entry: OutboxEntry,
-    optimisticChanges?: ReadonlyArray<SyncEntityChange>,
-  ) => void;
+  readonly appendOutbox: (entry: OutboxEntry) => boolean;
   readonly acknowledgeOutbox: (
     entryId: string,
     txid: number,
@@ -50,8 +49,6 @@ export interface ReplicaStoreApi {
   ) => Effect.Effect<{ readonly result: A; readonly snapshot: ReplicaStoreSnapshot }, CatalogError>;
 }
 
-export const outboxEntryIdentity = (entry: OutboxEntry) => `${entry.kind}:${entry.id}`;
-
 const cloneRows = (rows: ReplicaRows): ReplicaRows => ({
   category: [...rows.category],
   product: [...rows.product],
@@ -61,15 +58,13 @@ const cloneRows = (rows: ReplicaRows): ReplicaRows => ({
   stockMovement: [...rows.stockMovement],
 });
 
-const identityFor = (entry: OutboxEntry) => outboxEntryIdentity(entry);
-
 const optimisticChangesFor = (
   entry: OutboxEntry,
   changes: ReadonlyArray<SyncEntityChange> | undefined,
 ) => changes ?? changesForOutboxEntry(entry);
 
 const withoutOutbox = (outbox: ReadonlyArray<OutboxEntry>, entryId: string) =>
-  outbox.filter((entry) => identityFor(entry) !== entryId);
+  outbox.filter((entry) => outboxEntryIdentity(entry) !== entryId);
 
 const applyOverlay = (
   snapshot: ReplicaSnapshot,
@@ -85,24 +80,20 @@ export const applyReplicaTransaction = <A>(
   initial: ReplicaSnapshot,
   operation: (transaction: ReplicaStoreTransaction) => A,
 ) => {
-  let snapshot: ReplicaSnapshot = {
-    ...initial,
-    rows: initial.rows,
-    outbox: [...initial.outbox],
-    overlays: [...(initial.overlays ?? [])],
-  };
+  let snapshot = initial;
   const transaction: ReplicaStoreTransaction = {
-    appendOutbox: (entry, changes) => {
-      const identity = identityFor(entry);
-      if (snapshot.outbox.some((candidate) => identityFor(candidate) === identity)) return;
+    appendOutbox: (entry) => {
+      const identity = outboxEntryIdentity(entry);
+      if (snapshot.outbox.some((candidate) => outboxEntryIdentity(candidate) === identity))
+        return false;
       snapshot = {
         ...snapshot,
         outbox: [...snapshot.outbox, entry],
       };
-      void optimisticChangesFor(entry, changes);
+      return true;
     },
     acknowledgeOutbox: (entryId, txid, changes) => {
-      const entry = snapshot.outbox.find((candidate) => identityFor(candidate) === entryId);
+      const entry = snapshot.outbox.find((candidate) => outboxEntryIdentity(candidate) === entryId);
       if (!entry) return;
       const overlay = optimisticChangesFor(entry, changes);
       if (txid > snapshot.cursor) snapshot = applyOverlay(snapshot, txid, overlay);
@@ -113,10 +104,7 @@ export const applyReplicaTransaction = <A>(
     },
     commitPull: (cursor, changes, transactionEnd = cursor) => {
       if (cursor < snapshot.cursor) return;
-      const nextRows = applyChanges(
-        { ...snapshot, rows: snapshot.rows, outbox: [], overlays: [] },
-        changes,
-      ).rows;
+      const nextRows = applyRowChanges(snapshot.rows, changes);
       const overlays = (snapshot.overlays ?? []).filter((overlay) => overlay.txid > transactionEnd);
       snapshot = { ...snapshot, cursor, rows: nextRows, overlays };
     },
@@ -126,10 +114,7 @@ export const applyReplicaTransaction = <A>(
     stageBootstrapPage: (generation, changes, offset, done) => {
       const bootstrap = snapshot.bootstrap;
       if (!bootstrap || bootstrap.generation !== generation) return;
-      const staged = applyChanges(
-        { ...snapshot, rows: bootstrap.rows ?? emptyReplicaRows(), outbox: [], overlays: [] },
-        changes,
-      ).rows;
+      const staged = applyRowChanges(bootstrap.rows ?? emptyReplicaRows(), changes);
       snapshot = {
         ...snapshot,
         bootstrap: { ...bootstrap, offset, done, rows: staged },
@@ -163,24 +148,10 @@ export const makeMemoryReplicaStore = (
     Object.entries(seed).map(([key, value]) => [key, { ...value, rows: cloneRows(value.rows) }]),
   );
   return {
-    load: (scopeKey) =>
-      Effect.sync(
-        () =>
-          states.get(scopeKey) ?? {
-            cursor: 0,
-            outbox: [],
-            rows: emptyReplicaRows(),
-            overlays: [],
-          },
-      ),
+    load: (scopeKey) => Effect.sync(() => states.get(scopeKey) ?? emptyReplicaSnapshot()),
     transaction: (scopeKey, update) =>
       Effect.sync(() => {
-        const initial = states.get(scopeKey) ?? {
-          cursor: 0,
-          outbox: [],
-          rows: emptyReplicaRows(),
-          overlays: [],
-        };
+        const initial = states.get(scopeKey) ?? emptyReplicaSnapshot();
         const { result, snapshot } = applyReplicaTransaction(initial, update);
         states.set(scopeKey, snapshot);
         return { result, snapshot };

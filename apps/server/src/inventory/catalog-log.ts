@@ -13,7 +13,7 @@ import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { PostgresDrizzle, PostgresTransaction } from "./mutation-database";
+import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
 
 const PULL_LIMIT = SYNC_PAGE_ROWS;
 

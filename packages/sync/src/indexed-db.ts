@@ -8,9 +8,10 @@ import { applyReplicaTransaction } from "./persistence";
 import type { ReplicaStoreTransaction } from "./persistence";
 import {
   emptyReplicaRows,
+  diffReplicaRows,
+  outboxEntryIdentity,
   OutboxEntry,
   ReplicaBootstrap,
-  ReplicaRowIdentity,
   type ReplicaSnapshot as ReplicaSnapshotValue,
 } from "./replica";
 import { ReplicaStore } from "./store";
@@ -30,7 +31,6 @@ const RowRecord = Schema.Struct({
 });
 type RowRecord = typeof RowRecord.Type;
 const BootstrapRowRecord = Schema.Struct({ ...RowRecord.fields, generation: Schema.String });
-type BootstrapRowRecord = typeof BootstrapRowRecord.Type;
 const OutboxRecord = Schema.Struct({
   scopeKey: Schema.String,
   identity: Schema.String,
@@ -130,19 +130,6 @@ const rowsFromRecords = (records: ReadonlyArray<RowRecord>): ReplicaSnapshotValu
   return rows;
 };
 
-const bootstrapRowsFromRecords = (records: ReadonlyArray<BootstrapRowRecord>) =>
-  rowsFromRecords(records.map(({ scopeKey, entity, id, row }) => ({ scopeKey, entity, id, row })));
-
-const rowMap = (rows: ReplicaSnapshotValue["rows"]) => {
-  const result = new Map<string, unknown>();
-  for (const [entity, values] of Object.entries(rows))
-    for (const row of values) {
-      const identity = Schema.decodeUnknownSync(ReplicaRowIdentity)(row);
-      result.set(`${entity}:${identity.id}`, row);
-    }
-  return result;
-};
-
 type CachedReplica = { revision: string; snapshot: ReplicaSnapshotValue };
 
 const readState = (
@@ -183,7 +170,7 @@ const readState = (
               bootstrap: bootstrap
                 ? {
                     ...bootstrap,
-                    rows: bootstrapRowsFromRecords(
+                    rows: rowsFromRecords(
                       Schema.decodeUnknownSync(Schema.Array(BootstrapRowRecord))(
                         bootstrapRows.result,
                       ).filter((entry) => entry.generation === bootstrap.generation),
@@ -203,6 +190,29 @@ const readState = (
   };
 };
 
+const writeRows = (
+  store: IDBObjectStore,
+  scopeKey: string,
+  before: ReplicaSnapshotValue["rows"],
+  after: ReplicaSnapshotValue["rows"],
+  generation?: string,
+) => {
+  for (const { entity, upserts, deletes } of diffReplicaRows(before, after)) {
+    for (const { id, row } of upserts) {
+      store.put(
+        generation === undefined
+          ? { scopeKey, entity, id, row }
+          : { scopeKey, generation, entity, id, row },
+      );
+    }
+    for (const id of deletes) {
+      store.delete(
+        generation === undefined ? [scopeKey, entity, id] : [scopeKey, generation, entity, id],
+      );
+    }
+  }
+};
+
 const writeDiff = (
   tx: IDBTransaction,
   scopeKey: string,
@@ -210,43 +220,15 @@ const writeDiff = (
   after: ReplicaSnapshotValue,
   revision: string,
 ) => {
-  const rows = tx.objectStore(ROWS);
-  const changedBefore = { ...emptyReplicaRows() };
-  const changedAfter = { ...emptyReplicaRows() };
-  for (const entity of [
-    "category",
-    "product",
-    "batch",
-    "invoice",
-    "invoiceItem",
-    "stockMovement",
-  ] as const) {
-    if (before.rows[entity] === after.rows[entity]) continue;
-    changedBefore[entity] = before.rows[entity];
-    changedAfter[entity] = after.rows[entity];
-  }
-  const oldRows = rowMap(changedBefore);
-  const newRows = rowMap(changedAfter);
-  for (const [key, row] of newRows) {
-    if (oldRows.get(key) === row) continue;
-    const entity = key.slice(0, key.indexOf(":"));
-    const id = key.slice(key.indexOf(":") + 1);
-    rows.put({ scopeKey, entity, id, row });
-  }
-  for (const key of oldRows.keys())
-    if (!newRows.has(key)) {
-      const entity = key.slice(0, key.indexOf(":"));
-      const id = key.slice(key.indexOf(":") + 1);
-      rows.delete([scopeKey, entity, id]);
-    }
-  const oldOutbox = new Map(before.outbox.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
-  const newOutbox = new Map(after.outbox.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+  writeRows(tx.objectStore(ROWS), scopeKey, before.rows, after.rows);
+  const oldOutbox = new Map(before.outbox.map((entry) => [outboxEntryIdentity(entry), entry]));
+  const newOutbox = new Map(after.outbox.map((entry) => [outboxEntryIdentity(entry), entry]));
   const outbox = tx.objectStore(OUTBOX);
   for (const [index, entry] of after.outbox.entries()) {
     if (before.outbox[index] === entry) continue;
     outbox.put({
       scopeKey,
-      identity: `${entry.kind}:${entry.id}`,
+      identity: outboxEntryIdentity(entry),
       sequence: String(index).padStart(16, "0"),
       entry,
     });
@@ -257,7 +239,8 @@ const writeDiff = (
   const newOverlays = new Map((after.overlays ?? []).map((overlay) => [overlay.txid, overlay]));
   const overlays = tx.objectStore(OVERLAYS);
   for (const [txid, overlay] of newOverlays)
-    if (!oldOverlays.has(txid)) overlays.put({ scopeKey, txid, changes: overlay.changes });
+    if (oldOverlays.get(txid) !== overlay)
+      overlays.put({ scopeKey, txid, changes: overlay.changes });
   for (const txid of oldOverlays.keys())
     if (!newOverlays.has(txid)) overlays.delete([scopeKey, txid]);
   tx.objectStore(META).put(
@@ -274,25 +257,26 @@ const writeDiff = (
   const oldBootstrap = before.bootstrap;
   const newBootstrap = after.bootstrap;
   if (oldBootstrap && (!newBootstrap || oldBootstrap.generation !== newBootstrap.generation)) {
-    const oldStaged = rowMap(oldBootstrap.rows ?? emptyReplicaRows());
-    for (const key of oldStaged.keys()) {
-      const entity = key.slice(0, key.indexOf(":"));
-      const id = key.slice(key.indexOf(":") + 1);
-      bootstrapRows.delete([scopeKey, oldBootstrap.generation, entity, id]);
-    }
+    writeRows(
+      bootstrapRows,
+      scopeKey,
+      oldBootstrap.rows ?? emptyReplicaRows(),
+      emptyReplicaRows(),
+      oldBootstrap.generation,
+    );
   }
   if (newBootstrap && newBootstrap !== oldBootstrap) {
-    const oldStaged =
+    const previousRows =
       oldBootstrap?.generation === newBootstrap.generation
-        ? rowMap(oldBootstrap.rows ?? emptyReplicaRows())
-        : new Map<string, unknown>();
-    const newStaged = rowMap(newBootstrap.rows ?? emptyReplicaRows());
-    for (const [key, row] of newStaged) {
-      if (oldStaged.get(key) === row) continue;
-      const entity = key.slice(0, key.indexOf(":"));
-      const id = key.slice(key.indexOf(":") + 1);
-      bootstrapRows.put({ scopeKey, generation: newBootstrap.generation, entity, id, row });
-    }
+        ? (oldBootstrap.rows ?? emptyReplicaRows())
+        : emptyReplicaRows();
+    writeRows(
+      bootstrapRows,
+      scopeKey,
+      previousRows,
+      newBootstrap.rows ?? emptyReplicaRows(),
+      newBootstrap.generation,
+    );
   }
 };
 

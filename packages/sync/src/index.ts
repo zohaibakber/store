@@ -4,7 +4,6 @@ export { CatalogLive, makeCatalog } from "./engine";
 export { CatalogHttpTransport } from "./http";
 export { layerIndexedDbReplica } from "./indexed-db";
 export {
-  applyChange,
   applyChanges,
   commandChanges,
   diffFromChanges,

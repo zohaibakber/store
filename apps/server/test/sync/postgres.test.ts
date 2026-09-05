@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { bootstrapCatalog } from "../../src/inventory/bootstrap";
 import { appendCatalogChanges, pullCatalogChanges } from "../../src/inventory/catalog-log";
 import { withCatalogTransaction } from "../../src/inventory/catalog-transaction";
-import { makePostgresDrizzle } from "../../src/inventory/mutation-database";
+import { makePostgresDrizzle } from "../../src/inventory/postgres";
 
 // Use only a disposable database with repository migrations already applied.
 const url = process.env.STORE_SYNC_TEST_DATABASE_URL;

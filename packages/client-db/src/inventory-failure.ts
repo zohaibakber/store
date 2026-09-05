@@ -4,22 +4,19 @@ import * as Schema from "effect/Schema";
 const STALE_REPLICA_CODE = "ENTITY_CONFLICT";
 const ipcPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
-export type InventoryFailureReason =
-  | { readonly _tag: "transport" }
-  | { readonly _tag: "transient" }
-  | { readonly _tag: "unauthenticated" }
-  | { readonly _tag: "staleReplica" }
-  | { readonly _tag: "rejected"; readonly code: string };
+export const InventoryFailureReason = Schema.TaggedUnion({
+  transport: {},
+  transient: {},
+  unauthenticated: {},
+  staleReplica: {},
+  rejected: { code: Schema.String },
+});
+export type InventoryFailureReason = typeof InventoryFailureReason.Type;
 
-export class InventoryFailure extends Error {
-  readonly reason: InventoryFailureReason;
-
-  constructor(input: { readonly message: string; readonly reason: InventoryFailureReason }) {
-    super(input.message);
-    this.name = "InventoryFailure";
-    this.reason = input.reason;
-  }
-}
+export class InventoryFailure extends Schema.TaggedError<InventoryFailure>()("InventoryFailure", {
+  message: Schema.String,
+  reason: InventoryFailureReason,
+}) {}
 
 export const isAbortError = (cause: unknown) =>
   (cause instanceof DOMException && cause.name === "AbortError") ||
