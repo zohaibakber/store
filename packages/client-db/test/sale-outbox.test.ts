@@ -183,6 +183,6 @@ describe("sale outbox journal", () => {
     await restoreSaleOutbox(store, tables);
     expect([...tables.invoiceItems.state.values()]).toHaveLength(0);
     expect(tables.batches.state.get("batch-1")?.packQuantity).toBe(2);
-    expect(await store.list()).toEqual([]);
+    expect((await store.list()).map((entry) => entry.command.commandId)).toEqual(["command-1"]);
   });
 });

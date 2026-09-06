@@ -91,10 +91,7 @@ export const restoreSaleOutbox = async (
   },
 ) => {
   for (const snapshot of await store.list()) {
-    if (tables.invoices.state.get(snapshot.invoice.id)) {
-      await store.remove(snapshot.command.commandId);
-      continue;
-    }
+    if (tables.invoices.state.get(snapshot.invoice.id)) continue;
     await persistWrites(() => {
       tables.invoices.insert(snapshot.invoice);
       for (const item of snapshot.items) tables.invoiceItems.insert(item);

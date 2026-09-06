@@ -358,7 +358,7 @@ describe("PowerSync catalog upload failures", () => {
     expect(authenticatedFetch.mock.calls[0]?.[0]).toBe(
       "https://api.example/api/inventory/invoices",
     );
-    expect(complete).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledWith("9");
     expect((await saleOutbox.list()).map((entry) => entry.command.commandId)).toEqual([invoiceId]);
   });
 

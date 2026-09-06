@@ -5,6 +5,7 @@ import {
   makeLocalSaleOutbox,
   openCatalog,
   restoreSaleOutbox,
+  waitForInventoryFirstSync,
 } from "@store/client-db";
 import { isConnectivityFailure } from "@store/contracts";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
@@ -63,10 +64,20 @@ export const openInventory = async (
     },
     scope.organizationId,
   );
-  await restoreSaleOutbox(
-    makeLocalSaleOutbox(scope.organizationId),
-    inventory,
-    persistSale(inventory),
-  );
+  const saleOutbox = makeLocalSaleOutbox(scope.organizationId);
+  const restore = () => restoreSaleOutbox(saleOutbox, inventory, persistSale(inventory));
+  await restore();
+  void waitForInventoryFirstSync(inventory.powerSync)
+    .then(restore)
+    .catch((cause: unknown) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      const expectedOffline =
+        isConnectivityFailure(message) ||
+        message === INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE ||
+        (cause instanceof InventoryFailure &&
+          (cause.reason._tag === "transport" || cause.reason._tag === "transient"));
+      if (expectedOffline) return;
+      reportError(cause, { op: "inventory-sale-outbox-restore", scopeId });
+    });
   return inventory;
 };

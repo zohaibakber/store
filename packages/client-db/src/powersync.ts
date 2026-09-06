@@ -323,14 +323,11 @@ const uploadCatalogCrudEntry = async (
     const row = decodePowerSyncCatalogCrudEntry(table, entry);
     switch (table) {
       case "categories":
-        await submitCatalogRows({ ...input, entity: "category", rows: [row] });
-        break;
+        return submitCatalogRows({ ...input, entity: "category", rows: [row] });
       case "products":
-        await submitCatalogRows({ ...input, entity: "product", rows: [row] });
-        break;
+        return submitCatalogRows({ ...input, entity: "product", rows: [row] });
       case "batches":
-        await submitCatalogRows({ ...input, entity: "batch", rows: [row] });
-        break;
+        return submitCatalogRows({ ...input, entity: "batch", rows: [row] });
     }
   } catch (cause) {
     if (cause instanceof InventoryFailure || isAbortError(cause)) throw cause;
@@ -358,7 +355,7 @@ export const uploadInventoryCrudTransaction = async (
   },
   transaction: {
     readonly crud: ReadonlyArray<InventoryCrudEntry>;
-    complete: () => Promise<void>;
+    complete: (writeCheckpoint?: string) => Promise<void>;
   },
 ) => {
   const crud = inventoryCrudForUpload(transaction.crud);
@@ -374,18 +371,21 @@ export const uploadInventoryCrudTransaction = async (
   }
   if (classified._tag === "sale") {
     await input.saleOutbox?.put(saleSnapshotFromCrud(crud));
+    let result;
     try {
-      await submitIssueInvoice({ ...input, command: classified.command });
+      result = await submitIssueInvoice({ ...input, command: classified.command });
     } catch (error) {
       if (isAbortError(error)) throw error;
       throw failureFromUnknown(error);
     }
-    await transaction.complete();
+    await transaction.complete(String(result.txid));
     return;
   }
+  let writeCheckpoint: string | undefined;
   for (const entry of crud) {
     try {
-      await uploadCatalogCrudEntry(input, entry);
+      const result = await uploadCatalogCrudEntry(input, entry);
+      writeCheckpoint = String(result.txid);
     } catch (error) {
       if (isAbortError(error)) throw error;
       const failure = failureFromUnknown(error);
@@ -394,13 +394,13 @@ export const uploadInventoryCrudTransaction = async (
       throw failure;
     }
   }
-  await transaction.complete();
+  await transaction.complete(writeCheckpoint);
 };
 
 export type InventoryPowerSyncUploadSource = {
   readonly getNextCrudTransaction: () => Promise<{
     readonly crud: ReadonlyArray<InventoryCrudEntry>;
-    complete: () => Promise<void>;
+    complete: (writeCheckpoint?: string) => Promise<void>;
   } | null>;
   disconnect: () => Promise<void>;
 };
