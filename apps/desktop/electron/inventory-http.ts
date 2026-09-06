@@ -35,9 +35,11 @@ const inventoryApiPath = (apiBaseUrl: string) => {
 };
 
 export const INVENTORY_COMMAND_PATHS = [
-  "mutations",
-  "invoices",
+  "batch",
   "imports",
+  "invoices",
+  "live-ticket",
+  "mutations",
   "pull",
   "snapshot",
 ] as const;
@@ -70,7 +72,9 @@ export const validatedInventoryUrl = (
     requested.origin !== allowed.origin ||
     !routeAllowed
   ) {
-    throw new Error("The inventory request is outside the configured inventory API.");
+    throw new Error(
+      `The inventory request is outside the configured inventory API (${request.method} ${requested.pathname}).`,
+    );
   }
   return requested.href;
 };
