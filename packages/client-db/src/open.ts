@@ -10,6 +10,7 @@ import {
   waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
 } from "./powersync";
+import { makePowerSyncSaleOutbox } from "./sale-outbox";
 
 export type CatalogCollectionConfigs = ReturnType<typeof inventoryPowerSyncCollectionConfigs>;
 
@@ -56,10 +57,13 @@ export const openCatalog = async <Tables extends CatalogBoundTables>(
       collections.stockMovements.preload(),
     ]);
 
+    const saleOutbox = makePowerSyncSaleOutbox(powerSync);
+
     void powerSync.connect(
       makeInventoryPowerSyncConnector({
         apiBaseUrl: host.apiBaseUrl,
         authenticatedFetch: host.authenticatedFetch,
+        saleOutbox,
         onUploadHalt: host.onUploadHalt,
       }),
     );

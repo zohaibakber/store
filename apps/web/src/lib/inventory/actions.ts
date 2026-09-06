@@ -1,4 +1,9 @@
-import { makeCatalogWrites, makeInvoiceWrites, submitImportInventory } from "@store/client-db";
+import {
+  makeCatalogWrites,
+  makeInvoiceWrites,
+  makePowerSyncSaleOutbox,
+  submitImportInventory,
+} from "@store/client-db";
 import type { ImportInventoryCommand } from "@store/contracts";
 import { PowerSyncTransactor } from "@tanstack/powersync-db-collection";
 
@@ -6,7 +11,7 @@ import type { InventoryHost } from "@/lib/inventory-host";
 
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
-const persistSale = (inventory: Inventory) => async (work: () => void) => {
+export const persistSale = (inventory: Inventory) => async (work: () => void) => {
   const transaction = inventory.dbClient.createTransaction({
     autoCommit: false,
     mutationFn: async ({ transaction: pending }) => {
@@ -24,7 +29,15 @@ export const makeInventoryActions = (
   actor: InventoryActor,
 ): InventoryActions => {
   const writes = makeCatalogWrites(inventory, actor);
-  const invoices = makeInvoiceWrites({ ...inventory, persist: persistSale(inventory) }, actor);
+  const saleOutbox = makePowerSyncSaleOutbox(inventory.powerSync);
+  const invoices = makeInvoiceWrites(
+    {
+      ...inventory,
+      persist: persistSale(inventory),
+      journalSale: (snapshot) => saleOutbox.put(snapshot),
+    },
+    actor,
+  );
   return {
     createCategory: writes.createCategory,
     updateCategory: writes.updateCategory,

@@ -6,14 +6,20 @@ import {
   type CatalogWriteTables,
   type PersistableCollection,
 } from "./catalog-writes";
-import { projectIssuedInvoice, replicaInvoiceNumber } from "./invoice-projection";
+import {
+  projectIssuedInvoice,
+  replicaInvoiceNumber,
+  saleSnapshotFromProjection,
+} from "./invoice-projection";
 import type { InvoiceItemRow, InvoiceRow, StockMovementRow } from "./rows";
+import type { SaleOutboxSnapshot } from "./sale-outbox";
 
 export type InvoiceWriteTables = CatalogWriteTables & {
   readonly invoices: PersistableCollection<InvoiceRow>;
   readonly invoiceItems: PersistableCollection<InvoiceItemRow>;
   readonly stockMovements: PersistableCollection<StockMovementRow>;
   readonly persist: (work: () => void) => Promise<void>;
+  readonly journalSale?: (snapshot: SaleOutboxSnapshot) => Promise<void>;
 };
 
 const defaultIds: CatalogWriteIds = {
@@ -49,6 +55,7 @@ export const makeInvoiceWrites = (
         tables.batches.update(batch.id, (draft) => Object.assign(draft, batch));
       }
     });
+    await tables.journalSale?.(saleSnapshotFromProjection(projection));
     return {
       invoiceId: projection.invoice.id,
       invoiceNumber: projection.invoice.invoiceNumber,

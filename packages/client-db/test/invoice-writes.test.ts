@@ -139,8 +139,18 @@ describe("replicaInvoiceNumber", () => {
 describe("makeInvoiceWrites", () => {
   it("persists an invoice locally without waiting for the network", async () => {
     rowSeq = 0;
+    const journaled: unknown[] = [];
     const inventory = tables();
-    const writes = makeInvoiceWrites(inventory, actor, ids);
+    const writes = makeInvoiceWrites(
+      {
+        ...inventory,
+        journalSale: async (snapshot) => {
+          journaled.push(snapshot.command.commandId);
+        },
+      },
+      actor,
+      ids,
+    );
     const result = await writes.issueInvoice({
       customerName: "Walk-in",
       items: [
@@ -158,6 +168,7 @@ describe("makeInvoiceWrites", () => {
     expect([...inventory.invoices.state.values()]).toHaveLength(1);
     expect([...inventory.invoiceItems.state.values()]).toHaveLength(1);
     expect(inventory.batches.state.get("batch-1")?.packQuantity).toBe(1);
+    expect(journaled).toEqual(["command-1"]);
   });
 
   it("projects then reconstructs the same command from CRUD", () => {

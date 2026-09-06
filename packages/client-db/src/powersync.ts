@@ -10,7 +10,8 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
-import { classifyInventoryCrudTransaction } from "./invoice-projection";
+import { classifyInventoryCrudTransaction, saleSnapshotFromCrud } from "./invoice-projection";
+import type { SaleOutboxStore } from "./sale-outbox";
 import {
   catalogUploadDisposition,
   failureFromUnknown,
@@ -109,6 +110,13 @@ export const inventoryPowerSyncSchema = new Schema({
     total: column.integer,
     ...mutableColumns,
   }),
+  sale_outbox: new Table(
+    {
+      payload: column.text,
+      createdAt: column.integer,
+    },
+    { localOnly: true },
+  ),
   invoice_items: new Table({
     invoiceId: column.text,
     productId: column.text,
@@ -349,6 +357,7 @@ export const uploadInventoryCrudTransaction = async (
   input: {
     readonly apiBaseUrl: string;
     readonly authenticatedFetch: typeof fetch;
+    readonly saleOutbox?: SaleOutboxStore;
   },
   transaction: {
     readonly crud: ReadonlyArray<InventoryCrudEntry>;
@@ -362,6 +371,7 @@ export const uploadInventoryCrudTransaction = async (
     throw saleUploadFailure(cause);
   }
   if (classified._tag === "sale") {
+    await input.saleOutbox?.put(saleSnapshotFromCrud(transaction.crud));
     try {
       await submitIssueInvoice({ ...input, command: classified.command });
     } catch (error) {
@@ -369,6 +379,7 @@ export const uploadInventoryCrudTransaction = async (
       throw failureFromUnknown(error);
     }
     await transaction.complete();
+    await input.saleOutbox?.remove(classified.command.commandId);
     return;
   }
   for (const entry of transaction.crud) {
@@ -396,6 +407,7 @@ export type InventoryPowerSyncUploadSource = {
 type InventoryPowerSyncConnectorInput = {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
+  readonly saleOutbox?: SaleOutboxStore;
   readonly onUploadHalt?: (failure: InventoryFailure) => void;
 };
 
@@ -406,7 +418,14 @@ export const uploadInventoryData = async (
   const transaction = await database.getNextCrudTransaction();
   if (!transaction) return;
   try {
-    await uploadInventoryCrudTransaction(input, transaction);
+    await uploadInventoryCrudTransaction(
+      {
+        apiBaseUrl: input.apiBaseUrl,
+        authenticatedFetch: input.authenticatedFetch,
+        saleOutbox: input.saleOutbox,
+      },
+      transaction,
+    );
   } catch (error) {
     if (isAbortError(error)) throw error;
     const failure = failureFromUnknown(error);
@@ -417,13 +436,6 @@ export const uploadInventoryData = async (
         entry.table === "stock_movements",
     );
     const fate = saleHead ? invoiceUploadDisposition(failure) : catalogUploadDisposition(failure);
-    const discardRejectedSale =
-      saleHead && (failure.reason._tag === "staleReplica" || failure.reason._tag === "rejected");
-    if (discardRejectedSale) {
-      input.onUploadHalt?.(failure);
-      await transaction.complete();
-      return;
-    }
     if (fate._tag === "halt") {
       input.onUploadHalt?.(failure);
       await database.disconnect();

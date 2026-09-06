@@ -11,6 +11,7 @@ import {
   waitForInventoryFirstSync,
   waitForInventoryUploadDrain,
 } from "../src/powersync";
+import { memorySaleOutbox } from "../src/sale-outbox";
 
 const category = {
   id: "category-1",
@@ -26,6 +27,82 @@ const category = {
   updatedAt: 100,
   deletedAt: null,
 };
+
+const queuedSale = (invoiceId = "command-1") => [
+  {
+    id: invoiceId,
+    table: "invoices",
+    op: UpdateType.PUT,
+    opData: {
+      id: invoiceId,
+      invoiceNumber: 1,
+      customerName: null,
+      total: 50,
+      organizationId: "org-1",
+      createdByUserId: "user-1",
+      updatedByUserId: "user-1",
+      deviceId: "device-1",
+      operationId: invoiceId,
+      rowVersion: 1,
+      createdAt: 100,
+      updatedAt: 100,
+      deletedAt: null,
+    },
+  },
+  {
+    id: "item-1",
+    table: "invoice_items",
+    op: UpdateType.PUT,
+    opData: {
+      id: "item-1",
+      invoiceId,
+      productId: "product-1",
+      batchId: "batch-1",
+      productName: "Paracetamol",
+      batchNumber: "A",
+      quantity: 1,
+      quantityType: "pack",
+      baseUnitQuantity: 10,
+      salePrice: 50,
+      organizationId: "org-1",
+      createdByUserId: "user-1",
+      updatedByUserId: "user-1",
+      deviceId: "device-1",
+      operationId: invoiceId,
+      rowVersion: 1,
+      createdAt: 100,
+      updatedAt: 100,
+      deletedAt: null,
+    },
+  },
+  {
+    id: "batch-1",
+    table: "batches",
+    op: UpdateType.PATCH,
+    opData: { packQuantity: 1, unitQuantity: 0, operationId: invoiceId },
+    previousValues: { packQuantity: 2, unitQuantity: 0 },
+  },
+  {
+    id: "sale-1",
+    table: "stock_movements",
+    op: UpdateType.PUT,
+    opData: {
+      id: "sale-1",
+      productId: "product-1",
+      batchId: "batch-1",
+      invoiceId,
+      type: "sale",
+      packDelta: -1,
+      unitDelta: 0,
+      note: "Invoice #0001",
+      organizationId: "org-1",
+      actorUserId: "user-1",
+      deviceId: "device-1",
+      operationId: invoiceId,
+      createdAt: 100,
+    },
+  },
+];
 
 describe("PowerSync catalog upload snapshots", () => {
   it("reconstructs each offline patch from its own previous values", () => {
@@ -269,84 +346,11 @@ describe("PowerSync catalog upload failures", () => {
         new Response(JSON.stringify({ invoiceId, invoiceNumber: 1, txid: 9 }), { status: 200 }),
       );
     const complete = vi.fn(async () => undefined);
+    const saleOutbox = memorySaleOutbox();
     await uploadInventoryCrudTransaction(
-      { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch, saleOutbox },
       {
-        crud: [
-          {
-            id: invoiceId,
-            table: "invoices",
-            op: UpdateType.PUT,
-            opData: {
-              id: invoiceId,
-              invoiceNumber: 1,
-              customerName: null,
-              total: 50,
-              organizationId: "org-1",
-              createdByUserId: "user-1",
-              updatedByUserId: "user-1",
-              deviceId: "device-1",
-              operationId: "command-1",
-              rowVersion: 1,
-              createdAt: 100,
-              updatedAt: 100,
-              deletedAt: null,
-            },
-          },
-          {
-            id: "item-1",
-            table: "invoice_items",
-            op: UpdateType.PUT,
-            opData: {
-              id: "item-1",
-              invoiceId,
-              productId: "product-1",
-              batchId: "batch-1",
-              productName: "Paracetamol",
-              batchNumber: "A",
-              quantity: 1,
-              quantityType: "pack",
-              baseUnitQuantity: 10,
-              salePrice: 50,
-              organizationId: "org-1",
-              createdByUserId: "user-1",
-              updatedByUserId: "user-1",
-              deviceId: "device-1",
-              operationId: "command-1",
-              rowVersion: 1,
-              createdAt: 100,
-              updatedAt: 100,
-              deletedAt: null,
-            },
-          },
-          {
-            id: "batch-1",
-            table: "batches",
-            op: UpdateType.PATCH,
-            opData: { packQuantity: 1, unitQuantity: 0, operationId: "command-1" },
-            previousValues: { packQuantity: 2, unitQuantity: 0 },
-          },
-          {
-            id: "sale-1",
-            table: "stock_movements",
-            op: UpdateType.PUT,
-            opData: {
-              id: "sale-1",
-              productId: "product-1",
-              batchId: "batch-1",
-              invoiceId,
-              type: "sale",
-              packDelta: -1,
-              unitDelta: 0,
-              note: "Invoice #0001",
-              organizationId: "org-1",
-              actorUserId: "user-1",
-              deviceId: "device-1",
-              operationId: "command-1",
-              createdAt: 100,
-            },
-          },
-        ],
+        crud: queuedSale(invoiceId),
         complete,
       },
     );
@@ -355,6 +359,7 @@ describe("PowerSync catalog upload failures", () => {
       "https://api.example/api/inventory/invoices",
     );
     expect(complete).toHaveBeenCalledOnce();
+    expect(await saleOutbox.list()).toEqual([]);
   });
 
   it("does not complete a sale when the server rejects stock", async () => {
@@ -367,90 +372,52 @@ describe("PowerSync catalog upload failures", () => {
       ),
     );
     const complete = vi.fn(async () => undefined);
+    const saleOutbox = memorySaleOutbox();
     await expect(
       uploadInventoryCrudTransaction(
-        { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch, saleOutbox },
         {
-          crud: [
-            {
-              id: "command-1",
-              table: "invoices",
-              op: UpdateType.PUT,
-              opData: {
-                id: "command-1",
-                invoiceNumber: 1,
-                customerName: null,
-                total: 50,
-                organizationId: "org-1",
-                createdByUserId: "user-1",
-                updatedByUserId: "user-1",
-                deviceId: "device-1",
-                operationId: "command-1",
-                rowVersion: 1,
-                createdAt: 100,
-                updatedAt: 100,
-                deletedAt: null,
-              },
-            },
-            {
-              id: "item-1",
-              table: "invoice_items",
-              op: UpdateType.PUT,
-              opData: {
-                id: "item-1",
-                invoiceId: "command-1",
-                productId: "product-1",
-                batchId: "batch-1",
-                productName: "Paracetamol",
-                batchNumber: "A",
-                quantity: 1,
-                quantityType: "pack",
-                baseUnitQuantity: 10,
-                salePrice: 50,
-                organizationId: "org-1",
-                createdByUserId: "user-1",
-                updatedByUserId: "user-1",
-                deviceId: "device-1",
-                operationId: "command-1",
-                rowVersion: 1,
-                createdAt: 100,
-                updatedAt: 100,
-                deletedAt: null,
-              },
-            },
-            {
-              id: "batch-1",
-              table: "batches",
-              op: UpdateType.PATCH,
-              opData: { packQuantity: 1 },
-              previousValues: { packQuantity: 2 },
-            },
-            {
-              id: "sale-1",
-              table: "stock_movements",
-              op: UpdateType.PUT,
-              opData: {
-                id: "sale-1",
-                productId: "product-1",
-                batchId: "batch-1",
-                invoiceId: "command-1",
-                type: "sale",
-                packDelta: -1,
-                unitDelta: 0,
-                note: null,
-                organizationId: "org-1",
-                actorUserId: "user-1",
-                deviceId: "device-1",
-                operationId: "command-1",
-                createdAt: 100,
-              },
-            },
-          ],
+          crud: queuedSale(),
           complete,
         },
       ),
     ).rejects.toMatchObject({ reason: { _tag: "rejected", code: "INSUFFICIENT_STOCK" } });
     expect(complete).not.toHaveBeenCalled();
+    expect((await saleOutbox.list()).map((entry) => entry.command.commandId)).toEqual(["command-1"]);
+  });
+
+  it("keeps a rejected sale queued so local invoice rows are not discarded", async () => {
+    const authenticatedFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "INSUFFICIENT_STOCK",
+            message: "Not enough stock for Paracetamol: pack layout changed.",
+          },
+        }),
+        { status: 409 },
+      ),
+    );
+    const complete = vi.fn(async () => undefined);
+    const disconnect = vi.fn(async () => undefined);
+    const onUploadHalt = vi.fn();
+    const saleOutbox = memorySaleOutbox();
+    await expect(
+      uploadInventoryData(
+        { apiBaseUrl: "https://api.example/api", authenticatedFetch, onUploadHalt, saleOutbox },
+        {
+          getNextCrudTransaction: async () => ({
+            crud: queuedSale(),
+            complete,
+          }),
+          disconnect,
+        },
+      ),
+    ).rejects.toMatchObject({ reason: { _tag: "rejected", code: "INSUFFICIENT_STOCK" } });
+    expect(complete).not.toHaveBeenCalled();
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(onUploadHalt).not.toHaveBeenCalled();
+    expect((await saleOutbox.list()).map((entry) => entry.invoice.id)).toEqual(["command-1"]);
   });
 
   it("does not disconnect on transport failures so PowerSync can retry", async () => {

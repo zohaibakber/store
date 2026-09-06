@@ -6,3 +6,4 @@ export * from "./mutations";
 export * from "./open";
 export * from "./powersync";
 export * from "./rows";
+export * from "./sale-outbox";

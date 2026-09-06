@@ -2,7 +2,9 @@ import {
   InventoryFailure,
   INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE,
   inventoryReplicaScope,
+  makePowerSyncSaleOutbox,
   openCatalog,
+  restoreSaleOutbox,
 } from "@store/client-db";
 import { isConnectivityFailure } from "@store/contracts";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
@@ -12,6 +14,7 @@ import { toastStoreError } from "@/lib/errors";
 import type { InventoryHost } from "@/lib/inventory-host";
 import { reportError } from "@/lib/report-error";
 
+import { persistSale } from "./actions";
 import type { Inventory } from "./types";
 
 export const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
@@ -22,7 +25,7 @@ export const openInventory = async (
   scope: HostInventoryScope,
 ): Promise<Inventory> => {
   const scopeId = inventoryScopeId(host, scope);
-  return openCatalog(
+  const inventory = await openCatalog(
     {
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
@@ -60,4 +63,10 @@ export const openInventory = async (
     },
     scope.organizationId,
   );
+  await restoreSaleOutbox(
+    makePowerSyncSaleOutbox(inventory.powerSync),
+    inventory,
+    persistSale(inventory),
+  );
+  return inventory;
 };

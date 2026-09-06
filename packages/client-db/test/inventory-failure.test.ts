@@ -91,13 +91,13 @@ describe("inventoryFailureFromHttp", () => {
     expect(catalogUploadDisposition(forbidden)).toEqual({ _tag: "halt" });
   });
 
-  it("never skips a sale conflict the way catalog ENTITY_CONFLICT is skipped", () => {
+  it("retries a short-stock sale so the local invoice stays queued", () => {
     const stock = inventoryFailureFromHttp(
       409,
       { error: { code: "INSUFFICIENT_STOCK", message: "Not enough stock." } },
       "Invoice creation failed.",
     );
-    expect(invoiceUploadDisposition(stock)).toEqual({ _tag: "halt" });
+    expect(invoiceUploadDisposition(stock)).toEqual({ _tag: "retry" });
     const stale = inventoryFailureFromHttp(
       409,
       { error: { code: "ENTITY_CONFLICT", message: "The entity changed." } },

@@ -325,6 +325,37 @@ export const reconstructIssueInvoiceCommand = (
   return command;
 };
 
+export type SaleOutboxSnapshot = {
+  readonly command: IssueInvoiceCommand;
+  readonly invoice: InvoiceRow;
+  readonly items: ReadonlyArray<InvoiceItemRow>;
+  readonly movements: ReadonlyArray<StockMovementRow>;
+};
+
+export const saleSnapshotFromProjection = (projection: SaleProjection): SaleOutboxSnapshot => ({
+  command: projection.command,
+  invoice: projection.invoice,
+  items: projection.items,
+  movements: projection.movements,
+});
+
+export const saleSnapshotFromCrud = (
+  crud: ReadonlyArray<InventoryCrudEntry>,
+): SaleOutboxSnapshot => {
+  const invoiceEntry = crud.find((entry) => entry.table === "invoices" && entry.op === "PUT");
+  if (!invoiceEntry) throw new Error("Queued sale is missing the invoice row.");
+  return {
+    command: reconstructIssueInvoiceCommand(crud),
+    invoice: decodeInvoicePut(invoiceEntry),
+    items: crud
+      .filter((entry) => entry.table === "invoice_items" && entry.op === "PUT")
+      .map(decodeInvoiceItemPut),
+    movements: crud
+      .filter((entry) => entry.table === "stock_movements" && entry.op === "PUT")
+      .map(decodeStockMovementPut),
+  };
+};
+
 export const classifyInventoryCrudTransaction = (
   crud: ReadonlyArray<InventoryCrudEntry>,
 ): ClassifiedInventoryCrud => {
