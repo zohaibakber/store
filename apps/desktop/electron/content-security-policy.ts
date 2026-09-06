@@ -1,3 +1,9 @@
+export const websocketOrigin = (httpOrigin: string) => {
+  const url = new URL(httpOrigin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.origin;
+};
+
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
   readonly apiOrigin: string;
@@ -13,6 +19,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
   const connectSources = [
     "'self'",
     input.apiOrigin,
+    websocketOrigin(input.apiOrigin),
     input.authOrigin,
     "https://*.ingest.sentry.io",
     "https://*.ingest.us.sentry.io",

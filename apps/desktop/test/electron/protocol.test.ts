@@ -31,6 +31,7 @@ describe("desktop content security policy", () => {
       ?.split(" ");
 
     expect(connectSources).toContain("https://api.tabaaq.app");
+    expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).toContain("https://auth.tabaaq.app");
     expect(connectSources).toContain("https://*.ingest.sentry.io");
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");

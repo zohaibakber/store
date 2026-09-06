@@ -40,6 +40,18 @@ describe("desktop inventory HTTP allowlist", () => {
         url: "https://api.tabaaq.app/api/inventory/snapshot",
       }),
     ).toBe("https://api.tabaaq.app/api/inventory/snapshot");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/inventory/batch",
+      }),
+    ).toBe("https://api.tabaaq.app/api/inventory/batch");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/inventory/live-ticket",
+      }),
+    ).toBe("https://api.tabaaq.app/api/inventory/live-ticket");
   });
 
   it.each([
@@ -52,7 +64,7 @@ describe("desktop inventory HTTP allowlist", () => {
         method: "GET",
         url,
       }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
+    ).toThrow(/The inventory request is outside the configured inventory API/);
   });
 
   it("rejects command bodies larger than 1 MiB", () => {
@@ -71,12 +83,12 @@ describe("desktop inventory HTTP allowlist", () => {
         method: "POST",
         url: "https://api.tabaaq.app/api/inventory/legacy-migrations",
       }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
+    ).toThrow(/The inventory request is outside the configured inventory API/);
     expect(() =>
       validatedInventoryUrl(apiBaseUrl, {
         method: "POST",
         url: "https://api.tabaaq.app/api/inventory/not-a-command",
       }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
+    ).toThrow(/The inventory request is outside the configured inventory API/);
   });
 });
