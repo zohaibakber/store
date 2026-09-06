@@ -13,7 +13,8 @@ export const makeDesktopContentSecurityPolicy = (input: {
   const scriptSources = [
     "'self'",
     "'wasm-unsafe-eval'",
-    ...(input.development ? ["'unsafe-eval'"] : []),
+    // Vite React Refresh injects an inline preamble in `vp dev`.
+    ...(input.development ? ["'unsafe-eval'", "'unsafe-inline'"] : []),
     "https://challenges.cloudflare.com",
   ];
   const connectSources = [

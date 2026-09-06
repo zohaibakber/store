@@ -24,6 +24,21 @@ describe("desktop content security policy", () => {
     expect(scriptSources).not.toContain("'unsafe-inline'");
   });
 
+  it("allows Vite React Refresh inline scripts only in development", () => {
+    const scriptSources = makeDesktopContentSecurityPolicy({
+      scheme: "com.tabaaq.desktop",
+      apiOrigin: "http://localhost:8787",
+      authOrigin: "http://localhost:8788",
+      development: true,
+    })
+      .split("; ")
+      .find((directive) => directive.startsWith("script-src "))
+      ?.split(" ");
+
+    expect(scriptSources).toContain("'unsafe-eval'");
+    expect(scriptSources).toContain("'unsafe-inline'");
+  });
+
   it("permits production API, auth, and Sentry ingest connections", () => {
     const connectSources = productionPolicy()
       .split("; ")
