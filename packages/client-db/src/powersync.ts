@@ -417,6 +417,13 @@ export const uploadInventoryData = async (
         entry.table === "stock_movements",
     );
     const fate = saleHead ? invoiceUploadDisposition(failure) : catalogUploadDisposition(failure);
+    const discardRejectedSale =
+      saleHead && (failure.reason._tag === "staleReplica" || failure.reason._tag === "rejected");
+    if (discardRejectedSale) {
+      input.onUploadHalt?.(failure);
+      await transaction.complete();
+      return;
+    }
     if (fate._tag === "halt") {
       input.onUploadHalt?.(failure);
       await database.disconnect();
