@@ -1,4 +1,3 @@
-import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import { IssueInvoiceCommand } from "@store/contracts/store.schema";
 import * as Schema from "effect/Schema";
 
@@ -7,8 +6,6 @@ import type { SaleOutboxSnapshot } from "./invoice-projection";
 import { InvoiceItemRow, InvoiceRow, StockMovementRow, type BatchRow } from "./rows";
 
 export type { SaleOutboxSnapshot } from "./invoice-projection";
-
-export const SALE_OUTBOX_TABLE = "sale_outbox";
 
 const SaleOutboxSnapshot = Schema.Struct({
   command: IssueInvoiceCommand,
@@ -30,6 +27,37 @@ export type SaleOutboxTables = {
   readonly batches: PersistableCollection<BatchRow>;
 };
 
+const storageKey = (organizationId: string) => `tabaaq.sale-outbox.${organizationId}`;
+const memoryStores = new Map<string, Record<string, SaleOutboxSnapshot>>();
+
+const readAll = (organizationId: string): Record<string, SaleOutboxSnapshot> => {
+  if (typeof localStorage === "undefined") {
+    return memoryStores.get(organizationId) ?? {};
+  }
+  const raw = localStorage.getItem(storageKey(organizationId));
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).map(([commandId, value]) => [
+        commandId,
+        Schema.decodeUnknownSync(SaleOutboxSnapshot)(value),
+      ]),
+    );
+  } catch {
+    return {};
+  }
+};
+
+const writeAll = (organizationId: string, rows: Record<string, SaleOutboxSnapshot>) => {
+  if (typeof localStorage === "undefined") {
+    memoryStores.set(organizationId, rows);
+    return;
+  }
+  localStorage.setItem(storageKey(organizationId), JSON.stringify(rows));
+};
+
 export const memorySaleOutbox = (
   initial: ReadonlyArray<SaleOutboxSnapshot> = [],
 ): SaleOutboxStore => {
@@ -45,34 +73,18 @@ export const memorySaleOutbox = (
   };
 };
 
-type SaleOutboxRow = {
-  readonly id: string;
-  readonly payload: string;
-};
-
-export const makePowerSyncSaleOutbox = (database: AbstractPowerSyncDatabase): SaleOutboxStore => ({
+export const makeLocalSaleOutbox = (organizationId: string): SaleOutboxStore => ({
   put: async (snapshot) => {
-    await database.execute(
-      `INSERT OR REPLACE INTO ${SALE_OUTBOX_TABLE} (id, payload, createdAt) VALUES (?, ?, ?)`,
-      [snapshot.command.commandId, JSON.stringify(snapshot), snapshot.invoice.createdAt],
-    );
+    const rows = readAll(organizationId);
+    rows[snapshot.command.commandId] = snapshot;
+    writeAll(organizationId, rows);
   },
   remove: async (commandId) => {
-    await database.execute(`DELETE FROM ${SALE_OUTBOX_TABLE} WHERE id = ?`, [commandId]);
+    const rows = readAll(organizationId);
+    delete rows[commandId];
+    writeAll(organizationId, rows);
   },
-  list: async () => {
-    try {
-      const rows = await database.getAll<SaleOutboxRow>(
-        `SELECT id, payload FROM ${SALE_OUTBOX_TABLE}`,
-      );
-      return rows.map((row) =>
-        Schema.decodeUnknownSync(SaleOutboxSnapshot)(JSON.parse(row.payload)),
-      );
-    } catch (cause) {
-      if (cause instanceof Error && /no such table/i.test(cause.message)) return [];
-      throw cause;
-    }
-  },
+  list: async () => Object.values(readAll(organizationId)),
 });
 
 export const restoreSaleOutbox = async (
@@ -83,7 +95,10 @@ export const restoreSaleOutbox = async (
   },
 ) => {
   for (const snapshot of await store.list()) {
-    if (tables.invoices.state.get(snapshot.invoice.id)) continue;
+    if (tables.invoices.state.get(snapshot.invoice.id)) {
+      await store.remove(snapshot.command.commandId);
+      continue;
+    }
     await persistWrites(() => {
       tables.invoices.insert(snapshot.invoice);
       for (const item of snapshot.items) tables.invoiceItems.insert(item);

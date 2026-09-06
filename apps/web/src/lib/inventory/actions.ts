@@ -1,7 +1,7 @@
 import {
   makeCatalogWrites,
   makeInvoiceWrites,
-  makePowerSyncSaleOutbox,
+  makeLocalSaleOutbox,
   submitImportInventory,
 } from "@store/client-db";
 import type { ImportInventoryCommand } from "@store/contracts";
@@ -29,7 +29,7 @@ export const makeInventoryActions = (
   actor: InventoryActor,
 ): InventoryActions => {
   const writes = makeCatalogWrites(inventory, actor);
-  const saleOutbox = makePowerSyncSaleOutbox(inventory.powerSync);
+  const saleOutbox = makeLocalSaleOutbox(actor.organizationId);
   const invoices = makeInvoiceWrites(
     {
       ...inventory,

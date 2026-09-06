@@ -10,7 +10,11 @@ import * as EffectSchema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
-import { classifyInventoryCrudTransaction, saleSnapshotFromCrud } from "./invoice-projection";
+import {
+  classifyInventoryCrudTransaction,
+  inventoryCrudForUpload,
+  saleSnapshotFromCrud,
+} from "./invoice-projection";
 import {
   catalogUploadDisposition,
   failureFromUnknown,
@@ -110,13 +114,6 @@ export const inventoryPowerSyncSchema = new Schema({
     total: column.integer,
     ...mutableColumns,
   }),
-  sale_outbox: new Table(
-    {
-      payload: column.text,
-      createdAt: column.integer,
-    },
-    { localOnly: true },
-  ),
   invoice_items: new Table({
     invoiceId: column.text,
     productId: column.text,
@@ -364,14 +361,19 @@ export const uploadInventoryCrudTransaction = async (
     complete: () => Promise<void>;
   },
 ) => {
+  const crud = inventoryCrudForUpload(transaction.crud);
+  if (crud.length === 0) {
+    await transaction.complete();
+    return;
+  }
   let classified;
   try {
-    classified = classifyInventoryCrudTransaction(transaction.crud);
+    classified = classifyInventoryCrudTransaction(crud);
   } catch (cause) {
     throw saleUploadFailure(cause);
   }
   if (classified._tag === "sale") {
-    await input.saleOutbox?.put(saleSnapshotFromCrud(transaction.crud));
+    await input.saleOutbox?.put(saleSnapshotFromCrud(crud));
     try {
       await submitIssueInvoice({ ...input, command: classified.command });
     } catch (error) {
@@ -379,10 +381,9 @@ export const uploadInventoryCrudTransaction = async (
       throw failureFromUnknown(error);
     }
     await transaction.complete();
-    await input.saleOutbox?.remove(classified.command.commandId);
     return;
   }
-  for (const entry of transaction.crud) {
+  for (const entry of crud) {
     try {
       await uploadCatalogCrudEntry(input, entry);
     } catch (error) {

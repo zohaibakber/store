@@ -226,6 +226,10 @@ export type ClassifiedInventoryCrud =
 
 const CATALOG_TABLES = new Set(["categories", "products", "batches"]);
 const SALE_TABLES = new Set(["invoices", "invoice_items", "stock_movements", "batches"]);
+const UPLOAD_TABLES = new Set([...CATALOG_TABLES, ...SALE_TABLES]);
+
+export const inventoryCrudForUpload = (crud: ReadonlyArray<InventoryCrudEntry>) =>
+  crud.filter((entry) => UPLOAD_TABLES.has(entry.table));
 
 const decodeInvoicePut = (entry: InventoryCrudEntry) =>
   Schema.decodeUnknownSync(InvoiceRow)({

@@ -179,8 +179,10 @@ describe("sale outbox journal", () => {
       stockMovements: memoryCollection<StockMovementRow>(),
       batches: memoryCollection([batch()]),
     };
-    await restoreSaleOutbox(memorySaleOutbox([entry]), tables);
+    const store = memorySaleOutbox([entry]);
+    await restoreSaleOutbox(store, tables);
     expect([...tables.invoiceItems.state.values()]).toHaveLength(0);
     expect(tables.batches.state.get("batch-1")?.packQuantity).toBe(2);
+    expect(await store.list()).toEqual([]);
   });
 });

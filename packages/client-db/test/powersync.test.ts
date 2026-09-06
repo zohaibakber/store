@@ -359,7 +359,7 @@ describe("PowerSync catalog upload failures", () => {
       "https://api.example/api/inventory/invoices",
     );
     expect(complete).toHaveBeenCalledOnce();
-    expect(await saleOutbox.list()).toEqual([]);
+    expect((await saleOutbox.list()).map((entry) => entry.command.commandId)).toEqual([invoiceId]);
   });
 
   it("does not complete a sale when the server rejects stock", async () => {
@@ -420,6 +420,52 @@ describe("PowerSync catalog upload failures", () => {
     expect(disconnect).not.toHaveBeenCalled();
     expect(onUploadHalt).not.toHaveBeenCalled();
     expect((await saleOutbox.list()).map((entry) => entry.invoice.id)).toEqual(["command-1"]);
+  });
+
+  it("uploads a sale even when a local journal row is in the same CRUD batch", async () => {
+    const invoiceId = "command-1";
+    const authenticatedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ invoiceId, invoiceNumber: 1, txid: 9 }), { status: 200 }),
+      );
+    const complete = vi.fn(async () => undefined);
+    await uploadInventoryCrudTransaction(
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch },
+      {
+        crud: [
+          ...queuedSale(invoiceId),
+          {
+            id: invoiceId,
+            table: "sale_outbox",
+            op: UpdateType.PUT,
+            opData: { payload: "{}" },
+          },
+        ],
+        complete,
+      },
+    );
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("skips leftover local journal rows so they cannot stall a sale upload", async () => {
+    const complete = vi.fn(async () => undefined);
+    await uploadInventoryCrudTransaction(
+      { apiBaseUrl: "https://api.example/api", authenticatedFetch: vi.fn<typeof fetch>() },
+      {
+        crud: [
+          {
+            id: "command-1",
+            table: "sale_outbox",
+            op: UpdateType.PUT,
+            opData: { payload: "{}" },
+          },
+        ],
+        complete,
+      },
+    );
+    expect(complete).toHaveBeenCalledOnce();
   });
 
   it("does not disconnect on transport failures so PowerSync can retry", async () => {

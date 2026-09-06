@@ -2,7 +2,7 @@ import {
   InventoryFailure,
   INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE,
   inventoryReplicaScope,
-  makePowerSyncSaleOutbox,
+  makeLocalSaleOutbox,
   openCatalog,
   restoreSaleOutbox,
 } from "@store/client-db";
@@ -64,7 +64,7 @@ export const openInventory = async (
     scope.organizationId,
   );
   await restoreSaleOutbox(
-    makePowerSyncSaleOutbox(inventory.powerSync),
+    makeLocalSaleOutbox(scope.organizationId),
     inventory,
     persistSale(inventory),
   );
