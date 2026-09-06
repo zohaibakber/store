@@ -27,35 +27,33 @@ export type SaleOutboxTables = {
   readonly batches: PersistableCollection<BatchRow>;
 };
 
-const storageKey = (organizationId: string) => `tabaaq.sale-outbox.${organizationId}`;
-const memoryStores = new Map<string, Record<string, SaleOutboxSnapshot>>();
+const SaleOutboxRows = Schema.Record({
+  key: Schema.String,
+  value: SaleOutboxSnapshot,
+});
 
-const readAll = (organizationId: string): Record<string, SaleOutboxSnapshot> => {
-  if (typeof localStorage === "undefined") {
-    return memoryStores.get(organizationId) ?? {};
-  }
-  const raw = localStorage.getItem(storageKey(organizationId));
-  if (!raw) return {};
+const storageKey = (organizationId: string) => `tabaaq.sale-outbox.${organizationId}`;
+const memoryStores = new Map<string, typeof SaleOutboxRows.Type>();
+
+const readAll = (organizationId: string): typeof SaleOutboxRows.Type => {
+  const storage = globalThis.localStorage;
+  if (storage == null) return memoryStores.get(organizationId) ?? {};
+  const raw = storage.getItem(storageKey(organizationId));
+  if (raw == null) return {};
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).map(([commandId, value]) => [
-        commandId,
-        Schema.decodeUnknownSync(SaleOutboxSnapshot)(value),
-      ]),
-    );
+    return Schema.decodeUnknownSync(Schema.parseJson(SaleOutboxRows))(raw);
   } catch {
     return {};
   }
 };
 
-const writeAll = (organizationId: string, rows: Record<string, SaleOutboxSnapshot>) => {
-  if (typeof localStorage === "undefined") {
+const writeAll = (organizationId: string, rows: typeof SaleOutboxRows.Type) => {
+  const storage = globalThis.localStorage;
+  if (storage == null) {
     memoryStores.set(organizationId, rows);
     return;
   }
-  localStorage.setItem(storageKey(organizationId), JSON.stringify(rows));
+  storage.setItem(storageKey(organizationId), JSON.stringify(rows));
 };
 
 export const memorySaleOutbox = (
