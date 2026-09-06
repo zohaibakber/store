@@ -27,10 +27,8 @@ export type SaleOutboxTables = {
   readonly batches: PersistableCollection<BatchRow>;
 };
 
-const SaleOutboxRows = Schema.Record({
-  key: Schema.String,
-  value: SaleOutboxSnapshot,
-});
+const SaleOutboxRows = Schema.Record(Schema.String, SaleOutboxSnapshot);
+const decodeSaleOutboxRows = Schema.decodeUnknownSync(Schema.fromJsonString(SaleOutboxRows));
 
 const storageKey = (organizationId: string) => `tabaaq.sale-outbox.${organizationId}`;
 const memoryStores = new Map<string, typeof SaleOutboxRows.Type>();
@@ -41,7 +39,7 @@ const readAll = (organizationId: string): typeof SaleOutboxRows.Type => {
   const raw = storage.getItem(storageKey(organizationId));
   if (raw == null) return {};
   try {
-    return Schema.decodeUnknownSync(Schema.parseJson(SaleOutboxRows))(raw);
+    return decodeSaleOutboxRows(raw);
   } catch {
     return {};
   }
@@ -73,13 +71,13 @@ export const memorySaleOutbox = (
 
 export const makeLocalSaleOutbox = (organizationId: string): SaleOutboxStore => ({
   put: async (snapshot) => {
-    const rows = readAll(organizationId);
-    rows[snapshot.command.commandId] = snapshot;
-    writeAll(organizationId, rows);
+    writeAll(organizationId, {
+      ...readAll(organizationId),
+      [snapshot.command.commandId]: snapshot,
+    });
   },
   remove: async (commandId) => {
-    const rows = readAll(organizationId);
-    delete rows[commandId];
+    const { [commandId]: _removed, ...rows } = readAll(organizationId);
     writeAll(organizationId, rows);
   },
   list: async () => Object.values(readAll(organizationId)),
