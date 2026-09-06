@@ -6,7 +6,6 @@ import {
   foreignKey,
   index,
   integer,
-  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -37,58 +36,6 @@ const mutableMetadata = {
   operationId: text("operation_id").notNull(),
   rowVersion: epochMilliseconds("row_version").notNull().default(1),
 };
-
-export const catalogChangeLog = pgTable(
-  "catalog_change_log",
-  {
-    id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity().primaryKey(),
-    organizationId: tenantId(),
-    entity: text("entity").notNull(),
-    action: text("action").notNull(),
-    entityId: text("entity_id").notNull(),
-    rowVersion: epochMilliseconds("row_version").notNull(),
-    row: jsonb("row"),
-    transactionEnd: epochMilliseconds("transaction_end").notNull().default(0),
-    recordedAt: epochMilliseconds("recorded_at").notNull(),
-  },
-  (table) => [
-    index("catalog_change_log_organization_id_id_idx").on(table.organizationId, table.id),
-    index("catalog_change_log_organization_entity_idx").on(
-      table.organizationId,
-      table.entity,
-      table.entityId,
-    ),
-  ],
-);
-
-export const catalogBootstraps = pgTable(
-  "catalog_bootstraps",
-  {
-    id: text("id").primaryKey(),
-    organizationId: tenantId(),
-    cursor: epochMilliseconds("cursor").notNull(),
-    slices: text("slices").notNull(),
-    expiresAt: epochMilliseconds("expires_at").notNull(),
-  },
-  (table) => [index("catalog_bootstraps_expiry_idx").on(table.expiresAt)],
-);
-
-export const catalogBootstrapRows = pgTable(
-  "catalog_bootstrap_rows",
-  {
-    id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity().primaryKey(),
-    bootstrapId: text("bootstrap_id")
-      .notNull()
-      .references(() => catalogBootstraps.id, { onDelete: "cascade" }),
-    change: jsonb("change").notNull(),
-  },
-  (table) => [index("catalog_bootstrap_rows_page_idx").on(table.bootstrapId, table.id)],
-);
-
-export const catalogNotificationOutbox = pgTable("catalog_notification_outbox", {
-  organizationId: tenantId().primaryKey(),
-  cursor: epochMilliseconds("cursor").notNull(),
-});
 
 /**
  * Durable acknowledgement for an inventory command.

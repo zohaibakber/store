@@ -28,6 +28,10 @@ export const startWeb = async () => {
       apiBaseUrl,
       authenticatedFetch: session.bridge.apiFetch!,
       deviceId: session.bridge.deviceId!,
+      openPowerSyncDatabase: async (databaseName: string) => {
+        const { openWebInventoryPowerSync } = await import("@/lib/inventory-powersync.web");
+        return openWebInventoryPowerSync(databaseName);
+      },
     },
   });
 };

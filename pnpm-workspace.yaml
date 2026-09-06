@@ -3,30 +3,27 @@ packages:
   - packages/*
 
 catalog:
-  "@effect/sql-d1": 4.0.0-rc.112
-  "@effect/sql-sqlite-do": 4.0.0-rc.112
-  "@effect/vitest": 4.0.0-rc.112
-  alchemy: 2.0.0-beta.76
+  "@effect/sql-d1": 4.0.0-rc.111
+  "@effect/sql-sqlite-do": 4.0.0-rc.111
+  "@effect/vitest": 4.0.0-rc.111
+  alchemy: 2.0.0-beta.74
   drizzle-kit: 1.0.0-rc.5-ab785fc
   drizzle-orm: 1.0.0-rc.5-ab785fc
-  effect: 4.0.0-rc.112
-  "@tanstack/db": 0.8.7
-  "@tanstack/react-db": 0.3.7
+  effect: 4.0.0-rc.111
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@0.2.9
   vite-plus: 0.2.9
 
 overrides:
-  "@cloudflare/workers-types": 5.20260903.1
-  "@effect/platform-node-shared": 4.0.0-rc.112
-  "@effect/sql-d1": 4.0.0-rc.112
-  "@effect/sql-sqlite-do": 4.0.0-rc.112
+  "@cloudflare/workers-types": 5.20260827.1
+  "@effect/platform-node-shared": 4.0.0-rc.111
+  "@effect/sql-d1": 4.0.0-rc.111
+  "@effect/sql-sqlite-do": 4.0.0-rc.111
   drizzle-orm: 1.0.0-rc.5-ab785fc
   uuid: 11.1.1
   valibot: 1.4.2
   vite: npm:@voidzero-dev/vite-plus-core@0.2.9
   vitest: 4.1.11
-  "@tanstack/db": 0.8.7
 
 onlyBuiltDependencies:
   - "@sentry/cli"
@@ -38,6 +35,7 @@ onlyBuiltDependencies:
 
 allowBuilds:
   "@firebase/util": false
+  "@journeyapps/wa-sqlite": true
   "@sentry/cli": true
   better-sqlite3: true
   electron-winstaller: false
@@ -47,7 +45,6 @@ allowBuilds:
   workerd: true
 
 minimumReleaseAgeExclude:
-  - "@tanstack/db@0.8.7"
-  - "@tanstack/react-db@0.3.7"
-  - alchemy@2.0.0-beta.76
-  - "@cloudflare/workers-types@5.20260903.1"
+  - "@tanstack/db@0.8.3"
+  - "@tanstack/powersync-db-collection@0.1.62"
+  - "@tanstack/react-db@0.3.3"

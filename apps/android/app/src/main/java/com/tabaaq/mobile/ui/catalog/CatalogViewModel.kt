@@ -10,8 +10,8 @@ import com.tabaaq.mobile.core.catalog.InventoryOverview
 import com.tabaaq.mobile.core.catalog.StockFilter
 import com.tabaaq.mobile.data.auth.AuthRepository
 import com.tabaaq.mobile.data.auth.AuthState
-import com.tabaaq.mobile.data.sync.CatalogSyncSession
-import com.tabaaq.mobile.data.sync.SyncUiState
+import com.tabaaq.mobile.data.powersync.PowerSyncSession
+import com.tabaaq.mobile.data.powersync.SyncUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,7 +36,7 @@ data class CatalogUiState(
 
 class CatalogViewModel(
     auth: AuthRepository,
-    private val catalogSync: CatalogSyncSession,
+    private val powerSync: PowerSyncSession,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(StockFilter.All)
@@ -44,7 +44,7 @@ class CatalogViewModel(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     val ui: StateFlow<CatalogUiState> =
-        combine(catalogSync.snapshot, catalogSync.sync, auth.state, query, filter) {
+        combine(powerSync.snapshot, powerSync.sync, auth.state, query, filter) {
                 snapshot: CatalogSnapshot,
                 sync: SyncUiState,
                 authState: AuthState,
@@ -79,7 +79,7 @@ class CatalogViewModel(
         viewModelScope.launch {
             _refreshing.value = true
             try {
-                catalogSync.refresh()
+                powerSync.refresh()
                 delay(500)
             } finally {
                 _refreshing.value = false
@@ -90,10 +90,10 @@ class CatalogViewModel(
     companion object {
         fun factory(
             auth: AuthRepository,
-            catalogSync: CatalogSyncSession,
+            powerSync: PowerSyncSession,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = CatalogViewModel(auth, catalogSync) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = CatalogViewModel(auth, powerSync) as T
         }
     }
 }

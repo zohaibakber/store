@@ -9,7 +9,8 @@
     "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
-    "@effect/sql-pg": "4.0.0-rc.112",
+    "@effect/sql-pg": "4.0.0-rc.111",
+    "@effect/sql-sqlite-do": "4.0.0-rc.111",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
@@ -19,6 +20,8 @@
     "pg": "^8.23.0"
   },
   "devDependencies": {
+    "@effect/sql-libsql": "4.0.0-rc.111",
+    "@effect/vitest": "catalog:",
     "@types/node": "^26.2.0",
     "alchemy": "catalog:",
     "rolldown": "1.2.4",

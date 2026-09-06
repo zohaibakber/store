@@ -21,7 +21,7 @@ From the repository root:
 
 That starts `vp dev` in `apps/web` (Vite on `127.0.0.1:5174`, `strictPort: true`, `/api` proxied to `http://localhost:8787`). Ready when `GET http://127.0.0.1:5174` returns HTML with `<title>Tabaaq</title>` (the script waits up to ~30s). Log: `/tmp/tabaaq-verify/vite.log`. Pidfile: `/tmp/tabaaq-verify/vite.pid`.
 
-Full stack (auth, inventory mutations, catalog replica) is `vp run dev:web` from the repo root. That needs gitignored `.env.dev`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`. Alchemy binds real `dev`-stage D1, Hyperdrive, and Postgres; there is no local emulation. Prefer the SPA-only launch for sign-in-shell proofs. Use the full stack only when the feature file’s preconditions require a session.
+Full stack (auth, inventory mutations, PowerSync) is `vp run dev:web` from the repo root. That needs gitignored `.env.dev`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`. Alchemy binds real `dev`-stage D1, Hyperdrive, and Postgres; there is no local emulation. Prefer the SPA-only launch for sign-in-shell proofs. Use the full stack only when the feature file’s preconditions require a session.
 
 Teardown is Cleanup below. Do not start a second Vite on 5174; the port is exclusive.
 
@@ -67,11 +67,11 @@ Store proof under `.cursor/skills/verify-tabaaq/artifacts/<feature-id>/`. Cleanu
 
 Proof standards:
 
-- Exercise the real user path (click the same controls a user clicks). Do not call inventory APIs or replica internals as a substitute for the UI.
+- Exercise the real user path (click the same controls a user clicks). Do not call inventory APIs or PowerSync internals as a substitute for the UI.
 - Capture the action and the resulting state (snapshot or screenshot of the heading plus the control you used), not only a later screen.
 - For mutations, also prove persistence from a second user-facing view (list, detail, or reload).
 - Side effects: a created product must reappear on `/products`; a sale must reappear on `/invoices`.
-- Mocks only at production boundaries already isolated (Cloudflare). If those are down, skip authenticated features; do not fake a session in localStorage.
+- Mocks only at production boundaries already isolated (Cloudflare/PowerSync). If those are down, skip authenticated features; do not fake a session in localStorage.
 
 ## Cleanup
 

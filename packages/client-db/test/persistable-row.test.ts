@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { persistableRow } from "../src/rows";
 
 describe("persistableRow", () => {
-  it("strips TanStack DB virtual props before catalog persistence", () => {
+  it("strips TanStack DB virtual props before PowerSync persistence", () => {
     const row = persistableRow({
       id: "product-1",
       name: "Paracetamol",

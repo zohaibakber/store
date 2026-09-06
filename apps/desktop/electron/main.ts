@@ -25,12 +25,7 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { forwardRendererLogs } from "./report-renderer-logs";
-import {
-  disposeDesktopEffectRuntime,
-  initDesktopSentry,
-  reportDesktopError,
-  runDesktopEffect,
-} from "./sentry";
+import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { makeShutdownCoordinator } from "./shutdown";
 import { setupUpdater } from "./updater";
@@ -115,14 +110,7 @@ const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const authBroker = new AuthBroker(
-  API_BASE_URL,
-  AUTH_BASE_URL,
-  `${ELECTRON_PROTOCOL}://app`,
-  (snapshot) => {
-    publishSession(snapshot);
-  },
-);
+const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
 const oauthCallbacks = makeOAuthCallbackMailbox(ELECTRON_PROTOCOL, () => {
   win?.webContents.send("auth:oauth-callback-available");
 });
@@ -197,16 +185,17 @@ function registerAuthIpc() {
   ipcMain.handle("auth:adopt-session", async (event, input) => {
     assertRendererIpc(event.senderFrame);
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
-    return serializeAuthTransition(() => authBroker.adoptSession(tokens));
+    return serializeAuthTransition(() => authBroker.adoptSession(tokens).then(publishSession));
   });
   ipcMain.handle("auth:renew-session", (event) => {
     assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(() => authBroker.renewSession());
+    return serializeAuthTransition(() => authBroker.renewSession().then(publishSession));
   });
   ipcMain.handle("auth:sign-out", (event) => {
     assertRendererIpc(event.senderFrame);
     return serializeAuthTransition(async () => {
       await authBroker.signOut();
+      publishSession(authBroker.snapshot);
     });
   });
   ipcMain.handle("auth:organization", (event) => {
@@ -248,7 +237,7 @@ function registerServerIpc() {
       body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
     }
     const raw = await authBroker.apiRequest("/api/uploads", { method: "POST", body });
-    return await runDesktopEffect(
+    return await Effect.runPromise(
       Schema.decodeUnknownEffect(InvoiceExtraction)(raw).pipe(
         Effect.mapError(() => new Error("Invoice analysis returned an unexpected response.")),
       ),
@@ -350,7 +339,6 @@ const shutdown = makeShutdownCoordinator({
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
-    await disposeDesktopEffectRuntime();
     if (failures[0]) throw failures[0].reason;
   },
   quit: () => app.quit(),

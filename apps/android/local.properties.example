@@ -5,6 +5,10 @@ sdk.dir=/Users/YOU/Library/Android/sdk
 AUTH_URL=http://10.0.2.2:8788
 API_URL=http://10.0.2.2:8787
 
+## Optional. PowerSync URL is normally returned by GET /api/powersync/credentials.
+## Set this only when you want a fallback before the API answers.
+POWERSYNC_URL=
+
 ## Google Identity Services web client ID. Required for the native Google button.
 ## Must match GOOGLE_OAUTH_CLIENT_ID.
 GOOGLE_WEB_CLIENT_ID=

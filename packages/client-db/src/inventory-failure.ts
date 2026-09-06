@@ -4,19 +4,54 @@ import * as Schema from "effect/Schema";
 const STALE_REPLICA_CODE = "ENTITY_CONFLICT";
 const ipcPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
-export const InventoryFailureReason = Schema.TaggedUnion({
-  transport: {},
-  transient: {},
-  unauthenticated: {},
-  staleReplica: {},
-  rejected: { code: Schema.String },
-});
-export type InventoryFailureReason = typeof InventoryFailureReason.Type;
+export type InventoryFailureReason =
+  | { readonly _tag: "transport" }
+  | { readonly _tag: "transient" }
+  | { readonly _tag: "unauthenticated" }
+  | { readonly _tag: "staleReplica" }
+  | { readonly _tag: "rejected"; readonly code: string };
 
-export class InventoryFailure extends Schema.TaggedError<InventoryFailure>()("InventoryFailure", {
-  message: Schema.String,
-  reason: InventoryFailureReason,
-}) {}
+export class InventoryFailure extends Error {
+  readonly reason: InventoryFailureReason;
+
+  constructor(input: { readonly message: string; readonly reason: InventoryFailureReason }) {
+    super(input.message);
+    this.name = "InventoryFailure";
+    this.reason = input.reason;
+  }
+}
+
+export type CatalogUploadDisposition =
+  | { readonly _tag: "retry" }
+  | { readonly _tag: "skip" }
+  | { readonly _tag: "halt" };
+
+export const catalogUploadDisposition = (failure: InventoryFailure): CatalogUploadDisposition => {
+  switch (failure.reason._tag) {
+    case "staleReplica":
+      return { _tag: "skip" };
+    case "transport":
+    case "transient":
+      return { _tag: "retry" };
+    case "unauthenticated":
+    case "rejected":
+      return { _tag: "halt" };
+  }
+};
+
+export type InvoiceUploadDisposition = { readonly _tag: "retry" } | { readonly _tag: "halt" };
+
+export const invoiceUploadDisposition = (failure: InventoryFailure): InvoiceUploadDisposition => {
+  switch (failure.reason._tag) {
+    case "transport":
+    case "transient":
+      return { _tag: "retry" };
+    case "staleReplica":
+    case "unauthenticated":
+    case "rejected":
+      return { _tag: "halt" };
+  }
+};
 
 export const isAbortError = (cause: unknown) =>
   (cause instanceof DOMException && cause.name === "AbortError") ||

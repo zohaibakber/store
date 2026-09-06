@@ -11,8 +11,9 @@
     "test": "vitest run --root ../.. packages/client-db/test"
   },
   "dependencies": {
+    "@powersync/common": "1.57.3",
     "@store/contracts": "workspace:*",
-    "@store/sync": "workspace:*",
+    "@tanstack/powersync-db-collection": "0.1.62",
     "effect": "catalog:"
   },
   "devDependencies": {

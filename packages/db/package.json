@@ -7,7 +7,8 @@
     "./auth.schema": "./src/auth/schema.ts",
     "./auth/infra": "./src/auth/infra.ts",
     "./postgres/infra": "./src/postgres/infra.ts",
-    "./postgres/schema": "./src/postgres/schema.ts"
+    "./postgres/schema": "./src/postgres/schema.ts",
+    "./store.schema": "./src/shared/store.schema.ts"
   },
   "scripts": {
     "check": "tsc --noEmit && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.postgres.config.ts",

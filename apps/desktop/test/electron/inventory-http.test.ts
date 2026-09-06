@@ -28,18 +28,15 @@ describe("desktop inventory HTTP allowlist", () => {
         url: "https://api.tabaaq.app/api/inventory/invoices",
       }),
     ).toBe("https://api.tabaaq.app/api/inventory/invoices");
+  });
+
+  it("allows PowerSync credential fetches", () => {
     expect(
       validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/inventory/pull",
+        method: "GET",
+        url: "https://api.tabaaq.app/api/powersync/credentials",
       }),
-    ).toBe("https://api.tabaaq.app/api/inventory/pull");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/inventory/snapshot",
-      }),
-    ).toBe("https://api.tabaaq.app/api/inventory/snapshot");
+    ).toBe("https://api.tabaaq.app/api/powersync/credentials");
   });
 
   it.each([

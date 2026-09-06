@@ -24,14 +24,14 @@ describe("desktop content security policy", () => {
     expect(scriptSources).not.toContain("'unsafe-inline'");
   });
 
-  it("permits production API, auth, and Sentry ingest connections", () => {
+  it("permits production PowerSync Cloud and Sentry ingest connections", () => {
     const connectSources = productionPolicy()
       .split("; ")
       .find((directive) => directive.startsWith("connect-src "))
       ?.split(" ");
 
-    expect(connectSources).toContain("https://api.tabaaq.app");
-    expect(connectSources).toContain("https://auth.tabaaq.app");
+    expect(connectSources).toContain("https://*.powersync.journeyapps.com");
+    expect(connectSources).toContain("wss://*.powersync.journeyapps.com");
     expect(connectSources).toContain("https://*.ingest.sentry.io");
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");
     expect(connectSources).not.toContain("https:");

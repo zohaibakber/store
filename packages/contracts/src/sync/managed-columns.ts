@@ -1,30 +1,5 @@
-/** Columns assigned by the sync protocol rather than by a client payload. */
-export type StoreManagedColumn =
-  | "id"
-  | "actorUserId"
-  | "createdAt"
-  | "updatedAt"
-  | "deletedAt"
-  | "organizationId"
-  | "createdByUserId"
-  | "updatedByUserId"
-  | "deviceId"
-  | "operationId"
-  | "rowVersion";
-
-export const storeManagedColumnNames: ReadonlyArray<StoreManagedColumn> = [
-  "id",
-  "actorUserId",
-  "createdAt",
-  "updatedAt",
-  "deletedAt",
-  "organizationId",
-  "createdByUserId",
-  "updatedByUserId",
-  "deviceId",
-  "operationId",
-  "rowVersion",
-];
+import type { StoreManagedColumn } from "@store/db/store.schema";
+import { storeManagedColumnNames } from "@store/db/store.schema";
 
 interface ManagedFields {
   readonly id?: unknown;

@@ -58,6 +58,15 @@ export const assertCanChangeUnitsPerPack = (
   }
 };
 
+export const assertCanDeleteBatch = (batch: {
+  readonly packQuantity: number;
+  readonly unitQuantity: number;
+}) => {
+  if (batchHasRemainingStock(batch)) {
+    throw new Error(catalogWriteError.batchHasStock);
+  }
+};
+
 export const createdMutationMetadata = (
   actor: {
     readonly organizationId: string;

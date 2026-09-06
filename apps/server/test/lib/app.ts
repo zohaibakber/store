@@ -64,6 +64,7 @@ const testRuntimeContext = Context.make(RuntimeContext, {
 
 export interface AppOptions {
   readonly role?: "owner" | "admin" | "member";
+  readonly powerSyncUrl?: string;
   readonly limitInvoiceExtraction?: ServerRuntimeContract["limitInvoiceExtraction"];
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
@@ -109,6 +110,7 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
       invoiceAi: Effect.succeed(invoiceAi),
       limitInvoiceExtraction:
         options.limitInvoiceExtraction ?? (() => Effect.succeed({ success: true })),
+      powerSyncUrl: options.powerSyncUrl ?? "https://powersync.example",
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
       writeInventoryMutation: options.writeInventoryMutation ?? (() => Effect.succeed({ txid: 1 })),
@@ -116,9 +118,6 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
       issueInvoice:
         options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
-      notifyCatalog: () => Effect.void,
-      pullCatalog: () => Effect.succeed({ epoch: 2, cursor: 0, changes: [], hasMore: false }),
-      snapshotCatalog: () => Effect.succeed({ epoch: 2, cursor: 0, changes: [] }),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const app = ServerRoutes.pipe(

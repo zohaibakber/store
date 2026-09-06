@@ -39,7 +39,7 @@
     <string name="filter_out">Out</string>
     <string name="filter_hidden">Hidden</string>
     <string name="empty_catalog_title">No products yet</string>
-    <string name="empty_catalog_body">Products appear here after the catalog replica downloads.</string>
+    <string name="empty_catalog_body">Products appear here after the first PowerSync download.</string>
     <string name="empty_search_title">No matching products</string>
     <string name="empty_search_body">Try a broader search, or another stock filter.</string>
     <string name="offline_title">Offline</string>
@@ -70,6 +70,7 @@
     <string name="sync_disconnected">Disconnected</string>
     <string name="signed_out">Signed out</string>
     <string name="no_organization">Create or join a store before inventory can sync.</string>
+    <string name="powersync_unconfigured">PowerSync is waiting for API credentials. Check AUTH_URL, API_URL, and that you are signed in.</string>
     <string name="back">Back</string>
     <string name="save">Save</string>
     <string name="new_product">New product</string>

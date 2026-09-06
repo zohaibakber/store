@@ -1,11 +1,5 @@
-import { CatalogPullRequest } from "@store/contracts";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { HttpApiSchemaError } from "effect/unstable/httpapi/HttpApiError";
 import { describe, expect, it } from "vitest";
 
-import { recoverUnexpected } from "../../src/http/app";
 import { appFor } from "../lib/app";
 
 describe("HTTP auth and CORS", () => {
@@ -21,17 +15,29 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toMatchObject({ status: "unauthenticated" });
   });
 
-  it("lists catalog replica routes on the landing page", async () => {
-    const response = await appFor(true).request("/");
+  it("passes the current access token to PowerSync", async () => {
+    const response = await appFor(true).request("/api/powersync/credentials", {
+      headers: { authorization: "Bearer access-token" },
+    });
+
     expect(response.status).toBe(200);
-    const body = Schema.decodeUnknownSync(
-      Schema.Struct({
-        service: Schema.String,
-        endpoints: Schema.Array(Schema.String),
-      }),
-    )(await response.json());
-    expect(body).toMatchObject({ service: "Store Invoice API" });
-    expect(body.endpoints).toContain("/api/inventory/*");
+    expect(await response.json()).toMatchObject({
+      endpoint: "https://powersync.example",
+      token: "access-token",
+    });
+  });
+
+  it("does not mint PowerSync credentials without a bearer token", async () => {
+    const response = await appFor(true).request("/api/powersync/credentials");
+    expect(response.status).toBe(401);
+  });
+
+  it("fails closed when a stage has no PowerSync endpoint", async () => {
+    const response = await appFor(true, { powerSyncUrl: "" }).request(
+      "/api/powersync/credentials",
+      { headers: { authorization: "Bearer access-token" } },
+    );
+    expect(response.status).toBe(503);
   });
 
   it("adds CORS headers on API routes for a trusted origin", async () => {
@@ -84,81 +90,5 @@ describe("HTTP auth and CORS", () => {
       headers: { origin: "https://tabaaq.example.net" },
     });
     expect(other.headers.get("access-control-allow-origin")).toBeNull();
-  });
-
-  it("adds CORS headers on a valid catalog pull", async () => {
-    const response = await appFor(true).request("/api/inventory/pull", {
-      method: "POST",
-      headers: {
-        origin: "http://localhost:5173",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ epoch: 2, cursor: 0, slices: ["catalog"] }),
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
-    expect(await response.json()).toMatchObject({ epoch: 2, cursor: 0, hasMore: false });
-  });
-
-  it("answers an invalid catalog pull as 400 with CORS headers", async () => {
-    const response = await appFor(true).request("/api/inventory/pull", {
-      method: "POST",
-      headers: {
-        origin: "http://localhost:5173",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ cursor: 0, slices: ["catalog"] }),
-    });
-    expect(response.status).toBe(400);
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
-  });
-
-  it("does not turn a catalog payload schema defect into a 500", async () => {
-    const payloadError = await Effect.runPromise(
-      Schema.decodeUnknownEffect(CatalogPullRequest)({ cursor: 0, slices: ["catalog"] }).pipe(
-        Effect.mapError((cause) => new HttpApiSchemaError({ kind: "Payload", cause })),
-        Effect.flip,
-      ),
-    );
-    const response = HttpServerResponse.toWeb(
-      await Effect.runPromise(recoverUnexpected(Effect.die(payloadError))),
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it("keeps unexpected defects as a JSON 500", async () => {
-    const response = HttpServerResponse.toWeb(
-      await Effect.runPromise(recoverUnexpected(Effect.die(new Error("isolate exploded")))),
-    );
-    expect(response.status).toBe(500);
-    expect(await response.json()).toMatchObject({
-      error: { code: "INTERNAL_SERVER_ERROR" },
-    });
-  });
-
-  it("adds CORS headers on a valid catalog snapshot", async () => {
-    const response = await appFor(true).request("/api/inventory/snapshot", {
-      method: "POST",
-      headers: {
-        origin: "http://localhost:5173",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ epoch: 2, slices: ["catalog"] }),
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
-  });
-
-  it("answers an invalid catalog snapshot as 400 with CORS headers", async () => {
-    const response = await appFor(true).request("/api/inventory/snapshot", {
-      method: "POST",
-      headers: {
-        origin: "http://localhost:5173",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ slices: ["catalog"] }),
-    });
-    expect(response.status).toBe(400);
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
   });
 });

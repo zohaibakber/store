@@ -11,7 +11,7 @@ export const User = Schema.Struct({
   id: UserId,
   name: Schema.NonEmptyString,
   email: Schema.optionalKey(Schema.String),
-})
+});
 
 export interface User extends Schema.Schema.Type<typeof User> {}
 ```
@@ -34,13 +34,13 @@ Reuse fields directly when contracts are semantically related.
 export const CreateUserInput = Schema.Struct({
   name: User.fields.name,
   email: User.fields.email,
-})
+});
 
 export const StoredUser = User.pipe(
   Schema.fieldsAssign({
     createdAt: Schema.DateTimeUtcFromString,
   }),
-)
+);
 ```
 
 Guidance:
@@ -69,32 +69,32 @@ Guidance:
 
 ```ts
 type Step = Data.TaggedEnum<{
-  Continue: { readonly cursor: number }
-  Finished: { readonly count: number }
-}>
+  Continue: { readonly cursor: number };
+  Finished: { readonly count: number };
+}>;
 
-export const Step = Data.taggedEnum<Step>()
+export const Step = Data.taggedEnum<Step>();
 
-const next = Step.Continue({ cursor: 10 })
+const next = Step.Continue({ cursor: 10 });
 const label = Step.$match(next, {
   Continue: ({ cursor }) => `continue at ${cursor}`,
   Finished: ({ count }) => `finished ${count}`,
-})
+});
 ```
 
 ```ts
 export const Event = Schema.TaggedUnion({
   Started: { runId: RunId },
   Finished: { runId: RunId, result: Schema.Json },
-})
+});
 
-export type Event = typeof Event.Type
+export type Event = typeof Event.Type;
 
-const event = Event.cases.Started.make({ runId })
+const event = Event.cases.Started.make({ runId });
 const label = Event.match(event, {
   Started: ({ runId }) => `started ${runId}`,
   Finished: ({ runId }) => `finished ${runId}`,
-})
+});
 ```
 
 Guidance:
@@ -109,7 +109,7 @@ Guidance:
 
 ## Errors
 
-`Schema.TaggedError` is the explicit class exception for typed Effect errors.
+`Schema.TaggedError` is the default for typed, schema-backed, yieldable Effect errors in v4.
 
 ```ts
 export class PersistenceError extends Schema.TaggedError<PersistenceError>()(
@@ -128,3 +128,5 @@ Guidance:
 - Use schema unions for public API or transport error surfaces.
 - Use `Schema.Defect()` for defect-like payloads.
 - Preserve interruption when catching broad causes at ingress, worker, or stream boundaries.
+- Prefer `Data.TaggedError` only for lightweight internal errors that do not need Schema decode/encode.
+- Do not use `Schema.TaggedErrorClass` (removed / never shipped under that name in Effect v4).
