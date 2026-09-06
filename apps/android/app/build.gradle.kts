@@ -37,6 +37,7 @@ android {
 
         buildConfigField("String", "AUTH_URL", "\"${localProperty("AUTH_URL", "http://10.0.2.2:8788")}\"")
         buildConfigField("String", "API_URL", "\"${localProperty("API_URL", "http://10.0.2.2:8787")}\"")
+        buildConfigField("String", "POWERSYNC_URL", "\"${localProperty("POWERSYNC_URL")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperty("GOOGLE_WEB_CLIENT_ID")}\"")
         buildConfigField(
             "String",
@@ -116,6 +117,8 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.powersync.core)
+    implementation(libs.powersync.compose)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.ai)

@@ -9,10 +9,10 @@ import {
   type LoginRoute,
   type TokenSet,
 } from "@store/auth";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { authSession } from "@/lib/auth";
-import { runClientEffect } from "@/lib/sentry";
 
 const PKCE_KEY = "tabaaq-oauth-pkce";
 export const GOOGLE_AUTH_ERROR_EVENT = "tabaaq:google-auth-error";
@@ -25,7 +25,7 @@ const client = makeAuthClient({ baseUrl: authBaseUrl });
 const currentClient = (): AuthClientKind =>
   window.auth ? nativeClient("Tabaaq Desktop") : browserClient();
 
-const run = runClientEffect;
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 export const identify = (input: IdentifyInput): Promise<LoginRoute> => run(client.identify(input));
 

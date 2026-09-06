@@ -56,6 +56,7 @@ export const WorkspaceSnapshot = Schema.Union([
 
 export type WorkspaceSnapshot = typeof WorkspaceSnapshot.Type;
 
+export const decodeWorkspaceSnapshot = Schema.decodeUnknownSync(WorkspaceSnapshot);
 export const decodeAuthenticatedWorkspace = Schema.decodeUnknownSync(
   AuthenticatedWorkspaceSnapshot,
 );

@@ -28,7 +28,7 @@ export {
   AUTH_JWT_KEY_ID,
   decodeJsonWebKey,
   issueAccessToken,
-  publicJwks,
+  powerSyncPublicJwks,
   verifyAccessToken,
   type AccessTokenServiceApi,
   type IssueAccessTokenInput,

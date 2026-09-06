@@ -88,7 +88,7 @@ private data class Tab(
 fun TabaaqApp(container: AppContainer) {
     val session =
         viewModel<SessionViewModel>(
-            factory = SessionViewModel.factory(container.authRepository, container.catalogSync),
+            factory = SessionViewModel.factory(container.authRepository, container.powerSync),
         )
     val auth by session.authState.collectAsStateWithLifecycle()
     when (auth) {
@@ -123,7 +123,7 @@ private fun SignedInShell(container: AppContainer) {
     val showTabs = current is AppRoute.Home || current is AppRoute.Products || current is AppRoute.Settings
     val catalog =
         viewModel<CatalogViewModel>(
-            factory = CatalogViewModel.factory(container.authRepository, container.catalogSync),
+            factory = CatalogViewModel.factory(container.authRepository, container.powerSync),
         )
     val settings =
         viewModel<SettingsViewModel>(
@@ -209,7 +209,7 @@ private fun SignedInShell(container: AppContainer) {
                             val detail =
                                 viewModel<ProductDetailViewModel>(
                                     key = key.id,
-                                    factory = ProductDetailViewModel.factory(key.id, container.catalogRepository, container.catalogSync),
+                                    factory = ProductDetailViewModel.factory(key.id, container.catalogRepository, container.powerSync),
                                 )
                             ProductDetailScreen(
                                 detail,
@@ -222,7 +222,7 @@ private fun SignedInShell(container: AppContainer) {
                             val editor =
                                 viewModel<ProductEditorViewModel>(
                                     key = "new-${key.draft?.name}",
-                                    factory = ProductEditorViewModel.factory(container.catalogRepository, container.catalogSync, key.draft),
+                                    factory = ProductEditorViewModel.factory(container.catalogRepository, container.powerSync, key.draft),
                                 )
                             ProductEditorScreen(
                                 editor,
@@ -234,7 +234,7 @@ private fun SignedInShell(container: AppContainer) {
                         NavEntry(key) {
                             val scan =
                                 viewModel<ScanViewModel>(
-                                    factory = ScanViewModel.factory(container.productScan, container.catalogSync),
+                                    factory = ScanViewModel.factory(container.productScan, container.powerSync),
                                 )
                             ScanScreen(
                                 viewModel = scan,

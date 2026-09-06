@@ -55,7 +55,7 @@ jobs:
       - name: Check required configuration
         run: |
           for name in AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
-            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do
+            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET POWERSYNC_URL; do
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty for stage '${{ inputs.stage }}'."
               exit 1
@@ -93,6 +93,7 @@ jobs:
           VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
           VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
+          POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
         run: bun alchemy "${{ inputs.action }}" --stage "${{ inputs.stage }}" --yes
@@ -118,3 +119,4 @@ jobs:
           VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
           VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
           VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
+          POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}

@@ -26,7 +26,7 @@ export const openInventory = async (
     {
       apiBaseUrl: host.apiBaseUrl,
       authenticatedFetch: host.authenticatedFetch,
-      deviceId: host.deviceId,
+      openPowerSyncDatabase: host.openPowerSyncDatabase,
       bindCollections: (configs) => {
         const dbClient = new DbClient();
         return {
@@ -45,6 +45,9 @@ export const openInventory = async (
         toastStoreError(failure);
       },
       onFirstSyncError: (cause) => {
+        // PowerSync connect() is background. waitForFirstSync is optional for a
+        // first-launch loading screen, not a user-facing error when offline.
+        // https://docs.powersync.com/client-sdks/reference/javascript-web
         const message = cause instanceof Error ? cause.message : String(cause);
         const expectedOffline =
           isConnectivityFailure(message) ||

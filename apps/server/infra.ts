@@ -35,8 +35,6 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 import { reportRejectedAuthSettings } from "./src/runtime/worker";
-import { CatalogNotifications } from "./src/sync/notifications";
-import { notificationRoutes } from "./src/sync/routes";
 
 export {
   requireProductionApiHostname,
@@ -47,7 +45,7 @@ export {
 
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-export class Api extends Cloudflare.Worker<Api, {}, CatalogNotifications>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -79,36 +77,6 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const inventoryMutations = yield* InventoryMutationDatabase;
-    const notifications = yield* CatalogNotifications;
-    const execution = yield* Cloudflare.Workers.WorkerExecutionContext;
-    const notify = (organizationId: string, cursor: number) =>
-      notifications
-        .getByName(organizationId)
-        .notify(cursor)
-        .pipe(Effect.andThen(inventoryMutations.acknowledgeNotification(organizationId, cursor)));
-    const notifyAfterCommit = (organizationId: string, cursor: number) =>
-      notify(organizationId, cursor).pipe(
-        Effect.timeout("2 seconds"),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Catalog notification deferred to durable relay", cause),
-        ),
-      );
-    yield* Cloudflare.Workers.cron("* * * * *", () =>
-      Effect.gen(function* () {
-        yield* Effect.forEach(
-          yield* inventoryMutations.pendingNotifications,
-          (pending) =>
-            notify(pending.organizationId, pending.cursor).pipe(
-              Effect.timeout("5 seconds"),
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Catalog notification relay failed", cause),
-              ),
-            ),
-          { concurrency: 8, discard: true },
-        );
-        yield* inventoryMutations.expireBootstraps;
-      }),
-    );
     const ai = yield* Cloudflare.Workers.AI();
     const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
@@ -149,6 +117,7 @@ export const ApiLive = Api.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
+    const powerSyncUrl = yield* Config.string("POWERSYNC_URL").pipe(Config.withDefault(""));
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const { stage } = yield* Alchemy.Stack;
     const productionHostname = resolveProductionHostname(productionDomainEnv);
@@ -198,24 +167,17 @@ export const ApiLive = Api.make(
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
+      powerSyncUrl: powerSyncUrl.trim().replace(/\/+$/u, ""),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
       writeInventoryMutation: inventoryMutations.write,
       importInventory: inventoryMutations.importInventory,
       issueInvoice: inventoryMutations.issueInvoice,
-      notifyCatalog: (organizationId, cursor) =>
-        execution.waitUntil(Effect.scoped(notifyAfterCommit(organizationId, cursor))),
-      pullCatalog: inventoryMutations.pull,
-      snapshotCatalog: inventoryMutations.snapshot,
     });
-    const routes = Layer.merge(
-      ServerRoutes,
-      notificationRoutes(
-        notifications,
-        (headers) => authenticateHeaders(headers, jwtConfig),
-        security.trustedOrigins,
-      ),
-    ).pipe(Layer.provide(RuntimeLive), Layer.provide(HttpServer.layerServices));
+    const routes = ServerRoutes.pipe(
+      Layer.provide(RuntimeLive),
+      Layer.provide(HttpServer.layerServices),
+    );
 
     return {
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
@@ -223,7 +185,6 @@ export const ApiLive = Api.make(
   }).pipe(
     Effect.provide(InventoryMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
-    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
     Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
   ),

@@ -1,7 +1,12 @@
+import { UpdateType } from "@powersync/common";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { replicaInvoiceNumber } from "../src/invoice-projection";
+import {
+  classifyInventoryCrudTransaction,
+  projectIssuedInvoice,
+  replicaInvoiceNumber,
+} from "../src/invoice-projection";
 import { makeInvoiceWrites, type InvoiceWriteTables } from "../src/invoice-writes";
 import type {
   BatchRow,
@@ -113,7 +118,9 @@ const tables = (): InvoiceWriteTables => ({
   invoices: memoryCollection<InvoiceRow>(),
   invoiceItems: memoryCollection<InvoiceItemRow>(),
   stockMovements: memoryCollection<StockMovementRow>(),
-  submitInvoice: async () => undefined,
+  persist: async (work) => {
+    work();
+  },
 });
 
 describe("replicaInvoiceNumber", () => {
@@ -132,8 +139,7 @@ describe("replicaInvoiceNumber", () => {
 describe("makeInvoiceWrites", () => {
   it("persists an invoice locally without waiting for the network", async () => {
     rowSeq = 0;
-    const submitted = vi.fn<InvoiceWriteTables["submitInvoice"]>().mockResolvedValue(undefined);
-    const inventory = { ...tables(), submitInvoice: submitted };
+    const inventory = tables();
     const writes = makeInvoiceWrites(inventory, actor, ids);
     const result = await writes.issueInvoice({
       customerName: "Walk-in",
@@ -149,16 +155,65 @@ describe("makeInvoiceWrites", () => {
     });
 
     expect(result).toEqual({ invoiceId: "command-1", invoiceNumber: 1 });
-    expect(submitted).toHaveBeenCalledOnce();
-    expect(submitted.mock.calls[0]?.[1]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ entity: "invoice", entityId: "command-1" }),
-        expect.objectContaining({ entity: "invoiceItem" }),
-        expect.objectContaining({
-          entity: "batch",
-          row: expect.objectContaining({ packQuantity: 1 }),
-        }),
-      ]),
-    );
+    expect([...inventory.invoices.state.values()]).toHaveLength(1);
+    expect([...inventory.invoiceItems.state.values()]).toHaveLength(1);
+    expect(inventory.batches.state.get("batch-1")?.packQuantity).toBe(1);
+  });
+
+  it("projects then reconstructs the same command from CRUD", () => {
+    rowSeq = 0;
+    const inventory = tables();
+    const projection = projectIssuedInvoice({
+      actor,
+      commandId: "command-1",
+      occurredAt: 1_700_000_000_000,
+      invoiceNumber: 1,
+      sale: {
+        customerName: null,
+        items: [
+          {
+            productId: decodeProductId("product-1"),
+            batchId: null,
+            quantity: 1,
+            quantityType: "pack",
+            salePrice: 50,
+          },
+        ],
+      },
+      products: inventory.products,
+      batches: inventory.batches,
+      ids,
+    });
+    const crud = [
+      {
+        id: projection.invoice.id,
+        table: "invoices",
+        op: UpdateType.PUT,
+        opData: { ...projection.invoice },
+      },
+      ...projection.items.map((item) => ({
+        id: item.id,
+        table: "invoice_items",
+        op: UpdateType.PUT,
+        opData: { ...item },
+      })),
+      ...projection.batchUpdates.map((row) => ({
+        id: row.id,
+        table: "batches",
+        op: UpdateType.PATCH,
+        opData: { packQuantity: row.packQuantity, unitQuantity: row.unitQuantity },
+        previousValues: { ...batch() },
+      })),
+      ...projection.movements.map((movement) => ({
+        id: movement.id,
+        table: "stock_movements",
+        op: UpdateType.PUT,
+        opData: { ...movement },
+      })),
+    ];
+    expect(classifyInventoryCrudTransaction(crud)).toEqual({
+      _tag: "sale",
+      command: projection.command,
+    });
   });
 });

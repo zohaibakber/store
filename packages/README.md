@@ -2,11 +2,9 @@
 
 - `auth`. First-party auth schemas, ES256 JWTs, password hashing, trusted-origin
   policy, and the shared Effect client.
-- `client-db`. Catalog replica open, catalog writes, TanStack memory
-  projection, row models, and authenticated Postgres mutation clients for web,
-  Electron, and native Android.
-- `sync`. Catalog module: replica HashMap, HTTP transport, IndexedDB
-  KeyValueStore adapter, and push/pull engine.
+- `client-db`. Catalog replica open, catalog writes, PowerSync configuration,
+  row models, and authenticated Postgres mutation clients for web, Electron,
+  and native Android.
 - `contracts`. Public data contracts grouped into `server`, `store`, and catalog
   write domains.
 - `db`. Drizzle schemas and migrations for authentication and authoritative
@@ -16,7 +14,7 @@
 
 Package tests mirror the source domains under `test`.
 
-`@store/client-db` owns `openCatalog`. Hosts supply authenticated fetch and a
-device id. Web and Electron persist the replica in IndexedDB and project into
-TanStack memory collections. Electron's main process does not open the catalog
-database; it proxies HTTP.
+`@store/client-db` owns `openCatalog`. Hosts supply a PowerSync database factory
+and authenticated fetch. Web and Electron use `@powersync/web` plus wa-sqlite in
+the renderer. Native Android uses `com.powersync:core`. Electron's main process
+does not open the catalog database; it proxies HTTP.

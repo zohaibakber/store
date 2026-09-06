@@ -7,7 +7,7 @@ import {
   EmailAddress,
   issueAccessToken,
   OrganizationId,
-  publicJwks,
+  powerSyncPublicJwks,
   SessionId,
   UserId,
   verifyAccessToken,
@@ -63,7 +63,7 @@ describe("ES256 access tokens", () => {
     });
   });
 
-  it("publishes the same key id in access tokens and the public JWKS", async () => {
+  it("publishes the same key id in access tokens and the PowerSync JWKS", async () => {
     const config = await configuration();
     const issued = await Effect.runPromise(issueAccessToken(input, config));
     const encodedHeader = issued.token.split(".")[0];
@@ -73,12 +73,12 @@ describe("ES256 access tokens", () => {
     );
 
     expect(header.kid).toBe(AUTH_JWT_KEY_ID);
-    expect(publicJwks(config.publicJwk)).toEqual({
+    expect(powerSyncPublicJwks(config.publicJwk)).toEqual({
       keys: [expect.objectContaining({ kid: AUTH_JWT_KEY_ID, alg: "ES256", use: "sig" })],
     });
-    expect(publicJwks({ ...config.publicJwk, d: "must-not-publish" }).keys[0]).not.toHaveProperty(
-      "d",
-    );
+    expect(
+      powerSyncPublicJwks({ ...config.publicJwk, d: "must-not-publish" }).keys[0],
+    ).not.toHaveProperty("d");
   });
 
   it("rejects a token after its access lifetime", async () => {

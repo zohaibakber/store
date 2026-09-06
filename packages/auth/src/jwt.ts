@@ -301,7 +301,7 @@ export const accessTokenLayer = (configuration: JwtConfiguration) =>
 
 export const decodeJsonWebKey = Schema.decodeUnknownEffect(JsonWebKeySchema);
 
-export const publicJwks = (publicJwk: JsonWebKey) => ({
+export const powerSyncPublicJwks = (publicJwk: JsonWebKey) => ({
   keys: [
     {
       kty: publicJwk.kty,

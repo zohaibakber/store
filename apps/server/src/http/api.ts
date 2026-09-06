@@ -1,10 +1,4 @@
 import {
-  CatalogBatchRequest,
-  CatalogBatchResult,
-  CatalogPullRequest,
-  CatalogPullResult,
-  CatalogSnapshotRequest,
-  CatalogSnapshotResult,
   CatalogWriteCommand,
   ImportInventoryCommand,
   ImportInventoryCommandResult,
@@ -81,13 +75,6 @@ const InventoryMutationResult = Schema.Struct({
 
 const inventoryMutations = HttpApiGroup.make("inventoryMutations")
   .add(
-    HttpApiEndpoint.post("batch", "/api/inventory/batch", {
-      payload: CatalogBatchRequest,
-      success: CatalogBatchResult,
-      error: [BadRequest, Forbidden, PayloadTooLarge],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
     HttpApiEndpoint.post("write", "/api/inventory/mutations", {
       payload: CatalogWriteCommand,
       success: InventoryMutationResult,
@@ -106,20 +93,6 @@ const inventoryMutations = HttpApiGroup.make("inventoryMutations")
       payload: IssueInvoiceCommand,
       success: IssueInvoiceResult,
       error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("pull", "/api/inventory/pull", {
-      payload: CatalogPullRequest,
-      success: CatalogPullResult,
-      error: [BadRequest, Forbidden],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("snapshot", "/api/inventory/snapshot", {
-      payload: CatalogSnapshotRequest,
-      success: CatalogSnapshotResult,
-      error: [BadRequest, Forbidden],
     }).middleware(OrganizationAuth),
   );
 

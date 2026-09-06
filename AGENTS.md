@@ -84,9 +84,8 @@ and `vp build` (Turborepo fans them out per package).
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
   above. Inventory authority is
-  Postgres. The catalog replica (`@store/client-db` + `@store/sync`) stores
-  organization-scoped rows in IndexedDB and projects them into TanStack memory
-  collections. D1 is auth. Organization-scoped Durable Objects provide hibernating
-  WebSocket change hints at `/api/inventory/live`; Postgres owns replication state.
-  Inventory can be driven from the local catalog replica without the
+  Postgres. PowerSync streams organization-scoped rows into renderer SQLite
+  (`@store/client-db`). D1 is auth. There is no organization Durable Object
+  and no `/api/sync/live` path.
+  Inventory can be driven from the local PowerSync replica without the
   backend.

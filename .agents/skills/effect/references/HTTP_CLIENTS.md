@@ -9,7 +9,7 @@ Use Effect HTTP client modules for outgoing HTTP in app/provider code:
 - `effect/unstable/http/HttpClientResponse`
 - `effect/unstable/http/HttpClientError`
 
-Prefer Effect HttpClient in Effect application and provider code when its typed errors, layers, and transforms are useful. Raw `fetch` remains reasonable for browser or edge constraints, small adapters, platform transports, and libraries that intentionally avoid unstable Effect HTTP APIs.
+Prefer Effect HttpClient in Effect application and provider code when its typed errors, layers, and transforms are useful. Raw `fetch` remains reasonable for browser or edge constraints, small adapters, and platform transports. On Effect **`4.0.0-rc.110`**, HttpClient still lives under `effect/unstable/http/*` — that is expected, not deprecated; use it when the app already depends on those modules.
 
 ## Boundary Shape
 
@@ -69,26 +69,26 @@ const request = Effect.fn("Provider.request")(function* (input: RequestInput) {
   const response = yield* Effect.tryPromise({
     try: (signal) => fetch(input.url, { signal, headers: input.headers }),
     catch: (cause) => new ProviderError({ operation: "Provider.request", cause }),
-  })
+  });
 
   if (!response.ok) {
-    return yield* Effect.fail(new ProviderRejected({
-      operation: "Provider.request",
-      status: response.status,
-    }))
+    return yield* Effect.fail(
+      new ProviderRejected({
+        operation: "Provider.request",
+        status: response.status,
+      }),
+    );
   }
 
   const json = yield* Effect.tryPromise({
     try: () => response.json(),
     catch: (cause) => new ProviderError({ operation: "Provider.decodeJson", cause }),
-  })
+  });
 
   return yield* Schema.decodeUnknownEffect(ResponseSchema)(json).pipe(
-    Effect.mapError((cause) =>
-      new ProviderError({ operation: "Provider.decodeResponse", cause }),
-    ),
-  )
-})
+    Effect.mapError((cause) => new ProviderError({ operation: "Provider.decodeResponse", cause })),
+  );
+});
 ```
 
 Guidance:

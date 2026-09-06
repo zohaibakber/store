@@ -1,9 +1,4 @@
-import type { SyncEntityChange } from "@store/contracts";
-import type {
-  CreateInvoiceInput,
-  IssueInvoiceCommand,
-  IssueInvoiceResult,
-} from "@store/contracts/store.schema";
+import type { CreateInvoiceInput, IssueInvoiceResult } from "@store/contracts/store.schema";
 
 import {
   type CatalogActor,
@@ -18,10 +13,7 @@ export type InvoiceWriteTables = CatalogWriteTables & {
   readonly invoices: PersistableCollection<InvoiceRow>;
   readonly invoiceItems: PersistableCollection<InvoiceItemRow>;
   readonly stockMovements: PersistableCollection<StockMovementRow>;
-  readonly submitInvoice: (
-    command: IssueInvoiceCommand,
-    changes: ReadonlyArray<SyncEntityChange>,
-  ) => Promise<void>;
+  readonly persist: (work: () => void) => Promise<void>;
 };
 
 const defaultIds: CatalogWriteIds = {
@@ -49,37 +41,14 @@ export const makeInvoiceWrites = (
       batches: tables.batches,
       ids,
     });
-    const changes: SyncEntityChange[] = [
-      {
-        entity: "invoice",
-        action: "upsert",
-        entityId: projection.invoice.id,
-        rowVersion: projection.invoice.rowVersion,
-        row: projection.invoice,
-      },
-      ...projection.items.map((row): SyncEntityChange => ({
-        entity: "invoiceItem",
-        action: "upsert",
-        entityId: row.id,
-        rowVersion: row.rowVersion,
-        row,
-      })),
-      ...projection.movements.map((row): SyncEntityChange => ({
-        entity: "stockMovement",
-        action: "upsert",
-        entityId: row.id,
-        rowVersion: 1,
-        row,
-      })),
-      ...projection.batchUpdates.map((row): SyncEntityChange => ({
-        entity: "batch",
-        action: "upsert",
-        entityId: row.id,
-        rowVersion: row.rowVersion,
-        row,
-      })),
-    ];
-    await tables.submitInvoice(projection.command, changes);
+    await tables.persist(() => {
+      tables.invoices.insert(projection.invoice);
+      for (const item of projection.items) tables.invoiceItems.insert(item);
+      for (const movement of projection.movements) tables.stockMovements.insert(movement);
+      for (const batch of projection.batchUpdates) {
+        tables.batches.update(batch.id, (draft) => Object.assign(draft, batch));
+      }
+    });
     return {
       invoiceId: projection.invoice.id,
       invoiceNumber: projection.invoice.invoiceNumber,

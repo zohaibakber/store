@@ -26,7 +26,7 @@ Do not use streams just to loop forever. For one repeated effect with no emitted
 - Broadcast events: `PubSub` plus `Stream.fromPubSub(...)`.
 - Latest-value state plus updates: `SubscriptionRef`.
 - Schedule-generated ticks/values: `Stream.fromSchedule(...)`.
-- Paginated pull APIs: `Stream.paginate(...)`; its effectful step returns `Effect<readonly [ReadonlyArray<A>, Option<S>], E, R>`. The stream emits `A` elements, not page arrays. `Option.none()` ends pagination after emitting that step's elements; empty arrays are allowed.
+- Paginated pull APIs: `Stream.paginate(...)`; its step function is already effectful, returning `Effect<[chunk, Option<nextState>]>`.
 - Async iterable/platform source: `Stream.fromAsyncIterable(...)` when no native Effect source exists.
 - Effect that produces a stream after reading services/config: `Stream.unwrap(...)`.
 
@@ -40,6 +40,7 @@ Do not use streams just to loop forever. For one repeated effect with no emitted
 - Multiple inner streams concurrently: `Stream.flatMap(fn, { concurrency })`.
 - Keep only matching values: `Stream.filter(...)` / `Stream.filterEffect(...)`.
 - Stateful transformation: `Stream.mapAccum(...)` / `Stream.mapAccumEffect(...)`.
+- Paginated pull-to-pages: prefer `Stream.paginate(...)` over hand-rolled loops. There is no separate `Stream.paginateEffect`.
 
 ## Consumption Chooser
 
@@ -59,15 +60,15 @@ Own long-lived stream consumers in layers and fork them into the layer scope.
 ```ts
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const gateway = yield* Gateway.Service
+    const gateway = yield* Gateway.Service;
 
     yield* gateway.events.pipe(
       Stream.filter(isMessageEvent),
       Stream.runForEach(handleEvent),
       Effect.forkScoped,
-    )
+    );
   }),
-)
+);
 ```
 
 Guidance:
@@ -89,8 +90,8 @@ Good service shape:
 
 ```ts
 export interface Interface {
-  readonly events: Stream.Stream<ProviderEvent, ProviderError>
-  readonly status: Stream.Stream<ProviderStatus>
+  readonly events: Stream.Stream<ProviderEvent, ProviderError>;
+  readonly status: Stream.Stream<ProviderStatus>;
 }
 ```
 

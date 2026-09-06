@@ -7,6 +7,9 @@ const host: InventoryHost = {
   apiBaseUrl: "http://localhost",
   authenticatedFetch: globalThis.fetch,
   deviceId: "device",
+  openPowerSyncDatabase: async () => {
+    throw new Error("unused");
+  },
 };
 
 const scope = { organizationId: "o1", userId: "u1" };

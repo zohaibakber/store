@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://unpkg.com/@powersync/cli-schemas@latest/json-schema/service-config.json
+_type: cloud
+name: Production
+region: us
+
+replication:
+  connections:
+    - type: postgresql
+      hostname: ep-fragrant-smoke-aujwvr1j.c-10.us-east-1.aws.neon.tech
+      port: 5432
+      database: neondb
+      username: neondb_owner
+      password:
+        secret_ref: default_password
+      name: Default
+      tag: default
+      sslmode: verify-full
+      debug_api: false
+
+client_auth:
+  jwks_uri: https://auth.tabaaq.app/.well-known/jwks.json
+  additional_audiences:
+    - tabaaq-api

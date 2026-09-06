@@ -1,3 +1,4 @@
+import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import type {
   BatchRow,
   CategoryRow,
@@ -6,7 +7,6 @@ import type {
   ProductRow,
   StockMovementRow,
 } from "@store/client-db";
-import type { IssueInvoiceCommand, SyncEntityChange } from "@store/contracts";
 import type {
   CreateBatchInput,
   CreateCategoryInput,
@@ -31,12 +31,8 @@ export type Inventory = {
   readonly invoices: InventoryCollection<InvoiceRow>;
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
+  readonly powerSync: AbstractPowerSyncDatabase;
   readonly waitForUploadDrain: () => Promise<void>;
-  readonly enqueueInvoice: (
-    command: IssueInvoiceCommand,
-    changes: ReadonlyArray<SyncEntityChange>,
-  ) => Promise<void>;
-  readonly poke: () => Promise<void>;
   readonly dispose: () => Promise<void>;
 };
 

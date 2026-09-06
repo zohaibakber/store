@@ -5,13 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.tabaaq.mobile.data.auth.AuthRepository
 import com.tabaaq.mobile.data.auth.AuthState
-import com.tabaaq.mobile.data.sync.CatalogSyncSession
+import com.tabaaq.mobile.data.powersync.PowerSyncSession
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class SessionViewModel(
     private val auth: AuthRepository,
-    private val catalogSync: CatalogSyncSession,
+    private val powerSync: PowerSyncSession,
 ) : ViewModel() {
     val authState: StateFlow<AuthState> = auth.state
 
@@ -26,15 +26,15 @@ class SessionViewModel(
                         if (organizationId != lastOrganization) {
                             lastOrganization = organizationId
                             if (organizationId != null) {
-                                catalogSync.start(organizationId)
+                                powerSync.start(organizationId)
                             } else {
-                                catalogSync.stop()
+                                powerSync.stop()
                             }
                         }
                     }
                     AuthState.SignedOut -> {
                         lastOrganization = null
-                        catalogSync.stop()
+                        powerSync.stop()
                     }
                     AuthState.Loading -> Unit
                 }
@@ -45,10 +45,10 @@ class SessionViewModel(
     companion object {
         fun factory(
             auth: AuthRepository,
-            catalogSync: CatalogSyncSession,
+            powerSync: PowerSyncSession,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = SessionViewModel(auth, catalogSync) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = SessionViewModel(auth, powerSync) as T
         }
     }
 }

@@ -1,7 +1,7 @@
 ---
 name: effect
 description: |
-  Opinionated guide for building production TypeScript applications with Effect v4. Use when implementing Effect workflows, services, layers, schemas, configuration, schedules, caches, streams, HTTP clients, or tests.
+  Opinionated guide for building production TypeScript applications with Effect v4 (RC and later). Use when implementing Effect workflows, services, layers, schemas, configuration, schedules, caches, streams, HTTP clients, or tests.
 license: MIT
 compatibility: Requires Effect v4. Examples are reviewed against the version documented in this repository.
 ---
@@ -10,13 +10,26 @@ compatibility: Requires Effect v4. Examples are reviewed against the version doc
 
 Use current Effect v4 APIs and the production defaults in this skill. Established project conventions still take precedence unless the task is explicitly changing them.
 
+This monorepo pins `effect` / `@effect/*` at **`4.0.0-rc.110`** (see root `package.json` catalog). Prefer the installed package source and Effect v4 docs (`effect.website` v4 / migration guides) over Effect v3 muscle memory.
+
 ## Source Rule
 
 Check these before guessing:
 
 - the nearest `AGENTS.md` and any project-local Effect practices doc
-- the project-pinned `effect` package source and version
-- current upstream Effect source when the installed package does not answer the question
+- the project-pinned `effect` package source and version (`node_modules/effect/package.json`)
+- current upstream Effect v4 docs / migration notes when the installed package does not answer the question
+- never invent v3-era names (`Context.Tag`, `@effect/schema`, `Schema.TaggedErrorClass`) — they are wrong for this pin
+
+## Effect v4 (what changed vs v3 — use these)
+
+- **Services:** `Context.Service` (not `Context.Tag` / `Effect.Service` as the default app tag). Optional `make` on the service class; build layers with `Layer.effect(this, this.make)` (+ `Layer.provide`) yourself — `make` does not auto-emit a layer.
+- **Typed errors:** `Schema.TaggedError<Self>()("Tag", { fields })` (schema-backed, yieldable). `Data.TaggedError` is fine for lightweight non-schema errors. There is **no** `Schema.TaggedErrorClass` in Effect v4.
+- **Schemas:** `Schema` lives in `effect` (not `@effect/schema`). Prefer `Schema.Struct` + same-name `interface`; tagged unions via `Schema.TaggedUnion` / `Schema.TaggedStruct`.
+- **Ops:** `Effect.fn("Domain.op")` for public / non-trivial methods (spans + stack frames). Prefer `Effect.gen`.
+- **Unstable modules:** still under `effect/unstable/*` (http, httpapi, cluster, workflow, ai) until promoted — breaking changes allowed in minor RCs. Prefer them for HTTP/API when the codebase already does; do not treat “unstable” as “avoid”.
+- **HTTP:** `effect/unstable/http/HttpClient` (+ Request/Response). FiberRef-style HttpClient knobs moved toward `Context.Reference` in v4 — provide references explicitly rather than deleted convenience FiberRefs.
+- **Cache / schedule / stream:** prefer `effect/Cache`, `Schedule`, `Stream` over hand-rolled Map/TTL/dedupe and sleep loops.
 
 ## Branch Chooser
 
@@ -91,6 +104,7 @@ If a task spans several branches, read all matching files before editing.
 - Do not use `as any`, non-null assertions, or unchecked casts to silence Effect typing problems.
 - Do not introduce `Schema.Class` or `Schema.TaggedClass` as default app data-modeling patterns.
 - Do not hand-roll `_tag` error classes when `Schema.TaggedError` fits.
+- Do not write `Schema.TaggedErrorClass` — that name does not exist in Effect v4; use `Schema.TaggedError`.
 - Do not use cause-level recovery when typed-error recovery is enough.
 - Do not use `Layer.mergeAll(...)` or `provideMerge(...)` as blind make-it-compile tools.
 - Do not hide required application authority, credentials, persistence, transports, or external services behind `Context.Reference` defaults.

@@ -13,7 +13,8 @@ stay out of this client.
 | UI       | Compose Material 3                                |
 | Auth     | First-party JWT (`@store/auth`) + Google ID token |
 | Firebase | Gemini product scan only. Not user auth.          |
-| Sync     | Local SQLite replica and durable outbox           |
+| Sync     | `com.powersync:core` 1.14.1                       |
+| Schema   | Mirrored in `InventorySchema`                     |
 | Upload   | `/api/inventory/mutations` for catalog tables     |
 
 `applicationId` is `com.tabaaq.mobile` so this build can take over the existing
@@ -46,14 +47,15 @@ Do not commit `local.properties` or `app/google-services.json`.
 AUTH_URL=http://10.0.2.2:8788
 API_URL=http://10.0.2.2:8787
 GOOGLE_WEB_CLIENT_ID=123-abc.apps.googleusercontent.com
+POWERSYNC_URL=          # optional fallback; the API usually returns this
 ```
 
 The emulator reaches the host through `10.0.2.2`. A physical device needs the
 LAN IP of the machine running `vp run dev:web` (API `:8787`, auth `:8788`).
 
-Inventory uses a local SQLite replica and a durable outbox. Batched uploads and
-cursor pulls use the authenticated inventory API. A one-use ticket connects
-`/api/inventory/live` for change notifications; reconnects resume from the saved cursor.
+PowerSync tokens come from `GET /api/powersync/credentials` with the same
+Bearer token as web and desktop. `POWERSYNC_URL` is only a fallback when that
+response omits `endpoint`.
 
 ### Firebase
 

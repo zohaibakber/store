@@ -11,11 +11,14 @@
     "test": "vitest run --root ../.. apps/web/test"
   },
   "dependencies": {
-    "@sentry/effect": "10.73.0",
-    "@sentry/react": "10.73.0",
+    "@journeyapps/wa-sqlite": "^1.7.2",
+    "@powersync/common": "1.57.3",
+    "@powersync/web": "1.39.1",
+    "@sentry/react": "10.71.0",
     "@store/client-db": "workspace:*",
     "@tanstack/charts": "^0.14.0",
-    "@tanstack/react-db": "catalog:",
+    "@tanstack/powersync-db-collection": "0.1.62",
+    "@tanstack/react-db": "0.3.3",
     "d3-shape": "^3.2.0",
     "thinking-orbs": "^0.3.1"
   },
@@ -30,8 +33,8 @@
     "@store/workspace": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-form": "^1.33.5",
-    "@tanstack/react-router": "^1.170.32",
-    "@tanstack/react-table": "^9.2.4",
+    "@tanstack/react-router": "^1.170.31",
+    "@tanstack/react-table": "^9.1.2",
     "@tanstack/router-plugin": "^1.168.34",
     "@testing-library/react": "^16.3.2",
     "@types/d3-shape": "^3.2.0",
