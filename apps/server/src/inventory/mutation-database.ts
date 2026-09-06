@@ -1110,20 +1110,15 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
     const packsOpened =
       take.quantityType === "unit"
         ? Math.max(0, Math.ceil((take.quantity - batch.unitQuantity) / product.unitsPerPack))
-        : take.packsOpened;
-    if (take.quantityType === "unit" && packsOpened !== take.packsOpened) {
-      return yield* Effect.fail(
-        invoiceStockError(`Not enough stock for ${product.name}: pack layout changed.`),
-      );
-    }
+        : 0;
     const nextPackQuantity =
       take.quantityType === "pack"
         ? batch.packQuantity - take.quantity
-        : batch.packQuantity - take.packsOpened;
+        : batch.packQuantity - packsOpened;
     const nextUnitQuantity =
       take.quantityType === "pack"
         ? batch.unitQuantity
-        : batch.unitQuantity + take.packsOpened * product.unitsPerPack - take.quantity;
+        : batch.unitQuantity + packsOpened * product.unitsPerPack - take.quantity;
     if (nextPackQuantity < 0 || nextUnitQuantity < 0) {
       return yield* Effect.fail(invoiceStockError(`Not enough stock for ${product.name}.`));
     }
@@ -1169,18 +1164,15 @@ const issueInvoice = Effect.fn("InventoryCommand.issueInvoice")(function* (
       .returning({ id: invoiceItems.id });
     if (!item) return yield* Effect.fail(invoiceError("The invoice item could not be saved."));
 
-    if (take.packsOpened > 0) {
-      if (!take.openPackMovementId) {
-        return yield* Effect.fail(invoiceError("The invoice item could not be saved."));
-      }
+    if (packsOpened > 0) {
       yield* tx.insert(stockMovements).values({
-        id: take.openPackMovementId,
+        id: take.openPackMovementId ?? `${take.saleMovementId}:open-pack`,
         productId: product.id,
         batchId: batch.id,
         invoiceId: invoice.id,
         type: "open_pack",
-        packDelta: -take.packsOpened,
-        unitDelta: take.packsOpened * product.unitsPerPack,
+        packDelta: -packsOpened,
+        unitDelta: packsOpened * product.unitsPerPack,
         note: `Opened for invoice #${invoice.invoiceNumber}`,
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
