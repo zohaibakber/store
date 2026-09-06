@@ -1,6 +1,7 @@
 import { SyncEntity, SyncEntityChange } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { CatalogError } from "./errors";
@@ -51,7 +52,26 @@ const MetaRecord = Schema.Struct({
 });
 
 const storageError = (message: string) =>
-  new CatalogError({ reason: "rejected", code: "REPLICA_STORAGE", message });
+  new CatalogError({ reason: "transient", code: "REPLICA_STORAGE", message });
+
+type JsonValue = typeof Schema.Json.Type;
+
+const decodeRecordList = <A>(
+  decoder: (item: JsonValue) => Option.Option<A>,
+  encoded: JsonValue,
+): ReadonlyArray<A> => {
+  const items = Option.getOrElse(
+    Schema.decodeUnknownOption(Schema.Array(Schema.Json))(encoded),
+    () => [],
+  );
+  return items.flatMap((item) => {
+    const decoded = decoder(item);
+    return Option.isSome(decoded) ? [decoded.value] : [];
+  });
+};
+
+const jsonResult = (result: IDBRequest["result"]): JsonValue =>
+  Option.getOrElse(Schema.decodeUnknownOption(Schema.Json)(result ?? null), () => null);
 
 const openDatabase = Effect.fn("ReplicaStore.open")((name: string) =>
   Effect.callback<IDBDatabase, CatalogError>((resume) => {
@@ -89,29 +109,52 @@ const transactionToEffect = <A>(
   db: IDBDatabase,
   names: ReadonlyArray<string>,
   mode: IDBTransactionMode,
-  run: (tx: IDBTransaction, complete: (result: A) => void) => void,
+  run: (
+    tx: IDBTransaction,
+    complete: (result: A) => void,
+    fail: (error: CatalogError) => void,
+  ) => void,
 ) =>
   Effect.callback<A, CatalogError>((resume) => {
     const tx = db.transaction([...names], mode);
     let result: A;
-    let active = true;
-    tx.oncomplete = () => {
-      active = false;
-      resume(Effect.succeed(result));
+    let settled = false;
+    let failure: CatalogError | undefined;
+    const settle = (effect: Effect.Effect<A, CatalogError>) => {
+      if (settled) return;
+      settled = true;
+      resume(effect);
     };
-    tx.onabort = () => {
-      active = false;
-      resume(Effect.fail(storageError(tx.error?.message ?? "Local replica transaction aborted.")));
+    const fail = (error: CatalogError) => {
+      failure = error;
+      try {
+        tx.abort();
+      } catch {
+        settle(Effect.fail(error));
+      }
     };
+    tx.oncomplete = () => settle(Effect.succeed(result));
+    tx.onabort = () =>
+      settle(
+        Effect.fail(
+          failure ?? storageError(tx.error?.message ?? "Local replica transaction aborted."),
+        ),
+      );
     try {
-      run(tx, (value) => {
-        result = value;
-      });
-    } catch {
-      tx.abort();
+      run(
+        tx,
+        (value) => {
+          result = value;
+        },
+        fail,
+      );
+    } catch (error) {
+      fail(
+        storageError(error instanceof Error ? error.message : "Local replica transaction aborted."),
+      );
     }
     return Effect.sync(() => {
-      if (active) tx.abort();
+      settled = true;
     });
   });
 
@@ -141,7 +184,9 @@ const readState = (
   const state = tx.objectStore(META).get(`state:${scopeKey}`);
   state.onsuccess = () => {
     try {
-      const meta = Schema.decodeUnknownSync(Schema.UndefinedOr(MetaRecord))(state.result);
+      const meta = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.UndefinedOr(MetaRecord))(state.result),
+      );
       const revision = meta?.revision ?? "";
       const cached = cache.get(scopeKey);
       if (cached?.revision === revision) {
@@ -154,38 +199,59 @@ const readState = (
       const overlays = tx.objectStore(OVERLAYS).getAll(range);
       const bootstrapRows = tx.objectStore(BOOTSTRAP_ROWS).getAll(range);
       bootstrapRows.onsuccess = () => {
-        try {
-          const bootstrap = meta?.bootstrap;
-          loaded(
-            {
-              cursor: meta?.cursor ?? 0,
-              initialized: meta?.initialized ?? false,
-              rows: rowsFromRecords(Schema.decodeUnknownSync(Schema.Array(RowRecord))(rows.result)),
-              outbox: [...Schema.decodeUnknownSync(Schema.Array(OutboxRecord))(outbox.result)]
-                .sort((a, b) => a.sequence.localeCompare(b.sequence))
-                .map((entry) => entry.entry),
-              overlays: [...Schema.decodeUnknownSync(Schema.Array(OverlayRecord))(overlays.result)]
-                .sort((a, b) => a.txid - b.txid)
-                .map((entry) => ({ txid: entry.txid, changes: entry.changes })),
-              bootstrap: bootstrap
-                ? {
-                    ...bootstrap,
-                    rows: rowsFromRecords(
-                      Schema.decodeUnknownSync(Schema.Array(BootstrapRowRecord))(
-                        bootstrapRows.result,
-                      ).filter((entry) => entry.generation === bootstrap.generation),
-                    ),
-                  }
-                : undefined,
-            },
-            revision,
-          );
-        } catch {
-          tx.abort();
-        }
+        const bootstrap = meta?.bootstrap;
+        loaded(
+          {
+            cursor: meta?.cursor ?? 0,
+            initialized: meta?.initialized ?? false,
+            rows: rowsFromRecords(
+              decodeRecordList(
+                (item) => Schema.decodeUnknownOption(RowRecord)(item),
+                jsonResult(rows.result),
+              ),
+            ),
+            outbox: [
+              ...decodeRecordList(
+                (item) => Schema.decodeUnknownOption(OutboxRecord)(item),
+                jsonResult(outbox.result),
+              ),
+            ]
+              .sort((a, b) => a.sequence.localeCompare(b.sequence))
+              .map((entry) => entry.entry),
+            overlays: [
+              ...decodeRecordList(
+                (item) => Schema.decodeUnknownOption(OverlayRecord)(item),
+                jsonResult(overlays.result),
+              ),
+            ]
+              .sort((a, b) => a.txid - b.txid)
+              .map((entry) => ({ txid: entry.txid, changes: entry.changes })),
+            bootstrap: bootstrap
+              ? {
+                  ...bootstrap,
+                  rows: rowsFromRecords(
+                    decodeRecordList(
+                      (item) => Schema.decodeUnknownOption(BootstrapRowRecord)(item),
+                      jsonResult(bootstrapRows.result),
+                    ).filter((entry) => entry.generation === bootstrap.generation),
+                  ),
+                }
+              : undefined,
+          },
+          revision,
+        );
       };
     } catch {
-      tx.abort();
+      loaded(
+        {
+          cursor: 0,
+          initialized: false,
+          rows: rowsFromRecords([]),
+          outbox: [],
+          overlays: [],
+        },
+        "",
+      );
     }
   };
 };
@@ -303,12 +369,20 @@ export const layerIndexedDbReplica = (name: string) =>
             db,
             stores,
             "readwrite",
-            (tx, complete) => {
+            (tx, complete, fail) => {
               readState(tx, scopeKey, cache, (before) => {
-                const { result, snapshot } = applyReplicaTransaction(before, update);
-                const revision = crypto.randomUUID();
-                writeDiff(tx, scopeKey, before, snapshot, revision);
-                complete({ result, snapshot, revision });
+                try {
+                  const { result, snapshot } = applyReplicaTransaction(before, update);
+                  const revision = crypto.randomUUID();
+                  writeDiff(tx, scopeKey, before, snapshot, revision);
+                  complete({ result, snapshot, revision });
+                } catch (error) {
+                  fail(
+                    storageError(
+                      error instanceof Error ? error.message : "Local replica transaction aborted.",
+                    ),
+                  );
+                }
               });
             },
           ).pipe(Effect.tap((value) => Effect.sync(() => cache.set(scopeKey, value)))),

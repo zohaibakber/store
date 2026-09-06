@@ -180,7 +180,12 @@ export const diffReplicaRows = (
 ): ReadonlyArray<ReplicaDiff> => {
   const diffs: Array<ReplicaDiff> = [];
   const indexRows = (rows: ReplicaRows[SyncEntity]) =>
-    new Map(rows.map((row) => [Schema.decodeUnknownSync(ReplicaRowIdentity)(row).id, row]));
+    new Map(
+      rows.flatMap((row) => {
+        const identity = identityOf(row);
+        return identity ? ([[identity.id, row]] as const) : [];
+      }),
+    );
   for (const entity of replicaEntities) {
     if (before[entity] === after[entity]) continue;
     const previous = indexRows(before[entity]);

@@ -4,6 +4,8 @@ import {
   applyChanges,
   commandChanges,
   diffFromChanges,
+  diffReplicaRows,
+  emptyReplicaRows,
   emptyReplicaSnapshot,
 } from "../src/replica";
 
@@ -71,6 +73,27 @@ describe("catalog replica", () => {
         deletes: ["p2"],
       },
     ]);
+  });
+
+  it("diffs snapshot rows that carry extra catalog fields", () => {
+    expect(
+      diffReplicaRows(emptyReplicaRows(), { ...emptyReplicaRows(), category: [category] }),
+    ).toEqual([
+      {
+        entity: "category",
+        upserts: [{ id: category.id, row: category }],
+        deletes: [],
+      },
+    ]);
+  });
+
+  it("does not abort a replica write when a staged row has no identity", () => {
+    expect(
+      diffReplicaRows(emptyReplicaRows(), {
+        ...emptyReplicaRows(),
+        category: [{ name: "missing-id" }],
+      }),
+    ).toEqual([]);
   });
 
   it("reads catalog write rows as replica changes", () => {
