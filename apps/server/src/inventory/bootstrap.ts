@@ -1,9 +1,8 @@
 import {
   SYNC_EPOCH,
-  SYNC_PAGE_BYTES,
   SYNC_PAGE_ROWS,
-  SyncEntityChange,
   catalogSliceEntities,
+  SyncEntityChange,
   type CatalogSlice,
   type CatalogSnapshotRequest,
   type CatalogSnapshotResult,
@@ -19,7 +18,7 @@ import {
   catalogBootstrapRows,
   catalogChangeLog,
 } from "@store/db/postgres/schema";
-import { and, asc, count, desc, eq, getTableColumns, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, isNull, lt, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -27,32 +26,52 @@ import * as Schema from "effect/Schema";
 import type { PostgresDrizzle, PostgresTransaction } from "./postgres";
 
 const tableSources = [
-  { entity: "category", table: categories },
-  { entity: "product", table: products },
-  { entity: "batch", table: batches },
-  { entity: "invoice", table: invoices },
-  { entity: "invoiceItem", table: invoiceItems },
-  { entity: "stockMovement", table: stockMovements },
-] as const;
+  { entity: "category" as const, table: categories },
+  { entity: "product" as const, table: products },
+  { entity: "batch" as const, table: batches },
+  { entity: "invoice" as const, table: invoices },
+  { entity: "invoiceItem" as const, table: invoiceItems },
+  { entity: "stockMovement" as const, table: stockMovements },
+];
 
-const copiedRowCount = Effect.fn("CatalogBootstrap.copiedRowCount")(function* (
-  tx: PostgresTransaction,
-  bootstrapId: string,
-  offset?: number,
-) {
-  const [row] = yield* tx
-    .select({ n: count() })
-    .from(catalogBootstrapRows)
-    .where(
-      offset === undefined
-        ? eq(catalogBootstrapRows.bootstrapId, bootstrapId)
-        : and(
-            eq(catalogBootstrapRows.bootstrapId, bootstrapId),
-            gt(catalogBootstrapRows.id, offset),
-          ),
-    );
-  return Number(row?.n ?? 0);
+const compiledSources = tableSources.map(({ entity, table }) => {
+  const fields = Object.entries(getTableColumns(table)).flatMap(([name, column]) => [
+    sql`${sql.raw(`'${name}'`)}`,
+    sql`${column}`,
+  ]);
+  return {
+    entity,
+    table,
+    active: "deletedAt" in table ? isNull(table.deletedAt) : sql`true`,
+    change: sql`jsonb_build_object('entity', ${sql.raw(`'${entity}'`)}::text, 'action', 'upsert',
+      'entityId', ${table.id}, 'rowVersion', ${"rowVersion" in table ? sql`${table.rowVersion}` : sql`1`},
+      'row', jsonb_build_object(${sql.join(fields, sql`, `)}))`,
+  };
 });
+
+type JsonValue = typeof Schema.Json.Type;
+
+export const snapshotChangeFromUnknown = (encoded: JsonValue): SyncEntityChange | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(SyncEntityChange)(encoded));
+
+export const snapshotPageFromRows = (
+  rows: ReadonlyArray<{ readonly id: number; readonly change: JsonValue }>,
+  fallbackOffset: number,
+) => {
+  const page = rows.slice(0, SYNC_PAGE_ROWS);
+  const changes: SyncEntityChange[] = [];
+  let nextOffset = fallbackOffset;
+  for (const entry of page) {
+    nextOffset = entry.id;
+    const change = snapshotChangeFromUnknown(entry.change);
+    if (change) changes.push(change);
+  }
+  return {
+    changes,
+    nextOffset,
+    done: rows.length <= SYNC_PAGE_ROWS,
+  };
+};
 
 const createBootstrap = Effect.fn("CatalogBootstrap.create")(function* (
   tx: PostgresTransaction,
@@ -77,66 +96,81 @@ const createBootstrap = Effect.fn("CatalogBootstrap.create")(function* (
   return session;
 });
 
+const lastCopiedChange = Effect.fn("CatalogBootstrap.lastCopied")(function* (
+  tx: PostgresTransaction,
+  bootstrapId: string,
+) {
+  const [row] = yield* tx
+    .select({ change: catalogBootstrapRows.change })
+    .from(catalogBootstrapRows)
+    .where(eq(catalogBootstrapRows.bootstrapId, bootstrapId))
+    .orderBy(desc(catalogBootstrapRows.id))
+    .limit(1);
+  const encoded = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.Json)(row?.change ?? null),
+  );
+  return encoded === undefined || encoded === null ? undefined : snapshotChangeFromUnknown(encoded);
+});
+
 const fillBootstrapRows = Effect.fn("CatalogBootstrap.fill")(function* (
   tx: PostgresTransaction,
   organizationId: string,
   bootstrapId: string,
   slices: ReadonlyArray<CatalogSlice>,
-  offset: number,
+  remaining: number,
 ) {
-  const available = yield* copiedRowCount(tx, bootstrapId, offset);
-  let remaining = SYNC_PAGE_ROWS + 1 - available;
   if (remaining <= 0) return;
-  let skip = yield* copiedRowCount(tx, bootstrapId);
   const entities = new Set(slices.flatMap((slice) => catalogSliceEntities[slice]));
-  for (const { entity, table } of tableSources) {
-    if (remaining <= 0) return;
-    if (!entities.has(entity)) continue;
-    const active = "deletedAt" in table ? isNull(table.deletedAt) : sql`true`;
-    const [total] = yield* tx
-      .select({ n: count() })
-      .from(table)
-      .where(and(eq(table.organizationId, organizationId), active));
-    const tableCount = Number(total?.n ?? 0);
-    if (skip >= tableCount) {
-      skip -= tableCount;
-      continue;
-    }
-    const fields = Object.entries(getTableColumns(table)).flatMap(([name, column]) => [
-      sql`${sql.raw(`'${name}'`)}`,
-      sql`${column}`,
-    ]);
-    const row = sql`jsonb_build_object(${sql.join(fields, sql`, `)})`;
-    const version = "rowVersion" in table ? sql`${table.rowVersion}` : sql`1`;
-    const before = yield* copiedRowCount(tx, bootstrapId);
-    yield* tx.execute(sql`
-      insert into ${catalogBootstrapRows} (bootstrap_id, change)
-      select ${bootstrapId}, jsonb_build_object('entity', ${entity}::text, 'action', 'upsert',
-        'entityId', ${table.id}, 'rowVersion', ${version}, 'row', ${row})
-      from ${table}
-      where ${table.organizationId} = ${organizationId} and ${active}
-      order by ${table.id}
-      offset ${skip}
-      limit ${remaining}
-    `);
-    const inserted = (yield* copiedRowCount(tx, bootstrapId)) - before;
-    remaining -= inserted;
-    skip = 0;
-  }
+  const sources = compiledSources.filter((source) => entities.has(source.entity));
+  if (sources.length === 0) return;
+  const resume = yield* lastCopiedChange(tx, bootstrapId);
+  const resumeIndex = resume ? sources.findIndex((source) => source.entity === resume.entity) : -1;
+  const parts = sources.map(
+    (source, index) => sql`(
+      select ${index}::int as src, ${source.table.id}::text as id, ${source.change} as change
+      from ${source.table}
+      where ${source.table.organizationId} = ${organizationId} and ${source.active}
+    )`,
+  );
+  yield* tx.execute(sql`
+    insert into ${catalogBootstrapRows} (bootstrap_id, change)
+    select ${bootstrapId}, pages.change
+    from (
+      ${sql.join(parts, sql` union all `)}
+    ) pages
+    where ${resumeIndex < 0 ? sql`true` : sql`(pages.src, pages.id) > (${resumeIndex}, ${resume?.entityId ?? ""})`}
+    order by pages.src, pages.id
+    limit ${remaining}
+  `);
 });
+
+const readBootstrapPage = (
+  db: PostgresDrizzle | PostgresTransaction,
+  bootstrapId: string,
+  offset: number,
+) =>
+  db
+    .select({ id: catalogBootstrapRows.id, change: catalogBootstrapRows.change })
+    .from(catalogBootstrapRows)
+    .where(
+      and(eq(catalogBootstrapRows.bootstrapId, bootstrapId), gt(catalogBootstrapRows.id, offset)),
+    )
+    .orderBy(asc(catalogBootstrapRows.id))
+    .limit(SYNC_PAGE_ROWS + 1);
+
+const resetSnapshot = {
+  epoch: SYNC_EPOCH,
+  resetRequired: true,
+  cursor: 0,
+  changes: [],
+} satisfies CatalogSnapshotResult;
 
 export const bootstrapCatalog = Effect.fn("CatalogBootstrap.snapshot")(function* (
   db: PostgresDrizzle,
   organizationId: string,
   request: CatalogSnapshotRequest,
 ) {
-  const reset = {
-    epoch: SYNC_EPOCH,
-    resetRequired: true,
-    cursor: 0,
-    changes: [],
-  } satisfies CatalogSnapshotResult;
-  if (request.epoch !== SYNC_EPOCH) return reset;
+  if (request.epoch !== SYNC_EPOCH) return resetSnapshot;
   const offset = request.bootstrap?.offset ?? 0;
   const session = request.bootstrap
     ? (yield* db
@@ -149,58 +183,52 @@ export const bootstrapCatalog = Effect.fn("CatalogBootstrap.snapshot")(function*
           ),
         )
         .limit(1))[0]
-    : yield* db.transaction(
-        (tx) =>
-          Effect.gen(function* () {
-            const created = yield* createBootstrap(tx, organizationId, request);
-            yield* fillBootstrapRows(tx, organizationId, created.id, request.slices, offset);
-            return created;
-          }),
-        { isolationLevel: "repeatable read" },
-      );
+    : undefined;
+  if (request.bootstrap && !session) return resetSnapshot;
   if (
-    !session ||
-    session.expiresAt <= Date.now() ||
-    session.slices !== [...request.slices].sort().join(",")
+    session &&
+    (session.expiresAt <= Date.now() || session.slices !== [...request.slices].sort().join(","))
   )
-    return reset;
-  if (request.bootstrap) {
-    yield* db.transaction((tx) =>
-      fillBootstrapRows(tx, organizationId, session.id, request.slices, offset),
-    );
-  }
-  const rows = yield* db
-    .select()
-    .from(catalogBootstrapRows)
-    .where(
-      and(eq(catalogBootstrapRows.bootstrapId, session.id), gt(catalogBootstrapRows.id, offset)),
-    )
-    .orderBy(asc(catalogBootstrapRows.id))
-    .limit(SYNC_PAGE_ROWS + 1);
-  const changes: SyncEntityChange[] = [];
-  let nextOffset = offset;
-  let bytes = 0;
-  for (const entry of rows.slice(0, SYNC_PAGE_ROWS)) {
-    const change = Option.getOrUndefined(
-      Schema.decodeUnknownOption(SyncEntityChange)(entry.change),
-    );
-    const size = change ? new TextEncoder().encode(JSON.stringify(change)).byteLength : 0;
-    if (change && changes.length > 0 && bytes + size > SYNC_PAGE_BYTES) break;
-    if (change) {
-      changes.push(change);
-      bytes += size;
-    }
-    nextOffset = entry.id;
-  }
+    return resetSnapshot;
+
+  const paged = yield* db.transaction(
+    (tx) =>
+      Effect.gen(function* () {
+        const current = session ?? (yield* createBootstrap(tx, organizationId, request));
+        const existing = session ? yield* readBootstrapPage(tx, current.id, offset) : [];
+        if (existing.length <= SYNC_PAGE_ROWS) {
+          yield* fillBootstrapRows(
+            tx,
+            organizationId,
+            current.id,
+            request.slices,
+            SYNC_PAGE_ROWS + 1 - existing.length,
+          );
+        }
+        const rows =
+          existing.length > SYNC_PAGE_ROWS
+            ? existing
+            : yield* readBootstrapPage(tx, current.id, offset);
+        return { current, rows };
+      }),
+    { isolationLevel: "repeatable read" },
+  );
+  const page = snapshotPageFromRows(
+    paged.rows.flatMap((entry) => {
+      const change = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(entry.change));
+      return change === undefined || change === null ? [] : [{ id: entry.id, change }];
+    }),
+    offset,
+  );
   return {
     epoch: SYNC_EPOCH,
-    cursor: session.cursor,
-    changes,
+    cursor: paged.current.cursor,
+    changes: page.changes,
     bootstrap: {
-      id: session.id,
-      nextOffset,
-      done: rows.length === changes.length,
-      expiresAt: session.expiresAt,
+      id: paged.current.id,
+      nextOffset: page.nextOffset,
+      done: page.done,
+      expiresAt: paged.current.expiresAt,
     },
   } satisfies CatalogSnapshotResult;
 });
