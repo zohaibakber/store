@@ -383,7 +383,9 @@ describe("PowerSync catalog upload failures", () => {
       ),
     ).rejects.toMatchObject({ reason: { _tag: "rejected", code: "INSUFFICIENT_STOCK" } });
     expect(complete).not.toHaveBeenCalled();
-    expect((await saleOutbox.list()).map((entry) => entry.command.commandId)).toEqual(["command-1"]);
+    expect((await saleOutbox.list()).map((entry) => entry.command.commandId)).toEqual([
+      "command-1",
+    ]);
   });
 
   it("keeps a rejected sale queued so local invoice rows are not discarded", async () => {

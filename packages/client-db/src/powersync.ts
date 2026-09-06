@@ -11,7 +11,6 @@ import * as SchemaGetter from "effect/SchemaGetter";
 
 import { inventoryReplicaDatabaseName } from "./inventory";
 import { classifyInventoryCrudTransaction, saleSnapshotFromCrud } from "./invoice-projection";
-import type { SaleOutboxStore } from "./sale-outbox";
 import {
   catalogUploadDisposition,
   failureFromUnknown,
@@ -30,6 +29,7 @@ import {
   ProductRow,
   StockMovementRow,
 } from "./rows";
+import type { SaleOutboxStore } from "./sale-outbox";
 
 const PowerSyncCredentialsResponse = EffectSchema.Struct({
   endpoint: EffectSchema.String.check(EffectSchema.isMinLength(1)),

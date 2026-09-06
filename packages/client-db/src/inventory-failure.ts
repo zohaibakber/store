@@ -49,9 +49,7 @@ export const invoiceUploadDisposition = (failure: InventoryFailure): InvoiceUplo
     case "rejected":
       // Keep the local sale queued so PowerSync can retry after remote stock
       // or pack layout is reconciled. Completing the CRUD would drop it.
-      return failure.reason.code === "INSUFFICIENT_STOCK"
-        ? { _tag: "retry" }
-        : { _tag: "halt" };
+      return failure.reason.code === "INSUFFICIENT_STOCK" ? { _tag: "retry" } : { _tag: "halt" };
     case "staleReplica":
     case "unauthenticated":
       return { _tag: "halt" };
