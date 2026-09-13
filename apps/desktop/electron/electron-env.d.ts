@@ -11,6 +11,8 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import type { InventoryHttpBridge } from "./inventory-http-channels";
 
 declare global {
+  const __UPDATE_CHANNEL__: string;
+
   namespace NodeJS {
     interface ProcessEnv {
       APP_ROOT: string;

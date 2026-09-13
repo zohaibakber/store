@@ -1,6 +1,7 @@
 import { defineConfig } from "vite-plus";
 
 const development = process.env["STORE_DESKTOP_DEV"] === "1";
+const updateChannel = process.env["STORE_UPDATE_CHANNEL"] ?? "latest";
 const electronMainBundleDeps = [
   /^@tanstack\//u,
   /^@sentry\//u,
@@ -13,6 +14,7 @@ const electronMainBundleDeps = [
   /^import-in-the-middle(?:\/|$)/u,
 ];
 const rendererConfig = {
+  __UPDATE_CHANNEL__: JSON.stringify(updateChannel),
   "import.meta.env.PROD": JSON.stringify(!development),
   "import.meta.env.VITE_API_URL": JSON.stringify(process.env["VITE_API_URL"] ?? ""),
   "import.meta.env.VITE_AUTH_URL": JSON.stringify(process.env["VITE_AUTH_URL"] ?? ""),

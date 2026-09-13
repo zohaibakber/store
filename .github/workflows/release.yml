@@ -2,14 +2,27 @@ name: Release
 
 on:
   workflow_call:
+    inputs:
+      channel:
+        description: Update channel to publish
+        required: false
+        default: latest
+        type: string
     outputs:
       version:
         description: Desktop version published by this run
         value: ${{ jobs.version.outputs.version }}
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Update channel to publish
+        required: true
+        default: latest
+        type: choice
+        options: [latest, nightly]
 
 concurrency:
-  group: desktop-release
+  group: desktop-release-${{ inputs.channel }}
   cancel-in-progress: false
 
 permissions:
@@ -33,13 +46,20 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          latest="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          latest="$(gh api "repos/${GH_REPO}/releases/latest" --jq .tag_name 2>/dev/null || true)"
           if [[ "$latest" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
           else
             version="$(node -p "require('./apps/desktop/package.json').version")"
           fi
+          if [ "${{ inputs.channel }}" = "nightly" ]; then
+            version="${version}-nightly.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          fi
           while gh release view "v${version}" >/dev/null 2>&1; do
+            if [ "${{ inputs.channel }}" = "nightly" ]; then
+              echo "::error::Nightly release v${version} already exists."
+              exit 1
+            fi
             IFS=. read -r major minor patch <<< "$version"
             version="${major}.${minor}.$((patch + 1))"
           done
@@ -54,9 +74,9 @@ jobs:
         # Windows packaging is paused until its CI runtime is worth restoring.
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    # Same GitHub Environment as the production Worker deploy, so desktop
-    # builds read the same public API URL and protocol the Worker trusts.
-    environment: Production
+    # Same GitHub Environment as the matching Worker deploy, so desktop builds
+    # read the public API URL and protocol that deployment trusts.
+    environment: ${{ inputs.channel == 'nightly' && 'Nightly' || 'Production' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -76,13 +96,13 @@ jobs:
         run: |
           if [ -z "${VITE_API_URL}" ]; then
             echo "::error::VITE_API_URL is empty." \
-                 "Set it on the Production GitHub Environment" \
+                 "Set it on the selected GitHub Environment" \
                  "or the packaged desktop app will talk to localhost."
             exit 1
           fi
           if [ -z "${VITE_AUTH_URL}" ]; then
             echo "::error::VITE_AUTH_URL is empty." \
-                 "Set it on the Production GitHub Environment or packaged sign-in cannot reach auth."
+                 "Set it on the selected GitHub Environment or packaged sign-in cannot reach auth."
             exit 1
           fi
           echo "VITE_API_URL=${VITE_API_URL}"
@@ -107,8 +127,10 @@ jobs:
 
       - name: Build and publish
         working-directory: apps/desktop
-        run: pnpm run release
+        run: pnpm run "${RELEASE_SCRIPT}"
         env:
+          RELEASE_SCRIPT: ${{ inputs.channel == 'nightly' && 'release:nightly' || 'release' }}
+          STORE_UPDATE_CHANNEL: ${{ inputs.channel }}
           # Publishes to this repo directly now that it's public; the default
           # GITHUB_TOKEN has contents:write (see workflow permissions above).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -126,7 +148,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish complete release
-        run: gh release edit "v${{ needs.version.outputs.version }}" --draft=false --latest
+        run: |
+          if [ "${{ inputs.channel }}" = "nightly" ]; then
+            gh release edit "v${{ needs.version.outputs.version }}" \
+              --draft=false \
+              --prerelease \
+              --latest=false
+          else
+            gh release edit "v${{ needs.version.outputs.version }}" \
+              --draft=false \
+              --prerelease=false \
+              --latest
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

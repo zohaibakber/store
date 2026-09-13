@@ -11,6 +11,7 @@
     "dev": "cross-env STORE_DESKTOP_DEV=1 vp pack --watch",
     "build": "tsc && vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir && vp pack && electron-builder --config electron-builder.json5",
     "release": "tsc && vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir && vp pack && electron-builder --config electron-builder.json5 --publish always",
+    "release:nightly": "tsc && vp -C ../web build --mode desktop --outDir ../desktop/dist --emptyOutDir && vp pack && electron-builder --config electron-builder.nightly.json5 --publish always",
     "check": "vp check",
     "test": "vitest run --root ../.. apps/desktop/test"
   },

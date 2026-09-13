@@ -110,6 +110,7 @@ export async function setupUpdater(
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = console;
+  if (__UPDATE_CHANNEL__ !== "latest") autoUpdater.channel = __UPDATE_CHANNEL__;
   autoUpdater.setFeedURL({
     provider: "github",
     owner: "zohaibakber",

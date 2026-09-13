@@ -1,0 +1,70 @@
+// Keep this packaging configuration aligned with electron-builder.json5.
+// The publisher differs because GitHub channels must be explicit.
+{
+  $schema: "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  appId: "com.tabaaq.desktop",
+  executableName: "tabaaq",
+  asar: true,
+  asarUnpack: ["**/*.node"],
+  afterPack: "./scripts/verify-after-pack.cjs",
+  productName: "Tabaaq",
+  protocols: [
+    {
+      name: "Tabaaq",
+      schemes: ["com.tabaaq.desktop"],
+    },
+  ],
+  directories: {
+    output: "release/${version}",
+  },
+  publish: [
+    {
+      provider: "github",
+      owner: "zohaibakber",
+      repo: "store",
+      channel: "nightly",
+      releaseType: "draft",
+    },
+  ],
+  files: ["dist", "dist-electron"],
+  icon: "assets/prod/icon.png",
+  extraResources: [
+    {
+      from: "assets/prod/icon.png",
+      to: "logo.png",
+    },
+  ],
+  mac: {
+    target: ["dmg"],
+    artifactName: "${productName}-Mac-${version}-Installer.${ext}",
+  },
+  win: {
+    target: [
+      {
+        target: "nsis",
+        arch: ["x64"],
+      },
+    ],
+    artifactName: "${productName}-Windows-${version}-Setup.${ext}",
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    deleteAppDataOnUninstall: false,
+  },
+  linux: {
+    target: ["AppImage"],
+    artifactName: "${productName}-Linux-${version}.${ext}",
+    category: "Office",
+    maintainer: "Zohaib Akber <zohaibakber99@gmail.com>",
+    icon: "assets/prod/icons",
+    desktop: {
+      entry: {
+        Icon: "tabaaq",
+        StartupWMClass: "Tabaaq",
+      },
+    },
+    syncDesktopName: true,
+  },
+}
