@@ -302,7 +302,7 @@ export const connector: PowerSyncBackendConnector = {
 
 ### Getting the PowerSync Instance URL
 
-See `references/powersync-cli.md` § "Getting POWERSYNC_URL" — the instance ID is printed by `powersync link cloud --create` and the URL pattern is `https://<instance-id>.powersync.journeyapps.com`. Write it to `.env` before writing app code.
+See `references/powersync-cli.md` § "Getting POWERSYNC_URL" — the instance ID is printed by `powersync link cloud --create` and the URL pattern is `https://<instance-id>.powersync.journeyapps.com`. Write it to `.env` before running integration that requires it.
 
 For self-hosted, the URL is whatever hostname your PowerSync Docker service is exposed on (e.g. `http://localhost:8080`).
 

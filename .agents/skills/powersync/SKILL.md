@@ -1,6 +1,6 @@
 ---
 name: powersync
-description: Guided onboarding and best practices for building applications with PowerSync — Cloud and self-hosted setup, sync configuration, client SDK usage, backend integration (Supabase, custom Postgres, MongoDB, MySQL, MSSQL), and debugging. Use this skill whenever the user mentions PowerSync, offline-first sync, local-first architecture, sync rules, sync streams, uploadData, fetchCredentials, real-time data replication, Electric Cloud migration, Electric Shapes, or wants to add offline-capable sync to a mobile or web app — even if they don't explicitly name PowerSync.
+description: Configure or debug PowerSync streams, client replication, authentication, and uploads.
 license: MIT
 compatibility: Works with any skills-compatible agent. Some references include CLI commands requiring the @powersync/cli package.
 metadata:
@@ -10,29 +10,25 @@ metadata:
   tags: powersync, offline-first, local-first, sync-streams, sqlite, replication, uploadData, fetchCredentials, service-config, sync-config, cloud, cli, debugging, supabase, postgres, mongodb, mysql, electric, electric-migration
 ---
 
-# PowerSync Skills
+# PowerSync
 
-Use this skill to onboard a project onto PowerSync without trial-and-error. Treat this as a guided workflow first and a reference library second.
+Use the existing backend, deployment tooling, and pinned SDKs. This project uses Postgres for inventory authority and PowerSync for organization-scoped client replicas; a local SDK fix does not require new infrastructure.
 
-**Agents: Read [AGENTS.md](AGENTS.md) before proceeding.** It contains the mandatory compliance rules and onboarding playbook. The Quick Rules below are a reminder, not a substitute. **`powersync login`** is **PowerSync Cloud only** (PAT); self-hosted does not use it.
+## Scope and completion
 
-## Terminology
+Infer the environment and backend from project configuration and the conversation. Ask only for missing information needed by the current operation. Prepare and validate local changes within the requested scope; deployment requires authorization for the target and operation. Reuse authorization already given and verify the actual target before applying it.
 
-- **Operator** — the human directing this agent (whose request you are fulfilling).
-- **User** — an end-user of the operator's PowerSync app (JWT subjects, the row a sync stream filters by, the person calling `disconnectAndClear()`).
+For new onboarding, choose the matching guide below. Service readiness is needed for end-to-end sync verification, but independent client implementation can proceed while credentials or setup are pending. Prefer existing IaC for managed resources; CLI workflows are available for CLI-managed instances.
 
-If a sentence is ambiguous, default to the operator interpretation. Full legend in `AGENTS.md`.
+Keep secrets in the project's untracked environment or secret store. Do not hardcode them or upgrade dependencies as an incidental part of a fix. `pull instance` overwrites local configuration, so preserve local edits before using it.
 
-## Quick Rules
+## SDK invariants
 
-- **CLI-first.** Use the [PowerSync CLI](https://docs.powersync.com/tools/cli.md) for all operations. Do not hand-write config files. See `references/powersync-cli.md`.
-- **Ask, don't assume.** Ask the operator: Cloud vs self-hosted, and which backend (Supabase, Postgres, MongoDB, MySQL, MSSQL). Do not default to Supabase.
-- **Backend before frontend.** Deploy sync config and verify the service before writing app code.
-- **Sync Streams for new projects.** Sync Rules are legacy.
-- **Keep credentials in `.env`, never hardcoded.** Record URLs and keys in `.env` as they become available; config (`!env`) and app code read from there.
-- **Default scope on existing projects: sync-config only.** Do not edit `service.yaml` or `cli.yaml` unless the operator explicitly authorized service/infra changes in this conversation.
-- **Confirm the target instance before any mutating command** (`deploy`, `destroy`, `stop`, `link --create`, `pull instance`). Never deploy to an instance not authorized by the operator. Treat production as off-limits unless explicitly approved.
-- **Use project memory.** If your harness supports it, persist the CLI invocation, sync-config path, authorized instance ids + environment (dev/staging/prod), and allowed scope of changes. Verify saved values still match reality before acting on them. See `AGENTS.md` § "Continuous Use & Guardrails".
+- PowerSync creates the `id` column automatically. Represent booleans with integer columns and ISO dates with text columns.
+- Connection initiation is separate from first-sync readiness. Keep `waitForFirstSync()` off the shell's first-paint path.
+- Complete an upload transaction only after it succeeds or is deliberately handled under the application's rejection policy. An uncompleted transaction retries; completing a failed write loses that queued work.
+- Clear the replica when logout or an identity/organization switch requires removing the previous identity's data. Coordinate this with pending-write policy.
+- New sync configurations use Sync Streams. Do not migrate existing Sync Rules as an unrelated change.
 
 ## What to Load for Your Task
 
@@ -55,7 +51,7 @@ If a sentence is ambiguous, default to the operator interpretation. Full legend 
 
 ### JavaScript / TypeScript
 
-Always load `references/sdks/powersync-js.md` for any JS/TS project, then load the applicable framework file.
+For SDK lifecycle and upload changes, use `references/sdks/powersync-js.md`; add the framework reference when its integration is relevant.
 
 | Framework | File | Load early if… |
 |-----------|------|----------------|
@@ -74,12 +70,3 @@ Always load `references/sdks/powersync-js.md` for any JS/TS project, then load t
 | .NET | `references/sdks/powersync-dotnet.md` |
 | Kotlin | `references/sdks/powersync-kotlin.md` |
 | Swift | `references/sdks/powersync-swift.md` |
-
-## Key Rules to Apply Without Being Asked
-
-- Never define the `id` column in a PowerSync table schema; it is created automatically.
-- Use `column.integer` for booleans and `column.text` for ISO date strings.
-- `connect()` is fire-and-forget. Use `waitForFirstSync()` if you need readiness.
-- `transaction.complete()` is mandatory or the upload queue stalls permanently.
-- `disconnectAndClear()` is required on logout or user switch when local data must be wiped.
-- A 4xx response from `uploadData` blocks the upload queue permanently; return 2xx for validation errors.

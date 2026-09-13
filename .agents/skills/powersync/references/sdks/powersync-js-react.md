@@ -7,7 +7,7 @@ metadata:
 
 # PowerSync React & Next.js
 
-> **Load this when** building a React web app, Next.js app, or any Vite + React project. Load **before** package install for Vite projects — contains the required `vite.config.ts` setup. Always load `powersync-js.md` first.
+> **Load this when** building a React web app, Next.js app, or any Vite + React project. Load **before** package install for Vite projects — contains the required `vite.config.ts` setup. Use `powersync-js.md` when SDK lifecycle or upload details are needed.
 
 ## Table of Contents
 - [Provider Setup](#provider-setup)

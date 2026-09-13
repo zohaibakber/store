@@ -15,7 +15,7 @@ Use this recipe when onboarding any app onto PowerSync Cloud with a Supabase bac
 
 ## Required Inputs
 
-Collect before editing app code:
+Collect the inputs needed for the current setup step; infer existing values from configuration:
 
 - Whether the PowerSync Cloud instance already exists
 - PowerSync instance URL (if instance exists)
@@ -30,7 +30,7 @@ Only ask for the Postgres connection string when you reach the service configura
 
 ## Workflow
 
-Follow this sequence exactly. **Do not skip ahead to app code.**
+Use this sequence for a new service. Reuse existing setup and proceed with independent implementation when later integration steps are blocked.
 
 ### Phase 1: Service Setup
 
@@ -38,7 +38,7 @@ Follow this sequence exactly. **Do not skip ahead to app code.**
 
 2. **Keep credentials in `.env`, never hardcoded.** As soon as Supabase project details are available, record `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `PS_DATABASE_URI`, and `POWERSYNC_URL` in `.env`. Both `service.yaml` (via `!env` tags) and app code depend on these values. For how to get `POWERSYNC_URL`, see `references/powersync-cli.md` § "Getting POWERSYNC_URL". New Supabase projects use publishable keys (prefixed `sb_publishable_…`) instead of the legacy anon key — use it as the value for `SUPABASE_ANON_KEY`.
 
-3. **Run the Supabase publication SQL.** The publication must exist before PowerSync connects to the database. See `references/supabase-auth.md` § "Supabase Database Setup" for the exact SQL. Present it to the operator and ask them to confirm.
+3. **Run the Supabase publication SQL.** The publication must exist before PowerSync connects to the database. See `references/supabase-auth.md` § "Supabase Database Setup" for the exact SQL. Apply it when authorized for that database; otherwise prepare it for the operator.
 
 4. **Scaffold and configure PowerSync.**
    - **New instance (CLI):** `powersync init cloud` → edit config → `powersync link cloud --create --project-id=<id>` → deploy
@@ -61,7 +61,7 @@ Follow this sequence exactly. **Do not skip ahead to app code.**
 
 ### Phase 2: Backend Readiness Gate
 
-Do not proceed to app code until all items are verified:
+Before verifying end-to-end sync, check:
 
 - [ ] PowerSync instance exists and is running
 - [ ] Source database connection is configured
@@ -70,11 +70,11 @@ Do not proceed to app code until all items are verified:
 - [ ] Client auth is configured for Supabase
 - [ ] All credentials and URLs are in `.env`
 
-If any item is missing, finish it before writing app code.
+Verify these items before claiming end-to-end synchronization works. Independent client changes can proceed while service setup is pending.
 
 ### Phase 3: App Integration
 
-Only after Phase 2 is complete.
+Client implementation can proceed against the chosen schema and auth contract; live verification depends on Phase 2.
 
 9. **Install SDK packages.** Load the SDK reference file for your platform — see the SDK table in `SKILL.md`.
 
@@ -98,4 +98,4 @@ Only after Phase 2 is complete.
 
 ## If the App Is Stuck on `Syncing...`
 
-See `references/powersync-debug.md` § "First Response When the UI Is Stuck on `Syncing...`" — check backend readiness before inspecting frontend code.
+See `references/powersync-debug.md` § "First Response When the UI Is Stuck on `Syncing...`" — use the observed symptoms to distinguish backend readiness failures from client initialization problems.

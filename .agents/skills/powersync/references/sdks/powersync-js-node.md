@@ -7,7 +7,7 @@ metadata:
 
 # PowerSync Node.js & Electron
 
-> **Load this when** building a Node.js CLI tool, background sync process, ETL pipeline, or Electron desktop app. Always load `powersync-js.md` first.
+> **Load this when** building a Node.js CLI tool, background sync process, ETL pipeline, or Electron desktop app. Use `powersync-js.md` when SDK lifecycle or upload details are needed.
 
 Node.js-specific integration for the PowerSync JavaScript SDK. Use this reference alongside `references/sdks/powersync-js.md` when building Node.js CLI tools, background sync processes, ETL pipelines, or Electron desktop apps.
 

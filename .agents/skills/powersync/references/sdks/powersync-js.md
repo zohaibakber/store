@@ -5,7 +5,7 @@ metadata:
   tags: javascript, typescript, web, sqlite, offline-first
 ---
 
-> **Load this when** working on any JavaScript or TypeScript project with PowerSync. This is the foundation file — always load it first, then load the applicable framework-specific file alongside it.
+> **Load this when** working on any JavaScript or TypeScript project with PowerSync. Use the applicable framework reference when the task needs framework-specific integration.
 
 # PowerSync JavaScript/TypeScript SDK
 
@@ -97,7 +97,7 @@ npm install @powersync/tanstack-react-query@latest
 npm install @tanstack/powersync-db-collection@latest
 ```
 
-Always install packages using `@latest` as shown above — PowerSync releases frequently and older cached versions can be missing critical fixes. Do not write version strings into `package.json` manually.
+Use the project package manager and compatible pinned versions. The commands above illustrate new setup; use `@latest` only when a new install or upgrade is part of the task and compatibility has been checked.
 
 See the framework-specific files for full setup instructions per target.
 

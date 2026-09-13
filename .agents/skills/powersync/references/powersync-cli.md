@@ -46,7 +46,7 @@ These commands change Cloud state or local config. On an existing project, do no
 | Command | Effect | Required check |
 |---------|--------|----------------|
 | `powersync deploy` | Pushes `service.yaml` + `sync-config.yaml` to the linked instance | Confirm instance id and that the operator authorized deploying both files. If only sync streams changed, prefer `powersync deploy sync-config`. |
-| `powersync deploy service-config` | Replaces service config (replication, storage, auth) on the linked instance | Service-config edits are out-of-scope by default — get explicit operator authorization in this conversation before running. |
+| `powersync deploy service-config` | Replaces service config (replication, storage, auth) on the linked instance | Verify that the requested deployment includes service configuration and this target. |
 | `powersync deploy sync-config` | Replaces sync config on the linked instance | Confirm instance id + environment (dev/staging/prod) before running. Never deploy to a production instance the operator has not approved. |
 | `powersync destroy --confirm=yes` | Permanently destroys the linked Cloud instance | Always require explicit, in-conversation confirmation naming the instance. Treat as one-shot authorization. |
 | `powersync stop --confirm=yes` | Stops the linked Cloud instance (clients lose sync) | Same as `destroy` — confirm instance and that the operator accepts downtime. |
@@ -57,10 +57,10 @@ These commands change Cloud state or local config. On an existing project, do no
 **How to confirm the target instance.** Before any command in the table:
 
 1. Run `powersync fetch instances` (or read `powersync/cli.yaml`) and tell the operator the instance id, project id, and — if known from project memory — its environment.
-2. Production or unknown environment? Ask before proceeding. Do not assume "linked" means "safe."
-3. One approval = one command. Re-confirm for the next mutating command.
+2. Verify the environment and that the requested operation is authorized for it. A linked instance alone is not authorization; ask if the target or scope remains unknown.
+3. Reuse authorization for the stated workflow. Ask again only when the target, scope, or destructive impact goes beyond it.
 
-**Default scope on existing projects.** Edit and deploy `sync-config.yaml` only. Leave `service.yaml` and `cli.yaml` alone unless the operator has authorized service/infra changes in this conversation. See `AGENTS.md` § "Continuous Use & Guardrails".
+**Scope on existing projects.** Change the local files needed for the requested task. Deploy only the authorized configuration to the verified target; use existing IaC for resources it owns.
 
 ## Recommended Cloud Sequence
 
@@ -269,7 +269,7 @@ powersync fetch instances
 # → POWERSYNC_URL=https://69a961b40000000000000002.powersync.journeyapps.com
 ```
 
-Write it to `.env` as `POWERSYNC_URL=https://<instance-id>.powersync.journeyapps.com` before writing any app code.
+Write it to `.env` as `POWERSYNC_URL=https://<instance-id>.powersync.journeyapps.com` before running integration that requires it.
 
 ### Existing Cloud Instance
 

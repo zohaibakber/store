@@ -15,7 +15,7 @@ Use this recipe when onboarding any app onto PowerSync with a **non-Supabase bac
 
 ## Required Inputs
 
-Collect before writing any code:
+Collect the inputs needed for the current setup step; infer existing values from configuration:
 
 - **Cloud or self-hosted** — which PowerSync hosting model
 - **Database type** — Postgres, MongoDB, MySQL, or MSSQL
@@ -31,13 +31,13 @@ Only ask for secrets (database password, private keys) when you are at the step 
 
 ## Workflow
 
-Follow this sequence exactly. **Do not skip ahead to app code.**
+Use this sequence for a new service. Reuse existing setup and proceed with independent implementation when later integration steps are blocked.
 
 ### Phase 1: Service Setup
 
 1. **Confirm the path.** Verify: PowerSync (Cloud or self-hosted) + custom backend + your platform.
 
-2. **Set up the source database.** Load `references/powersync-service.md` § "Source Database Setup" for the relevant quick start (Postgres, MongoDB, MySQL, or MSSQL). Present the exact SQL to the operator and ask them to confirm it is done.
+2. **Set up the source database.** Load `references/powersync-service.md` § "Source Database Setup" for the relevant quick start (Postgres, MongoDB, MySQL, or MSSQL). Apply the exact SQL when authorized for that database; otherwise prepare it for the operator.
 
 3. **Keep credentials in `.env`, never hardcoded.** As soon as database details are available, record them there:
    ```
@@ -69,7 +69,7 @@ Follow this sequence exactly. **Do not skip ahead to app code.**
 
 ### Phase 2: Backend API
 
-Only start this after the PowerSync service is configured and running.
+Implement the backend against the selected auth and upload contracts; verify the live chain when the service is available.
 
 9. **Create the backend API.** Load `references/custom-backend.md` for full details. Your backend needs three endpoints: JWKS (`/.well-known/jwks.json`), token (`/api/auth/token`), and upload (`/api/powersync/upload`).
 
@@ -79,7 +79,7 @@ Only start this after the PowerSync service is configured and running.
 
 ### Phase 3: Backend Readiness Gate
 
-Do not proceed to app code until all items are verified:
+Before verifying end-to-end sync, check:
 
 - [ ] PowerSync instance exists and is running
 - [ ] Source database connection is configured
@@ -89,11 +89,11 @@ Do not proceed to app code until all items are verified:
 - [ ] Backend API is running (JWKS + token + upload endpoints)
 - [ ] All credentials and URLs are in `.env`
 
-If any item is missing, finish it before writing app code.
+Verify these items before claiming end-to-end synchronization works. Independent client changes can proceed while service setup is pending.
 
 ### Phase 4: App Integration
 
-Only after Phase 3 is complete.
+Client implementation can proceed against the chosen schema and auth contract; live verification depends on Phase 3.
 
 12. **Install SDK packages.** Load the SDK reference file for your platform — see the SDK table in `SKILL.md`.
 
@@ -113,4 +113,4 @@ Only after Phase 3 is complete.
 
 ## If the App Is Stuck on `Syncing...`
 
-See `references/powersync-debug.md` § "First Response When the UI Is Stuck on `Syncing...`" — check backend readiness before inspecting frontend code.
+See `references/powersync-debug.md` § "First Response When the UI Is Stuck on `Syncing...`" — use the observed symptoms to distinguish backend readiness failures from client initialization problems.

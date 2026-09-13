@@ -11,27 +11,18 @@ metadata:
 
 These are debugging steps most frequently recommended by PowerSync, with an explanation of what problem each step helps identify and why it works.
 
-Make sure to understand the [PowerSync Architecture](references/powersync-overview.md) before debugging.
+Use [the architecture overview](powersync-overview.md) when the read and upload paths are unclear.
 
 ## First Response When the UI Is Stuck on `Syncing...`
 
-Before asking for console logs or editing app code, verify these in order:
+Inspect available SDK status, errors, and initialization code to distinguish a client wait from an unavailable service. Check the relevant service prerequisites when the evidence points there:
 
-1. The PowerSync endpoint URL returned by `fetchCredentials()` is correct (not the backend URL).
-2. The PowerSync service has a valid source DB connection.
-3. Sync config was deployed and starts with `config: edition: 3`.
-4. Client auth is configured correctly (Supabase auth, custom JWKS, or other provider).
-5. Source database replication/publication/CDC is set up for the synced tables.
+- `fetchCredentials()` returns the PowerSync endpoint, not the backend URL.
+- The source database connection and replication/publication are configured.
+- Sync configuration is deployed and compatible with the service edition.
+- Client authentication is valid for the selected instance.
 
-Only inspect frontend connector code or SDK state after all five checks pass.
-
-Before requesting browser console logs, ask the operator to confirm:
-
-- the instance exists
-- the DB connection was configured
-- sync config was deployed
-- client auth was configured
-- source database replication/publication/CDC was set up
+Use existing configuration and logs before asking the operator for missing access or facts. A failed readiness check does not prevent independent client diagnosis.
 
 ## Check `SyncStatus` / `currentStatus` Before Investigating Further
 

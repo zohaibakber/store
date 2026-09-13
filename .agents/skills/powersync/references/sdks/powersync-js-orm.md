@@ -5,7 +5,7 @@ metadata:
   tags: javascript, typescript, drizzle, kysely, orm, powersync
 ---
 
-> **Load this when** the project uses Drizzle or Kysely ORM with PowerSync. Always load `powersync-js.md` first.
+> **Load this when** the project uses Drizzle or Kysely ORM with PowerSync. Use `powersync-js.md` when SDK lifecycle or upload details are needed.
 
 # Drizzle & Kysely ORM Integration
 

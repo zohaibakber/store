@@ -7,7 +7,7 @@ metadata:
 
 # PowerSync React Native, Expo & Expo Go
 
-> **Load this when** building a React Native app, Expo app (managed or bare), or Expo Go sandbox. Always load `powersync-js.md` first.
+> **Load this when** building a React Native app, Expo app (managed or bare), or Expo Go sandbox. Use `powersync-js.md` when SDK lifecycle or upload details are needed.
 
 React Native-specific integration for the PowerSync JavaScript SDK. Use this reference alongside `references/sdks/powersync-js.md` when building React Native apps, Expo apps (managed or bare workflow), or Expo Go sandboxes.
 

@@ -1,112 +1,32 @@
 ---
 name: effect
-description: |
-  Opinionated guide for building production TypeScript applications with Effect v4 (RC and later). Use when implementing Effect workflows, services, layers, schemas, configuration, schedules, caches, streams, HTTP clients, or tests.
+description: Implement or debug Effect v4 services, schemas, layers, and effectful workflows.
 license: MIT
 compatibility: Requires Effect v4. Examples are reviewed against the version documented in this repository.
 ---
 
-# Effect
+# Effect v4
 
-Use current Effect v4 APIs and the production defaults in this skill. Established project conventions still take precedence unless the task is explicitly changing them.
+Check the installed Effect version and source for API questions. This project uses v4 RCs; examples may lag its pin. Follow established project conventions and consult upstream v4 documentation when local types do not resolve a question.
 
-This monorepo pins `effect` / `@effect/*` at **`4.0.0-rc.110`** (see root `package.json` catalog). Prefer the installed package source and Effect v4 docs (`effect.website` v4 / migration guides) over Effect v3 muscle memory.
+## Project defaults
 
-## Source Rule
+- Compose with `Effect.gen`; use named `Effect.fn` for service operations where tracing matters.
+- Services use `Context.Service` and explicit layers. A service's `make` does not generate its layer.
+- Model boundary data with `Schema.Struct` and typed errors with `Schema.TaggedError`. Schema is exported from `effect`; avoid v3 `Context.Tag`, `@effect/schema`, and `Schema.TaggedErrorClass` assumptions.
+- Decode untrusted values at boundaries. Keep business rules in services and provider calls outside authoritative database transactions.
+- Provide required credentials and services explicitly. `Context.Reference` defaults must not silently replace required authority.
+- Retry only operations whose idempotency is established; keep exhausted failures visible unless a real fallback exists.
 
-Check these before guessing:
+## References by task
 
-- the nearest `AGENTS.md` and any project-local Effect practices doc
-- the project-pinned `effect` package source and version (`node_modules/effect/package.json`)
-- current upstream Effect v4 docs / migration notes when the installed package does not answer the question
-- never invent v3-era names (`Context.Tag`, `@effect/schema`, `Schema.TaggedErrorClass`) — they are wrong for this pin
+- Data models and decoding: [schemas](references/SCHEMA.md).
+- Services, errors, layers, and runtime ownership: [services and layers](references/SERVICES_LAYERS.md).
+- Runtime environment configuration: [config](references/CONFIG.md).
+- Retry, polling, and backoff: [scheduling](references/SCHEDULING.md).
+- TTL, deduplication, and batching: [caching](references/CACHING.md).
+- Event sources and backpressure: [streams](references/STREAMS.md).
+- Outgoing requests: [HTTP clients](references/HTTP_CLIENTS.md).
+- Effect test clocks and synchronization: [testing](references/TESTING.md).
 
-## Effect v4 (what changed vs v3 — use these)
-
-- **Services:** `Context.Service` (not `Context.Tag` / `Effect.Service` as the default app tag). Optional `make` on the service class; build layers with `Layer.effect(this, this.make)` (+ `Layer.provide`) yourself — `make` does not auto-emit a layer.
-- **Typed errors:** `Schema.TaggedError<Self>()("Tag", { fields })` (schema-backed, yieldable). `Data.TaggedError` is fine for lightweight non-schema errors. There is **no** `Schema.TaggedErrorClass` in Effect v4.
-- **Schemas:** `Schema` lives in `effect` (not `@effect/schema`). Prefer `Schema.Struct` + same-name `interface`; tagged unions via `Schema.TaggedUnion` / `Schema.TaggedStruct`.
-- **Ops:** `Effect.fn("Domain.op")` for public / non-trivial methods (spans + stack frames). Prefer `Effect.gen`.
-- **Unstable modules:** still under `effect/unstable/*` (http, httpapi, cluster, workflow, ai) until promoted — breaking changes allowed in minor RCs. Prefer them for HTTP/API when the codebase already does; do not treat “unstable” as “avoid”.
-- **HTTP:** `effect/unstable/http/HttpClient` (+ Request/Response). FiberRef-style HttpClient knobs moved toward `Context.Reference` in v4 — provide references explicitly rather than deleted convenience FiberRefs.
-- **Cache / schedule / stream:** prefer `effect/Cache`, `Schedule`, `Stream` over hand-rolled Map/TTL/dedupe and sleep loops.
-
-## Branch Chooser
-
-Read only the branch references that match the task.
-
-- Data models, schemas, brands, variants, optional keys, or decoders: read `references/SCHEMA.md`.
-- Services, module surfaces, layers, runtime wiring, errors, `Effect.fn`, or test services: read `references/SERVICES_LAYERS.md`.
-- Runtime config, env variables, `ConfigProvider`, or `layerConfig`: read `references/CONFIG.md`.
-- Retry, repeat, polling, backoff, jitter, rate-limit-aware policies, or pass loops: read `references/SCHEDULING.md`.
-- Memoization, per-key TTL caches, deduplicating concurrent lookups, or request batching: read `references/CACHING.md`.
-- Streams, event sources, async iterables, queues/pubsubs, pagination, backpressure, or stream consumers: read `references/STREAMS.md`.
-- Outgoing HTTP calls, Effect HttpClient, status handling, or HTTP rate limiting: read `references/HTTP_CLIENTS.md`.
-- Effect tests, time, sleeps, concurrency synchronization, or fakes: read `references/TESTING.md`.
-
-If a task spans several branches, read all matching files before editing.
-
-## Core Defaults
-
-- Compose workflows with `Effect.gen(function* () { ... })`.
-- Define public service methods and non-trivial internal service methods with `Effect.fn("Domain.operation")`.
-- Use `Effect.fnUntraced` only for internal helpers where stack-frame/span metadata is intentionally unnecessary.
-- Prefer `Context.Service` for application services when the codebase has not standardized on another current service-tag style.
-- Build real service implementations with `Layer.effect(Service, Effect.gen(...))` and return `Service.of({ ... })`.
-- Model records with `Schema.Struct(...)` plus a same-name `interface`.
-- Model typed Effect errors with `Schema.TaggedError`.
-- Read runtime config through `Config`, not direct `process.env` access in application logic.
-- Use `Schedule` for retry, repeat, polling, pacing, and backoff policies.
-- Use `Stream` for effectful sources that emit many values over time and need pull, backpressure, interruption, or transformation.
-- Prefer Effect HTTP client modules for outgoing HTTP in Effect applications when their typed errors, layers, and client transforms are useful.
-- Prefer Effect-aware tests, explicit layers, and deterministic synchronization over sleeps.
-- Prefer decoders and `schema.makeEffect(...)` at untrusted boundaries; reserve throwing `schema.make(...)` for trusted construction, and never use casts to skip validation.
-
-## Quick Selection Guide
-
-- Ordinary object record: `Schema.Struct(...)` plus same-name `interface`.
-- Scalar ID/value object: constrained branded schema.
-- Internal workflow decision or state: `Data.TaggedEnum<...>` plus `Data.taggedEnum<...>()` constructors and exhaustive `$match`.
-- Reusable boundary-crossing tagged variant: `Schema.TaggedStruct(...)` plus same-name `interface`.
-- Boundary-crossing tagged union: `Schema.TaggedUnion(...)` with `.cases`, `.guards`, and `.match`.
-- External/custom discriminator such as `type`: `Schema.Struct({ type: Schema.tag("variant"), ... })` plus `Schema.toTaggedUnion("type")` when union helpers are needed.
-- Expected typed failure: `Schema.TaggedError`.
-- Unknown boundary payload: `Schema.decodeUnknownEffect(...)`.
-- Service boundary: `Context.Service<Service, Interface>()(...)` plus `Layer.effect(...)` plus `Service.of(...)`.
-- Public or non-trivial internal service method: `Effect.fn("Domain.operation")`.
-- Runtime configuration: `Config` recipes read in layers; override with `ConfigProvider` in tests.
-- Event source: `Stream` consumed with `Stream.runForEach(...)` and forked with `Effect.forkScoped` in the owning layer.
-- Queue-backed event source: `Queue` for the producer boundary, `Stream.fromQueue(...)` for consumers.
-- Broadcast event source: `PubSub` / `Stream.fromPubSub(...)` or `SubscriptionRef` for latest-value state.
-- Polling worker: `runPass().pipe(Effect.repeat(Schedule.spaced(...)))`, with typed pass failures handled before repeat.
-- Retry transient operation: `Effect.retry(...)` / `Effect.retryOrElse(...)` with a bounded `Schedule`.
-- Keyed lookup cache with TTL and concurrent-lookup dedupe: prefer `Cache.make(...)` / exit-aware `Cache.makeWith(...)` when their lifecycle and eviction model fit.
-- Memoize a single effect result: `Effect.cached(...)` / `Effect.cachedWithTTL(...)`.
-- Batch N keys into one backend call (only when a real batch endpoint exists): `Effect.request(...)` + `RequestResolver`.
-- HTTP request in an Effect application: prefer Effect `HttpClient` plus request/response schema decoding.
-- HTTP transient retry: `HttpClient.retryTransient(...)`.
-- Time-sensitive test: `TestClock`, not real sleeping.
-- Concurrent/background test synchronization: `Deferred`, `Queue`, `Latch`, `Ref`, or explicit test hooks.
-
-## Boundary Rules
-
-- Keep HTTP handlers thin: decode input, read context, call services, map typed errors to transport responses.
-- Keep business rules in services or domain functions, not transport handlers.
-- Wrap HTTP clients, SDKs, CLIs, and external integrations in named effects at adapter boundaries.
-- Decode persisted rows with Schema or SQL-specific helpers when values are not trivially trusted.
-- Keep provider/network calls outside authoritative database transactions.
-- Catch or retry only when the current boundary has a truthful response.
-- Retry only when the operation has proven idempotency.
-- Let exhausted failures remain visible unless the boundary has a real fallback.
-
-## Do Nots
-
-- Do not use `as any`, non-null assertions, or unchecked casts to silence Effect typing problems.
-- Do not introduce `Schema.Class` or `Schema.TaggedClass` as default app data-modeling patterns.
-- Do not hand-roll `_tag` error classes when `Schema.TaggedError` fits.
-- Do not write `Schema.TaggedErrorClass` — that name does not exist in Effect v4; use `Schema.TaggedError`.
-- Do not use cause-level recovery when typed-error recovery is enough.
-- Do not use `Layer.mergeAll(...)` or `provideMerge(...)` as blind make-it-compile tools.
-- Do not hide required application authority, credentials, persistence, transports, or external services behind `Context.Reference` defaults.
-- Do not add arbitrary `Effect.sleep(...)` to tests when a deterministic synchronization primitive is available.
-- Do not hand-roll Map/TTL/prune caches or in-flight dedupe when `effect/Cache` fits.
+Load the sections relevant to the change. Performance work involving runtime reuse or first paint is covered by [effect-efficiency](../effect-efficiency/SKILL.md).
