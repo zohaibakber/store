@@ -8,10 +8,10 @@
  * is not the site host, then `api.${site}`. There is no baked product domain.
  */
 export const PRODUCTION_DOMAIN_MISSING_MESSAGE =
-  "Production hostname is not configured. Set PRODUCTION_DOMAIN (hostname only, e.g. example.com) on the Production GitHub Environment.";
+  "Published hostname is not configured. Set PRODUCTION_DOMAIN (hostname only, e.g. example.com) on the stage's GitHub Environment.";
 
 export const PRODUCTION_API_DOMAIN_MISSING_MESSAGE =
-  "Production API hostname is not configured. Set PRODUCTION_DOMAIN (API becomes api.<domain>), PRODUCTION_API_DOMAIN, or VITE_API_URL (https://api.example.com) on the Production GitHub Environment.";
+  "Published API hostname is not configured. Set PRODUCTION_DOMAIN (API becomes api.<domain>), PRODUCTION_API_DOMAIN, or VITE_API_URL (https://api.example.com) on the stage's GitHub Environment.";
 
 export type ProductionDomainEnv = {
   readonly PRODUCTION_DOMAIN?: string;

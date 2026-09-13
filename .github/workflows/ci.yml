@@ -2,11 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, nightly]
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'prod' || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref_name || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
@@ -48,9 +48,9 @@ jobs:
     needs: verify
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: Production
+    environment: ${{ github.ref_name == 'main' && 'Production' || 'Nightly' }}
     env:
-      STAGE: prod
+      STAGE: ${{ github.ref_name == 'main' && 'prod' || 'nightly' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -89,12 +89,13 @@ jobs:
           echo "VITE_SENTRY_DSN=${VITE_SENTRY_DSN:+set}"
           if [ -z "${PRODUCTION_DOMAIN}" ]; then
             echo "::error::PRODUCTION_DOMAIN is empty." \
-                 "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
+                 "Set PRODUCTION_DOMAIN (hostname only) on the ${STAGE} GitHub Environment."
             exit 1
           fi
         env:
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
           AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_BASE_URL: ${{ vars.AUTH_BASE_URL }}
           AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
           AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
@@ -119,6 +120,7 @@ jobs:
           CI: "1"
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
           AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
+          AUTH_BASE_URL: ${{ vars.AUTH_BASE_URL }}
           AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
           AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
           AUTH_DEV_OTP: ${{ vars.AUTH_DEV_OTP }}
@@ -146,3 +148,5 @@ jobs:
       contents: write
     secrets: inherit
     uses: ./.github/workflows/release.yml
+    with:
+      channel: ${{ github.ref_name == 'main' && 'latest' || 'nightly' }}

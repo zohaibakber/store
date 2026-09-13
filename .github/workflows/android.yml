@@ -2,7 +2,7 @@ name: Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, nightly]
   workflow_dispatch:
 
 concurrency:
@@ -19,7 +19,7 @@ jobs:
   release-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: Production
+    environment: ${{ github.ref_name == 'main' && 'Production' || 'Nightly' }}
     env:
       API_URL: ${{ vars.VITE_API_URL }}
       AUTH_URL: ${{ vars.VITE_AUTH_URL }}
@@ -66,7 +66,7 @@ jobs:
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty." \
                 "Set VITE_API_URL, VITE_AUTH_URL, and GOOGLE_OAUTH_CLIENT_ID" \
-                "on the Production GitHub Environment."
+                "on the selected GitHub Environment."
               exit 1
             fi
           done
@@ -111,7 +111,7 @@ jobs:
       - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: tabaaq-android-${{ github.sha }}
+          name: tabaaq-android-${{ github.ref_name }}-${{ github.sha }}
           path: apps/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

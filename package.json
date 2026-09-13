@@ -15,6 +15,8 @@
     "test": "turbo run test",
     "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "pnpm exec alchemy deploy --stage dev --env-file .env.dev",
+    "plan:nightly": "pnpm exec alchemy plan --stage nightly --env-file .env.nightly",
+    "deploy:nightly": "pnpm exec alchemy deploy --stage nightly --env-file .env.nightly",
     "plan:prod": "pnpm exec alchemy plan --stage prod --env-file .env.prod",
     "deploy:prod": "pnpm exec alchemy deploy --stage prod --env-file .env.prod",
     "destroy:dev": "pnpm exec alchemy destroy --stage dev --env-file .env.dev",

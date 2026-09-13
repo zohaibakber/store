@@ -38,11 +38,13 @@ Run deployments from the repository root and always pass a stage:
 ```sh
 pnpm run plan:dev
 pnpm run deploy:dev
+pnpm run plan:nightly
+pnpm run deploy:nightly
 pnpm run plan:prod
 pnpm run deploy:prod
 ```
 
-Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
+Secrets come from gitignored `.env.dev`, `.env.nightly`, and `.env.prod` files. Use different
 JWT keys and peppers for each stage. Set `POWERSYNC_URL` to that stage's
 PowerSync endpoint; configure its source with the direct Neon connection, the
 auth Worker's JWKS URL, and audience `tabaaq-api`.

@@ -59,6 +59,7 @@ export const AuthLive = Auth.make(
     const database = yield* AuthDatabase;
     const ephemeral = yield* Cloudflare.KV.Namespace("AuthEphemeral");
     const { stage } = yield* Alchemy.Stack;
+    const published = stage === "prod" || stage === "nightly";
     const productionDomain = process.env.PRODUCTION_DOMAIN ?? "";
     const productionAuthDomain = process.env.PRODUCTION_AUTH_DOMAIN ?? "";
     const authBaseUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
@@ -66,13 +67,13 @@ export const AuthLive = Auth.make(
       Config.withDefault(""),
     );
     const authHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod"
+      !globalThis.__ALCHEMY_RUNTIME__ && published
         ? resolveProductionAuthHostname({ productionDomain, productionAuthDomain })
         : undefined;
-    if (!globalThis.__ALCHEMY_RUNTIME__ && stage === "prod" && !authHostname) {
+    if (!globalThis.__ALCHEMY_RUNTIME__ && published && !authHostname) {
       return yield* Effect.die(
         new Error(
-          "Production auth hostname is missing. Set PRODUCTION_DOMAIN or PRODUCTION_AUTH_DOMAIN.",
+          "Published auth hostname is missing. Set PRODUCTION_DOMAIN or PRODUCTION_AUTH_DOMAIN.",
         ),
       );
     }
@@ -101,6 +102,7 @@ export const AuthLive = Auth.make(
     const ephemeralBinding = yield* Cloudflare.KV.ReadWriteNamespace(ephemeralResource);
     const { stage } = yield* Alchemy.Stack;
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
+    const published = stage === "prod" || stage === "nightly";
 
     const productionDomain = yield* Config.string("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.string("PRODUCTION_AUTH_DOMAIN").pipe(
@@ -113,7 +115,7 @@ export const AuthLive = Auth.make(
     });
     const baseUrl =
       configuredAuthUrl.trim() ||
-      (!localDevelopment && stage === "prod" && authHostname
+      (!localDevelopment && published && authHostname
         ? `https://${authHostname}`
         : LOCAL_AUTH_ORIGIN);
     const trustedOriginsRaw = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(

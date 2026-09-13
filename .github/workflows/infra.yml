@@ -7,7 +7,7 @@ on:
         description: Stage to target
         required: true
         type: choice
-        options: [dev, prod]
+        options: [dev, nightly, prod]
       action:
         description: Preview the plan, or apply it
         required: true
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     # `Production` should be a protected GitHub Environment requiring manual
     # approval. Auth signing keys and peppers are scoped per environment.
-    environment: ${{ inputs.stage == 'prod' && 'Production' || 'Development' }}
+    environment: ${{ inputs.stage == 'prod' && 'Production' || inputs.stage == 'nightly' && 'Nightly' || 'Development' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -71,9 +71,9 @@ jobs:
           echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
           echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
           echo "VITE_AUTH_URL=${VITE_AUTH_URL:-<unset>}"
-          if [ "${{ inputs.stage }}" = "prod" ] && [ -z "${PRODUCTION_DOMAIN}" ]; then
+          if [ "${{ inputs.stage }}" != "dev" ] && [ -z "${PRODUCTION_DOMAIN}" ]; then
             echo "::error::PRODUCTION_DOMAIN is empty." \
-                 "Set PRODUCTION_DOMAIN (hostname only) on the Production GitHub Environment."
+                 "Set PRODUCTION_DOMAIN (hostname only) on the selected GitHub Environment."
             exit 1
           fi
         env:
@@ -90,9 +90,9 @@ jobs:
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
-          VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
-          VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
-          VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
+          VITE_API_URL: ${{ inputs.stage != 'dev' && vars.VITE_API_URL || '' }}
+          VITE_AUTH_URL: ${{ inputs.stage != 'dev' && vars.VITE_AUTH_URL || '' }}
+          VITE_SENTRY_DSN: ${{ inputs.stage != 'dev' && vars.VITE_SENTRY_DSN || '' }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
@@ -116,7 +116,7 @@ jobs:
           PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
           PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
           PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
-          VITE_API_URL: ${{ inputs.stage == 'prod' && vars.VITE_API_URL || '' }}
-          VITE_AUTH_URL: ${{ inputs.stage == 'prod' && vars.VITE_AUTH_URL || '' }}
-          VITE_SENTRY_DSN: ${{ inputs.stage == 'prod' && vars.VITE_SENTRY_DSN || '' }}
+          VITE_API_URL: ${{ inputs.stage != 'dev' && vars.VITE_API_URL || '' }}
+          VITE_AUTH_URL: ${{ inputs.stage != 'dev' && vars.VITE_AUTH_URL || '' }}
+          VITE_SENTRY_DSN: ${{ inputs.stage != 'dev' && vars.VITE_SENTRY_DSN || '' }}
           POWERSYNC_URL: ${{ vars.POWERSYNC_URL }}

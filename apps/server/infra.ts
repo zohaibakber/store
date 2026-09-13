@@ -50,13 +50,12 @@ export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    const published = stage === "prod" || stage === "nightly";
     // Domain attachment is deploy-time only. This generator is also the Worker
     // entry (`main: import.meta.url`); `require*` reads `process.env`, which is
     // empty in workerd and 1101'd every request (including CORS preflight).
     const apiHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod"
-        ? requireProductionApiHostname()
-        : undefined;
+      !globalThis.__ALCHEMY_RUNTIME__ && published ? requireProductionApiHostname() : undefined;
     const worker = {
       main: import.meta.url,
       // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
@@ -120,12 +119,13 @@ export const ApiLive = Api.make(
     const powerSyncUrl = yield* Config.string("POWERSYNC_URL").pipe(Config.withDefault(""));
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const { stage } = yield* Alchemy.Stack;
+    const published = stage === "prod" || stage === "nightly";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
     const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
     // Hostname presence is a deploy-time check (CI already fails closed).
     // Dying here in the Worker turns a missing env into Cloudflare 1101 on
     // every request, which the browser reports as a CORS failure.
-    if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && stage === "prod") {
+    if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && published) {
       if (!productionHostname) {
         return yield* Effect.die(new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE));
       }

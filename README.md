@@ -63,20 +63,23 @@ main process, preload bridge, packaging, and native integrations.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
-resource. There are two isolated cloud stages, `dev` and `prod`:
+resource. There are three isolated cloud stages: `dev`, `nightly`, and `prod`:
 
 ```sh
 pnpm run plan:dev      # preview
 pnpm run deploy:dev
+pnpm run plan:nightly  # preview the shared pre-production stack
+pnpm run deploy:nightly
 pnpm run deploy:prod
 ```
 
-Create gitignored `.env.dev` and `.env.prod` at the repository root. Give each
+Create gitignored `.env.dev`, `.env.nightly`, and `.env.prod` at the repository root. Give each
 stage its own ES256 key pair, refresh and ephemeral peppers, and Google OAuth
 credentials. Worker setup and stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change. Pull requests do not create Cloudflare
-resources. A push to `main` deploys `prod`. `alchemy deploy` builds the SPA.
+resources. A push to `nightly` deploys the isolated `nightly` stage, while a
+push to `main` deploys `prod`. `alchemy deploy` builds the SPA.
 CI does not run a separate Vite build. Bootstrap its least-privilege Cloudflare
 credentials once:
 
@@ -85,7 +88,7 @@ pnpm exec alchemy login --profile admin
 CLOUDFLARE_ACCOUNT_ID=<account-id> pnpm run setup:ci
 ```
 
-The bootstrap stack creates the `Development` and `Production` GitHub
+The bootstrap stack creates the `Development`, `Nightly`, and `Production` GitHub
 environments and stores `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as
 repository secrets. Alchemy only binds Worker `Config` keys that are present in
 the deploy job's environment, so GitHub must pass every auth setting the Worker
@@ -106,8 +109,10 @@ Each GitHub Environment must define:
   `AUTH_TRUSTED_ORIGINS` (comma-separated `https://` origins, bare hosts, or
   wildcard patterns), and `AUTH_DEV_OTP`. Blank values are treated as unset.
 
-The `Production` environment must also define these variables. There is no
-domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
+The `Nightly` and `Production` environments must also define these variables.
+There is no domain baked into source. Published deploys fail if
+`PRODUCTION_DOMAIN` is missing. In `Nightly`, the name still refers to that
+environment's public hostname, not the production hostname.
 
 - `PRODUCTION_DOMAIN`. Site hostname only (example: `tabaaq.app`). Website Worker.
 - `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`). Desktop and the
@@ -117,6 +122,10 @@ domain baked into source. Prod deploys fail if `PRODUCTION_DOMAIN` is missing.
 - `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the
   Worker).
+
+Use a separate hostname such as `nightly.tabaaq.app` for `Nightly`, and add that
+site origin to `AUTH_TRUSTED_ORIGINS`. Nightly uses its own auth keys, peppers,
+Postgres project, D1 database, KV namespace, and PowerSync endpoint.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
@@ -137,8 +146,10 @@ issues the same session as every other route. That needs:
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
 Android release APKs run from `.github/workflows/android.yml` on a push to
-`main` and on `workflow_dispatch`. They build the Gradle app in `apps/android`.
-Nothing is submitted to Google Play.
+`main` or `nightly`, and on `workflow_dispatch`. They build the Gradle app in
+`apps/android`. Nightly builds remain 14-day workflow artifacts. The moving
+`android` GitHub release is updated only from `main`. Nothing is submitted to
+Google Play.
 
 Desktop releases run from CI after a successful production deploy on
 `main` via electron-builder (`electron-builder --publish always`). Each run
@@ -146,6 +157,13 @@ bumps the latest GitHub release patch and publishes a draft until Linux
 artifacts are present. A version tag is no longer required.
 `workflow_dispatch` on `.github/workflows/release.yml` remains for a manual
 rebuild.
+
+The `nightly` branch follows the same verified deploy-and-package path against
+the `Nightly` GitHub Environment. Its desktop builds use SemVer versions such as
+`0.3.78-nightly.412.1`, publish as GitHub prereleases, and read only the
+`nightly` update feed. Stable desktop builds continue to read `latest`, so they
+never install a nightly build. Promote tested work by merging `nightly` into
+`main`.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production

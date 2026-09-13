@@ -13,11 +13,11 @@ const rootDir = import.meta.dirname;
  * `Cloudflare.Website.Vite` runs Vite during `alchemy deploy` (CI included)
  * and ships client assets. Deep links fall back to `index.html`.
  *
- * Production attaches this Worker to `PRODUCTION_DOMAIN` (apex). The API Worker
+ * Published stages attach this Worker to `PRODUCTION_DOMAIN` (apex). The API Worker
  * attaches to `api.<domain>` in the same deploy. The hostnames no longer
  * collide, so there is no two-pass detach. Locally, `/api/*` is still proxied
  * to the API Worker so `vp run dev` and the `dev` stage stay same-origin.
- * Production browsers call `VITE_API_URL` with first-party access tokens.
+ * Published browsers call `VITE_API_URL` with first-party access tokens.
  *
  * @see https://alchemy.run/cloudflare/frontend/vite-spa/
  * @see https://alchemy.run/cloudflare/frontend/vite/
@@ -26,9 +26,10 @@ export const Website = Cloudflare.Website.Vite(
   "Website",
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    const published = stage === "prod" || stage === "nightly";
     const auth = yield* Auth;
     const siteHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod" ? requireProductionHostname() : undefined;
+      !globalThis.__ALCHEMY_RUNTIME__ && published ? requireProductionHostname() : undefined;
 
     const websiteConfig = {
       rootDir,
