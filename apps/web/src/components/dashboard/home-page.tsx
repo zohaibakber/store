@@ -1,19 +1,21 @@
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { DEFAULT_STOCK_POLICY } from "@store/services/stock-recommendations";
+import { useState } from "react";
 
-import { ExpiringBatches, LowStock } from "@/components/dashboard/inventory-health";
+import { ExpiringBatches } from "@/components/dashboard/inventory-health";
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { StatTiles } from "@/components/dashboard/stat-tiles";
+import { StockRecommendations } from "@/components/dashboard/stock-recommendations";
 import { TopProducts } from "@/components/dashboard/top-products";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useInventoryDashboardAnalytics } from "@/lib/inventory-db";
 
-const LOW_STOCK_THRESHOLD = 10;
-
 export function HomePage() {
-  const analytics = useInventoryDashboardAnalytics();
+  const [policy, setPolicy] = useState(DEFAULT_STOCK_POLICY);
+  const analytics = useInventoryDashboardAnalytics(policy);
 
   return (
     <PageLayout>
@@ -37,15 +39,17 @@ export function HomePage() {
         {analytics.isError && !analytics.hasCachedData ? null : (
           <>
             <StatTiles totals={analytics.data.totals} />
+            <StockRecommendations
+              state={analytics.recommendations}
+              policy={policy}
+              onPolicyChange={setPolicy}
+            />
             <RevenueChart data={analytics.data.revenueByDay} />
             <div className="grid gap-4 lg:grid-cols-2">
               <TopProducts products={analytics.data.topProducts} />
               <RecentInvoices invoices={analytics.data.recentInvoices} />
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ExpiringBatches batches={analytics.data.expiringBatches} />
-              <LowStock products={analytics.data.lowStock} threshold={LOW_STOCK_THRESHOLD} />
-            </div>
+            <ExpiringBatches batches={analytics.data.expiringBatches} />
           </>
         )}
       </PageContent>

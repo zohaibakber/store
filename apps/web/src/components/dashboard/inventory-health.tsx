@@ -1,4 +1,4 @@
-import { Alert02Icon, PackageIcon } from "@hugeicons/core-free-icons";
+import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DashboardAnalytics } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
@@ -77,49 +77,6 @@ export function ExpiringBatches({ batches }: { batches: DashboardAnalytics["expi
               </DashboardListRow>
             );
           })}
-        </div>
-      )}
-    </FrameCard>
-  );
-}
-
-export function LowStock({
-  products,
-  threshold,
-}: {
-  products: DashboardAnalytics["lowStock"];
-  threshold: number;
-}) {
-  return (
-    <FrameCard
-      description={`Visible products with ${threshold} units or fewer remaining.`}
-      title="Low stock"
-    >
-      {products.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
-            </EmptyMedia>
-            <EmptyTitle>Nothing at or below the threshold</EmptyTitle>
-            <EmptyDescription>No visible product has {threshold} units or fewer.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {products.map((product) => (
-            <DashboardListRow key={product.productId} productId={product.productId}>
-              <p className="min-w-0 truncate font-medium capitalize">{product.productName}</p>
-              <Badge
-                className="shrink-0 font-mono tabular-nums"
-                variant={product.packQuantity + product.unitQuantity === 0 ? "error" : "warning"}
-              >
-                {product.packQuantity + product.unitQuantity === 0
-                  ? "Out of stock"
-                  : `${product.packQuantity} packs · ${product.unitQuantity} loose`}
-              </Badge>
-            </DashboardListRow>
-          ))}
         </div>
       )}
     </FrameCard>

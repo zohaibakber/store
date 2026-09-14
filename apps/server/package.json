@@ -22,7 +22,7 @@
   "devDependencies": {
     "@effect/sql-libsql": "4.0.0-rc.111",
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "alchemy": "catalog:",
     "rolldown": "1.2.4",
     "typescript": "catalog:",

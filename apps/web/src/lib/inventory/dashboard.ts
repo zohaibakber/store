@@ -1,19 +1,25 @@
 import type { DashboardAnalytics, Product } from "@store/contracts";
+import type { StockPolicy } from "@store/services/stock-recommendations";
 import * as React from "react";
 
 import { useCatalogProducts, useInventoryInvoices } from "./queries";
+import { useStockRecommendations } from "./stock-recommendations";
 
 const DAY_MS = 86_400_000;
 const DASHBOARD_DAYS = 30;
 const EXPIRY_DAYS = 90;
-const LOW_STOCK_THRESHOLD = 10;
 const utcDayStart = (timestamp: number) => timestamp - (timestamp % DAY_MS);
 const isoDay = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
-export const useInventoryDashboardAnalytics = () => {
+export const useInventoryDashboardAnalytics = (policy: StockPolicy) => {
   const products = useCatalogProducts();
   const invoices = useInventoryInvoices();
-  const [now] = React.useState(() => Date.now());
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const recommendations = useStockRecommendations(products.data, invoices.data, policy, now);
   const data = React.useMemo<DashboardAnalytics>(() => {
     const todayStart = utcDayStart(now);
     const windowStart = todayStart - (DASHBOARD_DAYS - 1) * DAY_MS;
@@ -91,22 +97,6 @@ export const useInventoryDashboardAnalytics = () => {
         )
         .sort((a, b) => a.expiresAt - b.expiresAt)
         .slice(0, 8),
-      lowStock: products.data
-        .filter((product) => product.visible)
-        .map((product) => ({
-          productId: product.id,
-          productName: product.name,
-          packQuantity: product.batches.reduce((sum, batch) => sum + batch.packQuantity, 0),
-          unitQuantity: product.batches.reduce((sum, batch) => sum + batch.unitQuantity, 0),
-          totalUnits: product.batches.reduce(
-            (sum, batch) => sum + batch.packQuantity * product.unitsPerPack + batch.unitQuantity,
-            0,
-          ),
-        }))
-        .filter((product) => product.totalUnits <= LOW_STOCK_THRESHOLD)
-        .sort((a, b) => a.totalUnits - b.totalUnits || a.productName.localeCompare(b.productName))
-        .slice(0, 8)
-        .map(({ totalUnits: _totalUnits, ...product }) => product),
       recentInvoices: invoices.data.slice(0, 5).map((invoice) => ({
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
@@ -119,6 +109,7 @@ export const useInventoryDashboardAnalytics = () => {
 
   return {
     data,
+    recommendations,
     isError: invoices.isError || products.isError,
     hasCachedData: invoices.data.length > 0 || products.data.length > 0,
     isLoading: false,

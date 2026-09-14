@@ -11,17 +11,18 @@ import type { InventoryHost } from "@/lib/inventory-host";
 
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
-export const persistSale = (inventory: Inventory) => async (work: () => void) => {
-  const transaction = inventory.dbClient.createTransaction({
-    autoCommit: false,
-    mutationFn: async ({ transaction: pending }) => {
-      await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
-    },
-  });
-  transaction.mutate(work);
-  await transaction.commit();
-  await transaction.isPersisted.promise;
-};
+export const persistSale =
+  (inventory: Pick<Inventory, "dbClient" | "powerSync">) => async (work: () => void) => {
+    const transaction = inventory.dbClient.createTransaction({
+      autoCommit: false,
+      mutationFn: async ({ transaction: pending }) => {
+        await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
+      },
+    });
+    transaction.mutate(work);
+    await transaction.commit();
+    await transaction.isPersisted.promise;
+  };
 
 export const makeInventoryActions = (
   inventory: Inventory,

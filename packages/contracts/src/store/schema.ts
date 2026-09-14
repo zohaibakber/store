@@ -292,14 +292,6 @@ export const DashboardAnalytics = Schema.Struct({
       unitQuantity: Schema.Number,
     }),
   ),
-  lowStock: Schema.Array(
-    Schema.Struct({
-      productId: ProductId,
-      productName: Schema.String,
-      packQuantity: Schema.Number,
-      unitQuantity: Schema.Number,
-    }),
-  ),
   recentInvoices: Schema.Array(
     Schema.Struct({
       id: InvoiceId,

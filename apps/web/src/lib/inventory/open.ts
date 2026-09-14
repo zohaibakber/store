@@ -8,7 +8,12 @@ import {
   waitForInventoryFirstSync,
 } from "@store/client-db";
 import { isConnectivityFailure } from "@store/contracts";
+import {
+  StockRecommendationService,
+  stockRecommendationLayer,
+} from "@store/services/stock-recommendations";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
+import { Effect, ManagedRuntime } from "effect";
 
 import type { HostInventoryScope } from "@/host-access";
 import { toastStoreError } from "@/lib/errors";
@@ -79,5 +84,23 @@ export const openInventory = async (
       if (expectedOffline) return;
       reportError(cause, { op: "inventory-sale-outbox-restore", scopeId });
     });
-  return inventory;
+  const recommendations = ManagedRuntime.make(stockRecommendationLayer);
+  return {
+    ...inventory,
+    recommendStock: (snapshot, signal) =>
+      recommendations.runPromise(
+        Effect.gen(function* () {
+          const service = yield* StockRecommendationService;
+          return yield* service.analyze({ ...snapshot, organizationId: scope.organizationId });
+        }).pipe(Effect.result),
+        { signal },
+      ),
+    dispose: async () => {
+      try {
+        await recommendations.dispose();
+      } finally {
+        await inventory.dispose();
+      }
+    },
+  };
 };

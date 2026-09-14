@@ -4,9 +4,11 @@ Status: proposed implementation, no runtime changes made by this document.
 
 Prepared 2026-09-06 against commit `5a3d9f52` on `main`.
 
+Reviewed 2026-09-13 against the current working tree and upstream documentation. Section 17 records the additional implementation gates. This remains a design plan, not evidence that the replacement outperforms PowerSync.
+
 Keep PostgreSQL authoritative and replace PowerSync with an application-owned replication protocol. Run the sync API, live delivery, recovery scheduling, and snapshot distribution on Cloudflare. Keep local SQLite on web, Electron, and Android. D1 continues to own authentication.
 
-Target the latest published Effect v4 release candidate at implementation time. The latest release verified during this investigation is **4.0.0-rc.112**, also present in the current local `node_modules/effect`. Manifests and the lockfile still primarily pin RC 111; local Effect skills mention RC 110. Phase 0 aligns those sources before implementation. Do not use Effect v3 examples as the implementation reference.
+Target the latest published Effect v4 release candidate at implementation time. On 2026-09-13, the npm `rc` tag resolves to **4.0.0-rc.115** and Alchemy's `latest` tag resolves to **2.0.0-beta.77**. After a successful `vp install`, this checkout has RC 111 and Alchemy beta.74, matching its declared pins. The RC 112/beta.76 source observations below are historical, not the current installed tree. Phase 0 verifies the proposed RC 115/beta.77 pair with Drizzle and all Effect adapters before upgrading together. Effect's `latest` tag still selects v3; use the explicit v4 RC tag/version.
 
 The architecture can provide immediate local feedback and low-latency remote updates. A strict sub-10-ms Worker CPU budget remains an acceptance test, not a property established by using Effect, Hyperdrive, or Durable Objects.
 
@@ -183,7 +185,7 @@ Test callers and maintainers through the same interface: submit, interrupt trans
 
 ### 4.2 Alchemy-native Effect and Cloudflare wiring
 
-The repository pins Alchemy `2.0.0-beta.74`; the installed package is `2.0.0-beta.76` and declares Effect `>=4.0.0-rc.112 || >=4.0.0`. Treat this as dependency drift to resolve in Phase 0. The API details below were checked against installed beta.76 source and current Alchemy v2 documentation. Do not copy v1 `alchemy/cloudflare` examples into this stack.
+The repository pins and currently installs Alchemy `2.0.0-beta.74`. The original review used a locally installed beta.76. As of the September 13 review, the proposed beta.77 declares Effect `>=4.0.0-rc.112 || >=4.0.0`; this peer range does not prove RC 115 compatibility. The API details below originate from beta.76 source and Alchemy v2 documentation. The current beta.74 PostgreSQL proxy and request composition were rechecked locally; recheck the other APIs after alignment. Do not copy v1 `alchemy/cloudflare` examples into this stack.
 
 **Initialization and request execution.** Resolve resource bindings and construct typed handlers in Worker Init. Init participates in deployment planning and isolate initialization; actual requests execute the returned HttpEffect. Build shared contracts outside the Worker and attach server-only authorization during composition. Alchemy's guide builds the router handler once with `yield* HttpRouter.toHttpEffect(routes)`. [Alchemy Effect HTTP guide](https://alchemy.run/cloudflare/apis/effect-http-api/).
 
@@ -284,19 +286,22 @@ Use a bounded transaction retry for deadlock/serialization errors only when the 
 
 Add these tables using Drizzle migrations. Keep organization identity in keys and foreign keys.
 
-| Table                     | Required fields and constraints                                                                                                                                |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog_sync_state`      | organization PK, epoch, current sequence, retention floor, writer mode, protocol floor                                                                         |
-| `catalog_replicas`        | organization + replica PK, owner user, device identity, last processed client sequence, last seen, retired state                                               |
-| Command receipts          | organization + operation PK; unique organization + replica + client sequence; payload hash, command version, terminal decision, commit sequence, server result |
-| `catalog_transactions`    | organization + epoch + commit sequence PK; operation ID, change count, encoded size, committed server timestamp                                                |
-| `catalog_changes`         | transaction FK + ordinal PK; table/entity discriminator, entity ID, revision, immutable after-image or removal, subscription routing information               |
-| `catalog_delivery_outbox` | organization + epoch key, target sequence, delivered sequence, lease token, lease expiry, next attempt, attempt count                                          |
-| `catalog_snapshot_jobs`   | job ID, organization, epoch, subscription version, starting/ending sequence, phase, table/key cursor, lease, progress                                          |
-| `catalog_snapshot_rows`   | staged generation + table + entity key, row data; isolated from live domain tables                                                                             |
-| `catalog_snapshots`       | immutable snapshot ID, horizon, schema/subscription version, R2 manifest, ready/retired state                                                                  |
+| Table                      | Required fields and constraints                                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog_sync_state`       | organization PK, epoch, current sequence, retention floor, writer mode, protocol floor                                                                         |
+| `catalog_replicas`         | organization + replica PK, owner user, device identity, last processed client sequence, last seen, retired state                                               |
+| Command receipts           | organization + operation PK; unique organization + replica + client sequence; payload hash, command version, terminal decision, commit sequence, server result |
+| `catalog_transactions`     | organization + epoch + commit sequence PK; operation ID, change count, encoded size, committed server timestamp                                                |
+| `catalog_changes`          | transaction FK + ordinal PK; table/entity discriminator, entity ID, revision, immutable after-image or removal, subscription routing information               |
+| `catalog_delivery_outbox`  | organization + epoch key, target sequence, delivered sequence, lease token, lease expiry, next attempt, attempt count                                          |
+| `catalog_snapshot_jobs`    | job ID, organization, epoch, subscription version, starting/ending sequence, phase, table/key cursor, lease, progress                                          |
+| `catalog_snapshot_rows`    | staged generation + table + entity key, row data; isolated from live domain tables                                                                             |
+| `catalog_snapshots`        | immutable snapshot ID, horizon, schema/subscription version, R2 manifest, ready/retired state                                                                  |
+| `catalog_retention_leases` | organization + epoch + lease ID, owner/job, required-after sequence, expiry; used by snapshot builds and bounded download continuations                        |
 
 Evolve `inventoryMutationReceipts` in place or migrate it once with a compatibility adapter. Do not create two competing receipt authorities. Legacy PowerSync receipts lack reliable monotonic replica sequences; label/import them as legacy and preserve their deduplication identities.
+
+Export new replication tables through `packages/db/src/postgres/schema.ts`, the entry passed to `Drizzle.Schema` in `infra.ts`. Creating `replication.schema.ts` alone does not put its tables into that migration input. Verify generated DDL, organization-scoped foreign keys, backfills, and indexes against a populated database before enabling capture.
 
 Store PostgreSQL sequences as bigint. Encode them as decimal strings on the wire and parse them to bigint in TypeScript or Long with range checks in Kotlin. Never use lexical string order. Keep entity revisions, organization commit sequence, and device command sequence as distinct branded types.
 
@@ -316,6 +321,8 @@ Before entering the transaction, authenticate, decode bounded input, compute the
 8. Store the decision receipt and advance replica progress in the same transaction.
 9. Advance the outbox target using `GREATEST(existing, newSequence)` and make it eligible for delivery.
 10. Commit. Only now return accepted/rejected status and attempt external delivery.
+
+Use READ COMMITTED for this lock-based algorithm and read business rows in statements after acquiring the organization lock. A combined statement can use a snapshot from before a lock wait. If a different isolation level is chosen, prove its retry behavior explicitly. Keep `lock_timeout` and `statement_timeout` transaction-local, with a bounded overall command deadline. Do not keep a pooled connection waiting indefinitely. PostgreSQL documents statement snapshots and serialization failures in its [transaction isolation reference](https://www.postgresql.org/docs/current/transaction-iso.html).
 
 PostgreSQL sequences and transaction IDs are not commit-order cursors. Transaction A can allocate a number before B but commit after B. Holding the organization state lock through commit prevents that hole for this log. Every writer must use the same lock convention; an in-process Effect Semaphore cannot enforce it across Workers.
 
@@ -397,6 +404,8 @@ Bind any command watermark to the page horizon. Do not return the latest replica
 
 For snapshots and expired-log recovery, request explicit receipts for outstanding operation IDs. Keep invoice deduplication permanent through durable identities even if routine history is compacted. Never infer that an old operation did not execute merely because a short-lived receipt record was pruned.
 
+Return receipt lookup states that distinguish a retained decision, provably unprocessed identity, and expired/unknown evidence. Preserve replica high-water and retirement evidence beyond ordinary log retention; never reuse a retired replica ID or reset its client sequence on an epoch change. A restored or cloned local database with a reused sequence and different operation must stop for reconciliation. Issue a new replica identity for future submissions only after resolving old pending commands. Unknown evidence never authorizes resubmitting a sale with a fresh ID.
+
 ### 7.2 Subscription design
 
 Start with a fixed operational catalog subscription and explicitly requested history buckets. Define the operational working set precisely before shipping: categories, product fields required offline, relevant batches, and summaries required by the UI. Do not replicate all historical stock movements on every device by default.
@@ -404,6 +413,8 @@ Start with a fixed operational catalog subscription and explicitly requested his
 Use fixed monthly history buckets rather than an implicit rolling predicate that changes membership without a write. Subscribe/unsubscribe explicitly when the desired window changes. Subscription definitions have versions and field allowlists.
 
 Track which subscriptions retain each local entity. Removing one subscription cannot delete a row required by another. Preserve dependency closure for foreign keys and historical invoice references, or deliberately use a projection-specific schema with documented weaker local constraints. Do not claim identical local/server constraints while omitting referenced rows.
+
+Define a canonical row image per projection schema. Store its last applied organization sequence and deletion sequence independently of subscription coverage. An older history stream may advance its own coverage but cannot overwrite a newer operational row. Equal-revision, unequal-content images are a protocol/integrity failure. Subscription removal only releases that subscription's ownership; it is distinct from an authoritative entity deletion. Apply all visible changes from one transaction together, and track optimistic incorporation per affected projection so stock can settle even if a history subscription is still loading.
 
 During the initial implementation, derive subscription membership deterministically from transaction after-images and required prior routing keys. A category or organization field that changes membership needs an explicit removal from the previous subscription and insertion into the new one. No query-by-query server dependency graph is required.
 
@@ -445,6 +456,8 @@ Close the catch-up/subscription race: register the socket and its resume cursor,
 
 Pre-encode each frame once per subscription/version, not once per socket. Limit frames outstanding per socket. A slow or backgrounded client receives a resume signal or reconnect requirement rather than an unlimited queue. Fan-out is bounded work and must be measured against the object event CPU target.
 
+Cache row frames by the complete authorization/projection identity, including epoch, subscription parameters, schema, and field permissions. Keep user-specific receipts and command outcomes outside shared frames unless separately scoped. Enforce both byte and count windows with application ACKs; reject an ACK beyond the sent cursor or for another epoch/subscription. After hibernation, restore a bounded acknowledged position or force HTTP resume. Do not infer delivery from an empty runtime send buffer.
+
 Use the native Cloudflare hibernation API for acceptWebSocket, message handlers, and attachment restoration. Effect owns the bounded handler workflow, not the socket's persistent lifetime. Avoid generic socket server loops that keep the object active. Built-in ping handling may maintain the connection; application-level lease refresh and freshness checks remain explicit.
 
 ### 8.3 Authentication and revocation
@@ -452,6 +465,8 @@ Use the native Cloudflare hibernation API for acceptWebSocket, message handlers,
 Use an authenticated ticket endpoint because browser WebSocket constructors cannot attach arbitrary bearer headers. Issue a short-lived, single-use ticket bound to user, organization, subscription, protocol, and allowed origin. Keep long-lived access credentials out of URLs. If the ticket travels in the handshake URL, redact it from logs and consume it once.
 
 Reuse first-party auth. Enforce a bounded authorization lease for open sockets, and send revocation notifications when membership changes. Auth remains in D1, so revocation and PostgreSQL writes are not one cross-database transaction; document the chosen authorization window. Recheck authority for every command and snapshot request. A strict immediate-revocation requirement would need stronger coordination than a cached JWT alone.
+
+Consume ticket nonces atomically in the destination DO before accepting the socket; a signed expiry alone does not make a ticket single-use. Keep nonce state only through the ticket lifetime. Recheck the lease before sending protected frames after wakeup. Schedule the object's one alarm for the earliest pending delivery retry or authorization expiry, then recompute the next deadline. Delivery retries must not postpone revocation. Test a revoked idle socket through hibernation and a lost revocation notification. Data already stored on an offline device cannot be remotely erased until it reconnects.
 
 A workspace switch closes the socket, cancels its transport, clears UI subscriptions, and hides the previous replica immediately. Do not destroy a persisted unsent command queue as a side effect of ordinary disconnect. Store user-isolated pending commands according to the explicit sign-out/data-removal policy.
 
@@ -529,7 +544,7 @@ Both arrival orders are valid: the receipt may precede replication, or replicati
 
 Concrete fixture: device A shows 9 units after a pending sale from 10. Its accepted receipt targets sequence 42, but the client still has confirmed sequence 41. The visible quantity remains 9. Applying sequence 42 writes authoritative quantity 9 and retires that sale's optimistic decrement in one transaction; the UI never shows 8 or flashes back to 10. Another device's intervening sale recomputes the pending projection without changing A's immutable command payload.
 
-If undo is added to a catalog edit, submit a new compensating command with a fresh operation ID and current expected revisions. A stock or invoice correction must use the domain reversal rules. Do not rewind the replication cursor or delete an accepted receipt. For an unsent operation, cancellation also needs a sequencing policy: prefer a durable cancellation command/no-op preserving the allocated client sequence, or cancel only before sequence allocation. An already-sending operation has an unknown outcome and requires reconciliation before compensation. Undo UI can be deferred; these constraints belong in the protocol now.
+If undo is added to a catalog edit, submit a new compensating command with a fresh operation ID and current expected revisions. A stock or invoice correction must use the domain reversal rules. Do not rewind the replication cursor or delete an accepted receipt. In the first protocol, cancel drafts only before immutable command/sequence allocation. Once allocated, preserve the command and resolve its outcome before submitting compensation. Do not replace its payload with a no-op under the same identity. A future cancel-before-execution feature needs an explicit server decision protocol that arbitrates cancellation against submission under the same lock. Undo UI can be deferred; these constraints belong in the protocol now.
 
 ## 10. Snapshot construction and retention
 
@@ -555,6 +570,16 @@ Set explicit online/offline retention policies before launch. Expired cursors re
 
 Snapshot jobs are durable state machines driven by scheduled events or alarms. An Effect Schedule inside a transient Worker is not a persistent scheduler. Optional Queues/Workflows can be evaluated if the chosen Cloudflare plan and job volume justify them, without changing the snapshot protocol.
 
+### 10.1 Retention and publication races
+
+Define retention floor F as the lowest valid applied cursor; complete transactions after F remain readable. Capture/validate epoch, floor, horizon, and each returned page in one short consistent read transaction, or protect the range with a valid lease. A READ COMMITTED floor check followed by a later SELECT can race cleanup. Missing rows must never become an empty covered page. Continue a fixed horizon only while its lease/floor remains valid; otherwise reset explicitly.
+
+Serialize lease creation/renewal and floor advancement through the same `catalog_sync_state` row lock used to capture a build's starting sequence, using database time. Keep these metadata transactions short. Publish a new floor and its authorized deletion range atomically; delete physical log rows in bounded later batches. GC must not cross an active build/download lease. Cap lease duration, count, and pinned bytes per organization so abandoned clients cannot retain history forever. Client ACKs are flow-control observations, not permission to delete recovery evidence globally.
+
+Coalesce snapshot requests with a unique active job for each organization/epoch/subscription/schema. Serve a reusable compatible snapshot whose remaining catch-up fits the budget; do not rebuild for every device. Lease tokens fence every staging/progress/ready update. Make export bytes deterministic and use immutable, attempt-specific object keys when concurrent exporters could differ. Publish the winning manifest with a compare-and-set; readers cannot observe a stale builder's parts. Retain complete transaction metadata and scoped decision evidence through build repair, not only row images.
+
+Snapshot replacement must preserve new commands created during import. At generation switch, briefly take the local database owner, reconcile against the current outbox, and publish rows, coverage, and overlay together. Test a sale saved between the first imported part and the final switch. Require row counts and partition identity in the manifest as well as hashes; a verified part alone does not establish that every required table or empty partition was exported.
+
 ## 11. Host integration and low-end device behavior
 
 ### Web
@@ -569,7 +594,7 @@ Handle quota exhaustion and unavailable persistence before claiming offline dura
 
 Initially keep the database in the renderer's worker, preserving the current security boundary and avoiding an unrelated native database migration. Keep authentication in the main-process broker.
 
-Add exact allowlisted sync endpoints and approved cursor/content headers to inventory-http.ts. Do not broaden it to arbitrary URLs. Preserve trusted sender verification, response limits, abort propagation, and credential stripping.
+Add exact allowlisted sync endpoints and approved cursor/content headers to inventory-http.ts. Do not broaden it to arbitrary URLs. Preserve trusted sender verification, request limits, abort propagation, and credential stripping. Add a response-byte limit: the current broker calls `response.arrayBuffer()` without one. Read with a bounded stream, reject oversized bodies even without Content-Length, and abort requests when the requesting renderer disappears.
 
 Obtain a scoped live ticket through the broker and connect from the renderer with that ticket. Do not expose the main-process access/refresh token. Bounded snapshot parts fit the current ArrayBuffer IPC response shape; larger streaming IPC should be a separate measured change.
 
@@ -604,7 +629,21 @@ Measure bytes per edit, sale, idle hour, bootstrap, and offline catch-up. Track 
 
 RC 112 adds SchemaBinary. Keep it behind a negotiated codec boundary for a later experiment against JSON with compression. It must improve combined server CPU, client CPU, bytes, and compatibility. Kotlin needs an independent compatible decoder and evolution fixtures. Review arena-backed buffer ownership before retaining/transferring encoded bytes. Do not deploy a TypeScript-only binary protocol to Android accidentally.
 
-The latest Effect EventLog module was also inspected. It supplies typed event/journal machinery, but its presence does not prove atomicity with this PostgreSQL transaction, correct stock authority, or Kotlin compatibility. Use the explicit application log initially; adopting EventLog later requires proving those invariants rather than replacing tables by name.
+The RC 112 Effect EventLog module was also inspected during the original review. It supplies typed event/journal machinery, but its presence does not prove atomicity with this PostgreSQL transaction, correct stock authority, or Kotlin compatibility. Use the explicit application log initially; adopting EventLog later requires proving those invariants rather than replacing tables by name.
+
+### 12.1 Throughput, placement, and total cost
+
+Measure the organization lock's hold time T separately from SQL execution time and Worker CPU. Serial service capacity is approximately bounded by 1/T; at 25 ms average hold time that is about 40 commands/second before queueing overhead. This is arithmetic, not a benchmark result. Add per-organization admission limits, bounded lock waits, and fair snapshot/import scheduling. Benchmark a busy checkout while an import and snapshot repair run. Larger tenants must pass the same latency gate; adding Workers or live DO shards does not remove the PostgreSQL serialization point. If it fails, redesign ordering/partitioning before rollout and prove multi-product invoice atomicity again.
+
+Bound log records examined and SQL work as well as response bytes. A sparse history subscription must not scan a million unrelated changes to return one tiny page. Index routing keys where useful, cap the examined range, and return covered progress only through the range actually examined. Use EXPLAIN ANALYZE with buffers on representative isolated data for pull, outbox claims, receipt lookup, working-set queries, and snapshot pagination. Measure rows scanned/returned, SQL round trips, WAL growth, index size, vacuum pressure, and staged bytes.
+
+Compare Smart Placement with a supported explicit placement hint near the actual Neon primary. Keep Hyperdrive's direct Neon origin and disabled query cache. Hyperdrive pools connections, but cannot remove sequential query round trips. Budget aggregate origin connections across API, recovery, snapshots, and remaining PowerSync consumers. Cloudflare currently applies Worker placement to fetch handlers, not RPC methods or named entrypoints; measure the DO-to-database and scheduled paths independently. [Hyperdrive behavior](https://developers.cloudflare.com/hyperdrive/concepts/how-hyperdrive-works/) and [Worker placement](https://developers.cloudflare.com/workers/configuration/placement/).
+
+Choose DO placement deliberately on first use; a recovery dispatcher should not accidentally determine every organization's delivery location. Location hints are best effort. Measure the full client/API/PostgreSQL/DO/client route before adding a second Worker or regional delivery layer. [Durable Object data location](https://developers.cloudflare.com/durable-objects/reference/data-location/).
+
+Separate warm commit-to-visible latency from first-online-action latency after Neon suspension. Include a 24-hour idle-stage cost measurement: a minutely PostgreSQL recovery scan can keep an otherwise idle compute active, while suspending it adds cold-start latency. Choose recovery latency versus idle cost explicitly; do not hide that tradeoff in the sub-500-ms target. [Neon scale to zero](https://neon.com/docs/introduction/scale-to-zero).
+
+Before cutover, compare this engine with an optimized PowerSync baseline using the same dataset, device, network, and write rules. Report bootstrap bytes/time, idle traffic, p95/p99 local apply and confirmation latency, memory, maximum sustainable organization write rate, and total monthly sync infrastructure cost. The migration proceeds only after correctness gates and agreed measurable benefits pass. A smaller wire payload by itself is insufficient.
 
 ## 13. Implementation phases
 
@@ -612,12 +651,12 @@ Each phase should produce a working slice with the listed exit evidence. Keep Po
 
 ### Phase 0: align the latest RC and baseline the current system
 
-- Resolve the latest published Effect RC again. RC 112 is the verified baseline today; pin the selected version exactly.
+- Resolve the explicit Effect RC tag again. RC 115 is the September 13 candidate; pin the selected version exactly after compatibility verification.
 - Align root manifests, pnpm catalog, overrides, direct @effect dependencies, and test/runtime adapters. Check Alchemy and the Effect Drizzle RC integration rather than forcing incompatible peers.
-- Align Alchemy with that RC; installed beta.76 requires RC112 while the manifest pins beta.74. Verify the Init/event split in section 4.2, including reusable router construction, per-event SQL release, and Config/resource discovery.
+- Align Alchemy with that RC; beta.77 is the September 13 candidate while this checkout uses beta.74/RC111. Verify the Init/event split in section 4.2, including reusable router construction, per-event SQL release, and Config/resource discovery.
 - Run the normal `vp install` with project-approved lifecycle scripts and verify actual installed versions. Update stale local version guidance when implementation updates dependencies.
 - Establish the current check/test baseline and a deployed CPU baseline for catalog writes and representative invoices.
-- Record actual tenant size, online devices, required offline duration, and allowed offline-sale semantics. Use the provisional fixture envelope until those numbers are known.
+- Record actual tenant size, peak commands/second, online devices, required offline duration, recovery/revocation bounds, and allowed offline-sale semantics. Use the provisional fixture envelope until those numbers are known. Complete the browser persistence and migration feasibility spikes in section 17 before committing to full implementation.
 
 Exit: reproducible dependency tree, current RC snippets typecheck, baseline failures separated from new regressions, measurable workload definition.
 
@@ -656,7 +695,7 @@ Exit: two devices converge through HTTP alone after disconnects and crashes. Web
 - Provision the organization delivery Durable Object in the existing Alchemy stack.
 - Add live-ticket auth, native hibernating sockets, bounded frames, resume/ack protocol, and recovery alarms.
 - Add immediate post-commit dispatch and indexed scheduled outbox recovery with leases.
-- Test catch-up/live handoff and out-of-order dispatcher delivery.
+- Test catch-up/live handoff, out-of-order dispatcher delivery, single-use tickets, mixed permission caches, and authorization expiry sharing the recovery alarm.
 
 Exit: lost post-commit delivery recovers without another user write; hibernation/restart preserves correct resume behavior; fan-out fits its measured budget.
 
@@ -665,7 +704,7 @@ Exit: lost post-commit delivery recovers without another user write; hibernation
 - Implement snapshot state machine, staging repair, R2 parts/manifests, and retention pins.
 - Add resumable client import, receipt reconciliation, atomic generation switch, and history buckets.
 - Add coverage states, empty-partition evidence, coalesced partition acquisition, and protection against stale hydration overwriting newer live changes.
-- Implement tombstone/log cleanup and orphaned snapshot cleanup in bounded jobs.
+- Implement tombstone/log cleanup and orphaned snapshot cleanup in bounded jobs. Prove the page/GC, lease/GC, stale-builder, and concurrent-local-command races in section 10.1.
 
 Exit: bootstrap succeeds while writes continue, resumes after crashes, and stays within the CPU/memory/byte budgets. Expired history resets without losing pending commands.
 
@@ -683,7 +722,7 @@ Exit: realistic web, Electron, and Android user flows pass under offline, slow-d
 
 - Keep PostgreSQL business authority unchanged. Feed a read-only custom replica from captured writes while PowerSync serves normal clients.
 - Compare canonical per-table state at the same known horizon, not two independently changing snapshots. Compare stock invariants and invoice totals as well as row counts/hashes.
-- Ship clients that understand the new backend and can preserve/drain or explicitly translate outstanding PowerSync commands.
+- Ship clients that understand the new backend and can preserve/drain or explicitly translate outstanding PowerSync commands. Complete the concrete two-store handover in section 17.1 before changing writer mode.
 - Under the organization lock, change writer mode and epoch to fence incompatible clients. Old endpoints must read and enforce the same fence; routing changes alone are insufficient.
 - Preserve legacy operation IDs and receipts during translation so an uncertain old upload cannot become a second sale.
 - Activate a verified snapshot and resume the new clients. Increase rollout only after convergence and performance gates hold.
@@ -764,7 +803,7 @@ Effect references:
 - [Effect Schema migration](https://github.com/Effect-TS/effect/blob/main/migration/schema.md): v4 data/codec API changes.
 - Installed RC 112 sources inspected: `node_modules/effect/src/Context.ts`, `Schema.ts`, `Effect.ts`, `Schedule.ts`, `Stream.ts`, `Queue.ts`, `Semaphore.ts`, `SubscriptionRef.ts`, `unstable/sql/SqlClient.ts`, `unstable/reactivity/Reactivity.ts`, `unstable/eventlog/EventLog.ts`, `unstable/encoding/SchemaBinary.ts`, `unstable/http/FetchHttpClient.ts`, and `unstable/httpapi/HttpApiClient.ts`. API searches and selected implementation reads establish the names used here; they are not a full source audit.
 - Bundled official examples inspected under `node_modules/effect/ai-docs/src/`: services, ManagedRuntime integration, SQL, and Effect testing.
-- Project guidance: `.agents/skills/effect/SKILL.md`, its schema/layer/stream/schedule/HTTP/config/testing references, and `.agents/skills/effect-efficiency/SKILL.md`. Their RC 110 notes must not override the selected latest RC.
+- Project guidance: `.agents/skills/effect/SKILL.md`, its schema/layer/stream/schedule/HTTP/config/testing references, and `.agents/skills/effect-efficiency/SKILL.md`. Current guidance asks for installed-version verification; historical examples must not override the selected RC's types.
 
 Alchemy and codebase design references:
 
@@ -784,8 +823,81 @@ Infrastructure and protocol references:
 - [SQLite browser persistence](https://sqlite.org/wasm/doc/trunk/persistence.md): OPFS worker/storage choices and concurrency constraints.
 - [Replicache reconciliation](https://doc.replicache.dev/concepts/how-it-works) and [Electric HTTP protocol](https://electric.ax/docs/sync/api/http): prior-art references for pending intent and resumable ordered changes, not dependencies to add.
 
-Preparation environment: a lockfile-preserving, scripts-disabled dependency install failed because the sandbox could not open pnpm's store database; elevated installation was declined. No dependency versions were changed. `vp env doctor` passed its checks and noted that nvm is also present. The installed Effect RC 112 source was usable for this document; a reproducible dependency install remains Phase 0 work.
+Original September 6 preparation environment: a lockfile-preserving, scripts-disabled dependency install failed because the sandbox could not open pnpm's store database; elevated installation was declined. No dependency versions were changed. `vp env doctor` passed its checks and noted that nvm is also present. That investigation used installed Effect RC 112 source. On September 13, normal `vp install` succeeded with the existing lockfile and installed RC111/beta.74. Historical checks below must not be read as today's baseline.
 
 Document verification: the two TypeScript examples were extracted into a temporary module and passed strict TypeScript checking against installed RC 112. The document passed `vp fmt ... --check`; its local links, code fences, and whitespace were checked. These are API-shape and document checks, not runtime correctness or CPU evidence.
 
-Repository baseline checks were also attempted without changing implementation files. `vp check` passed formatting and reported 61 lint/type errors in existing files, including mutation-database.ts and PowerSync contracts/tests. `vp test` passed 48 suites and 289 tests; seven suites failed to load because dependencies such as `@powersync/common`, `@tanstack/powersync-db-collection`, and `@store/db/store.schema` were unresolved. Reinstall the aligned dependency tree and establish a clean baseline in Phase 0 before attributing failures to new sync work.
+Original September 6 baseline: `vp check` passed formatting and reported 61 lint/type errors in existing files, including mutation-database.ts and PowerSync contracts/tests. `vp test` passed 48 suites and 289 tests; seven suites failed to load because dependencies such as `@powersync/common`, `@tanstack/powersync-db-collection`, and `@store/db/store.schema` were unresolved.
+
+September 13 baseline after successful `vp install`: `vp check` passed formatting and reported no lint/type errors; `vp test` passed all 56 suites and 339 tests. This review changes only the plan. Existing runtime tests establish the current PowerSync baseline, not the proposed engine's correctness or performance. Re-run checks after the Phase 0 dependency upgrade.
+
+## 17. September 13 architecture review and additional gates
+
+Keep the proposed authority split and HTTP-first implementation order. An application-owned engine is reasonable for fixed inventory commands and bounded subscriptions, but its benefit over an optimized PowerSync configuration remains unmeasured. The following gaps must close before the corresponding phase exits.
+
+| Gap found                                                                              | Concrete requirement                                                                               | Phase                    |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------ |
+| Pending sales and PowerSync CRUD occupy different stores                               | Journal a resumable two-store migration and preserve original operation identities                 | 0 feasibility, 7 cutover |
+| PowerSync replay touches business rows and rewrites its acknowledgement transaction ID | Separate immutable sync decisions from legacy acknowledgement refresh                              | 2                        |
+| Older overlapping streams can regress confirmed rows                                   | Canonical row revisions, deletion evidence, subscription ownership, and per-projection integration | 1, 3, 5                  |
+| Pull/GC and lease/GC races can silently skip history                                   | Consistent page reads and serialized floor/lease updates                                           | 2, 5                     |
+| Concurrent snapshot workers or local edits can race publication                        | Fenced builder progress and atomic reconciliation against the latest local outbox                  | 5                        |
+| One organization lock caps throughput                                                  | Measure lock hold/wait time and checkout latency during bulk work                                  | 0, 2                     |
+| Small responses do not bound database scans                                            | Scan budgets, routing indexes, query plans, and storage/vacuum measurements                        | 2, 5                     |
+| Tickets, frame caches, and alarm scheduling lack precise permission boundaries         | Atomic nonce consumption, scoped caches, and expiry-aware alarm arbitration                        | 4                        |
+| Browser SQLite choice remains an untested dependency                                   | Prove VFS, worker, ownership, durability, and browser/Electron compatibility early                 | 0, 3                     |
+| Old app versions and restored replicas can reuse incompatible state                    | Compatibility matrix, replica retirement evidence, and lossless command preservation               | 1, 6, 7                  |
+| Electron response memory is currently unbounded                                        | Cap streamed response bytes before assembling IPC buffers                                          | 6                        |
+| Current version and baseline statements are stale                                      | Record reproducible installed versions and validate the selected upgrade pair                      | 0                        |
+
+### 17.1 Concrete PowerSync handover
+
+The current `packages/client-db/src/sale-outbox.ts` stores a whole JSON map in `localStorage` under `tabaaq.sale-outbox.${organizationId}`. It falls back to an in-memory map without localStorage and returns an empty map on decoding failure. This is separate from PowerSync's SQLite CRUD queue and is not scoped by user or API environment. `open.ts` opens both stores and its dispose path disconnects and clears PowerSync. The migration must inspect raw persisted sale data before cleanup and must not interpret decode failure as an empty queue.
+
+1. Ship a compatibility client with a local migration journal before organization cutover. Coordinate all tabs/windows; fence the legacy uploader and new local submissions at handover. A server writer fence still protects against older uncooperative clients.
+2. Inventory both the PowerSync CRUD transactions and the separate sale-outbox JSON. Preserve transaction boundaries and canonical original commands using supported SDK behavior. Do not infer pending business intent from the currently visible optimistic rows. PowerSync documents the [CRUD queue and completion contract](https://docs.powersync.com/configuration/app-backend/client-side-integration).
+3. Persist decoded commands, original payload/hash version, actor/environment evidence, and source identifiers into a durable migration journal/new outbox. Mark the import phase committed before acknowledging or deleting either source. Resuming the same copy must deduplicate by original identity.
+4. Reconcile receipts with the old command identity before translation. Keep accepted operations as integration targets and preserve unknown outcomes for identical replay. The existing legacy receipt lacks the new sequence contract; import it as legacy evidence, not a fabricated device sequence.
+5. An organization-only storage key cannot prove the actor/API origin. Use available command and authenticated membership evidence; quarantine ambiguous or malformed entries for explicit recovery. Never silently upload them as the currently signed-in user or discard them. Verify quota and disk failure before declaring the migration saved.
+6. Seed the new confirmed generation from a verified server snapshot, then project only unresolved commands. Do not copy PowerSync's optimistic visible rows into the confirmed tables. Validate row/domain invariants and the recorded migration counts.
+7. Atomically publish local migration completion and switch ownership. Keep recoverable legacy data until receipt reconciliation and crash tests prove removal is safe. Separate ordinary workspace close from destructive cleanup. Test crashes between every source read, destination commit, source acknowledgement, and generation switch.
+
+In `apps/server/src/inventory/mutation-database.ts`, duplicate catalog/import/invoice submissions deliberately issue no-op UPDATEs and refresh `inventoryMutationReceipts.transactionId` so PowerSync sees a fresh acknowledgement. During coexistence, those legacy acknowledgements must follow the writer fence/lock convention, but must not overwrite a custom protocol's immutable decision sequence or create a second business effect. Record a new capture transaction only when the chosen capture contract requires one; avoid treating no-op acknowledgement refresh as a new sale or changed row revision. After cutover, an identical replay returns its stored decision without those PowerSync-specific writes.
+
+### 17.2 Portable protocol and upgrade rules
+
+Specify the wire version, command/hash version, replica schema version, subscription version, and epoch separately. Maintain a table of server/client combinations that may read, write, or only recover/export pending commands. Roll out additive server readers before new writers. Keep decoding and receipt lookup for supported queued command versions until their migration is complete; a new deployment must not make yesterday's durable outbox unreadable.
+
+Do not assume `canonicalJson` is a cross-language standard. The current helper sorts JavaScript object keys and then uses JSON.stringify. Pin its behavior for legacy identities. Define the new hash input as an explicit versioned envelope and supply byte-level TypeScript/Kotlin fixtures for Unicode, escaping, null/absent fields, numeric-looking keys, array order, and safe numeric bounds. Normalize or reject non-finite numbers, negative zero, malformed Unicode, and duplicate input keys according to a documented boundary policy. Keep money/quantities within the shared integer representation where the domain allows it, and encode 64-bit sequences as canonical decimal strings. An implementation change must not alter the hash of an already-persisted command.
+
+Allocate replica sequences in the same local transaction that stores validated commands. Freeze the supported command limits/version with each submission. Batch responses identify each operation independently because a lost response can follow a committed prefix. A malformed envelope, unsupported command version, or sequence gap does not consume a sequence. Preserve that record and pause dependent uploads for upgrade/recovery rather than deleting it to unblock the queue. Downloads continue. Valid business rejections consume their sequence as specified in section 6.1. Test a supported command that was queued before a server rollout lowers limits.
+
+Additive row fields still require explicit projection/version rules. Never advance a cursor past an unknown table, undecodable required field, or unsupported transaction. Pause/reset with durable pending intent intact. Run golden fixtures in real Kotlin serialization and SQLite, including cursor overflow and restored-device sequence reuse. A TypeScript-only generated schema is insufficient evidence.
+
+### 17.3 Browser persistence feasibility and ownership
+
+Phase 0 must compare the already-used wa-sqlite family with the candidate Effect adapter on the actual supported browsers. The RC115 `@effect/sql-sqlite-wasm` package declares `@effect/wa-sqlite` as a peer. SQLite.org's VFS documentation is background, not proof that this adapter uses the same VFS or locking behavior. Record the selected implementation, journal/sync settings, schema migration behavior, and required headers.
+
+Keep one physical database owner and one upload authority per replica across tabs. Prefer an actual platform lock plus a database generation fence over a wall-clock lease alone; a backgrounded tab may resume after its lease appeared to expire. Messages must include workspace/owner generation so a stale response cannot update a newly opened organization. Feature-detect the chosen coordination mechanism and define a supported single-tab fallback if shared ownership is unavailable. Test suspension, BFCache restore, worker death, and app upgrade with an older tab still open.
+
+SQLite's OPFS VFS choices have different locking and COOP/COEP requirements. Verify sign-in popups, remote product images, WASM/worker loading, and the Electron custom origin under the actual chosen headers before rollout. Request/check persistent storage where supported and expose storage failure accurately; a committed browser database can still be lost when a user clears site data or storage is evicted. Reserve quota for the current replica, replacement generation, and pending commands. Never downgrade pending commands to an in-memory store while reporting a durable save. [SQLite persistence](https://sqlite.org/wasm/doc/trunk/persistence.md) and [browser storage persistence/eviction](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
+
+### 17.4 Additional failure and performance evidence
+
+Extend section 14 with these required histories:
+
+- Legacy CRUD and sale-outbox entries survive a crash at every handover step; malformed/ambiguous entries remain recoverable.
+- Receipt replay during PowerSync coexistence preserves the new decision sequence and creates one invoice/stock effect.
+- Two subscriptions deliver the same row out of order, then unsubscribe separately; no revision regression, resurrection, or premature overlay removal occurs.
+- Cleanup advances the floor between a pull's metadata and row reads; the client receives a consistent range or an explicit reset.
+- A build lease expires, a new builder wins, and the old one resumes; only the winning manifest becomes ready.
+- A user saves a new sale while a replacement snapshot imports; the final generation preserves that sale's pending intent.
+- Ticket replay, permission-different sockets, and hibernating authorization expiry cannot leak frames or postpone revocation indefinitely.
+- A large valid import competes with checkout and snapshot work; admission, lock wait, memory, and p99 latency stay within published limits.
+- A sparse history request returns bounded progress without scanning the entire organization log in one event.
+- A queued command crosses a client/server upgrade or replica restore; it remains decodable and cannot reuse a processed sequence with different content.
+- An Electron response omits Content-Length and exceeds the cap; the broker aborts without accumulating the full body.
+
+Publish a small benchmark record per release with dataset seed, platform/build, database region/compute, workload rate, warm/cold classification, query counts, CPU, latency percentiles, and cost assumptions. Gate rollout on those records rather than describing the architecture as optimized in advance.
+
+Review sources additionally checked on September 13: [Effect RC metadata](https://registry.npmjs.org/effect/4.0.0-rc.115), [Alchemy beta.77 metadata](https://registry.npmjs.org/alchemy/2.0.0-beta.77), [Effect SQLite WASM metadata](https://registry.npmjs.org/@effect%2fsql-sqlite-wasm/4.0.0-rc.115), [Alchemy Effect HTTP composition](https://alchemy.run/cloudflare/apis/effect-http-api/), [Cloudflare alarms](https://developers.cloudflare.com/durable-objects/api/alarms/), and [hibernating WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/). Added protocol and migration rules are this application's design decisions, informed by these documented constraints and the inspected repository code.

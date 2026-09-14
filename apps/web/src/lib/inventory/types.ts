@@ -19,11 +19,21 @@ import type {
   UpdateCategoryInput,
   UpdateProductInput,
 } from "@store/contracts";
+import type {
+  StockSnapshot,
+  StockReport,
+  StockRecommendationError,
+} from "@store/services/stock-recommendations";
 import type { Collection, DbClient } from "@tanstack/react-db";
+import type { Result } from "effect";
 
 export type InventoryCollection<Row extends object> = Collection<Row, string>;
 
 export type Inventory = {
+  readonly recommendStock: (
+    snapshot: Omit<StockSnapshot, "organizationId">,
+    signal: AbortSignal,
+  ) => Promise<Result.Result<StockReport, StockRecommendationError>>;
   readonly batches: InventoryCollection<BatchRow>;
   readonly categories: InventoryCollection<CategoryRow>;
   readonly dbClient: DbClient;

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./stock-recommendations": "./src/stock-recommendations/service.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
@@ -15,6 +16,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@types/node": "^26.2.0",
     "typescript": "catalog:",
     "vitest": "4.1.11"
