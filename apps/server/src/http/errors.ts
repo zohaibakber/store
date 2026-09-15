@@ -39,6 +39,9 @@ export type TooManyRequests = typeof TooManyRequests.Type;
 export const BadGateway = publicErrorSchema("BadGateway", 502);
 export type BadGateway = typeof BadGateway.Type;
 
+export const ServiceUnavailable = publicErrorSchema("ServiceUnavailable", 503);
+export type ServiceUnavailable = typeof ServiceUnavailable.Type;
+
 const body = (code: string, message: string) => ({ error: { code, message } });
 
 export const badRequest = (code: string, message: string) => BadRequest.make(body(code, message));
@@ -54,5 +57,7 @@ export const unsupportedMediaType = (code: string, message: string) =>
 export const tooManyRequests = (code: string, message: string) =>
   TooManyRequests.make(body(code, message));
 export const badGateway = (code: string, message: string) => BadGateway.make(body(code, message));
+export const serviceUnavailable = (code: string, message: string) =>
+  ServiceUnavailable.make(body(code, message));
 
 export const publicError = body;

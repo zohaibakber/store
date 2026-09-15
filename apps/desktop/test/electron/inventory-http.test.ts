@@ -39,6 +39,48 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe("https://api.tabaaq.app/api/powersync/credentials");
   });
 
+  it("allows the sync command and receipt routes", () => {
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/sync/commands",
+      }),
+    ).toBe("https://api.tabaaq.app/api/sync/commands");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/sync/replicas",
+      }),
+    ).toBe("https://api.tabaaq.app/api/sync/replicas");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/sync/pull",
+      }),
+    ).toBe("https://api.tabaaq.app/api/sync/pull");
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "GET",
+        url: "https://api.tabaaq.app/api/sync/receipts/sale-a",
+      }),
+    ).toBe("https://api.tabaaq.app/api/sync/receipts/sale-a");
+  });
+
+  it("rejects live sync and unknown sync paths", () => {
+    expect(() =>
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "GET",
+        url: "https://api.tabaaq.app/api/sync/live",
+      }),
+    ).toThrow("The inventory request is outside the configured inventory API.");
+    expect(() =>
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "POST",
+        url: "https://api.tabaaq.app/api/sync/live",
+      }),
+    ).toThrow("The inventory request is outside the configured inventory API.");
+  });
+
   it.each([
     "https://api.tabaaq.app/api/inventory/legacy-migrations",
     "https://api.tabaaq.app/api/inventory/legacy-migrations/job-123",

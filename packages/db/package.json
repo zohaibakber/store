@@ -9,7 +9,9 @@
     "./postgres/infra": "./src/postgres/infra.ts",
     "./postgres/schema": "./src/postgres/schema.ts",
     "./postgres/stage": "./src/postgres/stage.ts",
-    "./store.schema": "./src/shared/store.schema.ts"
+    "./store.schema": "./src/shared/store.schema.ts",
+    "./inventory.schema": "./src/inventory/schema.ts",
+    "./replica.schema": "./src/replica/schema.ts"
   },
   "scripts": {
     "check": "tsc --noEmit && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.postgres.config.ts",

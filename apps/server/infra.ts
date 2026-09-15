@@ -28,6 +28,7 @@ import {
   InventoryMutationDatabaseLive,
   InventoryMutationDatabaseUnavailable,
 } from "./src/inventory/mutation-database";
+import { UnprovisionedSyncAuthorityLive } from "./src/inventory/sync-authority";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -184,6 +185,7 @@ export const ApiLive = Api.make(
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
+      Layer.provide(UnprovisionedSyncAuthorityLive),
       Layer.provide(HttpServer.layerServices),
     );
 

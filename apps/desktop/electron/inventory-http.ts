@@ -35,6 +35,7 @@ const inventoryApiPath = (apiBaseUrl: string) => {
 };
 
 export const INVENTORY_COMMAND_PATHS = ["mutations", "invoices", "imports"] as const;
+export const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull"] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 
@@ -58,9 +59,13 @@ export const validatedInventoryUrl = (
   const apiPath = inventoryApiPath(apiBaseUrl);
   const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
+  const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
+  const receiptPath = new RegExp(`^${apiPath.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/sync/receipts/[^/]+$`);
   const routeAllowed =
     (request.method === "GET" && requested.pathname === credentialsPath) ||
-    (request.method === "POST" && commandPaths.includes(requested.pathname));
+    (request.method === "POST" && commandPaths.includes(requested.pathname)) ||
+    (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
+    (request.method === "GET" && receiptPath.test(requested.pathname));
   if (
     requested.username ||
     requested.password ||

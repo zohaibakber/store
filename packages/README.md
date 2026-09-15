@@ -9,6 +9,8 @@
   write domains.
 - `db`. Drizzle schemas and migrations for authentication and authoritative
   Postgres data.
+- `sync`. Host-agnostic SQLite command library, replica overlay/outbox, and
+  typed `SyncHttpApi` client. Authority remains a later Durable Object adapter.
 - `workspace`. Shared session HTTP, token renewal, and organization clients.
 - `services`. Application services shared by multiple apps.
 
