@@ -24,7 +24,6 @@ const packageManifests = [
   "apps/auth/package.json",
   "apps/desktop/package.json",
   "apps/server/package.json",
-  "apps/web/package.json",
   "packages/auth/package.json",
   "packages/client-db/package.json",
   "packages/contracts/package.json",
@@ -44,7 +43,7 @@ const configTexts = [
   [".github/workflows/android.yml", read(".github/workflows/android.yml")],
   ["README.md", read("README.md")],
   ["apps/server/README.md", read("apps/server/README.md")],
-  ["apps/web/README.md", read("apps/web/README.md")],
+  ["apps/desktop/README.md", read("apps/desktop/README.md")],
   ["packages/README.md", read("packages/README.md")],
 ];
 
@@ -63,7 +62,7 @@ const dependencyFields = [
 ];
 
 const runtimeSource = [
-  ...sourceFiles("apps/web/src/"),
+  ...sourceFiles("apps/desktop/src/"),
   ...sourceFiles("apps/server/src/"),
   ...sourceFiles("packages/client-db/src/"),
 ].map((path) => readFileSync(path, "utf8"));
@@ -114,7 +113,11 @@ const server = read("apps/server/src/http/app.ts");
 requireText(server, '"/api/powersync/credentials"', "server credential route");
 forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
-forbidText(read("apps/web/src/lib/inventory-db.tsx"), "migrateLegacyCatalog", "inventory database");
+forbidText(
+  read("apps/desktop/src/lib/inventory-db.tsx"),
+  "migrateLegacyCatalog",
+  "inventory database",
+);
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
 requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
 

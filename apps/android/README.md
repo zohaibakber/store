@@ -51,7 +51,7 @@ POWERSYNC_URL=          # optional fallback; the API usually returns this
 ```
 
 The emulator reaches the host through `10.0.2.2`. A physical device needs the
-LAN IP of the machine running `vp run dev:web` (API `:8787`, auth `:8788`).
+LAN IP of the machine running `turbo run dev --filter=@store/server` (API `:8787`, auth `:8788`).
 
 PowerSync tokens come from `GET /api/powersync/credentials` with the same
 Bearer token as web and desktop. `POWERSYNC_URL` is only a fallback when that

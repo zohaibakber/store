@@ -6,23 +6,23 @@ catalog:
   "@effect/sql-d1": 4.0.0-rc.111
   "@effect/sql-sqlite-do": 4.0.0-rc.111
   "@effect/vitest": 4.0.0-rc.111
-  alchemy: 2.0.0-beta.74
+  alchemy: 2.0.0-beta.77
   drizzle-kit: 1.0.0-rc.5-ab785fc
   drizzle-orm: 1.0.0-rc.5-ab785fc
   effect: 4.0.0-rc.111
   typescript: 7.0.2
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.9
-  vite-plus: 0.2.9
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.2
+  vite-plus: 0.3.2
 
 overrides:
-  "@cloudflare/workers-types": 5.20260827.1
+  "@cloudflare/workers-types": 5.20260911.1
   "@effect/platform-node-shared": 4.0.0-rc.111
   "@effect/sql-d1": 4.0.0-rc.111
   "@effect/sql-sqlite-do": 4.0.0-rc.111
   drizzle-orm: 1.0.0-rc.5-ab785fc
   uuid: 11.1.1
   valibot: 1.4.2
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.9
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.2
   vitest: 4.1.11
 
 onlyBuiltDependencies:
@@ -48,3 +48,42 @@ minimumReleaseAgeExclude:
   - "@tanstack/db@0.8.3"
   - "@tanstack/powersync-db-collection@0.1.62"
   - "@tanstack/react-db@0.3.3"
+  - "@oxlint/binding-android-arm-eabi@1.83.0"
+  - "@oxlint/binding-android-arm64@1.83.0"
+  - "@oxlint/binding-darwin-arm64@1.83.0"
+  - "@oxlint/binding-darwin-x64@1.83.0"
+  - "@oxlint/binding-freebsd-x64@1.83.0"
+  - "@oxlint/binding-linux-arm-gnueabihf@1.83.0"
+  - "@oxlint/binding-linux-arm-musleabihf@1.83.0"
+  - "@oxlint/binding-linux-arm64-gnu@1.83.0"
+  - "@oxlint/binding-linux-arm64-musl@1.83.0"
+  - "@oxlint/binding-linux-ppc64-gnu@1.83.0"
+  - "@oxlint/binding-linux-riscv64-gnu@1.83.0"
+  - "@oxlint/binding-linux-riscv64-musl@1.83.0"
+  - "@oxlint/binding-linux-s390x-gnu@1.83.0"
+  - "@oxlint/binding-linux-x64-gnu@1.83.0"
+  - "@oxlint/binding-linux-x64-musl@1.83.0"
+  - "@oxlint/binding-openharmony-arm64@1.83.0"
+  - "@oxlint/binding-win32-arm64-msvc@1.83.0"
+  - "@oxlint/binding-win32-ia32-msvc@1.83.0"
+  - "@oxlint/binding-win32-x64-msvc@1.83.0"
+  - "@oxlint/plugins@1.83.0"
+  - "@shadcn/lint@0.1.0"
+  - oxlint@1.83.0
+  - "@voidzero-dev/vite-plus-core@0.3.2"
+  - "@voidzero-dev/vite-plus-darwin-arm64@0.3.2"
+  - "@voidzero-dev/vite-plus-darwin-x64@0.3.2"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@0.3.2"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@0.3.2"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@0.3.2"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@0.3.2"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@0.3.2"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@0.3.2"
+  - vite-plus@0.3.2
+  - "@turbo/darwin-64@2.10.13"
+  - "@turbo/darwin-arm64@2.10.13"
+  - "@turbo/linux-64@2.10.13"
+  - "@turbo/linux-arm64@2.10.13"
+  - "@turbo/windows-64@2.10.13"
+  - "@turbo/windows-arm64@2.10.13"
+  - turbo@2.10.13

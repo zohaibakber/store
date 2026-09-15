@@ -1,24 +1,21 @@
 # Store
 
-Bun workspace for offline-first inventory: a TanStack web app, an Electron
-desktop app, a native Android app, and a Cloudflare Worker API. Postgres is the
+Bun workspace for offline-first inventory: an Electron desktop app, a native
+Android app, and a Cloudflare Worker API. Postgres is the
 authoritative inventory database. PowerSync streams organization-scoped rows
 into durable SQLite-backed TanStack DB collections on each client.
 
 ## Workspace boundaries
 
-- `apps/web` is the Vite + TanStack Router SPA (web-first, same model as T3 Code).
-  Alchemy deploys it with `Cloudflare.Website.Vite` so the production hostname
-  serves the app and `/api/*` on the same origin. Locally `alchemy dev` listens
-  on `:5174`; standalone `vp dev` proxies `/api` to `:8787`.
 - `apps/android` is the native Kotlin + Jetpack Compose client (`com.tabaaq.mobile`).
   First slice: sign-in, Home / Products / Settings, catalog writes, and label
   scan. Setup is in `apps/android/README.md`.
-- `apps/desktop` is the Electron shell. `electron` holds the main process and
-  preload. It loads the web renderer with hash history and keeps encrypted
+- `apps/desktop` owns the complete Electron application: main process, preload,
+  React renderer, Vite configuration, tests, and packaging. The renderer uses
+  hash history, while the main process keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
   inventory HTTP. Live inventory SQLite is `@powersync/web` plus wa-sqlite in
-  the renderer, the same engine as the browser. There is no main-process
+  the renderer. There is no main-process
   PowerSync. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
@@ -35,14 +32,14 @@ into durable SQLite-backed TanStack DB collections on each client.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
 Shared helpers stay next to the tests that use them, for example
-`apps/web/test/lib`.
+`apps/desktop/test/lib`.
 
-Web components are grouped by feature. `components/app` owns the application
+Desktop renderer components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
 Inventory reads come from TanStack DB live queries over PowerSync SQLite.
-Web and Electron open that database in the renderer with `@powersync/web`.
+Electron opens that database in the renderer with `@powersync/web`.
 Native Android uses `com.powersync:core`. Category, product, and batch
 mutations are durably queued offline, uploaded through authenticated
 `/api/inventory/*` commands, committed in Postgres, and streamed back by
@@ -52,14 +49,12 @@ PowerSync. The signed organization claim defines every sync stream.
 
 ```sh
 vp install
-vp run dev:web
+vp run dev
 ```
 
-That starts the API Worker (`:8787`), auth Worker (`:8788`), and browser app
-(`:5174`). Use `vp run dev:desktop` instead to run the same backend stack and
-web renderer inside the Electron shell. The two commands are separate on
-purpose: `apps/web` owns the renderer, while `apps/desktop` owns only Electron's
-main process, preload bridge, packaging, and native integrations.
+Turborepo starts the API/auth Workers and the desktop workspace. The desktop's
+plain `vp dev` task starts the renderer on `:5174`, builds main and preload, and
+launches Electron. Use a Turbo filter when you only need one workspace.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
@@ -79,8 +74,9 @@ credentials. Worker setup and stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change. Pull requests do not create Cloudflare
 resources. A push to `nightly` deploys the isolated `nightly` stage, while a
-push to `main` deploys `prod`. `alchemy deploy` builds the SPA.
-CI does not run a separate Vite build. Bootstrap its least-privilege Cloudflare
+push to `main` deploys `prod`. `alchemy deploy` deploys the API, auth, database,
+and sync infrastructure. The renderer is built by the desktop release job.
+Bootstrap its least-privilege Cloudflare
 credentials once:
 
 ```sh
@@ -114,23 +110,23 @@ There is no domain baked into source. Published deploys fail if
 `PRODUCTION_DOMAIN` is missing. In `Nightly`, the name still refers to that
 environment's public hostname, not the production hostname.
 
-- `PRODUCTION_DOMAIN`. Site hostname only (example: `tabaaq.app`). Website Worker.
-- `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`). Desktop and the
-  production SPA. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
+- `PRODUCTION_DOMAIN`. Base hostname (example: `tabaaq.app`) used to derive the
+  API and auth hostnames.
+- `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`) baked into the
+  desktop release. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
 - `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
   the auth hostname is `auth.<PRODUCTION_DOMAIN>`.
-- `AUTH_TRUSTED_ORIGINS`. Site origin for CORS and OAuth redirects.
+- `AUTH_TRUSTED_ORIGINS`. Additional trusted origins for CORS and OAuth redirects.
 - `ELECTRON_PROTOCOL` = `com.tabaaq.desktop` (optional; same default as the
   Worker).
 
-Use a separate hostname such as `nightly.tabaaq.app` for `Nightly`, and add that
-site origin to `AUTH_TRUSTED_ORIGINS`. Nightly uses its own auth keys, peppers,
+Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
+uses its own auth keys, peppers,
 Postgres project, D1 database, KV namespace, and PowerSync endpoint.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
-to the trusted web origin or native custom scheme after PKCE verification. Web
-and desktop use that redirect flow.
+to the desktop custom scheme after PKCE verification.
 
 Android does not. It signs in through Google Identity Services, which presents
 Google's account picker, and posts the resulting ID token to
@@ -167,9 +163,8 @@ never install a nightly build. Promote tested work by merging `nightly` into
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production
-deploys run `pnpm exec alchemy deploy`,
-which serves the SPA from `PRODUCTION_DOMAIN` and the API from
-`api.<PRODUCTION_DOMAIN>`, with auth at `auth.<PRODUCTION_DOMAIN>`.
+deploys run `pnpm exec alchemy deploy`, which serves the API from
+`api.<PRODUCTION_DOMAIN>` and auth at `auth.<PRODUCTION_DOMAIN>`.
 
 ## Install
 

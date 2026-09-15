@@ -34,7 +34,7 @@
   ],
   files: ["dist", "dist-electron"],
   // Packaged/prod uses the monochrome mark. Unpackaged `vp dev` loads the
-  // orange mark from apps/web/public/logo-dev.png in the main process.
+  // orange mark from apps/desktop/public/logo-dev.png in the main process.
   icon: "assets/prod/icon.png",
   extraResources: [
     {

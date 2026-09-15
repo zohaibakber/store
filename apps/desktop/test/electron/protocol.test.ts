@@ -13,6 +13,22 @@ const productionPolicy = () =>
   });
 
 describe("desktop content security policy", () => {
+  it("permits Vite's injected React refresh preamble in development", () => {
+    const policy = makeDesktopContentSecurityPolicy({
+      scheme: "com.tabaaq.desktop",
+      apiOrigin: "http://localhost:8787",
+      authOrigin: "http://localhost:8788",
+      development: true,
+    });
+    const scriptSources = policy
+      .split("; ")
+      .find((directive) => directive.startsWith("script-src "))
+      ?.split(" ");
+
+    expect(scriptSources).toContain("'unsafe-eval'");
+    expect(scriptSources).toContain("'unsafe-inline'");
+  });
+
   it("permits WebAssembly compilation without allowing general eval in production", () => {
     const scriptSources = productionPolicy()
       .split("; ")

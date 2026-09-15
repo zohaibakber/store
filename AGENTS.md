@@ -28,8 +28,8 @@ release. Add a tool name to select part of the graph. For example, run
 
 ## Typography
 
-These rules apply to all UI work in `apps/web`. The tokens live in
-`apps/web/src/styles.css` (Tailwind v4 `@theme` block).
+These rules apply to all UI work in `apps/desktop`. The tokens live in
+`apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
 
 Conventions, not hard clamps: `@theme` sets the font family, but nothing blocks
 other weights or sizes. Follow the rules anyway.
@@ -50,9 +50,13 @@ other weights or sizes. Follow the rules anyway.
 
 ## UI components
 
-`apps/web/src/components/ui` is a registry managed by `components.json`, not
+`apps/desktop/src/components/ui` is a registry managed by `components.json`, not
 application code. Primitives there may have no importer yet. That is inventory,
 not dead code, so don't delete them for being unused.
+
+After changing UI code in `apps/desktop`, run `vp run lint:design`. Application code
+must pass the design-system rules with zero errors; registry-owned COSS primitives
+under `apps/desktop/src/components/ui` stay governed by their upstream definitions.
 
 ## Cursor Cloud instructions
 
@@ -64,9 +68,9 @@ and `vp build` (Turborepo fans them out per package).
 - **Electron binary.** If installation leaves `apps/desktop/node_modules/electron`
   without its `dist/` binary, or `vp dev` for the desktop errors that Electron
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
-- **Desktop app.** `vp run dev:desktop` from the repo root starts the API/auth
-  workers and the web renderer, then `apps/desktop`'s `dev` script waits for
-  `:5174` and packs main/preload with `vp pack --watch`. Unpackaged/dev keeps an
+- **Desktop app.** `vp run dev` from the repo root lets Turborepo start the
+  API/auth workers and `apps/desktop`. Its `vp dev` command starts the renderer
+  on `:5174`, builds main/preload, and launches Electron. Unpackaged/dev keeps an
   escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
   can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
   Electron Fuses in electron-builder's `afterPack` hook and keep
@@ -80,7 +84,7 @@ and `vp build` (Turborepo fans them out per package).
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
   refresh and ephemeral peppers, and Google OAuth credentials. Use different
   secrets per stage. Do not commit env files or env templates.
-- **Auth gating.** The desktop renderer and the hosted SPA are gated behind
+- **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
   above. Inventory authority is

@@ -1,15 +1,14 @@
 # Tabaaq design system
 
-Shared tokens for three clients: web (`apps/web`, Tailwind v4 + coss),
-desktop (`apps/desktop`, the same renderer in Electron), and Android
+Shared tokens for the desktop renderer (`apps/desktop`, Tailwind v4 + coss) and Android
 (`apps/android`, Jetpack Compose Material 3).
 
-Palette, type scale, radii, and component vocabulary live here once. Web and
-desktop read them as CSS custom properties in `apps/web/src/styles.css`. Android
+Palette, type scale, radii, and component vocabulary live here once. Desktop
+reads them as CSS custom properties in `apps/desktop/src/styles.css`. Android
 mirrors the same numbers in Compose. When the two disagree, `styles.css` wins.
 
 Component recipes come from [coss ui](https://coss.com/ui) (Base UI + Tailwind),
-which is already what `apps/web/src/components/ui` is. Android does not rebuild
+which is already what `apps/desktop/src/components/ui` is. Android does not rebuild
 coss. It reuses coss slot names, variants, and states, then paints them with
 Compose.
 
@@ -37,7 +36,7 @@ Compose.
 
 ### 2.1 Semantic tokens
 
-Light and dark, sourced from `apps/web/src/styles.css`. Hex columns are the
+Light and dark, sourced from `apps/desktop/src/styles.css`. Hex columns are the
 resolved sRGB values Android uses (Tailwind v4 ships oklch; Compose takes the
 converted hex).
 
@@ -150,7 +149,7 @@ letter-spaced micro-labels. They read as marketing chrome. Tabular numerals
 ### Radius
 
 `--radius: 0.625rem` (10 px) is the base. The scale is multiplicative and
-matches `apps/web/src/styles.css`:
+matches `apps/desktop/src/styles.css`:
 
 | Name   | Formula        | px  | Use                            |
 | ------ | -------------- | --- | ------------------------------ |
@@ -208,8 +207,8 @@ defaults. Where web uses `shadow-xs/5` + a 1 px inset highlight, Android uses a
 
 ## 5. Component recipes
 
-Each recipe lists the coss anatomy, then how web/desktop and Android realise
-it. Web primitives live in `apps/web/src/components/ui`. Android paints the same
+Each recipe lists the coss anatomy, then how desktop and Android realise
+it. Desktop primitives live in `apps/desktop/src/components/ui`. Android paints the same
 slots in Compose.
 
 ### Button
@@ -397,4 +396,4 @@ Before shipping UI in any client:
 - [ ] Empty, loading and error states exist and use `Empty` / `Spinner` /
       `Alert`.
 - [ ] Touch targets ≥ 44; reduced motion respected.
-- [ ] Android screenshots read as the same product as the web app.
+- [ ] Android screenshots read as the same product as the desktop app.

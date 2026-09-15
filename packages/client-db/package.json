@@ -13,7 +13,7 @@
   "dependencies": {
     "@powersync/common": "1.57.3",
     "@store/contracts": "workspace:*",
-    "@tanstack/powersync-db-collection": "0.1.62",
+    "@tanstack/powersync-db-collection": "0.1.67",
     "effect": "catalog:"
   },
   "devDependencies": {
