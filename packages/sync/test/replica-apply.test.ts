@@ -9,13 +9,12 @@ import {
 } from "@store/contracts";
 import {
   LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { batches, products, replicaState } from "@store/db/replica.schema";
+import { batches } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -27,69 +26,7 @@ import {
   visibleBatchStock,
 } from "../src/replica/commands";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
-
-const seedTenUnits = (path?: string) => {
-  const store = openReplicaStore(path);
-  const occurredAt = 1_700_000_000_000;
-  runReplicaTransaction(store.db, (tx) => {
-    tx.insert(replicaState)
-      .values({
-        id: "singleton",
-        organizationId: LAST_UNIT_ORGANIZATION_ID,
-        userId: "user-1",
-        replicaId: LAST_UNIT_REPLICA_A,
-        epoch: LAST_UNIT_EPOCH,
-        appliedCommitSequence: "0",
-        nextClientSequence: "1",
-        localCommitVersion: 0,
-      })
-      .run();
-    tx.insert(products)
-      .values({
-        id: LAST_UNIT_PRODUCT_ID,
-        name: "Ten pack",
-        categoryId: "general",
-        aisle: null,
-        composition: null,
-        strength: null,
-        unitsPerPack: 1,
-        purchasePrice: 50,
-        retailPrice: 100,
-        unitPrice: 100,
-        visible: true,
-        createdAt: occurredAt,
-        updatedAt: occurredAt,
-        deletedAt: null,
-        organizationId: LAST_UNIT_ORGANIZATION_ID,
-        createdByUserId: "user-1",
-        updatedByUserId: "user-1",
-        deviceId: LAST_UNIT_REPLICA_A,
-        operationId: "seed-product",
-        rowVersion: 1,
-      })
-      .run();
-    tx.insert(batches)
-      .values({
-        id: LAST_UNIT_BATCH_ID,
-        productId: LAST_UNIT_PRODUCT_ID,
-        batchNumber: "B-1",
-        expiresAt: null,
-        packQuantity: 0,
-        unitQuantity: 10,
-        createdAt: occurredAt,
-        updatedAt: occurredAt,
-        deletedAt: null,
-        organizationId: LAST_UNIT_ORGANIZATION_ID,
-        createdByUserId: "user-1",
-        updatedByUserId: "user-1",
-        deviceId: LAST_UNIT_REPLICA_A,
-        operationId: "seed-batch",
-        rowVersion: 1,
-      })
-      .run();
-  });
-  return store;
-};
+import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
 const confirmedBatch = (unitQuantity: number, rowVersion = 2) => ({
   id: LAST_UNIT_BATCH_ID,
@@ -140,7 +77,7 @@ const confirmedSale = (commitSequence = "1"): SyncTransactionGroup => ({
 
 describe("replica overlay apply", () => {
   it("shows 10 then 9 with an overlay and stays 9 after the confirmed image, never 8", () => {
-    const store = seedTenUnits();
+    const store = seedReplicaTenUnits();
     runReplicaTransaction(store.db, (tx) => {
       expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
         packQuantity: 0,
@@ -171,7 +108,7 @@ describe("replica overlay apply", () => {
   });
 
   it("ends at the same visible stock for receipt-first and delta-first", () => {
-    const receiptFirst = seedTenUnits();
+    const receiptFirst = seedReplicaTenUnits();
     runReplicaTransaction(receiptFirst.db, (tx) => {
       saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
       recordCommandReceipt(tx, acceptedReceipt());
@@ -185,7 +122,7 @@ describe("replica overlay apply", () => {
     });
     receiptFirst.close();
 
-    const deltaFirst = seedTenUnits();
+    const deltaFirst = seedReplicaTenUnits();
     runReplicaTransaction(deltaFirst.db, (tx) => {
       saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
       applyTransactionGroup(tx, confirmedSale());
@@ -202,7 +139,7 @@ describe("replica command lifetime", () => {
   it("keeps a pending outbox row after reopening the sqlite file", () => {
     const directory = mkdtempSync(join(tmpdir(), "store-replica-"));
     const path = join(directory, "replica.sqlite");
-    const first = seedTenUnits(path);
+    const first = seedReplicaTenUnits(path);
     runReplicaTransaction(first.db, (tx) => saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1));
     first.close();
     const reopened = openReplicaStore(path);
@@ -214,7 +151,7 @@ describe("replica command lifetime", () => {
   });
 
   it("does not save an outbox row when the local transaction throws", () => {
-    const store = seedTenUnits();
+    const store = seedReplicaTenUnits();
     expect(() =>
       runReplicaTransaction(store.db, (tx) => {
         saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);

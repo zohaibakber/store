@@ -1,7 +1,9 @@
+import { replicaMigrations } from "@store/db/replica/migrations";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
-import { REPLICA_SCHEMA_SQL } from "../authority/schema-sql";
+import { betterSqliteMigrationTarget } from "../better-sqlite-target";
+import { runMigrations } from "../migrations";
 import { runSqliteTransaction, type SqliteConnection, type SqliteDatabase } from "../sqlite";
 
 export type ReplicaDb = SqliteConnection;
@@ -15,7 +17,7 @@ export type ReplicaStore = {
 export const openReplicaStore = (path = ":memory:"): ReplicaStore => {
   const sqlite = new Database(path);
   sqlite.pragma("journal_mode = WAL");
-  sqlite.exec(REPLICA_SCHEMA_SQL);
+  runMigrations(replicaMigrations, betterSqliteMigrationTarget(sqlite));
   const db = drizzle({ client: sqlite });
   return {
     sqlite,

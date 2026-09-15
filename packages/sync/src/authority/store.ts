@@ -21,10 +21,13 @@ import {
   products,
   replicas,
 } from "@store/db/inventory.schema";
+import { inventoryMigrations } from "@store/db/inventory/migrations";
 import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
+import { betterSqliteMigrationTarget } from "../better-sqlite-target";
+import { runMigrations } from "../migrations";
 import { runSqliteTransaction, type SqliteDatabase } from "../sqlite";
 import {
   commitPreparedCommand,
@@ -34,7 +37,6 @@ import {
   type InventoryActor,
   type InventoryDb,
 } from "./commands";
-import { INVENTORY_SCHEMA_SQL } from "./schema-sql";
 
 export const LAST_UNIT_USER_ID = "user-1";
 
@@ -52,7 +54,7 @@ export type InventoryStore = {
 export const openInventoryStore = (path = ":memory:"): InventoryStore => {
   const sqlite = new Database(path);
   sqlite.pragma("journal_mode = WAL");
-  sqlite.exec(INVENTORY_SCHEMA_SQL);
+  runMigrations(inventoryMigrations, betterSqliteMigrationTarget(sqlite));
   const db = drizzle({ client: sqlite });
   return {
     sqlite,
