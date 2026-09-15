@@ -1,5 +1,6 @@
 import {
   MAX_SYNC_PULL_TRANSACTIONS,
+  OPERATIONAL_SUBSCRIPTION,
   padDecimalSequence,
   type CommandReceipt,
   type SyncCommandEnvelope,
@@ -187,6 +188,7 @@ export const runPull = (
     pullTransactions(tx, {
       organizationId: actor.organizationId,
       epoch: input.epoch ?? LAST_UNIT_EPOCH,
+      subscription: OPERATIONAL_SUBSCRIPTION,
       afterCommitSequence: input.afterCommitSequence ?? "0",
       limit: input.limit ?? MAX_SYNC_PULL_TRANSACTIONS,
     }),

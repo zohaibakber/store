@@ -6,6 +6,7 @@ import { compareCodeUnits } from "./canonical-json";
 import { SyncAction, SyncEntity } from "./schema";
 
 export const MAX_SYNC_PULL_TRANSACTIONS = 100;
+
 export const MAX_SYNC_IDENTIFIER_LENGTH = 200;
 
 const Identifier = Schema.String.check(
@@ -13,11 +14,23 @@ const Identifier = Schema.String.check(
   Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
 );
 
-/** Canonical decimal string. Distinct from entity `rowVersion` and local publication versions. */
+export const SYNC_SCHEMA_VERSION = 1;
+
+export const SyncSchemaVersion = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(1),
+);
+export type SyncSchemaVersion = typeof SyncSchemaVersion.Type;
+
+export const SyncSubscription = Schema.Literals(["operational"]);
+export type SyncSubscription = typeof SyncSubscription.Type;
+
+export const OPERATIONAL_SUBSCRIPTION: SyncSubscription = "operational";
+
 export const DecimalSequence = Schema.String.check(Schema.isPattern(/^[0-9]+$/u));
 export type DecimalSequence = typeof DecimalSequence.Type;
 
-export const compareDecimalSequence = (left: string, right: string) => {
+export const compareDecimalSequence = (left: string, right: string): number => {
   const normalizedLeft = left.replace(/^0+(?=\d)/u, "");
   const normalizedRight = right.replace(/^0+(?=\d)/u, "");
   if (normalizedLeft.length !== normalizedRight.length) {
@@ -26,13 +39,14 @@ export const compareDecimalSequence = (left: string, right: string) => {
   return compareCodeUnits(normalizedLeft, normalizedRight);
 };
 
-export const incrementDecimalSequence = (value: string) => String(BigInt(value) + 1n);
+export const incrementDecimalSequence = (value: string): string => String(BigInt(value) + 1n);
 
-/** Fixed-width storage so SQLite text order matches numeric order. */
 export const DECIMAL_SEQUENCE_DIGITS = 20;
-export const padDecimalSequence = (value: string) =>
+
+export const padDecimalSequence = (value: string): string =>
   String(BigInt(value)).padStart(DECIMAL_SEQUENCE_DIGITS, "0");
-export const unpadDecimalSequence = (value: string) => String(BigInt(value));
+
+export const unpadDecimalSequence = (value: string): string => String(BigInt(value));
 
 export const SyncEpoch = DecimalSequence.pipe(Schema.brand("SyncEpoch"));
 export type SyncEpoch = typeof SyncEpoch.Type;
@@ -64,6 +78,11 @@ export const SyncProtocolCode = Schema.Literals([
   "REPLICA_OWNED_BY_OTHER",
   "COMMAND_IDENTITY_MISMATCH",
   "INVALID_PAYLOAD_HASH",
+  "IMPORT_IDENTITY_MISMATCH",
+  "SNAPSHOT_REQUIRED",
+  "SNAPSHOT_UNAVAILABLE",
+  "SCHEMA_VERSION_UNSUPPORTED",
+  "TICKET_INVALID",
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
@@ -75,7 +94,7 @@ export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()(
   },
 ) {}
 
-export const syncProtocolError = (code: SyncProtocolCode, message: string) =>
+export const syncProtocolError = (code: SyncProtocolCode, message: string): SyncProtocolError =>
   SyncProtocolError.make({ code, message });
 
 export const IssueInvoiceSyncCommand = Schema.Struct({
@@ -136,11 +155,14 @@ export const RegisterReplicaResult = Schema.Struct({
   replicaId: Identifier,
   epoch: SyncEpoch,
   nextClientSequence: ReplicaClientSequence,
+  retentionFloor: OrgCommitSequence,
+  schemaVersion: SyncSchemaVersion,
 });
 export type RegisterReplicaResult = typeof RegisterReplicaResult.Type;
 
 export const SyncPullRequest = Schema.Struct({
   epoch: SyncEpoch,
+  subscription: SyncSubscription,
   afterCommitSequence: OrgCommitSequence,
   limit: Schema.optionalKey(
     Schema.Number.check(
@@ -171,7 +193,22 @@ export type SyncTransactionGroup = typeof SyncTransactionGroup.Type;
 
 export const SyncPullResult = Schema.Struct({
   epoch: SyncEpoch,
+  subscription: SyncSubscription,
+  schemaVersion: SyncSchemaVersion,
   transactions: Schema.Array(SyncTransactionGroup),
   nextCommitSequence: OrgCommitSequence,
+  horizon: OrgCommitSequence,
+  retentionFloor: OrgCommitSequence,
 });
 export type SyncPullResult = typeof SyncPullResult.Type;
+
+export const SyncCoverage = Schema.TaggedUnion({
+  awaitingSnapshot: {
+    subscription: SyncSubscription,
+  },
+  downloaded: {
+    subscription: SyncSubscription,
+    throughCommitSequence: OrgCommitSequence,
+  },
+});
+export type SyncCoverage = typeof SyncCoverage.Type;

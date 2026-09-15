@@ -1,15 +1,18 @@
 import {
   allocationsCoverInput,
   CommandReceipt,
+  compareDecimalSequence,
   incrementDecimalSequence,
   nextInvoiceNumber,
   OrgCommitSequence,
   padDecimalSequence,
   ReplicaClientSequence,
+  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncLogChange,
   SyncProtocolError,
   syncProtocolError,
+  type SyncSubscription,
   unpadDecimalSequence,
   type AcceptedInvoiceResult,
   type RegisterReplicaRequest,
@@ -405,7 +408,6 @@ const issueInvoice = (
   };
 };
 
-/** Synchronous command transaction. Hosts wrap this in SQLite `transaction` / DO `transactionSync`. */
 export const commitPreparedCommand = (
   tx: InventoryDb,
   input: {
@@ -582,6 +584,8 @@ export const registerReplica = (
       nextClientSequence: ReplicaClientSequence.make(
         incrementDecimalSequence(unpadDecimalSequence(existing.lastClientSequence)),
       ),
+      retentionFloor: OrgCommitSequence.make(unpadDecimalSequence(state.retentionFloor)),
+      schemaVersion: SYNC_SCHEMA_VERSION,
     };
   }
   runWrite(
@@ -597,6 +601,8 @@ export const registerReplica = (
     replicaId: request.replicaId,
     epoch: SyncEpoch.make(state.epoch),
     nextClientSequence: ReplicaClientSequence.make("1"),
+    retentionFloor: OrgCommitSequence.make(unpadDecimalSequence(state.retentionFloor)),
+    schemaVersion: SYNC_SCHEMA_VERSION,
   };
 };
 
@@ -624,6 +630,7 @@ export const pullTransactions = (
   input: {
     readonly organizationId: string;
     readonly epoch: string;
+    readonly subscription: SyncSubscription;
     readonly afterCommitSequence: string;
     readonly limit: number;
   },
@@ -631,6 +638,13 @@ export const pullTransactions = (
   const state = requireReadyState(tx, input.organizationId);
   if (state.epoch !== input.epoch) {
     return fail("EPOCH_MISMATCH", "The replica epoch does not match.");
+  }
+  const retentionFloor = unpadDecimalSequence(state.retentionFloor);
+  if (compareDecimalSequence(input.afterCommitSequence, retentionFloor) < 0) {
+    return fail(
+      "SNAPSHOT_REQUIRED",
+      "This replica is behind the retained history and needs a snapshot.",
+    );
   }
   const headers = tx
     .select()
@@ -674,9 +688,13 @@ export const pullTransactions = (
   const last = transactions.at(-1);
   return {
     epoch: SyncEpoch.make(state.epoch),
+    subscription: input.subscription,
+    schemaVersion: SYNC_SCHEMA_VERSION,
     transactions,
     nextCommitSequence:
       last?.commitSequence ??
       OrgCommitSequence.make(unpadDecimalSequence(input.afterCommitSequence)),
+    horizon: OrgCommitSequence.make(unpadDecimalSequence(state.commitSequence)),
+    retentionFloor: OrgCommitSequence.make(retentionFloor),
   };
 };

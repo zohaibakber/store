@@ -19,7 +19,6 @@ export type SyncTransport = {
   readonly pull: (request: SyncPullRequest) => Effect.Effect<SyncPullResult, unknown>;
 };
 
-/** Typed client for `SyncHttpApi`. Hosts inject fetch/auth through Effect HttpClient. */
 export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (baseUrl: string) {
   const client = yield* HttpApiClient.make(SyncHttpApi, { baseUrl });
   return {
