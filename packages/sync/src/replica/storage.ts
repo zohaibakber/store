@@ -1,14 +1,14 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { REPLICA_SCHEMA_SQL } from "../authority/schema-sql";
+import { runSqliteTransaction, type SqliteConnection, type SqliteDatabase } from "../sqlite";
 
-export type ReplicaDb = BetterSQLite3Database;
+export type ReplicaDb = SqliteConnection;
 
 export type ReplicaStore = {
   readonly sqlite: Database.Database;
-  readonly db: ReplicaDb;
+  readonly db: SqliteDatabase;
   readonly close: () => void;
 };
 
@@ -24,5 +24,5 @@ export const openReplicaStore = (path = ":memory:"): ReplicaStore => {
   };
 };
 
-export const runReplicaTransaction = <A>(db: ReplicaDb, run: (tx: ReplicaDb) => A): A =>
-  db.transaction((tx) => run(tx as ReplicaDb) as never) as A;
+export const runReplicaTransaction = <A>(db: SqliteDatabase, run: (tx: ReplicaDb) => A): A =>
+  runSqliteTransaction(db, run);

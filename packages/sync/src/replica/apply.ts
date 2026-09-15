@@ -1,23 +1,18 @@
 import { compareDecimalSequence, type SyncTransactionGroup } from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import { batches, commandOutbox, replicaState, stockOverlays } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
+import * as Schema from "effect/Schema";
 
+import { runWrite } from "../sqlite";
 import { loadReplicaState } from "./commands";
 import type { ReplicaDb } from "./storage";
 
-const runWrite = (query: { readonly run: () => unknown }) => {
-  query.run();
-};
+const isBatchRow = Schema.is(syncEntityRows.batch.schema);
 
-type BatchRow = typeof batches.$inferSelect;
+type AppliedBatchRow = (typeof syncEntityRows.batch.schema)["Type"];
 
-const isBatchRow = (row: unknown): row is BatchRow => {
-  if (typeof row !== "object" || row === null) return false;
-  const candidate = row as Partial<BatchRow>;
-  return typeof candidate.id === "string" && typeof candidate.packQuantity === "number";
-};
-
-const upsertBatch = (tx: ReplicaDb, row: BatchRow) => {
+const upsertBatch = (tx: ReplicaDb, row: AppliedBatchRow) => {
   const existing = tx.select().from(batches).where(eq(batches.id, row.id)).get();
   if (existing) {
     runWrite(

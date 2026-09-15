@@ -1,7 +1,7 @@
 import {
   incrementDecimalSequence,
+  SyncCommandEnvelope,
   type CommandReceipt,
-  type SyncCommandEnvelope,
 } from "@store/contracts";
 import {
   batches,
@@ -11,12 +11,10 @@ import {
   stockOverlays,
 } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
+import * as Schema from "effect/Schema";
 
+import { runWrite } from "../sqlite";
 import type { ReplicaDb } from "./storage";
-
-const runWrite = (query: { readonly run: () => unknown }) => {
-  query.run();
-};
 
 export type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
 
@@ -180,5 +178,5 @@ export const takePendingCommand = (tx: ReplicaDb): SyncCommandEnvelope | undefin
   const row = tx.select().from(commandOutbox).where(eq(commandOutbox.status, "pending")).get();
   if (!row) return undefined;
   markCommandSending(tx, row.operationId);
-  return JSON.parse(row.envelopeJson) as SyncCommandEnvelope;
+  return Schema.decodeUnknownSync(SyncCommandEnvelope)(JSON.parse(row.envelopeJson));
 };

@@ -1,4 +1,4 @@
-import { OrgCommitSequence, syncProtocolError } from "@store/contracts";
+import { OrgCommitSequence, SyncCommandEnvelope, syncProtocolError } from "@store/contracts";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { SyncAuthorityContract } from "../../src/inventory/sync-authority";
 import { appFor } from "../lib/app";
 
-const commandPost = (body: unknown = lastUnitBuyerAEnvelope) =>
+const commandPost = (body: SyncCommandEnvelope = lastUnitBuyerAEnvelope) =>
   ({
     method: "POST",
     headers: { "content-type": "application/json" },

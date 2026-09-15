@@ -7,6 +7,7 @@ import {
   lastUnitBuyerBEnvelope,
   lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { commitPreparedCommand } from "../src/authority/commands";
@@ -19,12 +20,9 @@ import {
   runPull,
   seedLastUnitCatalog,
 } from "../src/authority/store";
+import { runSqliteTransaction } from "../src/sqlite";
 
-const isProtocol = (cause: unknown): cause is SyncProtocolError =>
-  typeof cause === "object" &&
-  cause !== null &&
-  "_tag" in cause &&
-  cause._tag === "SyncProtocolError";
+const isProtocol = Schema.is(SyncProtocolError);
 
 describe("authority command library", () => {
   it("accepts the first last-unit sale and rejects the second without going negative", () => {
@@ -132,13 +130,13 @@ describe("authority command library", () => {
   it("keeps commitPreparedCommand on the caller transaction handle", () => {
     const store = openInventoryStore();
     seedLastUnitCatalog(store.db);
-    const receipt = store.db.transaction((tx) =>
-      commitPreparedCommand(tx as Parameters<typeof commitPreparedCommand>[0], {
+    const receipt = runSqliteTransaction(store.db, (tx) =>
+      commitPreparedCommand(tx, {
         actor: lastUnitActor,
         envelope: lastUnitBuyerAEnvelope,
         receivedAt: 1,
       }),
-    ) as ReturnType<typeof commitPreparedCommand>;
+    );
     expect(receipt.replicaId).toBe(LAST_UNIT_REPLICA_A);
     expect(receipt.decision).toBe("accepted");
     store.close();

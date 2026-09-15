@@ -6,6 +6,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { applyTransactionGroup } from "./replica/apply";
 import { recordCommandReceipt, saveLocalCommand, takePendingCommand } from "./replica/commands";
 import { runReplicaTransaction, type ReplicaDb } from "./replica/storage";
+import type { SqliteDatabase } from "./sqlite";
 import type { SyncTransport } from "./transport";
 
 export type SyncEngineProgress = {
@@ -25,7 +26,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineContract>(
 ) {}
 
 export const makeSyncEngine = (
-  db: ReplicaDb,
+  db: SqliteDatabase,
   mutex: {
     readonly withPermits: (
       permits: number,
