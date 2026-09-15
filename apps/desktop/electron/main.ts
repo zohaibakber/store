@@ -65,7 +65,8 @@ function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
   // real filesystem and can't see into app.asar. Packaged builds load the
   // icon from extraResources, not from renderer assets. Unpackaged/dev uses
-  // the orange mark; packaged/prod uses the monochrome mark.
+  // the orange mark. Packaged builds load the mark selected by their channel's
+  // electron-builder configuration.
   return app.isPackaged
     ? path.join(process.resourcesPath, "logo.png")
     : path.join(process.env.VITE_PUBLIC, "logo-dev.png");

@@ -4,6 +4,13 @@ on:
   push:
     branches: [main, nightly]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy_production:
+        description: Deploy and publish the tested main branch to production
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref_name || github.ref }}
@@ -46,11 +53,13 @@ jobs:
 
   deploy:
     needs: verify
-    if: github.event_name == 'push'
+    if: >-
+      (github.event_name == 'push' && github.ref_name == 'nightly') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_production && github.ref_name == 'main')
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'Production' || 'Nightly' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'Production' || 'Nightly' }}
     env:
-      STAGE: ${{ github.ref_name == 'main' && 'prod' || 'nightly' }}
+      STAGE: ${{ github.event_name == 'workflow_dispatch' && 'prod' || 'nightly' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -72,9 +81,13 @@ jobs:
 
       - name: Check required configuration
         run: |
-          for name in AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
+          required="AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
             AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET \
-            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID NEON_API_KEY POWERSYNC_URL; do
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID"
+          if [ "${STAGE}" != "nightly" ]; then
+            required="${required} NEON_API_KEY POWERSYNC_URL"
+          fi
+          for name in $required; do
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty for ${STAGE}."
               exit 1
@@ -91,6 +104,30 @@ jobs:
             echo "::error::PRODUCTION_DOMAIN is empty." \
                  "Set PRODUCTION_DOMAIN (hostname only) on the ${STAGE} GitHub Environment."
             exit 1
+          fi
+          if [ "${STAGE}" = "nightly" ]; then
+            site="${PRODUCTION_DOMAIN#https://}"
+            site="${site#http://}"
+            site="${site%%/*}"
+            case "${site}" in
+              tabaaq.app|www.tabaaq.app)
+                echo "::error::Nightly PRODUCTION_DOMAIN must not be the production hostname."
+                echo "Set it to a nightly hostname such as nightly.tabaaq.app."
+                exit 1
+                ;;
+            esac
+            case "${VITE_API_URL}" in
+              https://api.tabaaq.app|https://api.tabaaq.app/*)
+                echo "::error::Nightly VITE_API_URL must not be the production API."
+                exit 1
+                ;;
+            esac
+            case "${VITE_AUTH_URL}" in
+              https://auth.tabaaq.app|https://auth.tabaaq.app/*)
+                echo "::error::Nightly VITE_AUTH_URL must not be the production auth host."
+                exit 1
+                ;;
+            esac
           fi
         env:
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
@@ -143,10 +180,10 @@ jobs:
 
   desktop:
     needs: [verify, deploy]
-    if: github.event_name == 'push'
+    if: needs.deploy.result == 'success'
     permissions:
       contents: write
     secrets: inherit
     uses: ./.github/workflows/release.yml
     with:
-      channel: ${{ github.ref_name == 'main' && 'latest' || 'nightly' }}
+      channel: ${{ github.event_name == 'workflow_dispatch' && 'latest' || 'nightly' }}

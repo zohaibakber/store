@@ -54,8 +54,12 @@ jobs:
 
       - name: Check required configuration
         run: |
-          for name in AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
-            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET POWERSYNC_URL; do
+          required="AUTH_JWT_PRIVATE_JWK AUTH_JWT_PUBLIC_JWK AUTH_REFRESH_TOKEN_PEPPER \
+            AUTH_EPHEMERAL_PEPPER GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET"
+          if [ "${{ inputs.stage }}" != "nightly" ]; then
+            required="${required} POWERSYNC_URL"
+          fi
+          for name in $required; do
             if [ -z "$(printenv "$name")" ]; then
               echo "::error::$name is empty for stage '${{ inputs.stage }}'."
               exit 1
@@ -75,6 +79,18 @@ jobs:
             echo "::error::PRODUCTION_DOMAIN is empty." \
                  "Set PRODUCTION_DOMAIN (hostname only) on the selected GitHub Environment."
             exit 1
+          fi
+          if [ "${{ inputs.stage }}" = "nightly" ]; then
+            site="${PRODUCTION_DOMAIN#https://}"
+            site="${site#http://}"
+            site="${site%%/*}"
+            case "${site}" in
+              tabaaq.app|www.tabaaq.app)
+                echo "::error::Nightly PRODUCTION_DOMAIN must not be the production hostname."
+                echo "Set it to a nightly hostname such as nightly.tabaaq.app."
+                exit 1
+                ;;
+            esac
           fi
         env:
           AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}

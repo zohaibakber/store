@@ -1266,6 +1266,20 @@ export class InventoryMutationDatabase extends Context.Service<
   }
 >()("@store/server/InventoryMutationDatabase") {}
 
+const nightlyInventoryUnavailable = protocolError(
+  "ENTITY_WRITE_FAILED",
+  "Nightly does not provision inventory Postgres.",
+);
+
+export const InventoryMutationDatabaseUnavailable = Layer.succeed(
+  InventoryMutationDatabase,
+  InventoryMutationDatabase.of({
+    write: () => Effect.fail(nightlyInventoryUnavailable),
+    importInventory: () => Effect.fail(nightlyInventoryUnavailable),
+    issueInvoice: () => Effect.fail(nightlyInventoryUnavailable),
+  }),
+);
+
 export const InventoryMutationDatabaseLive = Layer.effect(
   InventoryMutationDatabase,
   Effect.gen(function* () {

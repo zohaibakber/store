@@ -6,6 +6,7 @@ import {
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "@store/auth/security";
+import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
@@ -25,6 +26,7 @@ import {
 import {
   InventoryMutationDatabase,
   InventoryMutationDatabaseLive,
+  InventoryMutationDatabaseUnavailable,
 } from "./src/inventory/mutation-database";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
@@ -75,7 +77,14 @@ export const ApiLive = Api.make(
     return apiHostname ? { ...worker, domain: apiHostname } : worker;
   }),
   Effect.gen(function* () {
-    const inventoryMutations = yield* InventoryMutationDatabase;
+    const { stage } = yield* Alchemy.Stack;
+    const inventoryMutations = yield* InventoryMutationDatabase.pipe(
+      Effect.provide(
+        stageUsesInventoryPostgres(stage)
+          ? InventoryMutationDatabaseLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding))
+          : InventoryMutationDatabaseUnavailable,
+      ),
+    );
     const ai = yield* Cloudflare.Workers.AI();
     const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
@@ -118,7 +127,6 @@ export const ApiLive = Api.make(
     );
     const powerSyncUrl = yield* Config.string("POWERSYNC_URL").pipe(Config.withDefault(""));
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod" || stage === "nightly";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
     const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
@@ -183,10 +191,8 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
     };
   }).pipe(
-    Effect.provide(InventoryMutationDatabaseLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
-    Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
   ),
 );
 

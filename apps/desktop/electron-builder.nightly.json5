@@ -7,7 +7,9 @@
   asar: true,
   asarUnpack: ["**/*.node"],
   afterPack: "./scripts/verify-after-pack.cjs",
-  productName: "Tabaaq",
+  // Keep the updater identity shared with stable, as T3 Code does, while
+  // making the installed test train impossible to mistake for production.
+  productName: "Tabaaq Nightly",
   protocols: [
     {
       name: "Tabaaq",
@@ -27,10 +29,10 @@
     },
   ],
   files: ["dist", "dist-electron"],
-  icon: "assets/prod/icon.png",
+  icon: "assets/dev/icon.png",
   extraResources: [
     {
-      from: "assets/prod/icon.png",
+      from: "assets/dev/icon.png",
       to: "logo.png",
     },
   ],
@@ -58,7 +60,7 @@
     artifactName: "${productName}-Linux-${version}.${ext}",
     category: "Office",
     maintainer: "Zohaib Akber <zohaibakber99@gmail.com>",
-    icon: "assets/prod/icons",
+    icon: "assets/dev/icons",
     desktop: {
       entry: {
         Icon: "tabaaq",

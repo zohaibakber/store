@@ -35,3 +35,15 @@ vp run build:desktop
 
 The renderer, main process, and preload are built from this workspace before
 electron-builder packages the application.
+
+## Release channels
+
+Push testable work to `nightly`. After checks pass, CI deploys the isolated
+Nightly cloud stage (auth and API, without Neon or PowerSync) and publishes a
+`-nightly.<run>.<attempt>` GitHub prerelease. That build uses the `nightly`
+Electron update manifest and displays as `Tabaaq Nightly` with the orange icon.
+
+Stable installs read only the `latest` update manifest. To ship tested work,
+merge `nightly` into `main`, open the `CI` workflow in GitHub Actions, select the
+`main` branch, enable `deploy_production`, and run it. A normal push to `main`
+only verifies the commit and cannot deploy production.

@@ -72,10 +72,14 @@ Create gitignored `.env.dev`, `.env.nightly`, and `.env.prod` at the repository 
 stage its own ES256 key pair, refresh and ephemeral peppers, and Google OAuth
 credentials. Worker setup and stage details live in `apps/server/README.md`.
 
-GitHub Actions verifies every change. Pull requests do not create Cloudflare
-resources. A push to `nightly` deploys the isolated `nightly` stage, while a
-push to `main` deploys `prod`. `alchemy deploy` deploys the API, auth, database,
-and sync infrastructure. The renderer is built by the desktop release job.
+GitHub Actions verifies every change. Pull requests and pushes to `main` do not
+create or update Cloudflare resources. A push to `nightly` deploys the isolated
+`nightly` stage and publishes a nightly desktop build. Production is an explicit
+promotion: merge the tested `nightly` branch into `main`, then manually run the
+`CI` workflow on `main` with `deploy_production` enabled. That run deploys the
+production API, auth, database, and sync infrastructure before publishing the
+stable desktop build.
+
 Bootstrap its least-privilege Cloudflare
 credentials once:
 
@@ -96,7 +100,9 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
-- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint.
+- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint
+  (`dev` and `prod` only). Nightly does not provision inventory Postgres or
+  PowerSync.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.
@@ -121,8 +127,9 @@ environment's public hostname, not the production hostname.
   Worker).
 
 Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
-uses its own auth keys, peppers,
-Postgres project, D1 database, KV namespace, and PowerSync endpoint.
+uses its own auth keys, peppers, D1 database, and KV namespace. It does not
+create a Neon project or PowerSync instance; inventory writes stay on the local
+replica until a production promotion.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
@@ -147,19 +154,19 @@ Android release APKs run from `.github/workflows/android.yml` on a push to
 `android` GitHub release is updated only from `main`. Nothing is submitted to
 Google Play.
 
-Desktop releases run from CI after a successful production deploy on
-`main` via electron-builder (`electron-builder --publish always`). Each run
-bumps the latest GitHub release patch and publishes a draft until Linux
-artifacts are present. A version tag is no longer required.
-`workflow_dispatch` on `.github/workflows/release.yml` remains for a manual
-rebuild.
+Stable desktop releases run only during an explicit production promotion via
+electron-builder (`electron-builder --publish always`). Each run bumps the
+latest GitHub release patch and publishes a draft until Linux artifacts are
+present. A version tag is not required. `workflow_dispatch` on
+`.github/workflows/release.yml` remains available for a packaging-only rebuild;
+it does not deploy infrastructure.
 
 The `nightly` branch follows the same verified deploy-and-package path against
 the `Nightly` GitHub Environment. Its desktop builds use SemVer versions such as
-`0.3.78-nightly.412.1`, publish as GitHub prereleases, and read only the
-`nightly` update feed. Stable desktop builds continue to read `latest`, so they
-never install a nightly build. Promote tested work by merging `nightly` into
-`main`.
+`0.3.78-nightly.412.1`, publish as GitHub prereleases, use distinct nightly
+branding, and read only the `nightly` update feed. Stable desktop builds continue
+to read `latest`, so they never install a nightly build. Promote tested work by
+merging `nightly` into `main`, then manually dispatching the production run.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production

@@ -8,6 +8,7 @@
     "./auth/infra": "./src/auth/infra.ts",
     "./postgres/infra": "./src/postgres/infra.ts",
     "./postgres/schema": "./src/postgres/schema.ts",
+    "./postgres/stage": "./src/postgres/stage.ts",
     "./store.schema": "./src/shared/store.schema.ts"
   },
   "scripts": {

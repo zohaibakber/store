@@ -5,6 +5,8 @@ import * as Neon from "alchemy/Neon";
 import * as AlchemyOutput from "alchemy/Output";
 import * as Effect from "effect/Effect";
 
+export { stageUsesInventoryPostgres } from "./stage";
+
 /** The authoritative inventory database. */
 export const InventoryPostgres = Effect.gen(function* () {
   const schema = yield* Drizzle.Schema("InventoryPostgresSchema", {

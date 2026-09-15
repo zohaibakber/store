@@ -29,9 +29,10 @@ The Worker, its bindings, and the local dev port live in `infra.ts`.
 `alchemy.run.ts` composes the API Worker, auth Worker, website, and inventory
 Postgres project into one stack.
 
-Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,
-and a product-scan rate limiter. PowerSync receives the direct Neon connection;
-Worker commands use Hyperdrive for pooled Postgres access.
+Alchemy provisions the auth D1 database, Workers AI, and a product-scan rate
+limiter on every published stage. `dev` and `prod` also provision Neon Postgres
+and Hyperdrive. PowerSync receives that direct Neon connection; Worker commands
+use Hyperdrive for pooled Postgres access. Nightly skips Neon and PowerSync.
 
 Run deployments from the repository root and always pass a stage:
 
@@ -45,9 +46,10 @@ pnpm run deploy:prod
 ```
 
 Secrets come from gitignored `.env.dev`, `.env.nightly`, and `.env.prod` files. Use different
-JWT keys and peppers for each stage. Set `POWERSYNC_URL` to that stage's
-PowerSync endpoint; configure its source with the direct Neon connection, the
-auth Worker's JWKS URL, and audience `tabaaq-api`.
+JWT keys and peppers for each stage. For `dev` and `prod`, set `POWERSYNC_URL` to
+that stage's PowerSync endpoint and configure its source with the direct Neon
+connection, the auth Worker's JWKS URL, and audience `tabaaq-api`. Nightly does
+not provision Neon or PowerSync.
 
 ## Local development
 
