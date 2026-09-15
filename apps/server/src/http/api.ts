@@ -16,6 +16,7 @@ import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
+import { syncGroup } from "@store/contracts/sync/api";
 import { OrganizationAuth } from "../auth/organization";
 import {
   BadGateway,
@@ -101,4 +102,5 @@ export const StoreApi = HttpApi.make("StoreApi").add(
   uploads,
   productScans,
   inventoryMutations,
+  syncGroup.middleware(OrganizationAuth),
 );

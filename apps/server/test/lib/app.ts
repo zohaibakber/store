@@ -10,6 +10,11 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 
 import { ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
+import {
+  SyncAuthority,
+  unprovisionedSyncAuthority,
+  type SyncAuthorityContract,
+} from "../../src/inventory/sync-authority";
 
 const sessionFor = (role: "owner" | "admin" | "member") =>
   AuthSession.make({
@@ -72,6 +77,7 @@ export interface AppOptions {
   readonly writeInventoryMutation?: ServerRuntimeContract["writeInventoryMutation"];
   readonly importInventory?: ServerRuntimeContract["importInventory"];
   readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
+  readonly syncAuthority?: SyncAuthorityContract;
 }
 
 /** Route test harness. Organization access follows the JWT session: no session means revoked. */
@@ -120,8 +126,13 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
+    const SyncLive = Layer.succeed(
+      SyncAuthority,
+      options.syncAuthority ?? unprovisionedSyncAuthority,
+    );
     const app = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
+      Layer.provide(SyncLive),
       Layer.provide(HttpServer.layerServices),
       Layer.provide(Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext))),
     );

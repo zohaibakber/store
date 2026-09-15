@@ -7,6 +7,7 @@ export * from "./store/invoice-allocation";
 export * from "./store/schema";
 export * from "./sync/canonical-json";
 export * from "./sync/entity-semantics";
+export * from "./sync/protocol";
 export * from "./sync/schema";
 export * from "./updater";
 export * from "./workspace";
