@@ -148,8 +148,6 @@ CREATE TABLE `stock_overlays` (
 	`batchId` text NOT NULL,
 	`packDelta` integer NOT NULL,
 	`unitDelta` integer NOT NULL,
-	`nextPackQuantity` integer NOT NULL,
-	`nextUnitQuantity` integer NOT NULL,
 	CONSTRAINT `stock_overlays_command_id_batch_id_pk` PRIMARY KEY(`commandId`, `batchId`)
 );
 --> statement-breakpoint

@@ -63,16 +63,15 @@ const overlayForAllocation = (
     const packDelta = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
     const unitDelta =
       take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    const nextPackQuantity = current.packQuantity + packDelta;
-    const nextUnitQuantity = current.unitQuantity + unitDelta;
-    working.set(take.batchId, { packQuantity: nextPackQuantity, unitQuantity: nextUnitQuantity });
+    working.set(take.batchId, {
+      packQuantity: current.packQuantity + packDelta,
+      unitQuantity: current.unitQuantity + unitDelta,
+    });
     overlays.push({
       commandId: envelope.operationId,
       batchId: take.batchId,
       packDelta,
       unitDelta,
-      nextPackQuantity,
-      nextUnitQuantity,
     });
   }
   return overlays;

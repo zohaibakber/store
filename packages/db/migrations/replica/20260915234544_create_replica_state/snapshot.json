@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "699a7368-26da-4713-b5b6-20266ed98e46",
+  "id": "08e01f2d-029c-4634-9401-488b62ff5338",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
@@ -1137,26 +1137,6 @@
       "default": null,
       "generated": null,
       "name": "unitDelta",
-      "entityType": "columns",
-      "table": "stock_overlays"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "nextPackQuantity",
-      "entityType": "columns",
-      "table": "stock_overlays"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "nextUnitQuantity",
       "entityType": "columns",
       "table": "stock_overlays"
     },

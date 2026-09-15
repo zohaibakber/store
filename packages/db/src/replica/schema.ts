@@ -38,8 +38,6 @@ export const stockOverlays = sqliteTable(
     batchId: text().notNull(),
     packDelta: integer({ mode: "number" }).notNull(),
     unitDelta: integer({ mode: "number" }).notNull(),
-    nextPackQuantity: integer({ mode: "number" }).notNull(),
-    nextUnitQuantity: integer({ mode: "number" }).notNull(),
   },
   (table) => [
     primaryKey({

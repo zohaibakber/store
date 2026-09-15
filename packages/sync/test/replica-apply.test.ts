@@ -75,6 +75,25 @@ const confirmedSale = (commitSequence = "1"): SyncTransactionGroup => ({
   ],
 });
 
+const otherTerminalSale = (
+  unitQuantity: number,
+  commitSequence: string,
+  rowVersion: number,
+): SyncTransactionGroup => ({
+  commitSequence: OrgCommitSequence.make(commitSequence),
+  operationId: "operation-other-terminal",
+  decision: "accepted",
+  changes: [
+    {
+      entity: "batch",
+      action: "upsert",
+      entityId: LAST_UNIT_BATCH_ID,
+      rowVersion,
+      row: { ...confirmedBatch(unitQuantity, rowVersion), operationId: "operation-other-terminal" },
+    },
+  ],
+});
+
 describe("replica overlay apply", () => {
   it("shows 10 then 9 with an overlay and stays 9 after the confirmed image, never 8", () => {
     const store = seedReplicaTenUnits();
@@ -103,6 +122,50 @@ describe("replica overlay apply", () => {
         packQuantity: 0,
         unitQuantity: 9,
       });
+    });
+    store.close();
+  });
+
+  it("subtracts a pending local sale from another terminal's confirmed stock", () => {
+    const store = seedReplicaTenUnits();
+    runReplicaTransaction(store.db, (tx) => {
+      saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 9,
+      });
+
+      applyTransactionGroup(tx, otherTerminalSale(7, "1", 2));
+
+      expect(
+        tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).get()?.unitQuantity,
+      ).toBe(7);
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 6,
+      });
+      expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe("pending");
+
+      applyTransactionGroup(tx, {
+        commitSequence: OrgCommitSequence.make("2"),
+        operationId: lastUnitBuyerAEnvelope.operationId,
+        decision: "accepted",
+        changes: [
+          {
+            entity: "batch",
+            action: "upsert",
+            entityId: LAST_UNIT_BATCH_ID,
+            rowVersion: 3,
+            row: confirmedBatch(6, 3),
+          },
+        ],
+      });
+
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 6,
+      });
+      expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe("integrated");
     });
     store.close();
   });
