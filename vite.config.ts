@@ -67,6 +67,15 @@ export default defineConfig({
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
     overrides: [
       {
+        files: [
+          "packages/sync/**/*.ts",
+          "packages/contracts/src/sync/{api,directory,http-errors,live,protocol,snapshot}.ts",
+        ],
+        rules: {
+          "anti-slop/no-comments": "error",
+        },
+      },
+      {
         files: ["apps/desktop/src/**/*.{ts,tsx}"],
         plugins: ["react"],
         rules: {
