@@ -18,11 +18,7 @@ const isBatchRow = (row: unknown): row is BatchRow => {
 };
 
 const upsertBatch = (tx: ReplicaDb, row: BatchRow) => {
-  const existing = tx
-    .select()
-    .from(batches)
-    .where(eq(batches.id, row.id))
-    .get();
+  const existing = tx.select().from(batches).where(eq(batches.id, row.id)).get();
   if (existing) {
     runWrite(
       tx

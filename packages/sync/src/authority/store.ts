@@ -12,7 +12,14 @@ import {
   LAST_UNIT_REPLICA_A,
   LAST_UNIT_REPLICA_B,
 } from "@store/contracts/sync/fixtures";
-import { batches, categories, inventoryState, invoices, products, replicas } from "@store/db/inventory.schema";
+import {
+  batches,
+  categories,
+  inventoryState,
+  invoices,
+  products,
+  replicas,
+} from "@store/db/inventory.schema";
 import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -152,7 +159,9 @@ export const runCommit = (
   actor: InventoryActor = lastUnitActor,
   receivedAt = 1_700_000_000_000,
 ): CommandReceipt =>
-  db.transaction((tx) => commitPreparedCommand(tx as InventoryDb, { actor, envelope, receivedAt })) as CommandReceipt;
+  db.transaction((tx) =>
+    commitPreparedCommand(tx as InventoryDb, { actor, envelope, receivedAt }),
+  ) as CommandReceipt;
 
 export const runRegisterReplica = (
   db: InventoryDb,

@@ -10,13 +10,13 @@ import {
   ProductScanInput,
   ProductScanResult,
 } from "@store/contracts";
+import { syncGroup } from "@store/contracts/sync/api";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
-import { syncGroup } from "@store/contracts/sync/api";
 import { OrganizationAuth } from "../auth/organization";
 import {
   BadGateway,

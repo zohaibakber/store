@@ -60,7 +60,9 @@ export const validatedInventoryUrl = (
   const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
   const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
-  const receiptPath = new RegExp(`^${apiPath.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/sync/receipts/[^/]+$`);
+  const receiptPath = new RegExp(
+    `^${apiPath.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/sync/receipts/[^/]+$`,
+  );
   const routeAllowed =
     (request.method === "GET" && requested.pathname === credentialsPath) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname)) ||

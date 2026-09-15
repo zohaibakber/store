@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { lastUnitBuyerAEnvelope } from "../../src/sync/fixtures/last-unit-invoice";
 import { canonicalPayloadHash } from "../../src/sync/operation-hash";
 import {
   compareDecimalSequence,
   incrementDecimalSequence,
   SyncCommandEnvelope,
 } from "../../src/sync/protocol";
-import { lastUnitBuyerAEnvelope } from "../../src/sync/fixtures/last-unit-invoice";
 
 describe("decimal sequences", () => {
   it("compares numerically rather than lexicographically", () => {
@@ -24,12 +24,18 @@ describe("decimal sequences", () => {
 describe("sync command envelope", () => {
   it("hashes the decoded issue-invoice command, ignoring extra JSON keys", () => {
     const decoded = SyncCommandEnvelope.make(lastUnitBuyerAEnvelope);
-    const extra = { ...lastUnitBuyerAEnvelope, command: lastUnitBuyerAEnvelope.command, unused: true };
+    const extra = {
+      ...lastUnitBuyerAEnvelope,
+      command: lastUnitBuyerAEnvelope.command,
+      unused: true,
+    };
     expect(canonicalPayloadHash(decoded.command)).toBe(lastUnitBuyerAEnvelope.payloadHash);
     expect(canonicalPayloadHash(decoded.command)).not.toBe(canonicalPayloadHash(extra));
   });
 
   it("keeps invoice commandId on the inner payload equal to the envelope operationId", () => {
-    expect(lastUnitBuyerAEnvelope.operationId).toBe(lastUnitBuyerAEnvelope.command.payload.commandId);
+    expect(lastUnitBuyerAEnvelope.operationId).toBe(
+      lastUnitBuyerAEnvelope.command.payload.commandId,
+    );
   });
 });

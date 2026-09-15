@@ -1,3 +1,5 @@
+import { SyncProtocolError } from "@store/contracts";
+import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerACommand,
@@ -5,8 +7,6 @@ import {
   lastUnitBuyerBEnvelope,
   lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import { SyncProtocolError } from "@store/contracts";
 import { describe, expect, it } from "vitest";
 
 import { commitPreparedCommand } from "../src/authority/commands";
@@ -21,7 +21,10 @@ import {
 } from "../src/authority/store";
 
 const isProtocol = (cause: unknown): cause is SyncProtocolError =>
-  typeof cause === "object" && cause !== null && "_tag" in cause && cause._tag === "SyncProtocolError";
+  typeof cause === "object" &&
+  cause !== null &&
+  "_tag" in cause &&
+  cause._tag === "SyncProtocolError";
 
 describe("authority command library", () => {
   it("accepts the first last-unit sale and rejects the second without going negative", () => {

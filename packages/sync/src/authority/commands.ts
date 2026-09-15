@@ -186,7 +186,9 @@ const issueInvoice = (
   const existingInvoice = tx
     .select({ operationId: invoices.operationId })
     .from(invoices)
-    .where(and(eq(invoices.organizationId, actor.organizationId), eq(invoices.id, command.invoiceId)))
+    .where(
+      and(eq(invoices.organizationId, actor.organizationId), eq(invoices.id, command.invoiceId)),
+    )
     .get();
   if (existingInvoice && existingInvoice.operationId !== command.commandId) {
     return fail("INVOICE_IDENTITY_CONFLICT", "This invoice id is already in use.");
@@ -206,7 +208,9 @@ const issueInvoice = (
     const product = tx
       .select()
       .from(products)
-      .where(and(eq(products.organizationId, actor.organizationId), eq(products.id, take.productId)))
+      .where(
+        and(eq(products.organizationId, actor.organizationId), eq(products.id, take.productId)),
+      )
       .get();
     if (!product || product.deletedAt !== null) {
       return fail("INSUFFICIENT_STOCK", "One of the products no longer exists.");
@@ -296,7 +300,9 @@ const issueInvoice = (
           rowVersion: updatedBatch.rowVersion,
           updatedAt: updatedBatch.updatedAt,
         })
-        .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, plan.batch.id))),
+        .where(
+          and(eq(batches.organizationId, actor.organizationId), eq(batches.id, plan.batch.id)),
+        ),
     );
 
     const itemRow = {
@@ -409,10 +415,7 @@ export const commitPreparedCommand = (
 ): CommandReceipt => {
   const { actor, envelope } = input;
   if (envelope.organizationId !== actor.organizationId) {
-    return fail(
-      "ORGANIZATION_MISMATCH",
-      "The command does not belong to the active organization.",
-    );
+    return fail("ORGANIZATION_MISMATCH", "The command does not belong to the active organization.");
   }
   if (envelope.payloadHash !== canonicalPayloadHash(envelope.command)) {
     return fail("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
@@ -456,7 +459,9 @@ export const commitPreparedCommand = (
   if (replica.ownerUserId !== actor.userId) {
     return fail("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
   }
-  const expectedSequence = incrementDecimalSequence(unpadDecimalSequence(replica.lastClientSequence));
+  const expectedSequence = incrementDecimalSequence(
+    unpadDecimalSequence(replica.lastClientSequence),
+  );
   if (envelope.clientSequence !== expectedSequence) {
     return fail(
       "REPLICA_SEQUENCE_GAP",
@@ -668,6 +673,7 @@ export const pullTransactions = (
     epoch: SyncEpoch.make(state.epoch),
     transactions,
     nextCommitSequence:
-      last?.commitSequence ?? OrgCommitSequence.make(unpadDecimalSequence(input.afterCommitSequence)),
+      last?.commitSequence ??
+      OrgCommitSequence.make(unpadDecimalSequence(input.afterCommitSequence)),
   };
 };

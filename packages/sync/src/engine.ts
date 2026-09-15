@@ -4,11 +4,7 @@ import * as Effect from "effect/Effect";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { applyTransactionGroup } from "./replica/apply";
-import {
-  recordCommandReceipt,
-  saveLocalCommand,
-  takePendingCommand,
-} from "./replica/commands";
+import { recordCommandReceipt, saveLocalCommand, takePendingCommand } from "./replica/commands";
 import { runReplicaTransaction, type ReplicaDb } from "./replica/storage";
 import type { SyncTransport } from "./transport";
 
