@@ -1,19 +1,20 @@
 import {
   allocationsCoverInput,
+  CommandReceipt,
   incrementDecimalSequence,
   nextInvoiceNumber,
   OrgCommitSequence,
   padDecimalSequence,
   ReplicaClientSequence,
   SyncEpoch,
+  SyncLogChange,
   SyncProtocolError,
   syncProtocolError,
   unpadDecimalSequence,
-  type CommandReceipt,
+  type AcceptedInvoiceResult,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
-  type SyncLogChange,
   type SyncPullResult,
 } from "@store/contracts";
 import { decodeInvoiceId } from "@store/contracts/ids";
@@ -31,15 +32,16 @@ import {
   stockMovements,
 } from "@store/db/inventory.schema";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as Schema from "effect/Schema";
+
+import { runWrite, type SqliteConnection } from "../sqlite";
 
 export type InventoryActor = {
   readonly organizationId: string;
   readonly userId: string;
 };
 
-export type InventoryDb = BetterSQLite3Database;
+export type InventoryDb = SqliteConnection;
 
 const fail = (code: Parameters<typeof syncProtocolError>[0], message: string): never => {
   throw syncProtocolError(code, message);
@@ -47,19 +49,16 @@ const fail = (code: Parameters<typeof syncProtocolError>[0], message: string): n
 
 const isSyncProtocolError = Schema.is(SyncProtocolError);
 
-const runWrite = (query: { readonly run: () => unknown }) => {
-  query.run();
-};
-
-const parseReceipt = (row: typeof commandReceipts.$inferSelect): CommandReceipt => ({
-  operationId: row.operationId,
-  replicaId: row.replicaId,
-  clientSequence: ReplicaClientSequence.make(unpadDecimalSequence(row.clientSequence)),
-  payloadHash: row.payloadHash as CommandReceipt["payloadHash"],
-  decision: row.decision,
-  commitSequence: OrgCommitSequence.make(unpadDecimalSequence(row.commitSequence)),
-  result: JSON.parse(row.resultJson) as CommandReceipt["result"],
-});
+const parseReceipt = (row: typeof commandReceipts.$inferSelect): CommandReceipt =>
+  Schema.decodeUnknownSync(CommandReceipt)({
+    operationId: row.operationId,
+    replicaId: row.replicaId,
+    clientSequence: unpadDecimalSequence(row.clientSequence),
+    payloadHash: row.payloadHash,
+    decision: row.decision,
+    commitSequence: unpadDecimalSequence(row.commitSequence),
+    result: JSON.parse(row.resultJson),
+  });
 
 const requireReadyState = (tx: InventoryDb, organizationId: string) => {
   const state = tx
@@ -158,14 +157,16 @@ const insertInvoice = (
   return retry;
 };
 
+interface IssuedInvoice {
+  readonly result: AcceptedInvoiceResult;
+  readonly changes: ReadonlyArray<SyncLogChange>;
+}
+
 const issueInvoice = (
   tx: InventoryDb,
   actor: InventoryActor,
   envelope: SyncCommandEnvelope,
-): {
-  readonly result: Extract<CommandReceipt["result"], { readonly _tag: "issueInvoice" }>;
-  readonly changes: ReadonlyArray<SyncLogChange>;
-} => {
+): IssuedInvoice => {
   if (envelope.command._tag !== "issueInvoice") {
     return fail("INVALID_OPERATION", "Only issueInvoice is implemented.");
   }
@@ -659,13 +660,15 @@ export const pullTransactions = (
       commitSequence: OrgCommitSequence.make(unpadDecimalSequence(header.commitSequence)),
       operationId: header.operationId,
       decision: header.decision,
-      changes: rows.map((row) => ({
-        entity: row.entity as SyncLogChange["entity"],
-        action: row.action,
-        entityId: row.entityId,
-        rowVersion: row.rowVersion,
-        row: JSON.parse(row.rowJson) as unknown,
-      })),
+      changes: rows.map((row) =>
+        Schema.decodeUnknownSync(SyncLogChange)({
+          entity: row.entity,
+          action: row.action,
+          entityId: row.entityId,
+          rowVersion: row.rowVersion,
+          row: JSON.parse(row.rowJson),
+        }),
+      ),
     };
   });
   const last = transactions.at(-1);

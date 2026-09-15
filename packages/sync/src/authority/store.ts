@@ -24,6 +24,7 @@ import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
+import { runSqliteTransaction, type SqliteDatabase } from "../sqlite";
 import {
   commitPreparedCommand,
   getReceipt,
@@ -43,7 +44,7 @@ export const lastUnitActor: InventoryActor = {
 
 export type InventoryStore = {
   readonly sqlite: Database.Database;
-  readonly db: InventoryDb;
+  readonly db: SqliteDatabase;
   readonly close: () => void;
 };
 
@@ -60,7 +61,7 @@ export const openInventoryStore = (path = ":memory:"): InventoryStore => {
 };
 
 export const seedLastUnitCatalog = (
-  db: InventoryDb,
+  db: SqliteDatabase,
   input: {
     readonly organizationId?: string;
     readonly userId?: string;
@@ -70,7 +71,7 @@ export const seedLastUnitCatalog = (
   const organizationId = input.organizationId ?? LAST_UNIT_ORGANIZATION_ID;
   const userId = input.userId ?? LAST_UNIT_USER_ID;
   const occurredAt = 1_700_000_000_000;
-  db.transaction((tx) => {
+  runSqliteTransaction(db, (tx) => {
     tx.insert(inventoryState)
       .values({
         organizationId,
@@ -154,29 +155,27 @@ export const seedLastUnitCatalog = (
 };
 
 export const runCommit = (
-  db: InventoryDb,
+  db: SqliteDatabase,
   envelope: SyncCommandEnvelope,
   actor: InventoryActor = lastUnitActor,
   receivedAt = 1_700_000_000_000,
 ): CommandReceipt =>
-  db.transaction((tx) =>
-    commitPreparedCommand(tx as InventoryDb, { actor, envelope, receivedAt }),
-  ) as CommandReceipt;
+  runSqliteTransaction(db, (tx) => commitPreparedCommand(tx, { actor, envelope, receivedAt }));
 
 export const runRegisterReplica = (
-  db: InventoryDb,
+  db: SqliteDatabase,
   request: { readonly replicaId: string; readonly deviceLabel?: string },
   actor: InventoryActor = lastUnitActor,
-) => db.transaction((tx) => registerReplica(tx as InventoryDb, actor, request));
+) => runSqliteTransaction(db, (tx) => registerReplica(tx, actor, request));
 
 export const runGetReceipt = (
-  db: InventoryDb,
+  db: SqliteDatabase,
   operationId: string,
   actor: InventoryActor = lastUnitActor,
-) => db.transaction((tx) => getReceipt(tx as InventoryDb, actor, operationId));
+) => runSqliteTransaction(db, (tx) => getReceipt(tx, actor, operationId));
 
 export const runPull = (
-  db: InventoryDb,
+  db: SqliteDatabase,
   input: {
     readonly epoch?: string;
     readonly afterCommitSequence?: string;
@@ -184,8 +183,8 @@ export const runPull = (
   } = {},
   actor: InventoryActor = lastUnitActor,
 ) =>
-  db.transaction((tx) =>
-    pullTransactions(tx as InventoryDb, {
+  runSqliteTransaction(db, (tx) =>
+    pullTransactions(tx, {
       organizationId: actor.organizationId,
       epoch: input.epoch ?? LAST_UNIT_EPOCH,
       afterCommitSequence: input.afterCommitSequence ?? "0",
