@@ -1,3 +1,4 @@
+import { OrgCommitSequence } from "@store/contracts";
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
@@ -6,7 +7,6 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { OrgCommitSequence } from "@store/contracts";
 import { batches, products, replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";

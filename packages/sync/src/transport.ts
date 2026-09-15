@@ -1,4 +1,3 @@
-import { SyncHttpApi } from "@store/contracts/sync/api";
 import type {
   CommandReceipt,
   RegisterReplicaRequest,
@@ -7,6 +6,7 @@ import type {
   SyncPullRequest,
   SyncPullResult,
 } from "@store/contracts";
+import { SyncHttpApi } from "@store/contracts/sync/api";
 import * as Effect from "effect/Effect";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 

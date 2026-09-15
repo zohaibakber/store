@@ -1,4 +1,10 @@
-import { decodeBatchId, decodeInvoiceId, decodeInvoiceItemId, decodeOrganizationId, decodeProductId } from "../../ids";
+import {
+  decodeBatchId,
+  decodeInvoiceId,
+  decodeInvoiceItemId,
+  decodeOrganizationId,
+  decodeProductId,
+} from "../../ids";
 import type { IssueInvoiceCommand } from "../../store/schema";
 import { canonicalPayloadHash } from "../operation-hash";
 import {

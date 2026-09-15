@@ -34,7 +34,10 @@ describe("sync HTTP", () => {
       pull: () => Effect.die("unused"),
       submitCommand: () =>
         Effect.fail(
-          syncProtocolError("ORGANIZATION_MISMATCH", "The command does not belong to the active organization."),
+          syncProtocolError(
+            "ORGANIZATION_MISMATCH",
+            "The command does not belong to the active organization.",
+          ),
         ),
     };
     const response = await appFor(true, { syncAuthority }).request(

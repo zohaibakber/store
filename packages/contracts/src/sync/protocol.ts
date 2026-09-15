@@ -67,10 +67,13 @@ export const SyncProtocolCode = Schema.Literals([
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
-export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()("SyncProtocolError", {
-  code: SyncProtocolCode,
-  message: Schema.String,
-}) {}
+export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()(
+  "SyncProtocolError",
+  {
+    code: SyncProtocolCode,
+    message: Schema.String,
+  },
+) {}
 
 export const syncProtocolError = (code: SyncProtocolCode, message: string) =>
   SyncProtocolError.make({ code, message });

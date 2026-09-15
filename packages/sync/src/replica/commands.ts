@@ -36,12 +36,17 @@ export const visibleBatchStock = (tx: ReplicaDb, batchId: string): VisibleStock 
   if (!batch) return undefined;
   const overlays = tx.select().from(stockOverlays).where(eq(stockOverlays.batchId, batchId)).all();
   return {
-    packQuantity: batch.packQuantity + overlays.reduce((sum, overlay) => sum + overlay.packDelta, 0),
-    unitQuantity: batch.unitQuantity + overlays.reduce((sum, overlay) => sum + overlay.unitDelta, 0),
+    packQuantity:
+      batch.packQuantity + overlays.reduce((sum, overlay) => sum + overlay.packDelta, 0),
+    unitQuantity:
+      batch.unitQuantity + overlays.reduce((sum, overlay) => sum + overlay.unitDelta, 0),
   };
 };
 
-export const commandStatus = (tx: ReplicaDb, operationId: string): CommandOutboxStatus | undefined =>
+export const commandStatus = (
+  tx: ReplicaDb,
+  operationId: string,
+): CommandOutboxStatus | undefined =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get()?.status;
 
 const overlayForAllocation = (
@@ -55,8 +60,7 @@ const overlayForAllocation = (
   for (const take of command.allocations) {
     const product = tx.select().from(products).where(eq(products.id, take.productId)).get();
     const unitsPerPack = product?.unitsPerPack ?? 1;
-    const current =
-      working.get(take.batchId) ??
+    const current = working.get(take.batchId) ??
       visibleBatchStock(tx, take.batchId) ?? { packQuantity: 0, unitQuantity: 0 };
     const packDelta = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
     const unitDelta =
@@ -119,7 +123,11 @@ export const saveLocalCommand = (
 };
 
 export const markCommandSending = (tx: ReplicaDb, operationId: string) => {
-  const row = tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get();
+  const row = tx
+    .select()
+    .from(commandOutbox)
+    .where(eq(commandOutbox.operationId, operationId))
+    .get();
   if (!row || row.status !== "pending") return row?.status;
   runWrite(
     tx
@@ -131,7 +139,11 @@ export const markCommandSending = (tx: ReplicaDb, operationId: string) => {
 };
 
 export const recordCommandReceipt = (tx: ReplicaDb, receipt: CommandReceipt) => {
-  const row = tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, receipt.operationId)).get();
+  const row = tx
+    .select()
+    .from(commandOutbox)
+    .where(eq(commandOutbox.operationId, receipt.operationId))
+    .get();
   if (!row) return undefined;
   if (row.status === "integrated") {
     runWrite(
@@ -165,11 +177,7 @@ export const recordCommandReceipt = (tx: ReplicaDb, receipt: CommandReceipt) => 
 };
 
 export const takePendingCommand = (tx: ReplicaDb): SyncCommandEnvelope | undefined => {
-  const row = tx
-    .select()
-    .from(commandOutbox)
-    .where(eq(commandOutbox.status, "pending"))
-    .get();
+  const row = tx.select().from(commandOutbox).where(eq(commandOutbox.status, "pending")).get();
   if (!row) return undefined;
   markCommandSending(tx, row.operationId);
   return JSON.parse(row.envelopeJson) as SyncCommandEnvelope;

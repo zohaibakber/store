@@ -1,3 +1,12 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import {
+  OrgCommitSequence,
+  type CommandReceipt,
+  type SyncTransactionGroup,
+} from "@store/contracts";
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
@@ -6,12 +15,8 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { OrgCommitSequence, type CommandReceipt, type SyncTransactionGroup } from "@store/contracts";
 import { batches, products, replicaState } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { applyTransactionGroup } from "../src/replica/apply";
@@ -137,18 +142,30 @@ describe("replica overlay apply", () => {
   it("shows 10 then 9 with an overlay and stays 9 after the confirmed image, never 8", () => {
     const store = seedTenUnits();
     runReplicaTransaction(store.db, (tx) => {
-      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({ packQuantity: 0, unitQuantity: 10 });
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 10,
+      });
       saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
-      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({ packQuantity: 0, unitQuantity: 9 });
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 9,
+      });
       expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe("pending");
       applyTransactionGroup(tx, confirmedSale());
-      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({ packQuantity: 0, unitQuantity: 9 });
-      expect(tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).get()?.unitQuantity).toBe(
-        9,
-      );
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 9,
+      });
+      expect(
+        tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).get()?.unitQuantity,
+      ).toBe(9);
       expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe("integrated");
       applyTransactionGroup(tx, confirmedSale());
-      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({ packQuantity: 0, unitQuantity: 9 });
+      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)).toEqual({
+        packQuantity: 0,
+        unitQuantity: 9,
+      });
     });
     store.close();
   });
