@@ -147,7 +147,6 @@ export const ApiLive = Api.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
-    const powerSyncUrl = yield* Config.string("POWERSYNC_URL").pipe(Config.withDefault(""));
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const published = stage === "prod" || stage === "nightly";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
@@ -197,7 +196,6 @@ export const ApiLive = Api.make(
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
-      powerSyncUrl: powerSyncUrl.trim().replace(/\/+$/u, ""),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
       writeInventoryMutation: inventoryMutations.write,

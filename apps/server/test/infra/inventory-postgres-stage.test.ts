@@ -21,10 +21,11 @@ describe("inventory Postgres stage", () => {
     expect(stack).toContain("if (!stageUsesInventoryPostgres(stage))");
   });
 
-  it("does not require Neon or PowerSync for nightly CI", () => {
+  it("does not require Neon for nightly CI", () => {
     const ci = readRepo(".github/workflows/ci.yml");
     expect(ci).toContain('STAGE}" != "nightly"');
-    expect(ci).toContain("NEON_API_KEY POWERSYNC_URL");
+    expect(ci).toContain("NEON_API_KEY");
+    expect(ci).not.toContain("POWERSYNC_URL");
     expect(ci).toContain("Nightly PRODUCTION_DOMAIN must not be the production hostname.");
   });
 });

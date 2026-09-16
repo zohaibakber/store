@@ -6,7 +6,6 @@ import {
   INVENTORY_HTTP_ABORT_CHANNEL,
   INVENTORY_HTTP_CONFIG_CHANNEL,
   INVENTORY_HTTP_REQUEST_CHANNEL,
-  type InventoryHttpBackend,
   type InventoryHttpRequest,
   type InventoryHttpResponse,
 } from "./inventory-http-channels";
@@ -48,18 +47,6 @@ export const SYNC_COMMAND_PATHS = [
 ] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
-
-export const readInventoryHttpBackend = (
-  value = process.env["STORE_INVENTORY_BACKEND"],
-): InventoryHttpBackend => {
-  if (value === undefined || value === "" || value === "organizationObject") {
-    return { _tag: "organizationObject" };
-  }
-  if (value === "powerSync") {
-    return { _tag: "powerSync" };
-  }
-  throw new Error(`Unsupported inventory backend: ${value}`);
-};
 
 export const assertInventoryRequestBodySize = (
   _apiBaseUrl: string,
@@ -124,11 +111,9 @@ export const validatedInventoryUrl = (
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
   const apiPath = inventoryApiPath(apiBaseUrl);
-  const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
   const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
   const routeAllowed =
-    (request.method === "GET" && requested.pathname === credentialsPath) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname)) ||
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
     (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
@@ -159,9 +144,7 @@ export const registerInventoryHttpIpc = (options: {
   readonly deviceId: string;
   readonly ipcMain: IpcMain;
   readonly allowedOrigins: () => ReadonlyArray<string>;
-  readonly backend?: InventoryHttpBackend;
 }) => {
-  const backend = options.backend ?? readInventoryHttpBackend();
   const inFlight = new Map<string, AbortController>();
   const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent) =>
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
@@ -171,7 +154,6 @@ export const registerInventoryHttpIpc = (options: {
     return {
       apiBaseUrl: options.apiBaseUrl,
       deviceId: options.deviceId,
-      backend,
     };
   };
   const handleRequest = async (

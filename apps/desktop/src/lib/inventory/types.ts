@@ -1,16 +1,12 @@
-import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import type {
   BatchRow,
   CategoryRow,
   InvoiceItemRow,
   InvoiceRow,
-  ProductRow,
-  StockMovementRow,
-} from "@store/client-db";
-import type {
   InventoryCommandQueries,
   InventorySyncStatus,
-  ReplicaSqliteHandle,
+  ProductRow,
+  StockMovementRow,
 } from "@store/client-db";
 import type {
   CreateBatchInput,
@@ -31,10 +27,6 @@ import type {
 } from "@store/services/stock-recommendations";
 import type { Collection, DbClient } from "@tanstack/react-db";
 import type { Result } from "effect";
-
-export type InventoryBackendSelection =
-  | { readonly _tag: "powerSync" }
-  | { readonly _tag: "organizationObject" };
 
 export type InventoryCollection<Row extends { readonly id: string }> = Collection<Row, string>;
 
@@ -80,10 +72,3 @@ export type InventoryState =
   | { readonly _tag: "Opening" }
   | { readonly _tag: "Ready"; readonly inventory: Inventory; readonly actions: InventoryActions }
   | { readonly _tag: "Error"; readonly error: string };
-
-export type PowerSyncSaleTarget = {
-  readonly dbClient: DbClient;
-  readonly powerSync: AbstractPowerSyncDatabase;
-};
-
-export type ReplicaSqliteOpener = (databaseName: string) => Promise<ReplicaSqliteHandle>;

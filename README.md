@@ -1,35 +1,27 @@
 # Store
 
-Bun workspace for offline-first inventory: an Electron desktop app, a native
-Android app, and a Cloudflare Worker API. Nightly desktop treats the
-organization Durable Object as inventory authority. Android and the opt-in
-PowerSync desktop path (`STORE_INVENTORY_BACKEND=powerSync`) still stream
-organization-scoped rows from Postgres into durable SQLite-backed TanStack DB
-collections.
+Bun workspace for offline-first inventory: an Electron desktop app and a
+Cloudflare Worker API. Desktop inventory treats the organization Durable Object
+as authority. `dev` and `prod` still keep Neon Postgres as the source for a later
+one-time import onto that object.
 
 ## Workspace boundaries
 
-- `apps/android` is the native Kotlin + Jetpack Compose client (`com.tabaaq.mobile`).
-  First slice: sign-in, Home / Products / Settings, catalog writes, and label
-  scan. Setup is in `apps/android/README.md`. Sync stays on PowerSync.
 - `apps/desktop` owns the complete Electron application: main process, preload,
   React renderer, Vite configuration, tests, and packaging. The renderer uses
   hash history, while the main process keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
-  inventory HTTP. The default live path is the organization-object replica
-  (wa-sqlite in a renderer worker). `STORE_INVENTORY_BACKEND=powerSync` keeps
-  `@powersync/web` plus wa-sqlite. There is no main-process
+  inventory HTTP. Live inventory is the organization-object replica
+  (wa-sqlite in a renderer worker). There is no main-process
   SQLite. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. It hosts the organization Durable Object
   and `/api/sync/*` (including live tickets). On `dev` and `prod` it also writes
-  catalog commands to Postgres through Hyperdrive and issues authenticated
-  PowerSync connection credentials. Nightly skips Neon and PowerSync.
+  catalog commands to Postgres through Hyperdrive. Nightly skips Neon.
 - `packages/contracts` owns shared store and server contracts.
-- `packages/client-db` owns the catalog replica (`openCatalog`), catalog writes,
-  PowerSync schema and connector, the organization-object replica engine, row
-  models, and Postgres mutation clients.
+- `packages/client-db` owns the organization-object replica engine, catalog
+  writes, row models, and Postgres mutation clients.
 - `packages/db` owns the authentication, Postgres, inventory-authority, and
   replica schemas.
 - `packages/sync` owns the host-agnostic SQLite command library, replica
@@ -48,13 +40,12 @@ Desktop renderer components are grouped by feature. `components/app` owns the ap
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Nightly desktop inventory reads come from TanStack DB live queries over the
+Desktop inventory reads come from TanStack DB live queries over the
 organization-object SQLite replica. Sales go through `/api/sync/commands` and
 commit in one Durable Object SQLite transaction. Catalog writes on that path
-are unsupported. Android and the PowerSync desktop opt-in still queue category,
-product, and batch mutations through `/api/inventory/*`, commit them in Postgres,
-and stream canonical rows back. The signed organization claim defines every
-sync stream.
+are unsupported. On `dev` and `prod`, category, product, and batch mutations
+still go through `/api/inventory/*` and commit in Postgres. The signed
+organization claim scopes every sync stream.
 
 ## Run locally
 
@@ -111,9 +102,6 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
-- Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint
-  (`dev` and `prod` only). Nightly does not provision inventory Postgres or
-  PowerSync.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.
@@ -139,32 +127,15 @@ environment's public hostname, not the production hostname.
 
 Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
 uses its own auth keys, peppers, D1 database, KV namespace, organization
-Durable Objects, and R2 snapshot bucket. It does not create a Neon project or
-PowerSync instance. Nightly desktop inventory writes go to the organization
-object; catalog commands on that path are unsupported.
+Durable Objects, and R2 snapshot bucket. It does not create a Neon project.
+Nightly desktop inventory writes go to the organization object; catalog
+commands on that path are unsupported.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
 to the desktop custom scheme after PKCE verification.
 
-Android does not. It signs in through Google Identity Services, which presents
-Google's account picker, and posts the resulting ID token to
-`POST /v1/oauth/google/native`. The Worker verifies the token with Google and
-issues the same session as every other route. That needs:
-
-- An Android OAuth client in the same Google Cloud project, with package
-  `com.tabaaq.mobile` and the signing SHA-1.
-- `GOOGLE_WEB_CLIENT_ID` in `apps/android/local.properties` (the web client ID,
-  so Google mints an ID token). Without it the app builds and hides the Google
-  action. Release CI writes this from `GOOGLE_OAUTH_CLIENT_ID`.
-
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
-
-Android release APKs run from `.github/workflows/android.yml` on a push to
-`main` or `nightly`, and on `workflow_dispatch`. They build the Gradle app in
-`apps/android`. Nightly builds remain 14-day workflow artifacts. The moving
-`android` GitHub release is updated only from `main`. Nothing is submitted to
-Google Play.
 
 Stable desktop releases run only during an explicit production promotion via
 electron-builder (`electron-builder --publish always`). Each run bumps the

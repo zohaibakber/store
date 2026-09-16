@@ -1,4 +1,4 @@
-import { bearerToken, isTrustedOrigin } from "@store/auth";
+import { isTrustedOrigin } from "@store/auth";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -44,39 +44,6 @@ const RawRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", "/api/auth/session", handleSessionRequest);
     yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
-    yield* router.add(
-      "GET",
-      "/api/powersync/credentials",
-      Effect.fn("PowerSync.credentials")(function* () {
-        const identity = yield* authenticateCurrentOrganization(runtime);
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const token = bearerToken(request.headers.authorization);
-        if (!token) {
-          return HttpServerResponse.jsonUnsafe(
-            publicError("UNAUTHENTICATED", "Sign in required."),
-            { status: 401 },
-          );
-        }
-        if (!runtime.powerSyncUrl) {
-          return HttpServerResponse.jsonUnsafe(
-            publicError("POWERSYNC_NOT_CONFIGURED", "PowerSync is not configured."),
-            { status: 503 },
-          );
-        }
-        return HttpServerResponse.jsonUnsafe({
-          endpoint: runtime.powerSyncUrl,
-          token,
-          expiresAt: identity.session.expiresAt,
-        });
-      })().pipe(
-        Effect.catchTags({
-          Unauthenticated: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
-          Forbidden: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
-        }),
-      ),
-    );
     yield* router.add(
       "GET",
       "/api/sync/live",

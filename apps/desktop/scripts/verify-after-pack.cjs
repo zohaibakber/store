@@ -3,10 +3,9 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Nightly live inventory is the organization-object replica: wa-sqlite in a
-// dedicated worker (IndexedDB VFS) plus replica SQL migrations in the renderer.
-// PowerSync stays opt-in. OPFS worker assets stay banned because this build
-// has not switched to the OPFS VFS.
+// Live inventory is the organization-object replica: wa-sqlite in a dedicated
+// worker (IndexedDB VFS) plus replica SQL migrations in the renderer. OPFS
+// worker assets stay banned because this build has not switched to the OPFS VFS.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([

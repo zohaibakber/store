@@ -19,9 +19,8 @@ const authenticated = decodeAuthenticatedWorkspace({
 const host: InventoryHost = {
   apiBaseUrl: "http://localhost",
   authenticatedFetch: globalThis.fetch,
-  backend: { _tag: "powerSync" },
   deviceId: "device",
-  openPowerSyncDatabase: async () => {
+  openReplicaSqlite: async () => {
     throw new Error("unused");
   },
 };

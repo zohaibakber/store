@@ -8,7 +8,6 @@ import * as Schema from "effect/Schema";
 import { bootstrapAuth } from "@/lib/auth";
 import { completeGoogle, reportGoogleAuthError } from "@/lib/first-party-auth";
 import type { InventoryHost } from "@/lib/inventory-host";
-import type { InventoryBackendSelection } from "@/lib/inventory/types";
 import { reportError } from "@/lib/report-error";
 import { initClientSentry } from "@/lib/sentry";
 
@@ -20,10 +19,6 @@ type InventoryHttpBridge = NonNullable<Window["inventoryHttp"]>;
 const InventoryHttpConfig = Schema.Struct({
   apiBaseUrl: Schema.String,
   deviceId: Schema.String,
-  backend: Schema.Union([
-    Schema.Struct({ _tag: Schema.Literal("powerSync") }),
-    Schema.Struct({ _tag: Schema.Literal("organizationObject") }),
-  ]),
 });
 
 const aborted = (signal: AbortSignal) => {
@@ -65,33 +60,16 @@ const electronAuthenticatedFetch =
     }
   };
 
-const backendFromConfig = (
-  backend: (typeof InventoryHttpConfig.Type)["backend"],
-): InventoryBackendSelection => {
-  if (backend._tag === "organizationObject") return { _tag: "organizationObject" };
-  return { _tag: "powerSync" };
-};
-
 const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
   const http = window.inventoryHttp;
   if (!http) return undefined;
   const config = Schema.decodeUnknownSync(InventoryHttpConfig)(await http.getConfig());
-  const backend = backendFromConfig(config.backend);
   return {
     apiBaseUrl: config.apiBaseUrl,
     authenticatedFetch: electronAuthenticatedFetch(http),
-    backend,
     deviceId: config.deviceId,
-    openPowerSyncDatabase: async (databaseName: string) => {
-      const { openWebInventoryPowerSync } = await import("@/lib/inventory-powersync.web");
-      return openWebInventoryPowerSync(databaseName);
-    },
-    openReplicaSqlite:
-      backend._tag === "organizationObject"
-        ? (databaseName) => openElectronBrowserWorkerReplicaSqlite(databaseName)
-        : undefined,
-    openLiveSocket:
-      backend._tag === "organizationObject" ? openBrowserOrganizationObjectLiveSocket : undefined,
+    openReplicaSqlite: (databaseName) => openElectronBrowserWorkerReplicaSqlite(databaseName),
+    openLiveSocket: openBrowserOrganizationObjectLiveSocket,
   };
 };
 

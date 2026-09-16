@@ -6,9 +6,8 @@ and packaging.
 
 The renderer uses hash history and accesses authentication, invoice analysis,
 native integrations, and authenticated inventory HTTP through the preload IPC
-bridges. The default live path is the organization-object replica in a renderer
-worker. `STORE_INVENTORY_BACKEND=powerSync` keeps `@powersync/web` plus
-wa-sqlite. Electron's main process does not open the replica.
+bridges. Live inventory is the organization-object replica in a renderer
+worker. Electron's main process does not open the replica.
 
 ## Development
 
@@ -41,7 +40,7 @@ electron-builder packages the application.
 
 Push testable work to `nightly`. After checks pass, CI deploys the isolated
 Nightly cloud stage (auth, API, organization Durable Objects, and R2 snapshots,
-without Neon or PowerSync) and publishes a
+without Neon) and publishes a
 `-nightly.<run>.<attempt>` GitHub prerelease. That build uses the `nightly`
 Electron update manifest and displays as `Tabaaq Nightly` with the orange icon.
 
