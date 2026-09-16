@@ -1,5 +1,6 @@
 import {
   allocationsCoverInput,
+  AuthorityIncarnation,
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
@@ -549,6 +550,7 @@ export const registerReplica = (
   tx: InventoryDb,
   actor: InventoryActor,
   request: RegisterReplicaRequest,
+  now: number,
 ): RegisterReplicaResult => {
   const state = requireReadyState(tx, actor.organizationId);
   const existing = tx
@@ -584,7 +586,9 @@ export const registerReplica = (
       nextClientSequence: ReplicaClientSequence.make(
         incrementDecimalSequence(unpadDecimalSequence(existing.lastClientSequence)),
       ),
+      incarnation: AuthorityIncarnation.make(state.incarnation),
       retentionFloor: OrgCommitSequence.make(unpadDecimalSequence(state.retentionFloor)),
+      horizon: OrgCommitSequence.make(unpadDecimalSequence(state.commitSequence)),
       schemaVersion: SYNC_SCHEMA_VERSION,
     };
   }
@@ -595,13 +599,18 @@ export const registerReplica = (
       ownerUserId: actor.userId,
       deviceLabel: request.deviceLabel ?? null,
       lastClientSequence: padDecimalSequence("0"),
+      processedThroughClientSequence: padDecimalSequence("0"),
+      registeredAt: now,
+      lastSeenAt: now,
     }),
   );
   return {
     replicaId: request.replicaId,
     epoch: SyncEpoch.make(state.epoch),
     nextClientSequence: ReplicaClientSequence.make("1"),
+    incarnation: AuthorityIncarnation.make(state.incarnation),
     retentionFloor: OrgCommitSequence.make(unpadDecimalSequence(state.retentionFloor)),
+    horizon: OrgCommitSequence.make(unpadDecimalSequence(state.commitSequence)),
     schemaVersion: SYNC_SCHEMA_VERSION,
   };
 };
@@ -688,6 +697,7 @@ export const pullTransactions = (
   const last = transactions.at(-1);
   return {
     epoch: SyncEpoch.make(state.epoch),
+    incarnation: AuthorityIncarnation.make(state.incarnation),
     subscription: input.subscription,
     schemaVersion: SYNC_SCHEMA_VERSION,
     transactions,

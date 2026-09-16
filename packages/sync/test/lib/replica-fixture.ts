@@ -29,6 +29,7 @@ export const seedReplicaTenUnits = (path?: string): ReplicaStore => {
         userId: FIXTURE_USER_ID,
         replicaId: LAST_UNIT_REPLICA_A,
         epoch: LAST_UNIT_EPOCH,
+        incarnation: "incarnation-test",
         appliedCommitSequence: "0",
         nextClientSequence: "1",
         localCommitVersion: 0,

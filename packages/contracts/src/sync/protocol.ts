@@ -60,6 +60,22 @@ export type ReplicaClientSequence = typeof ReplicaClientSequence.Type;
 export const PayloadHash = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
 export type PayloadHash = typeof PayloadHash.Type;
 
+export const PartitionDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+export type PartitionDigest = typeof PartitionDigest.Type;
+
+export const AuthorityIncarnation = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
+).pipe(Schema.brand("AuthorityIncarnation"));
+export type AuthorityIncarnation = typeof AuthorityIncarnation.Type;
+
+export const MAX_TRANSPORT_PAYLOAD_BYTES = 900_000;
+
+export const MAX_COMMAND_ATTEMPTS = 8;
+
+export const UnknownFieldPolicy = Schema.Literals(["ignore", "fail"]);
+export type UnknownFieldPolicy = typeof UnknownFieldPolicy.Type;
+
 export const SyncProtocolCode = Schema.Literals([
   "ORGANIZATION_MISMATCH",
   "ACTOR_MISMATCH",
@@ -83,6 +99,8 @@ export const SyncProtocolCode = Schema.Literals([
   "SNAPSHOT_UNAVAILABLE",
   "SCHEMA_VERSION_UNSUPPORTED",
   "TICKET_INVALID",
+  "INCARNATION_MISMATCH",
+  "COMMAND_ABANDONED",
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
@@ -154,8 +172,10 @@ export type RegisterReplicaRequest = typeof RegisterReplicaRequest.Type;
 export const RegisterReplicaResult = Schema.Struct({
   replicaId: Identifier,
   epoch: SyncEpoch,
+  incarnation: AuthorityIncarnation,
   nextClientSequence: ReplicaClientSequence,
   retentionFloor: OrgCommitSequence,
+  horizon: OrgCommitSequence,
   schemaVersion: SyncSchemaVersion,
 });
 export type RegisterReplicaResult = typeof RegisterReplicaResult.Type;
@@ -193,12 +213,14 @@ export type SyncTransactionGroup = typeof SyncTransactionGroup.Type;
 
 export const SyncPullResult = Schema.Struct({
   epoch: SyncEpoch,
+  incarnation: AuthorityIncarnation,
   subscription: SyncSubscription,
   schemaVersion: SyncSchemaVersion,
   transactions: Schema.Array(SyncTransactionGroup),
   nextCommitSequence: OrgCommitSequence,
   horizon: OrgCommitSequence,
   retentionFloor: OrgCommitSequence,
+  digest: Schema.optionalKey(PartitionDigest),
 });
 export type SyncPullResult = typeof SyncPullResult.Type;
 
@@ -209,6 +231,7 @@ export const SyncCoverage = Schema.TaggedUnion({
   downloaded: {
     subscription: SyncSubscription,
     throughCommitSequence: OrgCommitSequence,
+    digest: PartitionDigest,
   },
 });
 export type SyncCoverage = typeof SyncCoverage.Type;

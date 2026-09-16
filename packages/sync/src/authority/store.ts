@@ -79,6 +79,9 @@ export const seedLastUnitCatalog = (
       .values({
         organizationId,
         status: "ready",
+        importId: "import-test",
+        releaseId: "release-test",
+        incarnation: "incarnation-test",
         epoch: LAST_UNIT_EPOCH,
         commitSequence: padDecimalSequence("0"),
         retentionFloor: padDecimalSequence("0"),
@@ -149,6 +152,9 @@ export const seedLastUnitCatalog = (
           organizationId,
           replicaId,
           ownerUserId: userId,
+          processedThroughClientSequence: padDecimalSequence("0"),
+          registeredAt: occurredAt,
+          lastSeenAt: occurredAt,
           deviceLabel: replicaId,
           lastClientSequence: padDecimalSequence("0"),
         })
@@ -169,7 +175,7 @@ export const runRegisterReplica = (
   db: SqliteDatabase,
   request: { readonly replicaId: string; readonly deviceLabel?: string },
   actor: InventoryActor = lastUnitActor,
-) => runSqliteTransaction(db, (tx) => registerReplica(tx, actor, request));
+) => runSqliteTransaction(db, (tx) => registerReplica(tx, actor, request, 1_700_000_000_000));
 
 export const runGetReceipt = (
   db: SqliteDatabase,

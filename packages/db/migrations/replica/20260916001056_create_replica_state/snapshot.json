@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b0e3101d-f5d9-4ec1-b941-eb36198b45e7",
+  "id": "1dbe5590-fc0d-42c8-9549-99e7ca7008bd",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
@@ -13,19 +13,7 @@
       "entityType": "tables"
     },
     {
-      "name": "command_receipts",
-      "entityType": "tables"
-    },
-    {
-      "name": "inventory_changes",
-      "entityType": "tables"
-    },
-    {
-      "name": "inventory_state",
-      "entityType": "tables"
-    },
-    {
-      "name": "inventory_transactions",
+      "name": "command_outbox",
       "entityType": "tables"
     },
     {
@@ -41,11 +29,23 @@
       "entityType": "tables"
     },
     {
-      "name": "replicas",
+      "name": "replica_coverage",
+      "entityType": "tables"
+    },
+    {
+      "name": "replica_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "snapshot_imports",
       "entityType": "tables"
     },
     {
       "name": "stock_movements",
+      "entityType": "tables"
+    },
+    {
+      "name": "stock_overlays",
       "entityType": "tables"
     },
     {
@@ -320,183 +320,13 @@
     },
     {
       "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "operationId",
       "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "replicaId",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "clientSequence",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "payloadHash",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "decision",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "commitSequence",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "resultJson",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "receivedAt",
-      "entityType": "columns",
-      "table": "command_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "commitSequence",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "ordinal",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "entity",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "action",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "entityId",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "rowVersion",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "rowJson",
-      "entityType": "columns",
-      "table": "inventory_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "table": "inventory_state"
+      "table": "command_outbox"
     },
     {
       "type": "text",
@@ -506,7 +336,7 @@
       "generated": null,
       "name": "status",
       "entityType": "columns",
-      "table": "inventory_state"
+      "table": "command_outbox"
     },
     {
       "type": "text",
@@ -514,79 +344,89 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "epoch",
+      "name": "envelopeJson",
       "entityType": "columns",
-      "table": "inventory_state"
+      "table": "command_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receiptJson",
+      "entityType": "columns",
+      "table": "command_outbox"
     },
     {
       "type": "text",
       "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "clientSequence",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimId",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimedAt",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "outcomeUncertain",
+      "entityType": "columns",
+      "table": "command_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "commitSequence",
       "entityType": "columns",
-      "table": "inventory_state"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "retentionFloor",
-      "entityType": "columns",
-      "table": "inventory_state"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organizationId",
-      "entityType": "columns",
-      "table": "inventory_transactions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "commitSequence",
-      "entityType": "columns",
-      "table": "inventory_transactions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "operationId",
-      "entityType": "columns",
-      "table": "inventory_transactions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "decision",
-      "entityType": "columns",
-      "table": "inventory_transactions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "epoch",
-      "entityType": "columns",
-      "table": "inventory_transactions"
+      "table": "command_outbox"
     },
     {
       "type": "text",
@@ -1110,13 +950,73 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "subscription",
+      "entityType": "columns",
+      "table": "replica_coverage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "replica_coverage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "throughCommitSequence",
+      "entityType": "columns",
+      "table": "replica_coverage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "digest",
+      "entityType": "columns",
+      "table": "replica_coverage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "replica_state"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "organizationId",
       "entityType": "columns",
-      "table": "replicas"
+      "table": "replica_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "userId",
+      "entityType": "columns",
+      "table": "replica_state"
     },
     {
       "type": "text",
@@ -1126,7 +1026,7 @@
       "generated": null,
       "name": "replicaId",
       "entityType": "columns",
-      "table": "replicas"
+      "table": "replica_state"
     },
     {
       "type": "text",
@@ -1134,9 +1034,59 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "ownerUserId",
+      "name": "epoch",
       "entityType": "columns",
-      "table": "replicas"
+      "table": "replica_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "incarnation",
+      "entityType": "columns",
+      "table": "replica_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "appliedCommitSequence",
+      "entityType": "columns",
+      "table": "replica_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nextClientSequence",
+      "entityType": "columns",
+      "table": "replica_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "localCommitVersion",
+      "entityType": "columns",
+      "table": "replica_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "activeGeneration",
+      "entityType": "columns",
+      "table": "replica_state"
     },
     {
       "type": "text",
@@ -1144,9 +1094,19 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "deviceLabel",
+      "name": "snapshotId",
       "entityType": "columns",
-      "table": "replicas"
+      "table": "snapshot_imports"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "snapshot_imports"
     },
     {
       "type": "text",
@@ -1154,9 +1114,49 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "lastClientSequence",
+      "name": "subscription",
       "entityType": "columns",
-      "table": "replicas"
+      "table": "snapshot_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "horizon",
+      "entityType": "columns",
+      "table": "snapshot_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "stage",
+      "entityType": "columns",
+      "table": "snapshot_imports"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "partsImported",
+      "entityType": "columns",
+      "table": "snapshot_imports"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "partsTotal",
+      "entityType": "columns",
+      "table": "snapshot_imports"
     },
     {
       "type": "text",
@@ -1289,6 +1289,46 @@
       "table": "stock_movements"
     },
     {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "commandId",
+      "entityType": "columns",
+      "table": "stock_overlays"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "batchId",
+      "entityType": "columns",
+      "table": "stock_overlays"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "packDelta",
+      "entityType": "columns",
+      "table": "stock_overlays"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "unitDelta",
+      "entityType": "columns",
+      "table": "stock_overlays"
+    },
+    {
       "columns": ["organizationId", "productId"],
       "tableTo": "products",
       "columnsTo": ["organizationId", "id"],
@@ -1391,34 +1431,6 @@
       "table": "categories"
     },
     {
-      "columns": ["organizationId", "operationId"],
-      "nameExplicit": true,
-      "name": "command_receipts_organization_operation_pk",
-      "entityType": "pks",
-      "table": "command_receipts"
-    },
-    {
-      "columns": ["organizationId", "commitSequence", "ordinal"],
-      "nameExplicit": true,
-      "name": "inventory_changes_organization_commit_ordinal_pk",
-      "entityType": "pks",
-      "table": "inventory_changes"
-    },
-    {
-      "columns": ["organizationId"],
-      "nameExplicit": true,
-      "name": "inventory_state_organization_id_pk",
-      "entityType": "pks",
-      "table": "inventory_state"
-    },
-    {
-      "columns": ["organizationId", "commitSequence"],
-      "nameExplicit": true,
-      "name": "inventory_transactions_organization_commit_pk",
-      "entityType": "pks",
-      "table": "inventory_transactions"
-    },
-    {
       "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "invoice_items_organization_id_id_pk",
@@ -1440,18 +1452,46 @@
       "table": "products"
     },
     {
-      "columns": ["organizationId", "replicaId"],
-      "nameExplicit": true,
-      "name": "replicas_organization_id_replica_id_pk",
-      "entityType": "pks",
-      "table": "replicas"
-    },
-    {
       "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "stock_movements_organization_id_id_pk",
       "entityType": "pks",
       "table": "stock_movements"
+    },
+    {
+      "columns": ["commandId", "batchId"],
+      "nameExplicit": true,
+      "name": "stock_overlays_command_id_batch_id_pk",
+      "entityType": "pks",
+      "table": "stock_overlays"
+    },
+    {
+      "columns": ["operationId"],
+      "nameExplicit": false,
+      "name": "command_outbox_pk",
+      "table": "command_outbox",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["subscription"],
+      "nameExplicit": false,
+      "name": "replica_coverage_pk",
+      "table": "replica_coverage",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "replica_state_pk",
+      "table": "replica_state",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["snapshotId"],
+      "nameExplicit": false,
+      "name": "snapshot_imports_pk",
+      "table": "snapshot_imports",
+      "entityType": "pks"
     },
     {
       "columns": [
@@ -1532,11 +1572,7 @@
     {
       "columns": [
         {
-          "value": "organizationId",
-          "isExpression": false
-        },
-        {
-          "value": "replicaId",
+          "value": "status",
           "isExpression": false
         },
         {
@@ -1544,30 +1580,12 @@
           "isExpression": false
         }
       ],
-      "isUnique": true,
-      "where": null,
-      "origin": "manual",
-      "name": "command_receipts_organization_replica_sequence_uidx",
-      "entityType": "indexes",
-      "table": "command_receipts"
-    },
-    {
-      "columns": [
-        {
-          "value": "organizationId",
-          "isExpression": false
-        },
-        {
-          "value": "operationId",
-          "isExpression": false
-        }
-      ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "inventory_transactions_organization_operation_idx",
+      "name": "command_outbox_status_client_sequence_idx",
       "entityType": "indexes",
-      "table": "inventory_transactions"
+      "table": "command_outbox"
     },
     {
       "columns": [
@@ -1750,10 +1768,22 @@
       "table": "stock_movements"
     },
     {
-      "value": "\"commitSequence\" glob '[0-9]*'",
-      "name": "inventory_transactions_commit_sequence_digits",
-      "entityType": "checks",
-      "table": "inventory_transactions"
+      "columns": [
+        {
+          "value": "commandId",
+          "isExpression": false
+        },
+        {
+          "value": "batchId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "stock_overlays_command_id_batch_id_uidx",
+      "entityType": "indexes",
+      "table": "stock_overlays"
     },
     {
       "value": "\"invoiceNumber\" > 0",

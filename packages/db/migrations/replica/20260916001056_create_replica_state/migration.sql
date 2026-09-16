@@ -34,48 +34,18 @@ CREATE TABLE `categories` (
 	CONSTRAINT `categories_organization_id_id_pk` PRIMARY KEY(`organizationId`, `id`)
 );
 --> statement-breakpoint
-CREATE TABLE `command_receipts` (
-	`organizationId` text NOT NULL,
-	`operationId` text NOT NULL,
-	`replicaId` text NOT NULL,
-	`clientSequence` text NOT NULL,
-	`payloadHash` text NOT NULL,
-	`decision` text NOT NULL,
-	`commitSequence` text NOT NULL,
-	`resultJson` text NOT NULL,
-	`receivedAt` integer NOT NULL,
-	CONSTRAINT `command_receipts_organization_operation_pk` PRIMARY KEY(`organizationId`, `operationId`)
-);
---> statement-breakpoint
-CREATE TABLE `inventory_changes` (
-	`organizationId` text NOT NULL,
-	`commitSequence` text NOT NULL,
-	`ordinal` integer NOT NULL,
-	`entity` text NOT NULL,
-	`action` text NOT NULL,
-	`entityId` text NOT NULL,
-	`rowVersion` integer NOT NULL,
-	`rowJson` text NOT NULL,
-	CONSTRAINT `inventory_changes_organization_commit_ordinal_pk` PRIMARY KEY(`organizationId`, `commitSequence`, `ordinal`)
-);
---> statement-breakpoint
-CREATE TABLE `inventory_state` (
-	`organizationId` text NOT NULL,
+CREATE TABLE `command_outbox` (
+	`operationId` text PRIMARY KEY,
 	`status` text NOT NULL,
-	`epoch` text NOT NULL,
-	`commitSequence` text NOT NULL,
-	`retentionFloor` text NOT NULL,
-	CONSTRAINT `inventory_state_organization_id_pk` PRIMARY KEY(`organizationId`)
-);
---> statement-breakpoint
-CREATE TABLE `inventory_transactions` (
-	`organizationId` text NOT NULL,
-	`commitSequence` text NOT NULL,
-	`operationId` text NOT NULL,
-	`decision` text NOT NULL,
-	`epoch` text NOT NULL,
-	CONSTRAINT `inventory_transactions_organization_commit_pk` PRIMARY KEY(`organizationId`, `commitSequence`),
-	CONSTRAINT "inventory_transactions_commit_sequence_digits" CHECK("commitSequence" glob '[0-9]*')
+	`envelopeJson` text NOT NULL,
+	`receiptJson` text,
+	`clientSequence` text NOT NULL,
+	`createdAt` integer NOT NULL,
+	`claimId` text,
+	`claimedAt` integer,
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`outcomeUncertain` integer DEFAULT false NOT NULL,
+	`commitSequence` text
 );
 --> statement-breakpoint
 CREATE TABLE `invoice_items` (
@@ -147,13 +117,34 @@ CREATE TABLE `products` (
 	CONSTRAINT `products_organization_category_fk` FOREIGN KEY (`organizationId`,`categoryId`) REFERENCES `categories`(`organizationId`,`id`)
 );
 --> statement-breakpoint
-CREATE TABLE `replicas` (
+CREATE TABLE `replica_coverage` (
+	`subscription` text PRIMARY KEY,
+	`state` text NOT NULL,
+	`throughCommitSequence` text,
+	`digest` text
+);
+--> statement-breakpoint
+CREATE TABLE `replica_state` (
+	`id` text PRIMARY KEY,
 	`organizationId` text NOT NULL,
+	`userId` text NOT NULL,
 	`replicaId` text NOT NULL,
-	`ownerUserId` text NOT NULL,
-	`deviceLabel` text,
-	`lastClientSequence` text NOT NULL,
-	CONSTRAINT `replicas_organization_id_replica_id_pk` PRIMARY KEY(`organizationId`, `replicaId`)
+	`epoch` text NOT NULL,
+	`incarnation` text NOT NULL,
+	`appliedCommitSequence` text NOT NULL,
+	`nextClientSequence` text NOT NULL,
+	`localCommitVersion` integer NOT NULL,
+	`activeGeneration` integer DEFAULT 1 NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `snapshot_imports` (
+	`snapshotId` text PRIMARY KEY,
+	`generation` integer NOT NULL,
+	`subscription` text NOT NULL,
+	`horizon` text NOT NULL,
+	`stage` text NOT NULL,
+	`partsImported` integer DEFAULT 0 NOT NULL,
+	`partsTotal` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `stock_movements` (
@@ -176,12 +167,19 @@ CREATE TABLE `stock_movements` (
 	CONSTRAINT `stock_movements_organization_invoice_fk` FOREIGN KEY (`organizationId`,`invoiceId`) REFERENCES `invoices`(`organizationId`,`id`)
 );
 --> statement-breakpoint
+CREATE TABLE `stock_overlays` (
+	`commandId` text NOT NULL,
+	`batchId` text NOT NULL,
+	`packDelta` integer NOT NULL,
+	`unitDelta` integer NOT NULL,
+	CONSTRAINT `stock_overlays_command_id_batch_id_pk` PRIMARY KEY(`commandId`, `batchId`)
+);
+--> statement-breakpoint
 CREATE INDEX `batches_organization_id_product_id_idx` ON `batches` (`organizationId`,`productId`);--> statement-breakpoint
 CREATE INDEX `batches_organization_id_product_expiry_idx` ON `batches` (`organizationId`,`productId`,`expiresAt`);--> statement-breakpoint
 CREATE UNIQUE INDEX `categories_organization_id_name_uidx` ON `categories` (`organizationId`,`name`) WHERE "categories"."deletedAt" is null;--> statement-breakpoint
 CREATE INDEX `categories_organization_id_updated_at_idx` ON `categories` (`organizationId`,`updatedAt`);--> statement-breakpoint
-CREATE UNIQUE INDEX `command_receipts_organization_replica_sequence_uidx` ON `command_receipts` (`organizationId`,`replicaId`,`clientSequence`);--> statement-breakpoint
-CREATE INDEX `inventory_transactions_organization_operation_idx` ON `inventory_transactions` (`organizationId`,`operationId`);--> statement-breakpoint
+CREATE INDEX `command_outbox_status_client_sequence_idx` ON `command_outbox` (`status`,`clientSequence`);--> statement-breakpoint
 CREATE INDEX `invoice_items_organization_id_invoice_id_idx` ON `invoice_items` (`organizationId`,`invoiceId`);--> statement-breakpoint
 CREATE UNIQUE INDEX `invoices_organization_id_invoice_number_uidx` ON `invoices` (`organizationId`,`invoiceNumber`);--> statement-breakpoint
 CREATE UNIQUE INDEX `invoices_organization_id_operation_id_uidx` ON `invoices` (`organizationId`,`operationId`);--> statement-breakpoint
@@ -191,4 +189,5 @@ CREATE INDEX `products_organization_id_updated_at_idx` ON `products` (`organizat
 CREATE INDEX `stock_movements_organization_id_product_id_idx` ON `stock_movements` (`organizationId`,`productId`);--> statement-breakpoint
 CREATE INDEX `stock_movements_organization_id_batch_id_idx` ON `stock_movements` (`organizationId`,`batchId`);--> statement-breakpoint
 CREATE INDEX `stock_movements_organization_id_invoice_id_idx` ON `stock_movements` (`organizationId`,`invoiceId`);--> statement-breakpoint
-CREATE INDEX `stock_movements_organization_id_operation_id_idx` ON `stock_movements` (`organizationId`,`operationId`);
+CREATE INDEX `stock_movements_organization_id_operation_id_idx` ON `stock_movements` (`organizationId`,`operationId`);--> statement-breakpoint
+CREATE UNIQUE INDEX `stock_overlays_command_id_batch_id_uidx` ON `stock_overlays` (`commandId`,`batchId`);
