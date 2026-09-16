@@ -6,9 +6,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./authority": "./src/authority/commands.ts",
+    "./authority/seed": "./src/authority/seed.ts",
     "./authority/store": "./src/authority/store.ts",
     "./better-sqlite-target": "./src/better-sqlite-target.ts",
     "./migrations": "./src/migrations.ts",
+    "./sqlite": "./src/sqlite.ts",
     "./protocol": "./src/index.ts"
   },
   "scripts": {

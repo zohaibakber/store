@@ -6,8 +6,9 @@ and packaging.
 
 The renderer uses hash history and accesses authentication, invoice analysis,
 native integrations, and authenticated inventory HTTP through the preload IPC
-bridges. PowerSync runs in the renderer with `@powersync/web` and wa-sqlite;
-Electron's main process does not open the replica.
+bridges. The default live path is the organization-object replica in a renderer
+worker. `STORE_INVENTORY_BACKEND=powerSync` keeps `@powersync/web` plus
+wa-sqlite. Electron's main process does not open the replica.
 
 ## Development
 
@@ -39,7 +40,8 @@ electron-builder packages the application.
 ## Release channels
 
 Push testable work to `nightly`. After checks pass, CI deploys the isolated
-Nightly cloud stage (auth and API, without Neon or PowerSync) and publishes a
+Nightly cloud stage (auth, API, organization Durable Objects, and R2 snapshots,
+without Neon or PowerSync) and publishes a
 `-nightly.<run>.<attempt>` GitHub prerelease. That build uses the `nightly`
 Electron update manifest and displays as `Tabaaq Nightly` with the orange icon.
 

@@ -183,12 +183,12 @@ describe("desktop inventory HTTP allowlist", () => {
   });
 
   it("selects the inventory backend explicitly from configuration", () => {
-    expect(readInventoryHttpBackend(undefined)).toEqual({ _tag: "powerSync" });
-    expect(readInventoryHttpBackend("")).toEqual({ _tag: "powerSync" });
-    expect(readInventoryHttpBackend("powerSync")).toEqual({ _tag: "powerSync" });
+    expect(readInventoryHttpBackend(undefined)).toEqual({ _tag: "organizationObject" });
+    expect(readInventoryHttpBackend("")).toEqual({ _tag: "organizationObject" });
     expect(readInventoryHttpBackend("organizationObject")).toEqual({
       _tag: "organizationObject",
     });
+    expect(readInventoryHttpBackend("powerSync")).toEqual({ _tag: "powerSync" });
     expect(() => readInventoryHttpBackend("both")).toThrow("Unsupported inventory backend: both");
   });
 

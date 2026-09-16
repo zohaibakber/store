@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev",
     "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. apps/server/test"
+    "test": "vitest run --root ../.. apps/server/test",
+    "test:workerd-proofs": "vitest run --config ./workerd-proofs/vitest.config.ts"
   },
   "dependencies": {
     "@effect/sql-pg": "4.0.0-rc.111",
@@ -21,6 +22,7 @@
     "pg": "^8.23.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.9",
     "@effect/sql-libsql": "4.0.0-rc.111",
     "@effect/vitest": "catalog:",
     "@types/node": "^26.5.1",

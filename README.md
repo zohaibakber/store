@@ -1,30 +1,40 @@
 # Store
 
 Bun workspace for offline-first inventory: an Electron desktop app, a native
-Android app, and a Cloudflare Worker API. Postgres is the
-authoritative inventory database. PowerSync streams organization-scoped rows
-into durable SQLite-backed TanStack DB collections on each client.
+Android app, and a Cloudflare Worker API. Nightly desktop treats the
+organization Durable Object as inventory authority. Android and the opt-in
+PowerSync desktop path (`STORE_INVENTORY_BACKEND=powerSync`) still stream
+organization-scoped rows from Postgres into durable SQLite-backed TanStack DB
+collections.
 
 ## Workspace boundaries
 
 - `apps/android` is the native Kotlin + Jetpack Compose client (`com.tabaaq.mobile`).
   First slice: sign-in, Home / Products / Settings, catalog writes, and label
-  scan. Setup is in `apps/android/README.md`.
+  scan. Setup is in `apps/android/README.md`. Sync stays on PowerSync.
 - `apps/desktop` owns the complete Electron application: main process, preload,
   React renderer, Vite configuration, tests, and packaging. The renderer uses
   hash history, while the main process keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
-  inventory HTTP. Live inventory SQLite is `@powersync/web` plus wa-sqlite in
-  the renderer. There is no main-process
-  PowerSync. Desktop requires sign-in before inventory.
+  inventory HTTP. The default live path is the organization-object replica
+  (wa-sqlite in a renderer worker). `STORE_INVENTORY_BACKEND=powerSync` keeps
+  `@powersync/web` plus wa-sqlite. There is no main-process
+  SQLite. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
-- `apps/server/src` is the Worker API. It writes inventory commands to Postgres
-  through Hyperdrive and issues authenticated PowerSync connection credentials.
+- `apps/server/src` is the Worker API. It hosts the organization Durable Object
+  and `/api/sync/*` (including live tickets). On `dev` and `prod` it also writes
+  catalog commands to Postgres through Hyperdrive and issues authenticated
+  PowerSync connection credentials. Nightly skips Neon and PowerSync.
 - `packages/contracts` owns shared store and server contracts.
 - `packages/client-db` owns the catalog replica (`openCatalog`), catalog writes,
-  PowerSync schema and connector, row models, and Postgres mutation clients.
-- `packages/db` owns the authentication and Postgres schemas.
+  PowerSync schema and connector, the organization-object replica engine, row
+  models, and Postgres mutation clients.
+- `packages/db` owns the authentication, Postgres, inventory-authority, and
+  replica schemas.
+- `packages/sync` owns the host-agnostic SQLite command library, replica
+  overlay/outbox, and typed `SyncHttpApi` client used by the organization
+  Durable Object.
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
@@ -38,12 +48,13 @@ Desktop renderer components are grouped by feature. `components/app` owns the ap
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Inventory reads come from TanStack DB live queries over PowerSync SQLite.
-Electron opens that database in the renderer with `@powersync/web`.
-Native Android uses `com.powersync:core`. Category, product, and batch
-mutations are durably queued offline, uploaded through authenticated
-`/api/inventory/*` commands, committed in Postgres, and streamed back by
-PowerSync. The signed organization claim defines every sync stream.
+Nightly desktop inventory reads come from TanStack DB live queries over the
+organization-object SQLite replica. Sales go through `/api/sync/commands` and
+commit in one Durable Object SQLite transaction. Catalog writes on that path
+are unsupported. Android and the PowerSync desktop opt-in still queue category,
+product, and batch mutations through `/api/inventory/*`, commit them in Postgres,
+and stream canonical rows back. The signed organization claim defines every
+sync stream.
 
 ## Run locally
 
@@ -127,9 +138,10 @@ environment's public hostname, not the production hostname.
   Worker).
 
 Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
-uses its own auth keys, peppers, D1 database, and KV namespace. It does not
-create a Neon project or PowerSync instance; inventory writes stay on the local
-replica until a production promotion.
+uses its own auth keys, peppers, D1 database, KV namespace, organization
+Durable Objects, and R2 snapshot bucket. It does not create a Neon project or
+PowerSync instance. Nightly desktop inventory writes go to the organization
+object; catalog commands on that path are unsupported.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back

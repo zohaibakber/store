@@ -66,6 +66,7 @@ export default defineConfig({
       "**/release/**",
       "**/*.gen.ts",
       "**/worker-configuration.d.ts",
+      "apps/server/workerd-proofs/**",
       "tools/oxlint/anti-slop/**",
     ],
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
