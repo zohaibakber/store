@@ -3,8 +3,10 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Live inventory is `@powersync/web` + wa-sqlite in the renderer (IndexedDB VFS).
-// OPFS worker assets stay banned because this build has not switched to the OPFS VFS.
+// Nightly live inventory is the organization-object replica: wa-sqlite in a
+// dedicated worker (IndexedDB VFS) plus replica SQL migrations in the renderer.
+// PowerSync stays opt-in. OPFS worker assets stay banned because this build
+// has not switched to the OPFS VFS.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
@@ -21,10 +23,14 @@ const forbiddenPackageRoots = new Set([
   "wrangler",
 ]);
 
+// Shared catalog index names also live in replica SQL, which the renderer must
+// apply. Ban inventory-authority and Postgres/ORM markers instead.
 const forbiddenRendererMarkers = [
-  "categories_organization_id_name_uidx",
-  "products_organization_id_category_id_idx",
-  "invoices_organization_id_invoice_number_uidx",
+  "command_receipts",
+  "consumed_tickets",
+  "inventory_changes",
+  "live_sessions",
+  "snapshot_jobs",
   "invoice_counters",
   "drizzle-orm",
 ];
@@ -142,7 +148,7 @@ const verifyDesktopAsar = (archivePath) => {
     }
   }
   if (rendererLeaks.length > 0) {
-    fail("database schema code reached the renderer bundle", rendererLeaks);
+    fail("inventory authority or ORM code reached the renderer bundle", rendererLeaks);
   }
 
   const desktopJavaScriptEntries = entries.filter(
@@ -194,6 +200,7 @@ const afterPack = async (context) => {
 
 module.exports = afterPack;
 module.exports.verifyDesktopAsar = verifyDesktopAsar;
+module.exports.forbiddenRendererMarkers = forbiddenRendererMarkers;
 
 if (require.main === module) {
   const archivePath = process.argv[2];
