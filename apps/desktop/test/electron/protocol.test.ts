@@ -50,6 +50,7 @@ describe("desktop content security policy", () => {
     expect(connectSources).toContain("wss://*.powersync.journeyapps.com");
     expect(connectSources).toContain("https://*.ingest.sentry.io");
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");
+    expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
   });

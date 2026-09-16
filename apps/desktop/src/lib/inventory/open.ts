@@ -18,9 +18,12 @@ import {
   createSyncStatusStore,
   waitForInventoryFirstSync,
   decodeOutboxStatusRow,
+  connectOrganizationObjectLiveTransport,
   type InventoryCollectionDescriptor,
   type InventoryCollectionRow,
   type InventorySyncStatus,
+  type OrganizationObjectLiveTransport,
+  type ReplicaLiveFeed,
   type ReplicaSqliteHandle,
 } from "@store/client-db";
 import { isConnectivityFailure } from "@store/contracts";
@@ -31,6 +34,7 @@ import {
 import { collectionOptions, DbClient } from "@tanstack/react-db";
 import { Effect, ManagedRuntime } from "effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import type { HostInventoryScope } from "@/host-access";
 import { toastStoreError } from "@/lib/errors";
@@ -166,8 +170,8 @@ const replicaDescriptor = <Row extends InventoryCollectionRow>(
   decodeRows,
 });
 
-const outboxStatus = (replica: ReplicaSqliteHandle): InventorySyncStatus => {
-  const statuses = replica.query(`select status from command_outbox`, []).flatMap((row) => {
+const outboxStatus = async (replica: ReplicaSqliteHandle): Promise<InventorySyncStatus> => {
+  const statuses = (await replica.query(`select status from command_outbox`, [])).flatMap((row) => {
     const decoded = decodeOutboxStatusRow(row);
     return Option.isSome(decoded) ? [decoded.value.status] : [];
   });
@@ -184,6 +188,10 @@ export const openOrganizationObjectInventoryWorkspace = async (
   }
   const scopeId = inventoryScopeId(host, scope);
   const replica = await opener(inventoryOrganizationObjectReplicaName(scopeId));
+  await replica.query(
+    `update replica_state set organizationId = ?, userId = ?, replicaId = ? where id = 'singleton'`,
+    [scope.organizationId, scope.userId, host.deviceId],
+  );
   const dbClient = new DbClient();
   const collections = {
     categories: dbClient.collection(
@@ -261,20 +269,56 @@ export const openOrganizationObjectInventoryWorkspace = async (
     ),
   };
   const { recommendStock, disposeRecommendations } = recommendStockFor(scope);
-  const status = createSyncStatusStore(outboxStatus(replica));
+  const status = createSyncStatusStore(await outboxStatus(replica));
   const unsubscribeStatus = replica.subscribe((notice) => {
     if (notice.workspaceToken !== replica.workspaceToken) return;
-    status.set(outboxStatus(replica));
+    void outboxStatus(replica).then(status.set);
   });
   const tables = { dbClient, ...collections };
+  const actor = actorFor(host, scope);
+  let live: OrganizationObjectLiveTransport | undefined;
+  const openSocket = host.openLiveSocket;
+  if (openSocket) {
+    const appliedRows = await replica.query(
+      `select appliedCommitSequence from replica_state where id = 'singleton'`,
+      [],
+    );
+    const applied = appliedRows[0]?.appliedCommitSequence;
+    let appliedCursor = Schema.is(Schema.String)(applied) ? applied : "0";
+    let feed: ReplicaLiveFeed = {
+      _tag: "catchingUp",
+      targetCommitSequence: appliedCursor,
+    };
+    void connectOrganizationObjectLiveTransport(
+      host.authenticatedFetch,
+      host.apiBaseUrl,
+      host.deviceId,
+      {
+        feed: () => feed,
+        appliedCursor: () => appliedCursor,
+        applyTransactions: () => false,
+        applyReceipt: () => undefined,
+        resumeFromCursor: (cursor) => {
+          appliedCursor = cursor;
+          feed = { _tag: "catchingUp", targetCommitSequence: cursor };
+        },
+      },
+      openSocket,
+    )
+      .then((transport) => {
+        live = transport;
+      })
+      .catch(() => undefined);
+  }
   return {
     ...tables,
-    actions: makeOrganizationObjectActions(),
+    actions: makeOrganizationObjectActions(tables, host, actor, replica),
     commands: { status: status.get },
     sync: status.get(),
     observeSync: status.observe,
     recommendStock,
     dispose: async () => {
+      live?.close();
       unsubscribeStatus();
       try {
         await disposeRecommendations();

@@ -1,13 +1,11 @@
 import type { SyncEntity } from "@store/contracts";
 import { replicaMigrations } from "@store/db/replica/migrations";
+import { betterSqliteMigrationTarget } from "@store/sync/better-sqlite-target";
+import { runMigrations } from "@store/sync/migrations";
 import Database from "better-sqlite3";
 
 import { createReplicaCommitPublisher, type ReplicaCommitPublisher } from "./publisher";
-import {
-  decodeAppliedMigrationKeys,
-  decodeReplicaStampRow,
-  decodeSqliteResultRow,
-} from "./sqlite-row";
+import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
 import type {
   ReplicaCommitNotice,
   ReplicaQueryStamp,
@@ -15,33 +13,6 @@ import type {
   SqliteParameter,
   SqliteResultRow,
 } from "./types";
-
-const LEDGER_TABLE = "__store_replica_migrations";
-const STATEMENT_SEPARATOR = "--> statement-breakpoint";
-const MIGRATION_KEY_PATTERN = /^[0-9a-z_]+$/u;
-
-const migrationStatements = (migration: string): ReadonlyArray<string> =>
-  migration
-    .split(STATEMENT_SEPARATOR)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-
-const runReplicaMigrations = (sqlite: Database.Database): void => {
-  sqlite.exec(`create table if not exists ${LEDGER_TABLE} (key text primary key not null)`);
-  const applied = new Set(
-    decodeAppliedMigrationKeys(sqlite.prepare(`select key from ${LEDGER_TABLE}`).pluck().all()),
-  );
-  for (const key of Object.keys(replicaMigrations).sort()) {
-    if (applied.has(key)) continue;
-    if (!MIGRATION_KEY_PATTERN.test(key)) {
-      throw new Error(`Replica migration key ${key} is not a safe identifier.`);
-    }
-    const migration = replicaMigrations[key];
-    if (migration === undefined) continue;
-    for (const statement of migrationStatements(migration)) sqlite.exec(statement);
-    sqlite.prepare(`insert into ${LEDGER_TABLE} (key) values (?)`).run(key);
-  }
-};
 
 const toParameter = (value: SqliteParameter): string | number | bigint | Buffer | null => {
   if (value instanceof Uint8Array) return Buffer.from(value);
@@ -85,7 +56,7 @@ export const openNodeReplicaSqlite = (
   const sqlite = new Database(path);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
-  runReplicaMigrations(sqlite);
+  runMigrations(replicaMigrations, betterSqliteMigrationTarget(sqlite));
   const existing = sqlite.prepare(`select id from replica_state where id = 'singleton'`).get();
   if (existing === undefined) {
     sqlite
@@ -105,7 +76,12 @@ export const openNodeReplicaSqlite = (
     parameters: ReadonlyArray<SqliteParameter>,
   ): ReadonlyArray<SqliteResultRow> => {
     const statement = sqlite.prepare(sql);
-    const rows = statement.all(...parameters.map(toParameter));
+    const bindings = parameters.map(toParameter);
+    if (!statement.reader) {
+      statement.run(...bindings);
+      return [];
+    }
+    const rows = statement.all(...bindings);
     const result: Array<SqliteResultRow> = [];
     for (const row of rows) {
       result.push(decodeSqliteResultRow(row));

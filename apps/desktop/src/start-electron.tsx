@@ -1,4 +1,7 @@
-import { openElectronBrowserWorkerReplicaSqlite } from "@store/client-db";
+import {
+  openBrowserOrganizationObjectLiveSocket,
+  openElectronBrowserWorkerReplicaSqlite,
+} from "@store/client-db";
 import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
@@ -87,6 +90,8 @@ const electronInventoryHost = async (): Promise<InventoryHost | undefined> => {
       backend._tag === "organizationObject"
         ? (databaseName) => openElectronBrowserWorkerReplicaSqlite(databaseName)
         : undefined,
+    openLiveSocket:
+      backend._tag === "organizationObject" ? openBrowserOrganizationObjectLiveSocket : undefined,
   };
 };
 

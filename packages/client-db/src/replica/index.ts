@@ -7,14 +7,24 @@ export {
   decodeProductSqliteRows,
   decodeStockMovementSqliteRows,
 } from "./decode";
-export { ReplicaRowInvalid, UnsupportedSubsetQuery } from "./errors";
+export {
+  OrganizationObjectCatalogUnsupported,
+  ReplicaRowInvalid,
+  UnsupportedSubsetQuery,
+} from "./errors";
+export { openElectronBrowserWorkerReplicaSqlite } from "./browser-sqlite";
+export { submitOrganizationObjectCommand } from "./command";
 export {
   connectOrganizationObjectLiveTransport,
-  openElectronBrowserWorkerReplicaSqlite,
-  submitOrganizationObjectCommand,
-} from "./gaps";
+  openBrowserOrganizationObjectLiveSocket,
+  type OpenOrganizationObjectLiveSocket,
+  type OrganizationObjectLiveEngine,
+  type OrganizationObjectLiveSocket,
+  type OrganizationObjectLiveSocketHandlers,
+  type OrganizationObjectLiveTransport,
+  type ReplicaLiveFeed,
+} from "./live";
 export { inventoryOrganizationObjectReplicaName } from "./namespace";
-export { openNodeReplicaSqlite } from "./node-sqlite";
 export type { NodeReplicaIdentity, NodeReplicaSqlite } from "./node-sqlite";
 export { projectionCollectionOptions, sqliteCollectionOptions } from "./collection";
 export { createReplicaCommitPublisher } from "./publisher";

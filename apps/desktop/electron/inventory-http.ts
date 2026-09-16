@@ -98,10 +98,23 @@ const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
 const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): boolean => {
   if (method !== "GET") return false;
   if (requested.pathname !== `${apiPath}/sync/live`) return false;
-  const keys = [...requested.searchParams.keys()];
-  if (keys.length !== 1 || keys[0] !== "nonce") return false;
   const nonce = requested.searchParams.get("nonce");
-  return nonce !== null && LIVE_TICKET_NONCE.test(nonce);
+  const replicaId = requested.searchParams.get("replicaId");
+  const subscription = requested.searchParams.get("subscription");
+  const keys = [...requested.searchParams.keys()];
+  if (keys.length === 1 && keys[0] === "nonce")
+    return nonce !== null && LIVE_TICKET_NONCE.test(nonce);
+  if (keys.length !== 3) return false;
+  const allowed = new Set(["nonce", "replicaId", "subscription"]);
+  if (keys.some((key) => !allowed.has(key))) return false;
+  return (
+    nonce !== null &&
+    LIVE_TICKET_NONCE.test(nonce) &&
+    replicaId !== null &&
+    replicaId.length > 0 &&
+    replicaId.length <= 200 &&
+    subscription === "operational"
+  );
 };
 
 export const validatedInventoryUrl = (
