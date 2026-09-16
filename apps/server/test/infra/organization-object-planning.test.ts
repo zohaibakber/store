@@ -9,10 +9,10 @@ import { organizationInventoryObjectInit } from "../../src/inventory/organizatio
 
 describe("organization Durable Object planning", () => {
   it("evaluates the outer Effect without touching runtime storage", async () => {
-    const planningState = fromDurableObjectState(
-      // SAFETY: planning evaluates binding discovery only; storage is not read here
-      { storage: {} } as Cf.DurableObjectState,
-    );
+    // SAFETY: Alchemy evaluates a Durable Object's outer Effect against a mock state with the
+    // same shape during planning. Every member this fake omits throws if planning reads it,
+    // which is the property under test.
+    const planningState = fromDurableObjectState({ storage: {} } as Cf.DurableObjectState);
     const snapshots = SnapshotObjects.of({
       getObject: () => {
         throw new Error("planning touched snapshot storage");

@@ -124,7 +124,6 @@ describe("sync HTTP", () => {
             }),
           ),
       },
-      // SAFETY: this test must fail directory lookup before any object RPC is invoked
       {
         getByName: () => {
           throw new Error("directory miss must not select an object");
@@ -158,7 +157,6 @@ describe("sync HTTP", () => {
             },
           }),
       },
-      // SAFETY: this test double implements only submitCommand for the RPC refusal path
       {
         getByName: () => ({
           ...idleInventoryRpcClient(),
@@ -200,7 +198,6 @@ describe("sync HTTP", () => {
             evidence,
           }),
       },
-      // SAFETY: this test double implements only submitCommand for the routed evidence check
       {
         getByName: (name: string) => {
           received.push(name);
