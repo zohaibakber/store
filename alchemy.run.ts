@@ -30,6 +30,7 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const auth = yield* Auth;
     const api = yield* Api;
+    yield* Cloudflare.R2.Bucket("InventorySnapshots");
     if (!stageUsesInventoryPostgres(stage)) {
       return {
         stage,

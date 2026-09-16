@@ -50,8 +50,9 @@ describe("API Worker bundle", () => {
     expect(source).toContain("AuthVerificationConfig");
   });
 
-  it("does not bind an organization Durable Object", () => {
+  it("binds OrganizationInventoryObject and does not bind the retired OrganizationStore", () => {
     const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
+    expect(source).toContain("OrganizationInventoryObject");
     expect(source).not.toContain("ORGANIZATION_STORE");
     expect(source).not.toContain("OrganizationStore");
     expect(source).not.toContain("connectSyncLive");

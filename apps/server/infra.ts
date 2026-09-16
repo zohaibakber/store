@@ -6,6 +6,7 @@ import {
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "@store/auth/security";
+import { AuthDatabase } from "@store/db/auth/infra";
 import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -28,7 +29,18 @@ import {
   InventoryMutationDatabaseLive,
   InventoryMutationDatabaseUnavailable,
 } from "./src/inventory/mutation-database";
-import { UnprovisionedSyncAuthorityLive } from "./src/inventory/sync-authority";
+import { makeD1InventoryDirectory } from "./src/inventory/inventory-directory";
+import { makeR2SnapshotObjects } from "./src/inventory/organization-host";
+import {
+  OrganizationInventoryObject,
+  OrganizationInventoryObjectLive,
+} from "./src/inventory/organization-object";
+import {
+  makeRoutedLiveUpgrade,
+  makeRoutedSyncAuthority,
+  SyncAuthority,
+  SyncLiveUpgrade,
+} from "./src/inventory/sync-authority";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -48,7 +60,7 @@ export {
 
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}, OrganizationInventoryObject>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -86,6 +98,15 @@ export const ApiLive = Api.make(
           : InventoryMutationDatabaseUnavailable,
       ),
     );
+    const authDatabase = yield* AuthDatabase;
+    const directoryDatabase = yield* Cloudflare.D1.QueryDatabase(authDatabase);
+    const directory = makeD1InventoryDirectory(directoryDatabase);
+    const objects = yield* OrganizationInventoryObject;
+    const snapshotBucket = yield* Cloudflare.R2.Bucket("InventorySnapshots");
+    const snapshotStore = yield* Cloudflare.R2.ReadWriteBucket(snapshotBucket);
+    const snapshots = makeR2SnapshotObjects(snapshotStore);
+    const syncAuthority = makeRoutedSyncAuthority(directory, objects, snapshots);
+    const liveUpgrade = makeRoutedLiveUpgrade(directory, objects);
     const ai = yield* Cloudflare.Workers.AI();
     const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
@@ -185,7 +206,8 @@ export const ApiLive = Api.make(
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
-      Layer.provide(UnprovisionedSyncAuthorityLive),
+      Layer.provide(Layer.succeed(SyncAuthority, syncAuthority)),
+      Layer.provide(Layer.succeed(SyncLiveUpgrade, liveUpgrade)),
       Layer.provide(HttpServer.layerServices),
     );
 
@@ -195,6 +217,9 @@ export const ApiLive = Api.make(
   }).pipe(
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
+    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
+    Effect.provide(Cloudflare.R2.ReadWriteBucketBinding),
+    Effect.provide(OrganizationInventoryObjectLive),
   ),
 );
 

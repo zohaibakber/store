@@ -12,6 +12,7 @@ import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/o
 import { InventoryMutationHandlers } from "../routes/inventory-mutations";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
+import { handleSyncLiveUpgrade } from "../routes/sync-live";
 import { UploadHandlers } from "../routes/uploads";
 import { reportError } from "../runtime/worker";
 import { StoreApi } from "./api";
@@ -67,6 +68,21 @@ const RawRoutes = HttpRouter.use((router) =>
           token,
           expiresAt: identity.session.expiresAt,
         });
+      })().pipe(
+        Effect.catchTags({
+          Unauthenticated: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
+          Forbidden: (error) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
+        }),
+      ),
+    );
+    yield* router.add(
+      "GET",
+      "/api/sync/live",
+      Effect.fn("SyncLive.upgrade")(function* () {
+        const identity = yield* authenticateCurrentOrganization(runtime);
+        return yield* handleSyncLiveUpgrade(identity);
       })().pipe(
         Effect.catchTags({
           Unauthenticated: (error) =>

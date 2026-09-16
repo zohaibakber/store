@@ -10,6 +10,7 @@ import {
   SyncNotFound,
   SyncServiceUnavailable,
 } from "./http-errors";
+import { LiveTicket, LiveTicketRequest } from "./live";
 import {
   CommandReceipt,
   RegisterReplicaRequest,
@@ -18,6 +19,12 @@ import {
   SyncPullRequest,
   SyncPullResult,
 } from "./protocol";
+import {
+  AcquireSnapshotRequest,
+  AcquireSnapshotResult,
+  SnapshotId,
+  SnapshotPartPayload,
+} from "./snapshot";
 
 const SyncHttpErrors = [
   SyncBadRequest,
@@ -55,6 +62,32 @@ export const syncGroup = HttpApiGroup.make("sync")
     HttpApiEndpoint.post("pull", "/api/sync/pull", {
       payload: SyncPullRequest,
       success: SyncPullResult,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("acquireSnapshot", "/api/sync/snapshots", {
+      payload: AcquireSnapshotRequest,
+      success: AcquireSnapshotResult,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("readSnapshotPart", "/api/sync/snapshots/:snapshotId/parts/:partNumber", {
+      params: Schema.Struct({
+        snapshotId: SnapshotId,
+        partNumber: Schema.NumberFromString.pipe(
+          Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+        ),
+      }),
+      success: SnapshotPartPayload,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("mintLiveTicket", "/api/sync/live-tickets", {
+      payload: LiveTicketRequest,
+      success: LiveTicket,
       error: SyncHttpErrors,
     }),
   );

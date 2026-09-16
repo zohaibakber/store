@@ -15,6 +15,7 @@
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "@store/services": "workspace:*",
+    "@store/sync": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:",
     "pg": "^8.23.0"
