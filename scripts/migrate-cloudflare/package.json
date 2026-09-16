@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "tsx ./bin.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. scripts/migrate-cloudflare/test"
   },
   "dependencies": {
     "@store/contracts": "workspace:*",
