@@ -15,6 +15,7 @@ import {
 } from "@store/contracts/sync/fixtures";
 import {
   batches,
+  commandReceipts,
   categories,
   inventoryState,
   invoices,
@@ -210,3 +211,26 @@ export const loadBatch = (db: InventoryDb, batchId = LAST_UNIT_BATCH_ID) =>
     .get();
 
 export const countInvoices = (db: InventoryDb) => db.select().from(invoices).all().length;
+
+export const loadReceiptAttempts = (
+  db: InventoryDb,
+  operationId: string,
+  organizationId = LAST_UNIT_ORGANIZATION_ID,
+) =>
+  db
+    .select({
+      attempts: commandReceipts.attempts,
+      decision: commandReceipts.decision,
+      resultJson: commandReceipts.resultJson,
+    })
+    .from(commandReceipts)
+    .where(
+      and(
+        eq(commandReceipts.organizationId, organizationId),
+        eq(commandReceipts.operationId, operationId),
+      ),
+    )
+    .get();
+
+export const loadInventoryHead = (db: InventoryDb, organizationId = LAST_UNIT_ORGANIZATION_ID) =>
+  db.select().from(inventoryState).where(eq(inventoryState.organizationId, organizationId)).get();

@@ -7,7 +7,7 @@ import {
 } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import { batches, categories, products } from "@store/db/inventory.schema";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 
 import type { SqliteConnection } from "../sqlite";
 
@@ -29,12 +29,21 @@ export const subscriptionEntities = (
   subscription: SyncSubscription,
 ): ReadonlyArray<PartitionEntity> => SUBSCRIPTION_ENTITIES[subscription];
 
+export const parsePartitionEntity = (value: string): PartitionEntity | undefined => {
+  for (const entity of PARTITION_ENTITIES) {
+    if (entity === value) return entity;
+  }
+  return undefined;
+};
+
 export const nextPartitionEntity = (
   subscription: SyncSubscription,
   entity: PartitionEntity,
 ): PartitionEntity | undefined => {
   const entities = subscriptionEntities(subscription);
-  return entities[entities.indexOf(entity) + 1];
+  const index = entities.indexOf(entity);
+  if (index < 0) return undefined;
+  return entities[index + 1];
 };
 
 export type PartitionPage = {
@@ -57,8 +66,12 @@ export const readPartitionPage = (
         .from(categories)
         .where(
           after === undefined
-            ? eq(categories.organizationId, page.organizationId)
-            : and(eq(categories.organizationId, page.organizationId), gt(categories.id, after)),
+            ? and(eq(categories.organizationId, page.organizationId), isNull(categories.deletedAt))
+            : and(
+                eq(categories.organizationId, page.organizationId),
+                isNull(categories.deletedAt),
+                gt(categories.id, after),
+              ),
         )
         .orderBy(asc(categories.id))
         .limit(page.limit)
@@ -70,8 +83,12 @@ export const readPartitionPage = (
         .from(products)
         .where(
           after === undefined
-            ? eq(products.organizationId, page.organizationId)
-            : and(eq(products.organizationId, page.organizationId), gt(products.id, after)),
+            ? and(eq(products.organizationId, page.organizationId), isNull(products.deletedAt))
+            : and(
+                eq(products.organizationId, page.organizationId),
+                isNull(products.deletedAt),
+                gt(products.id, after),
+              ),
         )
         .orderBy(asc(products.id))
         .limit(page.limit)
@@ -83,8 +100,12 @@ export const readPartitionPage = (
         .from(batches)
         .where(
           after === undefined
-            ? eq(batches.organizationId, page.organizationId)
-            : and(eq(batches.organizationId, page.organizationId), gt(batches.id, after)),
+            ? and(eq(batches.organizationId, page.organizationId), isNull(batches.deletedAt))
+            : and(
+                eq(batches.organizationId, page.organizationId),
+                isNull(batches.deletedAt),
+                gt(batches.id, after),
+              ),
         )
         .orderBy(asc(batches.id))
         .limit(page.limit)
@@ -129,13 +150,11 @@ export const rowImageDigest = (rows: ReadonlyArray<SnapshotRow>): PartitionDiges
 
 export const partitionDigest = (
   tx: SqliteConnection,
-  input: {
-    readonly organizationId: string;
-    readonly subscription: SyncSubscription;
-  },
+  organizationId: string,
+  subscription: SyncSubscription,
 ): PartitionDigest =>
   rowImageDigest(
-    subscriptionEntities(input.subscription).flatMap((entity) =>
-      readPartitionEntity(tx, input.organizationId, entity),
+    subscriptionEntities(subscription).flatMap((entity) =>
+      readPartitionEntity(tx, organizationId, entity),
     ),
   );

@@ -4,6 +4,7 @@ import {
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
+  MAX_COMMAND_ATTEMPTS,
   nextInvoiceNumber,
   OrgCommitSequence,
   padDecimalSequence,
@@ -476,20 +477,37 @@ export const commitPreparedCommand = (
   let decision: CommandReceipt["decision"] = "accepted";
   let result: CommandReceipt["result"];
   let changes: ReadonlyArray<SyncLogChange> = [];
-  try {
-    const issued = issueInvoice(tx, actor, envelope);
-    result = issued.result;
-    changes = issued.changes;
-  } catch (cause) {
-    if (isSyncProtocolError(cause) && cause.code === "INSUFFICIENT_STOCK") {
-      decision = "rejected";
-      result = {
-        _tag: "rejected",
-        code: "INSUFFICIENT_STOCK",
-        message: cause.message,
-      };
-    } else {
-      throw cause;
+  let attempts = 0;
+  for (;;) {
+    attempts += 1;
+    tx.run("SAVEPOINT command_attempt");
+    try {
+      const issued = issueInvoice(tx, actor, envelope);
+      tx.run("RELEASE command_attempt");
+      result = issued.result;
+      changes = issued.changes;
+      break;
+    } catch (cause) {
+      tx.run("ROLLBACK TO command_attempt");
+      tx.run("RELEASE command_attempt");
+      if (isSyncProtocolError(cause) && cause.code === "INSUFFICIENT_STOCK") {
+        decision = "rejected";
+        result = {
+          _tag: "rejected",
+          code: "INSUFFICIENT_STOCK",
+          message: cause.message,
+        };
+        break;
+      }
+      if (attempts >= MAX_COMMAND_ATTEMPTS) {
+        decision = "rejected";
+        result = {
+          _tag: "rejected",
+          code: "COMMAND_ABANDONED",
+          message: "The command could not be applied.",
+        };
+        break;
+      }
     }
   }
 
@@ -521,6 +539,7 @@ export const commitPreparedCommand = (
       commitSequence,
       resultJson: JSON.stringify(result),
       receivedAt: input.receivedAt,
+      attempts,
     }),
   );
   runWrite(
