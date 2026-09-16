@@ -97,7 +97,7 @@ for (const [label, text] of configTexts) {
   }
 }
 
-const syncConfig = read("powersync/sync-config.yaml");
+const syncConfig = read("powersync/prod/sync-config.yaml");
 for (const table of [
   "categories",
   "products",

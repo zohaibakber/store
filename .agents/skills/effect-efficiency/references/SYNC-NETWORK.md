@@ -29,7 +29,7 @@ Durable Object and no `/api/sync/live` path.
   then drop the cached database. `close()` alone leaves the previous org's
   rows on disk.
 
-Code: `packages/client-db`, `apps/web/src/lib/inventory`, `powersync/sync-config.yaml`,
+Code: `packages/client-db`, `apps/web/src/lib/inventory`, `powersync/prod/sync-config.yaml`,
 `apps/server` inventory routes and PowerSync credentials.
 
 ## Lessons from Zero
