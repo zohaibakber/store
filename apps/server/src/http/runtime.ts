@@ -21,7 +21,6 @@ import type { InventoryMutationResult } from "../inventory/mutation-database";
 
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
-  readonly powerSyncUrl: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
     headers: Headers,

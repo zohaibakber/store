@@ -1,16 +1,12 @@
 # Tabaaq design system
 
-Shared tokens for the desktop renderer (`apps/desktop`, Tailwind v4 + coss) and Android
-(`apps/android`, Jetpack Compose Material 3).
+Shared tokens for the desktop renderer (`apps/desktop`, Tailwind v4 + coss).
 
 Palette, type scale, radii, and component vocabulary live here once. Desktop
-reads them as CSS custom properties in `apps/desktop/src/styles.css`. Android
-mirrors the same numbers in Compose. When the two disagree, `styles.css` wins.
+reads them as CSS custom properties in `apps/desktop/src/styles.css`.
 
 Component recipes come from [coss ui](https://coss.com/ui) (Base UI + Tailwind),
-which is already what `apps/desktop/src/components/ui` is. Android does not rebuild
-coss. It reuses coss slot names, variants, and states, then paints them with
-Compose.
+which is already what `apps/desktop/src/components/ui` is.
 
 ---
 

@@ -6,17 +6,11 @@ import {
   decodeInvoiceSqliteRows,
   decodeProductSqliteRows,
   decodeStockMovementSqliteRows,
-  InventoryFailure,
-  INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE,
   inventoryOrganizationObjectReplicaName,
   inventoryReplicaScope,
-  makeLocalSaleOutbox,
-  openCatalog,
-  restoreSaleOutbox,
   sqliteCollectionOptions,
   syncStatusFromOutbox,
   createSyncStatusStore,
-  waitForInventoryFirstSync,
   decodeOutboxStatusRow,
   connectOrganizationObjectLiveTransport,
   type InventoryCollectionDescriptor,
@@ -26,7 +20,6 @@ import {
   type ReplicaLiveFeed,
   type ReplicaSqliteHandle,
 } from "@store/client-db";
-import { isConnectivityFailure } from "@store/contracts";
 import {
   StockRecommendationService,
   stockRecommendationLayer,
@@ -37,11 +30,9 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { HostInventoryScope } from "@/host-access";
-import { toastStoreError } from "@/lib/errors";
 import type { InventoryHost } from "@/lib/inventory-host";
-import { reportError } from "@/lib/report-error";
 
-import { makeInventoryActions, makeOrganizationObjectActions, persistSale } from "./actions";
+import { makeInventoryActions } from "./actions";
 import type { Inventory, InventoryActor } from "./types";
 
 export const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
@@ -68,94 +59,6 @@ const recommendStockFor = (scope: HostInventoryScope) => {
   };
 };
 
-export const openPowerSyncInventoryWorkspace = async (
-  host: InventoryHost,
-  scope: HostInventoryScope,
-): Promise<Inventory> => {
-  const scopeId = inventoryScopeId(host, scope);
-  const catalog = await openCatalog(
-    {
-      apiBaseUrl: host.apiBaseUrl,
-      authenticatedFetch: host.authenticatedFetch,
-      openPowerSyncDatabase: host.openPowerSyncDatabase,
-      bindCollections: (configs) => {
-        const dbClient = new DbClient();
-        return {
-          dbClient,
-          batches: dbClient.collection(collectionOptions(configs.batches)),
-          categories: dbClient.collection(collectionOptions(configs.categories)),
-          invoiceItems: dbClient.collection(collectionOptions(configs.invoiceItems)),
-          invoices: dbClient.collection(collectionOptions(configs.invoices)),
-          products: dbClient.collection(collectionOptions(configs.products)),
-          stockMovements: dbClient.collection(collectionOptions(configs.stockMovements)),
-          cleanupCollections: () => dbClient.cleanup(),
-        };
-      },
-      onUploadHalt: (failure) => {
-        reportError(failure, { op: "inventory-upload-halt", scopeId });
-        toastStoreError(failure);
-      },
-      onFirstSyncError: (cause) => {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        const expectedOffline =
-          isConnectivityFailure(message) ||
-          message === INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE ||
-          (cause instanceof InventoryFailure &&
-            (cause.reason._tag === "transport" || cause.reason._tag === "transient"));
-        if (expectedOffline) return;
-        reportError(cause, { op: "inventory-first-sync", scopeId });
-      },
-    },
-    scope.organizationId,
-  );
-  const salePersist = persistSale(catalog.dbClient, catalog.powerSync);
-  const saleOutbox = makeLocalSaleOutbox(scope.organizationId);
-  const restore = () => restoreSaleOutbox(saleOutbox, catalog, salePersist);
-  await restore();
-  void waitForInventoryFirstSync(catalog.powerSync)
-    .then(restore)
-    .catch((cause: unknown) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      const expectedOffline =
-        isConnectivityFailure(message) ||
-        message === INVENTORY_FIRST_SYNC_TIMEOUT_MESSAGE ||
-        (cause instanceof InventoryFailure &&
-          (cause.reason._tag === "transport" || cause.reason._tag === "transient"));
-      if (expectedOffline) return;
-      reportError(cause, { op: "inventory-sale-outbox-restore", scopeId });
-    });
-  const { recommendStock, disposeRecommendations } = recommendStockFor(scope);
-  const status = createSyncStatusStore({ _tag: "savedLocally" });
-  const tables = {
-    dbClient: catalog.dbClient,
-    batches: catalog.batches,
-    categories: catalog.categories,
-    invoiceItems: catalog.invoiceItems,
-    invoices: catalog.invoices,
-    products: catalog.products,
-    stockMovements: catalog.stockMovements,
-  };
-  const actions = makeInventoryActions(tables, host, actorFor(host, scope), {
-    persistSale: salePersist,
-    waitForUploadDrain: catalog.waitForUploadDrain,
-  });
-  return {
-    ...tables,
-    actions,
-    commands: { status: status.get },
-    sync: status.get(),
-    observeSync: status.observe,
-    recommendStock,
-    dispose: async () => {
-      try {
-        await disposeRecommendations();
-      } finally {
-        await catalog.dispose();
-      }
-    },
-  };
-};
-
 const replicaDescriptor = <Row extends InventoryCollectionRow>(
   id: string,
   source: InventoryCollectionDescriptor<Row>["source"],
@@ -178,16 +81,12 @@ const outboxStatus = async (replica: ReplicaSqliteHandle): Promise<InventorySync
   return syncStatusFromOutbox(statuses);
 };
 
-export const openOrganizationObjectInventoryWorkspace = async (
+export const openInventoryWorkspace = async (
   host: InventoryHost,
   scope: HostInventoryScope,
 ): Promise<Inventory> => {
-  const opener = host.openReplicaSqlite;
-  if (!opener) {
-    throw new Error("Organization-object inventory needs a replica SQLite opener.");
-  }
   const scopeId = inventoryScopeId(host, scope);
-  const replica = await opener(inventoryOrganizationObjectReplicaName(scopeId));
+  const replica = await host.openReplicaSqlite(inventoryOrganizationObjectReplicaName(scopeId));
   await replica.query(
     `update replica_state set organizationId = ?, userId = ?, replicaId = ? where id = 'singleton'`,
     [scope.organizationId, scope.userId, host.deviceId],
@@ -312,7 +211,7 @@ export const openOrganizationObjectInventoryWorkspace = async (
   }
   return {
     ...tables,
-    actions: makeOrganizationObjectActions(tables, host, actor, replica),
+    actions: makeInventoryActions(tables, host, actor, replica),
     commands: { status: status.get },
     sync: status.get(),
     observeSync: status.observe,
@@ -328,16 +227,6 @@ export const openOrganizationObjectInventoryWorkspace = async (
       }
     },
   };
-};
-
-export const openInventoryWorkspace = (
-  host: InventoryHost,
-  scope: HostInventoryScope,
-): Promise<Inventory> => {
-  if (host.backend._tag === "organizationObject") {
-    return openOrganizationObjectInventoryWorkspace(host, scope);
-  }
-  return openPowerSyncInventoryWorkspace(host, scope);
 };
 
 export const openInventory = openInventoryWorkspace;

@@ -47,7 +47,6 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - "@tanstack/db@0.8.3"
-  - "@tanstack/powersync-db-collection@0.1.62"
   - "@tanstack/react-db@0.3.3"
   - "@oxlint/binding-android-arm-eabi@1.83.0"
   - "@oxlint/binding-android-arm64@1.83.0"

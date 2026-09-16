@@ -13,17 +13,17 @@ _Avoid_: Session, active organization
 **Catalog.**
 The organization's products, categories, batches, invoices, and stock
 movements as one business record, not a bag of replica internals.
-_Avoid_: Inventory bag, collections, PowerSync database
+_Avoid_: Inventory bag, collections
 
 **Catalog replica.**
-The local SQLite copy of the catalog. Nightly desktop reads the organization
-Durable Object projection. Android and the opt-in PowerSync desktop path
-stream from Postgres.
+The local SQLite copy of the catalog. Desktop reads the organization Durable
+Object projection.
 _Avoid_: Local database, client DB, live inventory
 
 **Catalog write.**
-A row-list command that changes categories, products, or batches. Postgres
-commits it; the replica uploads it.
+A row-list command that changes categories, products, or batches. On `dev` and
+`prod`, Postgres still commits it. Desktop live inventory does not accept
+catalog commands.
 _Avoid_: SyncOperation, live sync, mutation envelope
 
 **Invoice.**

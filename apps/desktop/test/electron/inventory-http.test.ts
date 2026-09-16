@@ -14,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_INVENTORY_COMMAND_BODY_BYTES,
   assertInventoryRequestBodySize,
-  readInventoryHttpBackend,
   validatedInventoryUrl,
 } from "../../electron/inventory-http";
 
@@ -42,13 +41,13 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe("https://api.tabaaq.app/api/inventory/invoices");
   });
 
-  it("allows PowerSync credential fetches", () => {
-    expect(
+  it("rejects retired credential fetches", () => {
+    expect(() =>
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
         url: "https://api.tabaaq.app/api/powersync/credentials",
       }),
-    ).toBe("https://api.tabaaq.app/api/powersync/credentials");
+    ).toThrow("The inventory request is outside the configured inventory API.");
   });
 
   it("allows the sync command and receipt routes", () => {
@@ -180,16 +179,6 @@ describe("desktop inventory HTTP allowlist", () => {
         url: "https://api.tabaaq.app/api/inventory/not-a-command",
       }),
     ).toThrow("The inventory request is outside the configured inventory API.");
-  });
-
-  it("selects the inventory backend explicitly from configuration", () => {
-    expect(readInventoryHttpBackend(undefined)).toEqual({ _tag: "organizationObject" });
-    expect(readInventoryHttpBackend("")).toEqual({ _tag: "organizationObject" });
-    expect(readInventoryHttpBackend("organizationObject")).toEqual({
-      _tag: "organizationObject",
-    });
-    expect(readInventoryHttpBackend("powerSync")).toEqual({ _tag: "powerSync" });
-    expect(() => readInventoryHttpBackend("both")).toThrow("Unsupported inventory backend: both");
   });
 
   it("allows the command URL the renderer posts and never sees a token", async () => {

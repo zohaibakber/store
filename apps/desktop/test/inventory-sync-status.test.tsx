@@ -38,8 +38,7 @@ describe("InventorySyncStatusView", () => {
     expect(screen.getByRole("status").textContent).toBe("Local replica storage failed.");
   });
 
-  it("renders the shell from a local replica without opening PowerSync", async () => {
-    let powerSyncOpens = 0;
+  it("renders the shell from a local replica", async () => {
     const replica = openNodeReplicaSqlite({
       organizationId: "org-1",
       userId: "user-1",
@@ -48,12 +47,7 @@ describe("InventorySyncStatusView", () => {
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       authenticatedFetch: globalThis.fetch,
-      backend: { _tag: "organizationObject" },
       deviceId: "device",
-      openPowerSyncDatabase: async () => {
-        powerSyncOpens += 1;
-        throw new Error("must not open PowerSync");
-      },
       openReplicaSqlite: async () => replica,
     };
     const catalog = createCatalogLifetime({
@@ -70,7 +64,6 @@ describe("InventorySyncStatusView", () => {
     );
     expect(await screen.findByText("Caught up")).toBeTruthy();
     expect(screen.getByText("Ready shell")).toBeTruthy();
-    expect(powerSyncOpens).toBe(0);
     catalog.release();
   });
 });

@@ -13,22 +13,15 @@ const identity = {
 };
 
 describe("openInventoryWorkspace", () => {
-  it("opens the organization-object replica without PowerSync", async () => {
-    let powerSyncOpens = 0;
+  it("opens the organization-object replica", async () => {
     const replica = openNodeReplicaSqlite(identity);
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       authenticatedFetch: globalThis.fetch,
-      backend: { _tag: "organizationObject" },
       deviceId: "device",
-      openPowerSyncDatabase: async () => {
-        powerSyncOpens += 1;
-        throw new Error("must not open PowerSync");
-      },
       openReplicaSqlite: async () => replica,
     };
     const inventory = await openInventoryWorkspace(host, scope);
-    expect(powerSyncOpens).toBe(0);
     expect(inventory.sync).toEqual({ _tag: "caughtUp" });
     await expect(inventory.actions.createCategory({ name: "Tea" })).rejects.toThrow(
       "The organization-object backend does not accept catalog commands.",
@@ -36,23 +29,16 @@ describe("openInventoryWorkspace", () => {
     await inventory.dispose();
   });
 
-  it("does not fall back to PowerSync when the replica opener fails", async () => {
-    let powerSyncOpens = 0;
+  it("does not open a workspace when the replica opener fails", async () => {
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       authenticatedFetch: globalThis.fetch,
-      backend: { _tag: "organizationObject" },
       deviceId: "device",
-      openPowerSyncDatabase: async () => {
-        powerSyncOpens += 1;
-        throw new Error("must not open PowerSync");
-      },
       openReplicaSqlite: async () => {
         throw new Error("replica missing");
       },
     };
     await expect(openInventoryWorkspace(host, scope)).rejects.toThrow("replica missing");
-    expect(powerSyncOpens).toBe(0);
   });
 
   it("reports saved-locally from the outbox without waiting for a remote connection", async () => {
@@ -73,11 +59,7 @@ describe("openInventoryWorkspace", () => {
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       authenticatedFetch: globalThis.fetch,
-      backend: { _tag: "organizationObject" },
       deviceId: "device",
-      openPowerSyncDatabase: async () => {
-        throw new Error("must not open PowerSync");
-      },
       openReplicaSqlite: async () => replica,
     };
     const inventory = await openInventoryWorkspace(host, scope);

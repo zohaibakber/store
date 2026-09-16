@@ -90,8 +90,6 @@ and `vp build` (Turborepo fans them out per package).
   above. Inventory authority on nightly desktop is the organization Durable
   Object (SQLite). D1 is auth. Desktop defaults to that replica over
   `/api/sync/*`, including `/api/sync/live`. Catalog writes on that path are
-  unsupported; set `STORE_INVENTORY_BACKEND=powerSync` for the
-  Postgres/PowerSync desktop path. Android stays on PowerSync. `dev` and
-  `prod` still provision Neon. Nightly skips Neon and PowerSync. Inventory
-  can be driven from the local replica without the backend after the first
-  sync.
+  unsupported. `dev` and `prod` still provision Neon. Nightly skips Neon.
+  Inventory can be driven from the local replica without the backend after the
+  first sync.

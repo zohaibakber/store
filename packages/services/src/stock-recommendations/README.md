@@ -56,7 +56,7 @@ that spreadsheet applications might interpret as formulas.
 
 ## Data limits
 
-The report reflects the local PowerSync replica, including local sales. No-sales periods count as zero
+The report reflects the local catalog replica, including local sales. No-sales periods count as zero
 observed sales; the model cannot recover demand lost during stockouts or distinguish missing history
 from genuine inactivity. It does not model seasonality, promotions, supplier delivery performance,
 minimum supplier orders, or outstanding purchase orders. Product age is an observation proxy, not

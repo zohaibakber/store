@@ -11,7 +11,7 @@ import {
   SignOutInput,
   bearerToken,
   isTrustedOrigin,
-  powerSyncPublicJwks,
+  publicJwks,
   type AuthClientKind,
   type JwtConfiguration,
   type TokenSet,
@@ -159,9 +159,7 @@ export const authRoutes = (configuration: AuthHttpConfiguration) =>
         yield* router.add(
           "GET",
           "/.well-known/jwks.json",
-          Effect.succeed(
-            HttpServerResponse.jsonUnsafe(powerSyncPublicJwks(configuration.publicJwk)),
-          ),
+          Effect.succeed(HttpServerResponse.jsonUnsafe(publicJwks(configuration.publicJwk))),
         );
         yield* router.add(
           "POST",

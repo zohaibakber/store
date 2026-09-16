@@ -1,13 +1,13 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
-const requireText = (text, expected, label) => {
-  if (!text.includes(expected)) throw new Error(`${label} is missing ${expected}.`);
-};
 const forbidText = (text, forbidden, label) => {
   if (text.includes(forbidden)) throw new Error(`${label} still contains ${forbidden}.`);
+};
+const requireText = (text, expected, label) => {
+  if (!text.includes(expected)) throw new Error(`${label} is missing ${expected}.`);
 };
 
 const sourceFiles = (directory) => {
@@ -41,7 +41,6 @@ const configTexts = [
   [".github/workflows/ci.yml", read(".github/workflows/ci.yml")],
   [".github/workflows/infra.yml", read(".github/workflows/infra.yml")],
   [".github/workflows/release.yml", read(".github/workflows/release.yml")],
-  [".github/workflows/android.yml", read(".github/workflows/android.yml")],
   ["README.md", read("README.md")],
   ["apps/server/README.md", read("apps/server/README.md")],
   ["apps/desktop/README.md", read("apps/desktop/README.md")],
@@ -52,9 +51,12 @@ const forbiddenPackages = [
   "@electric-sql/client",
   "@electric-sql/react",
   "@tanstack/electric-db-collection",
+  "@powersync/common",
+  "@powersync/web",
+  "@tanstack/powersync-db-collection",
 ];
 const forbiddenPackagePrefix = "@clerk/";
-const leftoverEnvName = /\b(?:CLERK_|ELECTRIC_|VITE_CLERK|EXPO_PUBLIC_CLERK)[A-Z0-9_]*/u;
+const leftoverEnvName = /\b(?:CLERK_|ELECTRIC_|VITE_CLERK|EXPO_PUBLIC_CLERK|POWERSYNC_)[A-Z0-9_]*/u;
 const dependencyFields = [
   "dependencies",
   "devDependencies",
@@ -64,11 +66,14 @@ const dependencyFields = [
 
 const runtimeSource = [
   ...sourceFiles("apps/desktop/src/"),
+  ...sourceFiles("apps/desktop/electron/"),
   ...sourceFiles("apps/server/src/"),
   ...sourceFiles("packages/client-db/src/"),
+  ...sourceFiles("packages/auth/src/"),
+  new URL("apps/server/infra.ts", root).pathname,
 ].map((path) => readFileSync(path, "utf8"));
 
-for (const forbidden of [...forbiddenPackages, forbiddenPackagePrefix]) {
+for (const forbidden of [...forbiddenPackages, forbiddenPackagePrefix, "/api/powersync"]) {
   if (runtimeSource.some((source) => source.includes(forbidden))) {
     throw new Error(`Runtime source still imports ${forbidden}.`);
   }
@@ -97,21 +102,12 @@ for (const [label, text] of configTexts) {
   }
 }
 
-const syncConfig = read("powersync/sync-config.yaml");
-for (const table of [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-]) {
-  requireText(syncConfig, `FROM ${table}`, "PowerSync sync config");
+for (const leftover of ["apps/android", "powersync", ".github/workflows/android.yml"]) {
+  if (existsSync(new URL(leftover, root))) {
+    throw new Error(`${leftover} is still present.`);
+  }
 }
-requireText(syncConfig, "auth.parameter('org')", "PowerSync organization isolation");
 
-const server = read("apps/server/src/http/app.ts");
-requireText(server, '"/api/powersync/credentials"', "server credential route");
 forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
 forbidText(
@@ -119,7 +115,10 @@ forbidText(
   "migrateLegacyCatalog",
   "inventory database",
 );
+forbidText(read("apps/server/src/http/app.ts"), '"/api/powersync/credentials"', "server routes");
+forbidText(read(".github/workflows/ci.yml"), "POWERSYNC_URL", "CI workflow");
+forbidText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
+forbidText(read("turbo.json"), "STORE_INVENTORY_BACKEND", "turbo env");
 requireText(read("apps/auth/src/http.ts"), '"/.well-known/jwks.json"', "auth JWKS route");
-requireText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");
 
-console.log("PowerSync migration invariants are present.");
+console.log("Retired vendor leftovers are absent.");
