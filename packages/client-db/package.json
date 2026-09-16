@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./node-sqlite": "./src/replica/node-sqlite.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run --root ../.. packages/client-db/test"
   },
   "dependencies": {
+    "@journeyapps/wa-sqlite": "1.7.2",
     "@powersync/common": "1.57.3",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
+    "@store/sync": "workspace:*",
     "@tanstack/db": "0.9.0",
     "@tanstack/powersync-db-collection": "0.1.67",
     "better-sqlite3": "^12.4.1",

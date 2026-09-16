@@ -1,3 +1,8 @@
+const liveSocketOrigin = (apiOrigin: string): string => {
+  const url = new URL(apiOrigin);
+  return `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
+};
+
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
   readonly apiOrigin: string;
@@ -14,6 +19,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
     "'self'",
     input.apiOrigin,
     input.authOrigin,
+    liveSocketOrigin(input.apiOrigin),
     "https://*.powersync.journeyapps.com",
     "wss://*.powersync.journeyapps.com",
     "https://*.ingest.sentry.io",

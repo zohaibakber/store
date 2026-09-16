@@ -58,17 +58,18 @@ export type ReplicaQueryStamp = {
 };
 
 export interface ReplicaSqlExecutor {
-  readonly stamp: () => ReplicaQueryStamp;
+  readonly stamp: () => ReplicaQueryStamp | Promise<ReplicaQueryStamp>;
   readonly query: (
     sql: string,
     parameters: ReadonlyArray<SqliteParameter>,
-  ) => ReadonlyArray<SqliteResultRow>;
+  ) => ReadonlyArray<SqliteResultRow> | Promise<ReadonlyArray<SqliteResultRow>>;
 }
 
 export type ReplicaSqliteHandle = ReplicaSqlExecutor &
   ReplicaChangeFeed & {
     readonly workspaceToken: string;
     readonly close: () => void;
+    readonly publish: (notice: ReplicaCommitNotice) => void;
   };
 
 export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = {

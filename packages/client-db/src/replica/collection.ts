@@ -48,13 +48,13 @@ const decrement = (counts: Map<string, number>, key: string): number => {
   return next;
 };
 
-const readPlan = <Row extends InventoryCollectionRow>(
+const readPlan = async <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row> | InventoryProjectionDescriptor<Row>,
   dependencies: SqliteCollectionDependencies,
   plan: Pick<SqliteSubsetPlan, "sql" | "parameters">,
-): PlannedRead<Row> => {
-  const stamp = dependencies.executor.stamp();
-  const raw = dependencies.executor.query(plan.sql, plan.parameters);
+): Promise<PlannedRead<Row>> => {
+  const stamp = await dependencies.executor.stamp();
+  const raw = await dependencies.executor.query(plan.sql, plan.parameters);
   const rows = Effect.runSync(descriptor.decodeRows(raw));
   return { stamp, rows };
 };
@@ -92,7 +92,7 @@ const publishWindow = <Row extends InventoryCollectionRow>(
 };
 
 const startCollectionSync = <Row extends InventoryCollectionRow>(
-  readCurrent: (options: LoadSubsetOptions) => PlannedRead<Row>,
+  readCurrent: (options: LoadSubsetOptions) => Promise<PlannedRead<Row>>,
   descriptor: { readonly getKey: (row: Row) => string; readonly id: string },
   dependencies: SqliteCollectionDependencies,
   params: SyncParams<Row>,
@@ -128,7 +128,7 @@ const startCollectionSync = <Row extends InventoryCollectionRow>(
     signal?: AbortSignal,
   ): Promise<void> => {
     if (disposed || activeToken === undefined) return;
-    const current = readCurrent(acquisition.options);
+    const current = await readCurrent(acquisition.options);
     if (current.stamp.workspaceToken !== activeToken) return;
     if (current.stamp.generationId !== activeGeneration) {
       params.truncate();
@@ -183,7 +183,7 @@ const startCollectionSync = <Row extends InventoryCollectionRow>(
         await refillAcquisition(existing, options.signal);
         return;
       }
-      const current = readCurrent(options);
+      const current = await readCurrent(options);
       activeToken = current.stamp.workspaceToken;
       activeGeneration = current.stamp.generationId;
       const published = publishWindow(

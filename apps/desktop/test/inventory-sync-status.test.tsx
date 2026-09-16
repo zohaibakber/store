@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { openNodeReplicaSqlite } from "@store/client-db";
+import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 

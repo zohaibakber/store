@@ -1,4 +1,4 @@
-import { openNodeReplicaSqlite } from "@store/client-db";
+import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
 import { describe, expect, it } from "vitest";
 
 import type { InventoryHost } from "../src/lib/inventory-host";
@@ -31,7 +31,7 @@ describe("openInventoryWorkspace", () => {
     expect(powerSyncOpens).toBe(0);
     expect(inventory.sync).toEqual({ _tag: "caughtUp" });
     await expect(inventory.actions.createCategory({ name: "Tea" })).rejects.toThrow(
-      "submitOrganizationObjectCommand is not implemented.",
+      "The organization-object backend does not accept catalog commands.",
     );
     await inventory.dispose();
   });
