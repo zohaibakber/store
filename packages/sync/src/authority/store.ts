@@ -17,7 +17,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 
 import { betterSqliteMigrationTarget } from "../better-sqlite-target";
 import { runMigrations } from "../migrations";
-import { runSqliteTransaction, type SqliteDatabase } from "../sqlite";
+import { runSqlSavepoint, runSqliteTransaction, type SqliteDatabase } from "../sqlite";
 import {
   commitPreparedCommand,
   getReceipt,
@@ -54,7 +54,14 @@ export const runCommit = (
   actor: InventoryActor = lastUnitActor,
   receivedAt = 1_700_000_000_000,
 ): CommandReceipt =>
-  runSqliteTransaction(db, (tx) => commitPreparedCommand(tx, { actor, envelope, receivedAt }));
+  runSqliteTransaction(db, (tx) =>
+    commitPreparedCommand(tx, {
+      actor,
+      envelope,
+      receivedAt,
+      isolateAttempt: (run) => runSqlSavepoint(tx, "command_attempt", run),
+    }),
+  );
 
 export const runRegisterReplica = (
   db: SqliteDatabase,

@@ -39,7 +39,7 @@ import {
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import * as Schema from "effect/Schema";
 
-import { runWrite, type SqliteConnection } from "../sqlite";
+import { runWrite, SqliteTransactionAborted, type SqliteConnection } from "../sqlite";
 
 export type InventoryActor = {
   readonly organizationId: string;
@@ -416,9 +416,11 @@ export const commitPreparedCommand = (
     readonly actor: InventoryActor;
     readonly envelope: SyncCommandEnvelope;
     readonly receivedAt: number;
+    readonly isolateAttempt?: <A>(run: () => A) => A;
   },
 ): CommandReceipt => {
   const { actor, envelope } = input;
+  const isolateAttempt = input.isolateAttempt ?? (<A>(run: () => A) => run());
   if (envelope.organizationId !== actor.organizationId) {
     return fail("ORGANIZATION_MISMATCH", "The command does not belong to the active organization.");
   }
@@ -480,16 +482,13 @@ export const commitPreparedCommand = (
   let attempts = 0;
   for (;;) {
     attempts += 1;
-    tx.run("SAVEPOINT command_attempt");
     try {
-      const issued = issueInvoice(tx, actor, envelope);
-      tx.run("RELEASE command_attempt");
+      const issued = isolateAttempt(() => issueInvoice(tx, actor, envelope));
       result = issued.result;
       changes = issued.changes;
       break;
     } catch (cause) {
-      tx.run("ROLLBACK TO command_attempt");
-      tx.run("RELEASE command_attempt");
+      if (cause instanceof SqliteTransactionAborted) throw cause;
       if (isSyncProtocolError(cause)) {
         if (cause.code === "INSUFFICIENT_STOCK") {
           decision = "rejected";

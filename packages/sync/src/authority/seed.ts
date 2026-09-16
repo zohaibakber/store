@@ -7,7 +7,13 @@ import {
   LAST_UNIT_REPLICA_A,
   LAST_UNIT_REPLICA_B,
 } from "@store/contracts/sync/fixtures";
-import { batches, categories, inventoryState, products, replicas } from "@store/db/inventory.schema";
+import {
+  batches,
+  categories,
+  inventoryState,
+  products,
+  replicas,
+} from "@store/db/inventory.schema";
 
 import { runSqliteTransaction, type SqliteDatabase } from "../sqlite";
 import type { InventoryActor } from "./commands";

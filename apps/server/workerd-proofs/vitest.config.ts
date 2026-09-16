@@ -8,6 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../../..");
 
 export default defineConfig({
+  root: here,
   plugins: [
     cloudflareTest({
       wrangler: { configPath: path.join(here, "wrangler.jsonc") },

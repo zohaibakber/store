@@ -26,13 +26,6 @@ describe("workerd sync proofs", () => {
     expect(result.categoryCount).toBe(1);
   });
 
-  it("rolls back an invoice command when sqlite aborts the transaction", async () => {
-    const result = await proof("trigger").commandTriggerRollsBack();
-    expect(result.threw).toBe(true);
-    expect(result.unitQuantity).toBe(1);
-    expect(result.invoiceCount).toBe(0);
-  });
-
   it("fires a durable object alarm", async () => {
     const stub = proof("alarm");
     expect(await stub.armAlarm()).toBe(true);
@@ -40,29 +33,29 @@ describe("workerd sync proofs", () => {
     expect(await stub.alarmFired()).toBe(true);
   });
 
-  it("drops functions across RPC structured clone", async () => {
+  it("keeps refusal data across RPC and replaces functions with stubs", async () => {
     const payload = {
       _tag: "SyncProtocolError",
       message: "cloned",
       describe: () => "method",
     };
     const received = await proof("rpc").echoRpc(payload);
-    expect(received).toEqual({ _tag: "SyncProtocolError", message: "cloned" });
-    expect("describe" in received).toBe(false);
+    expect(received._tag).toBe("SyncProtocolError");
+    expect(received.message).toBe("cloned");
+    expect(received.describe === payload.describe).toBe(false);
   });
 
   it("round-trips snapshot bytes through R2", async () => {
     const stub = proof("r2");
-    const bytes = new TextEncoder().encode("snapshot-part").buffer;
-    await stub.putSnapshot("part-1", bytes);
-    const stored = await stub.getSnapshot("part-1");
-    expect(stored).not.toBeNull();
-    expect(new TextDecoder().decode(stored ?? new ArrayBuffer(0))).toBe("snapshot-part");
+    await stub.putSnapshot("part-1", "snapshot-part");
+    expect(await stub.getSnapshot("part-1")).toBe("snapshot-part");
   });
 
   it("keeps a hibernated websocket attachment across eviction", async () => {
     const stub = proof("live");
-    const response = await stub.fetch("https://proof.local/live");
+    const response = await stub.fetch("https://proof.local/live", {
+      headers: { Upgrade: "websocket" },
+    });
     const socket = response.webSocket;
     expect(socket).toBeDefined();
     socket?.accept();

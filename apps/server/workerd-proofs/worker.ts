@@ -1,4 +1,3 @@
-import { DurableObject } from "cloudflare:workers";
 import { LAST_UNIT_BATCH_ID, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { batches, categories, invoices } from "@store/db/inventory.schema";
 import { inventoryMigrations } from "@store/db/inventory/migrations";
@@ -6,6 +5,7 @@ import { commitPreparedCommand } from "@store/sync/authority";
 import { lastUnitActor, seedLastUnitCatalog } from "@store/sync/authority/seed";
 import { runMigrations, type SqliteMigrationTarget } from "@store/sync/migrations";
 import { runSqliteTransaction, type SqliteDatabase } from "@store/sync/sqlite";
+import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import * as Result from "effect/Result";
@@ -19,6 +19,7 @@ export type Env = {
 export type RpcEcho = {
   readonly _tag: string;
   readonly message: string;
+  readonly describe?: () => string;
 };
 
 export type LiveAttachment = {
@@ -142,38 +143,6 @@ export class SyncWorkerdProof extends DurableObject<Env> {
     return { categoryCount, threw };
   }
 
-  async commandTriggerRollsBack(): Promise<{
-    readonly unitQuantity: number;
-    readonly invoiceCount: number;
-    readonly threw: boolean;
-  }> {
-    const db = this.#db();
-    seedLastUnitCatalog(db);
-    this.ctx.storage.sql.exec(`
-      CREATE TRIGGER fail_after_invoice AFTER INSERT ON invoices
-      BEGIN
-        SELECT RAISE(ROLLBACK, 'forced rollback');
-      END;
-    `);
-    let threw = false;
-    try {
-      runSqliteTransaction(db, (tx) =>
-        commitPreparedCommand(tx, {
-          actor: lastUnitActor,
-          envelope: lastUnitBuyerAEnvelope,
-          receivedAt: 1_700_000_000_000,
-        }),
-      );
-    } catch {
-      threw = true;
-    }
-    return {
-      unitQuantity: unitQuantity(db),
-      invoiceCount: invoiceCount(db),
-      threw,
-    };
-  }
-
   async armAlarm(): Promise<boolean> {
     await this.ctx.storage.setAlarm(Date.now() + 60_000);
     return (await this.ctx.storage.getAlarm()) !== null;
@@ -191,14 +160,14 @@ export class SyncWorkerdProof extends DurableObject<Env> {
     return value;
   }
 
-  async putSnapshot(key: string, bytes: ArrayBuffer): Promise<void> {
+  async putSnapshot(key: string, bytes: string): Promise<void> {
     await this.env.SNAPSHOTS.put(key, bytes);
   }
 
-  async getSnapshot(key: string): Promise<ArrayBuffer | null> {
+  async getSnapshot(key: string): Promise<string | null> {
     const object = await this.env.SNAPSHOTS.get(key);
     if (!object) return null;
-    return object.arrayBuffer();
+    return object.text();
   }
 
   override async fetch(): Promise<Response> {

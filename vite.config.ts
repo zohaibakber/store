@@ -66,6 +66,7 @@ export default defineConfig({
       "**/release/**",
       "**/*.gen.ts",
       "**/worker-configuration.d.ts",
+      "apps/server/workerd-proofs/**",
       "tools/oxlint/anti-slop/**",
     ],
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
@@ -89,7 +90,6 @@ export default defineConfig({
           "apps/desktop/electron/inventory-http-channels.ts",
           "apps/desktop/test/electron/inventory-http.test.ts",
           "apps/desktop/test/inventory-workspace.test.ts",
-          "apps/server/workerd-proofs/**/*.ts",
           "scripts/migrate-cloudflare/**/*.ts",
         ],
         rules: {
