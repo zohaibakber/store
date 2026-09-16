@@ -2,6 +2,8 @@
 
 Status: proposed implementation. Updated 2026-09-15 for Cloudflare storage, Expo, and a one-click PostgreSQL import. This document replaces the previous PostgreSQL-authoritative design.
 
+Revised 2026-09-16 against four comparable systems and the replication literature. LiveStore, Electric, PowerSync, Replicache with Zero, and Linear's engine were each studied for what to adopt and what to refuse, alongside the invariant-confluence and CALM results. The central choice, an authoritative command executed in one serializable transaction, was confirmed from three independent directions and is unchanged. What changed is the surrounding protocol: overlays are reservations rather than asserted quantities, a published snapshot may lag head, replicas carry a state digest so divergence behind a plausible cursor is detectable, the authority declares its incarnation so a restore is not silently misread, one command is in flight per replica so the gap check means what it says, live frames are held while a catch-up hole is open, a deterministically failing command reaches a terminal decision, and receipt retention has a closed compaction scheme. Each of those is stated where it belongs below. The research notes and the design synthesis behind this revision are recorded in the agent store rather than here.
+
 ## 1. Target architecture
 
 Use **one SQLite-backed Durable Object per organization as the inventory authority**. Keep authentication, membership, and organization routing metadata in D1. Electron and Expo share the TypeScript command contracts, Effect sync engine, and TanStack DB query layer. Each device persists its replica and pending commands in local SQLite.
@@ -9,6 +11,22 @@ Use **one SQLite-backed Durable Object per organization as the inventory authori
 PostgreSQL is the source for a one-time import. The finished application has no PostgreSQL, Neon, Hyperdrive, or PowerSync dependency. Expo replaces the native Kotlin application. New clients start with fresh databases seeded from the imported Cloudflare data.
 
 The release uses a clean replacement: one new protocol and one supported data path. Remove old client compatibility, PowerSync queue translation, legacy receipt handling, dual writes, shadow replication, and stale-cache migration from implementation scope. The importer copies committed business records from PostgreSQL; it does not import device caches or old sync bookkeeping. Historical invoices, movements, and audit fields remain business data and are included in the import.
+
+### Why an authoritative command, and what that costs
+
+A coordination-free replicated type cannot decide which of two concurrent last-unit sales wins. The accurate statement of the constraint is narrower than "CRDTs cannot count": a bounded counter is a perfectly good replicated type and does preserve a floor, but it does so by partitioning decrement rights in advance, and when only one unit remains there is exactly one right to hold. Either a replica already owns it, or acquiring it is coordination. Operational transformation has the same problem from the other side: transforming two "sell the last unit" operations either applies both and goes negative, or drops one, which is a server veto wearing a different hat.
+
+This is the invariant-confluence result. Coordination-freedom, transactional availability, and convergence are simultaneously achievable exactly when the invariant is I-confluent, and a numeric floor under concurrent decrements is the canonical case that is not. Unique dense invoice numbers are likewise not I-confluent, which is why the authority allocates them; had uniqueness alone been sufficient, client-generated identifiers from disjoint namespaces would have been I-confluent and cheaper. A sale that reads a batch while another actor may delete it is also not I-confluent, which is why the read, the decision, and the writes share one transaction.
+
+Sources: Bailis et al. on invariant confluence, the CALM result on monotonicity, Shapiro et al. on strong eventual consistency being incomparable to serializability, Balegas et al. stating plainly that enforcing a stock limit on eventually consistent counters is impossible without bounded counters, and O'Neil's escrow method as the pre-CRDT form of the same idea.
+
+Three published engines were reviewed against this design and none of them can enforce the stock invariant without an authoritative command: Electric and PowerSync both replicate rows and leave writes to the application, and LiveStore's own maintainers wrote the proposal that says so, listing an architecture like this one as the alternative they declined on scope grounds rather than on correctness. Replicache is the closest published relative of this protocol, and Jepsen's review of it notes that the one capability it never exposed was a serializable transaction, achievable only by blocking for server acknowledgement. That is precisely what this design's synchronous single-writer command provides, so this is the specific extension that protocol family lacks rather than a reinvention of it.
+
+### What the single writer costs
+
+One serializable writer per organization bounds command throughput at roughly the reciprocal of the command transaction duration for that organization. Measure that duration directly and treat it as the capacity number; do not infer capacity from Worker request rates. Organizations do not contend with each other.
+
+The object commits, serves pull, exports snapshots, and fans out live frames. Storing a change log and serving one are different problems, and the published experience of engines that grew past this point is that serving gets separated from writing. That separation is not required at this scale and is deliberately out of scope, but record the exit: the change log can be shipped to an object index for serving while SQLite remains the sole writer, and pull CPU on the object is the signal to take it.
 
 ### D1 versus Durable Object SQLite
 
@@ -210,9 +228,19 @@ Share compatible SQLite domain column definitions where useful, but keep authori
 
 ### Transaction behavior to prove first
 
-The inspected latest Drizzle RC5 DO driver runs its transaction callback with `Effect.runSyncExit` inside `storage.transactionSync`. Consequently, command transactions may contain synchronous local SQL and pure computation only. Fetch, sleep, async hashing, socket sends, and other suspending Effects belong outside. The public transaction API looking Effect-native does not make an async callback safe.
+Two Drizzle SQLite drivers are relevant and only one of them belongs in the command path. Alchemy's `Drizzle.DurableObject` helper opens the Effect SQL driver, whose queries return Effects. Adopting it would mean either duplicating the stock and receipt decision or threading Effect SQL mechanics through every domain helper, which is two command implementations either way. Instead open `drizzle-orm/durable-sqlite` directly on `state.raw.storage`. That driver's database and `better-sqlite3`'s both extend `SQLiteAsyncDatabase<"sync", …>` with a synchronous transaction, so one command library runs unchanged in the object and under Node tests.
 
-Use one database adapter and a single transaction owner. Pass the explicit transaction handle into domain helpers. Do not nest independent Drizzle and Effect SQL transaction wrappers or issue raw `BEGIN`/`SAVEPOINT` through DO SQL. Test rollback, interruption, and concurrent commands on actual workerd before using this driver for inventory authority. [Cloudflare SQLite transaction rules](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#transactionsync).
+Command transactions may therefore contain synchronous local SQL and pure computation only. Fetch, sleep, async hashing, socket sends, and other suspending work belong outside. A transaction API that looks Effect-native does not make an async callback safe.
+
+Use one database adapter and a single transaction owner. Pass the explicit transaction handle into domain helpers. Do not nest independent transaction wrappers or issue raw `BEGIN`/`SAVEPOINT` through DO SQL, which `sql.exec` refuses in any case.
+
+Prove atomicity rather than reading it. The failure mode worth naming is not a driver that errors, it is an intermediate layer that swallows transaction control and leaves writes individually auto-committed. A published Cloudflare SQLite adapter does exactly that, suppressing `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` by string prefix, and its own documentation accepts the consequence that a partially failed batch leaves earlier rows behind. That trade is defensible when state is rebuildable from an append-only log and indefensible here, because a suppressed transaction does not raise: it leaves the invoice written, the stock decrement missing, and a receipt saying accepted.
+
+The driver selected above does not have that behavior. Its session emits no transaction-control statements at all and routes `transaction` through `storage.transactionSync`, which is the supported API. That was verified by inspection of the pinned package, which is necessary but not sufficient. Phase 0 must assert the negative on real workerd: begin a command, force a failure after the first domain write, and assert that write is gone. Run the same assertion under `better-sqlite3` so a driver swap cannot silently remove it.
+
+Record one more platform constraint. The SQLite session extension is unavailable inside a Durable Object; applying a changeset through the public storage API throws. The immutable change log must therefore carry explicit row images, which is a requirement rather than a design preference.
+
+[Cloudflare SQLite transaction rules](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#transactionsync).
 
 ## 6. Authoritative organization database
 
@@ -251,15 +279,22 @@ The object then performs one transaction:
 
 Unexpected storage failure rolls the whole operation back and remains retryable or observable. It does not become an invented business rejection. There is no PostgreSQL row lock, `nextval`, advisory lock, Hyperdrive connection, or cross-database delivery outbox in this path.
 
-One object routes an organization's calls, but asynchronous handlers can still interleave. Keep the read/decision/write section within the proven storage transaction and coordinate command/alarm metadata through one local owner. Organization A must not wait on organization B's work.
+One object routes an organization's calls, but asynchronous handlers can still interleave. Do not claim that one in-flight call prevents the next from starting; awaits interleave, and whole-handler serialization is not what makes the last-unit case correct. The proof is the explicit coordination permit plus the storage transaction. Keep the read, decision, and write section inside that transaction and coordinate command and alarm metadata through one local owner. Organization A must not wait on organization B's work.
+
+Actor identity and role come from the Worker's verified session, never from a field in the command envelope. This is the same rule already stated for routing and release identity, and it matters more here, because the actor is what the authorization half of the stock decision depends on.
 
 ### Inventory conflict rules
 
 - Revalidate stock and pack/unit conservation when issuing an invoice. Accept or reject the entire sale.
 - Use expected revisions for absolute counts, configuration changes, and destructive edits.
+- Use per-field last-writer-wins, ordered by commit sequence, for fields that carry no invariant: display names, category assignment, aisle, and sort order. Requiring an expected revision for these costs a rejection the user cannot act on. Keep rejection and expected revisions for stock, the prices used in a sale, and destructive edits. This is the register-plus-veto split that comparable engines settled on.
 - Use unique movements for receipts and adjustments; corrections create compensating business records.
 - An edit based on another pending edit carries a predecessor-operation reference, resolved through its receipt.
 - Persist commands immutably. Conflict resolution creates a new command ID.
+
+Reusing an operation identity with a different canonical payload hash is a permanent error, not a retry. Answer it as such and never execute it.
+
+A command that deterministically fails must reach a terminal decision. Insufficient stock already produces a durable rejection, but a command that passes envelope validation and then fails inside the transaction on every attempt would otherwise block that replica's queue forever, and the visible symptom is a till that silently stops selling. After a bounded number of identical failures, record a terminal decision for that operation, advance the replica sequence past it, and surface it. A poison command must not be able to wedge a device.
 
 These are rules for concurrent commands in the new application. They do not require importing any old sync history.
 
@@ -273,7 +308,21 @@ A frame identifies organization, epoch, subscription, from/to sequence, schema v
 
 The first subscription covers the operational catalog and current stock. Historical invoices/movements use explicit date/key partitions and coverage metadata. A query reports available coverage; an empty complete partition differs from a partition not downloaded yet. Network subscriptions remain predefined and are independent of TanStack's local query expression.
 
+Every replica in an organization receives the same rows. Pull output is not scoped by actor. A version-based cursor cannot convey a change in read authorization, because granting a user access does not modify the row and so does not advance its version; an actor-scoped pull would therefore never deliver a role change. Authorization is enforced at the boundary that admits the replica, not by filtering the log.
+
+Bound the first payload rather than assuming the catalog is small. The stated envelope of ten thousand products and fifty thousand batches is at the size where comparable engines measured client hydration becoming the bottleneck and moved to lazy loading. Hydrate the sell-path subset first, which is products, current batch quantities, and the configuration a sale reads, and fetch the rest on demand with coverage metadata describing what is present. Treat an eager whole-catalog subscription as a measured decision, not a default.
+
 Pull captures a fixed horizon and returns bounded complete transactions. If a valid transaction needs multiple transport parts, stage all parts before atomic local apply. Log metadata and returned rows must be read consistently with retention. A reconnect outside retained history receives a fresh snapshot while preserving commands created by the new client.
+
+### Detecting a divergent replica
+
+An ordered cursor proves a replica applied a contiguous range. It does not prove the replica holds the right rows. A defect that omits, duplicates, reorders, or partially applies a change, or storage corruption beneath the replica, leaves a device sitting at a perfectly plausible cursor with wrong stock and no way to notice. Comparable engines validate replicated state with a checksum for exactly this reason, and treat a mismatch as a reason to refetch.
+
+At complete horizons the authority returns a canonical digest per subscription partition, computed from the same row images the log carries. The replica persists the digest beside its cursor and recomputes it locally. A mismatch is not an error to log: it forces bounded repair of the affected partition, which is a refetch of that partition followed by re-verification. Coverage already distinguishes a partition awaiting a snapshot from one downloaded through a sequence, so the digest belongs with it.
+
+Also declare the incarnation of the authority. A restore, a wipe, or a rebuild that resets an object's storage leaves replicas holding cursors from a history that no longer exists, and nobody remembers to advance an epoch by hand. Give each authority incarnation an identity generated when it initializes, return it on registration and every pull, and have the replica compare it. A mismatch means the replica's cursor cannot be interpreted. The default response is to stop and surface it, not to self-wipe, because a till must never discard an unsent outbox on its own. The same check covers a point-in-time restore that moves the authority's record of a replica backward, which otherwise leaves that replica looking permanently ahead of the authority with no defined recovery.
+
+On opening a replica, assert that the authority's head is not behind the local applied cursor. If it is, refuse to open and surface it rather than proceeding.
 
 ### Durable delivery without an external outbox
 
@@ -281,13 +330,25 @@ The same DO commits inventory and the delivery target. It can publish committed 
 
 One alarm owner schedules pending delivery, authorization expiry, snapshot continuation, and bounded cleanup. Ensure a durable wake exists before a command can leave committed delivery work behind. With the synchronous Drizzle transaction path, pre-arm an alarm before committing work while holding the local coordination permit; preserve any earlier deadline. Alarm scheduling and completion use the same permit, so a handler cannot clear that wake between scheduling and commit. An unused wake is harmless. After each bounded pass, re-read durable targets before marking progress or rescheduling, including work committed during outbound I/O. Test a crash between every scheduling and commit boundary. Do not rely solely on a post-commit `waitUntil` attempt.
 
+The shared permit is what makes the ordering safe, and a token proving the arm completed is not a substitute for it. A value that can only be produced by arming the alarm is still worth having, because it lets the commit function refuse to run without one and makes the ordering a compile-time rule rather than a convention. But the token alone proves `setAlarm` returned at some point, not that the alarm still exists when the transaction commits: without the shared permit, an alarm pass can run in between, observe no work, and clear the wake. Require both, and add a test-only fold that asserts the armed deadline is never later than the earliest obligation the same transaction created.
+
+Publish before acknowledging. A caller must not observe an advanced commit sequence before the frame covering it exists to be read. Hold admission through publication under a single non-interruptible permit, and emit the acknowledgement only after publication completes.
+
 If the selected adapter can atomically combine the SQL update and alarm through supported storage APIs, prove that and keep it within the storage adapter. Do not add an async alarm call inside Drizzle's synchronous transaction callback.
 
 Alchemy's `processScheduledEvents` removes one-shot events before returning them to the caller in the inspected beta.77. Keep authoritative work in explicit database rows until it completes. Use one direct alarm owner instead of combining that helper with independent `setAlarm` calls.
 
 ### Hibernation and authentication
 
-Accept connections through `Cloudflare.upgrade()`. Use the returned socket wrapper with bounded message handlers. Restore `state.getWebSockets()` and decode versioned attachments on every activation. Attachments contain identity, subscription, lease expiry, and acknowledged position; they do not contain tokens or catalog data. [Alchemy hibernatable WebSockets](https://alchemy.run/cloudflare/compute/hibernatable-websockets/).
+Accept connections through `Cloudflare.upgrade()`. Use the returned socket wrapper with bounded message handlers. Restore `state.getWebSockets()` and decode versioned attachments on every activation. Attachments contain identity, subscription correlation, lease expiry, and acknowledged position; they do not contain tokens or catalog data. Close the socket rather than guessing when an attachment fails to decode. [Alchemy hibernatable WebSockets](https://alchemy.run/cloudflare/compute/hibernatable-websockets/).
+
+Separate the two facts that look like one. A socket's acknowledged position belongs in that socket's attachment, needs to survive hibernation of that socket, and dies with it. How far the authority has actually published belongs in a durable row, because that is what a wake has to reconcile after the socket is gone. Storing only the first loses delivery obligations; storing acknowledgement durably writes on every message for no benefit.
+
+Bound the frame payload well below one megabyte. Frames just under that limit are reported to fail on hibernated Durable Object sockets, so cap the transport payload around nine hundred thousand bytes and treat the cap as a protocol constant rather than a tuning knob discovered in production.
+
+Hold live frames until an outstanding catch-up is complete. A replica that applies a live frame while an HTTP pull hole is still unfilled can overwrite a newer row with an older one, and this is a mistake engines in this family have made and documented. Model the feed as catching-up or following, apply live frames only while following, and drop or queue them otherwise. Socket delivery is an optimization over authoritative HTTP pull, so a socket failure must never be a correctness failure.
+
+Treat an unknown field or an unknown variant as a declared policy rather than an accident. An unrecognized column on a row image is ignored with telemetry, because a replica one release behind should keep selling. An unrecognized decision or transaction kind fails and refuses to advance the cursor, because guessing there means diverging silently.
 
 Tickets are short-lived, single-use, scoped to the user and organization, and consumed transactionally in the target DO. Recheck the authorization lease before protected delivery after wake. D1 auth and inventory commits are separate boundaries; document and test the allowed membership-revocation interval. Keep auth refresh coordinated across upload and download.
 
@@ -304,6 +365,16 @@ Electron and Expo run the same Effect engine and command state machine. Host ada
 Local SQLite owns confirmed rows, sparse optimistic overlays, pending commands, receipt/integration state, coverage, and the applied cursor. Every local transaction also increments a publication version. Scope databases by environment, user, and organization. Keep a workspace ownership token and snapshot generation separate from the local publication version.
 
 Submitting a command persists its canonical payload, IDs, replica sequence, and optimistic projection in one transaction. Return saved status after local commit. Storage failure cannot leave a permanent successful-looking mutation. Persist `pending`, `sending`, `accepted-awaiting-integration`, `integrated`, and `rejected` states as appropriate. Recover interrupted sending by receipt lookup or identical retry.
+
+A receipt is not integration. A command leaves `accepted-awaiting-integration` only when the replica has applied the commit sequence the receipt names. Treating the HTTP receipt as completion makes the interface flicker between the receipt and the row, and it reports a sale as settled before the stock effect is locally visible.
+
+Upload at most one command per replica at a time. The authority rejects a sequence gap, correctly, so a client that fires every pending command concurrently manufactures gap errors under ordinary packet loss: a later sequence arrives first and is refused for a hole that only exists in flight. One in-flight command makes the gap check mean what it says. Claim the lowest pending sequence durably before sending, and on an uncertain outcome look the receipt up before retrying identically.
+
+Settle the claim with an Effect finalizer, not a generator `try/finally`. A `finally` block inside a generator does not run when the fiber is interrupted, so an interrupted upload would leave a command marked as sending forever. Use `Effect.acquireUseRelease` or `Effect.ensuring` so the release path returns a still-matching claim to pending with its outcome recorded as uncertain.
+
+Never hold the local database permit across network work. Acquire it, commit, release it, then send.
+
+A newly minted replica identity must not orphan an outbox. Opening local storage under a new identity while unsent commands remain either adopts the previous identity's queue or refuses to open. Silently starting fresh loses sales that were durably accepted locally and never sent.
 
 Apply a remote transaction's authoritative rows, operation decisions, overlay reconciliation, coverage, and cursor together. Publish query changes after commit. Applying the same transaction twice cannot decrement stock twice.
 
@@ -390,11 +461,19 @@ Initial migration snapshots come from the imported dataset before public writes 
 5. Publish the manifest only after every part exists. Include empty-table/partition evidence and the exact horizon.
 6. A client imports parts into a replacement generation, catches up, reconciles its current pending commands, and atomically activates it.
 
+A published snapshot is allowed to lag the log head, and that is what keeps it cheap. It is stamped with the sequence it reflects, and the client always pull-completes from that sequence to head after importing. This is the shape Raft snapshots, Linear's dumps, and Electric's snapshot boundary all use, and it means the job does not have to present a paged copy as an instantaneous view of now.
+
+Capture the repair horizon after the copy finishes, not before it. Fixing the horizon first and replaying forward only through that earlier point cannot remove rows created after it or restore rows deleted after it, so the staged generation would keep content the authority no longer has. Either capture the horizon after the copy, or read the copy from a genuinely historical view.
+
 Only one job owns a generation. A job token fences late completions, and repeated R2 exports must match the expected content. Network I/O occurs outside SQL transactions. The DO alarm schedules bounded continuation; the caller never keeps one HTTP request open to copy the organization.
 
 Snapshot staging competes with inventory for the DO's storage and event time. Cap staging size, retained log bytes, job duration, and per-event work. If the largest tenant cannot fit a verified snapshot build with headroom, revise export/storage design before launch.
 
-Advance the retention floor only past the ranges still required by a build or active download lease. Delete physical rows in bounded batches. Retain command decisions or compact replica deduplication evidence long enough that a repeated command cannot execute twice. A socket ACK is flow control, not global permission to erase recovery evidence.
+Advance the retention floor only past the ranges still required by a build or active download lease. A client that has selected a snapshot horizon and is still downloading holds a durable lease on it; retention must not pass a leased horizon and strand a client mid-import. Delete physical rows in bounded batches.
+
+Collapse successive images of the same row between snapshots. A new replica needs only the latest image of a row, so repeated updates can compact to one, provided a replica already in flight never skips an insert or a delete. This cuts how often a snapshot is needed at all.
+
+Close the retention question for receipts and tickets rather than leaving it open. Per-command receipts are not needed forever: maintain a compacted per-replica processed watermark, answer a replay at or below it as already processed rather than re-executing it, and delete receipts below it. Consumed tickets expire on their own lifetime. Tie retention to replica registration rather than a fixed window, so a device left in a drawer does not get its evidence collected and then double-sell on return, and so an abandoned replica does not pin storage forever. A socket acknowledgement is flow control, not global permission to erase recovery evidence.
 
 Use DO point-in-time recovery and tested exports for authoritative recovery, with D1 backup/recovery for auth and routing. After an authoritative restore, establish a new sync epoch and reconcile commands from the new protocol before resuming writes. This is an operational recovery rule for Cloudflare data, not a legacy migration mechanism.
 
@@ -405,6 +484,8 @@ Use DO point-in-time recovery and tested exports for authoritative recovery, wit
 - Resolve and pin the latest candidate versions in section 2. Align root dependencies, catalog, overrides, and direct Effect adapters.
 - Resolve the Alchemy/Drizzle peer mismatch with verified source compatibility and runtime tests.
 - Prove DO Drizzle commit/rollback and alarm recovery on workerd. Build and activate a migrated object.
+- Assert the atomicity negative on workerd: force a failure after the first domain write inside a command transaction and prove that write is gone. Run the same assertion under `better-sqlite3`. A suppressed transaction does not raise, so only this test distinguishes a real transaction from individually auto-committed statements.
+- Measure the command transaction duration, which is the organization's throughput bound.
 - Prove an Expo SQLite transaction and TanStack query on Android/iOS with the shared Effect runtime. Measure synchronous driver blocking and choose the local adapter.
 - Measure source tenant size, command rate, invoice size, device count, retention needs, and import duration against Cloudflare limits.
 
@@ -466,25 +547,38 @@ Exit: one Cloudflare authority path, one shared TypeScript sync implementation, 
 
 ## 12. Required tests and performance evidence
 
-| Test                                       | Required evidence                                                                              |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| DO transaction failure                     | Invoice, items, stock, receipt, and log all commit or all roll back                            |
-| Async work inside DO transaction           | Unsupported suspension fails before an accepted outcome; transaction boundary remains explicit |
-| Same operation retried after lost response | One business effect and the same durable receipt                                               |
-| Concurrent last-unit sales                 | One accepted sale; the other receives a domain rejection                                       |
-| Separate organizations                     | One organization's work does not block another's command execution                             |
-| Local process death                        | Original command identity and projection survive on Electron and Expo                          |
-| Receipt-first and delta-first delivery     | The local stock projection integrates once without flicker/double decrement                    |
-| Query subscription handoff/unload          | No missed local version, retained orphan query, or unbounded memory growth                     |
-| Mixed collection publication               | Combined invoice/stock result observes one committed local version                             |
-| Hibernation, expiry, and deploy            | Checked attachments, bounded authorization lifetime, and complete resume                       |
-| Alarm/commit interruption                  | Committed delivery work always has a durable recovery path                                     |
-| Snapshot/import interruption               | Resume or restart preserves the manifest identity and pending new-client commands              |
-| Migration validation                       | Mapped business rows, totals, stock, and relationships match the source                        |
-| Migration replay                           | Repeated chunks/action do not duplicate or overwrite active data                               |
-| Publication-response loss                  | Read-back identifies the active release; no second cutover                                     |
-| Expo lifecycle                             | Foreground resume works after background suspension and process termination                    |
-| Storage failure                            | No false saved/accepted outcome; durable work remains recoverable                              |
+| Test                                        | Required evidence                                                                                                    |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| DO transaction failure                      | Invoice, items, stock, receipt, and log all commit or all roll back                                                  |
+| Async work inside DO transaction            | Unsupported suspension fails before an accepted outcome; transaction boundary remains explicit                       |
+| Same operation retried after lost response  | One business effect and the same durable receipt                                                                     |
+| Concurrent last-unit sales                  | One accepted sale; the other receives a domain rejection                                                             |
+| Separate organizations                      | One organization's work does not block another's command execution                                                   |
+| Local process death                         | Original command identity and projection survive on Electron and Expo                                                |
+| Receipt-first and delta-first delivery      | The local stock projection integrates once without flicker/double decrement                                          |
+| Query subscription handoff/unload           | No missed local version, retained orphan query, or unbounded memory growth                                           |
+| Mixed collection publication                | Combined invoice/stock result observes one committed local version                                                   |
+| Hibernation, expiry, and deploy             | Checked attachments, bounded authorization lifetime, and complete resume                                             |
+| Alarm/commit interruption                   | Committed delivery work always has a durable recovery path                                                           |
+| Snapshot/import interruption                | Resume or restart preserves the manifest identity and pending new-client commands                                    |
+| Migration validation                        | Mapped business rows, totals, stock, and relationships match the source                                              |
+| Migration replay                            | Repeated chunks/action do not duplicate or overwrite active data                                                     |
+| Publication-response loss                   | Read-back identifies the active release; no second cutover                                                           |
+| Expo lifecycle                              | Foreground resume works after background suspension and process termination                                          |
+| Storage failure                             | No false saved/accepted outcome; durable work remains recoverable                                                    |
+| Suppressed transaction control              | A forced mid-command failure leaves no earlier domain write behind, under both drivers                               |
+| Third-party decrement during a pending sale | Visible stock is confirmed plus reservations, never an asserted absolute                                             |
+| Poison command                              | A command that always fails reaches a terminal decision and does not wedge the replica's queue                       |
+| Divergent replica                           | A partition digest mismatch is detected and repaired; missing, duplicate, reordered, and corrupted frames are caught |
+| Authority incarnation change                | A wiped or restored authority is detected and the replica stops rather than discarding its outbox                    |
+| Replica ahead of authority                  | Opening refuses when the authority head is behind the local applied cursor                                           |
+| New replica identity with a pending outbox  | The queue is adopted or opening refuses; unsent commands are never silently dropped                                  |
+| Live frame during catch-up                  | A live frame never overwrites a newer row while a pull hole is outstanding                                           |
+| Frame size ceiling                          | A frame at the transport cap is delivered on a hibernated socket                                                     |
+| Retention against a download lease          | Retention does not pass a horizon a client is still importing                                                        |
+| Receipt compaction                          | A replay at or below the processed watermark is answered as already processed, not re-executed                       |
+| Unknown field and unknown variant           | An unknown column is ignored with telemetry; an unknown decision kind refuses to advance the cursor                  |
+| Publication before acknowledgement          | No caller observes a commit sequence before the frame covering it is readable                                        |
 
 Use real workerd storage tests for DO behavior and real SQLite for client transactions. Use Effect test clocks for engine retries, not as evidence that Cloudflare's alarms ran. Test the latest adapters' transaction semantics directly. Run Android and iOS development/production builds; TypeScript checking alone cannot prove native module compatibility.
 
