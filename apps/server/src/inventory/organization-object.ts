@@ -1,9 +1,5 @@
 import { LiveSessionAttachment } from "@store/contracts";
 import { inventoryMigrations } from "@store/db/inventory/migrations";
-import {
-  runMigrations,
-  type SqliteMigrationTarget,
-} from "../../../../packages/sync/src/migrations";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import * as Clock from "effect/Clock";
@@ -16,6 +12,11 @@ import * as Semaphore from "effect/Semaphore";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import {
+  runMigrations,
+  type SqliteMigrationTarget,
+} from "../../../../packages/sync/src/migrations";
+import { runSqliteTransaction } from "../../../../packages/sync/src/sqlite";
 import {
   acquireRoutedSnapshot,
   commitRoutedCommand,
@@ -38,12 +39,21 @@ import {
   unimplementedLiveDelivery,
   unimplementedWakePass,
   type InventoryTransactionHost,
+  type OrganizationInventoryRpc,
+  type RoutedCommandCallWire,
+  type RoutedLiveTicketCallWire,
+  type RoutedPullCallWire,
+  type RoutedReceiptCallWire,
+  type RoutedReplicaCallWire,
+  type RoutedSnapshotCallWire,
+  type RoutedSnapshotPartCallWire,
   type RpcReply,
 } from "./organization-host";
 
-export class OrganizationInventoryObject extends Cloudflare.DurableObject<OrganizationInventoryObject>()(
-  "OrganizationInventoryObject",
-) {}
+export class OrganizationInventoryObject extends Cloudflare.DurableObject<
+  OrganizationInventoryObject,
+  OrganizationInventoryRpc
+>()("OrganizationInventoryObject") {}
 
 const MigrationKeyRow = Schema.Struct({
   key: Schema.String,
@@ -68,17 +78,28 @@ export const openOrganizationInventoryDatabase = (
   Effect.sync(() => {
     const storage = state.raw.storage;
     runMigrations(inventoryMigrations, durableSqliteMigrationTarget(storage));
-    return drizzle(storage);
+    const db = drizzle(storage);
+    return {
+      transaction: (run) => runSqliteTransaction(db, run),
+    };
   });
 
 const unreadableCall = <Value>(): RpcReply<Value> =>
   rpcProtocolFailure("INVALID_OPERATION", "The inventory call was unreadable.");
 
-const decodeRpcCall = <A, I, RD>(schema: Schema.Codec<A, I, RD>, input: unknown) =>
-  Schema.decodeUnknownEffect(schema)(input).pipe(
-    Effect.map((value) => ({ _tag: "ok" as const, value })),
-    Effect.catchTag("SchemaError", () => Effect.succeed({ _tag: "invalid" as const })),
-  );
+const decodeRpcCall = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  input: S["Encoded"],
+): Effect.Effect<RoutedRpcCallResult<S["Type"]>> =>
+  Effect.sync((): RoutedRpcCallResult<S["Type"]> => {
+    const decoded = Schema.decodeUnknownResult(schema)(input);
+    if (Result.isFailure(decoded)) return { _tag: "invalid" };
+    return { _tag: "ok", value: decoded.success };
+  });
+
+type RoutedRpcCallResult<A> =
+  | { readonly _tag: "ok"; readonly value: A }
+  | { readonly _tag: "invalid" };
 
 const prearmCommit = (state: Cloudflare.DurableObjectState["Service"]) =>
   Effect.gen(function* () {
@@ -122,49 +143,51 @@ export const organizationInventoryObjectInit = Effect.gen(function* () {
       );
 
     return {
-      registerReplica: (input: unknown) =>
+      registerReplica: (callWire: RoutedReplicaCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedReplicaCall, input);
+          const call = yield* decodeRpcCall(RoutedReplicaCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           const now = yield* Clock.currentTimeMillis;
           return runLibraryCommand(() => registerRoutedReplica(db, call.value, now));
         }),
-      submitCommand: (input: unknown) =>
+      submitCommand: (callWire: RoutedCommandCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedCommandCall, input);
+          const call = yield* decodeRpcCall(RoutedCommandCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           const receivedAt = yield* Clock.currentTimeMillis;
           return yield* withWake(
-            Effect.sync(() => runLibraryCommand(() => commitRoutedCommand(db, call.value, receivedAt))),
+            Effect.sync(() =>
+              runLibraryCommand(() => commitRoutedCommand(db, call.value, receivedAt)),
+            ),
           );
         }),
-      getReceipt: (input: unknown) =>
+      getReceipt: (callWire: RoutedReceiptCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedReceiptCall, input);
+          const call = yield* decodeRpcCall(RoutedReceiptCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           return runLibraryCommand(() => getRoutedReceipt(db, call.value));
         }),
-      pull: (input: unknown) =>
+      pull: (callWire: RoutedPullCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedPullCall, input);
+          const call = yield* decodeRpcCall(RoutedPullCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           return runLibraryCommand(() => pullRoutedTransactions(db, call.value));
         }),
-      acquireSnapshot: (input: unknown) =>
+      acquireSnapshot: (callWire: RoutedSnapshotCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedSnapshotCall, input);
+          const call = yield* decodeRpcCall(RoutedSnapshotCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           return runLibraryCommand(() => acquireRoutedSnapshot(db, call.value));
         }),
-      mintLiveTicket: (input: unknown) =>
+      mintLiveTicket: (callWire: RoutedLiveTicketCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedLiveTicketCall, input);
+          const call = yield* decodeRpcCall(RoutedLiveTicketCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           return runLibraryCommand(() => mintRoutedLiveTicket(db, call.value));
         }),
-      locateSnapshotPart: (input: unknown) =>
+      locateSnapshotPart: (callWire: RoutedSnapshotPartCallWire) =>
         Effect.gen(function* () {
-          const call = yield* decodeRpcCall(RoutedSnapshotPartCall, input);
+          const call = yield* decodeRpcCall(RoutedSnapshotPartCall, callWire);
           if (call._tag === "invalid") return unreadableCall();
           return runLibraryCommand(() => locateRoutedSnapshotPart(db, call.value));
         }),
@@ -190,7 +213,7 @@ export const organizationInventoryObjectInit = Effect.gen(function* () {
         ),
       webSocketMessage: () => Effect.sync(() => unimplementedLiveDelivery()),
       webSocketClose: () => Effect.void,
-    };
+    } satisfies OrganizationInventoryRpc;
   });
 });
 

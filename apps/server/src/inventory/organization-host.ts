@@ -29,11 +29,14 @@ import {
   registerReplica,
   type InventoryDb,
 } from "@store/sync";
-import { RpcCallError } from "alchemy/Cloudflare";
-import { eq } from "drizzle-orm";
+import type { RuntimeContext } from "alchemy";
+import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import type * as HttpBody from "effect/unstable/http/HttpBody";
+import type * as HttpServerError from "effect/unstable/http/HttpServerError";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
@@ -170,6 +173,14 @@ export const RoutedLiveTicketCall = Schema.Struct({
   input: LiveTicketRequest,
 });
 
+export type RoutedReplicaCallWire = typeof RoutedReplicaCall.Encoded;
+export type RoutedCommandCallWire = typeof RoutedCommandCall.Encoded;
+export type RoutedReceiptCallWire = typeof RoutedReceiptCall.Encoded;
+export type RoutedPullCallWire = typeof RoutedPullCall.Encoded;
+export type RoutedSnapshotCallWire = typeof RoutedSnapshotCall.Encoded;
+export type RoutedSnapshotPartCallWire = typeof RoutedSnapshotPartCall.Encoded;
+export type RoutedLiveTicketCallWire = typeof RoutedLiveTicketCall.Encoded;
+
 const isSyncProtocolError = Schema.is(SyncProtocolError);
 
 export const rpcSuccess = <Value>(value: Value): RpcSuccess<Value> => ({
@@ -225,11 +236,11 @@ export class SnapshotObjectUnavailable extends Schema.TaggedError<SnapshotObject
 export interface SnapshotObjectsContract {
   readonly getObject: (
     objectKey: string,
-  ) => Effect.Effect<Uint8Array | undefined, SnapshotObjectUnavailable>;
+  ) => Effect.Effect<Uint8Array | undefined, SnapshotObjectUnavailable, RuntimeContext>;
   readonly putObject: (
     objectKey: string,
     bytes: Uint8Array,
-  ) => Effect.Effect<void, SnapshotObjectUnavailable>;
+  ) => Effect.Effect<void, SnapshotObjectUnavailable, RuntimeContext>;
 }
 
 export class SnapshotObjects extends Context.Service<SnapshotObjects, SnapshotObjectsContract>()(
@@ -239,8 +250,12 @@ export class SnapshotObjects extends Context.Service<SnapshotObjects, SnapshotOb
 export const makeR2SnapshotObjects = (client: {
   readonly get: (
     key: string,
-  ) => Effect.Effect<{ readonly bytes: () => Effect.Effect<Uint8Array, unknown> } | null, unknown>;
-  readonly put: (key: string, value: Uint8Array) => Effect.Effect<unknown, unknown>;
+  ) => Effect.Effect<
+    { readonly bytes: () => Effect.Effect<Uint8Array, unknown> } | null,
+    unknown,
+    RuntimeContext
+  >;
+  readonly put: (key: string, value: Uint8Array) => Effect.Effect<unknown, unknown, RuntimeContext>;
 }): SnapshotObjectsContract => ({
   getObject: Effect.fn("SnapshotObjects.getObject")(function* (objectKey: string) {
     const object = yield* client.get(objectKey).pipe(
@@ -261,7 +276,10 @@ export const makeR2SnapshotObjects = (client: {
       ),
     );
   }),
-  putObject: Effect.fn("SnapshotObjects.putObject")(function* (objectKey: string, bytes: Uint8Array) {
+  putObject: Effect.fn("SnapshotObjects.putObject")(function* (
+    objectKey: string,
+    bytes: Uint8Array,
+  ) {
     yield* client.put(objectKey, bytes).pipe(
       Effect.mapError((cause) =>
         SnapshotObjectUnavailable.make({
@@ -278,7 +296,9 @@ const decodeImportId = Schema.decodeUnknownSync(InventoryImportId);
 const decodeReleaseId = Schema.decodeUnknownSync(InventoryReleaseId);
 const decodeEpoch = Schema.decodeUnknownSync(SyncEpoch);
 
-export const loadStoredInventoryIdentity = (tx: InventoryDb): StoredInventoryIdentity | undefined => {
+export const loadStoredInventoryIdentity = (
+  tx: InventoryDb,
+): StoredInventoryIdentity | undefined => {
   const row = tx.select().from(inventoryState).get();
   if (!row) return undefined;
   const organizationId = decodeOrganizationId(row.organizationId);
@@ -426,37 +446,72 @@ export const mintRoutedLiveTicket = (
 
 export type OrganizationInventoryRpc = {
   readonly registerReplica: (
-    call: RoutedRpcCall<RegisterReplicaRequest>,
-  ) => Effect.Effect<RpcReply<RegisterReplicaResult>, RpcCallError>;
+    call: RoutedReplicaCallWire,
+  ) => Effect.Effect<RpcReply<RegisterReplicaResult>, never, RuntimeContext>;
   readonly submitCommand: (
-    call: RoutedRpcCall<SyncCommandEnvelope>,
-  ) => Effect.Effect<RpcReply<CommandReceipt>, RpcCallError>;
+    call: RoutedCommandCallWire,
+  ) => Effect.Effect<RpcReply<CommandReceipt>, never, RuntimeContext>;
   readonly getReceipt: (
-    call: RoutedRpcCall<{ readonly operationId: string }>,
-  ) => Effect.Effect<RpcReply<ReceiptLookup>, RpcCallError>;
+    call: RoutedReceiptCallWire,
+  ) => Effect.Effect<RpcReply<ReceiptLookup>, never, RuntimeContext>;
   readonly pull: (
-    call: RoutedRpcCall<SyncPullRequest>,
-  ) => Effect.Effect<RpcReply<SyncPullResult>, RpcCallError>;
+    call: RoutedPullCallWire,
+  ) => Effect.Effect<RpcReply<SyncPullResult>, never, RuntimeContext>;
   readonly acquireSnapshot: (
-    call: RoutedRpcCall<AcquireSnapshotRequest>,
-  ) => Effect.Effect<RpcReply<AcquireSnapshotResult>, RpcCallError>;
+    call: RoutedSnapshotCallWire,
+  ) => Effect.Effect<RpcReply<AcquireSnapshotResult>, never, RuntimeContext>;
   readonly mintLiveTicket: (
-    call: RoutedRpcCall<LiveTicketRequest>,
-  ) => Effect.Effect<RpcReply<LiveTicket>, RpcCallError>;
+    call: RoutedLiveTicketCallWire,
+  ) => Effect.Effect<RpcReply<LiveTicket>, never, RuntimeContext>;
   readonly locateSnapshotPart: (
-    call: RoutedRpcCall<{
-      readonly snapshotId: SnapshotId;
-      readonly partNumber: number;
-    }>,
-  ) => Effect.Effect<RpcReply<SnapshotPartLookup>, RpcCallError>;
+    call: RoutedSnapshotPartCallWire,
+  ) => Effect.Effect<RpcReply<SnapshotPartLookup>, never, RuntimeContext>;
+  readonly fetch: Effect.Effect<
+    HttpServerResponse.HttpServerResponse,
+    HttpServerError.HttpServerError | HttpBody.HttpBodyError,
+    | HttpServerRequest.HttpServerRequest
+    | Scope.Scope
+    | Cloudflare.DurableObjectState
+    | RuntimeContext
+  >;
+  readonly alarm: (
+    alarmInfo?: Cloudflare.AlarmInvocationInfo,
+  ) => Effect.Effect<void, never, RuntimeContext>;
+  readonly webSocketMessage: (
+    socket: Cloudflare.WebSocket,
+    message: string | ArrayBuffer,
+  ) => Effect.Effect<void>;
+  readonly webSocketClose: (
+    socket: Cloudflare.WebSocket,
+    code: number,
+    reason: string,
+    wasClean: boolean,
+  ) => Effect.Effect<void>;
 };
 
-export type OrganizationInventoryNamespace = {
+export type OrganizationInventoryNamespace = Cloudflare.DurableObject<OrganizationInventoryRpc>;
+
+export type OrganizationInventoryRpcClient = Pick<
+  OrganizationInventoryRpc,
+  | "registerReplica"
+  | "submitCommand"
+  | "getReceipt"
+  | "pull"
+  | "acquireSnapshot"
+  | "mintLiveTicket"
+  | "locateSnapshotPart"
+>;
+
+export type OrganizationInventoryObjectsContract = {
   readonly getByName: (
     name: string,
-  ) => OrganizationInventoryRpc & {
-    readonly fetch: (
-      request: HttpServerRequest.HttpServerRequest,
-    ) => Effect.Effect<HttpServerResponse.HttpServerResponse, RpcCallError>;
-  };
+    options?: Cloudflare.DurableObjectGetDurableObjectOptions,
+  ) => OrganizationInventoryRpcClient;
+};
+
+export type OrganizationInventoryLiveObjectsContract = {
+  readonly getByName: (
+    name: string,
+    options?: Cloudflare.DurableObjectGetDurableObjectOptions,
+  ) => Pick<Cloudflare.DurableObjectStub<OrganizationInventoryRpc>, "fetch">;
 };

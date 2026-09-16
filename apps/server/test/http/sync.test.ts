@@ -13,12 +13,25 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { InventoryNotPublished } from "../../src/inventory/inventory-directory";
-import type { OrganizationInventoryNamespace } from "../../src/inventory/organization-host";
+import type {
+  OrganizationInventoryRpcClient,
+  RoutedCommandCallWire,
+} from "../../src/inventory/organization-host";
 import {
   makeRoutedSyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
 import { appFor } from "../lib/app";
+
+const idleInventoryRpcClient = (): OrganizationInventoryRpcClient => ({
+  registerReplica: () => Effect.die("unused"),
+  submitCommand: () => Effect.die("unused"),
+  getReceipt: () => Effect.die("unused"),
+  pull: () => Effect.die("unused"),
+  acquireSnapshot: () => Effect.die("unused"),
+  mintLiveTicket: () => Effect.die("unused"),
+  locateSnapshotPart: () => Effect.die("unused"),
+});
 
 const commandPost = (body: SyncCommandEnvelope = lastUnitBuyerAEnvelope) =>
   ({
@@ -111,6 +124,7 @@ describe("sync HTTP", () => {
             }),
           ),
       },
+      // SAFETY: this test must fail directory lookup before any object RPC is invoked
       {
         getByName: () => {
           throw new Error("directory miss must not select an object");
@@ -144,21 +158,16 @@ describe("sync HTTP", () => {
             },
           }),
       },
+      // SAFETY: this test double implements only submitCommand for the RPC refusal path
       {
         getByName: () => ({
-          registerReplica: () => Effect.die("unused"),
+          ...idleInventoryRpcClient(),
           submitCommand: () =>
             Effect.succeed({
               _tag: "protocolFailure",
               code: "ORGANIZATION_MISMATCH",
               message: "The command does not belong to the active organization.",
             }),
-          getReceipt: () => Effect.die("unused"),
-          pull: () => Effect.die("unused"),
-          acquireSnapshot: () => Effect.die("unused"),
-          mintLiveTicket: () => Effect.die("unused"),
-          locateSnapshotPart: () => Effect.die("unused"),
-          fetch: () => Effect.die("unused"),
         }),
       },
       {
@@ -183,39 +192,6 @@ describe("sync HTTP", () => {
       releaseId: Schema.decodeUnknownSync(InventoryReleaseId)("release-test"),
     };
     const received: Array<unknown> = [];
-    const objects: OrganizationInventoryNamespace = {
-      getByName: (name) => {
-        received.push(name);
-        return {
-          registerReplica: () => Effect.die("unused"),
-          submitCommand: (call) => {
-            received.push(call.route);
-            return Effect.succeed({
-              _tag: "success",
-              value: {
-                operationId: lastUnitBuyerAEnvelope.operationId,
-                replicaId: lastUnitBuyerAEnvelope.replicaId,
-                clientSequence: lastUnitBuyerAEnvelope.clientSequence,
-                payloadHash: lastUnitBuyerAEnvelope.payloadHash,
-                decision: "accepted",
-                commitSequence: OrgCommitSequence.make("1"),
-                result: {
-                  _tag: "issueInvoice",
-                  invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
-                  invoiceNumber: 1,
-                },
-              },
-            });
-          },
-          getReceipt: () => Effect.die("unused"),
-          pull: () => Effect.die("unused"),
-          acquireSnapshot: () => Effect.die("unused"),
-          mintLiveTicket: () => Effect.die("unused"),
-          locateSnapshotPart: () => Effect.die("unused"),
-          fetch: () => Effect.die("unused"),
-        };
-      },
-    };
     const syncAuthority = makeRoutedSyncAuthority(
       {
         resolveActive: () =>
@@ -224,7 +200,34 @@ describe("sync HTTP", () => {
             evidence,
           }),
       },
-      objects,
+      // SAFETY: this test double implements only submitCommand for the routed evidence check
+      {
+        getByName: (name: string) => {
+          received.push(name);
+          return {
+            ...idleInventoryRpcClient(),
+            submitCommand: (call: RoutedCommandCallWire) => {
+              received.push(call.route);
+              return Effect.succeed({
+                _tag: "success",
+                value: {
+                  operationId: lastUnitBuyerAEnvelope.operationId,
+                  replicaId: lastUnitBuyerAEnvelope.replicaId,
+                  clientSequence: lastUnitBuyerAEnvelope.clientSequence,
+                  payloadHash: lastUnitBuyerAEnvelope.payloadHash,
+                  decision: "accepted",
+                  commitSequence: OrgCommitSequence.make("1"),
+                  result: {
+                    _tag: "issueInvoice",
+                    invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
+                    invoiceNumber: 1,
+                  },
+                },
+              });
+            },
+          };
+        },
+      },
       {
         getObject: () => Effect.die("unused"),
         putObject: () => Effect.die("unused"),

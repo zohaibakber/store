@@ -140,12 +140,13 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
       Layer.provide(HttpServer.layerServices),
       Layer.provide(Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext))),
     );
+    const handlerContext = Context.merge(
+      testRuntimeContext,
+      Context.make(SyncLiveUpgrade, unprovisionedSyncLiveUpgrade),
+    );
     const { dispose, handler } = HttpRouter.toWebHandler(app, { disableLogger: true });
     try {
-      return await handler(
-        new Request(new URL(path, "http://localhost"), init),
-        testRuntimeContext,
-      );
+      return await handler(new Request(new URL(path, "http://localhost"), init), handlerContext);
     } finally {
       await dispose();
     }

@@ -24,12 +24,12 @@ import {
   loadWorkspaceSnapshot,
   type AuthVerificationConfig,
 } from "./src/auth/session";
+import { makeD1InventoryDirectory } from "./src/inventory/inventory-directory";
 import {
   InventoryMutationDatabase,
   InventoryMutationDatabaseLive,
   InventoryMutationDatabaseUnavailable,
 } from "./src/inventory/mutation-database";
-import { makeD1InventoryDirectory } from "./src/inventory/inventory-directory";
 import { makeR2SnapshotObjects } from "./src/inventory/organization-host";
 import {
   OrganizationInventoryObject,

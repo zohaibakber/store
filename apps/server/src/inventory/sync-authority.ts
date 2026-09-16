@@ -16,11 +16,13 @@ import {
   SyncPullResult,
   syncProtocolError,
 } from "@store/contracts";
+import type { RuntimeContext } from "alchemy";
 import { RpcCallError } from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Headers from "effect/unstable/http/Headers";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -36,7 +38,8 @@ import {
   RpcReply,
   SnapshotPartLookup,
   type InventorySyncActor,
-  type OrganizationInventoryNamespace,
+  type OrganizationInventoryLiveObjectsContract,
+  type OrganizationInventoryObjectsContract,
   type SnapshotObjectsContract,
 } from "./organization-host";
 
@@ -54,32 +57,32 @@ export interface SyncAuthorityContract {
   readonly registerReplica: (
     actor: InventorySyncActor,
     request: RegisterReplicaRequest,
-  ) => Effect.Effect<RegisterReplicaResult, SyncAuthorityError>;
+  ) => Effect.Effect<RegisterReplicaResult, SyncAuthorityError, RuntimeContext>;
   readonly submitCommand: (
     actor: InventorySyncActor,
     envelope: SyncCommandEnvelope,
-  ) => Effect.Effect<CommandReceipt, SyncAuthorityError>;
+  ) => Effect.Effect<CommandReceipt, SyncAuthorityError, RuntimeContext>;
   readonly getReceipt: (
     actor: InventorySyncActor,
     operationId: string,
-  ) => Effect.Effect<CommandReceipt | undefined, SyncAuthorityError>;
+  ) => Effect.Effect<CommandReceipt | undefined, SyncAuthorityError, RuntimeContext>;
   readonly pull: (
     actor: InventorySyncActor,
     request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, SyncAuthorityError>;
+  ) => Effect.Effect<SyncPullResult, SyncAuthorityError, RuntimeContext>;
   readonly acquireSnapshot: (
     actor: InventorySyncActor,
     request: AcquireSnapshotRequest,
-  ) => Effect.Effect<AcquireSnapshotResult, SyncAuthorityError>;
+  ) => Effect.Effect<AcquireSnapshotResult, SyncAuthorityError, RuntimeContext>;
   readonly readSnapshotPart: (
     actor: InventorySyncActor,
     snapshotId: SnapshotId,
     partNumber: number,
-  ) => Effect.Effect<SnapshotPartPayload, SyncAuthorityError>;
+  ) => Effect.Effect<SnapshotPartPayload, SyncAuthorityError, RuntimeContext>;
   readonly mintLiveTicket: (
     actor: InventorySyncActor,
     request: LiveTicketRequest,
-  ) => Effect.Effect<LiveTicket, SyncAuthorityError>;
+  ) => Effect.Effect<LiveTicket, SyncAuthorityError, RuntimeContext>;
 }
 
 export class SyncAuthority extends Context.Service<SyncAuthority, SyncAuthorityContract>()(
@@ -108,11 +111,9 @@ const notPublished = () =>
 
 const directoryUnavailable = () => syncUnavailableError("Inventory directory is unavailable.");
 
-const transportUnavailable = () =>
-  syncUnavailableError("Organization inventory is unavailable.");
+const transportUnavailable = () => syncUnavailableError("Organization inventory is unavailable.");
 
-const unreadableReply = () =>
-  syncUnavailableError("Organization inventory reply was unreadable.");
+const unreadableReply = () => syncUnavailableError("Organization inventory reply was unreadable.");
 
 const mapDirectoryError = (
   error: InventoryNotPublished | InventoryDirectoryUnavailable,
@@ -131,31 +132,41 @@ const actorOrganizationId = (actor: InventorySyncActor) =>
     ),
   );
 
-const deliverReply = <Value>(reply: {
-  readonly _tag: "success";
-  readonly value: Value;
-} | {
-  readonly _tag: "protocolFailure";
-  readonly code: SyncProtocolError["code"];
-  readonly message: string;
-}): Effect.Effect<Value, SyncProtocolError> => {
+const deliverReply = <Value>(
+  reply:
+    | {
+        readonly _tag: "success";
+        readonly value: Value;
+      }
+    | {
+        readonly _tag: "protocolFailure";
+        readonly code: SyncProtocolError["code"];
+        readonly message: string;
+      },
+): Effect.Effect<Value, SyncProtocolError> => {
   if (reply._tag === "protocolFailure") {
     return Effect.fail(syncProtocolError(reply.code, reply.message));
   }
   return Effect.succeed(reply.value);
 };
 
-const invokeRpc = <A>(
-  effect: Effect.Effect<A, RpcCallError>,
-): Effect.Effect<A, SyncUnavailableError> =>
+const invokeRpc = <A, R>(
+  effect: Effect.Effect<A, RpcCallError, R>,
+): Effect.Effect<A, SyncUnavailableError, R> =>
   effect.pipe(Effect.catchTag("RpcCallError", () => Effect.fail(transportUnavailable())));
 
-const decodeRpc = <S extends Schema.Top>(schema: S, input: unknown) =>
-  Schema.decodeUnknownEffect(schema)(input).pipe(Effect.mapError(() => unreadableReply()));
+const decodeDeliveredReply = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  delivered: S["Encoded"],
+): Effect.Effect<S["Type"], SyncUnavailableError> => {
+  const decoded = Schema.decodeUnknownResult(schema)(delivered);
+  if (Result.isFailure(decoded)) return unreadableReply();
+  return Effect.succeed(decoded.success);
+};
 
 export const makeRoutedSyncAuthority = (
   directory: InventoryDirectoryContract,
-  objects: OrganizationInventoryNamespace,
+  objects: OrganizationInventoryObjectsContract,
   snapshots: SnapshotObjectsContract,
 ): SyncAuthorityContract => {
   const routeFor = (actor: InventorySyncActor) =>
@@ -177,7 +188,7 @@ export const makeRoutedSyncAuthority = (
           input: request,
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(RegisterReplicaResult), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(RegisterReplicaResult), raw);
       return yield* deliverReply(reply);
     }),
     submitCommand: Effect.fn("SyncAuthority.submitCommand")(function* (actor, envelope) {
@@ -189,7 +200,7 @@ export const makeRoutedSyncAuthority = (
           input: envelope,
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(CommandReceipt), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(CommandReceipt), raw);
       return yield* deliverReply(reply);
     }),
     getReceipt: Effect.fn("SyncAuthority.getReceipt")(function* (actor, operationId) {
@@ -201,7 +212,7 @@ export const makeRoutedSyncAuthority = (
           input: { operationId },
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(ReceiptLookup), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(ReceiptLookup), raw);
       const lookup = yield* deliverReply(reply);
       return lookup._tag === "found" ? lookup.receipt : undefined;
     }),
@@ -214,7 +225,7 @@ export const makeRoutedSyncAuthority = (
           input: request,
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(SyncPullResult), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(SyncPullResult), raw);
       return yield* deliverReply(reply);
     }),
     acquireSnapshot: Effect.fn("SyncAuthority.acquireSnapshot")(function* (actor, request) {
@@ -226,50 +237,50 @@ export const makeRoutedSyncAuthority = (
           input: request,
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(AcquireSnapshotResult), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(AcquireSnapshotResult), raw);
       return yield* deliverReply(reply);
     }),
-    readSnapshotPart: Effect.fn("SyncAuthority.readSnapshotPart")(function* (
-      actor,
-      snapshotId,
-      partNumber,
-    ) {
-      const route = yield* routeFor(actor);
-      const raw = yield* invokeRpc(
-        stubFor(route.objectName).locateSnapshotPart({
-          route: route.evidence,
-          actor,
-          input: { snapshotId, partNumber },
-        }),
-      );
-      const reply = yield* decodeRpc(RpcReply(SnapshotPartLookup), raw);
-      const lookup = yield* deliverReply(reply);
-      if (lookup._tag === "missing") {
-        return yield* Effect.fail(
-          syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+    readSnapshotPart: Effect.fn("SyncAuthority.readSnapshotPart")(
+      function* (actor, snapshotId, partNumber) {
+        const route = yield* routeFor(actor);
+        const raw = yield* invokeRpc(
+          stubFor(route.objectName).locateSnapshotPart({
+            route: route.evidence,
+            actor,
+            input: { snapshotId, partNumber },
+          }),
         );
-      }
-      const bytes = yield* snapshots.getObject(lookup.locator.objectKey).pipe(
-        Effect.mapError(() =>
-          syncUnavailableError("Inventory snapshot storage is unavailable."),
-        ),
-      );
-      if (bytes === undefined) {
-        return yield* Effect.fail(
-          syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+        const reply = yield* decodeDeliveredReply(RpcReply(SnapshotPartLookup), raw);
+        const lookup = yield* deliverReply(reply);
+        if (lookup._tag === "missing") {
+          return yield* Effect.fail(
+            syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+          );
+        }
+        const bytes = yield* snapshots
+          .getObject(lookup.locator.objectKey)
+          .pipe(
+            Effect.mapError(() =>
+              syncUnavailableError("Inventory snapshot storage is unavailable."),
+            ),
+          );
+        if (bytes === undefined) {
+          return yield* Effect.fail(
+            syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+          );
+        }
+        const parsed = yield* Effect.try({
+          try: () => JSON.parse(new TextDecoder().decode(bytes)),
+          catch: () =>
+            syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+        });
+        return yield* Schema.decodeUnknownEffect(SnapshotPartPayload)(parsed).pipe(
+          Effect.mapError(() =>
+            syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
+          ),
         );
-      }
-      const parsed = yield* Effect.try({
-        try: () => JSON.parse(new TextDecoder().decode(bytes)),
-        catch: () =>
-          syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
-      });
-      return yield* Schema.decodeUnknownEffect(SnapshotPartPayload)(parsed).pipe(
-        Effect.mapError(() =>
-          syncProtocolError("SNAPSHOT_UNAVAILABLE", "That snapshot part is not available."),
-        ),
-      );
-    }),
+      },
+    ),
     mintLiveTicket: Effect.fn("SyncAuthority.mintLiveTicket")(function* (actor, request) {
       const route = yield* routeFor(actor);
       const raw = yield* invokeRpc(
@@ -279,7 +290,7 @@ export const makeRoutedSyncAuthority = (
           input: request,
         }),
       );
-      const reply = yield* decodeRpc(RpcReply(LiveTicket), raw);
+      const reply = yield* decodeDeliveredReply(RpcReply(LiveTicket), raw);
       return yield* deliverReply(reply);
     }),
   };
@@ -291,7 +302,7 @@ export interface SyncLiveUpgradeContract {
   ) => Effect.Effect<
     HttpServerResponse.HttpServerResponse,
     SyncAuthorityError,
-    HttpServerRequest.HttpServerRequest
+    HttpServerRequest.HttpServerRequest | RuntimeContext
   >;
 }
 
@@ -303,7 +314,9 @@ export const unprovisionedSyncLiveUpgrade: SyncLiveUpgradeContract = {
   handle: () =>
     Effect.succeed(
       HttpServerResponse.jsonUnsafe(
-        { error: { code: "SYNC_NOT_PROVISIONED", message: "Organization sync is not provisioned." } },
+        {
+          error: { code: "SYNC_NOT_PROVISIONED", message: "Organization sync is not provisioned." },
+        },
         { status: 503 },
       ),
     ),
@@ -316,14 +329,16 @@ export const UnprovisionedSyncLiveUpgradeLive = Layer.succeed(
 
 export const makeRoutedLiveUpgrade = (
   directory: InventoryDirectoryContract,
-  objects: OrganizationInventoryNamespace,
+  objects: OrganizationInventoryLiveObjectsContract,
 ): SyncLiveUpgradeContract => ({
   handle: Effect.fn("SyncLiveUpgrade.handle")(function* (actor) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = Option.getOrUndefined(HttpServerRequest.toURL(request));
     const nonce = url?.searchParams.get("nonce") ?? undefined;
     const parsedNonce = yield* Schema.decodeUnknownEffect(LiveTicketNonce)(nonce).pipe(
-      Effect.mapError(() => syncProtocolError("TICKET_INVALID", "The live ticket nonce is invalid.")),
+      Effect.mapError(() =>
+        syncProtocolError("TICKET_INVALID", "The live ticket nonce is invalid."),
+      ),
     );
     const organizationId = yield* actorOrganizationId(actor);
     const route = yield* directory
@@ -336,6 +351,9 @@ export const makeRoutedLiveUpgrade = (
         connection: request.headers.connection,
       }),
     });
-    return yield* invokeRpc(objects.getByName(route.objectName).fetch(forwarded));
+    return yield* objects
+      .getByName(route.objectName)
+      .fetch(forwarded)
+      .pipe(Effect.mapError(() => transportUnavailable()));
   }),
 });

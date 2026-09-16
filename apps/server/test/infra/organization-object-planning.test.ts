@@ -1,6 +1,7 @@
+import type * as Cf from "@cloudflare/workers-types";
+import * as Cloudflare from "alchemy/Cloudflare";
 import { fromDurableObjectState } from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
 import { SnapshotObjects } from "../../src/inventory/organization-host";
@@ -8,7 +9,10 @@ import { organizationInventoryObjectInit } from "../../src/inventory/organizatio
 
 describe("organization Durable Object planning", () => {
   it("evaluates the outer Effect without touching runtime storage", async () => {
-    const state = fromDurableObjectState({ storage: {} });
+    const planningState = fromDurableObjectState(
+      // SAFETY: planning evaluates binding discovery only; storage is not read here
+      { storage: {} } as Cf.DurableObjectState,
+    );
     const snapshots = SnapshotObjects.of({
       getObject: () => {
         throw new Error("planning touched snapshot storage");
@@ -20,7 +24,7 @@ describe("organization Durable Object planning", () => {
     const inner = await Effect.runPromise(
       organizationInventoryObjectInit.pipe(
         Effect.provideService(SnapshotObjects, snapshots),
-        Effect.provide(Layer.succeed(fromDurableObjectState, state)),
+        Effect.provideService(Cloudflare.DurableObjectState, planningState),
       ),
     );
     expect(Effect.isEffect(inner)).toBe(true);

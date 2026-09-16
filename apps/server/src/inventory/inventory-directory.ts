@@ -1,7 +1,5 @@
 import type {
-  InventoryImportId,
   InventoryObjectName,
-  InventoryReleaseId,
   InventoryRoutingContext,
   OrganizationId,
 } from "@store/contracts";
@@ -9,6 +7,7 @@ import { InventoryImportId as InventoryImportIdSchema } from "@store/contracts";
 import { InventoryObjectName as InventoryObjectNameSchema } from "@store/contracts";
 import { InventoryReleaseId as InventoryReleaseIdSchema } from "@store/contracts";
 import { InventoryRoutingContext as InventoryRoutingContextSchema } from "@store/contracts";
+import type { RuntimeContext } from "alchemy";
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -40,7 +39,8 @@ export interface InventoryDirectoryContract {
     organizationId: OrganizationId,
   ) => Effect.Effect<
     ActiveInventoryRoute,
-    InventoryNotPublished | InventoryDirectoryUnavailable
+    InventoryNotPublished | InventoryDirectoryUnavailable,
+    RuntimeContext
   >;
 }
 
@@ -60,37 +60,46 @@ const directoryUnavailable = (cause: unknown) =>
 export const makeD1InventoryDirectory = (
   database: Cloudflare.D1.QueryDatabaseClient,
 ): InventoryDirectoryContract => ({
-  resolveActive: Effect.fn("InventoryDirectory.resolveActive")(function* (
+  resolveActive: (
     organizationId: OrganizationId,
-  ) {
-    const row = yield* database
-      .prepare(ACTIVE_ROUTE_SQL)
-      .bind(organizationId)
-      .first()
-      .pipe(Effect.mapError((cause) => directoryUnavailable(cause)));
-    if (row === null) {
-      return yield* Effect.fail(
-        InventoryNotPublished.make({
-          message: "This organization has no published inventory.",
-        }),
-      );
-    }
-    const parsed = yield* Schema.decodeUnknownEffect(DirectoryRouteRow)(row).pipe(
-      Effect.mapError((cause) => directoryUnavailable(cause)),
-    );
-    const evidence = yield* Schema.decodeUnknownEffect(InventoryRoutingContextSchema)({
-      organizationId,
-      importId: parsed.importId,
-      releaseId: parsed.releaseId,
-    }).pipe(Effect.mapError((cause) => directoryUnavailable(cause)));
-    return { objectName: parsed.objectName, evidence };
-  }, (effect) =>
-    effect.pipe(
-      Effect.catchAllCause((cause) => {
-        if (Cause.hasDefects(cause)) {
+  ): Effect.Effect<
+    ActiveInventoryRoute,
+    InventoryNotPublished | InventoryDirectoryUnavailable,
+    RuntimeContext
+  > =>
+    Effect.gen(function* () {
+      const row = yield* database
+        .prepare(ACTIVE_ROUTE_SQL)
+        .bind(organizationId)
+        .first()
+        .pipe(Effect.mapError((cause) => directoryUnavailable(cause)));
+      if (row === null) {
+        return yield* Effect.fail(
+          InventoryNotPublished.make({
+            message: "This organization has no published inventory.",
+          }),
+        );
+      }
+      const parsed = yield* Effect.try({
+        try: () => Schema.decodeUnknownSync(DirectoryRouteRow)(row),
+        catch: (cause) => directoryUnavailable(cause),
+      });
+      const evidence = yield* Effect.try({
+        try: () =>
+          Schema.decodeUnknownSync(InventoryRoutingContextSchema)({
+            organizationId,
+            importId: parsed.importId,
+            releaseId: parsed.releaseId,
+          }),
+        catch: (cause) => directoryUnavailable(cause),
+      });
+      return { objectName: parsed.objectName, evidence };
+    }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasDies(cause)) {
           return Effect.fail(directoryUnavailable(Cause.squash(cause)));
         }
         return Effect.failCause(cause);
       }),
-    )),
+    ),
 });
