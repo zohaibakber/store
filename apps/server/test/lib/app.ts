@@ -12,7 +12,9 @@ import { ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import {
   SyncAuthority,
+  SyncLiveUpgrade,
   unprovisionedSyncAuthority,
+  unprovisionedSyncLiveUpgrade,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
 
@@ -130,18 +132,21 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
       SyncAuthority,
       options.syncAuthority ?? unprovisionedSyncAuthority,
     );
+    const LiveUpgradeLive = Layer.succeed(SyncLiveUpgrade, unprovisionedSyncLiveUpgrade);
     const app = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
       Layer.provide(SyncLive),
+      Layer.provide(LiveUpgradeLive),
       Layer.provide(HttpServer.layerServices),
       Layer.provide(Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext))),
     );
+    const handlerContext = Context.merge(
+      testRuntimeContext,
+      Context.make(SyncLiveUpgrade, unprovisionedSyncLiveUpgrade),
+    );
     const { dispose, handler } = HttpRouter.toWebHandler(app, { disableLogger: true });
     try {
-      return await handler(
-        new Request(new URL(path, "http://localhost"), init),
-        testRuntimeContext,
-      );
+      return await handler(new Request(new URL(path, "http://localhost"), init), handlerContext);
     } finally {
       await dispose();
     }

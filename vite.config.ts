@@ -70,6 +70,8 @@ export default defineConfig({
         files: [
           "packages/sync/**/*.ts",
           "packages/contracts/src/sync/{api,directory,http-errors,live,protocol,snapshot}.ts",
+          "apps/server/src/inventory/{inventory-directory,organization-host,organization-object,sync-authority}.ts",
+          "apps/server/src/routes/{sync,sync-live}.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",
