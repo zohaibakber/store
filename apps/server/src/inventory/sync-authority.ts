@@ -5,6 +5,7 @@ import {
   LiveTicket,
   LiveTicketNonce,
   LiveTicketRequest,
+  MAX_SYNC_IDENTIFIER_LENGTH,
   OrganizationId,
   RegisterReplicaRequest,
   RegisterReplicaResult,
@@ -14,6 +15,7 @@ import {
   SyncProtocolError,
   SyncPullRequest,
   SyncPullResult,
+  SyncSubscription,
   syncProtocolError,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
@@ -327,6 +329,15 @@ export const UnprovisionedSyncLiveUpgradeLive = Layer.succeed(
   unprovisionedSyncLiveUpgrade,
 );
 
+const LiveUpgradeQuery = Schema.Struct({
+  nonce: LiveTicketNonce,
+  replicaId: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
+  ),
+  subscription: SyncSubscription,
+});
+
 export const makeRoutedLiveUpgrade = (
   directory: InventoryDirectoryContract,
   objects: OrganizationInventoryLiveObjectsContract,
@@ -334,8 +345,11 @@ export const makeRoutedLiveUpgrade = (
   handle: Effect.fn("SyncLiveUpgrade.handle")(function* (actor) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = Option.getOrUndefined(HttpServerRequest.toURL(request));
-    const nonce = url?.searchParams.get("nonce") ?? undefined;
-    const parsedNonce = yield* Schema.decodeUnknownEffect(LiveTicketNonce)(nonce).pipe(
+    const parsedQuery = yield* Schema.decodeUnknownEffect(LiveUpgradeQuery)({
+      nonce: url?.searchParams.get("nonce") ?? undefined,
+      replicaId: url?.searchParams.get("replicaId") ?? undefined,
+      subscription: url?.searchParams.get("subscription") ?? undefined,
+    }).pipe(
       Effect.mapError(() =>
         syncProtocolError("TICKET_INVALID", "The live ticket nonce is invalid."),
       ),
@@ -345,7 +359,13 @@ export const makeRoutedLiveUpgrade = (
       .resolveActive(organizationId)
       .pipe(Effect.mapError(mapDirectoryError));
     const forwarded = request.modify({
-      url: `/api/sync/live?nonce=${parsedNonce}`,
+      url: `/api/sync/live?${new URLSearchParams({
+        nonce: parsedQuery.nonce,
+        replicaId: parsedQuery.replicaId,
+        subscription: parsedQuery.subscription,
+        userId: actor.userId,
+        authorizationExpiresAt: String(actor.authorizationExpiresAt),
+      }).toString()}`,
       headers: Headers.fromInput({
         upgrade: request.headers.upgrade,
         connection: request.headers.connection,
