@@ -20,7 +20,12 @@ export {
 } from "./authority/delivery";
 export { partitionDigest, rowImageDigest } from "./authority/digest";
 export { grantDownloadLease, stepRetention } from "./authority/retention";
-export { recordUploadedPart, startSnapshotJob, stepSnapshotJob } from "./authority/snapshots";
+export {
+  readPublishedManifest,
+  recordUploadedPart,
+  startSnapshotJob,
+  stepSnapshotJob,
+} from "./authority/snapshots";
 export type { SnapshotFence, SnapshotStep } from "./authority/snapshots";
 export {
   claimNextUpload,
@@ -47,6 +52,7 @@ export {
   SyncTransportInvalid,
   SyncTransportUnavailable,
 } from "./replica/errors";
+export { runSqliteTransaction } from "./sqlite";
 export { openReplicaStore, runReplicaTransaction } from "./replica/storage";
 export { makeSyncEngine, SyncEngine } from "./engine";
 export type { SyncEngineError, SyncEngineProgress } from "./engine";
