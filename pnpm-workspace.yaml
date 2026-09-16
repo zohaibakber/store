@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - scripts/migrate-cloudflare
 
 catalog:
   "@effect/sql-d1": 4.0.0-rc.111

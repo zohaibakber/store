@@ -259,7 +259,7 @@ importers:
         version: 26.5.1
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.77(3adfe2fff908dcd717cedb0123dff29a)
+        version: 2.0.0-beta.77(b63e55367f66aa8be5476e1d94f66002)
       effect:
         specifier: 4.0.0-rc.111
         version: 4.0.0-rc.111
@@ -292,7 +292,7 @@ importers:
         version: link:../../packages/db
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
@@ -305,7 +305,7 @@ importers:
         version: 26.2.0
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.77(e9ac5c699eb95dd3f63fbac50dcbb4c0)
+        version: 2.0.0-beta.77(03fe830a340eda8676264d22386fb4c8)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -504,7 +504,7 @@ importers:
         version: link:../../packages/sync
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
@@ -523,7 +523,7 @@ importers:
         version: 26.5.1
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.77(236b0676633650e612c6daefdc3608cc)
+        version: 2.0.0-beta.77(a453d23cc642accf6d35936919038238)
       rolldown:
         specifier: 1.2.4
         version: 1.2.4
@@ -597,7 +597,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
@@ -619,7 +619,7 @@ importers:
         version: 1.0.0-rc.6(effect@4.0.0-rc.111)
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       nanoid:
         specifier: ^6.0.1
         version: 6.0.1
@@ -629,7 +629,7 @@ importers:
         version: 26.2.0
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.77(e9ac5c699eb95dd3f63fbac50dcbb4c0)
+        version: 2.0.0-beta.77(03fe830a340eda8676264d22386fb4c8)
       drizzle-kit:
         specifier: 'catalog:'
         version: 1.0.0-rc.5-ab785fc
@@ -672,7 +672,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
@@ -720,6 +720,49 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1))(happy-dom@20.14.5)
+
+  scripts/migrate-cloudflare:
+    dependencies:
+      '@store/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@store/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      better-sqlite3:
+        specifier: ^12.4.1
+        version: 12.11.1
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.111
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.111(effect@4.0.0-rc.111)(vitest@4.1.11)
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^26.5.1
+        version: 26.5.1
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.5.1)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1))(happy-dom@20.14.5)
 
 packages:
 
@@ -4738,6 +4781,9 @@ packages:
 
   '@types/node@26.5.1':
     resolution: {integrity: sha512-CzNm2FezW4VR/LjG6yUdiEgLE/rAQ9Slj5gCu/C2VrdcW7I0ahNZ8DRbHT7zOZ6r3ONgd/bsQIeSaoDGrd1C6g==}
+
+  '@types/pg@8.23.1':
+    resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
   '@types/react-dom@19.3.0':
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
@@ -13801,6 +13847,12 @@ snapshots:
     dependencies:
       undici-types: 8.9.0
 
+  '@types/pg@8.23.1':
+    dependencies:
+      '@types/node': 26.5.1
+      pg-protocol: 1.16.0
+      pg-types: 2.2.0
+
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:
       '@types/react': 19.3.0
@@ -14437,119 +14489,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.77(236b0676633650e612c6daefdc3608cc):
-    dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.77(@distilled.cloud/cloudflare@1.0.0-rc.9(effect@4.0.0-rc.111))(@effect/platform-bun@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.5.1)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.0-rc.111)(rolldown@1.2.5)(typescript@7.0.2)
-      '@alchemy.run/floci': 2.0.0-beta.77(effect@4.0.0-rc.111)
-      '@alchemy.run/node-utils': 2.0.0-beta.77
-      '@alchemy.run/sigil': 0.0.0-alpha.10(@types/react@19.3.0)(react-devtools-core@6.1.5)(react@19.3.0)
-      '@aws-sdk/credential-providers': 3.1131.0
-      '@distilled.cloud/aws': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/axiom': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/cloudflare': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/core': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/fly-io': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/hetzner': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/neon': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/planetscale': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/railway': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/sql-sqlite-do': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/vitest': 4.0.0-rc.112(effect@4.0.0-rc.111)(vitest@4.1.11)
-      '@libsql/client': 0.17.4
-      '@octokit/rest': 22.0.1
-      '@octokit/webhooks': 14.2.0
-      '@prisma/dev': 0.20.0(typescript@7.0.2)
-      '@types/aws-lambda': 8.10.163
-      aws4fetch: 1.0.20
-      capnweb: 0.6.1
-      effect: 4.0.0-rc.111
-      fast-glob: 3.3.3
-      jszip: 3.10.2
-      libsodium-wrappers: 0.8.4
-      pathe: 2.0.3
-      picomatch: 4.0.7
-      react: 19.3.0
-      rolldown: 1.2.5
-      string-width: 8.2.2
-      undici: 7.29.1
-      yaml: 2.9.1
-    optionalDependencies:
-      '@effect/platform-bun': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/platform-node': 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@effect/sql-pg': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      drizzle-kit: 1.0.0-rc.5-ab785fc
-      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
-      pg: 8.23.0
-      vite: '@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1)'
-      ws: 8.21.3
-    transitivePeerDependencies:
-      - '@types/node'
-      - '@types/react'
-      - bufferutil
-      - proxy-agent
-      - react-devtools-core
-      - typescript
-      - utf-8-validate
-      - vitest
-
-  alchemy@2.0.0-beta.77(3adfe2fff908dcd717cedb0123dff29a):
-    dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.77(@distilled.cloud/cloudflare@1.0.0-rc.9(effect@4.0.0-rc.111))(@effect/platform-bun@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.5.1)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.1))(effect@4.0.0-rc.111)(rolldown@1.2.5)(typescript@5.9.3)
-      '@alchemy.run/floci': 2.0.0-beta.77(effect@4.0.0-rc.111)
-      '@alchemy.run/node-utils': 2.0.0-beta.77
-      '@alchemy.run/sigil': 0.0.0-alpha.10(@types/react@19.3.0)(react-devtools-core@6.1.5)(react@19.3.0)
-      '@aws-sdk/credential-providers': 3.1131.0
-      '@distilled.cloud/aws': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/axiom': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/cloudflare': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/core': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/fly-io': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/hetzner': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/neon': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/planetscale': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@distilled.cloud/railway': 1.0.0-rc.9(effect@4.0.0-rc.111)
-      '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/sql-sqlite-do': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/vitest': 4.0.0-rc.112(effect@4.0.0-rc.111)(vitest@4.1.11)
-      '@libsql/client': 0.17.4
-      '@octokit/rest': 22.0.1
-      '@octokit/webhooks': 14.2.0
-      '@prisma/dev': 0.20.0(typescript@5.9.3)
-      '@types/aws-lambda': 8.10.163
-      aws4fetch: 1.0.20
-      capnweb: 0.6.1
-      effect: 4.0.0-rc.111
-      fast-glob: 3.3.3
-      jszip: 3.10.2
-      libsodium-wrappers: 0.8.4
-      pathe: 2.0.3
-      picomatch: 4.0.7
-      react: 19.3.0
-      rolldown: 1.2.5
-      string-width: 8.2.2
-      undici: 7.29.1
-      yaml: 2.9.1
-    optionalDependencies:
-      '@effect/platform-bun': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      '@effect/platform-node': 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@effect/sql-pg': 4.0.0-rc.111(effect@4.0.0-rc.111)
-      drizzle-kit: 1.0.0-rc.5-ab785fc
-      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.4)
-      pg: 8.23.0
-      vite: '@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.1)'
-      ws: 8.21.3
-    transitivePeerDependencies:
-      - '@types/node'
-      - '@types/react'
-      - bufferutil
-      - proxy-agent
-      - react-devtools-core
-      - typescript
-      - utf-8-validate
-      - vitest
-
-  alchemy@2.0.0-beta.77(e9ac5c699eb95dd3f63fbac50dcbb4c0):
+  alchemy@2.0.0-beta.77(03fe830a340eda8676264d22386fb4c8):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.77(@distilled.cloud/cloudflare@1.0.0-rc.9(effect@4.0.0-rc.111))(@effect/platform-bun@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.2.0)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.0-rc.111)(rolldown@1.2.5)(typescript@7.0.2)
       '@alchemy.run/floci': 2.0.0-beta.77(effect@4.0.0-rc.111)
@@ -14591,9 +14531,121 @@ snapshots:
       '@effect/platform-node': 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/sql-pg': 4.0.0-rc.111(effect@4.0.0-rc.111)
       drizzle-kit: 1.0.0-rc.5-ab785fc
-      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
       pg: 8.23.0
       vite: '@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1)'
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - '@types/node'
+      - '@types/react'
+      - bufferutil
+      - proxy-agent
+      - react-devtools-core
+      - typescript
+      - utf-8-validate
+      - vitest
+
+  alchemy@2.0.0-beta.77(a453d23cc642accf6d35936919038238):
+    dependencies:
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.77(@distilled.cloud/cloudflare@1.0.0-rc.9(effect@4.0.0-rc.111))(@effect/platform-bun@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.5.1)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.0-rc.111)(rolldown@1.2.5)(typescript@7.0.2)
+      '@alchemy.run/floci': 2.0.0-beta.77(effect@4.0.0-rc.111)
+      '@alchemy.run/node-utils': 2.0.0-beta.77
+      '@alchemy.run/sigil': 0.0.0-alpha.10(@types/react@19.3.0)(react-devtools-core@6.1.5)(react@19.3.0)
+      '@aws-sdk/credential-providers': 3.1131.0
+      '@distilled.cloud/aws': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/axiom': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/cloudflare': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/core': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/fly-io': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/hetzner': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/neon': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/planetscale': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/railway': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/sql-sqlite-do': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/vitest': 4.0.0-rc.112(effect@4.0.0-rc.111)(vitest@4.1.11)
+      '@libsql/client': 0.17.4
+      '@octokit/rest': 22.0.1
+      '@octokit/webhooks': 14.2.0
+      '@prisma/dev': 0.20.0(typescript@7.0.2)
+      '@types/aws-lambda': 8.10.163
+      aws4fetch: 1.0.20
+      capnweb: 0.6.1
+      effect: 4.0.0-rc.111
+      fast-glob: 3.3.3
+      jszip: 3.10.2
+      libsodium-wrappers: 0.8.4
+      pathe: 2.0.3
+      picomatch: 4.0.7
+      react: 19.3.0
+      rolldown: 1.2.5
+      string-width: 8.2.2
+      undici: 7.29.1
+      yaml: 2.9.1
+    optionalDependencies:
+      '@effect/platform-bun': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/platform-node': 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/sql-pg': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      drizzle-kit: 1.0.0-rc.5-ab785fc
+      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4)
+      pg: 8.23.0
+      vite: '@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.1)'
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - '@types/node'
+      - '@types/react'
+      - bufferutil
+      - proxy-agent
+      - react-devtools-core
+      - typescript
+      - utf-8-validate
+      - vitest
+
+  alchemy@2.0.0-beta.77(b63e55367f66aa8be5476e1d94f66002):
+    dependencies:
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.77(@distilled.cloud/cloudflare@1.0.0-rc.9(effect@4.0.0-rc.111))(@effect/platform-bun@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.5.1)(@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.1))(effect@4.0.0-rc.111)(rolldown@1.2.5)(typescript@5.9.3)
+      '@alchemy.run/floci': 2.0.0-beta.77(effect@4.0.0-rc.111)
+      '@alchemy.run/node-utils': 2.0.0-beta.77
+      '@alchemy.run/sigil': 0.0.0-alpha.10(@types/react@19.3.0)(react-devtools-core@6.1.5)(react@19.3.0)
+      '@aws-sdk/credential-providers': 3.1131.0
+      '@distilled.cloud/aws': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/axiom': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/cloudflare': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/core': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/fly-io': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/hetzner': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/neon': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/planetscale': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@distilled.cloud/railway': 1.0.0-rc.9(effect@4.0.0-rc.111)
+      '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/sql-sqlite-do': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/vitest': 4.0.0-rc.112(effect@4.0.0-rc.111)(vitest@4.1.11)
+      '@libsql/client': 0.17.4
+      '@octokit/rest': 22.0.1
+      '@octokit/webhooks': 14.2.0
+      '@prisma/dev': 0.20.0(typescript@5.9.3)
+      '@types/aws-lambda': 8.10.163
+      aws4fetch: 1.0.20
+      capnweb: 0.6.1
+      effect: 4.0.0-rc.111
+      fast-glob: 3.3.3
+      jszip: 3.10.2
+      libsodium-wrappers: 0.8.4
+      pathe: 2.0.3
+      picomatch: 4.0.7
+      react: 19.3.0
+      rolldown: 1.2.5
+      string-width: 8.2.2
+      undici: 7.29.1
+      yaml: 2.9.1
+    optionalDependencies:
+      '@effect/platform-bun': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      '@effect/platform-node': 4.0.0-rc.111(effect@4.0.0-rc.111)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/sql-pg': 4.0.0-rc.111(effect@4.0.0-rc.111)
+      drizzle-kit: 1.0.0-rc.5-ab785fc
+      drizzle-orm: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.4)
+      pg: 8.23.0
+      vite: '@voidzero-dev/vite-plus-core@0.3.2(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.1)'
       ws: 8.21.3
     transitivePeerDependencies:
       - '@types/node'
@@ -15593,7 +15645,7 @@ snapshots:
       get-tsconfig: 4.14.3
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.4):
+  drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@5.9.3))(zod@4.6.4):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260911.1
       '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
@@ -15604,6 +15656,7 @@ snapshots:
       '@libsql/client': 0.17.4
       '@opentelemetry/api': 1.9.1
       '@types/better-sqlite3': 7.6.13
+      '@types/pg': 8.23.1
       better-sqlite3: 12.11.1
       effect: 4.0.0-rc.111
       expo-sqlite: 57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
@@ -15612,7 +15665,7 @@ snapshots:
       zod: 4.6.4
     optional: true
 
-  drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4):
+  drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260911.1)(@effect/sql-d1@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-libsql@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-pg@4.0.0-rc.111(effect@4.0.0-rc.111))(@effect/sql-sqlite-do@4.0.0-rc.111(effect@4.0.0-rc.111))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.0-rc.111)(expo-sqlite@57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(pg@8.23.0)(valibot@1.4.2(typescript@7.0.2))(zod@4.6.4):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260911.1
       '@effect/sql-d1': 4.0.0-rc.111(effect@4.0.0-rc.111)
@@ -15623,6 +15676,7 @@ snapshots:
       '@libsql/client': 0.17.4
       '@opentelemetry/api': 1.9.1
       '@types/better-sqlite3': 7.6.13
+      '@types/pg': 8.23.1
       better-sqlite3: 12.11.1
       effect: 4.0.0-rc.111
       expo-sqlite: 57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
@@ -15879,7 +15933,6 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.2
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
-    optional: true
 
   escalade@3.2.0: {}
 
@@ -19225,7 +19278,6 @@ snapshots:
       esbuild: 0.28.2
     optionalDependencies:
       fsevents: 2.3.3
-    optional: true
 
   tunnel-agent@0.6.0:
     dependencies:
