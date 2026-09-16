@@ -145,3 +145,40 @@ export const rateLimit = sqliteTable("auth_rate_limit", {
   count: integer().notNull(),
   expiresAt: integer().notNull(),
 });
+
+export const inventoryDatasetRelease = sqliteTable("inventory_dataset_release", {
+  id: text().primaryKey(),
+  status: text({ enum: ["staged", "active", "retired"] }).notNull(),
+  createdAt: timestamp().default(nowDefault).notNull(),
+  publishedAt: timestamp(),
+});
+
+export const inventoryReleaseEntry = sqliteTable(
+  "inventory_release_entry",
+  {
+    releaseId: text()
+      .notNull()
+      .references(() => inventoryDatasetRelease.id),
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id),
+    objectName: text().notNull(),
+    importId: text().notNull(),
+    status: text({ enum: ["importing", "ready"] }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("inventory_release_entry_release_organization_uidx").on(
+      table.releaseId,
+      table.organizationId,
+    ),
+    index("inventory_release_entry_organization_idx").on(table.organizationId),
+  ],
+);
+
+export const inventoryActiveRelease = sqliteTable("inventory_active_release", {
+  id: integer().primaryKey(),
+  releaseId: text()
+    .notNull()
+    .references(() => inventoryDatasetRelease.id),
+  activatedAt: timestamp().default(nowDefault).notNull(),
+});

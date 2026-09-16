@@ -10,6 +10,7 @@ import {
   ProductScanInput,
   ProductScanResult,
 } from "@store/contracts";
+import { syncGroup } from "@store/contracts/sync/api";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
@@ -101,4 +102,5 @@ export const StoreApi = HttpApi.make("StoreApi").add(
   uploads,
   productScans,
   inventoryMutations,
+  syncGroup.middleware(OrganizationAuth),
 );

@@ -13,6 +13,7 @@ export const SystemHandlers = HttpApiBuilder.group(StoreApi, "system", (handlers
           "/api/auth/*",
           "/api/powersync/credentials",
           "/api/inventory/*",
+          "/api/sync/*",
           "/api/uploads",
           "/api/product-scans",
         ],

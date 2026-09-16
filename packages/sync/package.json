@@ -1,0 +1,32 @@
+{
+  "name": "@store/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./authority": "./src/authority/commands.ts",
+    "./authority/store": "./src/authority/store.ts",
+    "./better-sqlite-target": "./src/better-sqlite-target.ts",
+    "./migrations": "./src/migrations.ts",
+    "./protocol": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/sync/test"
+  },
+  "dependencies": {
+    "@store/contracts": "workspace:*",
+    "@store/db": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.2.0",
+    "better-sqlite3": "^12.4.1",
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
+  }
+}

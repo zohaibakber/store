@@ -29,6 +29,7 @@ const packageManifests = [
   "packages/contracts/package.json",
   "packages/db/package.json",
   "packages/services/package.json",
+  "packages/sync/package.json",
   "packages/workspace/package.json",
 ];
 

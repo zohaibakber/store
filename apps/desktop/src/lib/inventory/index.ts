@@ -1,5 +1,5 @@
 export { useInventoryDashboardAnalytics } from "./dashboard";
-export { inventoryScopeId } from "./open";
+export { inventoryScopeId, openInventoryWorkspace } from "./open";
 export {
   InventoryProvider,
   InventoryReady,

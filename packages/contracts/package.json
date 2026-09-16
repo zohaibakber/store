@@ -17,6 +17,13 @@
     "./store-helpers": "./src/store/helpers.ts",
     "./store.schema": "./src/store/schema.ts",
     "./sync.schema": "./src/sync/schema.ts",
+    "./sync/protocol": "./src/sync/protocol.ts",
+    "./sync/api": "./src/sync/api.ts",
+    "./sync/directory": "./src/sync/directory.ts",
+    "./sync/http-errors": "./src/sync/http-errors.ts",
+    "./sync/live": "./src/sync/live.ts",
+    "./sync/snapshot": "./src/sync/snapshot.ts",
+    "./sync/fixtures": "./src/sync/fixtures/last-unit-invoice.ts",
     "./updater": "./src/updater.ts"
   },
   "scripts": {

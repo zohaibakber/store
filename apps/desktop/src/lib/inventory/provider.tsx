@@ -3,10 +3,10 @@ import * as React from "react";
 
 import type { InventoryHost } from "@/lib/inventory-host";
 
-import { makeInventoryActions } from "./actions";
 import type { CatalogLease, CatalogLifetime } from "./lifetime";
 import { StaleCatalogLease } from "./lifetime";
-import type { InventoryState } from "./types";
+import { InventorySyncStatusView } from "./sync-status";
+import type { Inventory, InventoryState } from "./types";
 
 const InventoryContext = React.createContext<InventoryState | null>(null);
 
@@ -21,8 +21,6 @@ export function InventoryProvider({
   readonly host: InventoryHost;
   readonly lease: CatalogLease;
 }) {
-  const organizationId = lease.scope.organizationId;
-  const userId = lease.scope.userId;
   const [state, setState] = React.useState<InventoryState>({ _tag: "Opening" });
   const [attempt, setAttempt] = React.useState(0);
 
@@ -34,11 +32,7 @@ export function InventoryProvider({
           setState({
             _tag: "Ready",
             inventory,
-            actions: makeInventoryActions(inventory, host, {
-              organizationId,
-              userId,
-              deviceId: host.deviceId,
-            }),
+            actions: inventory.actions,
           });
         }
       },
@@ -52,7 +46,7 @@ export function InventoryProvider({
     return () => {
       active = false;
     };
-  }, [attempt, catalog, host, lease, organizationId, userId]);
+  }, [attempt, catalog, host, lease]);
 
   if (state._tag === "Error") {
     return (
@@ -104,5 +98,19 @@ export function InventoryReady({ children }: { readonly children: React.ReactNod
   const state = React.useContext(InventoryContext);
   if (!state || state._tag === "Opening") return null;
   if (state._tag === "Error") return null;
-  return children;
+  return (
+    <>
+      <InventoryReadyStatus inventory={state.inventory} />
+      {children}
+    </>
+  );
+}
+
+function InventoryReadyStatus({ inventory }: { readonly inventory: Inventory }) {
+  const status = React.useSyncExternalStore(
+    inventory.observeSync,
+    inventory.commands.status,
+    inventory.commands.status,
+  );
+  return <InventorySyncStatusView status={status} />;
 }
