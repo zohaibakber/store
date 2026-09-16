@@ -1,0 +1,27 @@
+{
+  "name": "@store/migrate-cloudflare",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx ./bin.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@store/contracts": "workspace:*",
+    "@store/db": "workspace:*",
+    "better-sqlite3": "^12.4.1",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "catalog:",
+    "pg": "^8.23.0",
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.5.1",
+    "@types/pg": "^8.15.5",
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
+  }
+}

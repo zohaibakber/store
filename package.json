@@ -9,6 +9,7 @@
     "build": "turbo run build",
     "check": "node scripts/check-powersync-migration.mjs && turbo run check",
     "check:powersync-migration": "node scripts/check-powersync-migration.mjs",
+    "migrate:cloudflare": "pnpm --filter @store/migrate-cloudflare start",
     "lint:design": "oxlint -c .oxlintrc.design.json apps/desktop/src",
     "test": "turbo run test",
     "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
