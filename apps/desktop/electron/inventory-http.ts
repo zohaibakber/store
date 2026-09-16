@@ -52,11 +52,11 @@ export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 export const readInventoryHttpBackend = (
   value = process.env["STORE_INVENTORY_BACKEND"],
 ): InventoryHttpBackend => {
-  if (value === undefined || value === "" || value === "powerSync") {
-    return { _tag: "powerSync" };
-  }
-  if (value === "organizationObject") {
+  if (value === undefined || value === "" || value === "organizationObject") {
     return { _tag: "organizationObject" };
+  }
+  if (value === "powerSync") {
+    return { _tag: "powerSync" };
   }
   throw new Error(`Unsupported inventory backend: ${value}`);
 };

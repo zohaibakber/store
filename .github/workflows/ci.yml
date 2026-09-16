@@ -51,6 +51,9 @@ jobs:
       - name: Tests
         run: pnpm exec vp test
 
+      - name: Workerd proofs
+        run: pnpm --filter @store/server run test:workerd-proofs
+
   deploy:
     needs: verify
     if: >-
