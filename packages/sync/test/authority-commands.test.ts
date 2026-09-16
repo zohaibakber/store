@@ -113,6 +113,30 @@ describe("authority command library", () => {
     store.close();
   });
 
+  it("keeps a deterministic protocol failure as a throw, not COMMAND_ABANDONED", () => {
+    const store = openInventoryStore();
+    seedLastUnitCatalog(store.db);
+    const empty = lastUnitEnvelope({
+      replicaId: LAST_UNIT_REPLICA_A,
+      clientSequence: "1",
+      command: {
+        ...lastUnitBuyerACommand,
+        input: { customerName: null, items: [] },
+        allocations: [],
+      },
+    });
+    expect(() => runCommit(store.db, empty)).toThrowError(SyncProtocolError);
+    try {
+      runCommit(store.db, empty);
+    } catch (cause) {
+      expect(isProtocol(cause) && cause.code).toBe("INVALID_OPERATION");
+    }
+    expect(countInvoices(store.db)).toBe(0);
+    expect(loadReceiptAttempts(store.db, empty.operationId)).toBeUndefined();
+    expect(loadBatch(store.db)?.unitQuantity).toBe(1);
+    store.close();
+  });
+
   it("records a terminal COMMAND_ABANDONED decision instead of looping on a poison command", () => {
     const store = openInventoryStore();
     seedLastUnitCatalog(store.db);

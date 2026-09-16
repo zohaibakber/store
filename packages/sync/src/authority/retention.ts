@@ -27,16 +27,18 @@ export type RetentionProgress = {
   readonly compactedReceipts: number;
 };
 
-const minSequence = (values: ReadonlyArray<string>): string | undefined => {
+const pickSequence = (values: ReadonlyArray<string>, prefer: "min" | "max"): string | undefined => {
   const first = values[0];
   if (first === undefined) return undefined;
-  let min = first;
+  let chosen = first;
   for (const value of values) {
-    if (compareDecimalSequence(unpadDecimalSequence(value), unpadDecimalSequence(min)) < 0) {
-      min = value;
-    }
+    const compared = compareDecimalSequence(
+      unpadDecimalSequence(value),
+      unpadDecimalSequence(chosen),
+    );
+    if (prefer === "min" ? compared < 0 : compared > 0) chosen = value;
   }
-  return min;
+  return chosen;
 };
 
 const publishedHorizons = (tx: SqliteConnection, organizationId: string): ReadonlyArray<string> => {
@@ -188,10 +190,10 @@ export const stepRetention = (
       compactedReceipts: 0,
     };
   }
-  const published = minSequence(publishedHorizons(tx, organizationId));
+  const published = pickSequence(publishedHorizons(tx, organizationId), "max");
   const ceiling = published ?? state.retentionFloor;
   const pins = [...activePins(tx, organizationId), ...leasePins(tx, organizationId, now), ceiling];
-  const target = minSequence(pins) ?? state.retentionFloor;
+  const target = pickSequence(pins, "min") ?? state.retentionFloor;
   const current = unpadDecimalSequence(state.retentionFloor);
   const next =
     compareDecimalSequence(unpadDecimalSequence(target), current) > 0

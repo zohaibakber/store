@@ -3,7 +3,7 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { liveSessions } from "@store/db/inventory.schema";
+import { liveSessions, wakeState } from "@store/db/inventory.schema";
 import { describe, expect, it } from "vitest";
 
 import { openLiveSession } from "../src/authority/delivery";
@@ -13,7 +13,7 @@ import {
   runCommit,
   seedLastUnitCatalog,
 } from "../src/authority/store";
-import { armWake, nextWakeDeadline, recordArmedWake, wakeDebt } from "../src/authority/wake";
+import { nextWakeDeadline, recordArmedWake, wakeDebt } from "../src/authority/wake";
 import { runSqliteTransaction } from "../src/sqlite";
 
 const NOW = 1_700_000_000_000;
@@ -24,7 +24,13 @@ describe("authority wake debt", () => {
     seedLastUnitCatalog(store.db);
     runCommit(store.db, lastUnitBuyerAEnvelope);
     const debt = runSqliteTransaction(store.db, (tx) => {
-      recordArmedWake(tx, armWake(LAST_UNIT_ORGANIZATION_ID, NOW + 10_000, "retention"));
+      tx.insert(wakeState)
+        .values({
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          armedDueAt: NOW + 10_000,
+          reason: "retention",
+        })
+        .run();
       openLiveSession(tx, {
         organizationId: LAST_UNIT_ORGANIZATION_ID,
         sessionId: "socket-1",

@@ -42,7 +42,7 @@ export type WakeDebt =
       readonly armedDueAt: number;
     };
 
-export const armWake = (organizationId: string, dueAt: number, reason: WakeReason): WakeArmed =>
+const armWake = (organizationId: string, dueAt: number, reason: WakeReason): WakeArmed =>
   WakeArmed.mint(organizationId, dueAt, reason);
 
 const earlier = (left: WakeArmed, right: WakeArmed): WakeArmed => {

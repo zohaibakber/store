@@ -5,7 +5,7 @@ export {
   registerReplica,
 } from "./authority/commands";
 export type { InventoryActor, InventoryDb } from "./authority/commands";
-export { armWake, nextWakeDeadline, recordArmedWake, wakeDebt } from "./authority/wake";
+export { nextWakeDeadline, recordArmedWake, wakeDebt } from "./authority/wake";
 export type { WakeArmed, WakeDebt, WakeReason } from "./authority/wake";
 export {
   acknowledgeLiveSession,

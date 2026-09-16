@@ -64,6 +64,51 @@ describe("authority retention", () => {
     store.close();
   });
 
+  it("advances the floor to the latest published snapshot, not an older one", () => {
+    const store = openInventoryStore();
+    seedLastUnitCatalog(store.db);
+    runCommit(store.db, lastUnitBuyerAEnvelope);
+    runSqliteTransaction(store.db, (tx) => {
+      tx.insert(snapshotJobs)
+        .values({
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          snapshotId: "snap-old",
+          subscription: "operational",
+          stage: "published",
+          fence: 2,
+          startedAtCommitSequence: "00000000000000000001",
+          horizon: "00000000000000000001",
+          copyEntity: null,
+          copyCursor: null,
+          stepDueAt: NOW,
+        })
+        .run();
+      tx.insert(snapshotJobs)
+        .values({
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          snapshotId: "snap-new",
+          subscription: "operational",
+          stage: "published",
+          fence: 4,
+          startedAtCommitSequence: "00000000000000000001",
+          horizon: "00000000000000000002",
+          copyEntity: null,
+          copyCursor: null,
+          stepDueAt: NOW,
+        })
+        .run();
+    });
+    const progress = runSqliteTransaction(store.db, (tx) =>
+      stepRetention(tx, LAST_UNIT_ORGANIZATION_ID, NOW),
+    );
+    expect(progress).toEqual({
+      floor: "2",
+      deletedTransactions: 1,
+      compactedReceipts: 0,
+    });
+    store.close();
+  });
+
   it("deletes receipts at or below a replica processed watermark", () => {
     const store = openInventoryStore();
     seedLastUnitCatalog(store.db);

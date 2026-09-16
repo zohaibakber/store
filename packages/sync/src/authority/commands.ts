@@ -490,14 +490,17 @@ export const commitPreparedCommand = (
     } catch (cause) {
       tx.run("ROLLBACK TO command_attempt");
       tx.run("RELEASE command_attempt");
-      if (isSyncProtocolError(cause) && cause.code === "INSUFFICIENT_STOCK") {
-        decision = "rejected";
-        result = {
-          _tag: "rejected",
-          code: "INSUFFICIENT_STOCK",
-          message: cause.message,
-        };
-        break;
+      if (isSyncProtocolError(cause)) {
+        if (cause.code === "INSUFFICIENT_STOCK") {
+          decision = "rejected";
+          result = {
+            _tag: "rejected",
+            code: "INSUFFICIENT_STOCK",
+            message: cause.message,
+          };
+          break;
+        }
+        throw cause;
       }
       if (attempts >= MAX_COMMAND_ATTEMPTS) {
         decision = "rejected";
