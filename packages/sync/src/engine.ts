@@ -5,6 +5,7 @@ import type {
   SyncPullRequest,
 } from "@store/contracts";
 import { SyncProtocolError } from "@store/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -63,7 +64,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineContract>(
   "@store/sync/SyncEngine",
 ) {}
 
-const makeClaimId = (): string => crypto.randomUUID();
+const makeClaimId = Effect.sync(() => crypto.randomUUID());
 
 const STALE_UPLOAD_CLAIM_MILLIS = 60_000;
 
@@ -85,8 +86,9 @@ export const makeSyncEngine = (
     const withPermit = <A>(run: (tx: ReplicaDb) => A) =>
       mutex.withPermits(1)(Effect.sync(() => runReplicaTransaction(db, run)));
 
+    const startedAt = yield* Clock.currentTimeMillis;
     yield* withPermit((tx) => {
-      recoverStaleUploadClaims(tx, Date.now() - STALE_UPLOAD_CLAIM_MILLIS);
+      recoverStaleUploadClaims(tx, startedAt - STALE_UPLOAD_CLAIM_MILLIS);
     });
 
     const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
@@ -109,15 +111,19 @@ export const makeSyncEngine = (
     });
 
     const uploadOnce = Effect.fn("SyncEngine.uploadOnce")(function* () {
-      const claimedAt = Date.now();
-      const claimId = makeClaimId();
-      const claim = yield* withPermit((tx) => claimNextUpload(tx, { claimId, claimedAt }));
-      if (!claim) return undefined;
-      yield* SubscriptionRef.update(progress, (current) => ({ ...current, uploading: true }));
       return yield* Effect.acquireUseRelease(
-        Effect.succeed(claim),
+        Effect.gen(function* () {
+          const claimedAt = yield* Clock.currentTimeMillis;
+          const claimId = yield* makeClaimId;
+          const claim = yield* withPermit((tx) => claimNextUpload(tx, { claimId, claimedAt }));
+          if (claim) {
+            yield* SubscriptionRef.update(progress, (current) => ({ ...current, uploading: true }));
+          }
+          return claim;
+        }),
         (activeClaim) =>
           Effect.gen(function* () {
+            if (!activeClaim) return undefined;
             if (activeClaim.outcomeUncertain) {
               const existing = yield* transport.getReceipt(activeClaim.envelope.operationId);
               if (existing) {
@@ -130,13 +136,18 @@ export const makeSyncEngine = (
             return receipt;
           }),
         (activeClaim) =>
-          withPermit((tx) => {
-            releaseUploadClaim(tx, activeClaim.operationId, activeClaim.claimId);
-          }),
-      ).pipe(
-        Effect.ensuring(
-          SubscriptionRef.update(progress, (current) => ({ ...current, uploading: false })),
-        ),
+          activeClaim
+            ? withPermit((tx) => {
+                releaseUploadClaim(tx, activeClaim.operationId, activeClaim.claimId);
+              }).pipe(
+                Effect.ensuring(
+                  SubscriptionRef.update(progress, (current) => ({
+                    ...current,
+                    uploading: false,
+                  })),
+                ),
+              )
+            : Effect.void,
       );
     });
 
