@@ -561,13 +561,25 @@ importers:
       '@store/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@store/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tanstack/db':
+        specifier: 0.9.0
+        version: 0.9.0(typescript@7.0.2)
       '@tanstack/powersync-db-collection':
         specifier: 0.1.67
         version: 0.1.67(@powersync/common@1.57.3)(supports-color@10.2.2)(typescript@7.0.2)
+      better-sqlite3:
+        specifier: ^12.4.1
+        version: 12.11.1
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

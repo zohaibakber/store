@@ -8,6 +8,11 @@ import type {
   StockMovementRow,
 } from "@store/client-db";
 import type {
+  InventoryCommandQueries,
+  InventorySyncStatus,
+  ReplicaSqliteHandle,
+} from "@store/client-db";
+import type {
   CreateBatchInput,
   CreateCategoryInput,
   CreateInvoiceInput,
@@ -27,7 +32,11 @@ import type {
 import type { Collection, DbClient } from "@tanstack/react-db";
 import type { Result } from "effect";
 
-export type InventoryCollection<Row extends object> = Collection<Row, string>;
+export type InventoryBackendSelection =
+  | { readonly _tag: "powerSync" }
+  | { readonly _tag: "organizationObject" };
+
+export type InventoryCollection<Row extends { readonly id: string }> = Collection<Row, string>;
 
 export type Inventory = {
   readonly recommendStock: (
@@ -41,8 +50,10 @@ export type Inventory = {
   readonly invoices: InventoryCollection<InvoiceRow>;
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
-  readonly powerSync: AbstractPowerSyncDatabase;
-  readonly waitForUploadDrain: () => Promise<void>;
+  readonly actions: InventoryActions;
+  readonly commands: InventoryCommandQueries;
+  readonly sync: InventorySyncStatus;
+  readonly observeSync: (listener: (status: InventorySyncStatus) => void) => () => void;
   readonly dispose: () => Promise<void>;
 };
 
@@ -69,3 +80,10 @@ export type InventoryState =
   | { readonly _tag: "Opening" }
   | { readonly _tag: "Ready"; readonly inventory: Inventory; readonly actions: InventoryActions }
   | { readonly _tag: "Error"; readonly error: string };
+
+export type PowerSyncSaleTarget = {
+  readonly dbClient: DbClient;
+  readonly powerSync: AbstractPowerSyncDatabase;
+};
+
+export type ReplicaSqliteOpener = (databaseName: string) => Promise<ReplicaSqliteHandle>;

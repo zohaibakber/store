@@ -1,22 +1,25 @@
+import type { AbstractPowerSyncDatabase } from "@powersync/common";
 import {
   makeCatalogWrites,
   makeInvoiceWrites,
   makeLocalSaleOutbox,
   submitImportInventory,
+  submitOrganizationObjectCommand,
 } from "@store/client-db";
 import type { ImportInventoryCommand } from "@store/contracts";
 import { PowerSyncTransactor } from "@tanstack/powersync-db-collection";
+import type { DbClient } from "@tanstack/react-db";
 
 import type { InventoryHost } from "@/lib/inventory-host";
 
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
 export const persistSale =
-  (inventory: Pick<Inventory, "dbClient" | "powerSync">) => async (work: () => void) => {
-    const transaction = inventory.dbClient.createTransaction({
+  (dbClient: DbClient, powerSync: AbstractPowerSyncDatabase) => async (work: () => void) => {
+    const transaction = dbClient.createTransaction({
       autoCommit: false,
       mutationFn: async ({ transaction: pending }) => {
-        await new PowerSyncTransactor({ database: inventory.powerSync }).applyTransaction(pending);
+        await new PowerSyncTransactor({ database: powerSync }).applyTransaction(pending);
       },
     });
     transaction.mutate(work);
@@ -24,17 +27,32 @@ export const persistSale =
     await transaction.isPersisted.promise;
   };
 
+type ActionTables = Pick<
+  Inventory,
+  | "batches"
+  | "categories"
+  | "invoiceItems"
+  | "invoices"
+  | "products"
+  | "stockMovements"
+  | "dbClient"
+>;
+
 export const makeInventoryActions = (
-  inventory: Inventory,
+  inventory: ActionTables,
   host: InventoryHost,
   actor: InventoryActor,
+  runtime: {
+    readonly persistSale: (work: () => void) => Promise<void>;
+    readonly waitForUploadDrain: () => Promise<void>;
+  },
 ): InventoryActions => {
   const writes = makeCatalogWrites(inventory, actor);
   const saleOutbox = makeLocalSaleOutbox(actor.organizationId);
   const invoices = makeInvoiceWrites(
     {
       ...inventory,
-      persist: persistSale(inventory),
+      persist: runtime.persistSale,
       journalSale: (snapshot) => saleOutbox.put(snapshot),
     },
     actor,
@@ -54,7 +72,7 @@ export const makeInventoryActions = (
     },
     updateBatch: writes.updateBatch,
     importInventory: async (input) => {
-      await inventory.waitForUploadDrain();
+      await runtime.waitForUploadDrain();
       const command: ImportInventoryCommand = {
         commandId: crypto.randomUUID(),
         deviceId: actor.deviceId,
@@ -70,3 +88,16 @@ export const makeInventoryActions = (
     issueInvoice: invoices.issueInvoice,
   };
 };
+
+export const makeOrganizationObjectActions = (): InventoryActions => ({
+  createCategory: () => submitOrganizationObjectCommand(),
+  updateCategory: () => submitOrganizationObjectCommand(),
+  deleteCategory: () => submitOrganizationObjectCommand(),
+  createProduct: () => submitOrganizationObjectCommand(),
+  updateProduct: () => submitOrganizationObjectCommand(),
+  deleteProduct: () => submitOrganizationObjectCommand(),
+  createBatch: () => submitOrganizationObjectCommand(),
+  updateBatch: () => submitOrganizationObjectCommand(),
+  importInventory: () => submitOrganizationObjectCommand(),
+  issueInvoice: () => submitOrganizationObjectCommand(),
+});

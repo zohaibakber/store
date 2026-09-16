@@ -69,9 +69,18 @@ export default defineConfig({
       {
         files: [
           "packages/sync/**/*.ts",
+          "packages/client-db/src/replica/**/*.ts",
+          "packages/client-db/test/replica-*.test.ts",
           "packages/contracts/src/sync/{api,directory,http-errors,live,protocol,snapshot}.ts",
           "apps/server/src/inventory/{inventory-directory,organization-host,organization-object,sync-authority}.ts",
           "apps/server/src/routes/{sync,sync-live}.ts",
+          "apps/desktop/src/lib/inventory/{actions,index,open,provider,sync-status,types}.{ts,tsx}",
+          "apps/desktop/src/lib/inventory-host.ts",
+          "apps/desktop/src/start-electron.tsx",
+          "apps/desktop/electron/inventory-http.ts",
+          "apps/desktop/electron/inventory-http-channels.ts",
+          "apps/desktop/test/electron/inventory-http.test.ts",
+          "apps/desktop/test/inventory-workspace.test.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",

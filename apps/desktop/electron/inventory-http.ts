@@ -6,6 +6,7 @@ import {
   INVENTORY_HTTP_ABORT_CHANNEL,
   INVENTORY_HTTP_CONFIG_CHANNEL,
   INVENTORY_HTTP_REQUEST_CHANNEL,
+  type InventoryHttpBackend,
   type InventoryHttpRequest,
   type InventoryHttpResponse,
 } from "./inventory-http-channels";
@@ -27,6 +28,9 @@ const ALLOWED_REQUEST_HEADERS = new Set([
   "if-modified-since",
   "if-none-match",
 ]);
+const LIVE_TICKET_NONCE = /^[0-9a-f]{64}$/u;
+const SNAPSHOT_ID = /^[A-Za-z0-9._-]{1,200}$/u;
+const SNAPSHOT_PART = /^[1-9][0-9]{0,8}$/u;
 
 const inventoryApiPath = (apiBaseUrl: string) => {
   const url = new URL(apiBaseUrl);
@@ -35,9 +39,27 @@ const inventoryApiPath = (apiBaseUrl: string) => {
 };
 
 export const INVENTORY_COMMAND_PATHS = ["mutations", "invoices", "imports"] as const;
-export const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull"] as const;
+export const SYNC_COMMAND_PATHS = [
+  "replicas",
+  "commands",
+  "pull",
+  "snapshots",
+  "live-tickets",
+] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
+
+export const readInventoryHttpBackend = (
+  value = process.env["STORE_INVENTORY_BACKEND"],
+): InventoryHttpBackend => {
+  if (value === undefined || value === "" || value === "powerSync") {
+    return { _tag: "powerSync" };
+  }
+  if (value === "organizationObject") {
+    return { _tag: "organizationObject" };
+  }
+  throw new Error(`Unsupported inventory backend: ${value}`);
+};
 
 export const assertInventoryRequestBodySize = (
   _apiBaseUrl: string,
@@ -50,6 +72,38 @@ export const assertInventoryRequestBodySize = (
   );
 };
 
+const isReceiptPath = (apiPath: string, pathname: string): boolean => {
+  const prefix = `${apiPath}/sync/receipts/`;
+  if (!pathname.startsWith(prefix)) return false;
+  const operationId = pathname.slice(prefix.length);
+  return operationId.length > 0 && !operationId.includes("/");
+};
+
+const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
+  const prefix = `${apiPath}/sync/snapshots/`;
+  if (!pathname.startsWith(prefix)) return false;
+  const rest = pathname.slice(prefix.length);
+  const [snapshotId, parts, partNumber, ...extra] = rest.split("/");
+  if (
+    extra.length > 0 ||
+    parts !== "parts" ||
+    snapshotId === undefined ||
+    partNumber === undefined
+  ) {
+    return false;
+  }
+  return SNAPSHOT_ID.test(snapshotId) && SNAPSHOT_PART.test(partNumber);
+};
+
+const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): boolean => {
+  if (method !== "GET") return false;
+  if (requested.pathname !== `${apiPath}/sync/live`) return false;
+  const keys = [...requested.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== "nonce") return false;
+  const nonce = requested.searchParams.get("nonce");
+  return nonce !== null && LIVE_TICKET_NONCE.test(nonce);
+};
+
 export const validatedInventoryUrl = (
   apiBaseUrl: string,
   request: Pick<InventoryHttpRequest, "method" | "url">,
@@ -60,14 +114,13 @@ export const validatedInventoryUrl = (
   const credentialsPath = `${apiPath}/powersync/credentials`;
   const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
   const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
-  const receiptPath = new RegExp(
-    `^${apiPath.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/sync/receipts/[^/]+$`,
-  );
   const routeAllowed =
     (request.method === "GET" && requested.pathname === credentialsPath) ||
     (request.method === "POST" && commandPaths.includes(requested.pathname)) ||
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
-    (request.method === "GET" && receiptPath.test(requested.pathname));
+    (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
+    (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname)) ||
+    isLiveTicketUpgrade(apiPath, requested, request.method);
   if (
     requested.username ||
     requested.password ||
@@ -93,7 +146,9 @@ export const registerInventoryHttpIpc = (options: {
   readonly deviceId: string;
   readonly ipcMain: IpcMain;
   readonly allowedOrigins: () => ReadonlyArray<string>;
+  readonly backend?: InventoryHttpBackend;
 }) => {
+  const backend = options.backend ?? readInventoryHttpBackend();
   const inFlight = new Map<string, AbortController>();
   const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent) =>
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
@@ -103,6 +158,7 @@ export const registerInventoryHttpIpc = (options: {
     return {
       apiBaseUrl: options.apiBaseUrl,
       deviceId: options.deviceId,
+      backend,
     };
   };
   const handleRequest = async (
