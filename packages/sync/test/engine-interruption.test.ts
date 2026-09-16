@@ -1,3 +1,4 @@
+import { it } from "@effect/vitest";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
@@ -7,7 +8,6 @@ import * as Fiber from "effect/Fiber";
 import * as Semaphore from "effect/Semaphore";
 import { expect } from "vitest";
 
-import { it } from "../../services/node_modules/@effect/vitest/dist/index.js";
 import { makeSyncEngine } from "../src/engine";
 import { saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";

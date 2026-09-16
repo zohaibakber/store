@@ -73,14 +73,11 @@ export const commandStatus = (
 ): CommandOutboxStatus | undefined =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get()?.status;
 
-const parseStoredEnvelope = (
+export const parseStoredEnvelope = (
   row: typeof commandOutbox.$inferSelect,
 ): SyncCommandEnvelope => {
   const envelope = Schema.decodeUnknownSync(SyncCommandEnvelope)(JSON.parse(row.envelopeJson));
-  if (
-    envelope.operationId !== row.operationId ||
-    envelope.clientSequence !== row.clientSequence
-  ) {
+  if (envelope.operationId !== row.operationId || envelope.clientSequence !== row.clientSequence) {
     throw syncProtocolError(
       "COMMAND_IDENTITY_MISMATCH",
       "The stored command identity does not match its outbox row.",
@@ -89,7 +86,7 @@ const parseStoredEnvelope = (
   return envelope;
 };
 
-const overlayForAllocation = (
+export const overlayForAllocation = (
   tx: ReplicaDb,
   envelope: SyncCommandEnvelope,
 ): ReadonlyArray<typeof stockOverlays.$inferInsert> => {
@@ -183,9 +180,7 @@ export const saveLocalCommand = (
   return "pending" as const;
 };
 
-const lowestPendingRow = (
-  tx: ReplicaDb,
-): typeof commandOutbox.$inferSelect | undefined => {
+const lowestPendingRow = (tx: ReplicaDb): typeof commandOutbox.$inferSelect | undefined => {
   const rows = tx.select().from(commandOutbox).where(eq(commandOutbox.status, "pending")).all();
   let lowest: typeof commandOutbox.$inferSelect | undefined;
   for (const row of rows) {
@@ -234,10 +229,7 @@ export const claimNextUpload = (
   };
 };
 
-const validateReceipt = (
-  envelope: SyncCommandEnvelope,
-  receipt: CommandReceipt,
-): void => {
+const validateReceipt = (envelope: SyncCommandEnvelope, receipt: CommandReceipt): void => {
   if (
     receipt.operationId !== envelope.operationId ||
     receipt.replicaId !== envelope.replicaId ||
@@ -361,10 +353,90 @@ export const releaseUploadClaim = (
   return "pending" as const;
 };
 
-export const recoverStaleUploadClaims = (
+export const hasUnsentCommands = (tx: ReplicaDb): boolean => {
+  const statuses: ReadonlyArray<CommandOutboxStatus> = [
+    "pending",
+    "sending",
+    "accepted_awaiting_integration",
+  ];
+  for (const status of statuses) {
+    const row = tx
+      .select({ operationId: commandOutbox.operationId })
+      .from(commandOutbox)
+      .where(eq(commandOutbox.status, status))
+      .get();
+    if (row) return true;
+  }
+  return false;
+};
+
+export const verifyReplicaIncarnation = (tx: ReplicaDb, incarnation: string): void => {
+  const state = loadReplicaState(tx);
+  if (state.incarnation !== incarnation) {
+    throw syncProtocolError(
+      "INCARNATION_MISMATCH",
+      `Expected incarnation ${state.incarnation}, received ${incarnation}.`,
+    );
+  }
+};
+
+export const verifyAuthorityHeadNotBehind = (tx: ReplicaDb, authorityHorizon: string): void => {
+  const state = loadReplicaState(tx);
+  if (compareDecimalSequence(state.appliedCommitSequence, authorityHorizon) > 0) {
+    throw syncProtocolError(
+      "SNAPSHOT_REQUIRED",
+      `Local applied cursor ${state.appliedCommitSequence} is ahead of authority horizon ${authorityHorizon}.`,
+    );
+  }
+};
+
+export const openReplicaIdentity = (
   tx: ReplicaDb,
-  staleBefore: number,
-): number => {
+  input: {
+    readonly replicaId: string;
+    readonly adoptPendingOutbox: boolean;
+  },
+): void => {
+  const state = loadReplicaState(tx);
+  if (state.replicaId === input.replicaId) return;
+  if (!hasUnsentCommands(tx)) {
+    runWrite(
+      tx
+        .update(replicaState)
+        .set({ replicaId: input.replicaId })
+        .where(eq(replicaState.id, state.id)),
+    );
+    return;
+  }
+  if (!input.adoptPendingOutbox) {
+    throw syncProtocolError(
+      "REPLICA_OWNED_BY_OTHER",
+      "Unsent commands remain for the previous replica identity.",
+    );
+  }
+  const rows = tx.select().from(commandOutbox).all();
+  for (const row of rows) {
+    const envelope = parseStoredEnvelope(row);
+    const adopted = {
+      ...envelope,
+      replicaId: input.replicaId,
+    };
+    runWrite(
+      tx
+        .update(commandOutbox)
+        .set({ envelopeJson: JSON.stringify(adopted) })
+        .where(eq(commandOutbox.operationId, row.operationId)),
+    );
+  }
+  runWrite(
+    tx
+      .update(replicaState)
+      .set({ replicaId: input.replicaId })
+      .where(eq(replicaState.id, state.id)),
+  );
+};
+
+export const recoverStaleUploadClaims = (tx: ReplicaDb, staleBefore: number): number => {
   const stale = tx
     .select()
     .from(commandOutbox)
