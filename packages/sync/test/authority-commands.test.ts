@@ -15,6 +15,7 @@ import {
   countInvoices,
   lastUnitActor,
   loadBatch,
+  loadReceiptAttempts,
   openInventoryStore,
   runCommit,
   runPull,
@@ -96,19 +97,72 @@ describe("authority command library", () => {
     store.close();
   });
 
-  it("rolls back domain writes when the sqlite transaction throws", () => {
+  it("rolls back domain writes when sqlite aborts the whole transaction", () => {
     const store = openInventoryStore();
     seedLastUnitCatalog(store.db);
     store.sqlite.exec(`
       CREATE TRIGGER fail_after_invoice AFTER INSERT ON invoices
       BEGIN
-        SELECT RAISE(FAIL, 'forced rollback');
+        SELECT RAISE(ROLLBACK, 'forced rollback');
       END;
     `);
     expect(() => runCommit(store.db, lastUnitBuyerAEnvelope)).toThrow();
     expect(loadBatch(store.db)?.unitQuantity).toBe(1);
     expect(countInvoices(store.db)).toBe(0);
     expect(runPull(store.db).transactions).toHaveLength(0);
+    store.close();
+  });
+
+  it("keeps a deterministic protocol failure as a throw, not COMMAND_ABANDONED", () => {
+    const store = openInventoryStore();
+    seedLastUnitCatalog(store.db);
+    const empty = lastUnitEnvelope({
+      replicaId: LAST_UNIT_REPLICA_A,
+      clientSequence: "1",
+      command: {
+        ...lastUnitBuyerACommand,
+        input: { customerName: null, items: [] },
+        allocations: [],
+      },
+    });
+    expect(() => runCommit(store.db, empty)).toThrowError(SyncProtocolError);
+    try {
+      runCommit(store.db, empty);
+    } catch (cause) {
+      expect(isProtocol(cause) && cause.code).toBe("INVALID_OPERATION");
+    }
+    expect(countInvoices(store.db)).toBe(0);
+    expect(loadReceiptAttempts(store.db, empty.operationId)).toBeUndefined();
+    expect(loadBatch(store.db)?.unitQuantity).toBe(1);
+    store.close();
+  });
+
+  it("records a terminal COMMAND_ABANDONED decision instead of looping on a poison command", () => {
+    const store = openInventoryStore();
+    seedLastUnitCatalog(store.db);
+    store.sqlite.exec(`
+      CREATE TRIGGER fail_after_invoice AFTER INSERT ON invoices
+      BEGIN
+        SELECT RAISE(FAIL, 'forced poison');
+      END;
+    `);
+    const receipt = runCommit(store.db, lastUnitBuyerAEnvelope);
+    expect(receipt).toEqual({
+      operationId: lastUnitBuyerAEnvelope.operationId,
+      replicaId: LAST_UNIT_REPLICA_A,
+      clientSequence: lastUnitBuyerAEnvelope.clientSequence,
+      payloadHash: lastUnitBuyerAEnvelope.payloadHash,
+      decision: "rejected",
+      commitSequence: "1",
+      result: {
+        _tag: "rejected",
+        code: "COMMAND_ABANDONED",
+        message: "The command could not be applied.",
+      },
+    });
+    expect(loadReceiptAttempts(store.db, lastUnitBuyerAEnvelope.operationId)?.attempts).toBe(8);
+    expect(loadBatch(store.db)?.unitQuantity).toBe(1);
+    expect(countInvoices(store.db)).toBe(0);
     store.close();
   });
 
