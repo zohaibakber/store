@@ -1,7 +1,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
-import * as Neon from "alchemy/Neon";
+import * as Planetscale from "alchemy/Planetscale";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -13,7 +13,7 @@ import { InventoryPostgres } from "./packages/db/src/postgres/infra.ts";
 export default Alchemy.Stack(
   "Tabaaq",
   {
-    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers(), Neon.providers()),
+    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers(), Planetscale.providers()),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
@@ -29,7 +29,8 @@ export default Alchemy.Stack(
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
-      inventoryPostgresProjectId: inventoryPostgres.projectId,
+      inventoryPostgresDatabaseId: inventoryPostgres.database.id,
+      inventoryPostgresBranch: inventoryPostgres.branch?.name ?? "main",
     };
   }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),
 );

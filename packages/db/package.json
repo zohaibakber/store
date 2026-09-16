@@ -15,7 +15,6 @@
     "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.postgres.config.ts"
   },
   "dependencies": {
-    "@distilled.cloud/neon": "1.0.0-rc.6",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "nanoid": "^6.0.1"
   },

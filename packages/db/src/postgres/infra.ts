@@ -1,87 +1,77 @@
-import { getConnectionURI } from "@distilled.cloud/neon";
+import * as Alchemy from "alchemy";
+import { adopt } from "alchemy/AdoptPolicy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
-import * as Neon from "alchemy/Neon";
-import * as AlchemyOutput from "alchemy/Output";
+import * as Planetscale from "alchemy/Planetscale";
+import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Effect from "effect/Effect";
+
+/** Existing PlanetScale cluster `tabaaq/db`. Adopt it; do not create another. */
+const INVENTORY_DATABASE_NAME = "db";
+
+const inventoryCluster = {
+  clusterSize: "PS_5",
+  arch: "arm",
+  replicas: 0,
+  region: { slug: "us-east" },
+} as const;
 
 /** The authoritative inventory database. */
 export const InventoryPostgres = Effect.gen(function* () {
+  const { stage } = yield* Alchemy.Stack;
   const schema = yield* Drizzle.Schema("InventoryPostgresSchema", {
     schema: "packages/db/src/postgres/schema.ts",
     out: "packages/db/migrations/postgres",
     dialect: "postgres",
   });
 
-  return yield* Neon.Project("InventoryPostgres", {
-    enableLogicalReplication: true,
-    migrations: schema,
-  });
-});
+  // Retain: live stages adopt this billed cluster. Destroying one stage must
+  // not drop production data.
+  const database = yield* Planetscale.PostgresDatabase("InventoryPostgres", {
+    name: INVENTORY_DATABASE_NAME,
+    ...inventoryCluster,
+    ...(stage === "prod" ? { migrations: schema } : {}),
+  }).pipe(adopt(), RemovalPolicy.retain());
 
-/**
- * `Neon.Project` copies its create-time connection URI across updates, so
- * Hyperdrive must not use `postgres.origin`. Ask Neon for the current URI at
- * deploy time. The Worker runtime resolves the already-bound Hyperdrive and
- * must not call the Neon API.
- *
- * IDs are Outputs on the project resource. Plan resolves them from state.
- * Yielding them inside fromEffect bind()s RuntimeContext, which plan.diff
- * does not provide.
- */
-const currentInventoryOrigin = (postgres: Neon.Project) =>
-  AlchemyOutput.all(
-    AlchemyOutput.asOutput(postgres.projectId),
-    AlchemyOutput.asOutput(postgres.defaultBranchId),
-    AlchemyOutput.asOutput(postgres.databaseName),
-    AlchemyOutput.asOutput(postgres.roleName),
-  ).pipe(
-    AlchemyOutput.mapEffect(([projectId, branchId, databaseName, roleName]) =>
-      Effect.gen(function* () {
-        const direct = yield* getConnectionURI({
-          project_id: projectId,
-          branch_id: branchId,
-          database_name: databaseName,
-          role_name: roleName,
-          pooled: false,
-        });
-        const pooled = yield* getConnectionURI({
-          project_id: projectId,
-          branch_id: branchId,
-          database_name: databaseName,
-          role_name: roleName,
-          pooled: true,
-        });
-        return {
-          origin: Neon.parsePostgresOrigin(direct.uri),
-          pooledOrigin: Neon.parsePostgresOrigin(pooled.uri),
-        };
-      }).pipe(Effect.orDie),
-    ),
-  );
+  const branch =
+    stage === "prod"
+      ? undefined
+      : yield* Planetscale.PostgresBranch("InventoryPostgresBranch", {
+          name: stage,
+          database,
+          parentBranch: "main",
+          clusterSize: inventoryCluster.clusterSize,
+          replicas: inventoryCluster.replicas,
+          migrations: schema,
+        }).pipe(adopt());
+
+  return { database, branch };
+});
 
 /** Cloudflare's pooled Worker connection to the authoritative inventory DB. */
 export const InventoryHyperdrive = Effect.gen(function* () {
-  const postgres = yield* InventoryPostgres;
-  // Folded to the cached origin in the Worker bundle. The Output keeps the
-  // Neon lookup out of the stack program's requirements.
-  const credentials = !globalThis.__ALCHEMY_RUNTIME__
-    ? currentInventoryOrigin(postgres)
-    : { origin: postgres.origin, pooledOrigin: postgres.pooledOrigin };
+  const { database, branch } = yield* InventoryPostgres;
+  const role = yield* Planetscale.PostgresRole("InventoryPostgresAppRole", {
+    database,
+    branch: branch ?? "main",
+    inheritedRoles: ["pg_read_all_data", "pg_write_all_data"],
+  });
   return yield* Cloudflare.Hyperdrive.Connection("InventoryPostgresHyperdrive", {
-    // Hyperdrive is itself a pooler, so its production origin is Neon's direct endpoint.
-    origin: credentials.origin,
-    // Local workerd bypasses Hyperdrive and should use Neon's pooled endpoint.
+    // Hyperdrive is itself a pooler, so its production origin is the direct endpoint.
+    origin: role.origin,
+    // Local workerd bypasses Hyperdrive and should use PlanetScale's pooled endpoint.
     dev: {
-      scheme: credentials.pooledOrigin.scheme,
-      host: credentials.pooledOrigin.host,
-      port: credentials.pooledOrigin.port,
-      database: credentials.pooledOrigin.database,
-      user: credentials.pooledOrigin.user,
-      password: credentials.pooledOrigin.password,
+      scheme: role.pooledOrigin.scheme,
+      host: role.pooledOrigin.host,
+      port: role.pooledOrigin.port,
+      database: role.pooledOrigin.database,
+      user: role.pooledOrigin.user,
+      password: role.pooledOrigin.password,
       sslmode: "require",
     },
     // Writes must never be served from Hyperdrive's query cache.
     caching: { disabled: true },
+    // PS_5 has a small connection budget; leave room for PowerSync and migrations.
+    originConnectionLimit: 10,
   });
 });

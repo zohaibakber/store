@@ -101,6 +101,9 @@ Each GitHub Environment must define:
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
 - Variable `POWERSYNC_URL`, pointing to that stage's PowerSync endpoint.
+- Secrets `PLANETSCALE_API_TOKEN_ID` and `PLANETSCALE_API_TOKEN`, and secret
+  `PLANETSCALE_ORGANIZATION`. Alchemy adopts the existing `tabaaq/db` cluster;
+  it does not create a new database.
 - Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
   Android OAuth client IDs, accepted as ID token audiences alongside the web
   client ID.
@@ -125,7 +128,7 @@ environment's public hostname, not the production hostname.
 
 Use a separate hostname such as `nightly.tabaaq.app` for `Nightly`, and add that
 site origin to `AUTH_TRUSTED_ORIGINS`. Nightly uses its own auth keys, peppers,
-Postgres project, D1 database, KV namespace, and PowerSync endpoint.
+PlanetScale branch, D1 database, KV namespace, and PowerSync endpoint.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back

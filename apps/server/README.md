@@ -16,7 +16,7 @@ from `Authorization: Bearer` and trusts the organization membership in the
 signed claims. Auth users, organizations, memberships, and refresh sessions
 live in D1.
 
-Inventory is authoritative in Neon Postgres. The Worker authenticates and
+Inventory is authoritative in PlanetScale Postgres. The Worker authenticates and
 validates catalog write commands, commits each command in one Postgres
 transaction, and returns that transaction ID. PowerSync publishes
 organization-scoped table changes to TanStack DB clients. There is no
@@ -27,10 +27,12 @@ organization Durable Object and no `/api/sync/live` route.
 Infrastructure is declared in TypeScript with [Alchemy](https://alchemy.run).
 The Worker, its bindings, and the local dev port live in `infra.ts`.
 `alchemy.run.ts` composes the API Worker, auth Worker, website, and inventory
-Postgres project into one stack.
+Postgres cluster into one stack.
 
-Alchemy provisions the auth D1 database, Neon Postgres, Hyperdrive, Workers AI,
-and a product-scan rate limiter. PowerSync receives the direct Neon connection;
+Alchemy provisions the auth D1 database, Workers AI, and a product-scan rate
+limiter, and adopts the PlanetScale Postgres cluster `tabaaq/db` with Hyperdrive.
+Production uses branch `main`; other stages fork a same-named branch so local
+writes stay off production. PowerSync receives that branch's direct connection;
 Worker commands use Hyperdrive for pooled Postgres access.
 
 Run deployments from the repository root and always pass a stage:
@@ -46,8 +48,10 @@ pnpm run deploy:prod
 
 Secrets come from gitignored `.env.dev`, `.env.nightly`, and `.env.prod` files. Use different
 JWT keys and peppers for each stage. Set `POWERSYNC_URL` to that stage's
-PowerSync endpoint; configure its source with the direct Neon connection, the
-auth Worker's JWKS URL, and audience `tabaaq-api`.
+PowerSync endpoint; configure its source with the matching PlanetScale branch's
+direct connection, the auth Worker's JWKS URL, and audience `tabaaq-api`. Live
+stages also need `PLANETSCALE_API_TOKEN_ID`, `PLANETSCALE_API_TOKEN`, and
+`PLANETSCALE_ORGANIZATION`.
 
 ## Local development
 

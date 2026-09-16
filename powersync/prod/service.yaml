@@ -6,12 +6,12 @@ region: us
 replication:
   connections:
     - type: postgresql
-      hostname: ep-fragrant-smoke-aujwvr1j.c-10.us-east-1.aws.neon.tech
+      hostname: us-east-2.pg.psdb.cloud
       port: 5432
-      database: neondb
-      username: neondb_owner
+      database: postgres
+      username: pscale_api_7ycpdb2q2p25.xjdqadxfhv63
       password:
-        secret_ref: default_password
+        secret: !env PS_DATABASE_PASSWORD
       name: Default
       tag: default
       sslmode: verify-full

@@ -57,11 +57,12 @@ describe("API Worker bundle", () => {
     expect(source).not.toContain("connectSyncLive");
   });
 
-  it("does not call the Neon API from the Worker runtime", async () => {
+  it("does not call the PlanetScale API from the Worker runtime", async () => {
     const chunks = await bundleWorker();
     const code = chunks.map((chunk) => chunk.code).join("\n");
     expect(code).not.toContain("getConnectionURI");
     expect(code).not.toContain("resetProjectBranchRolePassword");
+    expect(code).not.toContain("PLANETSCALE_API_TOKEN");
   }, 60_000);
 
   it("does not require process.env production hostnames at Worker runtime", async () => {

@@ -78,13 +78,15 @@ and `vp build` (Turborepo fans them out per package).
   stores state remotely and binds real dev-stage D1, Hyperdrive, and Postgres.
   There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
-  refresh and ephemeral peppers, and Google OAuth credentials. Use different
+  refresh and ephemeral peppers, Google OAuth credentials, and PlanetScale API
+  token env vars (`PLANETSCALE_API_TOKEN_ID`, `PLANETSCALE_API_TOKEN`,
+  `PLANETSCALE_ORGANIZATION`). Use different
   secrets per stage. Do not commit env files or env templates.
 - **Auth gating.** The desktop renderer and the hosted SPA are gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
   above. Inventory authority is
-  Postgres. PowerSync streams organization-scoped rows into renderer SQLite
+  PlanetScale Postgres. PowerSync streams organization-scoped rows into renderer SQLite
   (`@store/client-db`). D1 is auth. There is no organization Durable Object
   and no `/api/sync/live` path.
   Inventory can be driven from the local PowerSync replica without the

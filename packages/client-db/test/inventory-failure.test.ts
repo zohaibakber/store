@@ -46,10 +46,10 @@ describe("inventoryFailureFromHttp", () => {
   it("uses a plain-text HTTP body as the message", () => {
     const failure = inventoryFailureFromHttp(
       400,
-      "Neon rejected the product batch.",
+      "Postgres rejected the product batch.",
       "Legacy inventory migration batch failed.",
     );
-    expect(failure.message).toBe("Neon rejected the product batch.");
+    expect(failure.message).toBe("Postgres rejected the product batch.");
     expect(failure.reason).toEqual({ _tag: "rejected", code: "HTTP_400" });
   });
 
