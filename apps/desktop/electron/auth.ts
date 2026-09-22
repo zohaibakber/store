@@ -12,7 +12,6 @@ import {
   RequestError,
   SessionHttpClient,
   adoptSessionTokens,
-  decodeTokenSet,
   loadSessionSnapshot,
   refreshTokenNeedsRefresh,
   renewSessionSnapshot,
@@ -120,7 +119,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
         .fetch(`${this.#http.authBaseUrl}/v1/session/logout`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(SignOutInput.make({ refreshToken })),
+          body: Schema.encodeSync(Schema.fromJsonString(SignOutInput))(
+            SignOutInput.make({ refreshToken }),
+          ),
         })
         .catch(() => undefined);
     }
@@ -155,8 +156,8 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     try {
       const encrypted = await readFile(this.#storagePath());
       if (!persistableEncryption()) return null;
-      return Schema.decodeUnknownOption(PersistedAuth)(
-        JSON.parse(safeStorage.decryptString(encrypted)),
+      return Schema.decodeUnknownOption(Schema.fromJsonString(PersistedAuth))(
+        safeStorage.decryptString(encrypted),
       ).pipe(Option.getOrNull);
     } catch {
       return null;
@@ -172,9 +173,11 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       return;
     }
     await mkdir(path.dirname(this.#storagePath()), { recursive: true });
-    await writeFile(this.#storagePath(), safeStorage.encryptString(JSON.stringify(value)), {
-      mode: 0o600,
-    });
+    await writeFile(
+      this.#storagePath(),
+      safeStorage.encryptString(Schema.encodeSync(Schema.fromJsonString(PersistedAuth))(value)),
+      { mode: 0o600 },
+    );
   }
 
   /** Returns null only on explicit auth rejection; transient failures preserve credentials. */
@@ -184,21 +187,22 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     const response = await net.fetch(`${this.#http.authBaseUrl}/v1/session/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(RefreshInput.make({ refreshToken: tokens.refreshToken })),
+      body: Schema.encodeSync(Schema.fromJsonString(RefreshInput))(
+        RefreshInput.make({ refreshToken: tokens.refreshToken }),
+      ),
     });
+    const bodyText = await response.text();
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         await this.#clear();
         return null;
       }
-      const payload = await response
-        .json()
-        .then(Schema.decodeUnknownOption(Schema.Json))
-        .then(Option.getOrNull)
-        .catch(() => null);
+      const payload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(bodyText).pipe(
+        Option.getOrNull,
+      );
       throw requestErrorFromPayload(payload, response.status);
     }
-    const next = decodeTokenSet(await response.json());
+    const next = Schema.decodeUnknownSync(Schema.fromJsonString(TokenSet))(bodyText);
     this.#tokens.set(next);
     await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
     return next;

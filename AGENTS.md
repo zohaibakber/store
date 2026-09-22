@@ -87,9 +87,7 @@ and `vp build` (Turborepo fans them out per package).
 - **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
-  above. Inventory authority on nightly desktop is the organization Durable
-  Object (SQLite). D1 is auth. Desktop defaults to that replica over
-  `/api/sync/*`, including `/api/sync/live`. Catalog writes on that path are
-  unsupported. `dev` and `prod` still provision Neon. Nightly skips Neon.
+  above. D1 is auth. Inventory commands commit in PlanetScale Postgres through
+  `/api/sync/*`. `dev` and `prod` provision that database. Nightly skips it.
   Inventory can be driven from the local replica without the backend after the
   first sync.

@@ -24,6 +24,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { registerReplicaWorkerIpc } from "./replica-ipc";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
@@ -60,6 +61,7 @@ initDesktopSentry();
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
+let disposeReplicaWorker: (() => Promise<void>) | undefined;
 
 function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
@@ -336,6 +338,7 @@ const shutdown = makeShutdownCoordinator({
     const results = await Promise.allSettled([
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
+      Promise.resolve(disposeReplicaWorker?.()),
     ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -397,6 +400,26 @@ void app.whenReady().then(async () => {
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
   });
+  disposeReplicaWorker = registerReplicaWorkerIpc({
+    ipcMain,
+    userDataPath: app.getPath("userData"),
+    workerPath: path.join(MAIN_DIST, "replica-worker.js"),
+    apiBaseUrl: API_BASE_URL,
+    syncApiRequest: async (pathname, init) => {
+      const url = new URL(pathname, API_BASE_URL.endsWith("/") ? API_BASE_URL : `${API_BASE_URL}/`);
+      const response = await authBroker.apiFetch(url, {
+        method: init?.method ?? "GET",
+        headers: init?.body ? { "content-type": "application/json" } : undefined,
+        body: init?.body ?? undefined,
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        bodyText: await response.text(),
+      };
+    },
+    allowedOrigins: allowedRendererOrigins,
+  }).dispose;
   await authBroker.initialize();
   publishSession(authBroker.snapshot);
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);

@@ -8,9 +8,7 @@ export const loadDeviceId = async (userDataDirectory: string) => {
   try {
     const stored = (await readFile(file, "utf8")).trim();
     if (validDeviceId(stored)) return stored;
-  } catch {
-    // Missing or unreadable persisted state is replaced below.
-  }
+  } catch {}
 
   const created = crypto.randomUUID();
   await mkdir(path.dirname(file), { recursive: true });

@@ -10,14 +10,11 @@ import {
   inventoryReplicaScope,
   sqliteCollectionOptions,
   syncStatusFromOutbox,
-  createSyncStatusStore,
+  createInvoiceCoherenceGate,
   decodeOutboxStatusRow,
-  connectOrganizationObjectLiveTransport,
   type InventoryCollectionDescriptor,
   type InventoryCollectionRow,
   type InventorySyncStatus,
-  type OrganizationObjectLiveTransport,
-  type ReplicaLiveFeed,
   type ReplicaSqliteHandle,
 } from "@store/client-db";
 import {
@@ -27,12 +24,12 @@ import {
 import { collectionOptions, DbClient } from "@tanstack/react-db";
 import { Effect, ManagedRuntime } from "effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 
 import type { HostInventoryScope } from "@/host-access";
 import type { InventoryHost } from "@/lib/inventory-host";
 
 import { makeInventoryActions } from "./actions";
+import { createWorkspaceAtoms } from "./atoms";
 import type { Inventory, InventoryActor } from "./types";
 
 export const inventoryScopeId = (host: InventoryHost, scope: HostInventoryScope) =>
@@ -74,6 +71,9 @@ const replicaDescriptor = <Row extends InventoryCollectionRow>(
 });
 
 const outboxStatus = async (replica: ReplicaSqliteHandle): Promise<InventorySyncStatus> => {
+  if (replica.readOutboxStatuses) {
+    return syncStatusFromOutbox(await replica.readOutboxStatuses());
+  }
   const statuses = (await replica.query(`select status from command_outbox`, [])).flatMap((row) => {
     const decoded = decodeOutboxStatusRow(row);
     return Option.isSome(decoded) ? [decoded.value.status] : [];
@@ -81,144 +81,129 @@ const outboxStatus = async (replica: ReplicaSqliteHandle): Promise<InventorySync
   return syncStatusFromOutbox(statuses);
 };
 
+type CollectionDeps = {
+  readonly executor: ReplicaSqliteHandle;
+  readonly changeFeed: ReplicaSqliteHandle;
+  readonly coherence: ReturnType<typeof createInvoiceCoherenceGate>;
+};
+
+const mountCollection = <Row extends InventoryCollectionRow>(
+  dbClient: DbClient,
+  deps: CollectionDeps,
+  id: string,
+  source: InventoryCollectionDescriptor<Row>["source"],
+  syncMode: InventoryCollectionDescriptor<Row>["syncMode"],
+  decodeRows: InventoryCollectionDescriptor<Row>["decodeRows"],
+) =>
+  dbClient.collection(
+    collectionOptions(
+      sqliteCollectionOptions(replicaDescriptor(id, source, syncMode, decodeRows), deps),
+    ),
+  );
+
+const openCollections = (dbClient: DbClient, scopeId: string, deps: CollectionDeps) => ({
+  categories: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:categories`,
+    "categories",
+    "eager",
+    decodeCategorySqliteRows,
+  ),
+  products: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:products`,
+    "products",
+    "on-demand",
+    decodeProductSqliteRows,
+  ),
+  batches: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:batches`,
+    "batches",
+    "on-demand",
+    decodeBatchSqliteRows,
+  ),
+  invoices: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:invoices`,
+    "invoices",
+    "on-demand",
+    decodeInvoiceSqliteRows,
+  ),
+  invoiceItems: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:invoice-items`,
+    "invoiceItems",
+    "on-demand",
+    decodeInvoiceItemSqliteRows,
+  ),
+  stockMovements: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:stock-movements`,
+    "stockMovements",
+    "on-demand",
+    decodeStockMovementSqliteRows,
+  ),
+});
+
 export const openInventoryWorkspace = async (
   host: InventoryHost,
   scope: HostInventoryScope,
 ): Promise<Inventory> => {
   const scopeId = inventoryScopeId(host, scope);
-  const replica = await host.openReplicaSqlite(inventoryOrganizationObjectReplicaName(scopeId));
-  await replica.query(
-    `update replica_state set organizationId = ?, userId = ?, replicaId = ? where id = 'singleton'`,
-    [scope.organizationId, scope.userId, host.deviceId],
-  );
+  const replica = await host.openReplicaSqlite(inventoryOrganizationObjectReplicaName(scopeId), {
+    organizationId: scope.organizationId,
+    userId: scope.userId,
+    replicaId: host.deviceId,
+  });
+  if (replica.engine !== "indexeddb") {
+    await replica.query(
+      `update replica_state set organizationId = ?, userId = ?, replicaId = ? where id = 'singleton'`,
+      [scope.organizationId, scope.userId, host.deviceId],
+    );
+  }
   const dbClient = new DbClient();
-  const collections = {
-    categories: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(
-            `${scopeId}:categories`,
-            "categories",
-            "eager",
-            decodeCategorySqliteRows,
-          ),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-    products: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(
-            `${scopeId}:products`,
-            "products",
-            "on-demand",
-            decodeProductSqliteRows,
-          ),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-    batches: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(`${scopeId}:batches`, "batches", "on-demand", decodeBatchSqliteRows),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-    invoices: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(
-            `${scopeId}:invoices`,
-            "invoices",
-            "on-demand",
-            decodeInvoiceSqliteRows,
-          ),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-    invoiceItems: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(
-            `${scopeId}:invoice-items`,
-            "invoiceItems",
-            "on-demand",
-            decodeInvoiceItemSqliteRows,
-          ),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-    stockMovements: dbClient.collection(
-      collectionOptions(
-        sqliteCollectionOptions(
-          replicaDescriptor(
-            `${scopeId}:stock-movements`,
-            "stockMovements",
-            "on-demand",
-            decodeStockMovementSqliteRows,
-          ),
-          { executor: replica, changeFeed: replica },
-        ),
-      ),
-    ),
-  };
+  const coherence = createInvoiceCoherenceGate();
+  const collections = openCollections(dbClient, scopeId, {
+    executor: replica,
+    changeFeed: replica,
+    coherence,
+  });
   const { recommendStock, disposeRecommendations } = recommendStockFor(scope);
-  const status = createSyncStatusStore(await outboxStatus(replica));
+  const atoms = createWorkspaceAtoms(await outboxStatus(replica), recommendStock);
   const unsubscribeStatus = replica.subscribe((notice) => {
     if (notice.workspaceToken !== replica.workspaceToken) return;
-    void outboxStatus(replica).then(status.set);
+    void outboxStatus(replica).then((next) => {
+      atoms.setSyncStatus(next);
+    });
   });
   const tables = { dbClient, ...collections };
   const actor = actorFor(host, scope);
-  let live: OrganizationObjectLiveTransport | undefined;
-  const openSocket = host.openLiveSocket;
-  if (openSocket) {
-    const appliedRows = await replica.query(
-      `select appliedCommitSequence from replica_state where id = 'singleton'`,
-      [],
-    );
-    const applied = appliedRows[0]?.appliedCommitSequence;
-    let appliedCursor = Schema.is(Schema.String)(applied) ? applied : "0";
-    let feed: ReplicaLiveFeed = {
-      _tag: "catchingUp",
-      targetCommitSequence: appliedCursor,
-    };
-    void connectOrganizationObjectLiveTransport(
-      host.authenticatedFetch,
-      host.apiBaseUrl,
-      host.deviceId,
-      {
-        feed: () => feed,
-        appliedCursor: () => appliedCursor,
-        applyTransactions: () => false,
-        applyReceipt: () => undefined,
-        resumeFromCursor: (cursor) => {
-          appliedCursor = cursor;
-          feed = { _tag: "catchingUp", targetCommitSequence: cursor };
-        },
-      },
-      openSocket,
-    )
-      .then((transport) => {
-        live = transport;
-      })
-      .catch(() => undefined);
-  }
   return {
     ...tables,
-    actions: makeInventoryActions(tables, host, actor, replica),
-    commands: { status: status.get },
-    sync: status.get(),
-    observeSync: status.observe,
+    atoms,
+    actions: makeInventoryActions(
+      tables,
+      actor,
+      replica,
+      () => {
+        replica.wakeSyncUpload?.();
+      },
+      atoms,
+    ),
+    commands: { status: () => atoms.getSyncStatus() },
+    sync: atoms.getSyncStatus(),
+    observeSync: (listener) => atoms.observeSyncStatus(listener),
     recommendStock,
     dispose: async () => {
-      live?.close();
       unsubscribeStatus();
+      atoms.dispose();
       try {
         await disposeRecommendations();
         await dbClient.cleanup();

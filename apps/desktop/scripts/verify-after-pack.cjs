@@ -3,9 +3,8 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Live inventory is the organization-object replica: wa-sqlite in a dedicated
-// worker (IndexedDB VFS) plus replica SQL migrations in the renderer. OPFS
-// worker assets stay banned because this build has not switched to the OPFS VFS.
+// Live inventory uses IndexedDB on web and main-process better-sqlite3 on
+// Electron. Ban OPFS/WASM SQLite worker assets from the packaged renderer.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
@@ -32,6 +31,9 @@ const forbiddenRendererMarkers = [
   "snapshot_jobs",
   "invoice_counters",
   "drizzle-orm",
+  "wa-sqlite",
+  "sql-sqlite-wasm",
+  "OpfsWorker",
 ];
 
 const forbiddenServerMarkers = [
@@ -109,6 +111,16 @@ const verifyDesktopAsar = (archivePath) => {
   );
   if (browserPersistenceAssets.length > 0) {
     fail("browser OPFS persistence reached the desktop artifact", browserPersistenceAssets);
+  }
+
+  const wasmSqliteAssets = entries.filter(
+    (entry) =>
+      /wa-sqlite/u.test(entry) ||
+      /sql-sqlite-wasm/u.test(entry) ||
+      /replica-sqlite\.worker/u.test(entry),
+  );
+  if (wasmSqliteAssets.length > 0) {
+    fail("SQLite WASM / OPFS worker assets reached the desktop artifact", wasmSqliteAssets);
   }
 
   const forbiddenPackages = [...packageRoots].filter(

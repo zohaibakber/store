@@ -8,66 +8,28 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { authenticateCurrentOrganization, OrganizationAuthLive } from "../auth/organization";
-import { InventoryMutationHandlers } from "../routes/inventory-mutations";
+import { OrganizationAuthLive } from "../auth/organization";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
-import { handleSyncLiveUpgrade } from "../routes/sync-live";
 import { UploadHandlers } from "../routes/uploads";
 import { reportError } from "../runtime/worker";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
 import { ServerRuntime } from "./runtime";
-import { SystemHandlers } from "./system";
+import { AuthHandlers, SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(
-  UploadHandlers,
-  ProductScanHandlers,
-  InventoryMutationHandlers,
-  SyncHandlers,
-).pipe(Layer.provide(OrganizationAuthLive));
-
-const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
-  Layer.provide(Layer.mergeAll(SystemHandlers, ProtectedHandlers)),
+const ProtectedHandlers = Layer.mergeAll(UploadHandlers, ProductScanHandlers, SyncHandlers).pipe(
+  Layer.provide(OrganizationAuthLive),
 );
 
-const RawRoutes = HttpRouter.use((router) =>
-  Effect.gen(function* () {
-    const runtime = yield* ServerRuntime;
-    const handleSessionRequest = Effect.fn("Server.handleSessionRequest")(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      const snapshot = yield* runtime
-        .loadWorkspace(new Headers(request.headers))
-        .pipe(Effect.orDie);
-      return HttpServerResponse.jsonUnsafe(snapshot);
-    });
-
-    yield* router.add("GET", "/api/auth/session", handleSessionRequest);
-    yield* router.add("GET", "/api/auth/get-session", handleSessionRequest);
-    yield* router.add(
-      "GET",
-      "/api/sync/live",
-      Effect.fn("SyncLive.upgrade")(function* () {
-        const identity = yield* authenticateCurrentOrganization(runtime);
-        return yield* handleSyncLiveUpgrade(identity);
-      })().pipe(
-        Effect.catchTags({
-          Unauthenticated: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 401 })),
-          Forbidden: (error) =>
-            Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.error }, { status: 403 })),
-        }),
-      ),
-    );
-  }),
+const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
+  Layer.provide(Layer.mergeAll(SystemHandlers, AuthHandlers, ProtectedHandlers)),
 );
 
 const Cors = HttpRouter.middleware(
   Effect.gen(function* () {
     const runtime = yield* ServerRuntime;
     const cors = HttpMiddleware.cors({
-      // Matched the way trusted origins are classified, so a wildcard or
-      // native-scheme entry is not allowed by CORS and then refused elsewhere.
       allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
       allowedHeaders: ["Content-Type", "Authorization", "Electron-Origin", "Expo-Origin"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
@@ -77,9 +39,6 @@ const Cors = HttpRouter.middleware(
     });
     return (httpEffect) =>
       Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
-        // Effect stores `url` without scheme/host. `new URL(originalUrl)`
-        // throws TypeError: Invalid URL string on Cloudflare when that value
-        // is a path rather than an absolute URL.
         if (!request.url.startsWith("/api")) return httpEffect;
         return cors(httpEffect);
       });
@@ -87,7 +46,7 @@ const Cors = HttpRouter.middleware(
   { global: true },
 );
 
-export const ServerRoutes = Layer.mergeAll(ApiRoutes, RawRoutes, Cors);
+export const ServerRoutes = Layer.mergeAll(ApiRoutes, Cors);
 
 export const recoverUnexpected = <E, R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,

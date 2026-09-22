@@ -1,15 +1,13 @@
 import { OtpCode, SessionId } from "@store/auth";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import { authError } from "./errors";
+import { AuthCryptoError, authError } from "./errors";
 
 const textEncoder = new TextEncoder();
-
-export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("Auth.CryptoError", {
-  operation: Schema.String,
-  cause: Schema.Defect(),
-}) {}
 
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 export const OTP_TTL_MS = 10 * 60 * 1_000;
@@ -17,24 +15,43 @@ export const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
 export const AUTHORIZATION_TTL_MS = 5 * 60 * 1_000;
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export const randomSecret = (bytes: number) => {
-  const value = crypto.getRandomValues(new Uint8Array(bytes));
-  let binary = "";
-  for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
+const platformCrypto = Crypto.make({
+  randomBytes: (size) => crypto.getRandomValues(new Uint8Array(size)),
+  digest: (algorithm, data) =>
+    Effect.tryPromise({
+      try: () => {
+        // SAFETY: copy onto a fresh ArrayBuffer so SubtleCrypto sees BufferSource.
+        const source = new Uint8Array(data);
+        return crypto.subtle.digest(algorithm, source).then((buffer) => new Uint8Array(buffer));
+      },
+      catch: (cause) =>
+        PlatformError.badArgument({
+          module: "Crypto",
+          method: "digest",
+          description: String(cause),
+          cause,
+        }),
+    }),
+});
+
+export const randomSecret = (bytes: number) =>
+  Effect.runSync(
+    platformCrypto.randomBytes(bytes).pipe(
+      Effect.map(Encoding.encodeBase64Url),
+      Effect.orDie,
+    ),
+  );
 
 export const sha256 = (value: string) =>
-  Effect.tryPromise({
-    try: () => crypto.subtle.digest("SHA-256", textEncoder.encode(value)),
-    catch: (cause) => new AuthCryptoError({ operation: "sha256", cause }),
-  }).pipe(
-    Effect.map((buffer) => {
-      let binary = "";
-      for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
-      return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-    }),
+  platformCrypto.digest("SHA-256", textEncoder.encode(value)).pipe(
+    Effect.mapError((cause) => new AuthCryptoError({ operation: "sha256", cause })),
+    Effect.map(Encoding.encodeBase64Url),
   );
+
+export const hashRefreshSecret = (pepper: string, secret: string) => sha256(`${pepper}:${secret}`);
+
+export const hashInvitationSecret = (pepper: string, secret: string) =>
+  sha256(`${pepper}:invite:${secret}`);
 
 export const safeEqual = (left: string, right: string) => {
   let difference = left.length ^ right.length;
@@ -45,13 +62,12 @@ export const safeEqual = (left: string, right: string) => {
   return difference === 0;
 };
 
-export const generateOtp = () => {
-  const maximum = 4_294_000_000;
-  const values = new Uint32Array(1);
-  do crypto.getRandomValues(values);
-  while ((values[0] ?? 0) >= maximum);
-  return OtpCode.make(String((values[0] ?? 0) % 1_000_000).padStart(6, "0"));
-};
+export const generateOtp = () =>
+  Effect.runSync(
+    platformCrypto
+      .randomIntBetween(0, 1_000_000, { halfOpen: true })
+      .pipe(Effect.map((value) => OtpCode.make(String(value).padStart(6, "0")))),
+  );
 
 export const parseRefreshToken = (token: string) =>
   Effect.gen(function* () {

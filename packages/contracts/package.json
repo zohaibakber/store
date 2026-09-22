@@ -9,6 +9,7 @@
     "./catalog-rules": "./src/catalog/rules.ts",
     "./catalog-write": "./src/catalog/write.ts",
     "./entity-rows": "./src/sync/entity-rows.ts",
+    "./sync/replica-model": "./src/sync/replica-model.ts",
     "./managed-columns": "./src/sync/managed-columns.ts",
     "./ids": "./src/ids.ts",
     "./workspace": "./src/workspace.ts",

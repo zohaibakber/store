@@ -91,3 +91,21 @@ export const stockOverlays = sqliteTable(
     uniqueIndex("stock_overlays_command_id_batch_id_uidx").on(table.commandId, table.batchId),
   ],
 );
+
+export const snapshotStagedRows = sqliteTable(
+  "snapshot_staged_rows",
+  {
+    snapshotId: text().notNull(),
+    entity: text().notNull(),
+    entityId: text().notNull(),
+    rowVersion: integer({ mode: "number" }).notNull(),
+    rowJson: text().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "snapshot_staged_rows_pk",
+      columns: [table.snapshotId, table.entity, table.entityId],
+    }),
+    index("snapshot_staged_rows_snapshot_id_idx").on(table.snapshotId),
+  ],
+);

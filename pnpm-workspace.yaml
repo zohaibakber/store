@@ -4,22 +4,40 @@ packages:
   - scripts/migrate-cloudflare
 
 catalog:
-  "@effect/sql-d1": 4.0.0-rc.111
-  "@effect/sql-sqlite-do": 4.0.0-rc.111
-  "@effect/vitest": 4.0.0-rc.111
-  alchemy: 2.0.0-beta.77
+  "@effect/atom-react": 4.0.0-rc.117
+  "@effect/platform-browser": 4.0.0-rc.117
+  "@effect/platform-bun": 4.0.0-rc.117
+  "@effect/platform-node": 4.0.0-rc.117
+  "@effect/sql-d1": 4.0.0-rc.117
+  "@effect/sql-libsql": 4.0.0-rc.117
+  "@effect/sql-pg": 4.0.0-rc.117
+  "@effect/sql-sqlite-do": 4.0.0-rc.117
+  "@effect/sql-sqlite-wasm": 4.0.0-rc.117
+  "@effect/wa-sqlite": 0.1.2
+  "@effect/vitest": 4.0.0-rc.117
+  alchemy: 2.0.0-beta.79
   drizzle-kit: 1.0.0-rc.5-ab785fc
   drizzle-orm: 1.0.0-rc.5-ab785fc
-  effect: 4.0.0-rc.111
+  effect: 4.0.0-rc.117
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@0.3.2
   vite-plus: 0.3.2
 
 overrides:
   "@cloudflare/workers-types": 5.20260911.1
-  "@effect/platform-node-shared": 4.0.0-rc.111
-  "@effect/sql-d1": 4.0.0-rc.111
-  "@effect/sql-sqlite-do": 4.0.0-rc.111
+  "@effect/atom-react": 4.0.0-rc.117
+  "@effect/platform-browser": 4.0.0-rc.117
+  "@effect/platform-bun": 4.0.0-rc.117
+  "@effect/platform-node": 4.0.0-rc.117
+  "@effect/platform-node-shared": 4.0.0-rc.117
+  "@effect/sql-d1": 4.0.0-rc.117
+  "@effect/sql-libsql": 4.0.0-rc.117
+  "@effect/sql-pg": 4.0.0-rc.117
+  "@effect/sql-sqlite-do": 4.0.0-rc.117
+  "@effect/sql-sqlite-wasm": 4.0.0-rc.117
+  "@effect/wa-sqlite": 0.1.2
+  "@effect/vitest": 4.0.0-rc.117
+  effect: 4.0.0-rc.117
   drizzle-orm: 1.0.0-rc.5-ab785fc
   uuid: 11.1.1
   valibot: 1.4.2
@@ -27,6 +45,7 @@ overrides:
   vitest: 4.1.11
 
 onlyBuiltDependencies:
+  - "@embedded-postgres/linux-x64"
   - "@sentry/cli"
   - better-sqlite3
   - electron
@@ -35,8 +54,8 @@ onlyBuiltDependencies:
   - workerd
 
 allowBuilds:
+  "@embedded-postgres/linux-x64": true
   "@firebase/util": false
-  "@journeyapps/wa-sqlite": true
   "@sentry/cli": true
   better-sqlite3: true
   electron-winstaller: false
@@ -87,3 +106,14 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-64@2.10.13"
   - "@turbo/windows-arm64@2.10.13"
   - turbo@2.10.13
+  - '@effect/platform-bun@4.0.0-rc.117'
+  - '@effect/platform-node-shared@4.0.0-rc.117'
+  - '@effect/platform-node@4.0.0-rc.117'
+  - '@effect/sql-d1@4.0.0-rc.117'
+  - '@effect/sql-libsql@4.0.0-rc.117'
+  - '@effect/sql-pg@4.0.0-rc.117'
+  - '@effect/sql-sqlite-do@4.0.0-rc.117'
+  - '@effect/sql-sqlite-wasm@4.0.0-rc.117'
+  - '@effect/wa-sqlite@0.1.2'
+  - '@effect/vitest@4.0.0-rc.117'
+  - effect@4.0.0-rc.117

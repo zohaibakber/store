@@ -19,8 +19,10 @@ export const invoiceAiClient = (ai: Ai, requestSignal?: AbortSignal): InvoiceAiC
     );
   },
   generate: async ({ messages, jsonSchema, signal }) => {
-    // SAFETY: The schema is produced by Effect's JSON Schema encoder and therefore contains JSON values only.
-    const workerJsonSchema = jsonSchema as JsonSchemaObject;
+    // SAFETY: Effect's JSON Schema encoder yields JSON values; Cloudflare Ai
+    // accepts that shape. InvoiceAiClient still types the payload as object
+    // (owned in @store/services).
+    const schema = jsonSchema as JsonSchemaObject;
     const output = await ai.run(
       INVOICE_MODEL,
       {
@@ -29,7 +31,7 @@ export const invoiceAiClient = (ai: Ai, requestSignal?: AbortSignal): InvoiceAiC
           type: "json_schema",
           json_schema: {
             name: "invoice_extraction",
-            schema: workerJsonSchema,
+            schema,
             strict: true,
           },
         },

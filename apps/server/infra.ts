@@ -1,4 +1,4 @@
-import { decodeJsonWebKey } from "@store/auth";
+import { decodeJsonWebKeyText } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
@@ -6,7 +6,6 @@ import {
   parseTrustedOrigins,
   resolveAuthSecurity,
 } from "@store/auth/security";
-import { AuthDatabase } from "@store/db/auth/infra";
 import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -24,22 +23,16 @@ import {
   loadWorkspaceSnapshot,
   type AuthVerificationConfig,
 } from "./src/auth/session";
-import { makeD1InventoryDirectory } from "./src/inventory/inventory-directory";
+import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
+import { InventoryCommands } from "./src/inventory/commands";
+import { InventoryLive } from "./src/inventory/live-tickets";
+import { makePostgresSyncLiveUpgrade } from "./src/inventory/live-upgrade";
+import { InventorySnapshots } from "./src/inventory/snapshots";
 import {
-  InventoryMutationDatabase,
-  InventoryMutationDatabaseLive,
-  InventoryMutationDatabaseUnavailable,
-} from "./src/inventory/mutation-database";
-import { makeR2SnapshotObjects } from "./src/inventory/organization-host";
-import {
-  OrganizationInventoryObject,
-  OrganizationInventoryObjectLive,
-} from "./src/inventory/organization-object";
-import {
-  makeRoutedLiveUpgrade,
-  makeRoutedSyncAuthority,
+  makeInventorySyncAuthority,
   SyncAuthority,
   SyncLiveUpgrade,
+  unavailableSyncLiveUpgrade,
 } from "./src/inventory/sync-authority";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
@@ -60,7 +53,7 @@ export {
 
 const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-export class Api extends Cloudflare.Worker<Api, {}, OrganizationInventoryObject>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -83,67 +76,63 @@ export const ApiLive = Api.make(
       compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
       placement: { mode: "smart" as const },
       observability: { enabled: true },
-      // The desktop falls back to http://localhost:8787 in development, so pin
-      // the local dev port rather than taking alchemy's default of 1337.
       dev: { port: 8787 },
     };
     return apiHostname ? { ...worker, domain: apiHostname } : worker;
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const inventoryMutations = yield* InventoryMutationDatabase.pipe(
-      Effect.provide(
-        stageUsesInventoryPostgres(stage)
-          ? InventoryMutationDatabaseLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding))
-          : InventoryMutationDatabaseUnavailable,
-      ),
-    );
-    const authDatabase = yield* AuthDatabase;
-    const directoryDatabase = yield* Cloudflare.D1.QueryDatabase(authDatabase);
-    const directory = makeD1InventoryDirectory(directoryDatabase);
-    const objects = yield* OrganizationInventoryObject;
-    const snapshotBucket = yield* Cloudflare.R2.Bucket("InventorySnapshots");
-    const snapshotStore = yield* Cloudflare.R2.ReadWriteBucket(snapshotBucket);
-    const snapshots = makeR2SnapshotObjects(snapshotStore);
-    const syncAuthority = makeRoutedSyncAuthority(directory, objects, snapshots);
-    const liveUpgrade = makeRoutedLiveUpgrade(directory, objects);
+    const authorityLayer = stageUsesInventoryPostgres(stage)
+      ? InventoryAuthorityLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding))
+      : InventoryAuthorityUnavailable;
+    const inventory = yield* Effect.gen(function* () {
+      return {
+        commands: yield* InventoryCommands,
+        snapshots: yield* InventorySnapshots,
+        live: yield* InventoryLive,
+      };
+    }).pipe(Effect.provide(authorityLayer));
+    const syncAuthority = makeInventorySyncAuthority(inventory);
+    const syncLiveUpgrade = stageUsesInventoryPostgres(stage)
+      ? makePostgresSyncLiveUpgrade(inventory.live)
+      : unavailableSyncLiveUpgrade;
     const ai = yield* Cloudflare.Workers.AI();
-    const invoiceExtractionRateLimit = yield* Cloudflare.Workers.RateLimit(
+    const invoiceExtractionRateLimit = yield* Cloudflare.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
       {
         namespaceId: 1002,
         simple: { limit: 10, period: 60 },
       },
     );
-    const productScanRateLimit = yield* Cloudflare.Workers.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
+    const productScanRateLimit = yield* Cloudflare.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
       namespaceId: 1001,
       simple: { limit: 30, period: 60 },
     });
     // Alchemy binds every Config read during Worker Init onto Cloudflare.
     // GitHub Actions turns unset Environment vars into "", which would
     // otherwise beat Config.withDefault and ship a blank protocol/origin.
-    const authPublicJwkText = yield* Config.string("AUTH_JWT_PUBLIC_JWK");
-    const authBaseUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
-    const productionAuthDomain = yield* Config.string("PRODUCTION_AUTH_DOMAIN").pipe(
+    const authPublicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
+    const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
+    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
       Config.withDefault(""),
     );
-    const trustedOriginsRaw = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+    const trustedOriginsRaw = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
     );
     const trustedOrigins = parseTrustedOrigins(trustedOriginsRaw);
     const productionDomainEnv = {
-      PRODUCTION_DOMAIN: yield* Config.string("PRODUCTION_DOMAIN").pipe(Config.withDefault("")),
-      PRODUCTION_API_DOMAIN: yield* Config.string("PRODUCTION_API_DOMAIN").pipe(
+      PRODUCTION_DOMAIN: yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault("")),
+      PRODUCTION_API_DOMAIN: yield* Config.String("PRODUCTION_API_DOMAIN").pipe(
         Config.withDefault(""),
       ),
-      VITE_API_URL: yield* Config.string("VITE_API_URL").pipe(Config.withDefault("")),
+      VITE_API_URL: yield* Config.String("VITE_API_URL").pipe(Config.withDefault("")),
       AUTH_TRUSTED_ORIGINS: trustedOriginsRaw,
     };
-    const electronProtocol = yield* Config.string("ELECTRON_PROTOCOL").pipe(
+    const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
     );
-    const mobileProtocol = yield* Config.string("MOBILE_PROTOCOL").pipe(
+    const mobileProtocol = yield* Config.String("MOBILE_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
@@ -180,10 +169,7 @@ export const ApiLive = Api.make(
       ],
     });
     reportRejectedAuthSettings(security.rejectedSettings);
-    const publicJwk = yield* Effect.try({
-      try: () => JSON.parse(authPublicJwkText),
-      catch: (cause) => new Error(`AUTH_JWT_PUBLIC_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
+    const publicJwk = yield* decodeJsonWebKeyText(authPublicJwkText).pipe(Effect.orDie);
     const jwtConfig: AuthVerificationConfig = {
       issuer: security.baseURL,
       audience: "tabaaq-api",
@@ -198,14 +184,11 @@ export const ApiLive = Api.make(
       limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
       productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
-      writeInventoryMutation: inventoryMutations.write,
-      importInventory: inventoryMutations.importInventory,
-      issueInvoice: inventoryMutations.issueInvoice,
     });
     const routes = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
       Layer.provide(Layer.succeed(SyncAuthority, syncAuthority)),
-      Layer.provide(Layer.succeed(SyncLiveUpgrade, liveUpgrade)),
+      Layer.provide(Layer.succeed(SyncLiveUpgrade, syncLiveUpgrade)),
       Layer.provide(HttpServer.layerServices),
     );
 
@@ -215,9 +198,6 @@ export const ApiLive = Api.make(
   }).pipe(
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
-    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
-    Effect.provide(Cloudflare.R2.ReadWriteBucketBinding),
-    Effect.provide(OrganizationInventoryObjectLive),
   ),
 );
 

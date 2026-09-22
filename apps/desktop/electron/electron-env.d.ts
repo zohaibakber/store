@@ -9,6 +9,7 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 
 import type { InventoryHttpBridge } from "./inventory-http-channels";
+import type { ReplicaIpcBridge } from "./replica-channels";
 
 declare global {
   const __UPDATE_CHANNEL__: string;
@@ -23,6 +24,7 @@ declare global {
 
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
+    replica?: ReplicaIpcBridge;
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };

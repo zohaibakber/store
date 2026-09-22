@@ -6,27 +6,23 @@
   "scripts": {
     "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev",
     "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. apps/server/test",
-    "test:workerd-proofs": "vitest run --config ./workerd-proofs/vitest.config.ts"
+    "test": "vitest run --root ../.. apps/server/test"
   },
   "dependencies": {
-    "@effect/sql-pg": "4.0.0-rc.111",
-    "@effect/sql-sqlite-do": "4.0.0-rc.111",
+    "@effect/sql-pg": "catalog:",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "@store/services": "workspace:*",
-    "@store/sync": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:",
     "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.1.9",
-    "@effect/sql-libsql": "4.0.0-rc.111",
     "@effect/vitest": "catalog:",
     "@types/node": "^26.5.1",
     "alchemy": "catalog:",
+    "embedded-postgres": "18.4.0-beta.17",
     "rolldown": "1.2.4",
     "typescript": "catalog:",
     "vitest": "4.1.11"

@@ -54,7 +54,6 @@ describe("invoice upload authorization", () => {
   });
 
   it("denies uploads when the session was revoked with organization access", async () => {
-    // Membership removal invalidates the session; there is no separate member ping.
     const response = await appFor(false).request(
       "/api/uploads",
       invoiceForm([pdf()]),

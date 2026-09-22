@@ -1,4 +1,6 @@
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { DbProvider } from "@tanstack/react-db";
+import { Cause, Effect, Exit, Schedule } from "effect";
 import * as React from "react";
 
 import type { InventoryHost } from "@/lib/inventory-host";
@@ -9,6 +11,27 @@ import { InventorySyncStatusView } from "./sync-status";
 import type { Inventory, InventoryState } from "./types";
 
 const InventoryContext = React.createContext<InventoryState | null>(null);
+
+const openRetrySchedule = Schedule.exponential("200 millis").pipe(
+  Schedule.jittered,
+  Schedule.upTo({ times: 3 }),
+);
+
+const openCatalog = (catalog: CatalogLifetime, lease: CatalogLease, host: InventoryHost) =>
+  Effect.tryPromise({
+    try: () => catalog.open(lease, host),
+    catch: (cause) =>
+      cause instanceof StaleCatalogLease
+        ? cause
+        : cause instanceof Error
+          ? cause
+          : new Error("Catalog storage is unavailable."),
+  }).pipe(
+    Effect.retry({
+      schedule: openRetrySchedule,
+      while: (cause) => !(cause instanceof StaleCatalogLease),
+    }),
+  );
 
 export function InventoryProvider({
   children,
@@ -26,23 +49,23 @@ export function InventoryProvider({
 
   React.useEffect(() => {
     let active = true;
-    void catalog.open(lease, host).then(
-      (inventory) => {
-        if (active) {
-          setState({
-            _tag: "Ready",
-            inventory,
-            actions: inventory.actions,
-          });
-        }
-      },
-      (cause: unknown) => {
-        if (!active) return;
-        if (cause instanceof StaleCatalogLease) return;
-        const message = cause instanceof Error ? cause.message : "Catalog storage is unavailable.";
-        setState({ _tag: "Error", error: message });
-      },
-    );
+    void Effect.runPromiseExit(openCatalog(catalog, lease, host)).then((exit) => {
+      if (!active) return;
+      if (Exit.isSuccess(exit)) {
+        setState({
+          _tag: "Ready",
+          inventory: exit.value,
+          actions: exit.value.actions,
+        });
+        return;
+      }
+      if (Cause.hasInterrupts(exit.cause)) return;
+      const failure = Cause.squash(exit.cause);
+      if (failure instanceof StaleCatalogLease) return;
+      const message =
+        failure instanceof Error ? failure.message : "Catalog storage is unavailable.";
+      setState({ _tag: "Error", error: message });
+    });
     return () => {
       active = false;
     };
@@ -69,7 +92,9 @@ export function InventoryProvider({
   return (
     <InventoryContext.Provider value={state}>
       {state._tag === "Ready" ? (
-        <DbProvider client={state.inventory.dbClient}>{children}</DbProvider>
+        <RegistryContext.Provider value={state.inventory.atoms.registry}>
+          <DbProvider client={state.inventory.dbClient}>{children}</DbProvider>
+        </RegistryContext.Provider>
       ) : (
         children
       )}
@@ -94,6 +119,43 @@ export const useCatalogIsReady = () => {
   return state?._tag === "Ready";
 };
 
+export const useWorkspaceAtoms = () => {
+  const inventory = useCatalogReplica();
+  return inventory.atoms;
+};
+
+export const useCommandExecution = () => {
+  const atoms = useWorkspaceAtoms();
+  return useAtomValue(atoms.commandExecution);
+};
+
+export const useSharedFilters = () => {
+  const atoms = useWorkspaceAtoms();
+  return useAtomValue(atoms.sharedFilters);
+};
+
+export const useBindSelectedProduct = (productId: string) => {
+  const atoms = useWorkspaceAtoms();
+  const setSelectedProductId = useAtomSet(atoms.selectedProductId);
+  React.useEffect(() => {
+    setSelectedProductId(productId);
+    return () => {
+      setSelectedProductId(undefined);
+    };
+  }, [productId, setSelectedProductId]);
+};
+
+export const useBindSelectedInvoice = (invoiceId: string) => {
+  const atoms = useWorkspaceAtoms();
+  const setSelectedInvoiceId = useAtomSet(atoms.selectedInvoiceId);
+  React.useEffect(() => {
+    setSelectedInvoiceId(invoiceId);
+    return () => {
+      setSelectedInvoiceId(undefined);
+    };
+  }, [invoiceId, setSelectedInvoiceId]);
+};
+
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
   const state = React.useContext(InventoryContext);
   if (!state || state._tag === "Opening") return null;
@@ -107,10 +169,6 @@ export function InventoryReady({ children }: { readonly children: React.ReactNod
 }
 
 function InventoryReadyStatus({ inventory }: { readonly inventory: Inventory }) {
-  const status = React.useSyncExternalStore(
-    inventory.observeSync,
-    inventory.commands.status,
-    inventory.commands.status,
-  );
+  const status = useAtomValue(inventory.atoms.syncStatus);
   return <InventorySyncStatusView status={status} />;
 }

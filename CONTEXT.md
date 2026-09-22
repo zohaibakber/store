@@ -10,6 +10,11 @@ The signed-in user's selected organization, plus its isolated local catalog
 replica. At most one authenticated workspace is active.
 _Avoid_: Session, active organization
 
+**Catalog layout.**
+The physical columns for catalog entities in authoritative Postgres and in the
+SQLite catalog projection. Persistence only; not a business aggregate.
+_Avoid_: Store schema, replica tables
+
 **Catalog.**
 The organization's products, categories, batches, invoices, and stock
 movements as one business record, not a bag of replica internals.

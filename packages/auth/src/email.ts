@@ -29,11 +29,6 @@ export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()
 
 export interface EmailProviderApi {
   readonly sendOtp: (input: SendOtpInput) => Effect.Effect<void, EmailDeliveryError>;
-  /**
-   * Delivery is not implemented. The invitation token is returned to the
-   * inviter so they can pass the link on themselves, and this call only
-   * records that an invitation exists.
-   */
   readonly sendInvitation: (input: SendInvitationInput) => Effect.Effect<void, EmailDeliveryError>;
 }
 
@@ -41,10 +36,6 @@ export class EmailProvider extends Context.Service<EmailProvider, EmailProviderA
   "@store/auth/EmailProvider",
 ) {}
 
-/**
- * Development adapter. It emits a structured log event but never claims that
- * an email was delivered. Production should replace this layer.
- */
 export const developmentEmailLayer = Layer.succeed(
   EmailProvider,
   EmailProvider.of({
@@ -72,10 +63,6 @@ export const developmentEmailLayer = Layer.succeed(
   }),
 );
 
-/**
- * Production placeholder until Cloudflare Email is wired. It records that an
- * OTP was requested without logging the code or claiming delivery.
- */
 export const disabledEmailLayer = Layer.succeed(
   EmailProvider,
   EmailProvider.of({

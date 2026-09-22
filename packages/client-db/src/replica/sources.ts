@@ -11,17 +11,6 @@ export const INVENTORY_COLLECTION_SOURCES = [
 
 export type InventoryCollectionSource = (typeof INVENTORY_COLLECTION_SOURCES)[number];
 
-export const NAMED_PROJECTION_NAMES = [
-  "productList",
-  "productStock",
-  "invoiceList",
-  "invoiceStock",
-  "suggestions",
-  "dashboard",
-] as const;
-
-export type NamedProjectionName = (typeof NAMED_PROJECTION_NAMES)[number];
-
 export type InventoryCollectionSyncMode = "eager" | "on-demand";
 
 export const SOURCE_TABLE = {

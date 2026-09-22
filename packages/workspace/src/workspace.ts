@@ -1,7 +1,6 @@
 import type { TokenSet } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
 
-/** JSON-serializable values accepted at authenticated HTTP boundaries. */
 export type JsonSerializable =
   | string
   | number

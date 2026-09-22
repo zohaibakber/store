@@ -8,13 +8,13 @@ import { runSqliteTransaction, type SqliteConnection, type SqliteDatabase } from
 
 export type ReplicaDb = SqliteConnection;
 
-export type ReplicaStore = {
+export type SqliteReplicaHandle = {
   readonly sqlite: Database.Database;
   readonly db: SqliteDatabase;
   readonly close: () => void;
 };
 
-export const openReplicaStore = (path = ":memory:"): ReplicaStore => {
+export const openReplicaStore = (path = ":memory:"): SqliteReplicaHandle => {
   const sqlite = new Database(path);
   sqlite.pragma("journal_mode = WAL");
   runMigrations(replicaMigrations, betterSqliteMigrationTarget(sqlite));

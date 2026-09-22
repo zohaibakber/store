@@ -2,8 +2,8 @@ import { Add01Icon, Delete02Icon, PencilEdit02Icon, TagIcon } from "@hugeicons/c
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
 import { useForm } from "@tanstack/react-form";
+import * as Schema from "effect/Schema";
 import { useState } from "react";
-import * as z from "zod";
 
 import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -44,14 +44,20 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
+import { formValidator } from "@/lib/form-schema";
 import { useInventoryActions } from "@/lib/inventory-db";
 
-const categoryFormSchema = z.object({
-  name: z.string().trim().min(1, "Category name is required.").max(64),
-  tracksPacks: z.boolean(),
+const CategoryFormSchema = Schema.Struct({
+  name: Schema.Trim.check(
+    Schema.isMinLength(1, { message: "Category name is required." }),
+    Schema.isMaxLength(64),
+  ),
+  tracksPacks: Schema.Boolean,
 });
 
-type CategoryFormValues = z.infer<typeof categoryFormSchema>;
+const categoryFormSchema = formValidator(CategoryFormSchema);
+
+type CategoryFormValues = typeof CategoryFormSchema.Type;
 
 type InventoryActions = ReturnType<typeof useInventoryActions>;
 type CategoryCommands = {

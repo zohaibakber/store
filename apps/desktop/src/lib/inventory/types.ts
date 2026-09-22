@@ -28,6 +28,8 @@ import type {
 import type { Collection, DbClient } from "@tanstack/react-db";
 import type { Result } from "effect";
 
+import type { WorkspaceAtoms } from "./atoms";
+
 export type InventoryCollection<Row extends { readonly id: string }> = Collection<Row, string>;
 
 export type Inventory = {
@@ -43,6 +45,7 @@ export type Inventory = {
   readonly products: InventoryCollection<ProductRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
   readonly actions: InventoryActions;
+  readonly atoms: WorkspaceAtoms;
   readonly commands: InventoryCommandQueries;
   readonly sync: InventorySyncStatus;
   readonly observeSync: (listener: (status: InventorySyncStatus) => void) => () => void;

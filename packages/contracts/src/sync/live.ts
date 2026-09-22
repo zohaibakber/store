@@ -43,6 +43,41 @@ export const LiveTicket = Schema.Struct({
 });
 export type LiveTicket = typeof LiveTicket.Type;
 
+export const SyncLiveWakeHint = Schema.Struct({
+  epoch: SyncEpoch,
+  subscription: SyncSubscription,
+  horizon: OrgCommitSequence,
+});
+export type SyncLiveWakeHint = typeof SyncLiveWakeHint.Type;
+
+export const LIVE_SSE_POLL_MILLIS = 1_500;
+export const LIVE_LONG_POLL_DEFAULT_MILLIS = 20_000;
+export const LIVE_LONG_POLL_MAX_MILLIS = 25_000;
+
+export const LiveUpgradeQuery = Schema.Struct({
+  nonce: LiveTicketNonce,
+  replicaId: Identifier,
+  subscription: SyncSubscription,
+  afterHorizon: Schema.optionalKey(OrgCommitSequence),
+  waitMs: Schema.optionalKey(
+    Schema.NumberFromString.pipe(
+      Schema.check(
+        Schema.isInt(),
+        Schema.isGreaterThanOrEqualTo(1),
+        Schema.isLessThanOrEqualTo(LIVE_LONG_POLL_MAX_MILLIS),
+      ),
+    ),
+  ),
+});
+export type LiveUpgradeQuery = typeof LiveUpgradeQuery.Type;
+
+export const SyncLiveSseEvent = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  event: Schema.Literals(["wake", "ping"]),
+  data: Schema.String,
+});
+export type SyncLiveSseEvent = typeof SyncLiveSseEvent.Type;
+
 export const LiveResumeReason = Schema.Literals([
   "send_window_lost",
   "retention_passed",

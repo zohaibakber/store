@@ -66,7 +66,6 @@ export default defineConfig({
       "**/release/**",
       "**/*.gen.ts",
       "**/worker-configuration.d.ts",
-      "apps/server/workerd-proofs/**",
       "tools/oxlint/anti-slop/**",
     ],
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
@@ -77,10 +76,9 @@ export default defineConfig({
           "packages/client-db/src/replica/**/*.ts",
           "packages/client-db/test/replica-*.test.ts",
           "packages/contracts/src/sync/{api,directory,http-errors,live,protocol,snapshot}.ts",
-          "apps/server/src/inventory/{inventory-directory,organization-host,organization-object,sync-authority}.ts",
+          "apps/server/src/inventory/sync-authority.ts",
           "apps/server/src/routes/{sync,sync-live}.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
-          "apps/server/test/infra/organization-object-planning.test.ts",
           "packages/contracts/src/sync/fixtures/**/*.ts",
           "packages/contracts/test/sync/**/*.ts",
           "apps/desktop/src/lib/inventory/{actions,index,open,provider,sync-status,types}.{ts,tsx}",
@@ -101,7 +99,6 @@ export default defineConfig({
         plugins: ["react"],
         rules: {
           "react/no-children-prop": "off",
-          // react/react-compiler was split into per-category rules in oxlint 1.79.
           "react/error-boundaries": "error",
           "react/globals": "error",
           "react/immutability": "error",

@@ -51,7 +51,7 @@ describe("session-http helpers", () => {
 
   it("serializes JSON bodies and leaves FormData alone", () => {
     expect(serializeRequestBody({ a: 1 })).toEqual({
-      body: JSON.stringify({ a: 1 }),
+      body: '{"a":1}',
       setJsonContentType: true,
     });
     expect(serializeRequestBody("raw")).toEqual({ body: "raw", setJsonContentType: false });

@@ -9,8 +9,10 @@ interface JsonSchemaObject {
 
 export const productScanAiClient = (ai: Ai, requestSignal?: AbortSignal): ProductScanAiClient => ({
   generate: async ({ messages, jsonSchema, signal }) => {
-    // SAFETY: The schema is produced by Effect's JSON Schema encoder and therefore contains JSON values only.
-    const workerJsonSchema = jsonSchema as JsonSchemaObject;
+    // SAFETY: Effect's JSON Schema encoder yields JSON values; Cloudflare Ai
+    // accepts that shape. ProductScanAiClient still types the payload as object
+    // (owned in @store/services).
+    const schema = jsonSchema as JsonSchemaObject;
     const output = await ai.run(
       PRODUCT_SCAN_MODEL,
       {
@@ -19,7 +21,7 @@ export const productScanAiClient = (ai: Ai, requestSignal?: AbortSignal): Produc
           type: "json_schema",
           json_schema: {
             name: "product_scan",
-            schema: workerJsonSchema,
+            schema,
             strict: true,
           },
         },

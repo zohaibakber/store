@@ -130,8 +130,6 @@ export function useAppUpdater() {
           showDownloadProgress(event.percent, "Almost ready to install.");
           break;
         case "error":
-          // electron-updater / Electron autoUpdater: log errors, notify only
-          // when an update is ready. Background checks stay silent.
           if (!manualCheck) break;
           manualCheck = false;
           if (event.failure === "network") {

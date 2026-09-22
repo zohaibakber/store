@@ -12,8 +12,8 @@ import {
   type OrganizationInvitation,
 } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
+import * as Schema from "effect/Schema";
 import * as React from "react";
-import * as z from "zod";
 
 import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { formValidator } from "@/lib/form-schema";
 import { copyInvitation, invitationHandoff, useOrganization } from "@/lib/organization";
 
 const invitableRoles = [
@@ -45,10 +46,16 @@ const invitableRoles = [
   { value: "admin", label: "Admin" },
 ] as const;
 
-const inviteSchema = z.object({
-  email: z.email("Enter a valid email."),
-  role: z.enum(["admin", "member"]),
-});
+const inviteSchema = formValidator(
+  Schema.Struct({
+    email: Schema.String.check(
+      Schema.isMinLength(3, { message: "Enter a valid email." }),
+      Schema.isMaxLength(320),
+      Schema.isPattern(/^[^@\s]+@[^@\s]+\.[^@\s]+$/u, { message: "Enter a valid email." }),
+    ),
+    role: Schema.Literals(["admin", "member"]),
+  }),
+);
 
 interface InviteDraft {
   email: string;

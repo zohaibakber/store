@@ -16,8 +16,9 @@ import {
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
-import { INVITATION_TTL_MS, randomSecret, sha256 } from "./crypto";
+import { hashInvitationSecret, INVITATION_TTL_MS, randomSecret } from "./crypto";
 import { authError } from "./errors";
+import { enforceAuthLimit, type AuthLimits } from "./limits";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
 
@@ -30,14 +31,16 @@ export const makeOrganizationOps = (
   email: EmailProviderApi,
   sessions: Pick<SessionOps, "authorize">,
   configuration: OrganizationOpsConfiguration,
+  limits: AuthLimits,
 ) => {
+  const hashInvite = (secret: string) =>
+    hashInvitationSecret(configuration.refreshTokenPepper, secret);
+
   const membershipOf = Effect.fn("Auth.Organization.membershipOf")(function* (
     userId: UserId,
     organizationId: OrganizationId,
   ) {
     const membership = yield* repository.membershipInOrganization({ userId, organizationId });
-    // An organization the caller does not belong to is indistinguishable
-    // from one that does not exist, so it cannot be probed for.
     if (!membership) {
       return yield* authError(404, "ORGANIZATION_NOT_FOUND", "This organization is not yours.");
     }
@@ -86,7 +89,6 @@ export const makeOrganizationOps = (
     const claims = yield* sessions.authorize(accessToken);
     const membership = yield* membershipOf(claims.subject, claims.activeOrganizationId);
     const members = yield* repository.listMembers(claims.activeOrganizationId);
-    // A plain member sees who they work with, not who is being courted.
     const invitations =
       membership.role === "member"
         ? []
@@ -142,7 +144,7 @@ export const makeOrganizationOps = (
       );
     }
     const secret = randomSecret(32);
-    const tokenHash = yield* sha256(`${configuration.refreshTokenPepper}:invite:${secret}`);
+    const tokenHash = yield* hashInvite(secret);
     const expiresAt = now + INVITATION_TTL_MS;
     const invitation = yield* repository.createInvitation({
       organizationId: input.organizationId,
@@ -163,8 +165,6 @@ export const makeOrganizationOps = (
         expiresAt,
       })
       .pipe(
-        // The invitation exists whether or not anything could carry it, and
-        // the inviter is handed the link either way.
         Effect.catchTag("Auth.EmailDeliveryError", (cause) =>
           Effect.logWarning("auth.invitation_delivery_failed").pipe(
             Effect.annotateLogs({ invitation: invitation.id, message: cause.message }),
@@ -183,16 +183,12 @@ export const makeOrganizationOps = (
     token: string,
   ) {
     const now = yield* Clock.currentTimeMillis;
-    const allowed = yield* repository.allowRateLimit({
-      key: `accept-invitation:${claims.subject}`,
-      limit: 10,
-      windowSeconds: 600,
-      now,
-    });
-    if (!allowed) {
-      return yield* authError(429, "RATE_LIMITED", "Wait before trying another invitation.");
-    }
-    const tokenHash = yield* sha256(`${configuration.refreshTokenPepper}:invite:${token}`);
+    yield* enforceAuthLimit(
+      limits.tenPerMinute,
+      `accept-invitation:${claims.subject}`,
+      "Wait before trying another invitation.",
+    );
+    const tokenHash = yield* hashInvite(token);
     const invitation = yield* repository.findInvitationByTokenHash(tokenHash);
     const expired = invitation !== null && invitation.expiresAt <= now;
     const spent =
@@ -204,8 +200,6 @@ export const makeOrganizationOps = (
         "This invitation is no longer valid. Ask for a new one.",
       );
     }
-    // The invitation names one mailbox. Anyone else holding the link is not
-    // who was invited, even if the link itself is genuine.
     if (invitation.email !== normalizeEmail(claims.email)) {
       return yield* authError(
         403,
@@ -225,9 +219,6 @@ export const makeOrganizationOps = (
         "This invitation has already been used.",
       );
     }
-    // Redeeming an invitation is the only thing that moves a session, so
-    // the store the link was for is the one this device lands in on its
-    // next refresh. Without this the membership would be unreachable.
     yield* repository.moveSession({
       sessionId: claims.sessionId,
       organizationId: invitation.organizationId,
@@ -241,6 +232,18 @@ export const makeOrganizationOps = (
         role: invitation.role,
       }),
     } as const;
+  });
+
+  const lastOwnerOrMissing = Effect.fn("Auth.Organization.lastOwnerOrMissing")(function* (
+    organizationId: OrganizationId,
+    userId: UserId,
+    lastOwnerMessage: string,
+  ) {
+    const latest = yield* repository.membershipInOrganization({ userId, organizationId });
+    if (latest?.role === "owner") {
+      return yield* authError(409, "LAST_OWNER", lastOwnerMessage);
+    }
+    return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
   });
 
   const changeMemberRole = Effect.fn("Auth.Organization.changeMemberRole")(function* (
@@ -260,9 +263,6 @@ export const makeOrganizationOps = (
       return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
     }
     if (target.role === input.role) return { _tag: "Applied" } as const;
-    // Somebody has to be able to grant roles, so the last owner cannot be
-    // demoted. Promote a second owner first. The predicate lives in the
-    // UPDATE so two concurrent demotes cannot both succeed.
     const changed = yield* repository.changeMemberRole(input);
     if (!changed) {
       const latest = yield* repository.membershipInOrganization({
@@ -270,14 +270,11 @@ export const makeOrganizationOps = (
         organizationId: input.organizationId,
       });
       if (latest?.role === input.role) return { _tag: "Applied" } as const;
-      if (latest?.role === "owner" && input.role !== "owner") {
-        return yield* authError(
-          409,
-          "LAST_OWNER",
-          "Make someone else an owner before changing this role.",
-        );
-      }
-      return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
+      return yield* lastOwnerOrMissing(
+        input.organizationId,
+        input.userId,
+        "Make someone else an owner before changing this role.",
+      );
     }
     return { _tag: "Applied" } as const;
   });
@@ -304,8 +301,6 @@ export const makeOrganizationOps = (
     if (!target) {
       return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
     }
-    // An admin manages the people below them; owners and other admins are
-    // the owner's business.
     if (caller.role === "admin" && target.role !== "member") {
       return yield* authError(
         403,
@@ -315,18 +310,11 @@ export const makeOrganizationOps = (
     }
     const removed = yield* repository.removeMember(input);
     if (!removed) {
-      const latest = yield* repository.membershipInOrganization({
-        userId: input.userId,
-        organizationId: input.organizationId,
-      });
-      if (latest?.role === "owner") {
-        return yield* authError(
-          409,
-          "LAST_OWNER",
-          "Make someone else an owner before removing this person.",
-        );
-      }
-      return yield* authError(404, "MEMBER_NOT_FOUND", "This person is not a member.");
+      return yield* lastOwnerOrMissing(
+        input.organizationId,
+        input.userId,
+        "Make someone else an owner before removing this person.",
+      );
     }
     return { _tag: "Applied" } as const;
   });

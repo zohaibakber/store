@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 import { generateOtp, OTP_TTL_MS } from "./crypto";
 import type { EphemeralStoreApi } from "./ephemeral";
 import { authError } from "./errors";
+import { enforceAuthLimit, type AuthLimits } from "./limits";
 import type { AuthRepositoryApi } from "./repository";
 import type { SessionOps } from "./session-ops";
 
@@ -28,21 +29,18 @@ export const makeLoginOps = (
   email: EmailProviderApi,
   sessions: Pick<SessionOps, "issueSession">,
   configuration: LoginOpsConfiguration,
+  limits: AuthLimits,
 ) => {
   const identify = Effect.fn("Auth.Login.identify")(function* (input: IdentifyInput) {
     const now = yield* Clock.currentTimeMillis;
     const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
       normalizeEmail(input.email),
     ).pipe(Effect.mapError(() => authError(400, "INVALID_EMAIL", "Enter a valid email.")));
-    const allowed = yield* repository.allowRateLimit({
-      key: `identify:${normalized}`,
-      limit: 10,
-      windowSeconds: 60,
-      now,
-    });
-    if (!allowed) {
-      return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
-    }
+    yield* enforceAuthLimit(
+      limits.tenPerMinute,
+      `identify:${normalized}`,
+      "Wait before trying again.",
+    );
     const user = yield* repository.findUserByEmail(normalized);
     if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
     if (user.passwordHash) return LoginRoute.make({ _tag: "Password", email: normalized });
@@ -70,15 +68,11 @@ export const makeLoginOps = (
     switch (command._tag) {
       case "Password": {
         const emailAddress = EmailAddress.make(normalizeEmail(command.email));
-        const allowed = yield* repository.allowRateLimit({
-          key: `password:${emailAddress}`,
-          limit: 5,
-          windowSeconds: 300,
-          now,
-        });
-        if (!allowed) {
-          return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
-        }
+        yield* enforceAuthLimit(
+          limits.fivePerMinute,
+          `password:${emailAddress}`,
+          "Wait before trying again.",
+        );
         const user = yield* repository.findUserByEmail(emailAddress);
         if (!user?.passwordHash) {
           return yield* authError(
@@ -98,15 +92,11 @@ export const makeLoginOps = (
         return yield* sessions.issueSession(user, command.client);
       }
       case "Otp": {
-        const allowed = yield* repository.allowRateLimit({
-          key: `otp-attempt:${command.challengeId}`,
-          limit: 5,
-          windowSeconds: OTP_TTL_MS / 1_000,
-          now,
-        });
-        if (!allowed) {
-          return yield* authError(429, "RATE_LIMITED", "Wait before trying another code.");
-        }
+        yield* enforceAuthLimit(
+          limits.fivePerMinute,
+          `otp-attempt:${command.challengeId}`,
+          "Wait before trying another code.",
+        );
         const emailAddress = yield* ephemeral.consumeOtp({
           challengeId: command.challengeId,
           code: command.code,
@@ -123,15 +113,11 @@ export const makeLoginOps = (
       }
       case "RegisterPassword": {
         const emailAddress = EmailAddress.make(normalizeEmail(command.email));
-        const allowed = yield* repository.allowRateLimit({
-          key: `register:${emailAddress}`,
-          limit: 5,
-          windowSeconds: 3_600,
-          now,
-        });
-        if (!allowed) {
-          return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
-        }
+        yield* enforceAuthLimit(
+          limits.fivePerMinute,
+          `register:${emailAddress}`,
+          "Wait before trying again.",
+        );
         const existing = yield* repository.findUserByEmail(emailAddress);
         if (existing) {
           return yield* authError(

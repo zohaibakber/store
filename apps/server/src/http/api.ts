@@ -1,28 +1,23 @@
 import {
-  CatalogWriteCommand,
-  ImportInventoryCommand,
-  ImportInventoryCommandResult,
-  IssueInvoiceCommand,
-  IssueInvoiceResult,
   InvoiceExtraction,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
   ProductScanInput,
   ProductScanResult,
+  WorkspaceSnapshot,
 } from "@store/contracts";
 import { syncGroup } from "@store/contracts/sync/api";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
 import { OrganizationAuth } from "../auth/organization";
 import {
   BadGateway,
   BadRequest,
-  Conflict,
-  Forbidden,
   PayloadTooLarge,
   TooManyRequests,
   UnsupportedMediaType,
@@ -30,6 +25,11 @@ import {
 
 export const MAX_UPLOAD_FILES = MAX_INVOICE_UPLOAD_FILES;
 export const MAX_UPLOAD_BYTES = MAX_INVOICE_UPLOAD_BYTES;
+
+export class ProductScanPayloadErrors extends HttpApiMiddleware.Service<ProductScanPayloadErrors>()(
+  "@store/server/ProductScanPayloadErrors",
+  { error: BadRequest },
+) {}
 
 const Landing = Schema.Struct({
   service: Schema.Literal("Store Invoice API"),
@@ -47,6 +47,10 @@ const system = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("landing", "/", { success: Landing }))
   .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
   .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
+
+const auth = HttpApiGroup.make("auth")
+  .add(HttpApiEndpoint.get("session", "/api/auth/session", { success: WorkspaceSnapshot }))
+  .add(HttpApiEndpoint.get("getSession", "/api/auth/get-session", { success: WorkspaceSnapshot }));
 
 const uploads = HttpApiGroup.make("uploads").add(
   HttpApiEndpoint.post("extract", "/api/uploads", {
@@ -67,40 +71,15 @@ const productScans = HttpApiGroup.make("productScans").add(
     payload: ProductScanInput,
     success: ProductScanResult,
     error: [BadRequest, PayloadTooLarge, TooManyRequests, BadGateway],
-  }).middleware(OrganizationAuth),
+  })
+    .middleware(OrganizationAuth)
+    .middleware(ProductScanPayloadErrors),
 );
-
-const InventoryMutationResult = Schema.Struct({
-  txid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-});
-
-const inventoryMutations = HttpApiGroup.make("inventoryMutations")
-  .add(
-    HttpApiEndpoint.post("write", "/api/inventory/mutations", {
-      payload: CatalogWriteCommand,
-      success: InventoryMutationResult,
-      error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("importInventory", "/api/inventory/imports", {
-      payload: ImportInventoryCommand,
-      success: ImportInventoryCommandResult,
-      error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("issueInvoice", "/api/inventory/invoices", {
-      payload: IssueInvoiceCommand,
-      success: IssueInvoiceResult,
-      error: [BadRequest, Forbidden, Conflict],
-    }).middleware(OrganizationAuth),
-  );
 
 export const StoreApi = HttpApi.make("StoreApi").add(
   system,
+  auth,
   uploads,
   productScans,
-  inventoryMutations,
   syncGroup.middleware(OrganizationAuth),
 );

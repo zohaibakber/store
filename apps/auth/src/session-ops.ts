@@ -12,7 +12,13 @@ import {
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 
-import { parseRefreshToken, randomSecret, REFRESH_TTL_MS, safeEqual, sha256 } from "./crypto";
+import {
+  hashRefreshSecret,
+  parseRefreshToken,
+  randomSecret,
+  REFRESH_TTL_MS,
+  safeEqual,
+} from "./crypto";
 import { authError } from "./errors";
 import {
   type AuthRepositoryApi,
@@ -30,11 +36,9 @@ export const makeSessionOps = (
   accessTokens: AccessTokenServiceApi,
   configuration: SessionOpsConfiguration,
 ) => {
-  /**
-   * The organization the caller asked for, when they still belong to it,
-   * and otherwise their first one. A session that names an organization
-   * the user has left must not keep refreshing into it.
-   */
+  const hashSecret = (secret: string) =>
+    hashRefreshSecret(configuration.refreshTokenPepper, secret);
+
   const resolveMembership = Effect.fn("Auth.Session.resolveMembership")(function* (
     userId: UserId,
     preferred?: OrganizationId,
@@ -78,7 +82,7 @@ export const makeSessionOps = (
     const sessionId = SessionId.make(replayKey ?? crypto.randomUUID());
     const familyId = crypto.randomUUID();
     const refreshSecret = randomSecret(32);
-    const refreshTokenHash = yield* sha256(`${configuration.refreshTokenPepper}:${refreshSecret}`);
+    const refreshTokenHash = yield* hashSecret(refreshSecret);
     const refreshExpiresAt = now + REFRESH_TTL_MS;
     yield* repository.createSession({
       id: sessionId,
@@ -98,13 +102,7 @@ export const makeSessionOps = (
     });
   });
 
-  /**
-   * Two tabs often refresh the same live token at once. The loser sees a
-   * just-revoked row. Treat that as a lost race for a short window instead of
-   * killing the winner's new session. Presenting the same revoked token after
-   * the window still burns the family, which is the stolen-token rule.
-   */
-  const REFRESH_REUSE_GRACE_MS = 30_000;
+  const REFRESH_REUSE_WINDOW_MS = 30_000;
 
   const openRefresh = Effect.fn("Auth.Session.openRefresh")(function* (
     refreshToken: string | undefined,
@@ -118,12 +116,12 @@ export const makeSessionOps = (
     if (!current) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
-    const actualHash = yield* sha256(`${configuration.refreshTokenPepper}:${parsed.secret}`);
+    const actualHash = yield* hashSecret(parsed.secret);
     if (!safeEqual(actualHash, current.refreshTokenHash)) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
     if (current.revokedAt !== null) {
-      if (current.revokedAt + REFRESH_REUSE_GRACE_MS > now) {
+      if (current.revokedAt + REFRESH_REUSE_WINDOW_MS > now) {
         return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
       }
       yield* repository.revokeFamily(current.familyId, now);
@@ -151,7 +149,7 @@ export const makeSessionOps = (
     const now = yield* Clock.currentTimeMillis;
     const nextId = SessionId.make(crypto.randomUUID());
     const nextSecret = randomSecret(32);
-    const nextHash = yield* sha256(`${configuration.refreshTokenPepper}:${nextSecret}`);
+    const nextHash = yield* hashSecret(nextSecret);
     const refreshExpiresAt = now + REFRESH_TTL_MS;
     const rotated = yield* repository.rotateSession({
       currentId: input.session.id,
@@ -193,17 +191,12 @@ export const makeSessionOps = (
     const parsed = yield* parseRefreshToken(input.refreshToken);
     const session = yield* repository.findSession(parsed.sessionId);
     if (!session) return;
-    const actualHash = yield* sha256(`${configuration.refreshTokenPepper}:${parsed.secret}`);
+    const actualHash = yield* hashSecret(parsed.secret);
     if (!safeEqual(actualHash, session.refreshTokenHash)) return;
     if (input.everywhere) yield* repository.revokeUser(session.userId, now);
     else yield* repository.revokeSession(session.id, now);
   });
 
-  /**
-   * Resolves a bearer access token to its claims, and confirms the session
-   * behind it is still live. The token is short-lived, but a membership
-   * change or a sign-out everywhere must take effect before it expires.
-   */
   const authorize = Effect.fn("Auth.Session.authorize")(function* (accessToken: string) {
     const now = yield* Clock.currentTimeMillis;
     const claims = yield* accessTokens

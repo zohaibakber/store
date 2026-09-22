@@ -1,7 +1,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
-import * as Neon from "alchemy/Neon";
+import * as Planetscale from "alchemy/Planetscale";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -19,7 +19,7 @@ export default Alchemy.Stack(
       Layer.unwrap(
         Alchemy.Stage.pipe(
           Effect.map((stage) =>
-            stageUsesInventoryPostgres(stage) ? Neon.providers() : Layer.empty,
+            stageUsesInventoryPostgres(stage) ? Planetscale.providers() : Layer.empty,
           ),
         ),
       ),
@@ -30,7 +30,6 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const auth = yield* Auth;
     const api = yield* Api;
-    yield* Cloudflare.R2.Bucket("InventorySnapshots");
     if (!stageUsesInventoryPostgres(stage)) {
       return {
         stage,
@@ -45,7 +44,7 @@ export default Alchemy.Stack(
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
-      inventoryPostgresProjectId: inventoryPostgres.projectId,
+      inventoryDatabaseId: inventoryPostgres.id,
     };
   }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),
 );

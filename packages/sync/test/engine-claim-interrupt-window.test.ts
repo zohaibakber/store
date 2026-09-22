@@ -20,6 +20,9 @@ const unusedTransport: SyncTransport = {
   getReceipt: () => Effect.die("unused"),
   pull: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
+  acquireSnapshot: () => Effect.die("unused"),
+  readSnapshotPart: () => Effect.die("unused"),
+  mintLiveTicket: () => Effect.die("unused"),
 };
 
 it.live("holds an interrupt that lands between claiming a command and sending it", () =>

@@ -20,7 +20,7 @@ const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan
 const SignedInteger = Schema.Number.check(Schema.isInt());
 const NullableNonNegativeInteger = Schema.NullOr(NonNegativeInteger);
 
-const CategoryRow = createSelectSchema(categories, {
+export const CategoryRow = createSelectSchema(categories, {
   id: CategoryId,
   name: NonEmptyString,
   // Change-log entries written before categories gained this column do not
@@ -28,7 +28,7 @@ const CategoryRow = createSelectSchema(categories, {
   tracksPacks: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 
-const ProductRow = createSelectSchema(products, {
+export const ProductRow = createSelectSchema(products, {
   id: ProductId,
   name: NonEmptyString,
   categoryId: CategoryId,
@@ -38,7 +38,7 @@ const ProductRow = createSelectSchema(products, {
   unitPrice: NullableNonNegativeInteger,
 });
 
-const BatchRow = createSelectSchema(batches, {
+export const BatchRow = createSelectSchema(batches, {
   id: BatchId,
   productId: ProductId,
   expiresAt: NullableNonNegativeInteger,
@@ -46,13 +46,13 @@ const BatchRow = createSelectSchema(batches, {
   unitQuantity: NonNegativeInteger,
 });
 
-const InvoiceRow = createSelectSchema(invoices, {
+export const InvoiceRow = createSelectSchema(invoices, {
   id: InvoiceId,
   invoiceNumber: PositiveInteger,
   total: NonNegativeInteger,
 });
 
-const InvoiceItemRow = createSelectSchema(invoiceItems, {
+export const InvoiceItemRow = createSelectSchema(invoiceItems, {
   id: InvoiceItemId,
   invoiceId: InvoiceId,
   productId: ProductId,
@@ -64,7 +64,7 @@ const InvoiceItemRow = createSelectSchema(invoiceItems, {
   salePrice: NonNegativeInteger,
 });
 
-const StockMovementRow = createSelectSchema(stockMovements, {
+export const StockMovementRow = createSelectSchema(stockMovements, {
   productId: ProductId,
   batchId: BatchId,
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),

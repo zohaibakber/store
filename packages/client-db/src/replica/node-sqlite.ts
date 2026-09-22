@@ -4,12 +4,13 @@ import { betterSqliteMigrationTarget } from "@store/sync/better-sqlite-target";
 import { runMigrations } from "@store/sync/migrations";
 import Database from "better-sqlite3";
 
+import { openReplicaHandleScope } from "./handle-scope";
 import { createReplicaCommitPublisher, type ReplicaCommitPublisher } from "./publisher";
 import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
 import type {
   ReplicaCommitNotice,
+  ReplicaHandle,
   ReplicaQueryStamp,
-  ReplicaSqliteHandle,
   SqliteParameter,
   SqliteResultRow,
 } from "./types";
@@ -25,7 +26,7 @@ export type NodeReplicaIdentity = {
   readonly replicaId: string;
 };
 
-export type NodeReplicaSqlite = ReplicaSqliteHandle & {
+export type NodeReplicaSqlite = ReplicaHandle & {
   readonly publish: ReplicaCommitPublisher["publish"];
   readonly withWrite: (
     write: (sqlite: Database.Database) => void,
@@ -53,6 +54,7 @@ export const openNodeReplicaSqlite = (
   identity: NodeReplicaIdentity,
   path = ":memory:",
 ): NodeReplicaSqlite => {
+  const lifetime = openReplicaHandleScope();
   const sqlite = new Database(path);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
@@ -70,6 +72,10 @@ export const openNodeReplicaSqlite = (
   }
   const workspaceToken = crypto.randomUUID();
   const publisher = createReplicaCommitPublisher();
+  lifetime.addSyncFinalizer(() => {
+    publisher.dispose();
+    sqlite.close();
+  });
 
   const query = (
     sql: string,
@@ -115,12 +121,18 @@ export const openNodeReplicaSqlite = (
     workspaceToken,
     stamp: () => readStamp(sqlite, workspaceToken),
     query,
+    queryStamped: (sql, parameters) => ({
+      stamp: readStamp(sqlite, workspaceToken),
+      rows: query(sql, parameters),
+    }),
     subscribe: publisher.subscribe,
     publish: publisher.publish,
     withWrite,
-    close: () => {
-      publisher.dispose();
-      sqlite.close();
-    },
+    close: lifetime.closeSync,
   };
 };
+
+export { openNodeReplicaSyncSession } from "./node-sync";
+export type { NodeReplicaSyncIdentity, NodeReplicaSyncSession } from "./node-sync";
+export { makeProxySyncTransport } from "./proxy-transport";
+export type { SyncProxyFetch } from "./proxy-transport";

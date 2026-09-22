@@ -15,6 +15,7 @@ import {
   type SignOutInput,
   type TokenSet as TokenSetType,
 } from "@store/auth";
+import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -23,6 +24,7 @@ import { EphemeralStore } from "./ephemeral";
 import { AuthError, infrastructureError, infrastructureLog } from "./errors";
 import { GoogleOAuth } from "./google";
 import { makeGoogleIdentityOps, type GoogleCallback } from "./google-identity";
+import type { AuthLimits } from "./limits";
 import { makeLoginOps } from "./login";
 import { makeOrganizationOps } from "./organization-ops";
 import { AuthRepository } from "./repository";
@@ -31,24 +33,32 @@ import { makeSessionOps } from "./session-ops";
 export { AuthError, type GoogleCallback };
 
 export interface AuthServiceApi {
-  readonly identify: (input: IdentifyInput) => Effect.Effect<LoginRouteType, AuthError>;
-  readonly authenticate: (command: LoginCommand) => Effect.Effect<TokenSetType, AuthError>;
-  readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<URL, AuthError>;
+  readonly identify: (
+    input: IdentifyInput,
+  ) => Effect.Effect<LoginRouteType, AuthError, RuntimeContext>;
+  readonly authenticate: (
+    command: LoginCommand,
+  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<URL, AuthError, RuntimeContext>;
   readonly completeGoogle: (input: {
     readonly code: string;
     readonly state: string;
-  }) => Effect.Effect<GoogleCallback, AuthError>;
-  readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSetType, AuthError>;
+  }) => Effect.Effect<GoogleCallback, AuthError, RuntimeContext>;
+  readonly exchangeGoogle: (
+    input: ExchangeGoogleInput,
+  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInput,
-  ) => Effect.Effect<TokenSetType, AuthError>;
-  readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError>;
-  readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
-  readonly roster: (accessToken: string) => Effect.Effect<OrganizationRosterType, AuthError>;
+  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError, RuntimeContext>;
+  readonly roster: (
+    accessToken: string,
+  ) => Effect.Effect<OrganizationRosterType, AuthError, RuntimeContext>;
   readonly organize: (input: {
     readonly accessToken: string;
     readonly command: OrganizationCommand;
-  }) => Effect.Effect<OrganizationCommandResult, AuthError>;
+  }) => Effect.Effect<OrganizationCommandResult, AuthError, RuntimeContext>;
 }
 
 export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
@@ -59,7 +69,19 @@ export interface AuthServiceConfiguration {
   readonly developmentOtp: boolean;
   readonly trustedRedirects: ReadonlyArray<string>;
   readonly refreshTokenPepper: string;
+  readonly limits: AuthLimits;
 }
+
+const withInfrastructure = <A, E, Args extends ReadonlyArray<unknown>>(
+  name: string,
+  operation: (...args: Args) => Effect.Effect<A, E, RuntimeContext>,
+) =>
+  Effect.fn(name)(function* (...args: Args) {
+    return yield* operation(...args).pipe(
+      Effect.tapError(infrastructureLog),
+      Effect.mapError(infrastructureError),
+    );
+  });
 
 export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
   Layer.effect(
@@ -73,61 +95,51 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
       const google = yield* GoogleOAuth;
 
       const sessions = makeSessionOps(repository, accessTokens, configuration);
-      const login = makeLoginOps(repository, ephemeral, passwords, email, sessions, configuration);
+      const login = makeLoginOps(
+        repository,
+        ephemeral,
+        passwords,
+        email,
+        sessions,
+        configuration,
+        configuration.limits,
+      );
       const googleIdentity = makeGoogleIdentityOps(
         repository,
         ephemeral,
         google,
         sessions,
         configuration,
+        configuration.limits,
       );
-      const organizations = makeOrganizationOps(repository, email, sessions, configuration);
+      const organizations = makeOrganizationOps(
+        repository,
+        email,
+        sessions,
+        configuration,
+        configuration.limits,
+      );
 
-      const handle = <A, E>(effect: Effect.Effect<A, E>) =>
-        effect.pipe(Effect.tapError(infrastructureLog), Effect.mapError(infrastructureError));
-
-      // Public surface spans stay on AuthService.*; ops modules use Auth.{Login,Session,...}.*
       return AuthService.of({
-        identify: Effect.fn("AuthService.identify")(function* (input: IdentifyInput) {
-          return yield* handle(login.identify(input));
-        }),
-        authenticate: Effect.fn("AuthService.authenticate")(function* (command: LoginCommand) {
-          return yield* handle(login.authenticate(command));
-        }),
-        beginGoogle: Effect.fn("AuthService.beginGoogle")(function* (input: BeginGoogleInput) {
-          return yield* handle(googleIdentity.beginGoogle(input));
-        }),
-        completeGoogle: Effect.fn("AuthService.completeGoogle")(function* (input: {
-          readonly code: string;
-          readonly state: string;
-        }) {
-          return yield* handle(googleIdentity.completeGoogle(input));
-        }),
-        exchangeGoogle: Effect.fn("AuthService.exchangeGoogle")(function* (
-          input: ExchangeGoogleInput,
-        ) {
-          return yield* handle(googleIdentity.exchangeGoogle(input));
-        }),
-        exchangeGoogleIdToken: Effect.fn("AuthService.exchangeGoogleIdToken")(function* (
-          input: ExchangeGoogleIdTokenInput,
-        ) {
-          return yield* handle(googleIdentity.exchangeGoogleIdToken(input));
-        }),
-        refresh: Effect.fn("AuthService.refresh")(function* (input: RefreshInput) {
-          return yield* handle(sessions.refresh(input));
-        }),
-        signOut: Effect.fn("AuthService.signOut")(function* (input: SignOutInput) {
-          return yield* handle(sessions.signOut(input));
-        }),
-        roster: Effect.fn("AuthService.roster")(function* (accessToken: string) {
-          return yield* handle(organizations.roster(accessToken));
-        }),
-        organize: Effect.fn("AuthService.organize")(function* (input: {
-          readonly accessToken: string;
-          readonly command: OrganizationCommand;
-        }) {
-          return yield* handle(organizations.organize(input));
-        }),
+        identify: withInfrastructure("AuthService.identify", login.identify),
+        authenticate: withInfrastructure("AuthService.authenticate", login.authenticate),
+        beginGoogle: withInfrastructure("AuthService.beginGoogle", googleIdentity.beginGoogle),
+        completeGoogle: withInfrastructure(
+          "AuthService.completeGoogle",
+          googleIdentity.completeGoogle,
+        ),
+        exchangeGoogle: withInfrastructure(
+          "AuthService.exchangeGoogle",
+          googleIdentity.exchangeGoogle,
+        ),
+        exchangeGoogleIdToken: withInfrastructure(
+          "AuthService.exchangeGoogleIdToken",
+          googleIdentity.exchangeGoogleIdToken,
+        ),
+        refresh: withInfrastructure("AuthService.refresh", sessions.refresh),
+        signOut: withInfrastructure("AuthService.signOut", sessions.signOut),
+        roster: withInfrastructure("AuthService.roster", organizations.roster),
+        organize: withInfrastructure("AuthService.organize", organizations.organize),
       });
     }),
   );

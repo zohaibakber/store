@@ -17,7 +17,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-const textEncoder = new TextEncoder();
+import { sha256 } from "./crypto";
 
 const OtpRecord = Schema.Struct({
   email: EmailAddress,
@@ -109,17 +109,7 @@ export const kvExpirationTtlSeconds = (expiresAtMs: number, nowMs: number) =>
   Math.max(Math.ceil((expiresAtMs - nowMs) / 1_000), 60) + 1;
 
 const digest = (value: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const bytes = new Uint8Array(
-        await crypto.subtle.digest("SHA-256", textEncoder.encode(value)),
-      );
-      let binary = "";
-      for (const byte of bytes) binary += String.fromCharCode(byte);
-      return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-    },
-    catch: (cause) => error("digest", cause),
-  });
+  sha256(value).pipe(Effect.mapError((cause) => error("digest", cause)));
 
 const keyId = () => crypto.randomUUID();
 
@@ -131,17 +121,16 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         const now = yield* Clock.currentTimeMillis;
         const challengeId = OtpChallengeId.make(keyId());
         const codeHash = yield* digest(`${pepper}:${challengeId}:${input.code}`);
+        const record = {
+          email: input.email,
+          codeHash,
+          expiresAt: input.expiresAt,
+        } satisfies typeof OtpRecord.Type;
         yield* Effect.tryPromise({
           try: () =>
-            namespace.put(
-              `otp:${challengeId}`,
-              JSON.stringify({
-                email: input.email,
-                codeHash,
-                expiresAt: input.expiresAt,
-              } satisfies typeof OtpRecord.Type),
-              { expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now) },
-            ),
+            namespace.put(`otp:${challengeId}`, JSON.stringify(record), {
+              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
+            }),
           catch: (cause) => error("createOtp", cause),
         });
         return challengeId;
@@ -168,9 +157,13 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
         const state = keyId();
         yield* Effect.tryPromise({
           try: () =>
-            namespace.put(`oauth-state:${state}`, JSON.stringify(input), {
-              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
-            }),
+            namespace.put(
+              `oauth-state:${state}`,
+              JSON.stringify(input satisfies typeof OAuthStateRecord.Type),
+              {
+                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
+              },
+            ),
           catch: (cause) => error("createOAuthState", cause),
         });
         return state;
@@ -197,9 +190,13 @@ export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
           const code = AuthorizationCode.make(keyId());
           yield* Effect.tryPromise({
             try: () =>
-              namespace.put(`authorization:${code}`, JSON.stringify(input), {
-                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
-              }),
+              namespace.put(
+                `authorization:${code}`,
+                JSON.stringify(input satisfies typeof AuthorizationGrantRecord.Type),
+                {
+                  expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
+                },
+              ),
             catch: (cause) => error("createAuthorizationGrant", cause),
           });
           return code;

@@ -7,6 +7,7 @@ import {
   Password,
   RefreshInput,
 } from "@store/auth";
+import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -53,7 +54,7 @@ const withAccounts = () => {
 
 const run = <A, E>(
   instance: Harness,
-  use: (auth: ReturnType<typeof AuthService.of>) => Effect.Effect<A, E>,
+  use: (auth: ReturnType<typeof AuthService.of>) => Effect.Effect<A, E, RuntimeContext>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {

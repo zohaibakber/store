@@ -13,7 +13,7 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { batches, commandOutbox, replicaState } from "@store/db/replica.schema";
+import { batches, commandOutbox, replicaState, snapshotStagedRows } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -74,7 +74,7 @@ const partPayload: SnapshotPartPayload = {
 };
 
 describe("replica snapshot import", () => {
-  it("imports the same part twice without duplicating rows", () => {
+  it("stages snapshot parts without writing live tables", () => {
     const store = seedReplicaTenUnits();
     runReplicaTransaction(store.db, (tx) => {
       beginSnapshotImport(tx, manifest);
@@ -83,11 +83,15 @@ describe("replica snapshot import", () => {
       expect(first).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
       expect(second).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
       expect(
-        tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).all(),
+        tx
+          .select()
+          .from(snapshotStagedRows)
+          .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
+          .all(),
       ).toHaveLength(1);
       expect(
         tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).get()?.unitQuantity,
-      ).toBe(8);
+      ).toBe(10);
     });
     store.close();
   });
@@ -111,6 +115,13 @@ describe("replica snapshot import", () => {
           .where(eq(commandOutbox.operationId, lastUnitBuyerAEnvelope.operationId))
           .get(),
       ).toBeDefined();
+      expect(
+        tx
+          .select()
+          .from(snapshotStagedRows)
+          .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
+          .all(),
+      ).toHaveLength(0);
     });
     store.close();
   });

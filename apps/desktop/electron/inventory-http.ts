@@ -37,7 +37,6 @@ const inventoryApiPath = (apiBaseUrl: string) => {
   return (basePath.endsWith("/api") ? basePath : `${basePath}/api`).replace(/^\/\//u, "/");
 };
 
-export const INVENTORY_COMMAND_PATHS = ["mutations", "invoices", "imports"] as const;
 export const SYNC_COMMAND_PATHS = [
   "replicas",
   "commands",
@@ -89,19 +88,23 @@ const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): b
   const replicaId = requested.searchParams.get("replicaId");
   const subscription = requested.searchParams.get("subscription");
   const keys = [...requested.searchParams.keys()];
-  if (keys.length === 1 && keys[0] === "nonce")
-    return nonce !== null && LIVE_TICKET_NONCE.test(nonce);
-  if (keys.length !== 3) return false;
-  const allowed = new Set(["nonce", "replicaId", "subscription"]);
+  const allowed = new Set(["nonce", "replicaId", "subscription", "afterHorizon", "waitMs"]);
   if (keys.some((key) => !allowed.has(key))) return false;
-  return (
-    nonce !== null &&
-    LIVE_TICKET_NONCE.test(nonce) &&
-    replicaId !== null &&
-    replicaId.length > 0 &&
-    replicaId.length <= 200 &&
-    subscription === "operational"
-  );
+  if (
+    nonce === null ||
+    !LIVE_TICKET_NONCE.test(nonce) ||
+    replicaId === null ||
+    replicaId.length === 0 ||
+    replicaId.length > 200 ||
+    subscription !== "operational"
+  ) {
+    return false;
+  }
+  const afterHorizon = requested.searchParams.get("afterHorizon");
+  if (afterHorizon !== null && !/^[0-9]+$/u.test(afterHorizon)) return false;
+  const waitMs = requested.searchParams.get("waitMs");
+  if (waitMs !== null && !/^[1-9][0-9]{0,5}$/u.test(waitMs)) return false;
+  return true;
 };
 
 export const validatedInventoryUrl = (
@@ -111,10 +114,8 @@ export const validatedInventoryUrl = (
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
   const apiPath = inventoryApiPath(apiBaseUrl);
-  const commandPaths = INVENTORY_COMMAND_PATHS.map((command) => `${apiPath}/inventory/${command}`);
   const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
   const routeAllowed =
-    (request.method === "POST" && commandPaths.includes(requested.pathname)) ||
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
     (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
     (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname)) ||

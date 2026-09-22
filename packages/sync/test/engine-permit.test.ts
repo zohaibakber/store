@@ -54,6 +54,9 @@ describe("sync engine permit", () => {
             },
           };
         }),
+      acquireSnapshot: () => Effect.die("unused"),
+      readSnapshotPart: () => Effect.die("unused"),
+      mintLiveTicket: () => Effect.die("unused"),
     };
 
     await Effect.runPromise(

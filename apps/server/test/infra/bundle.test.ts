@@ -50,19 +50,22 @@ describe("API Worker bundle", () => {
     expect(source).toContain("AuthVerificationConfig");
   });
 
-  it("binds OrganizationInventoryObject and does not bind the retired OrganizationStore", () => {
+  it("binds inventory commands through Hyperdrive and does not bind a Durable Object", () => {
     const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
-    expect(source).toContain("OrganizationInventoryObject");
-    expect(source).not.toContain("ORGANIZATION_STORE");
-    expect(source).not.toContain("OrganizationStore");
-    expect(source).not.toContain("connectSyncLive");
+    expect(source).toContain("InventoryAuthorityLive");
+    expect(source).toContain("InventoryCommands");
+    expect(source).toContain("Hyperdrive.ConnectBinding");
+    expect(source).not.toContain("OrganizationInventoryObject");
+    expect(source).not.toContain("DurableObject");
+    expect(source).not.toContain("Neon");
   });
 
-  it("does not call the Neon API from the Worker runtime", async () => {
+  it("does not call the database control plane from the Worker runtime", async () => {
     const chunks = await bundleWorker();
     const code = chunks.map((chunk) => chunk.code).join("\n");
     expect(code).not.toContain("getConnectionURI");
-    expect(code).not.toContain("resetProjectBranchRolePassword");
+    expect(code).not.toContain("@distilled.cloud/neon");
+    expect(code).not.toContain("@distilled.cloud/planetscale");
   }, 60_000);
 
   it("does not require process.env production hostnames at Worker runtime", async () => {

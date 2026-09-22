@@ -1,7 +1,13 @@
 import type {
+  AcquireSnapshotRequest,
+  AcquireSnapshotResult,
   CommandReceipt,
+  LiveTicket,
+  LiveTicketRequest,
   RegisterReplicaRequest,
   RegisterReplicaResult,
+  SnapshotId,
+  SnapshotPartPayload,
   SyncCommandEnvelope,
   SyncPullRequest,
   SyncPullResult,
@@ -9,9 +15,22 @@ import type {
 import { SyncProtocolError } from "@store/contracts";
 import { SyncHttpApi } from "@store/contracts/sync/api";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
-import { SyncTransportInvalid, SyncTransportUnavailable } from "./replica/errors";
+export class SyncTransportUnavailable extends Schema.TaggedError<SyncTransportUnavailable>()(
+  "SyncTransportUnavailable",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class SyncTransportInvalid extends Schema.TaggedError<SyncTransportInvalid>()(
+  "SyncTransportInvalid",
+  {
+    message: Schema.String,
+  },
+) {}
 
 export type SyncTransportError = SyncTransportUnavailable | SyncTransportInvalid;
 
@@ -45,6 +64,16 @@ export type SyncTransport = {
   readonly pull: (
     request: SyncPullRequest,
   ) => Effect.Effect<SyncPullResult, SyncTransportError | SyncProtocolError>;
+  readonly acquireSnapshot: (
+    request: AcquireSnapshotRequest,
+  ) => Effect.Effect<AcquireSnapshotResult, SyncTransportError | SyncProtocolError>;
+  readonly readSnapshotPart: (
+    snapshotId: SnapshotId,
+    partNumber: number,
+  ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
+  readonly mintLiveTicket: (
+    request: LiveTicketRequest,
+  ) => Effect.Effect<LiveTicket, SyncTransportError | SyncProtocolError>;
 };
 
 export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (baseUrl: string) {
@@ -61,5 +90,11 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
           .pipe(Effect.catchTag("NotFound", () => Effect.succeed(undefined))),
       ),
     pull: (request) => mapTransportFailure(client.sync.pull({ payload: request })),
+    acquireSnapshot: (request) =>
+      mapTransportFailure(client.sync.acquireSnapshot({ payload: request })),
+    readSnapshotPart: (snapshotId, partNumber) =>
+      mapTransportFailure(client.sync.readSnapshotPart({ params: { snapshotId, partNumber } })),
+    mintLiveTicket: (request) =>
+      mapTransportFailure(client.sync.mintLiveTicket({ payload: request })),
   } satisfies SyncTransport;
 });

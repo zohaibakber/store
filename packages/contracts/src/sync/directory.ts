@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { OrganizationId } from "../ids";
-import { MAX_SYNC_IDENTIFIER_LENGTH, SyncEpoch } from "./protocol";
+import { MAX_SYNC_IDENTIFIER_LENGTH } from "./protocol";
 
 export const InventoryObjectName = Schema.String.check(
   Schema.isPattern(/^inventory-[0-9a-z-]{1,64}$/u),
@@ -19,38 +18,3 @@ export const InventoryReleaseId = Schema.String.check(
   Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
 ).pipe(Schema.brand("InventoryReleaseId"));
 export type InventoryReleaseId = typeof InventoryReleaseId.Type;
-
-export const InventoryDirectoryEntry = Schema.TaggedUnion({
-  importing: {
-    organizationId: OrganizationId,
-    objectName: InventoryObjectName,
-    importId: InventoryImportId,
-  },
-  ready: {
-    organizationId: OrganizationId,
-    objectName: InventoryObjectName,
-    importId: InventoryImportId,
-    releaseId: InventoryReleaseId,
-  },
-});
-export type InventoryDirectoryEntry = typeof InventoryDirectoryEntry.Type;
-
-export const InventoryRoutingContext = Schema.Struct({
-  organizationId: OrganizationId,
-  importId: InventoryImportId,
-  releaseId: InventoryReleaseId,
-});
-export type InventoryRoutingContext = typeof InventoryRoutingContext.Type;
-
-export const InventoryObjectIdentity = Schema.TaggedUnion({
-  importing: {
-    organizationId: OrganizationId,
-    importId: InventoryImportId,
-  },
-  ready: {
-    organizationId: OrganizationId,
-    importId: InventoryImportId,
-    epoch: SyncEpoch,
-  },
-});
-export type InventoryObjectIdentity = typeof InventoryObjectIdentity.Type;

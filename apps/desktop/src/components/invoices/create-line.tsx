@@ -35,7 +35,6 @@ const quantityItems = [
   { label: "Pack", value: "pack" },
 ] as const;
 
-// A product whose category is not sold in packs has nothing to choose between.
 const quantityItemsFor = (line: SaleLine) =>
   line.product.category.tracksPacks ? quantityItems : quantityItems.slice(0, 1);
 

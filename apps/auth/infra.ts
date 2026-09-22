@@ -2,7 +2,7 @@ import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   accessTokenLayer,
-  decodeJsonWebKey,
+  decodeJsonWebKeyText,
   disabledEmailLayer,
   developmentEmailLayer,
   fallbackIfBlank,
@@ -62,8 +62,8 @@ export const AuthLive = Auth.make(
     const published = stage === "prod" || stage === "nightly";
     const productionDomain = process.env.PRODUCTION_DOMAIN ?? "";
     const productionAuthDomain = process.env.PRODUCTION_AUTH_DOMAIN ?? "";
-    const authBaseUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
-    const trustedOrigins = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+    const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
+    const trustedOrigins = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
     );
     const authHostname =
@@ -104,11 +104,11 @@ export const AuthLive = Auth.make(
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const published = stage === "prod" || stage === "nightly";
 
-    const productionDomain = yield* Config.string("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
-    const productionAuthDomain = yield* Config.string("PRODUCTION_AUTH_DOMAIN").pipe(
+    const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
+    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
       Config.withDefault(""),
     );
-    const configuredAuthUrl = yield* Config.string("AUTH_BASE_URL").pipe(Config.withDefault(""));
+    const configuredAuthUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
     const authHostname = resolveProductionAuthHostname({
       productionDomain,
       productionAuthDomain,
@@ -118,14 +118,14 @@ export const AuthLive = Auth.make(
       (!localDevelopment && published && authHostname
         ? `https://${authHostname}`
         : LOCAL_AUTH_ORIGIN);
-    const trustedOriginsRaw = yield* Config.string("AUTH_TRUSTED_ORIGINS").pipe(
+    const trustedOriginsRaw = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
     );
-    const electronProtocol = yield* Config.string("ELECTRON_PROTOCOL").pipe(
+    const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
     );
-    const mobileProtocol = yield* Config.string("MOBILE_PROTOCOL").pipe(
+    const mobileProtocol = yield* Config.String("MOBILE_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
@@ -140,22 +140,15 @@ export const AuthLive = Auth.make(
       ].filter((origin): origin is string => Boolean(origin)),
     });
 
-    const privateJwkText = Redacted.value(yield* Config.redacted("AUTH_JWT_PRIVATE_JWK"));
-    const publicJwkText = yield* Config.string("AUTH_JWT_PUBLIC_JWK");
-    const privateJwk = yield* Effect.try({
-      try: () => JSON.parse(privateJwkText),
-      catch: (cause) => new Error(`AUTH_JWT_PRIVATE_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
-    const publicJwk = yield* Effect.try({
-      try: () => JSON.parse(publicJwkText),
-      catch: (cause) => new Error(`AUTH_JWT_PUBLIC_JWK is invalid JSON: ${String(cause)}`),
-    }).pipe(Effect.flatMap(decodeJsonWebKey), Effect.orDie);
-    const refreshTokenPepper = Redacted.value(yield* Config.redacted("AUTH_REFRESH_TOKEN_PEPPER"));
-    const ephemeralPepper = Redacted.value(yield* Config.redacted("AUTH_EPHEMERAL_PEPPER"));
-    const googleClientId = yield* Config.string("GOOGLE_OAUTH_CLIENT_ID");
-    const googleClientSecret = Redacted.value(yield* Config.redacted("GOOGLE_OAUTH_CLIENT_SECRET"));
-    /** Native apps sign in with Google's own SDK, which mints its own audience. */
-    const googleNativeClientIds = yield* Config.string("GOOGLE_OAUTH_NATIVE_CLIENT_IDS").pipe(
+    const privateJwkText = Redacted.value(yield* Config.Redacted("AUTH_JWT_PRIVATE_JWK"));
+    const publicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
+    const privateJwk = yield* decodeJsonWebKeyText(privateJwkText).pipe(Effect.orDie);
+    const publicJwk = yield* decodeJsonWebKeyText(publicJwkText).pipe(Effect.orDie);
+    const refreshTokenPepper = Redacted.value(yield* Config.Redacted("AUTH_REFRESH_TOKEN_PEPPER"));
+    const ephemeralPepper = Redacted.value(yield* Config.Redacted("AUTH_EPHEMERAL_PEPPER"));
+    const googleClientId = yield* Config.String("GOOGLE_OAUTH_CLIENT_ID");
+    const googleClientSecret = Redacted.value(yield* Config.Redacted("GOOGLE_OAUTH_CLIENT_SECRET"));
+    const googleNativeClientIds = yield* Config.String("GOOGLE_OAUTH_NATIVE_CLIENT_IDS").pipe(
       Config.withDefault(""),
       Config.map((value) =>
         value
@@ -164,7 +157,15 @@ export const AuthLive = Auth.make(
           .filter((entry) => entry.length > 0),
       ),
     );
-    const developmentOtp = yield* Config.boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
+    const tenPerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_TEN_PER_MINUTE", {
+      namespaceId: 1003,
+      simple: { limit: 10, period: 60 },
+    });
+    const fivePerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_FIVE_PER_MINUTE", {
+      namespaceId: 1004,
+      simple: { limit: 5, period: 60 },
+    });
+    const developmentOtp = yield* Config.Boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
     if (!localDevelopment && developmentOtp) {
       return yield* Effect.die(
         new Error(
@@ -201,6 +202,10 @@ export const AuthLive = Auth.make(
       developmentOtp,
       trustedRedirects: security.trustedRedirects,
       refreshTokenPepper,
+      limits: {
+        tenPerMinute: (key) => tenPerMinute.limit({ key }),
+        fivePerMinute: (key) => fivePerMinute.limit({ key }),
+      },
     }).pipe(Layer.provide(DependenciesLive));
     const RoutesLive = authRoutes({
       baseUrl: security.baseURL,
@@ -244,6 +249,7 @@ export const AuthLive = Auth.make(
   }).pipe(
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(Cloudflare.KV.ReadWriteNamespaceBinding),
+    Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),
 );
 

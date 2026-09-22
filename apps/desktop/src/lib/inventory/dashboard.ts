@@ -1,5 +1,8 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { DashboardAnalytics, Product } from "@store/contracts";
 import type { StockPolicy } from "@store/services/stock-recommendations";
+import { Effect, Schedule } from "effect";
+import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
 import { useCatalogProducts, useInventoryInvoices } from "./queries";
@@ -11,14 +14,21 @@ const EXPIRY_DAYS = 90;
 const utcDayStart = (timestamp: number) => timestamp - (timestamp % DAY_MS);
 const isoDay = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
+/** Minute clock for dashboard windows; Fiber disposed when the atom has no subscribers. */
+const dashboardNowAtom = Atom.make((get) => {
+  const fiber = Effect.runFork(
+    Effect.sync(() => get.setSelf(Date.now())).pipe(Effect.schedule(Schedule.spaced("1 minute"))),
+  );
+  get.addFinalizer(() => {
+    fiber.interruptUnsafe();
+  });
+  return Date.now();
+});
+
 export const useInventoryDashboardAnalytics = (policy: StockPolicy) => {
-  const products = useCatalogProducts();
-  const invoices = useInventoryInvoices();
-  const [now, setNow] = React.useState(() => Date.now());
-  React.useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
+  const products = useCatalogProducts(200);
+  const invoices = useInventoryInvoices(100);
+  const now = useAtomValue(dashboardNowAtom);
   const recommendations = useStockRecommendations(products.data, invoices.data, policy, now);
   const data = React.useMemo<DashboardAnalytics>(() => {
     const todayStart = utcDayStart(now);

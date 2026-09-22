@@ -24,7 +24,12 @@ const inventorySql = readFileSync(
 );
 
 const authoritySqlMarkers = forbiddenRendererMarkers.filter(
-  (marker) => marker !== "drizzle-orm" && marker !== "invoice_counters",
+  (marker) =>
+    marker !== "drizzle-orm" &&
+    marker !== "invoice_counters" &&
+    marker !== "wa-sqlite" &&
+    marker !== "sql-sqlite-wasm" &&
+    marker !== "OpfsWorker",
 );
 
 describe("desktop renderer schema boundary", () => {

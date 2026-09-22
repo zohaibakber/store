@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 import type { HostInventoryScope } from "@/host-access";
 import type { InventoryHost } from "@/lib/inventory-host";
 
@@ -30,11 +32,6 @@ export type CatalogLifetime<Replica extends CatalogReplica = Inventory> = {
   readonly open: (lease: CatalogLease, host: InventoryHost) => Promise<Replica>;
 };
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
 const settle = (work: Promise<void>): Promise<void> =>
   work.then(
     () => undefined,
@@ -63,7 +60,10 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
 
   const enqueue = (databaseName: string, work: () => Promise<void>): Promise<void> => {
     const previous = tailByDatabase.get(databaseName) ?? Promise.resolve();
-    const next = Promise.race([previous, delay(sameFileWaitMs)]).then(work, work);
+    const next = Promise.race([
+      previous,
+      Effect.runPromise(Effect.sleep(`${sameFileWaitMs} millis`)),
+    ]).then(work, work);
     tailByDatabase.set(databaseName, settle(next));
     return next;
   };

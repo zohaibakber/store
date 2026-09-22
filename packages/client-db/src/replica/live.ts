@@ -1,15 +1,107 @@
-import {
-  CommandReceipt,
-  LiveTicket,
-  LiveTicketRequest,
-  OPERATIONAL_SUBSCRIPTION,
-  SyncLiveClientFrame,
-  SyncLiveServerFrame,
-} from "@store/contracts";
-import * as Option from "effect/Option";
+import { LiveTicket, LiveTicketRequest, OPERATIONAL_SUBSCRIPTION } from "@store/contracts";
+import { wakeHintsFromSseBody } from "@store/sync/browser";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import { inventoryApiRoot, inventoryRequest } from "../mutations";
+import { openReplicaHandleScope } from "./handle-scope";
+
+export type OrganizationObjectLiveTransport = {
+  readonly close: () => void;
+};
+
+export type OrganizationObjectLiveEngine = {
+  readonly appliedCursor: () => string;
+  readonly onWake: (horizon: string) => void;
+  readonly resumeFromCursor: (cursor: string) => void;
+};
+
+const liveUrl = (
+  apiBaseUrl: string,
+  nonce: string,
+  replicaId: string,
+  subscription: typeof OPERATIONAL_SUBSCRIPTION,
+  afterHorizon: string | undefined,
+): string => {
+  const live = new URL(`${inventoryApiRoot(apiBaseUrl)}/sync/live`);
+  live.searchParams.set("nonce", nonce);
+  live.searchParams.set("replicaId", replicaId);
+  live.searchParams.set("subscription", subscription);
+  if (afterHorizon !== undefined) live.searchParams.set("afterHorizon", afterHorizon);
+  return live.href;
+};
+
+const continueWithHttpPolling = (): undefined => undefined;
+
+export const connectOrganizationObjectLiveTransport = async (
+  authenticatedFetch: typeof fetch,
+  apiBaseUrl: string,
+  replicaId: string,
+  engine: OrganizationObjectLiveEngine,
+): Promise<OrganizationObjectLiveTransport | undefined> => {
+  try {
+    const ticket = await inventoryRequest({
+      apiBaseUrl,
+      authenticatedFetch,
+      path: "/sync/live-tickets",
+      body: Schema.encodeSync(LiveTicketRequest)({
+        replicaId,
+        subscription: OPERATIONAL_SUBSCRIPTION,
+      }),
+      decode: Schema.decodeUnknownSync(LiveTicket),
+      failureLabel: "Live ticket mint failed.",
+    });
+
+    const lifetime = openReplicaHandleScope();
+    const abort = new AbortController();
+    lifetime.addSyncFinalizer(() => {
+      abort.abort();
+    });
+
+    try {
+      const response = await authenticatedFetch(
+        liveUrl(apiBaseUrl, ticket.nonce, replicaId, ticket.subscription, engine.appliedCursor()),
+        {
+          method: "GET",
+          headers: { accept: "text/event-stream" },
+          signal: abort.signal,
+        },
+      );
+      if (!response.ok || response.body === null) {
+        lifetime.closeSync();
+        return continueWithHttpPolling();
+      }
+
+      await lifetime.runInScope(
+        wakeHintsFromSseBody(response.body).pipe(
+          Stream.runForEach((hint) =>
+            Effect.sync(() => {
+              engine.onWake(hint.horizon);
+            }),
+          ),
+          Effect.catchCause(() =>
+            Effect.sync(() => {
+              engine.resumeFromCursor(engine.appliedCursor());
+            }),
+          ),
+          Effect.forkScoped,
+        ),
+      );
+
+      return {
+        close: () => {
+          lifetime.close();
+        },
+      };
+    } catch {
+      lifetime.close();
+      return continueWithHttpPolling();
+    }
+  } catch {
+    return continueWithHttpPolling();
+  }
+};
 
 export type ReplicaLiveFeed =
   | {
@@ -19,176 +111,3 @@ export type ReplicaLiveFeed =
   | {
       readonly _tag: "following";
     };
-
-export type OrganizationObjectLiveSocket = {
-  readonly send: (data: string) => void;
-  readonly close: () => void;
-  readonly isOpen: () => boolean;
-};
-
-export type OrganizationObjectLiveSocketHandlers = {
-  readonly onMessage: (data: string) => void;
-  readonly onClose: () => void;
-  readonly onError: () => void;
-};
-
-export type OpenOrganizationObjectLiveSocket = (
-  url: string,
-  handlers: OrganizationObjectLiveSocketHandlers,
-) => OrganizationObjectLiveSocket;
-
-export type OrganizationObjectLiveEngine = {
-  readonly feed: () => ReplicaLiveFeed;
-  readonly appliedCursor: () => string;
-  readonly applyTransactions: (
-    frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-  ) => boolean | Promise<boolean>;
-  readonly applyReceipt: (receipt: CommandReceipt) => void;
-  readonly resumeFromCursor: (cursor: string) => void;
-};
-
-export type OrganizationObjectLiveTransport = {
-  readonly close: () => void;
-};
-
-const decodeLiveFrame = Schema.decodeUnknownOption(Schema.fromJsonString(SyncLiveServerFrame));
-
-const liveSocketUrl = (
-  apiBaseUrl: string,
-  nonce: string,
-  replicaId: string,
-  subscription: typeof OPERATIONAL_SUBSCRIPTION,
-): string => {
-  const live = new URL(`${inventoryApiRoot(apiBaseUrl)}/sync/live`);
-  live.protocol = live.protocol === "https:" ? "wss:" : "ws:";
-  live.searchParams.set("nonce", nonce);
-  live.searchParams.set("replicaId", replicaId);
-  live.searchParams.set("subscription", subscription);
-  return live.href;
-};
-
-const acknowledgeTransactions = (
-  socket: OrganizationObjectLiveSocket,
-  engine: OrganizationObjectLiveEngine,
-  frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-): void => {
-  if (!socket.isOpen()) {
-    engine.resumeFromCursor(engine.appliedCursor());
-    return;
-  }
-  try {
-    socket.send(
-      JSON.stringify(
-        Schema.encodeSync(SyncLiveClientFrame)({
-          _tag: "acknowledge",
-          throughCommitSequence: frame.toCommitSequence,
-        }),
-      ),
-    );
-  } catch {
-    engine.resumeFromCursor(engine.appliedCursor());
-  }
-};
-
-const afterTransactionsApplied = (
-  applied: boolean | Promise<boolean>,
-  socket: OrganizationObjectLiveSocket,
-  engine: OrganizationObjectLiveEngine,
-  frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-): void => {
-  if (applied === true) {
-    acknowledgeTransactions(socket, engine, frame);
-    return;
-  }
-  if (applied === false) return;
-  void applied.then((ok) => {
-    if (ok) acknowledgeTransactions(socket, engine, frame);
-  });
-};
-
-const handleLiveFrame = (
-  data: string,
-  socket: OrganizationObjectLiveSocket,
-  engine: OrganizationObjectLiveEngine,
-): void => {
-  const decoded = decodeLiveFrame(data);
-  if (Option.isNone(decoded)) {
-    engine.resumeFromCursor(engine.appliedCursor());
-    return;
-  }
-  const frame = decoded.value;
-  switch (frame._tag) {
-    case "transactions": {
-      if (engine.feed()._tag !== "following") return;
-      afterTransactionsApplied(engine.applyTransactions(frame), socket, engine, frame);
-      return;
-    }
-    case "receipt": {
-      if (engine.feed()._tag !== "following") return;
-      engine.applyReceipt(frame.receipt);
-      return;
-    }
-    case "resume": {
-      engine.resumeFromCursor(engine.appliedCursor());
-    }
-  }
-};
-
-export const openBrowserOrganizationObjectLiveSocket = (
-  url: string,
-  handlers: OrganizationObjectLiveSocketHandlers,
-): OrganizationObjectLiveSocket => {
-  const socket = new WebSocket(url);
-  socket.addEventListener("message", (event) => {
-    if (Schema.is(Schema.String)(event.data)) handlers.onMessage(event.data);
-  });
-  socket.addEventListener("close", () => {
-    handlers.onClose();
-  });
-  socket.addEventListener("error", () => {
-    handlers.onError();
-  });
-  return {
-    send: (data) => {
-      socket.send(data);
-    },
-    close: () => {
-      socket.close();
-    },
-    isOpen: () => socket.readyState === WebSocket.OPEN,
-  };
-};
-
-export const connectOrganizationObjectLiveTransport = async (
-  authenticatedFetch: typeof fetch,
-  apiBaseUrl: string,
-  replicaId: string,
-  engine: OrganizationObjectLiveEngine,
-  openSocket: OpenOrganizationObjectLiveSocket,
-): Promise<OrganizationObjectLiveTransport> => {
-  const ticket = await inventoryRequest({
-    apiBaseUrl,
-    authenticatedFetch,
-    path: "/sync/live-tickets",
-    body: Schema.encodeSync(LiveTicketRequest)({
-      replicaId,
-      subscription: OPERATIONAL_SUBSCRIPTION,
-    }),
-    decode: Schema.decodeUnknownSync(LiveTicket),
-    failureLabel: "Live ticket mint failed.",
-  });
-  let socket: OrganizationObjectLiveSocket | undefined;
-  socket = openSocket(liveSocketUrl(apiBaseUrl, ticket.nonce, replicaId, ticket.subscription), {
-    onMessage: (data) => {
-      if (socket === undefined) return;
-      handleLiveFrame(data, socket, engine);
-    },
-    onClose: () => undefined,
-    onError: () => undefined,
-  });
-  return {
-    close: () => {
-      socket?.close();
-    },
-  };
-};

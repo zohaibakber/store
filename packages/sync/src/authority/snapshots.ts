@@ -34,6 +34,8 @@ import {
   type PartitionEntity,
 } from "./digest";
 
+const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 export const SNAPSHOT_COPY_PAGE_ROWS = 500;
 
 const ACTIVE_STAGES = ["copying", "repairing", "frozen", "exporting"] as const;
@@ -172,7 +174,7 @@ const upsertStaged = (tx: SqliteConnection, job: SnapshotJobRow, row: SnapshotRo
     runWrite(
       tx
         .update(snapshotStagedRows)
-        .set({ rowVersion: row.rowVersion, rowJson: JSON.stringify(row.row) })
+        .set({ rowVersion: row.rowVersion, rowJson: encodeRowJson(row.row) })
         .where(
           and(
             eq(snapshotStagedRows.organizationId, job.organizationId),
@@ -191,7 +193,7 @@ const upsertStaged = (tx: SqliteConnection, job: SnapshotJobRow, row: SnapshotRo
       entity: row.entity,
       entityId: row.entityId,
       rowVersion: row.rowVersion,
-      rowJson: JSON.stringify(row.row),
+      rowJson: encodeRowJson(row.row),
     }),
   );
 };
@@ -245,7 +247,7 @@ const applyLogChange = (
     entity,
     entityId: change.entityId,
     rowVersion: change.rowVersion,
-    row: JSON.parse(change.rowJson),
+    row: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(change.rowJson),
   });
 };
 
@@ -420,7 +422,7 @@ const toSnapshotRows = (
     entity: decodeEntity(row.entity),
     entityId: row.entityId,
     rowVersion: row.rowVersion,
-    row: JSON.parse(row.rowJson),
+    row: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(row.rowJson),
   }));
 
 type EncodedSnapshotPart = {

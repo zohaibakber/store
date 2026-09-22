@@ -39,8 +39,8 @@ const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedi
 export const clearStalePendingUpdate = async (currentVersion: string) => {
   const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
   try {
-    const info = Schema.decodeUnknownSync(PendingUpdateInfo)(
-      JSON.parse(await readFile(path.join(pendingDirectory, "update-info.json"), "utf8")),
+    const info = Schema.decodeUnknownSync(Schema.fromJsonString(PendingUpdateInfo))(
+      await readFile(path.join(pendingDirectory, "update-info.json"), "utf8"),
     );
     const pendingVersion = info.fileName ? versionFromPendingFileName(info.fileName) : undefined;
     if (!pendingVersion) return;
@@ -52,9 +52,7 @@ export const clearStalePendingUpdate = async (currentVersion: string) => {
         sensitivity: "base",
       }) > 0;
     if (!newer) await rm(pendingDirectory, { force: true, recursive: true });
-  } catch {
-    // Missing cache is the common case.
-  }
+  } catch {}
 };
 
 const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {

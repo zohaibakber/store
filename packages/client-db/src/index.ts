@@ -5,4 +5,3 @@ export * from "./invoice-writes";
 export * from "./mutations";
 export * from "./replica";
 export * from "./rows";
-export * from "./sale-outbox";

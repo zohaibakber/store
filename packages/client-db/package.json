@@ -12,7 +12,6 @@
     "test": "vitest run --root ../.. packages/client-db/test"
   },
   "dependencies": {
-    "@journeyapps/wa-sqlite": "1.7.2",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "@store/sync": "workspace:*",

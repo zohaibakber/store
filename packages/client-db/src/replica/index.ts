@@ -1,4 +1,5 @@
-export { compileSqliteSubset } from "./compile";
+export { compileSqliteSubset, analyzeInventorySubset } from "./compile";
+export type { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./compile";
 export {
   decodeBatchSqliteRows,
   decodeCategorySqliteRows,
@@ -12,37 +13,31 @@ export {
   ReplicaRowInvalid,
   UnsupportedSubsetQuery,
 } from "./errors";
-export { openElectronBrowserWorkerReplicaSqlite } from "./browser-sqlite";
+export { enqueueLocalCommand, touchedEntitiesForCommand } from "./enqueue";
+export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
+export type { ElectronReplicaOpenIdentity } from "./electron-ipc-handle";
+export { openIndexedDbReplicaHandle } from "./indexeddb-handle";
+export type { OpenIndexedDbReplicaInput } from "./indexeddb-handle";
+export { indexedDbReplicaDatabaseName } from "@store/sync/replica/migrate-pending";
 export { submitOrganizationObjectCommand } from "./command";
 export {
   connectOrganizationObjectLiveTransport,
-  openBrowserOrganizationObjectLiveSocket,
-  type OpenOrganizationObjectLiveSocket,
   type OrganizationObjectLiveEngine,
-  type OrganizationObjectLiveSocket,
-  type OrganizationObjectLiveSocketHandlers,
   type OrganizationObjectLiveTransport,
   type ReplicaLiveFeed,
 } from "./live";
 export { inventoryOrganizationObjectReplicaName } from "./namespace";
 export type { NodeReplicaIdentity, NodeReplicaSqlite } from "./node-sqlite";
-export { projectionCollectionOptions, sqliteCollectionOptions } from "./collection";
-export { createReplicaCommitPublisher } from "./publisher";
 export {
-  DEFAULT_COLLECTION_MAXIMUM_ROWS,
-  HISTORY_SOURCES,
-  INVENTORY_COLLECTION_SOURCES,
-  MAX_IN_VALUES,
-  NAMED_PROJECTION_NAMES,
-  SOURCE_ENTITY,
-  SOURCE_TABLE,
-} from "./sources";
-export type {
-  InventoryCollectionSource,
-  InventoryCollectionSyncMode,
-  NamedProjectionName,
-} from "./sources";
-export { createSyncStatusStore, syncStatusFromOutbox } from "./status";
+  collectionSubsetWindowKey,
+  createInvoiceCoherenceGate,
+  sqliteCollectionOptions,
+} from "./collection";
+export { createReplicaCommitPublisher } from "./publisher";
+export type { ReplicaCommitPublisher } from "./publisher";
+export { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "./sources";
+export type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
+export { syncStatusFromOutbox } from "./status";
 export { decodeOutboxStatusRow } from "./sqlite-row";
 export type { OutboxCommandStatus } from "./sqlite-row";
 export type { InventoryCommandQueries, InventorySyncStatus } from "./status";
@@ -50,12 +45,16 @@ export type {
   CompileSubsetInput,
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
-  InventoryProjectionDescriptor,
   ReplicaChangeFeed,
   ReplicaCommitNotice,
+  ReplicaHandle,
+  ReplicaHandleIdentity,
+  ReplicaHandleLifecycle,
+  ReplicaMutationSurface,
   ReplicaQueryStamp,
   ReplicaSqlExecutor,
   ReplicaSqliteHandle,
+  ReplicaSubsetRead,
   SqliteCollectionConfig,
   SqliteCollectionDependencies,
   SqliteParameter,

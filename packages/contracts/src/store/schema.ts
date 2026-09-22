@@ -58,9 +58,6 @@ const createBatchFields = {
 export const CreateBatchInput = Schema.Struct(createBatchFields);
 export type CreateBatchInput = typeof CreateBatchInput.Type;
 
-// Quantities are optional: leaving them out edits the batch's details alone,
-// while sending them corrects the count, which records an adjustment movement,
-// so stock still only ever moves through the movement log.
 export const UpdateBatchInput = Schema.Struct({
   id: BatchId,
   batchNumber: Schema.NullOr(Schema.String),

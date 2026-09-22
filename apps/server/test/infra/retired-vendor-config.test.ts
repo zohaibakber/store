@@ -2,10 +2,6 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-/**
- * Clerk leftovers only. Retired vendor leftover scanning lives in
- * `scripts/check-powersync-migration.mjs` (run by `vp check`).
- */
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
 const readRepo = (path: string) => readFileSync(`${repoRoot}${path}`, "utf8");
 

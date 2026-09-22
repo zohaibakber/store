@@ -1,35 +1,32 @@
 import {
-  BeginGoogleInput,
-  ExchangeGoogleIdTokenInput,
-  ExchangeGoogleInput,
-  GoogleAuthorization,
-  IdentifyInput,
-  LoginCommand,
-  OrganizationCommand,
-  RefreshInput,
-  RefreshToken,
-  SignOutInput,
-  bearerToken,
+  AuthHttpApi,
+  Authorization,
+  AuthUnauthenticated,
+  authHttpErrorFromStatus,
+  CurrentAccessToken,
   isTrustedOrigin,
+  optionalRedactedValue,
   publicJwks,
+  refreshCookieName,
+  refreshCookieOptions,
+  refreshCookieSecurity,
   type AuthClientKind,
+  type AuthHttpError,
   type JwtConfiguration,
   type TokenSet,
 } from "@store/auth";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
 import { resolveRefreshCredential } from "./refresh-credential";
 import { AuthError, AuthService } from "./service";
-
-const refreshCookieName = (secureCookies: boolean) =>
-  secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh";
 
 export interface AuthHttpConfiguration {
   readonly baseUrl: string;
@@ -38,342 +35,281 @@ export interface AuthHttpConfiguration {
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
-const errorResponse = (error: AuthError) =>
-  HttpServerResponse.jsonUnsafe(
-    { error: { code: error.code, message: error.message } },
-    { status: error.status },
-  );
+class AuthHttpConfig extends Context.Service<AuthHttpConfig, AuthHttpConfiguration>()(
+  "@store/auth-worker/AuthHttpConfig",
+) {}
 
-const invalidRequest = (message: string) =>
-  errorResponse(new AuthError({ status: 400, code: "INVALID_REQUEST", message }));
+const mapAuthError = (error: AuthError): AuthHttpError =>
+  authHttpErrorFromStatus(error.status, error.code, error.message);
 
-const requestJson = <A>(schema: Schema.ConstraintDecoder<A>) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
-    if (contentType !== "application/json") {
-      return yield* new AuthError({
-        status: 415,
-        code: "JSON_REQUIRED",
-        message: "Authentication requests must use application/json.",
-      });
-    }
-    const json = yield* request.json.pipe(
-      Effect.mapError(
-        () =>
-          new AuthError({
-            status: 400,
-            code: "INVALID_JSON",
-            message: "The request body is not valid JSON.",
-          }),
-      ),
-    );
-    return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
-      Effect.mapError(
-        () =>
-          new AuthError({
-            status: 400,
-            code: "INVALID_REQUEST",
-            message: "The authentication request is invalid.",
-          }),
-      ),
-    );
-  });
+const fromAuth = <A, R>(effect: Effect.Effect<A, AuthError, R>) =>
+  effect.pipe(Effect.mapError(mapAuthError));
 
-const browserTokenResponse = (tokens: TokenSet, client: AuthClientKind, secureCookies: boolean) => {
-  const responseTokens =
-    client._tag === "Browser"
-      ? {
-          accessToken: tokens.accessToken,
-          accessExpiresAt: tokens.accessExpiresAt,
-          refreshExpiresAt: tokens.refreshExpiresAt,
-        }
-      : tokens;
-  let response = HttpServerResponse.jsonUnsafe(responseTokens);
-  if (client._tag === "Browser" && tokens.refreshToken) {
-    response = HttpServerResponse.setCookieUnsafe(
-      response,
-      refreshCookieName(secureCookies),
-      tokens.refreshToken,
-      {
-        httpOnly: true,
-        secure: secureCookies,
-        sameSite: "lax",
-        path: "/",
-        expires: new Date(tokens.refreshExpiresAt),
-      },
-    );
-  }
-  return response;
-};
+const browserTokenPayload = (tokens: TokenSet, client: AuthClientKind) =>
+  client._tag === "Browser"
+    ? {
+        accessToken: tokens.accessToken,
+        accessExpiresAt: tokens.accessExpiresAt,
+        refreshExpiresAt: tokens.refreshExpiresAt,
+      }
+    : tokens;
 
-const requireBearer = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const token = bearerToken(request.headers.authorization);
-  if (!token) {
-    return yield* new AuthError({
-      status: 401,
-      code: "UNAUTHENTICATED",
-      message: "Sign in to continue.",
-    });
-  }
-  return token;
-});
-
-const refreshTokenFromRequest = (
-  request: HttpServerRequest.HttpServerRequest,
+const issueBrowserTokens = <R>(
+  effect: Effect.Effect<TokenSet, AuthError, R>,
+  client: AuthClientKind,
   secureCookies: boolean,
-  provided?: typeof RefreshToken.Type,
 ) =>
-  resolveRefreshCredential({
-    cookie: request.cookies[refreshCookieName(secureCookies)],
-    bodyToken: provided,
-  })?.refreshToken;
-
-const withAuthErrorResponse = <R>(
-  effect: Effect.Effect<HttpServerResponse.HttpServerResponse, AuthError, R>,
-) =>
-  effect.pipe(Effect.catchTag("Auth.AuthError", (error) => Effect.succeed(errorResponse(error))));
-
-const withOAuthCallbackErrorPage = <R>(
-  effect: Effect.Effect<HttpServerResponse.HttpServerResponse, AuthError, R>,
-) =>
-  effect.pipe(
-    Effect.catchTag("Auth.AuthError", (error) =>
-      Effect.succeed(oauthCallbackErrorResponse(error.status, error.message)),
+  fromAuth(effect).pipe(
+    Effect.flatMap((tokens) =>
+      Effect.gen(function* () {
+        if (client._tag === "Browser" && tokens.refreshToken) {
+          yield* HttpApiBuilder.securitySetCookie(
+            refreshCookieSecurity(secureCookies),
+            tokens.refreshToken,
+            {
+              ...refreshCookieOptions(secureCookies),
+              expires: new Date(tokens.refreshExpiresAt),
+            },
+          );
+        }
+        return browserTokenPayload(tokens, client);
+      }),
     ),
   );
 
-export const authRoutes = (configuration: AuthHttpConfiguration) =>
-  Layer.mergeAll(
-    HttpRouter.use((router) =>
-      Effect.gen(function* () {
-        const auth = yield* AuthService;
+const AuthorizationLive = Layer.succeed(
+  Authorization,
+  Authorization.of({
+    bearer: Effect.fn("AuthAuthorization.bearer")(function* (httpEffect, { credential }) {
+      const token = optionalRedactedValue(credential);
+      if (!token) {
+        return yield* Effect.fail(
+          AuthUnauthenticated.make({
+            error: { code: "UNAUTHENTICATED", message: "Sign in to continue." },
+          }),
+        );
+      }
+      return yield* Effect.provideService(httpEffect, CurrentAccessToken, token);
+    }),
+  }),
+);
 
-        yield* router.add("GET", "/", Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })));
-        yield* router.add(
-          "GET",
-          "/health",
-          Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })),
-        );
-        yield* router.add(
-          "GET",
-          "/.well-known/jwks.json",
-          Effect.succeed(HttpServerResponse.jsonUnsafe(publicJwks(configuration.publicJwk))),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/identify",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(IdentifyInput);
-              return HttpServerResponse.jsonUnsafe(yield* auth.identify(input));
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/sign-in/password",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(LoginCommand);
-              if (input._tag !== "Password") return invalidRequest("Password sign-in is required.");
-              const tokens = yield* auth.authenticate(input);
-              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/sign-in/otp",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(LoginCommand);
-              if (input._tag !== "Otp") return invalidRequest("OTP sign-in is required.");
-              const tokens = yield* auth.authenticate(input);
-              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/sign-up/password",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(LoginCommand);
-              if (input._tag !== "RegisterPassword") {
-                return invalidRequest("Password registration is required.");
-              }
-              const tokens = yield* auth.authenticate(input);
-              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/oauth/google/start",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(BeginGoogleInput);
-              const url = yield* auth.beginGoogle(input);
-              return HttpServerResponse.jsonUnsafe(GoogleAuthorization.make({ url: url.href }));
-            }),
-          ),
-        );
-        yield* router.add(
-          "GET",
-          "/v1/oauth/google/callback",
-          withOAuthCallbackErrorPage(
-            Effect.gen(function* () {
-              const request = yield* HttpServerRequest.HttpServerRequest;
-              const url = new URL(request.originalUrl, configuration.baseUrl);
-              if (url.searchParams.get("error") === "access_denied") {
-                return oauthCallbackErrorResponse(400, "Google sign-in was cancelled.");
-              }
-              const code = url.searchParams.get("code");
-              const state = url.searchParams.get("state");
-              if (!code || !state) {
-                return oauthCallbackErrorResponse(
-                  400,
-                  "Google did not return an authorization code.",
-                );
-              }
-              const callback = yield* auth.completeGoogle({ code, state });
-              const redirect = new URL(callback.redirectUri);
-              redirect.searchParams.set("code", callback.code);
-              return googleOAuthAppResponse(redirect);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/oauth/google/exchange",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(ExchangeGoogleInput);
-              const tokens = yield* auth.exchangeGoogle(input);
-              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/oauth/google/native",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const input = yield* requestJson(ExchangeGoogleIdTokenInput);
-              const tokens = yield* auth.exchangeGoogleIdToken(input);
-              return browserTokenResponse(tokens, input.client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/session/refresh",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const request = yield* HttpServerRequest.HttpServerRequest;
-              const input = yield* requestJson(RefreshInput);
-              const resolved = resolveRefreshCredential({
-                cookie: request.cookies[refreshCookieName(configuration.secureCookies)],
-                bodyToken: input.refreshToken,
-              });
-              const tokens = yield* auth.refresh({ refreshToken: resolved?.refreshToken });
-              const client: AuthClientKind = resolved?.client ?? {
-                _tag: "Native",
-                deviceName: "Native client",
-              };
-              return browserTokenResponse(tokens, client, configuration.secureCookies);
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/session/logout",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const request = yield* HttpServerRequest.HttpServerRequest;
-              const input = yield* requestJson(SignOutInput);
-              const refreshToken = refreshTokenFromRequest(
-                request,
-                configuration.secureCookies,
-                input.refreshToken,
-              );
-              yield* auth.signOut({ ...input, refreshToken });
-              return HttpServerResponse.expireCookieUnsafe(
-                HttpServerResponse.jsonUnsafe({ ok: true }),
-                refreshCookieName(configuration.secureCookies),
-                {
-                  secure: configuration.secureCookies,
-                  httpOnly: true,
-                  sameSite: "lax",
-                  path: "/",
-                },
-              );
-            }),
-          ),
-        );
-        yield* router.add(
-          "GET",
-          "/v1/organization",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const token = yield* requireBearer;
-              return HttpServerResponse.jsonUnsafe(yield* auth.roster(token));
-            }),
-          ),
-        );
-        yield* router.add(
-          "POST",
-          "/v1/organization",
-          withAuthErrorResponse(
-            Effect.gen(function* () {
-              const token = yield* requireBearer;
-              const command = yield* requestJson(OrganizationCommand);
-              return HttpServerResponse.jsonUnsafe(
-                yield* auth.organize({ accessToken: token, command }),
-              );
-            }),
+const SystemHandlers = HttpApiBuilder.group(
+  AuthHttpApi,
+  "system",
+  Effect.fn("AuthSystemHandlers.make")(function* (handlers) {
+    const configuration = yield* AuthHttpConfig;
+    return handlers
+      .handle("landing", () => Effect.succeed({ ok: true as const }))
+      .handle("health", () => Effect.succeed({ ok: true as const }))
+      .handle("jwks", () => Effect.succeed(publicJwks(configuration.publicJwk)));
+  }),
+);
+
+const SessionHandlers = HttpApiBuilder.group(
+  AuthHttpApi,
+  "session",
+  Effect.fn("AuthSessionHandlers.make")(function* (handlers) {
+    const auth = yield* AuthService;
+    const configuration = yield* AuthHttpConfig;
+    const cookies = configuration.secureCookies;
+    const refreshCookie = refreshCookieSecurity(cookies);
+
+    return handlers
+      .handle(
+        "identify",
+        Effect.fn("AuthSessionHandlers.identify")(function* ({ payload }) {
+          return yield* fromAuth(auth.identify(payload));
+        }),
+      )
+      .handle(
+        "signInPassword",
+        Effect.fn("AuthSessionHandlers.signInPassword")(function* ({ payload }) {
+          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+        }),
+      )
+      .handle(
+        "signInOtp",
+        Effect.fn("AuthSessionHandlers.signInOtp")(function* ({ payload }) {
+          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+        }),
+      )
+      .handle(
+        "signUpPassword",
+        Effect.fn("AuthSessionHandlers.signUpPassword")(function* ({ payload }) {
+          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+        }),
+      )
+      .handle(
+        "googleStart",
+        Effect.fn("AuthSessionHandlers.googleStart")(function* ({ payload }) {
+          const url = yield* fromAuth(auth.beginGoogle(payload));
+          return { url: url.href };
+        }),
+      )
+      .handle(
+        "googleExchange",
+        Effect.fn("AuthSessionHandlers.googleExchange")(function* ({ payload }) {
+          return yield* issueBrowserTokens(auth.exchangeGoogle(payload), payload.client, cookies);
+        }),
+      )
+      .handle(
+        "googleNative",
+        Effect.fn("AuthSessionHandlers.googleNative")(function* ({ payload }) {
+          return yield* issueBrowserTokens(
+            auth.exchangeGoogleIdToken(payload),
+            payload.client,
+            cookies,
+          );
+        }),
+      )
+      .handle(
+        "refresh",
+        Effect.fn("AuthSessionHandlers.refresh")(function* ({ payload }) {
+          const cookie = optionalRedactedValue(yield* HttpApiBuilder.securityDecode(refreshCookie));
+          const resolved = resolveRefreshCredential({
+            cookie,
+            bodyToken: payload.refreshToken,
+          });
+          const tokens = yield* fromAuth(auth.refresh({ refreshToken: resolved?.refreshToken }));
+          const client: AuthClientKind = resolved?.client ?? {
+            _tag: "Native",
+            deviceName: "Native client",
+          };
+          if (client._tag === "Browser" && tokens.refreshToken) {
+            yield* HttpApiBuilder.securitySetCookie(refreshCookie, tokens.refreshToken, {
+              ...refreshCookieOptions(cookies),
+              expires: new Date(tokens.refreshExpiresAt),
+            });
+          }
+          return browserTokenPayload(tokens, client);
+        }),
+      )
+      .handle(
+        "logout",
+        Effect.fn("AuthSessionHandlers.logout")(function* ({ payload }) {
+          const cookie = optionalRedactedValue(yield* HttpApiBuilder.securityDecode(refreshCookie));
+          const refreshToken = resolveRefreshCredential({
+            cookie,
+            bodyToken: payload.refreshToken,
+          })?.refreshToken;
+          yield* fromAuth(auth.signOut({ ...payload, refreshToken }));
+          return HttpServerResponse.expireCookieUnsafe(
+            HttpServerResponse.jsonUnsafe({ ok: true as const }),
+            refreshCookieName(cookies),
+            refreshCookieOptions(cookies),
+          );
+        }),
+      );
+  }),
+);
+
+const OrganizationHandlers = HttpApiBuilder.group(
+  AuthHttpApi,
+  "organization",
+  Effect.fn("AuthOrganizationHandlers.make")(function* (handlers) {
+    const auth = yield* AuthService;
+
+    return handlers
+      .handle(
+        "roster",
+        Effect.fn("AuthOrganizationHandlers.roster")(function* () {
+          const token = yield* CurrentAccessToken;
+          return yield* fromAuth(auth.roster(token));
+        }),
+      )
+      .handle(
+        "command",
+        Effect.fn("AuthOrganizationHandlers.command")(function* ({ payload }) {
+          const token = yield* CurrentAccessToken;
+          return yield* fromAuth(auth.organize({ accessToken: token, command: payload }));
+        }),
+      );
+  }),
+);
+
+const GoogleCallbackRoutes = HttpRouter.use((router) =>
+  Effect.gen(function* () {
+    const auth = yield* AuthService;
+    const configuration = yield* AuthHttpConfig;
+
+    yield* router.add(
+      "GET",
+      "/v1/oauth/google/callback",
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const url = new URL(request.originalUrl, configuration.baseUrl);
+        if (url.searchParams.get("error") === "access_denied") {
+          return oauthCallbackErrorResponse(400, "Google sign-in was cancelled.");
+        }
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        if (!code || !state) {
+          return oauthCallbackErrorResponse(400, "Google did not return an authorization code.");
+        }
+        return yield* auth.completeGoogle({ code, state }).pipe(
+          Effect.map((callback) => {
+            const redirect = new URL(callback.redirectUri);
+            redirect.searchParams.set("code", callback.code);
+            return googleOAuthAppResponse(redirect);
+          }),
+          Effect.catchTag("Auth.AuthError", (error) =>
+            Effect.succeed(oauthCallbackErrorResponse(error.status, error.message)),
           ),
         );
       }),
-    ),
-    HttpRouter.middleware(
-      Effect.succeed((httpEffect) =>
-        Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
-          const origin = request.headers.origin;
-          const hasRefreshCookie =
-            refreshCookieName(configuration.secureCookies) in request.cookies;
-          if (
-            request.method !== "GET" &&
-            (origin !== undefined || hasRefreshCookie) &&
-            !isTrustedOrigin(origin, configuration.trustedOrigins)
-          ) {
-            return Effect.succeed(
-              errorResponse(
-                new AuthError({
-                  status: 403,
+    );
+  }),
+);
+
+const CorsAndOrigin = HttpRouter.middleware(
+  Effect.gen(function* () {
+    const configuration = yield* AuthHttpConfig;
+    const cors = HttpMiddleware.cors({
+      allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
+      allowedHeaders: ["Authorization", "Content-Type"],
+      allowedMethods: ["GET", "POST", "OPTIONS"],
+      credentials: true,
+      maxAge: 600,
+    });
+    return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, unknown>) =>
+      Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
+        const origin = request.headers.origin;
+        const hasRefreshCookie = refreshCookieName(configuration.secureCookies) in request.cookies;
+        if (
+          request.method !== "GET" &&
+          (origin !== undefined || hasRefreshCookie) &&
+          !isTrustedOrigin(origin, configuration.trustedOrigins)
+        ) {
+          return Effect.succeed(
+            HttpServerResponse.jsonUnsafe(
+              {
+                error: {
                   code: "UNTRUSTED_ORIGIN",
                   message: "The request origin is not trusted.",
-                }),
-              ),
-            );
-          }
-          return httpEffect;
-        }),
-      ),
-      { global: true },
+                },
+              },
+              { status: 403 },
+            ),
+          );
+        }
+        return cors(httpEffect);
+      });
+  }),
+  { global: true },
+);
+
+export const authRoutes = (configuration: AuthHttpConfiguration) => {
+  const ConfigLive = Layer.succeed(AuthHttpConfig, configuration);
+  const ApiRoutes = HttpApiBuilder.layer(AuthHttpApi).pipe(
+    Layer.provide(
+      Layer.mergeAll(SystemHandlers, SessionHandlers, OrganizationHandlers, AuthorizationLive),
     ),
-    HttpRouter.middleware(
-      Effect.succeed(
-        HttpMiddleware.cors({
-          allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
-          allowedHeaders: ["Authorization", "Content-Type"],
-          allowedMethods: ["GET", "POST", "OPTIONS"],
-          credentials: true,
-          maxAge: 600,
-        }),
-      ),
-      { global: true },
-    ),
+    Layer.provide(ConfigLive),
   );
+  return Layer.mergeAll(
+    ApiRoutes,
+    GoogleCallbackRoutes.pipe(Layer.provide(ConfigLive)),
+    CorsAndOrigin.pipe(Layer.provide(ConfigLive)),
+  );
+};

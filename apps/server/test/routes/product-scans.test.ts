@@ -43,11 +43,11 @@ describe("product scan authorization and validation", () => {
     expect(await response.json()).toMatchObject({ error: { code: "INVALID_PRODUCT_SCAN" } });
   });
 
-  it("enforces the request body limit before schema decoding", async () => {
-    const response = await appFor(true).request("/api/product-scans", scan("x".repeat(100 * 1024)));
+  it("rejects recognized text beyond the schema max length", async () => {
+    const response = await appFor(true).request("/api/product-scans", scan("x".repeat(12_001)));
 
-    expect(response.status).toBe(413);
-    expect(await response.json()).toMatchObject({ error: { code: "PRODUCT_SCAN_TOO_LARGE" } });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "INVALID_PRODUCT_SCAN" } });
   });
 
   it("returns a typed rate-limit response", async () => {

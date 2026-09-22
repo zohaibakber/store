@@ -10,24 +10,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import {
-  applyLiveFrame,
-  applyPullResult,
-  feedAfterPull,
-  type ReplicaFeedMode,
-} from "./replica/apply";
-import {
-  claimNextUpload,
-  recoverStaleUploadClaims,
-  releaseUploadClaim,
-  saveLocalCommand,
-  settleUploadClaim,
-  verifyAuthorityHeadNotBehind,
-  verifyReplicaIncarnation,
-} from "./replica/commands";
-import { markCoverageRepair } from "./replica/coverage";
-import { ReplicaCoverageRepairRequired, ReplicaStorageError } from "./replica/errors";
-import { runReplicaTransaction, type ReplicaDb } from "./replica/storage";
+import { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
+import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
+import { mapReplicaStoreFailure, ReplicaCoverageRepairRequired } from "./replica/errors";
+import { makeSqliteReplicaStore } from "./replica/sqlite/store";
+import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
 import type { SqliteDatabase } from "./sqlite";
 import type { SyncTransport, SyncTransportError } from "./transport";
 
@@ -40,24 +27,24 @@ export type SyncEngineProgress = {
 export type SyncEngineError =
   | SyncTransportError
   | SyncProtocolError
-  | ReplicaStorageError
-  | ReplicaCoverageRepairRequired;
+  | ReplicaCoverageRepairRequired
+  | ReplicaStoreError;
 
 export interface SyncEngineContract {
   readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
   readonly saveCommand: (
     envelope: SyncCommandEnvelope,
     createdAt: number,
-  ) => Effect.Effect<void, ReplicaStorageError>;
+  ) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
   readonly uploadOnce: () => Effect.Effect<CommandReceipt | undefined, SyncEngineError>;
   readonly downloadOnce: (request: SyncPullRequest) => Effect.Effect<string, SyncEngineError>;
   readonly applyLiveFrame: (
     frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-  ) => Effect.Effect<boolean, ReplicaStorageError>;
+  ) => Effect.Effect<boolean, SyncProtocolError | ReplicaStoreError>;
   readonly verifyAuthority: (input: {
     readonly incarnation: string;
     readonly horizon: string;
-  }) => Effect.Effect<void, SyncProtocolError | ReplicaStorageError>;
+  }) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
 }
 
 export class SyncEngine extends Context.Service<SyncEngine, SyncEngineContract>()(
@@ -68,46 +55,42 @@ const makeClaimId = Effect.sync(() => crypto.randomUUID());
 
 const STALE_UPLOAD_CLAIM_MILLIS = 60_000;
 
-export const makeSyncEngine = (
-  db: SqliteDatabase,
-  mutex: {
-    readonly withPermits: (
-      permits: number,
-    ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
-  },
+type SyncEngineMutex = {
+  readonly withPermits: (
+    permits: number,
+  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+};
+
+const makeSyncEngineFromStore = (
+  store: ReplicaStoreContract,
+  mutex: SyncEngineMutex,
   transport: SyncTransport,
-): Effect.Effect<SyncEngineContract> =>
+): Effect.Effect<SyncEngineContract, SyncProtocolError | ReplicaStoreError> =>
   Effect.gen(function* () {
     const progress = yield* SubscriptionRef.make<SyncEngineProgress>({
       uploading: false,
       downloading: false,
       feed: { _tag: "catchingUp", targetCommitSequence: "0" },
     });
-    const withPermit = <A>(run: (tx: ReplicaDb) => A) =>
-      mutex.withPermits(1)(Effect.sync(() => runReplicaTransaction(db, run)));
+    const withPermit = <A, E>(effect: Effect.Effect<A, E>) => mutex.withPermits(1)(effect);
 
     const startedAt = yield* Clock.currentTimeMillis;
-    yield* withPermit((tx) => {
-      recoverStaleUploadClaims(tx, startedAt - STALE_UPLOAD_CLAIM_MILLIS);
-    });
+    yield* withPermit(store.recoverStaleUploadClaims(startedAt - STALE_UPLOAD_CLAIM_MILLIS));
 
     const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
       envelope: SyncCommandEnvelope,
       createdAt: number,
     ) {
-      yield* withPermit((tx) => {
-        saveLocalCommand(tx, envelope, createdAt);
-      });
+      yield* withPermit(store.enqueueCommand(envelope, createdAt)).pipe(
+        Effect.mapError(mapReplicaStoreFailure),
+      );
     });
 
     const verifyAuthority = Effect.fn("SyncEngine.verifyAuthority")(function* (input: {
       readonly incarnation: string;
       readonly horizon: string;
     }) {
-      yield* withPermit((tx) => {
-        verifyReplicaIncarnation(tx, input.incarnation);
-        verifyAuthorityHeadNotBehind(tx, input.horizon);
-      });
+      yield* withPermit(store.verifyAuthority(input)).pipe(Effect.mapError(mapReplicaStoreFailure));
     });
 
     const uploadOnce = Effect.fn("SyncEngine.uploadOnce")(function* () {
@@ -115,11 +98,13 @@ export const makeSyncEngine = (
         Effect.gen(function* () {
           const claimedAt = yield* Clock.currentTimeMillis;
           const claimId = yield* makeClaimId;
-          const claim = yield* withPermit((tx) => claimNextUpload(tx, { claimId, claimedAt }));
-          if (claim) {
+          const claimed = yield* withPermit(store.claimNextUpload({ claimId, claimedAt })).pipe(
+            Effect.mapError(mapReplicaStoreFailure),
+          );
+          if (claimed.value) {
             yield* SubscriptionRef.update(progress, (current) => ({ ...current, uploading: true }));
           }
-          return claim;
+          return claimed.value;
         }),
         (activeClaim) =>
           Effect.gen(function* () {
@@ -127,19 +112,24 @@ export const makeSyncEngine = (
             if (activeClaim.outcomeUncertain) {
               const existing = yield* transport.getReceipt(activeClaim.envelope.operationId);
               if (existing) {
-                yield* withPermit((tx) => settleUploadClaim(tx, activeClaim.claimId, existing));
+                yield* withPermit(store.settleUploadClaim(activeClaim.claimId, existing)).pipe(
+                  Effect.mapError(mapReplicaStoreFailure),
+                );
                 return existing;
               }
             }
             const receipt = yield* transport.submitCommand(activeClaim.envelope);
-            yield* withPermit((tx) => settleUploadClaim(tx, activeClaim.claimId, receipt));
+            yield* withPermit(store.settleUploadClaim(activeClaim.claimId, receipt)).pipe(
+              Effect.mapError(mapReplicaStoreFailure),
+            );
             return receipt;
           }),
         (activeClaim) =>
           activeClaim
-            ? withPermit((tx) => {
-                releaseUploadClaim(tx, activeClaim.operationId, activeClaim.claimId);
-              }).pipe(
+            ? withPermit(
+                store.releaseUploadClaim(activeClaim.operationId, activeClaim.claimId),
+              ).pipe(
+                Effect.mapError(mapReplicaStoreFailure),
                 Effect.ensuring(
                   SubscriptionRef.update(progress, (current) => ({
                     ...current,
@@ -154,15 +144,24 @@ export const makeSyncEngine = (
     const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
       yield* SubscriptionRef.update(progress, (current) => ({ ...current, downloading: true }));
       return yield* Effect.gen(function* () {
-        const pulled = yield* transport.pull(request);
-        const applied = yield* withPermit((tx) => {
-          verifyReplicaIncarnation(tx, pulled.incarnation);
-          return applyPullResult(tx, pulled);
-        });
-        if (applied.repairRequired) {
-          yield* withPermit((tx) => {
-            markCoverageRepair(tx, pulled.subscription);
-          });
+        const pulled = yield* transport.pull(request).pipe(
+          Effect.catchIf(isSnapshotRequired, () =>
+            Effect.gen(function* () {
+              yield* recoverRequiredSnapshot(transport, store, {
+                epoch: request.epoch,
+                subscription: request.subscription,
+              });
+              return yield* transport.pull(request);
+            }),
+          ),
+        );
+        const applied = yield* withPermit(store.applyRemotePage(pulled)).pipe(
+          Effect.mapError(mapReplicaStoreFailure),
+        );
+        if (applied.value.repairRequired) {
+          yield* withPermit(store.markCoverageRepair(pulled.subscription)).pipe(
+            Effect.mapError(mapReplicaStoreFailure),
+          );
           return yield* Effect.fail(
             ReplicaCoverageRepairRequired.make({ subscription: pulled.subscription }),
           );
@@ -170,13 +169,13 @@ export const makeSyncEngine = (
         const nextFeed = feedAfterPull(
           yield* SubscriptionRef.get(progress).pipe(Effect.map((current) => current.feed)),
           pulled,
-          applied.appliedThrough,
+          applied.value.appliedThrough,
         );
         yield* SubscriptionRef.update(progress, (current) => ({
           ...current,
           feed: nextFeed,
         }));
-        return applied.appliedThrough;
+        return applied.value.appliedThrough;
       }).pipe(
         Effect.ensuring(
           SubscriptionRef.update(progress, (current) => ({ ...current, downloading: false })),
@@ -188,7 +187,16 @@ export const makeSyncEngine = (
       frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
     ) {
       const feed = yield* SubscriptionRef.get(progress).pipe(Effect.map((current) => current.feed));
-      return yield* withPermit((tx) => applyLiveFrame(tx, feed, frame));
+      if (feed._tag !== "following") return false;
+      yield* Effect.forEach(
+        frame.transactions,
+        (group) =>
+          withPermit(store.applyTransactionGroup(group)).pipe(
+            Effect.mapError(mapReplicaStoreFailure),
+          ),
+        { discard: true },
+      );
+      return true;
     });
 
     return {
@@ -200,3 +208,22 @@ export const makeSyncEngine = (
       verifyAuthority,
     };
   });
+
+export const makeSyncEngine = (
+  db: SqliteDatabase,
+  mutex: SyncEngineMutex,
+  transport: SyncTransport,
+): Effect.Effect<SyncEngineContract, SyncProtocolError | ReplicaStoreError> =>
+  Effect.gen(function* () {
+    const store = yield* makeSqliteReplicaStore(db, "sqlite");
+    return yield* makeSyncEngineFromStore(store, mutex, transport);
+  });
+
+export const makeSyncEngineFromReplicaStore = (
+  store: ReplicaStoreContract,
+  mutex: SyncEngineMutex,
+  transport: SyncTransport,
+): Effect.Effect<SyncEngineContract, SyncProtocolError | ReplicaStoreError> =>
+  makeSyncEngineFromStore(store, mutex, transport);
+
+export { ReplicaStore };

@@ -1,9 +1,8 @@
 # Store
 
 Bun workspace for offline-first inventory: an Electron desktop app and a
-Cloudflare Worker API. Desktop inventory treats the organization Durable Object
-as authority. `dev` and `prod` still keep Neon Postgres as the source for a later
-one-time import onto that object.
+Cloudflare Worker API. Inventory commands commit in PlanetScale Postgres
+through Hyperdrive. Nightly does not provision that database.
 
 ## Workspace boundaries
 
@@ -12,13 +11,12 @@ one-time import onto that object.
   hash history, while the main process keeps encrypted
   refresh credentials in the main process. Main also proxies authenticated
   inventory HTTP. Live inventory is the organization-object replica
-  (wa-sqlite in a renderer worker). There is no main-process
+  (Effect's SQLite WASM client in a renderer worker). There is no main-process
   SQLite. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
-- `apps/server/src` is the Worker API. It hosts the organization Durable Object
-  and `/api/sync/*` (including live tickets). On `dev` and `prod` it also writes
-  catalog commands to Postgres through Hyperdrive. Nightly skips Neon.
+- `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
+  in PlanetScale Postgres through Hyperdrive. Nightly skips that database.
 - `packages/contracts` owns shared store and server contracts.
 - `packages/client-db` owns the organization-object replica engine, catalog
   writes, row models, and Postgres mutation clients.
@@ -127,7 +125,7 @@ environment's public hostname, not the production hostname.
 
 Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
 uses its own auth keys, peppers, D1 database, KV namespace, organization
-Durable Objects, and R2 snapshot bucket. It does not create a Neon project.
+Durable Objects, and R2 snapshot bucket. It does not create a PlanetScale database.
 Nightly desktop inventory writes go to the organization object; catalog
 commands on that path are unsupported.
 

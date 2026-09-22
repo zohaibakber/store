@@ -81,6 +81,8 @@ export interface SerializedRequestBody {
   readonly setJsonContentType: boolean;
 }
 
+const encodeJsonBody = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
 export const serializeRequestBody = (
   requestBody: JsonRequestPayload | undefined,
 ): SerializedRequestBody => {
@@ -90,7 +92,7 @@ export const serializeRequestBody = (
   if (Schema.is(Schema.String)(requestBody)) {
     return { body: requestBody, setJsonContentType: false };
   }
-  return { body: JSON.stringify(requestBody), setJsonContentType: true };
+  return { body: encodeJsonBody(requestBody), setJsonContentType: true };
 };
 
 export const requestErrorFromPayload = (
@@ -120,11 +122,6 @@ export class MemoryTokenStore implements TokenStore {
   }
 }
 
-/**
- * Authenticated JSON HTTP against the store API and auth service. Hosts supply
- * fetch, token storage, and refresh; this module owns bearer injection, body
- * serialization, failure parsing, and refresh coalescing.
- */
 export class SessionHttpClient {
   readonly #apiBaseUrl: string;
   readonly #authBaseUrl: string;
@@ -212,10 +209,11 @@ export class SessionHttpClient {
       if (refreshed) response = await this.#send(baseUrl, pathname, init);
     }
 
-    const parsed = await response
-      .json()
-      .then(Schema.decodeUnknownOption(Schema.Json))
-      .catch(() => Option.none<typeof Schema.Json.Type>());
+    const bodyText = await response.text().catch(() => "");
+    const parsed =
+      bodyText.trim().length === 0
+        ? Option.none<typeof Schema.Json.Type>()
+        : Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(bodyText);
     if (!response.ok) {
       throw requestErrorFromPayload(Option.getOrNull(parsed), response.status);
     }

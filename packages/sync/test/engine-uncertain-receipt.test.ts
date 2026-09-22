@@ -49,6 +49,9 @@ it.effect("looks up a receipt before retrying an uncertain command", () =>
               submitCalls += 1;
               return acceptedReceipt;
             }),
+          acquireSnapshot: () => Effect.die("unused"),
+          readSnapshotPart: () => Effect.die("unused"),
+          mintLiveTicket: () => Effect.die("unused"),
         };
         const engine = yield* makeSyncEngine(store.db, mutex, transport);
         const receipt = yield* engine.uploadOnce();

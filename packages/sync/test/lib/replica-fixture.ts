@@ -10,7 +10,7 @@ import { batches, categories, products, replicaState } from "@store/db/replica.s
 import {
   openReplicaStore,
   runReplicaTransaction,
-  type ReplicaStore,
+  type SqliteReplicaHandle,
 } from "../../src/replica/storage";
 
 export const FIXTURE_USER_ID = "user-1";
@@ -19,7 +19,7 @@ export const FIXTURE_CATEGORY_ID = "general";
 
 export const FIXTURE_OCCURRED_AT = 1_700_000_000_000;
 
-export const seedReplicaTenUnits = (path?: string): ReplicaStore => {
+export const seedReplicaTenUnits = (path?: string): SqliteReplicaHandle => {
   const store = openReplicaStore(path);
   runReplicaTransaction(store.db, (tx) => {
     tx.insert(replicaState)

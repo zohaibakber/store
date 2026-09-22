@@ -4,10 +4,7 @@ export interface AccessLocation {
   readonly pathname: string;
 }
 
-/**
- * Outcome of one admit() call. Completes the host decision in one step.
- * Callers do not classify routes, then check auth, then pick a URL.
- */
+/** Outcome of one admit() call. */
 export type AccessVerdict =
   | { readonly _tag: "Allow" }
   | {

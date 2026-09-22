@@ -10,11 +10,6 @@ export const reportError = (event: string, cause: unknown) => {
   );
 };
 
-/**
- * Bad auth settings are ignored, not thrown, so sign-in still works for the
- * origins that remain valid. Log the setting, value, and reason. This is the
- * only trace.
- */
 export const reportRejectedAuthSettings = (rejected: ReadonlyArray<RejectedAuthSetting>) => {
   for (const setting of rejected)
     console.error(

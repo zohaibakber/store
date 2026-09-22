@@ -1,3 +1,4 @@
+import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import React from "react";
@@ -50,7 +51,9 @@ export const mountApp = (input: {
           <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
         }
       >
-        <ThemeProvider>{app}</ThemeProvider>
+        <RegistryContext.Provider value={session.registry}>
+          <ThemeProvider>{app}</ThemeProvider>
+        </RegistryContext.Provider>
       </Sentry.ErrorBoundary>
     </React.StrictMode>,
   );

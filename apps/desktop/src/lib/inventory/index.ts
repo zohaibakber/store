@@ -3,8 +3,13 @@ export { inventoryScopeId, openInventoryWorkspace } from "./open";
 export {
   InventoryProvider,
   InventoryReady,
-  useInventoryActions,
+  useBindSelectedInvoice,
+  useBindSelectedProduct,
   useCatalogIsReady,
+  useCommandExecution,
+  useInventoryActions,
+  useSharedFilters,
+  useWorkspaceAtoms,
 } from "./provider";
 export {
   useCatalogCategories,

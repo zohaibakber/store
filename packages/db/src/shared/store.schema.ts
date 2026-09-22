@@ -59,9 +59,6 @@ export const categories = sqliteTable(
   {
     id: entityId(),
     name: text().notNull(),
-    // Off for things sold one at a time: no pack size, and stock arrives as a
-    // plain quantity rather than a numbered batch. Purchase price is still the
-    // pack cost.
     tracksPacks: integer({ mode: "boolean" }).notNull().default(true),
     ...timestamps,
     ...mutableSyncMetadata,

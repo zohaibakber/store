@@ -138,8 +138,6 @@ export const makeUpdaterWorkflow = (
               retrying: failure === "pending-release",
               failure,
             };
-            // Official autoUpdater sample logs errors; the renderer decides
-            // whether a background check is worth a toast.
             yield* transition(output);
             if (failure === "pending-release") yield* schedulePendingReleaseRetry;
           })

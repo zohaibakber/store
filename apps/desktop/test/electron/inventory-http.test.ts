@@ -20,25 +20,15 @@ import {
 const apiBaseUrl = "https://api.tabaaq.app";
 
 describe("desktop inventory HTTP allowlist", () => {
-  it("allows inventory command posts", () => {
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/inventory/mutations",
-      }),
-    ).toBe("https://api.tabaaq.app/api/inventory/mutations");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/inventory/imports",
-      }),
-    ).toBe("https://api.tabaaq.app/api/inventory/imports");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/inventory/invoices",
-      }),
-    ).toBe("https://api.tabaaq.app/api/inventory/invoices");
+  it("rejects the retired inventory mutation routes", () => {
+    for (const path of ["mutations", "imports", "invoices"]) {
+      expect(() =>
+        validatedInventoryUrl(apiBaseUrl, {
+          method: "POST",
+          url: `https://api.tabaaq.app/api/inventory/${path}`,
+        }),
+      ).toThrow("The inventory request is outside the configured inventory API.");
+    }
   });
 
   it("rejects retired credential fetches", () => {
@@ -97,12 +87,12 @@ describe("desktop inventory HTTP allowlist", () => {
       }),
     ).toBe("https://api.tabaaq.app/api/sync/snapshots/snap-1/parts/1");
     const nonce = "ab".repeat(32);
-    expect(
+    expect(() =>
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
         url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}`,
       }),
-    ).toBe(`https://api.tabaaq.app/api/sync/live?nonce=${nonce}`);
+    ).toThrow("The inventory request is outside the configured inventory API.");
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
@@ -110,6 +100,14 @@ describe("desktop inventory HTTP allowlist", () => {
       }),
     ).toBe(
       `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
+    );
+    expect(
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "GET",
+        url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=20000`,
+      }),
+    ).toBe(
+      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=20000`,
     );
   });
 
@@ -160,7 +158,7 @@ describe("desktop inventory HTTP allowlist", () => {
     const oversized = new ArrayBuffer(MAX_INVENTORY_COMMAND_BODY_BYTES + 1);
     expect(() =>
       assertInventoryRequestBodySize(apiBaseUrl, {
-        url: "https://api.tabaaq.app/api/inventory/mutations",
+        url: "https://api.tabaaq.app/api/sync/commands",
         body: oversized,
       }),
     ).toThrow("The inventory request body exceeds the 1 MiB limit.");
@@ -234,66 +232,68 @@ describe("desktop inventory HTTP allowlist", () => {
       readonly url: string;
       readonly method: string;
       readonly authorization: string | null;
+      readonly accept: string | null;
     }> = [];
-    const urls: Array<string> = [];
     const authenticatedFetch: typeof fetch = async (input, init) => {
       const request = new Request(input, init);
       requests.push({
         url: request.url,
         method: request.method,
         authorization: request.headers.get("authorization"),
+        accept: request.headers.get("accept"),
       });
+      if (request.url.includes("/live-tickets")) {
+        return new Response(
+          JSON.stringify({
+            nonce,
+            organizationId: "org-1",
+            subscription: "operational",
+            expiresAt: 1_700_000_030_000,
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
       return new Response(
-        JSON.stringify({
-          nonce,
-          organizationId: "org-1",
-          subscription: "operational",
-          expiresAt: 1_700_000_030_000,
-        }),
+        'event: wake\ndata: {"epoch":"1","subscription":"operational","horizon":"0"}\n\n',
         {
           status: 200,
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "text/event-stream" },
         },
       );
     };
-    await connectOrganizationObjectLiveTransport(
+    const transport = await connectOrganizationObjectLiveTransport(
       authenticatedFetch,
       apiBaseUrl,
       LAST_UNIT_REPLICA_A,
       {
-        feed: () => ({ _tag: "following" }),
         appliedCursor: () => "0",
-        applyTransactions: () => false,
-        applyReceipt: () => undefined,
+        onWake: () => undefined,
         resumeFromCursor: () => undefined,
       },
-      (url) => {
-        urls.push(url);
-        return {
-          send: () => undefined,
-          close: () => undefined,
-          isOpen: () => true,
-        };
-      },
     );
-    expect(requests).toEqual([
-      {
-        url: "https://api.tabaaq.app/api/sync/live-tickets",
-        method: "POST",
-        authorization: null,
-      },
-    ]);
+    expect(transport).toBeDefined();
+    expect(requests[0]).toEqual({
+      url: "https://api.tabaaq.app/api/sync/live-tickets",
+      method: "POST",
+      authorization: null,
+      accept: null,
+    });
+    expect(requests[1]?.url).toContain(
+      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
+    );
+    expect(requests[1]?.method).toBe("GET");
+    expect(requests[1]?.accept).toBe("text/event-stream");
+    expect(requests[1]?.url.includes("refresh")).toBe(false);
+    expect(requests[1]?.url.includes("Bearer")).toBe(false);
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "POST",
         url: "https://api.tabaaq.app/api/sync/live-tickets",
       }),
     ).toBe("https://api.tabaaq.app/api/sync/live-tickets");
-    expect(urls).toEqual([
-      `wss://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-    ]);
-    expect(urls[0]?.includes("refresh")).toBe(false);
-    expect(urls[0]?.includes("Bearer")).toBe(false);
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
@@ -302,5 +302,6 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe(
       `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
     );
+    transport?.close();
   });
 });

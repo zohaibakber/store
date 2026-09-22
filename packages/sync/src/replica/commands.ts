@@ -1,9 +1,8 @@
 import {
   compareDecimalSequence,
-  incrementDecimalSequence,
+  CommandReceipt,
   SyncCommandEnvelope,
   syncProtocolError,
-  type CommandReceipt,
 } from "@store/contracts";
 import {
   batches,
@@ -16,6 +15,14 @@ import { eq } from "drizzle-orm";
 import * as Schema from "effect/Schema";
 
 import { runWrite } from "../sqlite";
+import {
+  assertAuthorityHeadNotBehind,
+  assertIncarnationMatch,
+  decideEnqueue,
+  decideOverlays,
+  decideReceipt,
+  type VisibleStock,
+} from "./decisions";
 import type { ReplicaDb } from "./storage";
 
 export type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
@@ -34,10 +41,7 @@ export type UploadClaim = {
   readonly envelope: SyncCommandEnvelope;
 };
 
-export type VisibleStock = {
-  readonly packQuantity: number;
-  readonly unitQuantity: number;
-};
+export type { VisibleStock };
 
 export const loadReplicaState = (tx: ReplicaDb): typeof replicaState.$inferSelect => {
   const state = tx.select().from(replicaState).get();
@@ -73,10 +77,14 @@ export const commandStatus = (
 ): CommandOutboxStatus | undefined =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get()?.status;
 
+const decodeStoredEnvelope = Schema.decodeUnknownSync(Schema.fromJsonString(SyncCommandEnvelope));
+const encodeEnvelopeJson = Schema.encodeSync(Schema.fromJsonString(SyncCommandEnvelope));
+const encodeReceiptJson = Schema.encodeSync(Schema.fromJsonString(CommandReceipt));
+
 export const parseStoredEnvelope = (
   row: typeof commandOutbox.$inferSelect,
 ): SyncCommandEnvelope => {
-  const envelope = Schema.decodeUnknownSync(SyncCommandEnvelope)(JSON.parse(row.envelopeJson));
+  const envelope = decodeStoredEnvelope(row.envelopeJson);
   if (envelope.operationId !== row.operationId || envelope.clientSequence !== row.clientSequence) {
     throw syncProtocolError(
       "COMMAND_IDENTITY_MISMATCH",
@@ -89,32 +97,13 @@ export const parseStoredEnvelope = (
 export const overlayForAllocation = (
   tx: ReplicaDb,
   envelope: SyncCommandEnvelope,
-): ReadonlyArray<typeof stockOverlays.$inferInsert> => {
-  if (envelope.command._tag !== "issueInvoice") return [];
-  const command = envelope.command.payload;
-  const overlays: Array<typeof stockOverlays.$inferInsert> = [];
-  const working = new Map<string, VisibleStock>();
-  for (const take of command.allocations) {
-    const product = tx.select().from(products).where(eq(products.id, take.productId)).get();
-    const unitsPerPack = product?.unitsPerPack ?? 1;
-    const current = working.get(take.batchId) ??
-      visibleBatchStock(tx, take.batchId) ?? { packQuantity: 0, unitQuantity: 0 };
-    const packDelta = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
-    const unitDelta =
-      take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    working.set(take.batchId, {
-      packQuantity: current.packQuantity + packDelta,
-      unitQuantity: current.unitQuantity + unitDelta,
-    });
-    overlays.push({
-      commandId: envelope.operationId,
-      batchId: take.batchId,
-      packDelta,
-      unitDelta,
-    });
-  }
-  return overlays;
-};
+): ReadonlyArray<typeof stockOverlays.$inferInsert> =>
+  decideOverlays(
+    envelope,
+    (productId) =>
+      tx.select().from(products).where(eq(products.id, productId)).get()?.unitsPerPack ?? 1,
+    (batchId) => visibleBatchStock(tx, batchId) ?? { packQuantity: 0, unitQuantity: 0 },
+  );
 
 export const saveLocalCommand = (
   tx: ReplicaDb,
@@ -126,43 +115,29 @@ export const saveLocalCommand = (
     .from(commandOutbox)
     .where(eq(commandOutbox.operationId, envelope.operationId))
     .get();
-  if (existing) {
-    const stored = parseStoredEnvelope(existing);
-    if (JSON.stringify(stored) !== JSON.stringify(envelope)) {
-      throw syncProtocolError("OPERATION_ID_REUSED", "The local command id was reused.");
-    }
-    return existing.status;
-  }
   const state = loadReplicaState(tx);
-  if (envelope.organizationId !== state.organizationId) {
-    throw syncProtocolError(
-      "ORGANIZATION_MISMATCH",
-      "The local command belongs to another organization.",
-    );
-  }
-  if (envelope.epoch !== state.epoch) {
-    throw syncProtocolError("EPOCH_MISMATCH", "The local command uses another epoch.");
-  }
-  if (envelope.replicaId !== state.replicaId) {
-    throw syncProtocolError(
-      "COMMAND_IDENTITY_MISMATCH",
-      "The local command belongs to another replica.",
-    );
-  }
-  if (envelope.clientSequence !== state.nextClientSequence) {
-    throw syncProtocolError(
-      "REPLICA_SEQUENCE_GAP",
-      `Expected replica sequence ${state.nextClientSequence}, received ${envelope.clientSequence}.`,
-    );
-  }
-  for (const overlay of overlayForAllocation(tx, envelope)) {
+  const decision = decideEnqueue(
+    {
+      organizationId: state.organizationId,
+      epoch: state.epoch,
+      replicaId: state.replicaId,
+      nextClientSequence: state.nextClientSequence,
+    },
+    existing ? { status: existing.status, envelope: parseStoredEnvelope(existing) } : undefined,
+    envelope,
+    (productId) =>
+      tx.select().from(products).where(eq(products.id, productId)).get()?.unitsPerPack ?? 1,
+    (batchId) => visibleBatchStock(tx, batchId) ?? { packQuantity: 0, unitQuantity: 0 },
+  );
+  if (decision._tag === "replay") return decision.status;
+  for (const overlay of decision.overlays) {
     runWrite(tx.insert(stockOverlays).values(overlay));
   }
   runWrite(
     tx.insert(commandOutbox).values({
       operationId: envelope.operationId,
       status: "pending",
-      envelopeJson: JSON.stringify(envelope),
+      envelopeJson: encodeEnvelopeJson(envelope),
       receiptJson: null,
       clientSequence: envelope.clientSequence,
       createdAt,
@@ -172,7 +147,7 @@ export const saveLocalCommand = (
     tx
       .update(replicaState)
       .set({
-        nextClientSequence: incrementDecimalSequence(state.nextClientSequence),
+        nextClientSequence: decision.nextClientSequence,
         localCommitVersion: state.localCommitVersion + 1,
       })
       .where(eq(replicaState.id, state.id)),
@@ -229,20 +204,6 @@ export const claimNextUpload = (
   };
 };
 
-const validateReceipt = (envelope: SyncCommandEnvelope, receipt: CommandReceipt): void => {
-  if (
-    receipt.operationId !== envelope.operationId ||
-    receipt.replicaId !== envelope.replicaId ||
-    receipt.clientSequence !== envelope.clientSequence ||
-    receipt.payloadHash !== envelope.payloadHash
-  ) {
-    throw syncProtocolError(
-      "COMMAND_IDENTITY_MISMATCH",
-      "The command receipt does not match the stored command.",
-    );
-  }
-};
-
 const settleCommandReceipt = (
   tx: ReplicaDb,
   receipt: CommandReceipt,
@@ -254,24 +215,17 @@ const settleCommandReceipt = (
     .where(eq(commandOutbox.operationId, receipt.operationId))
     .get();
   if (!row) return undefined;
-  if (claimId !== undefined && (row.status !== "sending" || row.claimId !== claimId)) {
-    return row.status;
-  }
   const envelope = parseStoredEnvelope(row);
-  validateReceipt(envelope, receipt);
-  if (row.status === "abandoned") return row.status;
-  if (row.status === "integrated") {
-    if (receipt.decision !== "accepted") {
-      throw syncProtocolError(
-        "COMMAND_IDENTITY_MISMATCH",
-        "An integrated command received a rejected receipt.",
-      );
-    }
+  const claimMatches =
+    claimId === undefined || (row.status === "sending" && row.claimId === claimId);
+  const decision = decideReceipt(row.status, envelope, receipt, claimMatches);
+  if (decision._tag === "noop") return decision.status;
+  if (decision._tag === "refreshIntegrated") {
     runWrite(
       tx
         .update(commandOutbox)
         .set({
-          receiptJson: JSON.stringify(receipt),
+          receiptJson: encodeReceiptJson(receipt),
           commitSequence: receipt.commitSequence,
           claimId: null,
           claimedAt: null,
@@ -281,14 +235,14 @@ const settleCommandReceipt = (
     );
     return "integrated" as const;
   }
-  if (receipt.decision === "rejected") {
+  if (decision._tag === "rejected") {
     runWrite(tx.delete(stockOverlays).where(eq(stockOverlays.commandId, receipt.operationId)));
     runWrite(
       tx
         .update(commandOutbox)
         .set({
           status: "rejected",
-          receiptJson: JSON.stringify(receipt),
+          receiptJson: encodeReceiptJson(receipt),
           commitSequence: receipt.commitSequence,
           claimId: null,
           claimedAt: null,
@@ -304,7 +258,7 @@ const settleCommandReceipt = (
       .update(commandOutbox)
       .set({
         status: "accepted_awaiting_integration",
-        receiptJson: JSON.stringify(receipt),
+        receiptJson: encodeReceiptJson(receipt),
         commitSequence: receipt.commitSequence,
         claimId: null,
         claimedAt: null,
@@ -371,23 +325,11 @@ export const hasUnsentCommands = (tx: ReplicaDb): boolean => {
 };
 
 export const verifyReplicaIncarnation = (tx: ReplicaDb, incarnation: string): void => {
-  const state = loadReplicaState(tx);
-  if (state.incarnation !== incarnation) {
-    throw syncProtocolError(
-      "INCARNATION_MISMATCH",
-      `Expected incarnation ${state.incarnation}, received ${incarnation}.`,
-    );
-  }
+  assertIncarnationMatch(loadReplicaState(tx).incarnation, incarnation);
 };
 
 export const verifyAuthorityHeadNotBehind = (tx: ReplicaDb, authorityHorizon: string): void => {
-  const state = loadReplicaState(tx);
-  if (compareDecimalSequence(state.appliedCommitSequence, authorityHorizon) > 0) {
-    throw syncProtocolError(
-      "SNAPSHOT_REQUIRED",
-      `Local applied cursor ${state.appliedCommitSequence} is ahead of authority horizon ${authorityHorizon}.`,
-    );
-  }
+  assertAuthorityHeadNotBehind(loadReplicaState(tx).appliedCommitSequence, authorityHorizon);
 };
 
 export const openReplicaIdentity = (
@@ -424,7 +366,7 @@ export const openReplicaIdentity = (
     runWrite(
       tx
         .update(commandOutbox)
-        .set({ envelopeJson: JSON.stringify(adopted) })
+        .set({ envelopeJson: encodeEnvelopeJson(adopted) })
         .where(eq(commandOutbox.operationId, row.operationId)),
     );
   }

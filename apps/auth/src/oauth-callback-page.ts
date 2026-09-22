@@ -84,7 +84,7 @@ ${openApp}
 
 export const nativeOAuthHandoffHtml = (appUrl: URL) =>
   page({
-    title: "Signed in — Tabaaq",
+    title: "Signed in. Tabaaq",
     heading: "You're signed in",
     body: "You can close this tab and return to Tabaaq.",
     actionHref: appUrl.href,
@@ -93,7 +93,7 @@ export const nativeOAuthHandoffHtml = (appUrl: URL) =>
 
 export const oauthCallbackErrorHtml = (message: string) =>
   page({
-    title: "Sign-in didn't finish — Tabaaq",
+    title: "Sign-in didn't finish. Tabaaq",
     heading: "Sign-in didn't finish",
     body: `${message} You can close this tab and try again in Tabaaq.`,
   });
@@ -104,8 +104,7 @@ const htmlResponse = (html: string, status = 200) =>
     callbackPageHeaders,
   );
 
-export const nativeOAuthHandoffResponse = (appUrl: URL) =>
-  htmlResponse(nativeOAuthHandoffHtml(appUrl));
+const nativeOAuthHandoffResponse = (appUrl: URL) => htmlResponse(nativeOAuthHandoffHtml(appUrl));
 
 export const oauthCallbackErrorResponse = (status: number, message: string) =>
   htmlResponse(oauthCallbackErrorHtml(message), status);

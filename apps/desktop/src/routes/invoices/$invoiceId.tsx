@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/detail-page";
-import { useInventoryInvoice } from "@/lib/inventory-db";
+import { useBindSelectedInvoice, useInventoryInvoice } from "@/lib/inventory-db";
 
 export const Route = createFileRoute("/invoices/$invoiceId")({
   component: InvoiceDetailRoute,
@@ -12,6 +12,8 @@ export const Route = createFileRoute("/invoices/$invoiceId")({
 function InvoiceDetailRoute() {
   const { invoiceId } = Route.useParams();
   const invoice = useInventoryInvoice(invoiceId);
+  useBindSelectedInvoice(invoiceId);
+
   if (invoice.data) return <InvoiceDetailPage invoice={invoice.data} />;
   if (invoice.isError) {
     return <InvoiceDetailError error={new Error("The invoice could not be loaded.")} />;

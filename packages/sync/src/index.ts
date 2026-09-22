@@ -46,15 +46,36 @@ export {
 } from "./replica/import";
 export { loadCoverage, markCoverageRepair, saveCoverage } from "./replica/coverage";
 export {
+  IndexedDbCorruptRecord,
+  IndexedDbIdentityMismatch,
+  IndexedDbQuotaExceeded,
+  IndexedDbUnavailable,
+  IndexedDbUpgradeBlocked,
   ReplicaCoverageRepairRequired,
-  ReplicaIncarnationMismatch,
   ReplicaStorageError,
-  SyncTransportInvalid,
-  SyncTransportUnavailable,
 } from "./replica/errors";
-export { runSqliteTransaction } from "./sqlite";
-export { openReplicaStore, runReplicaTransaction } from "./replica/storage";
-export { makeSyncEngine, SyncEngine } from "./engine";
-export type { SyncEngineError, SyncEngineProgress } from "./engine";
-export { makeSyncTransport } from "./transport";
+export { SyncTransportInvalid, SyncTransportUnavailable, makeSyncTransport } from "./transport";
 export type { SyncTransport, SyncTransportError } from "./transport";
+export { openReplicaStore, runReplicaTransaction } from "./replica/storage";
+export type { SqliteReplicaHandle } from "./replica/storage";
+export { makeSyncEngine, makeSyncEngineFromReplicaStore, ReplicaStore, SyncEngine } from "./engine";
+export type { SyncEngineError, SyncEngineProgress } from "./engine";
+export { makeSqliteReplicaStore } from "./replica/sqlite/store";
+export type { ReplicaStoreContract, ReplicaStoreError } from "./replica/store";
+export { decideEnqueue, decideOverlays, decideReceipt } from "./replica/decisions";
+export { isSnapshotRequired, isSnapshotUnavailable, recoverRequiredSnapshot } from "./recovery";
+export type { SnapshotRecoveryError } from "./recovery";
+export { coalesceCommitNotices, defaultHttpPollPolicy, makeSyncScheduler } from "./scheduler";
+export type {
+  SyncScheduler,
+  SyncSchedulerHandlers,
+  SyncSchedulerPolicy,
+  SyncWakeReason,
+} from "./scheduler";
+export { makeWebNetworkOwnership } from "./web-ownership";
+export type { CrossTabNotice, WebNetworkOwnership } from "./web-ownership";
+export { startOwnedHttpSync } from "./session";
+export type { OwnedHttpSync } from "./session";
+export { wakeHintsFromSseBody } from "./live-wake";
+export type { LiveWakeHost } from "./live-wake";
+export type { ReplicaSyncCursor } from "./replica/store";

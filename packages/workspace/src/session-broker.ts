@@ -23,10 +23,6 @@ export interface SessionSnapshotHooks {
   readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Promise<void>;
 }
 
-/**
- * Shared ensure-fresh → GET /api/auth/session → online/offline/error mapping.
- * Hosts only supply refresh + optional persistence; this owns the snapshot machine.
- */
 export const loadSessionSnapshot = async (
   hooks: SessionSnapshotHooks,
 ): Promise<WorkspaceSnapshotType> => {

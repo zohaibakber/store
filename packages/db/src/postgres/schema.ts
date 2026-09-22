@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   integer,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -267,6 +268,334 @@ export const stockMovements = pgTable(
     index("stock_movements_organization_id_operation_id_idx").on(
       table.organizationId,
       table.operationId,
+    ),
+  ],
+);
+
+/**
+ * Exact non-negative integer stored as PostgreSQL `numeric`.
+ *
+ * Commit sequences and replica sequences must survive beyond
+ * `Number.MAX_SAFE_INTEGER`. Callers pass and read canonical decimal strings;
+ * comparison and ordering stay in PostgreSQL.
+ */
+const decimalCounter = (name: string) =>
+  numeric(name, { precision: 20, scale: 0, mode: "string" }).notNull();
+
+/**
+ * One row per organization. Inventory writers lock this row with
+ * `SELECT ... FOR UPDATE` before reading stock, so concurrent commands in one
+ * organization observe each other's committed outcome.
+ */
+export const inventoryState = pgTable(
+  "inventory_state",
+  {
+    organizationId: tenantId(),
+    status: text("status").$type<"importing" | "ready">().notNull(),
+    importId: text("import_id").notNull(),
+    releaseId: text("release_id"),
+    incarnation: text("incarnation").notNull(),
+    epoch: text("epoch").notNull(),
+    commitSequence: decimalCounter("commit_sequence"),
+    retentionFloor: decimalCounter("retention_floor"),
+  },
+  (table) => [
+    primaryKey({
+      name: "inventory_state_organization_id_pk",
+      columns: [table.organizationId],
+    }),
+    check("inventory_state_status", sql`${table.status} in ('importing', 'ready')`),
+    check(
+      "inventory_state_sequences_nonnegative",
+      sql`${table.commitSequence} >= 0 and ${table.retentionFloor} >= 0`,
+    ),
+    check("inventory_state_epoch_digits", sql`${table.epoch} ~ '^[0-9]+$'`),
+  ],
+);
+
+export const replicas = pgTable(
+  "replicas",
+  {
+    organizationId: tenantId(),
+    replicaId: text("replica_id").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    deviceLabel: text("device_label"),
+    lastClientSequence: decimalCounter("last_client_sequence"),
+    processedThroughClientSequence: decimalCounter("processed_through_client_sequence"),
+    registeredAt: epochMilliseconds("registered_at").notNull(),
+    lastSeenAt: epochMilliseconds("last_seen_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "replicas_organization_id_replica_id_pk",
+      columns: [table.organizationId, table.replicaId],
+    }),
+    check(
+      "replicas_sequences_nonnegative",
+      sql`${table.lastClientSequence} >= 0 and ${table.processedThroughClientSequence} >= 0`,
+    ),
+  ],
+);
+
+export const inventoryTransactions = pgTable(
+  "inventory_transactions",
+  {
+    organizationId: tenantId(),
+    commitSequence: decimalCounter("commit_sequence"),
+    operationId: text("operation_id").notNull(),
+    decision: text("decision").$type<"accepted" | "rejected">().notNull(),
+    epoch: text("epoch").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "inventory_transactions_organization_commit_pk",
+      columns: [table.organizationId, table.commitSequence],
+    }),
+    index("inventory_transactions_organization_epoch_commit_idx").on(
+      table.organizationId,
+      table.epoch,
+      table.commitSequence,
+    ),
+    index("inventory_transactions_organization_operation_idx").on(
+      table.organizationId,
+      table.operationId,
+    ),
+    check("inventory_transactions_decision", sql`${table.decision} in ('accepted', 'rejected')`),
+    check("inventory_transactions_epoch_digits", sql`${table.epoch} ~ '^[0-9]+$'`),
+    check("inventory_transactions_commit_sequence_positive", sql`${table.commitSequence} > 0`),
+  ],
+);
+
+/**
+ * Durable decision for one command identity.
+ *
+ * An identical retry returns this row. A different payload under the same
+ * operation id is rejected. The commit sequence is the log position the
+ * replica must apply before the command is locally integrated.
+ */
+export const commandReceipts = pgTable(
+  "command_receipts",
+  {
+    organizationId: tenantId(),
+    operationId: text("operation_id").notNull(),
+    replicaId: text("replica_id").notNull(),
+    clientSequence: decimalCounter("client_sequence"),
+    payloadHash: text("payload_hash").notNull(),
+    decision: text("decision").$type<"accepted" | "rejected">().notNull(),
+    commitSequence: decimalCounter("commit_sequence"),
+    resultJson: text("result_json").notNull(),
+    receivedAt: epochMilliseconds("received_at").notNull(),
+    attempts: integer("attempts").notNull().default(1),
+  },
+  (table) => [
+    primaryKey({
+      name: "command_receipts_organization_operation_pk",
+      columns: [table.organizationId, table.operationId],
+    }),
+    uniqueIndex("command_receipts_organization_replica_sequence_uidx").on(
+      table.organizationId,
+      table.replicaId,
+      table.clientSequence,
+    ),
+    foreignKey({
+      name: "command_receipts_replica_fk",
+      columns: [table.organizationId, table.replicaId],
+      foreignColumns: [replicas.organizationId, replicas.replicaId],
+    }),
+    foreignKey({
+      name: "command_receipts_transaction_fk",
+      columns: [table.organizationId, table.commitSequence],
+      foreignColumns: [inventoryTransactions.organizationId, inventoryTransactions.commitSequence],
+    }),
+    check("command_receipts_decision", sql`${table.decision} in ('accepted', 'rejected')`),
+    check("command_receipts_client_sequence_positive", sql`${table.clientSequence} > 0`),
+    check("command_receipts_attempts_positive", sql`${table.attempts} > 0`),
+  ],
+);
+
+export const inventoryChanges = pgTable(
+  "inventory_changes",
+  {
+    organizationId: tenantId(),
+    commitSequence: decimalCounter("commit_sequence"),
+    ordinal: integer("ordinal").notNull(),
+    entity: text("entity").notNull(),
+    action: text("action").$type<"upsert" | "delete">().notNull(),
+    entityId: text("entity_id").notNull(),
+    rowVersion: integer("row_version").notNull(),
+    rowJson: text("row_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "inventory_changes_organization_commit_ordinal_pk",
+      columns: [table.organizationId, table.commitSequence, table.ordinal],
+    }),
+    foreignKey({
+      name: "inventory_changes_transaction_fk",
+      columns: [table.organizationId, table.commitSequence],
+      foreignColumns: [inventoryTransactions.organizationId, inventoryTransactions.commitSequence],
+    }),
+    check("inventory_changes_action", sql`${table.action} in ('upsert', 'delete')`),
+    check("inventory_changes_ordinal_nonnegative", sql`${table.ordinal} >= 0`),
+    check("inventory_changes_row_version_positive", sql`${table.rowVersion} > 0`),
+  ],
+);
+
+/**
+ * Leased snapshot build. A fencing token stops a timed-out worker from
+ * publishing after another worker takes the job.
+ */
+export const snapshotJobs = pgTable(
+  "snapshot_jobs",
+  {
+    organizationId: tenantId(),
+    snapshotId: text("snapshot_id").notNull(),
+    subscription: text("subscription").notNull(),
+    stage: text("stage")
+      .$type<"copying" | "repairing" | "frozen" | "exporting" | "published" | "failed">()
+      .notNull(),
+    fence: integer("fence").notNull(),
+    ownerToken: text("owner_token"),
+    startedAtCommitSequence: decimalCounter("started_at_commit_sequence"),
+    horizon: numeric("horizon", { precision: 20, scale: 0, mode: "string" }),
+    copyEntity: text("copy_entity"),
+    copyCursor: text("copy_cursor"),
+    stepDueAt: epochMilliseconds("step_due_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "snapshot_jobs_organization_id_snapshot_id_pk",
+      columns: [table.organizationId, table.snapshotId],
+    }),
+    index("snapshot_jobs_organization_id_stage_idx").on(table.organizationId, table.stage),
+    check(
+      "snapshot_jobs_stage",
+      sql`${table.stage} in ('copying', 'repairing', 'frozen', 'exporting', 'published', 'failed')`,
+    ),
+    check("snapshot_jobs_fence_nonnegative", sql`${table.fence} >= 0`),
+  ],
+);
+
+export const downloadLeases = pgTable(
+  "download_leases",
+  {
+    organizationId: tenantId(),
+    replicaId: text("replica_id").notNull(),
+    snapshotId: text("snapshot_id").notNull(),
+    pinnedHorizon: decimalCounter("pinned_horizon"),
+    expiresAt: epochMilliseconds("expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "download_leases_organization_id_replica_id_pk",
+      columns: [table.organizationId, table.replicaId],
+    }),
+    foreignKey({
+      name: "download_leases_snapshot_fk",
+      columns: [table.organizationId, table.snapshotId],
+      foreignColumns: [snapshotJobs.organizationId, snapshotJobs.snapshotId],
+    }),
+    index("download_leases_organization_id_horizon_idx").on(
+      table.organizationId,
+      table.pinnedHorizon,
+    ),
+  ],
+);
+
+/**
+ * Staged entity rows while a snapshot job is copying/repairing.
+ * Readers never see these until the job publishes and clients activate.
+ */
+export const snapshotStagedRows = pgTable(
+  "snapshot_staged_rows",
+  {
+    organizationId: tenantId(),
+    snapshotId: text("snapshot_id").notNull(),
+    entity: text("entity").notNull(),
+    entityId: text("entity_id").notNull(),
+    rowVersion: integer("row_version").notNull(),
+    rowJson: text("row_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "snapshot_staged_rows_pk",
+      columns: [table.organizationId, table.snapshotId, table.entity, table.entityId],
+    }),
+    foreignKey({
+      name: "snapshot_staged_rows_job_fk",
+      columns: [table.organizationId, table.snapshotId],
+      foreignColumns: [snapshotJobs.organizationId, snapshotJobs.snapshotId],
+    }),
+    check("snapshot_staged_rows_row_version_positive", sql`${table.rowVersion} > 0`),
+  ],
+);
+
+/**
+ * Immutable snapshot parts. Payload lives in Postgres (`payload_json`) because
+ * this stage has no R2 binding; objectKey remains the stable part identity.
+ */
+export const snapshotParts = pgTable(
+  "snapshot_parts",
+  {
+    organizationId: tenantId(),
+    snapshotId: text("snapshot_id").notNull(),
+    partNumber: integer("part_number").notNull(),
+    objectKey: text("object_key").notNull(),
+    byteLength: integer("byte_length").notNull(),
+    sha256: text("sha256").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "snapshot_parts_pk",
+      columns: [table.organizationId, table.snapshotId, table.partNumber],
+    }),
+    foreignKey({
+      name: "snapshot_parts_job_fk",
+      columns: [table.organizationId, table.snapshotId],
+      foreignColumns: [snapshotJobs.organizationId, snapshotJobs.snapshotId],
+    }),
+    check("snapshot_parts_part_number_positive", sql`${table.partNumber} > 0`),
+    check("snapshot_parts_byte_length_nonnegative", sql`${table.byteLength} >= 0`),
+  ],
+);
+
+export const liveSessions = pgTable(
+  "live_sessions",
+  {
+    organizationId: tenantId(),
+    sessionId: text("session_id").notNull(),
+    replicaId: text("replica_id").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    subscription: text("subscription").notNull(),
+    deliveredThroughCommitSequence: decimalCounter("delivered_through_commit_sequence"),
+    leaseExpiresAt: epochMilliseconds("lease_expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "live_sessions_organization_id_session_id_pk",
+      columns: [table.organizationId, table.sessionId],
+    }),
+    index("live_sessions_organization_id_replica_id_idx").on(table.organizationId, table.replicaId),
+    index("live_sessions_organization_id_lease_idx").on(table.organizationId, table.leaseExpiresAt),
+  ],
+);
+
+export const consumedTickets = pgTable(
+  "consumed_tickets",
+  {
+    organizationId: tenantId(),
+    nonceHash: text("nonce_hash").notNull(),
+    expiresAt: epochMilliseconds("expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "consumed_tickets_organization_id_nonce_hash_pk",
+      columns: [table.organizationId, table.nonceHash],
+    }),
+    index("consumed_tickets_organization_id_expires_at_idx").on(
+      table.organizationId,
+      table.expiresAt,
     ),
   ],
 );

@@ -1,5 +1,6 @@
 import {
   compareDecimalSequence,
+  SyncEntity,
   syncProtocolError,
   type SnapshotManifest,
   type SnapshotPartPayload,
@@ -15,10 +16,11 @@ import {
   products,
   replicaState,
   snapshotImports,
+  snapshotStagedRows,
   stockMovements,
   stockOverlays,
 } from "@store/db/replica.schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as Schema from "effect/Schema";
 
 import { runWrite } from "../sqlite";
@@ -29,6 +31,8 @@ import {
   type CommandOutboxStatus,
 } from "./commands";
 import type { ReplicaDb } from "./storage";
+
+const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const parseSubscription = (subscription: string): SyncSubscription => {
   if (subscription === "operational") return "operational";
@@ -54,20 +58,106 @@ const entityTables = {
   stockMovement: stockMovements,
 } as const;
 
-const applySnapshotRow = (tx: ReplicaDb, row: SnapshotPartPayload["rows"][number]): void => {
-  const entity = row.entity;
-  const table = entityTables[entity];
-  const schema = syncEntityRows[entity].schema;
-  const parsed = Schema.decodeUnknownSync(schema)(row.row);
-  const existing = tx.select().from(table).where(eq(table.id, row.entityId)).get();
-  if (existing && "rowVersion" in existing && existing.rowVersion > row.rowVersion) {
+const stageSnapshotRow = (
+  tx: ReplicaDb,
+  snapshotId: string,
+  row: SnapshotPartPayload["rows"][number],
+): void => {
+  const schema = syncEntityRows[row.entity].schema;
+  Schema.decodeUnknownSync(schema)(row.row);
+  const existing = tx
+    .select()
+    .from(snapshotStagedRows)
+    .where(
+      and(
+        eq(snapshotStagedRows.snapshotId, snapshotId),
+        eq(snapshotStagedRows.entity, row.entity),
+        eq(snapshotStagedRows.entityId, row.entityId),
+      ),
+    )
+    .get();
+  if (existing && existing.rowVersion > row.rowVersion) return;
+  const rowJson = encodeRowJson(row.row);
+  if (existing) {
+    runWrite(
+      tx
+        .update(snapshotStagedRows)
+        .set({ rowVersion: row.rowVersion, rowJson })
+        .where(
+          and(
+            eq(snapshotStagedRows.snapshotId, snapshotId),
+            eq(snapshotStagedRows.entity, row.entity),
+            eq(snapshotStagedRows.entityId, row.entityId),
+          ),
+        ),
+    );
     return;
   }
+  runWrite(
+    tx.insert(snapshotStagedRows).values({
+      snapshotId,
+      entity: row.entity,
+      entityId: row.entityId,
+      rowVersion: row.rowVersion,
+      rowJson,
+    }),
+  );
+};
+
+const promoteStagedRow = (
+  tx: ReplicaDb,
+  entity: SyncEntity,
+  entityId: string,
+  rowJson: string,
+): void => {
+  const table = entityTables[entity];
+  const schema = syncEntityRows[entity].schema;
+  const parsed = Schema.decodeUnknownSync(Schema.fromJsonString(schema))(rowJson);
+  const existing = tx.select().from(table).where(eq(table.id, entityId)).get();
   if (existing) {
-    runWrite(tx.update(table).set(parsed).where(eq(table.id, row.entityId)));
+    runWrite(tx.update(table).set(parsed).where(eq(table.id, entityId)));
     return;
   }
   runWrite(tx.insert(table).values(parsed));
+};
+
+const promoteStagedSnapshot = (tx: ReplicaDb, snapshotId: string): void => {
+  const staged = [
+    ...tx
+      .select()
+      .from(snapshotStagedRows)
+      .where(eq(snapshotStagedRows.snapshotId, snapshotId))
+      .all(),
+  ].sort((left, right) => {
+    const order = (entity: string): number => {
+      switch (entity) {
+        case "category":
+          return 0;
+        case "product":
+          return 1;
+        case "batch":
+          return 2;
+        case "invoice":
+          return 3;
+        case "invoiceItem":
+          return 4;
+        case "stockMovement":
+          return 5;
+        default:
+          return 6;
+      }
+    };
+    return order(left.entity) - order(right.entity);
+  });
+  for (const row of staged) {
+    promoteStagedRow(
+      tx,
+      Schema.decodeUnknownSync(SyncEntity)(row.entity),
+      row.entityId,
+      row.rowJson,
+    );
+  }
+  runWrite(tx.delete(snapshotStagedRows).where(eq(snapshotStagedRows.snapshotId, snapshotId)));
 };
 
 export const beginSnapshotImport = (
@@ -142,7 +232,7 @@ export const importSnapshotPart = (
     throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order.");
   }
   for (const row of part.rows) {
-    applySnapshotRow(tx, row);
+    stageSnapshotRow(tx, manifest.snapshotId, row);
   }
   const partsImported = importRow.partsImported + 1;
   const stage = partsImported === importRow.partsTotal ? "caught_up" : "importing";
@@ -215,6 +305,7 @@ export const activateSnapshotGeneration = (
     throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot is not ready to activate.");
   }
   const state = loadReplicaState(tx);
+  promoteStagedSnapshot(tx, snapshotId);
   integrateCoveredCommands(tx, importRow.horizon);
   recomputePendingOverlays(tx);
   runWrite(

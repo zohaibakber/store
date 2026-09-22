@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
@@ -32,9 +34,6 @@ export default defineConfig(({ command }) => ({
   },
   resolve: {
     tsconfigPaths: true,
-  },
-  optimizeDeps: {
-    exclude: ["@journeyapps/wa-sqlite"],
   },
   worker: {
     format: "es",
@@ -78,8 +77,12 @@ export default defineConfig(({ command }) => ({
             emptyOutDir: command === "build",
             sourcemap: true,
             rolldownOptions: {
-              external: ["electron", "electron-updater"],
-              output: { entryFileNames: "main.js" },
+              input: {
+                main: path.resolve("electron/main.ts"),
+                "replica-worker": path.resolve("electron/replica-worker.ts"),
+              },
+              external: ["electron", "electron-updater", "better-sqlite3"],
+              output: { entryFileNames: "[name].js" },
             },
           },
         },

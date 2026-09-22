@@ -7,9 +7,7 @@ try {
   if (savedPreference === "light" || savedPreference === "dark" || savedPreference === "system") {
     preference = savedPreference;
   }
-} catch {
-  // Keep the app's default theme when storage is unavailable.
-}
+} catch {}
 
 const theme =
   preference === "system"

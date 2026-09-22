@@ -1,19 +1,11 @@
-import type { CommandReceipt, SyncLiveServerFrame } from "@store/contracts";
-import { OrgCommitSequence } from "@store/contracts";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_ORGANIZATION_ID,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
+import { OrgCommitSequence, SyncLiveWakeHint } from "@store/contracts";
+import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
   connectOrganizationObjectLiveTransport,
-  type OrganizationObjectLiveSocket,
-  type OrganizationObjectLiveSocketHandlers,
-  type ReplicaLiveFeed,
+  type OrganizationObjectLiveEngine,
 } from "../src/replica/live";
 
 const nonce = "ab".repeat(32);
@@ -25,209 +17,99 @@ const ticket = {
   expiresAt: 1_700_000_030_000,
 };
 
-const transactionsFrame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }> = {
-  _tag: "transactions",
-  epoch: lastUnitBuyerAEnvelope.epoch,
-  subscription: "operational",
-  schemaVersion: 1,
-  fromCommitSequence: OrgCommitSequence.make("3"),
-  toCommitSequence: OrgCommitSequence.make("3"),
-  transactions: [
-    {
-      commitSequence: OrgCommitSequence.make("3"),
-      operationId: "operation-stale-live",
-      decision: "accepted",
-      changes: [
-        {
-          entity: "batch",
-          action: "upsert",
-          entityId: LAST_UNIT_BATCH_ID,
-          rowVersion: 3,
-          row: {
-            id: LAST_UNIT_BATCH_ID,
-            productId: LAST_UNIT_PRODUCT_ID,
-            packQuantity: 0,
-            unitQuantity: 3,
-          },
-        },
-      ],
-    },
-  ],
+const wakeHint = {
+  epoch: "1",
+  subscription: "operational" as const,
+  horizon: OrgCommitSequence.make("12"),
 };
 
 type RecordedRequest = {
   readonly url: string;
   readonly method: string;
-  readonly body: string;
-  readonly authorization: string | null;
+  readonly accept: string | null;
 };
 
-const mintFetch =
-  (requests: Array<RecordedRequest>): typeof fetch =>
+const mintThenSseFetch =
+  (requests: Array<RecordedRequest>, body: string): typeof fetch =>
   async (input, init) => {
     const request = new Request(input, init);
     requests.push({
       url: request.url,
       method: request.method,
-      body: await request.text(),
-      authorization: request.headers.get("authorization"),
+      accept: request.headers.get("accept"),
     });
-    return new Response(JSON.stringify(ticket), {
+    if (request.url.includes("/live-tickets")) {
+      return new Response(JSON.stringify(ticket), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(body, {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "text/event-stream" },
     });
   };
-
-const createSocket = () => {
-  const urls: Array<string> = [];
-  const sent: Array<string> = [];
-  let handlers: OrganizationObjectLiveSocketHandlers | undefined;
-  let open = true;
-  const socket: OrganizationObjectLiveSocket & {
-    readonly deliver: (data: string) => void;
-  } = {
-    send: (data) => {
-      sent.push(data);
-    },
-    close: () => {
-      open = false;
-    },
-    isOpen: () => open,
-    deliver: (data) => {
-      handlers?.onMessage(data);
-    },
-  };
-  return {
-    urls,
-    sent,
-    socket,
-    openSocket: (url: string, next: OrganizationObjectLiveSocketHandlers) => {
-      urls.push(url);
-      handlers = next;
-      return socket;
-    },
-  };
-};
 
 describe("connectOrganizationObjectLiveTransport", () => {
-  it("does not apply a live frame while the feed is catching up, then applies the same frame while following", async () => {
+  it("mints a ticket and opens an authenticated SSE wake stream", async () => {
     const requests: Array<RecordedRequest> = [];
-    const applied: Array<SyncLiveServerFrame> = [];
-    let feed: ReplicaLiveFeed = { _tag: "catchingUp", targetCommitSequence: "5" };
-    const { socket, openSocket } = createSocket();
-    await connectOrganizationObjectLiveTransport(
-      mintFetch(requests),
+    const wakes: Array<string> = [];
+    const engine: OrganizationObjectLiveEngine = {
+      appliedCursor: () => "0",
+      onWake: (horizon) => {
+        wakes.push(horizon);
+      },
+      resumeFromCursor: () => undefined,
+    };
+    const sseBody = `event: wake\ndata: ${JSON.stringify(wakeHint)}\n\n`;
+    const transport = await connectOrganizationObjectLiveTransport(
+      mintThenSseFetch(requests, sseBody),
       "https://api.tabaaq.app",
       LAST_UNIT_REPLICA_A,
-      {
-        feed: () => feed,
-        appliedCursor: () => "5",
-        applyTransactions: (frame) => {
-          applied.push(frame);
-          return true;
-        },
-        applyReceipt: () => undefined,
-        resumeFromCursor: () => undefined,
-      },
-      openSocket,
+      engine,
     );
-    socket.deliver(JSON.stringify(transactionsFrame));
-    expect(applied).toEqual([]);
-    feed = { _tag: "following" };
-    socket.deliver(JSON.stringify(transactionsFrame));
-    expect(applied).toEqual([transactionsFrame]);
+    expect(transport).toBeDefined();
+    expect(requests[0]).toMatchObject({
+      url: "https://api.tabaaq.app/api/sync/live-tickets",
+      method: "POST",
+    });
+    expect(requests[1]?.url).toContain(
+      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
+    );
+    expect(requests[1]?.accept).toBe("text/event-stream");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(wakes).toEqual(["12"]);
+    transport?.close();
   });
 
-  it("resumes from the persisted cursor when a live frame cannot be decoded", async () => {
-    const requests: Array<RecordedRequest> = [];
-    const applied: Array<SyncLiveServerFrame> = [];
-    const resumes: Array<string> = [];
-    const { socket, openSocket } = createSocket();
-    await connectOrganizationObjectLiveTransport(
-      mintFetch(requests),
+  it("returns undefined when the live upgrade is unavailable so HTTP polling continues", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const request = new Request(input);
+      if (request.url.includes("/live-tickets")) {
+        return new Response(JSON.stringify(ticket), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: { code: "TICKET_INVALID", message: "no" } }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const transport = await connectOrganizationObjectLiveTransport(
+      fetchImpl,
       "https://api.tabaaq.app",
       LAST_UNIT_REPLICA_A,
       {
-        feed: () => ({ _tag: "following" }),
-        appliedCursor: () => "12",
-        applyTransactions: (frame) => {
-          applied.push(frame);
-          return true;
-        },
-        applyReceipt: () => undefined,
-        resumeFromCursor: (cursor) => {
-          resumes.push(cursor);
-        },
-      },
-      openSocket,
-    );
-    socket.deliver("{");
-    socket.deliver(JSON.stringify({ hello: 1 }));
-    expect(applied).toEqual([]);
-    expect(resumes).toEqual(["12", "12"]);
-  });
-
-  it("mints a ticket through authenticated fetch and opens a nonce socket without a refresh token", async () => {
-    const requests: Array<RecordedRequest> = [];
-    const { urls, openSocket } = createSocket();
-    await connectOrganizationObjectLiveTransport(
-      mintFetch(requests),
-      "https://api.tabaaq.app",
-      LAST_UNIT_REPLICA_A,
-      {
-        feed: () => ({ _tag: "following" }),
         appliedCursor: () => "0",
-        applyTransactions: () => false,
-        applyReceipt: (_receipt: CommandReceipt) => undefined,
+        onWake: () => undefined,
         resumeFromCursor: () => undefined,
       },
-      openSocket,
     );
-    expect(requests).toEqual([
-      {
-        url: "https://api.tabaaq.app/api/sync/live-tickets",
-        method: "POST",
-        body: JSON.stringify({
-          replicaId: "replica-a",
-          subscription: "operational",
-        }),
-        authorization: null,
-      },
-    ]);
-    expect(urls).toEqual([
-      `wss://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-    ]);
-    expect(urls[0]?.includes("refresh")).toBe(false);
-    expect(urls[0]?.includes("Bearer")).toBe(false);
+    expect(transport).toBeUndefined();
   });
 
-  it("resumes from the persisted cursor when the server reports a lost send window", async () => {
-    const requests: Array<RecordedRequest> = [];
-    const resumes: Array<string> = [];
-    const { socket, openSocket } = createSocket();
-    await connectOrganizationObjectLiveTransport(
-      mintFetch(requests),
-      "https://api.tabaaq.app",
-      LAST_UNIT_REPLICA_A,
-      {
-        feed: () => ({ _tag: "following" }),
-        appliedCursor: () => "12",
-        applyTransactions: () => true,
-        applyReceipt: () => undefined,
-        resumeFromCursor: (cursor) => {
-          resumes.push(cursor);
-        },
-      },
-      openSocket,
-    );
-    socket.deliver(
-      JSON.stringify({
-        _tag: "resume",
-        epoch: "1",
-        reason: "send_window_lost",
-        fromCommitSequence: "99",
-      }),
-    );
-    expect(resumes).toEqual(["12"]);
+  it("decodes SyncLiveWakeHint payloads", () => {
+    expect(Schema.decodeUnknownSync(SyncLiveWakeHint)(wakeHint)).toEqual(wakeHint);
   });
 });

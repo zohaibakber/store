@@ -212,17 +212,3 @@ export const projectIssuedInvoice = (input: {
 export const replicaInvoiceNumber = (
   invoices: Iterable<{ readonly deletedAt: number | null; readonly invoiceNumber: number }>,
 ) => nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
-
-export type SaleOutboxSnapshot = {
-  readonly command: IssueInvoiceCommand;
-  readonly invoice: InvoiceRow;
-  readonly items: ReadonlyArray<InvoiceItemRow>;
-  readonly movements: ReadonlyArray<StockMovementRow>;
-};
-
-export const saleSnapshotFromProjection = (projection: SaleProjection): SaleOutboxSnapshot => ({
-  command: projection.command,
-  invoice: projection.invoice,
-  items: projection.items,
-  movements: projection.movements,
-});

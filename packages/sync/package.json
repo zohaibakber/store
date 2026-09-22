@@ -7,17 +7,19 @@
     ".": "./src/index.ts",
     "./authority": "./src/authority/commands.ts",
     "./authority/seed": "./src/authority/seed.ts",
-    "./authority/store": "./src/authority/store.ts",
     "./better-sqlite-target": "./src/better-sqlite-target.ts",
+    "./browser": "./src/browser.ts",
     "./migrations": "./src/migrations.ts",
-    "./sqlite": "./src/sqlite.ts",
-    "./protocol": "./src/index.ts"
+    "./replica/indexeddb": "./src/replica/indexeddb/store.ts",
+    "./replica/migrate-pending": "./src/replica/migrate-pending.ts",
+    "./sqlite": "./src/sqlite.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run --root ../.. packages/sync/test"
   },
   "dependencies": {
+    "@effect/platform-browser": "catalog:",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
@@ -28,6 +30,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.2.0",
     "better-sqlite3": "^12.4.1",
+    "fake-indexeddb": "^6.2.4",
     "typescript": "catalog:",
     "vitest": "4.1.11"
   }

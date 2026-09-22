@@ -16,7 +16,8 @@ import {
   syncProtocolError,
   type SyncSubscription,
   unpadDecimalSequence,
-  type AcceptedInvoiceResult,
+  AcceptedInvoiceResult,
+  RejectedCommandResult,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
@@ -53,6 +54,10 @@ const fail = (code: Parameters<typeof syncProtocolError>[0], message: string): n
 };
 
 const isSyncProtocolError = Schema.is(SyncProtocolError);
+const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const encodeCommandResultJson = Schema.encodeSync(
+  Schema.fromJsonString(Schema.Union([AcceptedInvoiceResult, RejectedCommandResult])),
+);
 
 const parseReceipt = (row: typeof commandReceipts.$inferSelect): CommandReceipt =>
   Schema.decodeUnknownSync(CommandReceipt)({
@@ -62,7 +67,9 @@ const parseReceipt = (row: typeof commandReceipts.$inferSelect): CommandReceipt 
     payloadHash: row.payloadHash,
     decision: row.decision,
     commitSequence: unpadDecimalSequence(row.commitSequence),
-    result: JSON.parse(row.resultJson),
+    result: Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Union([AcceptedInvoiceResult, RejectedCommandResult])),
+    )(row.resultJson),
   });
 
 const requireReadyState = (tx: InventoryDb, organizationId: string) => {
@@ -107,7 +114,7 @@ const writeLog = (
         action: change.action,
         entityId: change.entityId,
         rowVersion: change.rowVersion,
-        rowJson: JSON.stringify(change.row),
+        rowJson: encodeRowJson(change.row),
       }),
     );
   }
@@ -539,7 +546,7 @@ export const commitPreparedCommand = (
       payloadHash: envelope.payloadHash,
       decision,
       commitSequence,
-      resultJson: JSON.stringify(result),
+      resultJson: encodeCommandResultJson(result),
       receivedAt: input.receivedAt,
       attempts,
     }),
@@ -710,7 +717,7 @@ export const pullTransactions = (
           action: row.action,
           entityId: row.entityId,
           rowVersion: row.rowVersion,
-          row: JSON.parse(row.rowJson),
+          row: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(row.rowJson),
         }),
       ),
     };

@@ -1,7 +1,7 @@
 import type { Category, Product, ProductSuggestions } from "@store/contracts";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
-import * as z from "zod";
+import * as Schema from "effect/Schema";
 
 import { CategoryField } from "@/components/products/category-field";
 import { SuggestField } from "@/components/products/suggest-field";
@@ -24,35 +24,46 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
+import { formValidator } from "@/lib/form-schema";
 import { useInventoryActions } from "@/lib/inventory-db";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
+type StrengthUnit = (typeof strengthUnits)[number];
 const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: unit }));
+const strengthUnitSet: ReadonlySet<string> = new Set(strengthUnits);
+const isStrengthUnit = (value: string): value is StrengthUnit => strengthUnitSet.has(value);
 
-const optionalPrice = z
-  .string()
-  .refine((value) => value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0), {
-    message: "Enter a valid price or leave this blank.",
-  });
+const optionalPrice = Schema.String.check(
+  Schema.makeFilter((value) =>
+    value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0)
+      ? undefined
+      : "Enter a valid price or leave this blank.",
+  ),
+);
 
-const productFormSchema = z.object({
-  name: z.string().trim().min(1, "Product name is required.").max(120),
-  categoryId: z.string().min(1, "Category is required."),
-  aisle: z.string().trim().max(64),
-  composition: z.string().trim().max(160),
-  strength: z.string().trim().max(20),
-  strengthUnit: z.enum(strengthUnits),
-  // Blank means one: an item sold as-is has no pack size to state, and a
-  // category that isn't sold in packs never shows the field at all.
-  unitsPerPack: z
-    .string()
-    .refine((value) => value === "" || (Number.isInteger(Number(value)) && Number(value) >= 1), {
-      message: "Units per pack must be a whole number of 1 or more.",
-    }),
-  purchasePrice: optionalPrice,
-  retailPrice: optionalPrice,
-  unitPrice: optionalPrice,
-});
+const productFormSchema = formValidator(
+  Schema.Struct({
+    name: Schema.Trim.check(
+      Schema.isMinLength(1, { message: "Product name is required." }),
+      Schema.isMaxLength(120),
+    ),
+    categoryId: Schema.String.check(Schema.isMinLength(1, { message: "Category is required." })),
+    aisle: Schema.Trim.check(Schema.isMaxLength(64)),
+    composition: Schema.Trim.check(Schema.isMaxLength(160)),
+    strength: Schema.Trim.check(Schema.isMaxLength(20)),
+    strengthUnit: Schema.Literals(strengthUnits),
+    unitsPerPack: Schema.String.check(
+      Schema.makeFilter((value) =>
+        value === "" || (Number.isInteger(Number(value)) && Number(value) >= 1)
+          ? undefined
+          : "Units per pack must be a whole number of 1 or more.",
+      ),
+    ),
+    purchasePrice: optionalPrice,
+    retailPrice: optionalPrice,
+    unitPrice: optionalPrice,
+  }),
+);
 
 const nullableText = (value: string) => value.trim() || null;
 const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
@@ -68,37 +79,53 @@ const computeUnitPrice = (unitsPerPack: string, retailPrice: string) => {
   return String(Math.round(retail / units));
 };
 
-const parseStrength = (value: string | null) => {
+type ParsedStrength = {
+  strength: string;
+  strengthUnit: StrengthUnit;
+};
+
+const parseStrength = (value: string | null): ParsedStrength => {
   const match = value?.match(/^([\d.]+)\s*(mg|mcg|g|ml|l)$/i);
   if (!match) {
-    // SAFETY: The fallback literal is a member of the closed strengthUnits tuple.
-    return { strength: value ?? "", strengthUnit: "mg" as (typeof strengthUnits)[number] };
+    return { strength: value ?? "", strengthUnit: "mg" };
   }
-  // SAFETY: The regex capture is restricted to the same closed unit alternatives.
+  const unit = match[2].toLowerCase();
   return {
     strength: match[1],
-    strengthUnit: match[2].toLowerCase() as (typeof strengthUnits)[number],
+    strengthUnit: isStrengthUnit(unit) ? unit : "mg",
   };
 };
 
+type ProductFormValues = {
+  name: string;
+  categoryId: string;
+  aisle: string;
+  composition: string;
+  strength: string;
+  strengthUnit: StrengthUnit;
+  unitsPerPack: string;
+  purchasePrice: string;
+  retailPrice: string;
+  unitPrice: string;
+};
+
+const productFormDefaults: ProductFormValues = {
+  name: "",
+  categoryId: "",
+  aisle: "",
+  composition: "",
+  strength: "",
+  strengthUnit: "mg",
+  unitsPerPack: "",
+  purchasePrice: "",
+  retailPrice: "",
+  unitPrice: "",
+};
+
 const productFormOpts = formOptions({
-  defaultValues: {
-    name: "",
-    categoryId: "",
-    aisle: "",
-    composition: "",
-    strength: "",
-    // SAFETY: The default literal is a member of the closed strengthUnits tuple.
-    strengthUnit: "mg" as (typeof strengthUnits)[number],
-    unitsPerPack: "",
-    purchasePrice: "",
-    retailPrice: "",
-    unitPrice: "",
-  },
+  defaultValues: productFormDefaults,
   validators: { onSubmit: productFormSchema },
 });
-
-type ProductFormValues = typeof productFormOpts.defaultValues;
 
 /**
  * A category that isn't sold in packs hides pack size and pack retail, so
@@ -384,50 +411,61 @@ function ProductForm({
         </Fieldset>
 
         <form.Subscribe selector={(state) => state.values.categoryId}>
-          {(categoryId) => (
-            <ProductPricingFields
-              form={form}
-              tracksPacks={categoryTracksPacks(categories, categoryId)}
-            />
-          )}
+          {(categoryId) =>
+            categoryTracksPacks(categories, categoryId) ? (
+              <PackPricingFields form={form} />
+            ) : (
+              <UnitPricingFields form={form} />
+            )
+          }
         </form.Subscribe>
       </Fieldset>
     </form>
   );
 }
 
-function ProductPricingFields({
-  form,
-  tracksPacks,
-}: {
-  form: ReturnType<typeof useProductCreateForm>;
-  tracksPacks: boolean;
-}) {
+function PurchasePriceField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
   return (
     <Fieldset className="flex flex-col">
-      {tracksPacks ? <UnitsPerPackField form={form} /> : null}
+      <p className="text-sm font-medium">Purchase price</p>
+      <form.Field
+        name="purchasePrice"
+        children={(field) => (
+          <FormField
+            description="Cost of one pack. Leave blank if you do not track cost."
+            field={field}
+            label="Purchase price"
+          >
+            {(control) => (
+              <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
+            )}
+          </FormField>
+        )}
+      />
+    </Fieldset>
+  );
+}
 
-      <Fieldset className="flex flex-col">
-        <p className="text-sm font-medium">Purchase price</p>
-        <form.Field
-          name="purchasePrice"
-          children={(field) => (
-            <FormField
-              description="Cost of one pack. Leave blank if you do not track cost."
-              field={field}
-              label="Purchase price"
-            >
-              {(control) => (
-                <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
-              )}
-            </FormField>
-          )}
-        />
-      </Fieldset>
-
+function PackPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+  return (
+    <Fieldset className="flex flex-col">
+      <UnitsPerPackField form={form} />
+      <PurchasePriceField form={form} />
       <Fieldset className="flex flex-col">
         <p className="text-sm font-medium">Retail price</p>
-        {tracksPacks ? <PackRetailFields form={form} /> : <UnitRetailField form={form} />}
+        <PackRetailFields form={form} />
+      </Fieldset>
+    </Fieldset>
+  );
+}
+
+function UnitPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+  return (
+    <Fieldset className="flex flex-col">
+      <PurchasePriceField form={form} />
+      <Fieldset className="flex flex-col">
+        <p className="text-sm font-medium">Retail price</p>
+        <UnitRetailField form={form} />
       </Fieldset>
     </Fieldset>
   );

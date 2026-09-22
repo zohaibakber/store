@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
@@ -18,18 +19,6 @@ import {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 export const AUTH_JWT_KEY_ID = "tabaaq-auth-v1";
-
-const base64UrlEncode = (bytes: Uint8Array) => {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
-
-const base64UrlDecode = (value: string) => {
-  const base64 = value.replace(/-/gu, "+").replace(/_/gu, "/");
-  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-};
 
 const JsonWebKeySchema = Schema.Struct({
   kty: Schema.String,
@@ -80,27 +69,25 @@ export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
 }) {}
 
 const decodeBase64Url = (value: string) =>
-  Effect.try({
-    try: () => base64UrlDecode(value),
-    catch: (cause) =>
-      new JwtError({
-        reason: "Malformed",
-        message: "The access token is malformed.",
-        cause,
-      }),
-  });
+  Effect.fromResult(Encoding.decodeBase64Url(value)).pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "Malformed",
+          message: "The access token is malformed.",
+          cause,
+        }),
+    ),
+  );
 
-const decodeJson = <A>(schema: Schema.ConstraintDecoder<A>, bytes: Uint8Array) =>
-  Effect.try({
-    try: () => JSON.parse(textDecoder.decode(bytes)),
-    catch: () => new JwtError({ reason: "Malformed", message: "The access token is malformed." }),
-  }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+const decodeJson = <A>(schema: Schema.Top & Schema.ConstraintDecoder<A>, bytes: Uint8Array) =>
+  Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(textDecoder.decode(bytes)).pipe(
     Effect.mapError(
       (cause) =>
         new JwtError({
           reason: "InvalidClaims",
           message: `The access token claims are invalid: ${cause.message}`,
+          cause,
         }),
     ),
   );
@@ -183,8 +170,30 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     typ: "JWT",
     kid: AUTH_JWT_KEY_ID,
   } satisfies typeof JwtHeader.Type;
-  const encodedHeader = base64UrlEncode(textEncoder.encode(JSON.stringify(header)));
-  const encodedPayload = base64UrlEncode(textEncoder.encode(JSON.stringify(payload)));
+  const encodedHeader = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader))(header).pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "InvalidClaims",
+          message: `The access token header is invalid: ${cause.message}`,
+          cause,
+        }),
+    ),
+    Effect.map(Encoding.encodeBase64Url),
+  );
+  const encodedPayload = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtPayload))(
+    payload,
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "InvalidClaims",
+          message: `The access token claims are invalid: ${cause.message}`,
+          cause,
+        }),
+    ),
+    Effect.map(Encoding.encodeBase64Url),
+  );
   const signingInput = `${encodedHeader}.${encodedPayload}`;
   const key = importedKey ?? (yield* importSigningKey(configuration.privateJwk));
   const signature = yield* Effect.tryPromise({
@@ -198,7 +207,9 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
       }),
   });
   return {
-    token: AccessToken.make(`${signingInput}.${base64UrlEncode(new Uint8Array(signature))}`),
+    token: AccessToken.make(
+      `${signingInput}.${Encoding.encodeBase64Url(new Uint8Array(signature))}`,
+    ),
     expiresAt: expiresAt * 1_000,
   } satisfies IssuedAccessToken;
 });
@@ -225,7 +236,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
     });
   }
   const key = importedKey ?? (yield* importVerificationKey(configuration.publicJwk));
-  const signature = yield* decodeBase64Url(encodedSignature);
+  const signature = new Uint8Array(yield* decodeBase64Url(encodedSignature));
   const valid = yield* Effect.tryPromise({
     try: () =>
       crypto.subtle.verify(
@@ -300,17 +311,36 @@ export const accessTokenLayer = (configuration: JwtConfiguration) =>
   );
 
 export const decodeJsonWebKey = Schema.decodeUnknownEffect(JsonWebKeySchema);
+export const decodeJsonWebKeyText = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(JsonWebKeySchema),
+);
 
-export const publicJwks = (publicJwk: JsonWebKey) => ({
-  keys: [
-    {
-      kty: publicJwk.kty,
-      crv: publicJwk.crv,
-      x: publicJwk.x,
-      y: publicJwk.y,
-      alg: "ES256",
-      use: "sig",
-      kid: AUTH_JWT_KEY_ID,
-    },
-  ],
+export const AuthJwks = Schema.Struct({
+  keys: Schema.Array(
+    Schema.Struct({
+      kty: Schema.String,
+      crv: Schema.optionalKey(Schema.String),
+      x: Schema.optionalKey(Schema.String),
+      y: Schema.optionalKey(Schema.String),
+      alg: Schema.String,
+      use: Schema.String,
+      kid: Schema.String,
+    }),
+  ),
 });
+export type AuthJwks = typeof AuthJwks.Type;
+
+export const publicJwks = (publicJwk: JsonWebKey): AuthJwks =>
+  AuthJwks.make({
+    keys: [
+      {
+        kty: publicJwk.kty ?? "EC",
+        crv: publicJwk.crv,
+        x: publicJwk.x,
+        y: publicJwk.y,
+        alg: "ES256",
+        use: "sig",
+        kid: AUTH_JWT_KEY_ID,
+      },
+    ],
+  });

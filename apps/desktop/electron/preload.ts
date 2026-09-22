@@ -18,6 +18,17 @@ import {
 } from "./inventory-http-channels";
 import { makeLastValueReplay } from "./last-value-replay";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
+import {
+  REPLICA_CANCEL_CHANNEL,
+  REPLICA_CLOSE_CHANNEL,
+  REPLICA_COMMIT_CHANNEL,
+  REPLICA_OPEN_CHANNEL,
+  REPLICA_QUERY_CHANNEL,
+  REPLICA_STAMP_CHANNEL,
+  REPLICA_WAKE_CHANNEL,
+  type ReplicaCommitEvent,
+  type ReplicaIpcBridge,
+} from "./replica-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
@@ -31,6 +42,23 @@ const inventoryHttp: InventoryHttpBridge = {
 };
 
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
+
+const replica: ReplicaIpcBridge = {
+  open: (input) => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL, input),
+  close: (workspaceToken) => ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken),
+  stamp: (workspaceToken) => ipcRenderer.invoke(REPLICA_STAMP_CHANNEL, workspaceToken),
+  query: (input) => ipcRenderer.invoke(REPLICA_QUERY_CHANNEL, input),
+  wakeSyncUpload: (workspaceToken) => ipcRenderer.invoke(REPLICA_WAKE_CHANNEL, workspaceToken),
+  cancel: (requestId) => ipcRenderer.send(REPLICA_CANCEL_CHANNEL, requestId),
+  onCommit(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, event: ReplicaCommitEvent) =>
+      callback(event);
+    ipcRenderer.on(REPLICA_COMMIT_CHANNEL, listener);
+    return () => ipcRenderer.off(REPLICA_COMMIT_CHANNEL, listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("replica", replica);
 
 const sessionReplay = makeLastValueReplay<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

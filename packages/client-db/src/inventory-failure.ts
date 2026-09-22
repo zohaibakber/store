@@ -4,22 +4,19 @@ import * as Schema from "effect/Schema";
 const STALE_REPLICA_CODE = "ENTITY_CONFLICT";
 const ipcPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
-export type InventoryFailureReason =
-  | { readonly _tag: "transport" }
-  | { readonly _tag: "transient" }
-  | { readonly _tag: "unauthenticated" }
-  | { readonly _tag: "staleReplica" }
-  | { readonly _tag: "rejected"; readonly code: string };
+export const InventoryFailureReason = Schema.Union([
+  Schema.TaggedStruct("transport", {}),
+  Schema.TaggedStruct("transient", {}),
+  Schema.TaggedStruct("unauthenticated", {}),
+  Schema.TaggedStruct("staleReplica", {}),
+  Schema.TaggedStruct("rejected", { code: Schema.String }),
+]);
+export type InventoryFailureReason = typeof InventoryFailureReason.Type;
 
-export class InventoryFailure extends Error {
-  readonly reason: InventoryFailureReason;
-
-  constructor(input: { readonly message: string; readonly reason: InventoryFailureReason }) {
-    super(input.message);
-    this.name = "InventoryFailure";
-    this.reason = input.reason;
-  }
-}
+export class InventoryFailure extends Schema.TaggedError<InventoryFailure>()("InventoryFailure", {
+  message: Schema.String,
+  reason: InventoryFailureReason,
+}) {}
 
 export type CatalogUploadDisposition =
   | { readonly _tag: "retry" }
@@ -41,15 +38,19 @@ export const catalogUploadDisposition = (failure: InventoryFailure): CatalogUplo
 
 export type InvoiceUploadDisposition = { readonly _tag: "retry" } | { readonly _tag: "halt" };
 
+const INSUFFICIENT_STOCK = "INSUFFICIENT_STOCK";
+
+const retryInsufficientStockSale = (): InvoiceUploadDisposition => ({ _tag: "retry" });
+
 export const invoiceUploadDisposition = (failure: InventoryFailure): InvoiceUploadDisposition => {
   switch (failure.reason._tag) {
     case "transport":
     case "transient":
       return { _tag: "retry" };
     case "rejected":
-      // Keep the local sale queued so a later retry can succeed after remote
-      // stock or pack layout is reconciled.
-      return failure.reason.code === "INSUFFICIENT_STOCK" ? { _tag: "retry" } : { _tag: "halt" };
+      return failure.reason.code === INSUFFICIENT_STOCK
+        ? retryInsufficientStockSale()
+        : { _tag: "halt" };
     case "staleReplica":
     case "unauthenticated":
       return { _tag: "halt" };

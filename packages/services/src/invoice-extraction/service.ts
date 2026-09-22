@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { parseModelJson } from "../model-json";
 import { parseCsvRecords } from "./csv";
 import { parseMajorCurrencyToMinor, parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
@@ -189,23 +190,6 @@ const documentsToMarkdown = (converted: ReadonlyArray<ConvertedDocument>) => {
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 };
 
-const parseModelOutput = (raw: InvoiceModelOutput): InvoiceModelObject => {
-  const response = isString(raw) ? raw : (raw.response ?? raw);
-  if (!isString(response)) return response;
-  const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = (fenced?.[1] ?? response).trim();
-  try {
-    const parsed: InvoiceModelObject = JSON.parse(candidate);
-    return parsed;
-  } catch {
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-    if (start === -1 || end <= start) throw new Error("The model did not return JSON.");
-    const parsed: InvoiceModelObject = JSON.parse(candidate.slice(start, end + 1));
-    return parsed;
-  }
-};
-
 export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
   Layer.succeed(InvoiceExtractionService, {
     extract: Effect.fn("InvoiceExtraction.extract")(
@@ -251,7 +235,7 @@ export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
             signal,
           }),
         ).pipe(Effect.timeout("30 seconds"));
-        const output = yield* Effect.try(() => parseModelOutput(raw));
+        const output = yield* Effect.try(() => parseModelJson<InvoiceModelObject>(raw));
         return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
       },
       (effect) =>

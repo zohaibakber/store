@@ -74,7 +74,6 @@ function recommendProduct(product: Product, demand: Demand, policy: StockPolicy,
     ageDays >= 30 &&
     availableUnits > 0 &&
     (units30d === 0 || (daysRemaining !== null && daysRemaining > 90));
-  // Sparse history should not turn a single large sale into an automatic purchase recommendation.
   const targetUnits = Math.max(policy.minimumUnits, Math.ceil(dailyDemand * horizonDays));
   const suggestedUnits =
     status !== "healthy" && history === "established" && dailyDemand > 0 && !slowMoving

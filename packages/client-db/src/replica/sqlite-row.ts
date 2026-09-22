@@ -1,3 +1,4 @@
+import { CommandStatus } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
 export const SqliteCell = Schema.Union([
@@ -17,15 +18,8 @@ export const ReplicaStampRow = Schema.Struct({
 });
 export type ReplicaStampRow = typeof ReplicaStampRow.Type;
 
-export const OutboxCommandStatus = Schema.Literals([
-  "pending",
-  "sending",
-  "accepted_awaiting_integration",
-  "integrated",
-  "rejected",
-  "abandoned",
-]);
-export type OutboxCommandStatus = typeof OutboxCommandStatus.Type;
+export const OutboxCommandStatus = CommandStatus;
+export type OutboxCommandStatus = CommandStatus;
 
 export const OutboxStatusRow = Schema.Struct({
   status: OutboxCommandStatus,
@@ -47,6 +41,3 @@ export type ComparisonList = typeof ComparisonList.Type;
 export const decodeSqliteResultRow = Schema.decodeUnknownSync(SqliteResultRow);
 export const decodeReplicaStampRow = Schema.decodeUnknownSync(ReplicaStampRow);
 export const decodeOutboxStatusRow = Schema.decodeUnknownOption(OutboxStatusRow);
-export const decodeComparisonScalar = Schema.decodeUnknownSync(ComparisonScalar);
-export const decodeComparisonList = Schema.decodeUnknownSync(ComparisonList);
-export const decodeAppliedMigrationKeys = Schema.decodeUnknownSync(Schema.Array(Schema.String));
