@@ -57,16 +57,18 @@ export type AuthHttpError =
   | AuthTooManyRequests
   | AuthServiceUnavailable;
 
-const authHttpErrorByStatus = {
-  400: AuthBadRequest,
-  401: AuthUnauthenticated,
-  403: AuthForbidden,
-  404: AuthNotFound,
-  409: AuthConflict,
-  415: AuthUnsupportedMediaType,
-  429: AuthTooManyRequests,
-  503: AuthServiceUnavailable,
-} as const;
+type AuthHttpErrorSchema = (typeof AuthHttpErrors)[number];
+
+const authHttpErrorByStatus = new Map<number, AuthHttpErrorSchema>([
+  [400, AuthBadRequest],
+  [401, AuthUnauthenticated],
+  [403, AuthForbidden],
+  [404, AuthNotFound],
+  [409, AuthConflict],
+  [415, AuthUnsupportedMediaType],
+  [429, AuthTooManyRequests],
+  [503, AuthServiceUnavailable],
+]);
 
 const authHttpErrorStatusByTag = {
   BadRequest: 400,
@@ -89,9 +91,6 @@ export const authHttpErrorFromStatus = (
   code: string,
   message: string,
 ): AuthHttpError => {
-  const schema =
-    status in authHttpErrorByStatus
-      ? authHttpErrorByStatus[status as keyof typeof authHttpErrorByStatus]
-      : AuthBadRequest;
+  const schema = authHttpErrorByStatus.get(status) ?? AuthBadRequest;
   return schema.make(body(code, message));
 };

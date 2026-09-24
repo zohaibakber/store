@@ -1,4 +1,5 @@
 import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import type { ReplicaOutboxActivity } from "@store/sync/browser";
 import { IR, type CollectionConfig, type LoadSubsetOptions } from "@tanstack/db";
 import type * as Effect from "effect/Effect";
 
@@ -10,12 +11,12 @@ import type {
   ProductRow,
   StockMovementRow,
 } from "../rows";
-import type { ReplicaRowInvalid, UnsupportedSubsetQuery } from "./errors";
-import type {
-  InventoryCollectionSource,
-  InventoryCollectionSyncMode,
-} from "./sources";
+import type { InvoiceCoherenceGate } from "./coherence";
+import type { ReplicaRowInvalid } from "./errors";
+import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
 import type { OutboxCommandStatus, SqliteResultRow } from "./sqlite-row";
+import type { ReplicaSyncHealth } from "./status";
+import type { InventorySubsetSpec } from "./subset-spec";
 
 export type InventoryCollectionRow =
   | CategoryRow
@@ -28,15 +29,6 @@ export type InventoryCollectionRow =
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
 export type { SqliteResultRow };
-
-export type SqliteSubsetPlan = {
-  readonly source: InventoryCollectionSource;
-  readonly sql: string;
-  readonly parameters: ReadonlyArray<SqliteParameter>;
-  readonly maximumRows: number;
-};
-
-export type IndexedDbSubsetPlan = import("@store/sync/replica/indexeddb").IndexedDbSubsetPlan;
 
 export type ReplicaCommitNotice = {
   readonly workspaceToken: string;
@@ -52,14 +44,16 @@ export interface ReplicaChangeFeed {
   readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => ReplicaChangeUnsubscribe;
 }
 
+export interface ReplicaSyncHealthFeed {
+  readonly subscribeSyncHealth?: (
+    listener: (health: ReplicaSyncHealth) => void,
+  ) => ReplicaChangeUnsubscribe;
+}
+
 export type ReplicaQueryStamp = {
   readonly workspaceToken: string;
   readonly generationId: string;
   readonly localCommitVersion: number;
-};
-
-export type ReplicaQueryExecutor = {
-  readonly stamp: () => ReplicaQueryStamp | Promise<ReplicaQueryStamp>;
 };
 
 export type ReplicaSubsetRead = {
@@ -67,30 +61,9 @@ export type ReplicaSubsetRead = {
   readonly rows: ReadonlyArray<SqliteResultRow>;
 };
 
-export interface ReplicaSqlExecutor extends ReplicaQueryExecutor {
-  readonly query: (
-    sql: string,
-    parameters: ReadonlyArray<SqliteParameter>,
-  ) => ReadonlyArray<SqliteResultRow> | Promise<ReadonlyArray<SqliteResultRow>>;
-  readonly queryStamped?: (
-    sql: string,
-    parameters: ReadonlyArray<SqliteParameter>,
-  ) => ReplicaSubsetRead | Promise<ReplicaSubsetRead>;
+export interface ReplicaSubsetReader {
+  readonly readSubset: (spec: InventorySubsetSpec) => Promise<ReplicaSubsetRead>;
 }
-
-export type ReplicaCollectionExecutor = ReplicaSqlExecutor & {
-  readonly querySubset?: (
-    plan: IndexedDbSubsetPlan,
-  ) => ReplicaSubsetRead | Promise<ReplicaSubsetRead>;
-};
-
-export const isReplicaIndexedDbExecutor = (
-  executor: ReplicaCollectionExecutor,
-): executor is ReplicaSqlExecutor & {
-  readonly querySubset: (
-    plan: IndexedDbSubsetPlan,
-  ) => ReplicaSubsetRead | Promise<ReplicaSubsetRead>;
-} => typeof executor.querySubset === "function";
 
 export type ReplicaHandleIdentity = {
   readonly workspaceToken: string;
@@ -102,12 +75,12 @@ export type ReplicaHandleLifecycle = {
 };
 
 export type ReplicaMutationSurface = {
-  readonly readOutboxStatuses?: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
-  readonly readCommandAllocation?: () => Promise<{
+  readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
+  readonly readCommandAllocation: () => Promise<{
     readonly epoch: string;
     readonly nextClientSequence: string;
   }>;
-  readonly enqueueLocal?: (
+  readonly enqueueLocal: (
     envelope: SyncCommandEnvelope,
     createdAt: number,
   ) => Promise<{
@@ -117,15 +90,22 @@ export type ReplicaMutationSurface = {
   readonly wakeSyncUpload?: () => void;
 };
 
+export type ReplicaActivitySurface = {
+  readonly replicaId?: string;
+  readonly readOutboxActivity?: () => Promise<ReplicaOutboxActivity>;
+  readonly readPendingRowIds?: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
+};
+
 export type ReplicaHandle = ReplicaHandleIdentity &
   ReplicaHandleLifecycle &
-  ReplicaCollectionExecutor &
+  ReplicaSubsetReader &
   ReplicaChangeFeed &
-  ReplicaMutationSurface & {
+  ReplicaSyncHealthFeed &
+  ReplicaMutationSurface &
+  ReplicaActivitySurface & {
+    readonly stamp: () => Promise<ReplicaQueryStamp>;
     readonly publish: (notice: ReplicaCommitNotice) => void;
   };
-
-export type ReplicaSqliteHandle = ReplicaHandle;
 
 export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = {
   readonly id: string;
@@ -139,9 +119,9 @@ export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = 
 };
 
 export type SqliteCollectionDependencies = {
-  readonly executor: ReplicaCollectionExecutor;
+  readonly executor: ReplicaSubsetReader;
   readonly changeFeed: ReplicaChangeFeed;
-  readonly coherence?: import("./coherence").InvoiceCoherenceGate;
+  readonly coherence?: InvoiceCoherenceGate;
 };
 
 export type SqliteCollectionConfig<Row extends InventoryCollectionRow> = CollectionConfig<
@@ -161,8 +141,3 @@ export type CompileSubsetInput = {
   readonly offset?: number;
   readonly cursor?: LoadSubsetOptions["cursor"];
 };
-
-export type CompileSqliteSubset = <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  options: CompileSubsetInput,
-) => Effect.Effect<SqliteSubsetPlan, UnsupportedSubsetQuery>;

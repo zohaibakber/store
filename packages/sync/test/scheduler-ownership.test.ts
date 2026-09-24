@@ -1,14 +1,21 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import { makeSyncScheduler } from "../src/scheduler";
 import { makeWebNetworkOwnership } from "../src/web-ownership";
 
+type LockOptions = { readonly signal?: AbortSignal };
+
 type LockManagerLike = {
-  readonly request: (name: string, callback: () => Promise<void>) => Promise<void>;
+  readonly request: (
+    name: string,
+    options: LockOptions,
+    callback: () => Promise<void>,
+  ) => Promise<void>;
 };
 
 const withNavigatorLocks = <A, E, R>(
@@ -37,12 +44,17 @@ const queuedLocks = (): LockManagerLike => {
   let held = false;
   const waiters: Array<() => void> = [];
   return {
-    request: async (_name, callback) => {
+    request: async (_name, options, callback) => {
       while (held) {
-        await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve, reject) => {
           waiters.push(resolve);
+          options.signal?.addEventListener("abort", () => {
+            waiters.splice(waiters.indexOf(resolve), 1);
+            reject(new Error("AbortError"));
+          });
         });
       }
+      if (options.signal?.aborted) throw new Error("AbortError");
       held = true;
       try {
         await callback();
@@ -54,6 +66,9 @@ const queuedLocks = (): LockManagerLike => {
     },
   };
 };
+
+const settle = (millis: number) =>
+  Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)));
 
 describe("web network ownership", () => {
   it.effect("acquires immediately when Web Locks are unavailable", () =>
@@ -80,18 +95,62 @@ describe("web network ownership", () => {
         const firstHandle = yield* first.tryAcquire(() =>
           Ref.update(owners, (current) => [...current, "first"]),
         );
+        yield* settle(10);
         expect(yield* Ref.get(owners)).toEqual(["first"]);
-        const secondFiber = yield* Effect.forkChild(
-          second.tryAcquire(() => Ref.update(owners, (current) => [...current, "second"])),
+        const secondHandle = yield* second.tryAcquire(() =>
+          Ref.update(owners, (current) => [...current, "second"]),
         );
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 20)));
+        yield* settle(20);
         expect(yield* Ref.get(owners)).toEqual(["first"]);
         yield* firstHandle.release;
-        const secondHandle = yield* Fiber.join(secondFiber);
+        yield* settle(10);
         expect(yield* Ref.get(owners)).toEqual(["first", "second"]);
         yield* secondHandle.release;
         yield* first.dispose;
         yield* second.dispose;
+      }),
+    ),
+  );
+
+  it.live("opens a follower tab without waiting for the lock", () =>
+    withNavigatorLocks(
+      queuedLocks(),
+      Effect.gen(function* () {
+        const leader = yield* makeWebNetworkOwnership("follower-open");
+        const follower = yield* makeWebNetworkOwnership("follower-open");
+        const leaderHandle = yield* leader.tryAcquire(() => Effect.void);
+        yield* settle(10);
+        const followerHandle = yield* follower
+          .tryAcquire(() => Effect.void)
+          .pipe(Effect.timeoutOption("50 millis"));
+        expect(Option.isSome(followerHandle)).toBe(true);
+        yield* leaderHandle.release;
+        if (Option.isSome(followerHandle)) yield* followerHandle.value.release;
+      }),
+    ),
+  );
+
+  it.live("a follower released before the grant never becomes owner", () =>
+    withNavigatorLocks(
+      queuedLocks(),
+      Effect.gen(function* () {
+        const leader = yield* makeWebNetworkOwnership("follower-cancel");
+        const follower = yield* makeWebNetworkOwnership("follower-cancel");
+        const third = yield* makeWebNetworkOwnership("follower-cancel");
+        const owners = yield* Ref.make<ReadonlyArray<string>>([]);
+        const leaderHandle = yield* leader.tryAcquire(() => Effect.void);
+        yield* settle(10);
+        const followerHandle = yield* follower.tryAcquire(() =>
+          Ref.update(owners, (current) => [...current, "follower"]),
+        );
+        const thirdHandle = yield* third.tryAcquire(() =>
+          Ref.update(owners, (current) => [...current, "third"]),
+        );
+        yield* followerHandle.release;
+        yield* leaderHandle.release;
+        yield* settle(20);
+        expect(yield* Ref.get(owners)).toEqual(["third"]);
+        yield* thirdHandle.release;
       }),
     ),
   );

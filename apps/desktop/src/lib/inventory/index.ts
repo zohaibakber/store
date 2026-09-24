@@ -1,23 +1,17 @@
-export { useInventoryDashboardAnalytics } from "./dashboard";
-export { inventoryScopeId, openInventoryWorkspace } from "./open";
 export {
-  InventoryProvider,
-  InventoryReady,
-  useBindSelectedInvoice,
-  useBindSelectedProduct,
-  useCatalogIsReady,
-  useCommandExecution,
-  useInventoryActions,
-  useSharedFilters,
-  useWorkspaceAtoms,
-} from "./provider";
-export {
+  inventoryScopeId,
+  openInventoryWorkspace,
   useCatalogCategories,
+  useCatalogIsReady,
   useCatalogProduct,
   useCatalogProducts,
   useCatalogStockMovements,
   useCatalogSuggestions,
+  useCommandExecution,
+  useInventoryActions,
+  useInventoryDashboardAnalytics,
   useInventoryInvoice,
   useInventoryInvoices,
-} from "./queries";
-export type { InventoryActions } from "./types";
+  type InventoryActions,
+} from "@store/inventory-react";
+export { InventoryProvider, InventoryReady } from "./provider";

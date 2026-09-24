@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  foreignKey,
   index,
   integer,
   primaryKey,
@@ -16,7 +15,6 @@ export const epochMilliseconds = () => integer({ mode: "number" });
 const timestamps = {
   createdAt: epochMilliseconds().notNull(),
   updatedAt: epochMilliseconds().notNull(),
-  deletedAt: epochMilliseconds(),
 };
 
 export const tenantId = () => text().notNull();
@@ -45,7 +43,6 @@ export const storeManagedColumnNames: ReadonlyArray<StoreManagedColumn> = [
   "actorUserId",
   "createdAt",
   "updatedAt",
-  "deletedAt",
   "organizationId",
   "createdByUserId",
   "updatedByUserId",
@@ -68,9 +65,7 @@ export const categories = sqliteTable(
       name: "categories_organization_id_id_pk",
       columns: [table.organizationId, table.id],
     }),
-    uniqueIndex("categories_organization_id_name_uidx")
-      .on(table.organizationId, table.name)
-      .where(sql`${table.deletedAt} is null`),
+    uniqueIndex("categories_organization_id_name_uidx").on(table.organizationId, table.name),
     index("categories_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
   ],
 );
@@ -97,11 +92,6 @@ export const products = sqliteTable(
       name: "products_organization_id_id_pk",
       columns: [table.organizationId, table.id],
     }),
-    foreignKey({
-      name: "products_organization_category_fk",
-      columns: [table.organizationId, table.categoryId],
-      foreignColumns: [categories.organizationId, categories.id],
-    }),
     index("products_organization_id_category_id_idx").on(table.organizationId, table.categoryId),
     index("products_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
   ],
@@ -123,11 +113,6 @@ export const batches = sqliteTable(
     primaryKey({
       name: "batches_organization_id_id_pk",
       columns: [table.organizationId, table.id],
-    }),
-    foreignKey({
-      name: "batches_organization_product_fk",
-      columns: [table.organizationId, table.productId],
-      foreignColumns: [products.organizationId, products.id],
     }),
     index("batches_organization_id_product_id_idx").on(table.organizationId, table.productId),
     index("batches_organization_id_product_expiry_idx").on(
@@ -187,21 +172,6 @@ export const invoiceItems = sqliteTable(
       name: "invoice_items_organization_id_id_pk",
       columns: [table.organizationId, table.id],
     }),
-    foreignKey({
-      name: "invoice_items_organization_invoice_fk",
-      columns: [table.organizationId, table.invoiceId],
-      foreignColumns: [invoices.organizationId, invoices.id],
-    }),
-    foreignKey({
-      name: "invoice_items_organization_product_fk",
-      columns: [table.organizationId, table.productId],
-      foreignColumns: [products.organizationId, products.id],
-    }),
-    foreignKey({
-      name: "invoice_items_organization_batch_fk",
-      columns: [table.organizationId, table.batchId],
-      foreignColumns: [batches.organizationId, batches.id],
-    }),
     index("invoice_items_organization_id_invoice_id_idx").on(table.organizationId, table.invoiceId),
   ],
 );
@@ -227,21 +197,6 @@ export const stockMovements = sqliteTable(
     primaryKey({
       name: "stock_movements_organization_id_id_pk",
       columns: [table.organizationId, table.id],
-    }),
-    foreignKey({
-      name: "stock_movements_organization_product_fk",
-      columns: [table.organizationId, table.productId],
-      foreignColumns: [products.organizationId, products.id],
-    }),
-    foreignKey({
-      name: "stock_movements_organization_batch_fk",
-      columns: [table.organizationId, table.batchId],
-      foreignColumns: [batches.organizationId, batches.id],
-    }),
-    foreignKey({
-      name: "stock_movements_organization_invoice_fk",
-      columns: [table.organizationId, table.invoiceId],
-      foreignColumns: [invoices.organizationId, invoices.id],
     }),
     index("stock_movements_organization_id_product_id_idx").on(
       table.organizationId,

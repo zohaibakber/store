@@ -1,6 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { stockPolicyAtom } from "@store/inventory-react";
 
 import { ExpiringBatches } from "@/components/dashboard/inventory-health";
 import { RecentInvoices } from "@/components/dashboard/recent-invoices";
@@ -11,7 +12,6 @@ import { TopProducts } from "@/components/dashboard/top-products";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useInventoryDashboardAnalytics } from "@/lib/inventory-db";
-import { stockPolicyAtom } from "@/lib/inventory/atoms";
 
 export function HomePage() {
   const policy = useAtomValue(stockPolicyAtom);

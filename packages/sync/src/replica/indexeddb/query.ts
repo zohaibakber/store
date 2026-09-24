@@ -1,9 +1,8 @@
-import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { ReplicaIndexedDb } from "./schema";
+import type { ReplicaQueryBuilder } from "./schema";
 
 export type IndexedDbEntityTable =
   | "categories"
@@ -52,6 +51,7 @@ export type IndexedDbResidualPredicate =
       readonly values: ReadonlyArray<string | number | boolean | null>;
     }
   | { readonly _tag: "isNull"; readonly column: string }
+  | { readonly _tag: "like"; readonly column: string; readonly pattern: string }
   | {
       readonly _tag: "and";
       readonly predicates: ReadonlyArray<IndexedDbResidualPredicate>;
@@ -85,10 +85,6 @@ type IndexedDbCellValue = typeof IndexedDbCellValue.Type;
 export type IndexedDbSubsetRow = {
   readonly [column: string]: IndexedDbCellValue;
 };
-
-type QueryBuilder = IndexedDbQueryBuilder.IndexedDbQueryBuilder<
-  (typeof ReplicaIndexedDb)["version"]
->;
 
 const decodeNumber = Schema.decodeUnknownOption(Schema.Number);
 const decodeString = Schema.decodeUnknownOption(Schema.String);
@@ -142,6 +138,37 @@ const matchesCompare = (
   }
 };
 
+const foldAsciiCase = (value: string): string =>
+  value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
+
+const REGEXP_SPECIALS = /[.*+?^${}()|[\]\\/]/u;
+
+const likeExpression = (pattern: string): RegExp => {
+  let source = "";
+  for (const character of foldAsciiCase(pattern)) {
+    if (character === "%") source += "[\\s\\S]*";
+    else if (character === "_") source += "[\\s\\S]";
+    else source += REGEXP_SPECIALS.test(character) ? `\\${character}` : character;
+  }
+  return new RegExp(`^${source}$`, "u");
+};
+
+const likeExpressions = new Map<string, RegExp>();
+
+const likeExpressionFor = (pattern: string): RegExp => {
+  const cached = likeExpressions.get(pattern);
+  if (cached) return cached;
+  const compiled = likeExpression(pattern);
+  if (likeExpressions.size >= 64) likeExpressions.clear();
+  likeExpressions.set(pattern, compiled);
+  return compiled;
+};
+
+const matchesLike = (value: IndexedDbCellValue | undefined, pattern: string): boolean => {
+  if (value === null || value === undefined) return false;
+  return likeExpressionFor(pattern).test(foldAsciiCase(stringifyCell(value)));
+};
+
 const matchesResidual = (
   row: IndexedDbSubsetRow,
   predicate: IndexedDbResidualPredicate | undefined,
@@ -156,6 +183,8 @@ const matchesResidual = (
       );
     case "isNull":
       return cell(row, predicate.column) === null || cell(row, predicate.column) === undefined;
+    case "like":
+      return matchesLike(cell(row, predicate.column), predicate.pattern);
     case "and":
       return predicate.predicates.every((part) => matchesResidual(row, part));
     case "or":
@@ -177,12 +206,12 @@ const stripGeneration = (row: IndexedDbStoredRow) => {
   return Object.fromEntries(entries) satisfies IndexedDbSubsetRow;
 };
 
-const generationBounds = (generation: number): [[number], [number, []]] => [
+export const generationBounds = (generation: number): [[number], [number, []]] => [
   [generation],
   [generation, []],
 ];
 
-const selectRows = (api: QueryBuilder, plan: IndexedDbSubsetPlan, generation: number) => {
+const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generation: number) => {
   const [lower, upper] = generationBounds(generation);
   const table = plan.table;
   const scan = plan.scan;
@@ -322,7 +351,7 @@ const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
 };
 
 export const executeIndexedDbSubset = (
-  api: QueryBuilder,
+  api: ReplicaQueryBuilder,
   generation: number,
   plan: IndexedDbSubsetPlan,
 ): Effect.Effect<ReadonlyArray<IndexedDbSubsetRow>, unknown> =>

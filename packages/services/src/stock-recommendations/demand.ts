@@ -1,4 +1,3 @@
-/** Most recent 24-hour bucket first. Missing sales are zero, not inferred lost demand. */
 export function forecastDemand(dailyUnits: ReadonlyArray<number>, observedDays: number) {
   const average = (start: number, days: number) => {
     const count = Math.min(days, Math.max(0, observedDays - start));
@@ -7,8 +6,6 @@ export function forecastDemand(dailyUnits: ReadonlyArray<number>, observedDays: 
     for (let index = start; index < start + count; index += 1) total += dailyUnits[index] ?? 0;
     return total / count;
   };
-  // Fourteen held-out days, with thirty strictly earlier days available for each origin.
-  // https://otexts.com/fpp3/tscv.html describes rolling-origin evaluation without future leakage.
   const validationDays = 14;
   if (observedDays < 30 + validationDays || !dailyUnits.some((units) => units > 0)) {
     return { dailyDemand: average(0, 30), forecastDays: 30, backtestError: null };

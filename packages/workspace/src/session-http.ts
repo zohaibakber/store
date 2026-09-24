@@ -1,10 +1,10 @@
-import { TokenSet, type TokenSet as TokenSetType } from "@store/auth";
+import type { TokenSet } from "@store/auth";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { JsonApiResponse, JsonRequestInit, JsonRequestPayload } from "./workspace";
 
-export const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
+const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
 
 const RequestFailure = Schema.Struct({
   message: Schema.optional(Schema.String),
@@ -26,8 +26,8 @@ export class RequestError extends Schema.TaggedError<RequestError>()("Workspace.
 }) {}
 
 export interface TokenStore {
-  get(): TokenSetType | null;
-  set(tokens: TokenSetType | null): void;
+  get(): TokenSet | null;
+  set(tokens: TokenSet | null): void;
 }
 
 export type SessionFetch = typeof fetch;
@@ -37,20 +37,9 @@ export interface SessionHttpClientOptions {
   readonly authBaseUrl: string;
   readonly tokens: TokenStore;
   readonly fetch: SessionFetch;
-  /**
-   * Platform refresh (cookie credentials vs refresh-token body). Must update
-   * `tokens` on success and return `null` on explicit authentication rejection.
-   * Transient/network/server failures must throw so callers preserve credentials.
-   * Concurrent callers share one in-flight refresh.
-   */
-  readonly refreshSession: () => Promise<TokenSetType | null>;
-  readonly needsRefresh: (tokens: TokenSetType | null, force: boolean) => boolean;
-  /**
-   * Runs after a successful refresh, once the in-flight lock is released, so
-   * hosts can reload `/api/auth/session` without deadlocking.
-   */
-  readonly afterRefresh?: (tokens: TokenSetType) => Promise<void>;
-  /** Extra headers on every bearer request (e.g. Electron `electron-origin`). */
+  readonly refreshSession: () => Promise<TokenSet | null>;
+  readonly needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
+  readonly afterRefresh?: (tokens: TokenSet) => Promise<void>;
   readonly requestHeaders?: () => HeadersInit;
 }
 
@@ -60,20 +49,15 @@ export const normalizeApiBaseUrl = (baseUrl: string) =>
 export const normalizeAuthBaseUrl = (baseUrl: string) => baseUrl.replace(/\/$/, "");
 
 export const isAccessTokenFresh = (
-  tokens: TokenSetType | null | undefined,
+  tokens: TokenSet | null | undefined,
   skewMs = ACCESS_TOKEN_REFRESH_SKEW_MS,
   now = Date.now(),
 ) => tokens != null && tokens.accessExpiresAt > now + skewMs;
 
-/** Cookie-session hosts: refresh when forced, missing, or near expiry. */
-export const cookieSessionNeedsRefresh = (tokens: TokenSetType | null, force: boolean) =>
+export const cookieSessionNeedsRefresh = (tokens: TokenSet | null, force: boolean) =>
   force || !isAccessTokenFresh(tokens);
 
-/**
- * Refresh-token hosts: rotate when a refresh token exists and access is stale,
- * or when `force` is set (e.g. renew after org rename / invite redeem).
- */
-export const refreshTokenNeedsRefresh = (tokens: TokenSetType | null, force = false) =>
+export const refreshTokenNeedsRefresh = (tokens: TokenSet | null, force = false) =>
   !!tokens?.refreshToken && (force || !isAccessTokenFresh(tokens));
 
 export interface SerializedRequestBody {
@@ -111,13 +95,13 @@ export const requestErrorFromPayload = (
 };
 
 export class MemoryTokenStore implements TokenStore {
-  #tokens: TokenSetType | null = null;
+  #tokens: TokenSet | null = null;
 
   get() {
     return this.#tokens;
   }
 
-  set(tokens: TokenSetType | null) {
+  set(tokens: TokenSet | null) {
     this.#tokens = tokens;
   }
 }
@@ -127,11 +111,11 @@ export class SessionHttpClient {
   readonly #authBaseUrl: string;
   readonly #tokens: TokenStore;
   readonly #fetch: SessionFetch;
-  readonly #refreshSession: () => Promise<TokenSetType | null>;
-  readonly #needsRefresh: (tokens: TokenSetType | null, force: boolean) => boolean;
-  readonly #afterRefresh: ((tokens: TokenSetType) => Promise<void>) | undefined;
+  readonly #refreshSession: () => Promise<TokenSet | null>;
+  readonly #needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
+  readonly #afterRefresh: ((tokens: TokenSet) => Promise<void>) | undefined;
   readonly #requestHeaders: (() => HeadersInit) | undefined;
-  #refreshInFlight: Promise<TokenSetType | null> | null = null;
+  #refreshInFlight: Promise<TokenSet | null> | null = null;
 
   constructor(options: SessionHttpClientOptions) {
     this.#apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl);
@@ -156,24 +140,25 @@ export class SessionHttpClient {
     return this.#tokens;
   }
 
-  ensureFreshAccess(force = false): Promise<TokenSetType | null> {
+  ensureFreshAccess(force = false): Promise<TokenSet | null> {
     const tokens = this.#tokens.get();
     if (!this.#needsRefresh(tokens, force)) return Promise.resolve(tokens);
     if (this.#refreshInFlight) return this.#refreshInFlight;
-    this.#refreshInFlight = this.#refreshSession()
+    const release = () => {
+      if (this.#refreshInFlight === refresh) this.#refreshInFlight = null;
+    };
+    const refresh: Promise<TokenSet | null> = this.#refreshSession()
       .then(async (next) => {
-        this.#refreshInFlight = null;
+        release();
         if (next && this.#afterRefresh) await this.#afterRefresh(next);
         return next;
       })
-      .finally(() => {
-        this.#refreshInFlight = null;
-      });
-    return this.#refreshInFlight;
+      .finally(release);
+    this.#refreshInFlight = refresh;
+    return refresh;
   }
 
-  /** Wait for an in-flight refresh without starting a new one (e.g. before sign-out). */
-  awaitRefreshInFlight(): Promise<TokenSetType | null> | null {
+  awaitRefreshInFlight(): Promise<TokenSet | null> | null {
     return this.#refreshInFlight;
   }
 
@@ -181,7 +166,6 @@ export class SessionHttpClient {
     return this.request(this.#apiBaseUrl, pathname, init);
   }
 
-  /** Bearer-authenticated raw fetch for streaming/non-JSON API clients. */
   async apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     await this.ensureFreshAccess();
     const request = this.#apiRequest(input, init);
@@ -270,5 +254,3 @@ export class SessionHttpClient {
     return this.#fetch(new Request(request, { credentials: "omit", headers }));
   }
 }
-
-export const decodeTokenSet = Schema.decodeUnknownSync(TokenSet);

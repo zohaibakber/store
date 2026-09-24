@@ -1,32 +1,14 @@
-import * as Schema from "effect/Schema";
-import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
+import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import type { AuthBroker } from "./auth";
-import {
-  INVENTORY_HTTP_ABORT_CHANNEL,
-  INVENTORY_HTTP_CONFIG_CHANNEL,
-  INVENTORY_HTTP_REQUEST_CHANNEL,
-  type InventoryHttpRequest,
-  type InventoryHttpResponse,
-} from "./inventory-http-channels";
+import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
 import { assertTrustedIpcSender } from "./ipc-sender";
+import type { ReplicaSyncApiRequest } from "./replica-ipc";
 
-const InventoryHttpRequestInput = Schema.Struct({
-  requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
-  url: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8_192)),
-  method: Schema.Literals(["GET", "POST"]),
-  headers: Schema.Array(Schema.Tuple([Schema.String, Schema.String])).check(Schema.isMaxLength(64)),
-  body: Schema.NullOr(Schema.instanceOf(ArrayBuffer)),
-});
+type InventoryHttpRequest = {
+  readonly method: "GET" | "POST";
+  readonly url: string;
+};
 
-const requestKey = (senderId: number, requestId: string) => `${senderId}:${requestId}`;
-const ALLOWED_REQUEST_HEADERS = new Set([
-  "accept",
-  "cache-control",
-  "content-type",
-  "if-modified-since",
-  "if-none-match",
-]);
 const LIVE_TICKET_NONCE = /^[0-9a-f]{64}$/u;
 const SNAPSHOT_ID = /^[A-Za-z0-9._-]{1,200}$/u;
 const SNAPSHOT_PART = /^[1-9][0-9]{0,8}$/u;
@@ -47,12 +29,9 @@ export const SYNC_COMMAND_PATHS = [
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 
-export const assertInventoryRequestBodySize = (
-  _apiBaseUrl: string,
-  request: Pick<InventoryHttpRequest, "url" | "body">,
-) => {
-  if (!request.body) return;
-  if (request.body.byteLength <= MAX_INVENTORY_COMMAND_BODY_BYTES) return;
+export const assertInventoryRequestBodySize = (body: string | null) => {
+  if (!body) return;
+  if (Buffer.byteLength(body, "utf8") <= MAX_INVENTORY_COMMAND_BODY_BYTES) return;
   throw new Error(
     `The inventory request body exceeds the ${MAX_INVENTORY_COMMAND_BODY_BYTES / 1_048_576} MiB limit.`,
   );
@@ -107,10 +86,7 @@ const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): b
   return true;
 };
 
-export const validatedInventoryUrl = (
-  apiBaseUrl: string,
-  request: Pick<InventoryHttpRequest, "method" | "url">,
-) => {
+export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest) => {
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
   const apiPath = inventoryApiPath(apiBaseUrl);
@@ -131,83 +107,42 @@ export const validatedInventoryUrl = (
   return requested.href;
 };
 
-const sanitizedRequestHeaders = (entries: ReadonlyArray<readonly [string, string]>): Headers => {
-  const headers = new Headers();
-  for (const [name, value] of entries) {
-    if (ALLOWED_REQUEST_HEADERS.has(name.toLowerCase())) headers.append(name, value);
-  }
-  return headers;
-};
+export const makeReplicaSyncApiRequest =
+  (
+    apiBaseUrl: string,
+    apiFetch: (url: string, init: RequestInit) => Promise<Response>,
+  ): ReplicaSyncApiRequest =>
+  async (pathname, init) => {
+    const method = init?.method ?? "GET";
+    const body = init?.body ?? null;
+    const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
+    const url = validatedInventoryUrl(apiBaseUrl, { method, url: new URL(pathname, base).href });
+    assertInventoryRequestBodySize(body);
+    const response = await apiFetch(url, {
+      method,
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body: body ?? undefined,
+    });
+    return { ok: response.ok, status: response.status, bodyText: await response.text() };
+  };
 
 export const registerInventoryHttpIpc = (options: {
   readonly apiBaseUrl: string;
-  readonly auth: AuthBroker;
   readonly deviceId: string;
-  readonly ipcMain: IpcMain;
+  readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
   readonly allowedOrigins: () => ReadonlyArray<string>;
 }) => {
-  const inFlight = new Map<string, AbortController>();
-  const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent) =>
+  const handleConfig = (event: Pick<IpcMainInvokeEvent, "senderFrame">) => {
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
-
-  const handleConfig = (event: IpcMainInvokeEvent) => {
-    assertSender(event);
     return {
       apiBaseUrl: options.apiBaseUrl,
       deviceId: options.deviceId,
     };
   };
-  const handleRequest = async (
-    event: IpcMainInvokeEvent,
-    input: InventoryHttpRequest,
-  ): Promise<InventoryHttpResponse> => {
-    assertSender(event);
-    const request = Schema.decodeUnknownSync(InventoryHttpRequestInput)(input);
-    validatedInventoryUrl(options.apiBaseUrl, request);
-    assertInventoryRequestBodySize(options.apiBaseUrl, request);
-    const key = requestKey(event.sender.id, request.requestId);
-    if (inFlight.has(key)) throw new Error("The inventory request ID is already in use.");
-
-    const controller = new AbortController();
-    inFlight.set(key, controller);
-    try {
-      const response = await options.auth.apiFetch(
-        validatedInventoryUrl(options.apiBaseUrl, request),
-        {
-          method: request.method,
-          headers: sanitizedRequestHeaders(request.headers),
-          body: request.body,
-          redirect: "error",
-          signal: controller.signal,
-        },
-      );
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        headers: [...response.headers.entries()].filter(
-          ([name]) => name.toLowerCase() !== "set-cookie",
-        ),
-        body: await response.arrayBuffer(),
-      };
-    } finally {
-      inFlight.delete(key);
-    }
-  };
-  const abortRequest = (event: IpcMainEvent, input: string) => {
-    assertSender(event);
-    const requestId = Schema.decodeUnknownSync(Schema.String)(input);
-    inFlight.get(requestKey(event.sender.id, requestId))?.abort();
-  };
 
   options.ipcMain.handle(INVENTORY_HTTP_CONFIG_CHANNEL, handleConfig);
-  options.ipcMain.handle(INVENTORY_HTTP_REQUEST_CHANNEL, handleRequest);
-  options.ipcMain.on(INVENTORY_HTTP_ABORT_CHANNEL, abortRequest);
 
   return () => {
     options.ipcMain.removeHandler(INVENTORY_HTTP_CONFIG_CHANNEL);
-    options.ipcMain.removeHandler(INVENTORY_HTTP_REQUEST_CHANNEL);
-    options.ipcMain.off(INVENTORY_HTTP_ABORT_CHANNEL, abortRequest);
-    for (const controller of inFlight.values()) controller.abort();
-    inFlight.clear();
   };
 };

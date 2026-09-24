@@ -171,3 +171,15 @@ export const inventoryActiveRelease = sqliteTable("inventory_active_release", {
     .references(() => inventoryDatasetRelease.id),
   activatedAt: timestamp().default(nowDefault).notNull(),
 });
+
+export const ephemeralRecord = sqliteTable(
+  "auth_ephemeral_record",
+  {
+    key: text().primaryKey(),
+    kind: text({ enum: ["otp", "oauth-state", "authorization"] }).notNull(),
+    payload: text().notNull(),
+    expiresAt: integer().notNull(),
+    createdAt: integer().notNull(),
+  },
+  (table) => [index("auth_ephemeral_record_expiry_idx").on(table.expiresAt)],
+);

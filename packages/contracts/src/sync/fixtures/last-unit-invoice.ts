@@ -7,12 +7,7 @@ import {
 } from "../../ids";
 import type { IssueInvoiceCommand } from "../../store/schema";
 import { canonicalPayloadHash } from "../operation-hash";
-import {
-  OrgCommitSequence,
-  ReplicaClientSequence,
-  SyncCommandEnvelope,
-  SyncEpoch,
-} from "../protocol";
+import { ReplicaClientSequence, type SyncCommandEnvelope, SyncEpoch } from "../protocol";
 
 export const LAST_UNIT_ORGANIZATION_ID = decodeOrganizationId("org-1");
 export const LAST_UNIT_REPLICA_A = "replica-a";
@@ -101,5 +96,3 @@ export const lastUnitBuyerBEnvelope = lastUnitEnvelope({
   clientSequence: "1",
   command: lastUnitBuyerBCommand,
 });
-
-export const INITIAL_COMMIT_SEQUENCE = OrgCommitSequence.make("0");

@@ -9,12 +9,8 @@ import {
   type BusinessTable,
   type DriverRow,
   type OrganizationAggregates,
-  type PostgresBatch,
   type PostgresCategory,
-  type PostgresInvoice,
-  type PostgresInvoiceItem,
   type PostgresProduct,
-  type PostgresStockMovement,
   PostgresBatch as PostgresBatchSchema,
   PostgresCategory as PostgresCategorySchema,
   PostgresInvoice as PostgresInvoiceSchema,
@@ -22,14 +18,10 @@ import {
   PostgresProduct as PostgresProductSchema,
   PostgresStockMovement as PostgresStockMovementSchema,
   type Sha256Hex,
-  type SqliteBatch,
   type SqliteBusinessRow,
   type SqliteCategory,
   type SqliteFlag,
-  type SqliteInvoice,
-  type SqliteInvoiceItem,
   type SqliteProduct,
-  type SqliteStockMovement,
   SqliteBatch as SqliteBatchSchema,
   SqliteCategory as SqliteCategorySchema,
   SqliteInvoice as SqliteInvoiceSchema,
@@ -56,7 +48,7 @@ export const translateCategory = (row: PostgresCategory): SqliteCategory =>
     deletedAt: row.deletedAt,
   });
 
-export const translateProduct = (row: PostgresProduct): SqliteProduct =>
+const translateProduct = (row: PostgresProduct): SqliteProduct =>
   SqliteProductSchema.make({
     id: row.id,
     name: row.name,
@@ -79,17 +71,6 @@ export const translateProduct = (row: PostgresProduct): SqliteProduct =>
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
   });
-
-export const translateBatch = (row: PostgresBatch): SqliteBatch => SqliteBatchSchema.make(row);
-
-export const translateInvoice = (row: PostgresInvoice): SqliteInvoice =>
-  SqliteInvoiceSchema.make(row);
-
-export const translateInvoiceItem = (row: PostgresInvoiceItem): SqliteInvoiceItem =>
-  SqliteInvoiceItemSchema.make(row);
-
-export const translateStockMovement = (row: PostgresStockMovement): SqliteStockMovement =>
-  SqliteStockMovementSchema.make(row);
 
 const parseDriverRow = (
   table: BusinessTable,
@@ -116,28 +97,20 @@ const parseDriverRow = (
           ),
         );
       case "batches":
-        return translateBatch(
-          yield* Schema.decodeUnknownEffect(PostgresBatchSchema)(row).pipe(
-            Effect.mapError(decodeError),
-          ),
+        return yield* Schema.decodeUnknownEffect(PostgresBatchSchema)(row).pipe(
+          Effect.mapError(decodeError),
         );
       case "invoices":
-        return translateInvoice(
-          yield* Schema.decodeUnknownEffect(PostgresInvoiceSchema)(row).pipe(
-            Effect.mapError(decodeError),
-          ),
+        return yield* Schema.decodeUnknownEffect(PostgresInvoiceSchema)(row).pipe(
+          Effect.mapError(decodeError),
         );
       case "invoice_items":
-        return translateInvoiceItem(
-          yield* Schema.decodeUnknownEffect(PostgresInvoiceItemSchema)(row).pipe(
-            Effect.mapError(decodeError),
-          ),
+        return yield* Schema.decodeUnknownEffect(PostgresInvoiceItemSchema)(row).pipe(
+          Effect.mapError(decodeError),
         );
       case "stock_movements":
-        return translateStockMovement(
-          yield* Schema.decodeUnknownEffect(PostgresStockMovementSchema)(row).pipe(
-            Effect.mapError(decodeError),
-          ),
+        return yield* Schema.decodeUnknownEffect(PostgresStockMovementSchema)(row).pipe(
+          Effect.mapError(decodeError),
         );
       default:
         return casesHandled(table);
@@ -158,41 +131,30 @@ export const encodeRowsJson = (rows: ReadonlyArray<SqliteBusinessRow>): string =
   return encoded === undefined ? "[]" : encoded;
 };
 
+const chunkRowsSchema = (table: BusinessTable) => {
+  switch (table) {
+    case "categories":
+      return Schema.Array(SqliteCategorySchema);
+    case "products":
+      return Schema.Array(SqliteProductSchema);
+    case "batches":
+      return Schema.Array(SqliteBatchSchema);
+    case "invoices":
+      return Schema.Array(SqliteInvoiceSchema);
+    case "invoice_items":
+      return Schema.Array(SqliteInvoiceItemSchema);
+    case "stock_movements":
+      return Schema.Array(SqliteStockMovementSchema);
+    default:
+      return casesHandled(table);
+  }
+};
+
 export const decodeChunkRows = (
   table: BusinessTable,
   rowsJson: string,
-): Effect.Effect<ReadonlyArray<SqliteBusinessRow>, TranslationFailed> => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rowsJson);
-  } catch (cause) {
-    return Effect.fail(
-      new TranslationFailed({
-        table,
-        message: `Chunk JSON for ${table} is not valid JSON.`,
-        cause,
-      }),
-    );
-  }
-  const schemaForTable = () => {
-    switch (table) {
-      case "categories":
-        return Schema.Array(SqliteCategorySchema);
-      case "products":
-        return Schema.Array(SqliteProductSchema);
-      case "batches":
-        return Schema.Array(SqliteBatchSchema);
-      case "invoices":
-        return Schema.Array(SqliteInvoiceSchema);
-      case "invoice_items":
-        return Schema.Array(SqliteInvoiceItemSchema);
-      case "stock_movements":
-        return Schema.Array(SqliteStockMovementSchema);
-      default:
-        return casesHandled(table);
-    }
-  };
-  return Schema.decodeUnknownEffect(schemaForTable())(parsed).pipe(
+): Effect.Effect<ReadonlyArray<SqliteBusinessRow>, TranslationFailed> =>
+  Schema.decodeUnknownEffect(Schema.fromJsonString(chunkRowsSchema(table)))(rowsJson).pipe(
     Effect.mapError(
       (cause) =>
         new TranslationFailed({
@@ -202,7 +164,6 @@ export const decodeChunkRows = (
         }),
     ),
   );
-};
 
 export const emptyAggregates = (): OrganizationAggregates => ({
   invoiceTotalSum: 0,

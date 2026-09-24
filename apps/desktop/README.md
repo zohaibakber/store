@@ -5,9 +5,16 @@ Electron main process, preload bridge, renderer, Vite configuration, tests, and
 packaging.
 
 The renderer uses hash history. Auth, invoice analysis, native integrations, and
-authenticated inventory HTTP go through preload IPC. Live inventory reads the
-local replica. Electron packages a main-owned SQLite replica worker; the web
-host uses IndexedDB instead.
+authenticated sync HTTP go through preload IPC. Live inventory reads the local
+replica: a main-owned Node worker on `@effect/sql-sqlite-node` over
+`node:sqlite`, with no native addon to rebuild at packaging time. The web host
+uses the IndexedDB replica from `@store/sync/browser` instead.
+
+The preload bridge carries domain commands, bounded reads, and change notices.
+Command state never crosses IPC as SQL, and the renderer cannot name a file
+path or a table. Sales and catalog edits are the same two sync commands
+(`issueInvoice`, `catalogWrite`): they commit locally, show as pending rows,
+and settle when the authority's decision arrives through the pull.
 
 ## Development
 

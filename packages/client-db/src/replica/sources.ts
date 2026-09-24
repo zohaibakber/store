@@ -32,18 +32,20 @@ export const SOURCE_ENTITY = {
 } satisfies Record<InventoryCollectionSource, SyncEntity>;
 
 export const FILTER_COLUMNS = {
-  categories: new Set(["id", "organizationId", "name", "updatedAt", "deletedAt", "tracksPacks"]),
-  products: new Set(["id", "organizationId", "categoryId", "updatedAt", "deletedAt", "visible"]),
-  batches: new Set(["id", "organizationId", "productId", "expiresAt", "deletedAt"]),
-  invoices: new Set([
+  categories: new Set(["id", "organizationId", "name", "updatedAt", "tracksPacks"]),
+  products: new Set([
     "id",
     "organizationId",
-    "invoiceNumber",
-    "operationId",
-    "createdAt",
-    "deletedAt",
+    "categoryId",
+    "updatedAt",
+    "visible",
+    "name",
+    "composition",
+    "strength",
   ]),
-  invoiceItems: new Set(["id", "organizationId", "invoiceId", "productId", "batchId", "deletedAt"]),
+  batches: new Set(["id", "organizationId", "productId", "expiresAt"]),
+  invoices: new Set(["id", "organizationId", "invoiceNumber", "operationId", "createdAt"]),
+  invoiceItems: new Set(["id", "organizationId", "invoiceId", "productId", "batchId"]),
   stockMovements: new Set([
     "id",
     "organizationId",
@@ -57,11 +59,20 @@ export const FILTER_COLUMNS = {
 
 export const ORDER_COLUMNS = {
   categories: new Set(["id", "name", "updatedAt"]),
-  products: new Set(["id", "categoryId", "updatedAt"]),
+  products: new Set(["id", "name", "categoryId", "updatedAt"]),
   batches: new Set(["id", "productId", "expiresAt"]),
   invoices: new Set(["id", "invoiceNumber", "operationId", "createdAt"]),
   invoiceItems: new Set(["id", "invoiceId"]),
   stockMovements: new Set(["id", "productId", "batchId", "invoiceId", "operationId", "createdAt"]),
+} satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
+
+export const CASE_INSENSITIVE_ORDER_COLUMNS = {
+  categories: new Set<string>(),
+  products: new Set(["name"]),
+  batches: new Set<string>(),
+  invoices: new Set<string>(),
+  invoiceItems: new Set<string>(),
+  stockMovements: new Set<string>(),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const HISTORY_SOURCES: ReadonlySet<InventoryCollectionSource> = new Set([
@@ -71,5 +82,7 @@ export const HISTORY_SOURCES: ReadonlySet<InventoryCollectionSource> = new Set([
 ]);
 
 export const MAX_IN_VALUES = 32;
+
+export const MAX_LIKE_PATTERN_LENGTH = 256;
 
 export const DEFAULT_COLLECTION_MAXIMUM_ROWS = 500;

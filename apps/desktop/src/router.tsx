@@ -1,8 +1,7 @@
+import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
 import type { HostAccessPolicy } from "@/host-access";
-import type { InventoryHost } from "@/lib/inventory-host";
-import type { CatalogLifetime } from "@/lib/inventory/lifetime";
 import type { ReplayChannel } from "@/replay-channel";
 import { routeTree } from "@/routeTree.gen";
 import type { WorkspaceSession } from "@/session/workspace-session";

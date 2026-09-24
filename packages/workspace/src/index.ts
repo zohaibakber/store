@@ -1,10 +1,8 @@
 export {
-  ACCESS_TOKEN_REFRESH_SKEW_MS,
   MemoryTokenStore,
   RequestError,
   SessionHttpClient,
   cookieSessionNeedsRefresh,
-  decodeTokenSet,
   isAccessTokenFresh,
   normalizeApiBaseUrl,
   normalizeAuthBaseUrl,

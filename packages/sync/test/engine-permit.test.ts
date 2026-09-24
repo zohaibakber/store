@@ -3,19 +3,14 @@ import { LAST_UNIT_REPLICA_A, lastUnitBuyerAEnvelope } from "@store/contracts/sy
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import { makeSyncEngine } from "../src/engine";
 import { commandStatus, saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";
+import { makeSyncEngine } from "../src/sqlite";
 import type { SyncTransport } from "../src/transport";
-import { seedReplicaTenUnits } from "./lib/replica-fixture";
+import { withSeededReplica, invoicePayloadOf } from "./lib/replica-fixture";
 
 describe("sync engine permit", () => {
   it("releases the replica permit before the HTTP submit", async () => {
-    const store = seedReplicaTenUnits();
-    runReplicaTransaction(store.db, (tx) => {
-      saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
-    });
-
     let held = 0;
     let heldDuringHttp = true;
     const mutex = {
@@ -49,7 +44,7 @@ describe("sync engine permit", () => {
             commitSequence: OrgCommitSequence.make("1"),
             result: {
               _tag: "issueInvoice" as const,
-              invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
+              invoiceId: invoicePayloadOf(lastUnitBuyerAEnvelope).invoiceId,
               invoiceNumber: 1,
             },
           };
@@ -59,18 +54,21 @@ describe("sync engine permit", () => {
       mintLiveTicket: () => Effect.die("unused"),
     };
 
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const engine = yield* makeSyncEngine(store.db, mutex, transport);
-        yield* engine.uploadOnce();
-      }),
+    const status = await Effect.runPromise(
+      withSeededReplica((store) =>
+        Effect.gen(function* () {
+          yield* runReplicaTransaction(store, (tx) =>
+            saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1),
+          );
+          const engine = yield* makeSyncEngine(store, mutex, transport);
+          yield* engine.uploadOnce();
+          return yield* runReplicaTransaction(store, (tx) =>
+            commandStatus(tx, lastUnitBuyerAEnvelope.operationId),
+          );
+        }),
+      ),
     );
     expect(heldDuringHttp).toBe(false);
-    runReplicaTransaction(store.db, (tx) => {
-      expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe(
-        "accepted_awaiting_integration",
-      );
-    });
-    store.close();
+    expect(status).toBe("accepted_awaiting_integration");
   });
 });

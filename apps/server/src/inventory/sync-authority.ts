@@ -20,23 +20,39 @@ import {
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
 
 import type { InventoryCommandsContract } from "./commands";
-import { InventoryDatabaseError } from "./errors";
+import type { InventoryDatabaseError, InventoryError } from "./errors";
 import type { InventoryLiveContract } from "./live-tickets";
 import type { InventorySyncActor } from "./model";
+import { inventoryPostgresUnavailable } from "./postgres";
 import type { InventorySnapshotsContract } from "./snapshots";
 
 export class SyncUnavailableError extends Schema.TaggedError<SyncUnavailableError>()(
   "SyncUnavailableError",
-  { message: Schema.String },
+  {
+    code: Schema.Literals(["SYNC_NOT_PROVISIONED", "SYNC_UNAVAILABLE"]),
+    message: Schema.String,
+  },
 ) {}
 
-export const syncUnavailableError = (message = "Organization sync is not provisioned.") =>
-  SyncUnavailableError.make({ message });
+const syncUnavailableError = (message = "Organization sync is not provisioned.") =>
+  SyncUnavailableError.make({ code: "SYNC_NOT_PROVISIONED", message });
+
+const syncDatabaseFailure = (error: InventoryDatabaseError) =>
+  Effect.logError("inventory.database_failed", error.cause ?? error.message).pipe(
+    Effect.annotateLogs({ detail: error.message }),
+    Effect.andThen(
+      Effect.fail(
+        SyncUnavailableError.make({
+          code: "SYNC_UNAVAILABLE",
+          message: "Organization sync is temporarily unavailable. Try again shortly.",
+        }),
+      ),
+    ),
+  );
 
 export type SyncAuthorityError = SyncProtocolError | SyncUnavailableError;
 
@@ -88,17 +104,14 @@ export const unprovisionedSyncAuthority: SyncAuthorityContract = {
   mintLiveTicket: () => unavailable(),
 };
 
-export const UnprovisionedSyncAuthorityLive = Layer.succeed(
-  SyncAuthority,
-  unprovisionedSyncAuthority,
-);
-
-const mapInventoryError = <A, R>(
-  effect: Effect.Effect<A, SyncProtocolError | InventoryDatabaseError, R>,
+export const toSyncAuthorityError = <A, R>(
+  effect: Effect.Effect<A, InventoryError, R>,
 ): Effect.Effect<A, SyncAuthorityError, R> =>
   effect.pipe(
-    Effect.mapError((error) =>
-      error._tag === "InventoryDatabaseError" ? syncUnavailableError(error.message) : error,
+    Effect.catchTag("InventoryDatabaseError", (error) =>
+      error === inventoryPostgresUnavailable
+        ? Effect.fail(syncUnavailableError(error.message))
+        : syncDatabaseFailure(error),
     ),
   );
 
@@ -107,19 +120,21 @@ export const makeInventorySyncAuthority = (stores: {
   readonly snapshots: InventorySnapshotsContract;
   readonly live: InventoryLiveContract;
 }): SyncAuthorityContract => ({
-  registerReplica: (actor, request) => mapInventoryError(stores.commands.register(actor, request)),
-  submitCommand: (actor, envelope) => mapInventoryError(stores.commands.commit(actor, envelope)),
+  registerReplica: (actor, request) =>
+    toSyncAuthorityError(stores.commands.register(actor, request)),
+  submitCommand: (actor, envelope) => toSyncAuthorityError(stores.commands.commit(actor, envelope)),
   getReceipt: (actor, operationId) =>
-    mapInventoryError(stores.commands.receipt(actor, operationId)),
-  pull: (actor, request) => mapInventoryError(stores.commands.pull(actor, request)),
+    toSyncAuthorityError(stores.commands.receipt(actor, operationId)),
+  pull: (actor, request) => toSyncAuthorityError(stores.commands.pull(actor, request)),
   acquireSnapshot: (actor, request) =>
-    mapInventoryError(stores.snapshots.acquireSnapshot(actor, request)),
+    toSyncAuthorityError(stores.snapshots.acquireSnapshot(actor, request)),
   readSnapshotPart: (actor, snapshotId, partNumber) =>
-    mapInventoryError(stores.snapshots.readSnapshotPart(actor, snapshotId, partNumber)),
-  mintLiveTicket: (actor, request) => mapInventoryError(stores.live.mintLiveTicket(actor, request)),
+    toSyncAuthorityError(stores.snapshots.readSnapshotPart(actor, snapshotId, partNumber)),
+  mintLiveTicket: (actor, request) =>
+    toSyncAuthorityError(stores.live.mintLiveTicket(actor, request)),
 });
 
-export type SyncLiveUpgradeSuccess = SyncLiveWakeHint | void | Stream.Stream<SyncLiveSseEvent>;
+type SyncLiveUpgradeSuccess = SyncLiveWakeHint | void | Stream.Stream<SyncLiveSseEvent>;
 
 export interface SyncLiveUpgradeContract {
   readonly handle: (
@@ -140,8 +155,3 @@ export const unprovisionedSyncLiveUpgrade: SyncLiveUpgradeContract = {
 export const unavailableSyncLiveUpgrade: SyncLiveUpgradeContract = {
   handle: () => Effect.fail(syncProtocolError("TICKET_INVALID", "Live updates are not available.")),
 };
-
-export const UnprovisionedSyncLiveUpgradeLive = Layer.succeed(
-  SyncLiveUpgrade,
-  unprovisionedSyncLiveUpgrade,
-);

@@ -1,20 +1,23 @@
 import {
+  AcceptedCatalogWriteResult,
   AcceptedInvoiceResult,
   AuthorityIncarnation,
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
   MAX_SYNC_PULL_TRANSACTIONS,
+  MAX_TRANSPORT_PAYLOAD_BYTES,
   OrgCommitSequence,
   RejectedCommandResult,
   ReplicaClientSequence,
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncLogChange,
-  SyncProtocolError,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
+  type SyncCommand,
   type SyncCommandEnvelope,
+  type SyncProtocolCode,
   type SyncPullRequest,
   type SyncPullResult,
 } from "@store/contracts";
@@ -26,14 +29,17 @@ import {
   inventoryTransactions,
   replicas,
 } from "@store/db/postgres/schema";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { InventoryDatabaseError } from "./errors";
+import { applyCatalogWrite } from "./catalog-write";
+import { partitionDigestFromPostgres } from "./digest";
+import type { InventoryError } from "./errors";
 import { issueInvoice } from "./issue-invoice";
 import type { InventoryActor } from "./model";
 import {
@@ -43,14 +49,51 @@ import {
   isProtocolError,
   lockOrganization,
   protocol,
-  requireReady,
+  randomHex,
+  readReadyState,
+  readReplica,
   runTransaction,
   type InventoryDrizzle,
   type InventoryTransaction,
 } from "./postgres";
 
-const CommandResult = Schema.Union([AcceptedInvoiceResult, RejectedCommandResult]);
+const CommandResult = Schema.Union([
+  AcceptedInvoiceResult,
+  AcceptedCatalogWriteResult,
+  RejectedCommandResult,
+]);
+
+const REQUEST_FAILURE_CODES: ReadonlyArray<SyncProtocolCode> = [
+  "ORGANIZATION_MISMATCH",
+  "INVALID_PAYLOAD_HASH",
+  "OPERATION_ID_REUSED",
+  "REPLICA_SEQUENCE_GAP",
+  "EPOCH_MISMATCH",
+  "REPLICA_UNKNOWN",
+  "REPLICA_OWNED_BY_OTHER",
+];
+
+const isDomainRejection = (code: SyncProtocolCode): boolean =>
+  !REQUEST_FAILURE_CODES.includes(code);
+
+const PULL_ENVELOPE_HEADROOM_BYTES = 16_384;
+
+export const PULL_PAYLOAD_BUDGET_BYTES = MAX_TRANSPORT_PAYLOAD_BYTES - PULL_ENVELOPE_HEADROOM_BYTES;
+
+const CHANGE_FRAME_OVERHEAD_BYTES = 96;
+
+const GROUP_FRAME_OVERHEAD_BYTES = 128;
+
+const utf8 = new TextEncoder();
+
+const encodedByteLength = (value: string): number => utf8.encode(value).length;
 const EMPTY_SYNC_LOG_CHANGES: ReadonlyArray<SyncLogChange> = [];
+
+const rejectedDecision = (code: SyncProtocolCode, message: string) => {
+  const result: RejectedCommandResult = { _tag: "rejected", code, message };
+  return { decision: "rejected" as const, result, changes: EMPTY_SYNC_LOG_CHANGES };
+};
+
 const encodeChangeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const encodeCommandResultJson = Schema.encodeSync(Schema.fromJsonString(CommandResult));
 
@@ -73,6 +116,24 @@ const decodeReceipt = (row: typeof commandReceipts.$inferSelect) =>
     }).pipe(Effect.mapError(databaseError));
   });
 
+const readReceiptRow = Effect.fn("InventoryCommands.readReceiptRow")(function* (
+  tx: InventoryTransaction,
+  organizationId: string,
+  operationId: string,
+) {
+  const [row] = yield* tx
+    .select()
+    .from(commandReceipts)
+    .where(
+      and(
+        eq(commandReceipts.organizationId, organizationId),
+        eq(commandReceipts.operationId, operationId),
+      ),
+    )
+    .limit(1);
+  return row;
+});
+
 const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
   tx: InventoryTransaction,
   input: {
@@ -81,7 +142,7 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
     readonly stateCommitSequence: string;
     readonly epoch: string;
     readonly decision: "accepted" | "rejected";
-    readonly result: AcceptedInvoiceResult | RejectedCommandResult;
+    readonly result: AcceptedInvoiceResult | AcceptedCatalogWriteResult | RejectedCommandResult;
     readonly changes: ReadonlyArray<SyncLogChange>;
     readonly receivedAt: number;
   },
@@ -145,6 +206,17 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
   }).pipe(Effect.mapError(databaseError));
 });
 
+const executeCommand = Effect.fn("InventoryCommands.executeCommand")(function* (
+  tx: InventoryTransaction,
+  actor: InventoryActor,
+  command: SyncCommand,
+) {
+  if (command._tag === "issueInvoice") {
+    return yield* issueInvoice(tx, actor, command.payload);
+  }
+  return yield* applyCatalogWrite(tx, actor, command.payload);
+});
+
 const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
@@ -156,16 +228,7 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
   }
 
-  const [existing] = yield* tx
-    .select()
-    .from(commandReceipts)
-    .where(
-      and(
-        eq(commandReceipts.organizationId, actor.organizationId),
-        eq(commandReceipts.operationId, envelope.operationId),
-      ),
-    )
-    .limit(1);
+  const existing = yield* readReceiptRow(tx, actor.organizationId, envelope.operationId);
   if (existing) {
     if (existing.payloadHash !== envelope.payloadHash) {
       return yield* protocol("OPERATION_ID_REUSED", "The command id was reused.");
@@ -173,16 +236,7 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     return yield* decodeReceipt(existing);
   }
 
-  const [replica] = yield* tx
-    .select()
-    .from(replicas)
-    .where(
-      and(
-        eq(replicas.organizationId, actor.organizationId),
-        eq(replicas.replicaId, envelope.replicaId),
-      ),
-    )
-    .limit(1);
+  const replica = yield* readReplica(tx, actor.organizationId, envelope.replicaId);
   if (!replica) {
     return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
   }
@@ -199,34 +253,22 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     );
   }
 
-  if (envelope.command._tag !== "issueInvoice") {
-    return yield* protocol("INVALID_OPERATION", "Only issueInvoice is implemented.");
-  }
-  if (envelope.command.payload.commandId !== envelope.operationId) {
-    return yield* protocol(
-      "COMMAND_IDENTITY_MISMATCH",
-      "The invoice command id must match the envelope operation id.",
-    );
-  }
-
-  const issued = yield* issueInvoice(tx, actor, envelope.command.payload).pipe(
-    Effect.map((accepted) => ({ decision: "accepted" as const, ...accepted })),
-    Effect.catch((cause) => {
-      if (isProtocolError(cause) && cause.code === "INSUFFICIENT_STOCK") {
-        const result: RejectedCommandResult = {
-          _tag: "rejected",
-          code: cause.code,
-          message: cause.message,
-        };
-        return Effect.succeed({
-          decision: "rejected" as const,
-          result,
-          changes: EMPTY_SYNC_LOG_CHANGES,
-        });
-      }
-      return Effect.fail(cause);
-    }),
-  );
+  const issued =
+    envelope.command.payload.commandId === envelope.operationId
+      ? yield* tx
+          .transaction((savepoint) => executeCommand(savepoint, actor, envelope.command))
+          .pipe(
+            Effect.map((accepted) => ({ decision: "accepted" as const, ...accepted })),
+            Effect.catch((cause) =>
+              isProtocolError(cause) && isDomainRejection(cause.code)
+                ? Effect.succeed(rejectedDecision(cause.code, cause.message))
+                : Effect.fail(cause),
+            ),
+          )
+      : rejectedDecision(
+          "COMMAND_IDENTITY_MISMATCH",
+          "The command id must match the envelope operation id.",
+        );
 
   return yield* recordDecision(tx, {
     actor,
@@ -245,13 +287,7 @@ const pullInTransaction = Effect.fn("InventoryCommands.pullInTransaction")(funct
   actor: InventoryActor,
   request: SyncPullRequest,
 ) {
-  const [state] = yield* tx
-    .select()
-    .from(inventoryState)
-    .where(eq(inventoryState.organizationId, actor.organizationId))
-    .limit(1);
-  yield* requireReady(state);
-  if (!state) return yield* protocol("EPOCH_MISMATCH", "This organization inventory is not ready.");
+  const state = yield* readReadyState(tx, actor.organizationId);
   if (state.epoch !== request.epoch) {
     return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
   }
@@ -283,17 +319,37 @@ const pullInTransaction = Effect.fn("InventoryCommands.pullInTransaction")(funct
     .orderBy(asc(inventoryTransactions.commitSequence))
     .limit(limit);
   const transactions = [];
+  let usedBytes = 0;
+  const changeRows =
+    headers.length === 0
+      ? []
+      : yield* tx
+          .select()
+          .from(inventoryChanges)
+          .where(
+            and(
+              eq(inventoryChanges.organizationId, actor.organizationId),
+              inArray(
+                inventoryChanges.commitSequence,
+                headers.map((header) => header.commitSequence),
+              ),
+            ),
+          )
+          .orderBy(asc(inventoryChanges.commitSequence), asc(inventoryChanges.ordinal));
+  const rowsByCommit = Arr.groupBy(changeRows, (row) => row.commitSequence);
   for (const header of headers) {
-    const rows = yield* tx
-      .select()
-      .from(inventoryChanges)
-      .where(
-        and(
-          eq(inventoryChanges.organizationId, actor.organizationId),
-          eq(inventoryChanges.commitSequence, header.commitSequence),
-        ),
-      )
-      .orderBy(asc(inventoryChanges.ordinal));
+    const rows = rowsByCommit[header.commitSequence] ?? [];
+    const groupBytes = rows.reduce(
+      (total, row) =>
+        total +
+        CHANGE_FRAME_OVERHEAD_BYTES +
+        encodedByteLength(row.rowJson) +
+        encodedByteLength(row.entityId) +
+        encodedByteLength(row.entity),
+      GROUP_FRAME_OVERHEAD_BYTES + encodedByteLength(header.operationId),
+    );
+    if (transactions.length > 0 && usedBytes + groupBytes > PULL_PAYLOAD_BUDGET_BYTES) break;
+    usedBytes += groupBytes;
     const changes: SyncLogChange[] = [];
     for (const row of rows) {
       const parsed = yield* decodeStoredJson(Schema.Unknown, row.rowJson);
@@ -315,16 +371,21 @@ const pullInTransaction = Effect.fn("InventoryCommands.pullInTransaction")(funct
     });
   }
   const last = transactions.at(-1);
-  return {
+  const nextCommitSequence = last?.commitSequence ?? request.afterCommitSequence;
+  const page = {
     epoch: SyncEpoch.make(state.epoch),
     incarnation: AuthorityIncarnation.make(state.incarnation),
     subscription: request.subscription,
     schemaVersion: SYNC_SCHEMA_VERSION,
     transactions,
-    nextCommitSequence: last?.commitSequence ?? request.afterCommitSequence,
+    nextCommitSequence,
     horizon: OrgCommitSequence.make(horizon),
     retentionFloor: OrgCommitSequence.make(retentionFloor),
   } satisfies SyncPullResult;
+  if (request.includeDigest !== true) return page;
+  if (compareDecimalSequence(nextCommitSequence, horizon) < 0) return page;
+  const digest = yield* partitionDigestFromPostgres(tx, actor.organizationId, request.subscription);
+  return { ...page, digest } satisfies SyncPullResult;
 });
 
 const readReceipt = Effect.fn("InventoryCommands.readReceipt")(function* (
@@ -332,27 +393,27 @@ const readReceipt = Effect.fn("InventoryCommands.readReceipt")(function* (
   actor: InventoryActor,
   operationId: string,
 ) {
-  const [state] = yield* tx
-    .select({
-      status: inventoryState.status,
-      releaseId: inventoryState.releaseId,
-    })
-    .from(inventoryState)
-    .where(eq(inventoryState.organizationId, actor.organizationId))
-    .limit(1);
-  yield* requireReady(state);
-  const [row] = yield* tx
-    .select()
-    .from(commandReceipts)
-    .where(
-      and(
-        eq(commandReceipts.organizationId, actor.organizationId),
-        eq(commandReceipts.operationId, operationId),
-      ),
-    )
-    .limit(1);
+  yield* readReadyState(tx, actor.organizationId);
+  const row = yield* readReceiptRow(tx, actor.organizationId, operationId);
   return row ? yield* decodeReceipt(row) : undefined;
 });
+
+const PROVISIONED_DATASET = "provisioned";
+
+const provisionOrganization = (tx: InventoryTransaction, organizationId: string) =>
+  tx
+    .insert(inventoryState)
+    .values({
+      organizationId,
+      status: "ready",
+      importId: PROVISIONED_DATASET,
+      releaseId: PROVISIONED_DATASET,
+      incarnation: randomHex(16),
+      epoch: "1",
+      commitSequence: "0",
+      retentionFloor: "0",
+    })
+    .onConflictDoNothing({ target: inventoryState.organizationId });
 
 const registerReplica = Effect.fn("InventoryCommands.registerReplica")(function* (
   tx: InventoryTransaction,
@@ -360,17 +421,9 @@ const registerReplica = Effect.fn("InventoryCommands.registerReplica")(function*
   request: RegisterReplicaRequest,
   now: number,
 ) {
+  yield* provisionOrganization(tx, actor.organizationId);
   const state = yield* lockOrganization(tx, actor.organizationId);
-  const [existing] = yield* tx
-    .select()
-    .from(replicas)
-    .where(
-      and(
-        eq(replicas.organizationId, actor.organizationId),
-        eq(replicas.replicaId, request.replicaId),
-      ),
-    )
-    .limit(1);
+  const existing = yield* readReplica(tx, actor.organizationId, request.replicaId);
   const ready = {
     epoch: SyncEpoch.make(state.epoch),
     incarnation: AuthorityIncarnation.make(state.incarnation),
@@ -420,25 +473,23 @@ const registerReplica = Effect.fn("InventoryCommands.registerReplica")(function*
   } satisfies RegisterReplicaResult;
 });
 
-export type InventoryCommandsError = SyncProtocolError | InventoryDatabaseError;
-
 export interface InventoryCommandsContract {
   readonly register: (
     actor: InventoryActor,
     request: RegisterReplicaRequest,
-  ) => Effect.Effect<RegisterReplicaResult, InventoryCommandsError>;
+  ) => Effect.Effect<RegisterReplicaResult, InventoryError>;
   readonly commit: (
     actor: InventoryActor,
     envelope: SyncCommandEnvelope,
-  ) => Effect.Effect<CommandReceipt, InventoryCommandsError>;
+  ) => Effect.Effect<CommandReceipt, InventoryError>;
   readonly receipt: (
     actor: InventoryActor,
     operationId: string,
-  ) => Effect.Effect<CommandReceipt | undefined, InventoryCommandsError>;
+  ) => Effect.Effect<CommandReceipt | undefined, InventoryError>;
   readonly pull: (
     actor: InventoryActor,
     request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, InventoryCommandsError>;
+  ) => Effect.Effect<SyncPullResult, InventoryError>;
 }
 
 /**

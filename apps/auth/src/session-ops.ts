@@ -81,7 +81,7 @@ export const makeSessionOps = (
     const membership = yield* resolveMembership(user.id);
     const sessionId = SessionId.make(replayKey ?? crypto.randomUUID());
     const familyId = crypto.randomUUID();
-    const refreshSecret = randomSecret(32);
+    const refreshSecret = yield* randomSecret(32);
     const refreshTokenHash = yield* hashSecret(refreshSecret);
     const refreshExpiresAt = now + REFRESH_TTL_MS;
     yield* repository.createSession({
@@ -148,7 +148,7 @@ export const makeSessionOps = (
   }) {
     const now = yield* Clock.currentTimeMillis;
     const nextId = SessionId.make(crypto.randomUUID());
-    const nextSecret = randomSecret(32);
+    const nextSecret = yield* randomSecret(32);
     const nextHash = yield* hashSecret(nextSecret);
     const refreshExpiresAt = now + REFRESH_TTL_MS;
     const rotated = yield* repository.rotateSession({

@@ -28,7 +28,14 @@ const unusedTransport = (acquireSnapshot: SyncTransport["acquireSnapshot"]): Syn
 });
 
 const unusedStore = {
-  readSyncCursor: () => Effect.succeed({ epoch: "1", appliedCommitSequence: "0" }),
+  readSyncCursor: () =>
+    Effect.succeed({
+      epoch: "1",
+      appliedCommitSequence: "0",
+      replicaId: "replica-1",
+      registered: true,
+    }),
+  adoptRegistration: () => Effect.die("unused"),
   beginSnapshotImport: () => Effect.die("unused begin"),
   importSnapshotPart: () => Effect.die("unused import"),
   activateSnapshot: () => Effect.die("unused activate"),
@@ -40,9 +47,13 @@ const unusedStore = {
   recoverStaleUploadClaims: () => Effect.die("unused"),
   verifyAuthority: () => Effect.die("unused"),
   markCoverageRepair: () => Effect.die("unused"),
+  readDigestVerification: () => Effect.die("unused"),
+  recordDigestVerification: () => Effect.die("unused"),
   applyRemotePage: () => Effect.die("unused"),
   applyTransactionGroup: () => Effect.die("unused"),
   readCommandStatus: () => Effect.die("unused"),
+  readPendingMarks: () => Effect.die("unused"),
+  recordCaughtUp: () => Effect.die("unused"),
   commits: Stream.empty,
 } satisfies ReplicaStoreContract;
 

@@ -19,6 +19,10 @@ export const epochMilliseconds = (name: string) => bigint(name, { mode: "number"
 const timestamps = {
   createdAt: epochMilliseconds("created_at").notNull(),
   updatedAt: epochMilliseconds("updated_at").notNull(),
+};
+
+const softDeleteTimestamps = {
+  ...timestamps,
   deletedAt: epochMilliseconds("deleted_at"),
 };
 
@@ -38,35 +42,6 @@ const mutableMetadata = {
   rowVersion: epochMilliseconds("row_version").notNull().default(1),
 };
 
-/**
- * Durable acknowledgement for an inventory command.
- *
- * A client can lose the HTTP response after Postgres commits and replay the
- * same operation after a restart. The payload hash rejects an operation-id
- * collision, while the stored transaction id makes that replay an
- * acknowledgement instead of applying the domain changes twice.
- */
-export const inventoryMutationReceipts = pgTable(
-  "inventory_mutation_receipts",
-  {
-    organizationId: tenantId(),
-    operationId: text("operation_id").notNull(),
-    deviceId: text("device_id").notNull(),
-    actorUserId: text("actor_user_id").notNull(),
-    clientSequence: epochMilliseconds("client_sequence").notNull(),
-    payloadHash: text("payload_hash").notNull(),
-    transactionId: epochMilliseconds("transaction_id").notNull(),
-    receivedAt: epochMilliseconds("received_at").notNull(),
-    commandResult: text("command_result"),
-  },
-  (table) => [
-    primaryKey({
-      name: "inventory_mutation_receipts_organization_operation_pk",
-      columns: [table.organizationId, table.operationId],
-    }),
-  ],
-);
-
 export const categories = pgTable(
   "categories",
   {
@@ -81,9 +56,7 @@ export const categories = pgTable(
       name: "categories_organization_id_id_pk",
       columns: [table.organizationId, table.id],
     }),
-    uniqueIndex("categories_organization_id_name_uidx")
-      .on(table.organizationId, table.name)
-      .where(sql`${table.deletedAt} is null`),
+    uniqueIndex("categories_organization_id_name_uidx").on(table.organizationId, table.name),
     index("categories_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
   ],
 );
@@ -102,18 +75,13 @@ export const products = pgTable(
     retailPrice: integer("retail_price"),
     unitPrice: integer("unit_price"),
     visible: boolean("visible").notNull().default(true),
-    ...timestamps,
+    ...softDeleteTimestamps,
     ...mutableMetadata,
   },
   (table) => [
     primaryKey({
       name: "products_organization_id_id_pk",
       columns: [table.organizationId, table.id],
-    }),
-    foreignKey({
-      name: "products_organization_category_fk",
-      columns: [table.organizationId, table.categoryId],
-      foreignColumns: [categories.organizationId, categories.id],
     }),
     index("products_organization_id_category_id_idx").on(table.organizationId, table.categoryId),
     index("products_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
@@ -129,7 +97,7 @@ export const batches = pgTable(
     expiresAt: epochMilliseconds("expires_at"),
     packQuantity: integer("pack_quantity").notNull().default(0),
     unitQuantity: integer("unit_quantity").notNull().default(0),
-    ...timestamps,
+    ...softDeleteTimestamps,
     ...mutableMetadata,
   },
   (table) => [
@@ -298,12 +266,17 @@ export const inventoryState = pgTable(
     epoch: text("epoch").notNull(),
     commitSequence: decimalCounter("commit_sequence"),
     retentionFloor: decimalCounter("retention_floor"),
+    maintainedAt: epochMilliseconds("maintained_at"),
   },
   (table) => [
     primaryKey({
       name: "inventory_state_organization_id_pk",
       columns: [table.organizationId],
     }),
+    index("inventory_state_maintained_at_organization_id_idx").on(
+      table.maintainedAt,
+      table.organizationId,
+    ),
     check("inventory_state_status", sql`${table.status} in ('importing', 'ready')`),
     check(
       "inventory_state_sequences_nonnegative",
@@ -372,6 +345,10 @@ export const inventoryTransactions = pgTable(
  * An identical retry returns this row. A different payload under the same
  * operation id is rejected. The commit sequence is the log position the
  * replica must apply before the command is locally integrated.
+ *
+ * No foreign key points at `inventory_transactions`: retention deletes log
+ * history below the retained floor while receipts keep the per-replica
+ * processed watermark, so a receipt outlives the transaction group it names.
  */
 export const commandReceipts = pgTable(
   "command_receipts",
@@ -401,11 +378,6 @@ export const commandReceipts = pgTable(
       name: "command_receipts_replica_fk",
       columns: [table.organizationId, table.replicaId],
       foreignColumns: [replicas.organizationId, replicas.replicaId],
-    }),
-    foreignKey({
-      name: "command_receipts_transaction_fk",
-      columns: [table.organizationId, table.commitSequence],
-      foreignColumns: [inventoryTransactions.organizationId, inventoryTransactions.commitSequence],
     }),
     check("command_receipts_decision", sql`${table.decision} in ('accepted', 'rejected')`),
     check("command_receipts_client_sequence_positive", sql`${table.clientSequence} > 0`),
@@ -468,6 +440,10 @@ export const snapshotJobs = pgTable(
       columns: [table.organizationId, table.snapshotId],
     }),
     index("snapshot_jobs_organization_id_stage_idx").on(table.organizationId, table.stage),
+    index("snapshot_jobs_organization_id_step_due_at_idx").on(
+      table.organizationId,
+      table.stepDueAt,
+    ),
     check(
       "snapshot_jobs_stage",
       sql`${table.stage} in ('copying', 'repairing', 'frozen', 'exporting', 'published', 'failed')`,
@@ -557,27 +533,6 @@ export const snapshotParts = pgTable(
     }),
     check("snapshot_parts_part_number_positive", sql`${table.partNumber} > 0`),
     check("snapshot_parts_byte_length_nonnegative", sql`${table.byteLength} >= 0`),
-  ],
-);
-
-export const liveSessions = pgTable(
-  "live_sessions",
-  {
-    organizationId: tenantId(),
-    sessionId: text("session_id").notNull(),
-    replicaId: text("replica_id").notNull(),
-    ownerUserId: text("owner_user_id").notNull(),
-    subscription: text("subscription").notNull(),
-    deliveredThroughCommitSequence: decimalCounter("delivered_through_commit_sequence"),
-    leaseExpiresAt: epochMilliseconds("lease_expires_at").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      name: "live_sessions_organization_id_session_id_pk",
-      columns: [table.organizationId, table.sessionId],
-    }),
-    index("live_sessions_organization_id_replica_id_idx").on(table.organizationId, table.replicaId),
-    index("live_sessions_organization_id_lease_idx").on(table.organizationId, table.leaseExpiresAt),
   ],
 );
 

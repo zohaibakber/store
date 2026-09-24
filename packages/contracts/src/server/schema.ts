@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
 
+import { PositiveInt } from "../schema-primitives";
+
 export const MAX_INVOICE_UPLOAD_FILES = 10;
 export const MAX_INVOICE_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -15,11 +17,9 @@ export const invoiceUploadRejection = (
   return null;
 };
 
-const nonNegativeInteger = (description: string) =>
-  Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({ description });
+const nonNegativeInteger = (description: string) => Schema.Natural.annotate({ description });
 
-const positiveInteger = (description: string) =>
-  Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).annotate({ description });
+const positiveInteger = (description: string) => PositiveInt.annotate({ description });
 
 export const InvoiceExtractionLine = Schema.Struct({
   name: Schema.String.annotate({ description: "Product name printed on the invoice line." }),

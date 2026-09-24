@@ -1,5 +1,5 @@
+import type * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { decodeOrganizationId, InventoryObjectName } from "@store/contracts";
-import Database from "better-sqlite3";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -16,8 +16,8 @@ import { sqliteTargetLayer } from "../src/target.ts";
 import { runMigration } from "../src/workflow.ts";
 
 export const ORG = decodeOrganizationId("org-1");
-export const OBJECT_NAME = Schema.decodeUnknownSync(InventoryObjectName)("inventory-org-1");
-export const SOURCE_IDENTITY = "pg-fixture";
+const OBJECT_NAME = Schema.decodeUnknownSync(InventoryObjectName)("inventory-org-1");
+const SOURCE_IDENTITY = "pg-fixture";
 export const PUBLISHED_AT = 1_700_000_000_000;
 
 export const request: MigrationRequest = {
@@ -51,7 +51,7 @@ const category = (id: string, name: string, tracksPacks: boolean): DriverRow => 
   operationId: `op-cat-${id}`,
 });
 
-export const fixtureRows: SourceTableRows = {
+const fixtureRows: SourceTableRows = {
   categories: [
     category("cat-1", "General", true),
     category("cat-2", "Loose", false),
@@ -146,18 +146,10 @@ export const fixtureRows: SourceTableRows = {
   ],
 };
 
-export type Harness = {
-  readonly journal: Database.Database;
-  readonly target: Database.Database;
-  readonly directory: Database.Database;
-  readonly layer: ReturnType<typeof buildLayer>;
-  readonly close: () => void;
-};
-
 const buildLayer = (
-  journal: Database.Database,
-  target: Database.Database,
-  directory: Database.Database,
+  journal: SqliteClient.SqliteClient,
+  target: SqliteClient.SqliteClient,
+  directory: SqliteClient.SqliteClient,
 ) =>
   Layer.mergeAll(
     journalLayerFromSqlite(journal),
@@ -173,23 +165,37 @@ const buildLayer = (
     testCheckpointLayer,
   );
 
-export const openHarness = (): Harness => {
-  const journal = openSqlite(":memory:");
-  const target = openSqlite(":memory:");
-  const directory = openSqlite(":memory:");
-  const layer = buildLayer(journal, target, directory);
+export type Harness = {
+  readonly journal: SqliteClient.SqliteClient;
+  readonly target: SqliteClient.SqliteClient;
+  readonly directory: SqliteClient.SqliteClient;
+  readonly layer: ReturnType<typeof buildLayer>;
+};
+
+export const openHarness = Effect.gen(function* () {
+  const journal = yield* openSqlite(":memory:");
+  const target = yield* openSqlite(":memory:");
+  const directory = yield* openSqlite(":memory:");
   return {
     journal,
     target,
     directory,
-    layer,
-    close: () => {
-      journal.close();
-      target.close();
-      directory.close();
-    },
-  };
-};
+    layer: buildLayer(journal, target, directory),
+  } satisfies Harness;
+});
+
+export const firstRow = (
+  sql: SqliteClient.SqliteClient,
+  statement: string,
+  parameters: ReadonlyArray<string> = [],
+) =>
+  sql.unsafe(statement, parameters).pipe(
+    Effect.map((rows) => rows[0]),
+    Effect.orDie,
+  );
+
+export const allRows = (sql: SqliteClient.SqliteClient, statement: string) =>
+  sql.unsafe(statement).pipe(Effect.orDie);
 
 export const runOn = (harness: Harness) =>
   Effect.gen(function* () {

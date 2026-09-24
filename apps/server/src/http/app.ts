@@ -12,7 +12,6 @@ import { OrganizationAuthLive } from "../auth/organization";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
-import { reportError } from "../runtime/worker";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
 import { ServerRuntime } from "./runtime";
@@ -54,7 +53,8 @@ export const recoverUnexpected = <E, R>(
   effect.pipe(
     Effect.catchCause((cause) => {
       if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
-      return Effect.sync(() => reportError("worker.request_failed", Cause.pretty(cause))).pipe(
+      return Effect.logError("worker.request_failed").pipe(
+        Effect.annotateLogs({ cause: Cause.pretty(cause) }),
         Effect.as(
           HttpServerResponse.jsonUnsafe(
             publicError("INTERNAL_SERVER_ERROR", "Something went wrong."),

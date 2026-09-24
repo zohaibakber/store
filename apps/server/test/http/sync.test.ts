@@ -4,12 +4,18 @@ import {
   SyncEpoch,
   syncProtocolError,
 } from "@store/contracts";
-import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { lastUnitBuyerACommand, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
-import type { SyncAuthorityContract } from "../../src/inventory/sync-authority";
+import { databaseError } from "../../src/inventory/postgres";
+import {
+  makeInventorySyncAuthority,
+  type SyncAuthorityContract,
+} from "../../src/inventory/sync-authority";
 import type { SyncLiveUpgradeContract } from "../../src/inventory/sync-authority";
 import { appFor } from "../lib/app";
 
@@ -32,6 +38,37 @@ describe("sync HTTP", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "SYNC_NOT_PROVISIONED" },
     });
+  });
+
+  it("answers database failures with a generic message and no SQL text", async () => {
+    const unused = () => Effect.die("unused");
+    const syncAuthority = makeInventorySyncAuthority({
+      commands: {
+        register: unused,
+        receipt: unused,
+        pull: unused,
+        commit: () =>
+          Effect.fail(
+            databaseError(
+              new EffectDrizzleQueryError({
+                query: 'select "secret_column" from "inventory_state" where "organization_id" = $1',
+                params: ["org-private"],
+                cause: Cause.fail(new Error("could not serialize access")),
+              }),
+            ),
+          ),
+      },
+      snapshots: { acquireSnapshot: unused, readSnapshotPart: unused },
+      live: { mintLiveTicket: unused, consumeLiveTicket: unused, readLiveHorizon: unused },
+    });
+    const response = await appFor(true, { syncAuthority }).request(
+      "/api/sync/commands",
+      commandPost(),
+    );
+    const text = await response.text();
+    expect(response.status).toBe(503);
+    expect(JSON.parse(text)).toMatchObject({ error: { code: "SYNC_UNAVAILABLE" } });
+    expect(text).not.toMatch(/select|secret_column|inventory_state|org-private|Failed query/iu);
   });
 
   it("maps organization mismatch to 403", async () => {
@@ -70,7 +107,7 @@ describe("sync HTTP", () => {
       commitSequence: OrgCommitSequence.make("1"),
       result: {
         _tag: "issueInvoice" as const,
-        invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
+        invoiceId: lastUnitBuyerACommand.invoiceId,
         invoiceNumber: 1,
       },
     };

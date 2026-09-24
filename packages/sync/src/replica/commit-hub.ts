@@ -1,7 +1,20 @@
+import type { SyncEntity } from "@store/contracts";
 import type { ReplicaCommitNotice, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
+
+export const touchedEntitiesWithStock = (
+  entities: ReadonlyArray<SyncEntity> | undefined,
+): ReadonlyArray<SyncEntity> => [...new Set<SyncEntity>(["batch", ...(entities ?? [])])];
+
+export const stampOf = (state: {
+  readonly activeGeneration: number;
+  readonly localCommitVersion: number;
+}): ReplicaReadStamp => ({
+  generationId: String(state.activeGeneration),
+  localCommitVersion: state.localCommitVersion,
+});
 
 export const noticeFromState = (
   databaseIdentity: string,
@@ -23,7 +36,7 @@ export const noticeFromState = (
   return notice;
 };
 
-export type ReplicaCommitHub = {
+type ReplicaCommitHub = {
   readonly publish: (notice: ReplicaCommitNotice | undefined) => Effect.Effect<void>;
   readonly commits: Stream.Stream<ReplicaCommitNotice>;
 };

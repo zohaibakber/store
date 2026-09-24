@@ -23,9 +23,6 @@ import {
   UnsupportedMediaType,
 } from "./errors";
 
-export const MAX_UPLOAD_FILES = MAX_INVOICE_UPLOAD_FILES;
-export const MAX_UPLOAD_BYTES = MAX_INVOICE_UPLOAD_BYTES;
-
 export class ProductScanPayloadErrors extends HttpApiMiddleware.Service<ProductScanPayloadErrors>()(
   "@store/server/ProductScanPayloadErrors",
   { error: BadRequest },
@@ -56,9 +53,9 @@ const uploads = HttpApiGroup.make("uploads").add(
   HttpApiEndpoint.post("extract", "/api/uploads", {
     payload: Schema.Unknown.pipe(
       HttpApiSchema.asMultipartStream({
-        maxParts: MAX_UPLOAD_FILES + 10,
-        maxFileSize: MAX_UPLOAD_BYTES,
-        maxTotalSize: MAX_UPLOAD_BYTES,
+        maxParts: MAX_INVOICE_UPLOAD_FILES + 10,
+        maxFileSize: MAX_INVOICE_UPLOAD_BYTES,
+        maxTotalSize: MAX_INVOICE_UPLOAD_BYTES,
       }),
     ),
     success: InvoiceExtraction,

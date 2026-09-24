@@ -1,17 +1,14 @@
 import { createCollection, IR } from "@tanstack/db";
 import { describe, expect, it } from "vitest";
 
-import {
-  collectionSubsetWindowKey,
-  createInvoiceCoherenceGate,
-  sqliteCollectionOptions,
-} from "../src/replica/collection";
+import { createInvoiceCoherenceGate, sqliteCollectionOptions } from "../src/replica/collection";
 import { decodeCategorySqliteRows } from "../src/replica/decode";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
+import { subsetWindowKey } from "../src/replica/subset-window";
 import type {
   InventoryCollectionDescriptor,
   ReplicaCommitNotice,
-  ReplicaSqlExecutor,
+  ReplicaSubsetReader,
   SqliteResultRow,
 } from "../src/replica/types";
 import type { CategoryRow } from "../src/rows";
@@ -31,7 +28,6 @@ const categorySqlRow = (id: string, name: string): SqliteResultRow => ({
   tracksPacks: 1,
   createdAt: 1,
   updatedAt: 1,
-  deletedAt: null,
   organizationId: "org-1",
   createdByUserId: "user-1",
   updatedByUserId: "user-1",
@@ -43,15 +39,13 @@ const categorySqlRow = (id: string, name: string): SqliteResultRow => ({
 describe("collection reactivity", () => {
   it("shares equivalent query windows under one acquisition", async () => {
     let reads = 0;
-    const executor: ReplicaSqlExecutor = {
-      stamp: () => ({
-        workspaceToken: "ws",
-        generationId: "1",
-        localCommitVersion: 1,
-      }),
-      query: () => {
+    const executor: ReplicaSubsetReader = {
+      readSubset: async () => {
         reads += 1;
-        return [categorySqlRow("shared", "Shared")];
+        return {
+          stamp: { workspaceToken: "ws", generationId: "1", localCommitVersion: 1 },
+          rows: [categorySqlRow("shared", "Shared")],
+        };
       },
     };
     const options = sqliteCollectionOptions(descriptor, {
@@ -68,7 +62,7 @@ describe("collection reactivity", () => {
       where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("shared")]),
       limit: 10,
     };
-    expect(collectionSubsetWindowKey(first)).toBe(collectionSubsetWindowKey(second));
+    expect(subsetWindowKey(first)).toBe(subsetWindowKey(second));
     await options.utils.loadSubset(first);
     await options.utils.loadSubset(second);
     expect(reads).toBe(2);
@@ -82,15 +76,14 @@ describe("collection reactivity", () => {
     const versions: Array<number> = [];
     let localCommitVersion = 1;
     const listeners: Array<(notice: ReplicaCommitNotice) => void> = [];
-    const executor: ReplicaSqlExecutor = {
-      stamp: () => ({
-        workspaceToken: "ws",
-        generationId: "1",
-        localCommitVersion,
-      }),
-      query: () => {
+    const executor: ReplicaSubsetReader = {
+      readSubset: async () => {
+        await Promise.resolve();
         versions.push(localCommitVersion);
-        return [categorySqlRow("a", `v${localCommitVersion}`)];
+        return {
+          stamp: { workspaceToken: "ws", generationId: "1", localCommitVersion },
+          rows: [categorySqlRow("a", `v${localCommitVersion}`)],
+        };
       },
     };
     const options = sqliteCollectionOptions(descriptor, {

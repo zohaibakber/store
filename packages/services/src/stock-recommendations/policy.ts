@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 const days = (minimum: number, maximum: number) =>
-  Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }));
+  Schema.Int.check(Schema.isBetween({ minimum, maximum }));
 
 export const StockPolicy = Schema.Struct({
   leadDays: days(0, 90),
@@ -11,7 +11,6 @@ export const StockPolicy = Schema.Struct({
 });
 export type StockPolicy = typeof StockPolicy.Type;
 
-/** Editable planning assumptions, not supplier facts or a calibrated service level. */
 export const DEFAULT_STOCK_POLICY: StockPolicy = {
   leadDays: 7,
   safetyDays: 3,

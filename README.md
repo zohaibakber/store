@@ -1,30 +1,31 @@
 # Store
 
-Bun workspace for offline-first inventory: an Electron desktop app and a
+pnpm workspace for offline-first inventory: an Electron desktop app and a
 Cloudflare Worker API. Inventory commands commit in PlanetScale Postgres
-through Hyperdrive. Nightly does not provision that database.
+through Hyperdrive. `dev` and `prod` provision that database; nightly does not.
 
 ## Workspace boundaries
 
 - `apps/desktop` owns the complete Electron application: main process, preload,
   React renderer, Vite configuration, tests, and packaging. The renderer uses
-  hash history, while the main process keeps encrypted
-  refresh credentials in the main process. Main also proxies authenticated
-  inventory HTTP. Live inventory is the organization-object replica
-  (Effect's SQLite WASM client in a renderer worker). There is no main-process
-  SQLite. Desktop requires sign-in before inventory.
+  hash history; the main process keeps encrypted refresh credentials and
+  proxies authenticated sync HTTP. Live inventory is the local replica, owned
+  by a main-process worker on `@effect/sql-sqlite-node` over `node:sqlite`.
+  The renderer never sees SQL. Desktop requires sign-in before inventory.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
   in PlanetScale Postgres through Hyperdrive. Nightly skips that database.
 - `packages/contracts` owns shared store and server contracts.
-- `packages/client-db` owns the organization-object replica engine, catalog
-  writes, row models, and Postgres mutation clients.
-- `packages/db` owns the authentication, Postgres, inventory-authority, and
-  replica schemas.
-- `packages/sync` owns the host-agnostic SQLite command library, replica
-  overlay/outbox, and typed `SyncHttpApi` client used by the organization
-  Durable Object.
+- `packages/client-db` owns the replica handles hosts open, catalog writes,
+  row models, and the reactive collections the renderer reads.
+- `packages/db` owns the authentication, Postgres authority, and replica
+  schemas and their migrations.
+- `packages/sync` owns the host-agnostic replica engine: command outbox,
+  pending projections, coverage, the polling scheduler, and the typed
+  `SyncHttpApi` client. Its shared entrypoint is native-free; the SQLite
+  adapter lives behind `@store/sync/sqlite` and the IndexedDB adapter behind
+  `@store/sync/browser`.
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
@@ -38,12 +39,13 @@ Desktop renderer components are grouped by feature. `components/app` owns the ap
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Desktop inventory reads come from TanStack DB live queries over the
-organization-object SQLite replica. Sales go through `/api/sync/commands` and
-commit in one Durable Object SQLite transaction. Catalog writes on that path
-are unsupported. On `dev` and `prod`, category, product, and batch mutations
-still go through `/api/inventory/*` and commit in Postgres. The signed
-organization claim scopes every sync stream.
+Desktop inventory reads come from TanStack DB live queries over the local
+replica. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
+sync commands: they commit locally first, project pending rows, then upload to
+`/api/sync/commands`, where one organization-locked PostgreSQL transaction
+decides them and appends to the change log that `/api/sync/pull` serves.
+Replicas hard-delete on a `delete` change. The signed organization claim scopes
+every pull.
 
 ## Run locally
 
@@ -124,10 +126,10 @@ environment's public hostname, not the production hostname.
   Worker).
 
 Use a separate base hostname such as `nightly.tabaaq.app` for `Nightly`. Nightly
-uses its own auth keys, peppers, D1 database, KV namespace, organization
-Durable Objects, and R2 snapshot bucket. It does not create a PlanetScale database.
-Nightly desktop inventory writes go to the organization object; catalog
-commands on that path are unsupported.
+uses its own auth keys, peppers, D1 database, KV namespace, and R2 snapshot
+bucket. It does not create a PlanetScale database, so nightly has no inventory
+authority: sync commands are rejected as not provisioned and the maintenance
+cron is not registered. Desktop still runs against its local replica.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back

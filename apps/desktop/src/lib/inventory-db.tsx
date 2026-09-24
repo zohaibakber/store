@@ -2,8 +2,6 @@ export {
   InventoryProvider,
   InventoryReady,
   inventoryScopeId,
-  useBindSelectedInvoice,
-  useBindSelectedProduct,
   useCatalogCategories,
   useCatalogIsReady,
   useCatalogProduct,
@@ -15,7 +13,5 @@ export {
   useInventoryDashboardAnalytics,
   useInventoryInvoice,
   useInventoryInvoices,
-  useSharedFilters,
-  useWorkspaceAtoms,
 } from "./inventory";
 export type { InventoryActions } from "./inventory";

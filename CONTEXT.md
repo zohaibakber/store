@@ -21,15 +21,30 @@ movements as one business record, not a bag of replica internals.
 _Avoid_: Inventory bag, collections
 
 **Catalog replica.**
-The local SQLite copy of the catalog. Desktop reads the organization Durable
-Object projection.
+The local copy of the catalog, applied from the authority's change log.
+Desktop keeps it in SQLite owned by a main-process worker; the web host keeps
+it in IndexedDB. Replicas hard-delete on a `delete` change and hold no
+`deletedAt`.
 _Avoid_: Local database, client DB, live inventory
 
 **Catalog write.**
-A row-list command that changes categories, products, or batches. On `dev` and
-`prod`, Postgres still commits it. Desktop live inventory does not accept
-catalog commands.
+The `catalogWrite` sync command: an ordered row list that changes categories,
+products, or batches. It commits locally as pending rows, then the PlanetScale
+Postgres authority decides it in the same organization-locked transaction as
+`issueInvoice` and publishes it through the change log.
 _Avoid_: SyncOperation, live sync, mutation envelope
+
+**Pending projection.**
+The provisional rows a saved command writes into the replica, marked with its
+operation id and journalled so rejection restores the prior image. Integration
+replaces them with authoritative rows.
+_Avoid_: Optimistic cache, shadow state, draft rows
+
+**Command state.**
+Where a saved command stands: pending, sending, accepted awaiting integration,
+integrated, rejected, or abandoned. It is read through the replica handle, never
+as SQL across IPC.
+_Avoid_: Sync status, queue state
 
 **Invoice.**
 A recorded sale against catalog stock.

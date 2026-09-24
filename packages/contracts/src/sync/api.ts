@@ -4,6 +4,7 @@ import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
+import { SyncIdentifier } from "../schema-primitives";
 import {
   SyncBadRequest,
   SyncConflict,
@@ -59,7 +60,7 @@ export const syncGroup = HttpApiGroup.make("sync")
   .add(
     HttpApiEndpoint.get("getReceipt", "/api/sync/receipts/:operationId", {
       params: Schema.Struct({
-        operationId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+        operationId: SyncIdentifier,
       }),
       success: CommandReceipt,
       error: SyncHttpErrors,

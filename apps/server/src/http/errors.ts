@@ -21,12 +21,6 @@ export type Unauthenticated = typeof Unauthenticated.Type;
 export const Forbidden = publicErrorSchema("Forbidden", 403);
 export type Forbidden = typeof Forbidden.Type;
 
-export const NotFound = publicErrorSchema("NotFound", 404);
-export type NotFound = typeof NotFound.Type;
-
-export const Conflict = publicErrorSchema("Conflict", 409);
-export type Conflict = typeof Conflict.Type;
-
 export const PayloadTooLarge = publicErrorSchema("PayloadTooLarge", 413);
 export type PayloadTooLarge = typeof PayloadTooLarge.Type;
 
@@ -39,25 +33,19 @@ export type TooManyRequests = typeof TooManyRequests.Type;
 export const BadGateway = publicErrorSchema("BadGateway", 502);
 export type BadGateway = typeof BadGateway.Type;
 
-export const ServiceUnavailable = publicErrorSchema("ServiceUnavailable", 503);
-export type ServiceUnavailable = typeof ServiceUnavailable.Type;
+export const publicError = (code: string, message: string) => ({ error: { code, message } });
 
-const body = (code: string, message: string) => ({ error: { code, message } });
-
-export const badRequest = (code: string, message: string) => BadRequest.make(body(code, message));
+export const badRequest = (code: string, message: string) =>
+  BadRequest.make(publicError(code, message));
 export const unauthenticated = (code: string, message: string) =>
-  Unauthenticated.make(body(code, message));
-export const forbidden = (code: string, message: string) => Forbidden.make(body(code, message));
-export const notFound = (code: string, message: string) => NotFound.make(body(code, message));
-export const conflict = (code: string, message: string) => Conflict.make(body(code, message));
+  Unauthenticated.make(publicError(code, message));
+export const forbidden = (code: string, message: string) =>
+  Forbidden.make(publicError(code, message));
 export const payloadTooLarge = (code: string, message: string) =>
-  PayloadTooLarge.make(body(code, message));
+  PayloadTooLarge.make(publicError(code, message));
 export const unsupportedMediaType = (code: string, message: string) =>
-  UnsupportedMediaType.make(body(code, message));
+  UnsupportedMediaType.make(publicError(code, message));
 export const tooManyRequests = (code: string, message: string) =>
-  TooManyRequests.make(body(code, message));
-export const badGateway = (code: string, message: string) => BadGateway.make(body(code, message));
-export const serviceUnavailable = (code: string, message: string) =>
-  ServiceUnavailable.make(body(code, message));
-
-export const publicError = body;
+  TooManyRequests.make(publicError(code, message));
+export const badGateway = (code: string, message: string) =>
+  BadGateway.make(publicError(code, message));

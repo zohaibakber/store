@@ -15,18 +15,19 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 
-import { recoverUnexpected, ServerRoutes, ServerRuntime } from "./src";
-import { invoiceAiClient } from "./src/ai/invoice-ai";
-import { productScanAiClient } from "./src/ai/product-scan-ai";
+import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
 import {
   authenticateHeaders,
   loadWorkspaceSnapshot,
   type AuthVerificationConfig,
 } from "./src/auth/session";
+import { recoverUnexpected, ServerRoutes } from "./src/http/app";
+import { ServerRuntime } from "./src/http/runtime";
 import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
 import { InventoryLive } from "./src/inventory/live-tickets";
 import { makePostgresSyncLiveUpgrade } from "./src/inventory/live-upgrade";
+import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
 import {
   makeInventorySyncAuthority,
@@ -39,14 +40,6 @@ import {
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
   productionSiteOrigin,
   requireProductionApiHostname,
-  resolveProductionApiHostname,
-  resolveProductionHostname,
-} from "./src/runtime/production-domain";
-import { reportRejectedAuthSettings } from "./src/runtime/worker";
-
-export {
-  requireProductionApiHostname,
-  requireProductionHostname,
   resolveProductionApiHostname,
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
@@ -85,13 +78,20 @@ export const ApiLive = Api.make(
     const authorityLayer = stageUsesInventoryPostgres(stage)
       ? InventoryAuthorityLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding))
       : InventoryAuthorityUnavailable;
-    const inventory = yield* Effect.gen(function* () {
-      return {
-        commands: yield* InventoryCommands,
-        snapshots: yield* InventorySnapshots,
-        live: yield* InventoryLive,
-      };
+    const inventory = yield* Effect.all({
+      commands: InventoryCommands,
+      snapshots: InventorySnapshots,
+      live: InventoryLive,
+      maintenance: InventoryMaintenance,
     }).pipe(Effect.provide(authorityLayer));
+    if (stageUsesInventoryPostgres(stage)) {
+      yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
+        inventory.maintenance.runScheduled().pipe(
+          Effect.tap((progress) => Effect.log("inventory maintenance run", progress)),
+          Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
+        ),
+      );
+    }
     const syncAuthority = makeInventorySyncAuthority(inventory);
     const syncLiveUpgrade = stageUsesInventoryPostgres(stage)
       ? makePostgresSyncLiveUpgrade(inventory.live)
@@ -168,7 +168,19 @@ export const ApiLive = Api.make(
         ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
       ],
     });
-    reportRejectedAuthSettings(security.rejectedSettings);
+    yield* Effect.forEach(
+      security.rejectedSettings,
+      (setting) =>
+        Effect.logError("auth.setting_rejected").pipe(
+          Effect.annotateLogs({
+            message: `${setting.setting} value "${setting.value}" ${setting.reason} and was ignored.`,
+            setting: setting.setting,
+            value: setting.value,
+            reason: setting.reason,
+          }),
+        ),
+      { discard: true },
+    );
     const publicJwk = yield* decodeJsonWebKeyText(authPublicJwkText).pipe(Effect.orDie);
     const jwtConfig: AuthVerificationConfig = {
       issuer: security.baseURL,
@@ -182,7 +194,7 @@ export const ApiLive = Api.make(
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
-      productScanAi: ai.raw.pipe(Effect.map((binding) => productScanAiClient(binding))),
+      productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
     });
     const routes = ServerRoutes.pipe(
@@ -196,6 +208,7 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
     };
   }).pipe(
+    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),

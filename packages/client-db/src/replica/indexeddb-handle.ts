@@ -1,29 +1,26 @@
 import type { SyncCommandEnvelope } from "@store/contracts";
-import type { ReplicaCommitNotice as ContractNotice } from "@store/contracts/sync/replica-model";
-import { makeSyncTransport, startOwnedHttpSync, type OwnedHttpSync } from "@store/sync/browser";
-import type { IndexedDbSubsetPlan, IndexedDbSubsetRow } from "@store/sync/replica/indexeddb";
+import { layerOwnedHttpSync, SyncScheduler, SyncTransportService } from "@store/sync/browser";
 import {
-  makeIndexedDbReplicaStore,
-  requireIndexedDbPrimitives,
+  layerIndexedDbReplicaStore,
+  IndexedDbReplicaStore,
   type IndexedDbReplicaIdentity,
+  type IndexedDbSubsetRow,
 } from "@store/sync/replica/indexeddb";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-import { openReplicaHandleScope } from "./handle-scope";
+import { layerCommitForwarding } from "./commit-forwarding";
+import { planIndexedDbSubset } from "./indexeddb-plan";
 import { createReplicaCommitPublisher } from "./publisher";
 import { decodeSqliteResultRow, type OutboxCommandStatus } from "./sqlite-row";
-import type {
-  ReplicaCommitNotice,
-  ReplicaHandle,
-  ReplicaQueryStamp,
-  ReplicaSubsetRead,
-  SqliteParameter,
-  SqliteResultRow,
-} from "./types";
+import type { InventorySubsetSpec } from "./subset-spec";
+import { subscribeSchedulerHealth } from "./sync-health";
+import type { ReplicaHandle, ReplicaQueryStamp, ReplicaSubsetRead, SqliteResultRow } from "./types";
+import { bootWorkspaceRuntime } from "./workspace-runtime";
 
 export type OpenIndexedDbReplicaInput = {
   readonly databaseName: string;
@@ -37,14 +34,6 @@ export type OpenIndexedDbReplicaInput = {
 const IndexedDbCell = Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null]);
 type IndexedDbCell = typeof IndexedDbCell.Type;
 const decodeIndexedDbCell = Schema.decodeUnknownOption(IndexedDbCell);
-
-const toClientNotice = (workspaceToken: string, notice: ContractNotice): ReplicaCommitNotice => ({
-  workspaceToken,
-  generationId: notice.generationId,
-  localCommitVersion: notice.localCommitVersion,
-  touchedEntities: notice.touchedEntities,
-  touchedKeys: [...notice.touchedKeys],
-});
 
 const indexedDbCellToSqlite = (value: IndexedDbCell): string | number | null =>
   value === true ? 1 : value === false ? 0 : value;
@@ -61,61 +50,54 @@ const toSqliteResultRow = (row: IndexedDbSubsetRow): SqliteResultRow =>
     ),
   );
 
+const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
+  input.sync === undefined
+    ? Layer.empty
+    : layerOwnedHttpSync({
+        databaseIdentity: input.databaseName,
+        live: {
+          apiBaseUrl: input.sync.apiBaseUrl,
+          replicaId: input.identity.replicaId,
+          fetch: input.sync.authenticatedFetch,
+          preferSse: true,
+        },
+      }).pipe(
+        Layer.provide(
+          SyncTransportService.layer(input.sync.apiBaseUrl).pipe(
+            Layer.provide(FetchHttpClient.layer),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, input.sync.authenticatedFetch)),
+          ),
+        ),
+      );
+
 export const openIndexedDbReplicaHandle = async (
   input: OpenIndexedDbReplicaInput,
 ): Promise<ReplicaHandle> => {
-  const lifetime = openReplicaHandleScope();
-
-  const primitives = await Effect.runPromise(requireIndexedDbPrimitives());
-  const store = await Effect.runPromise(
-    makeIndexedDbReplicaStore({
-      databaseName: input.databaseName,
-      databaseIdentity: input.databaseName,
-      identity: input.identity,
-      indexedDB: primitives.indexedDB,
-      IDBKeyRange: primitives.IDBKeyRange,
-    }),
-  );
-  await lifetime.addFinalizer(store.dispose());
-
   const publisher = createReplicaCommitPublisher();
-  lifetime.addSyncFinalizer(() => {
-    publisher.dispose();
-  });
-
-  await lifetime.runInScope(
-    store.commits.pipe(
-      Stream.runForEach((notice) =>
-        Effect.sync(() => {
-          publisher.publish(toClientNotice(input.databaseName, notice));
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(layerWebSync(input), layerCommitForwarding(input.databaseName, publisher)).pipe(
+      Layer.provideMerge(
+        layerIndexedDbReplicaStore({
+          databaseName: input.databaseName,
+          databaseIdentity: input.databaseName,
+          identity: input.identity,
         }),
       ),
-      Effect.forkScoped,
     ),
   );
-
-  let ownedSync: OwnedHttpSync | undefined;
-  if (input.sync) {
-    const { apiBaseUrl, authenticatedFetch } = input.sync;
-    ownedSync = await Effect.runPromise(
-      Effect.gen(function* () {
-        const transport = yield* makeSyncTransport(apiBaseUrl).pipe(
-          Effect.provide(FetchHttpClient.layer),
-          Effect.provideService(FetchHttpClient.Fetch, authenticatedFetch),
-        );
-        return yield* startOwnedHttpSync(store, transport, input.databaseName, {
-          apiBaseUrl,
-          replicaId: input.identity.replicaId,
-          fetch: authenticatedFetch,
-          preferSse: true,
-        });
-      }),
-    );
-    await lifetime.addFinalizer(ownedSync.dispose);
-  }
-
+  const { store, scheduler, replicaId } = await bootWorkspaceRuntime(
+    runtime,
+    Effect.gen(function* () {
+      const store = yield* IndexedDbReplicaStore;
+      return {
+        store,
+        scheduler: input.sync === undefined ? undefined : yield* SyncScheduler,
+        replicaId: (yield* store.readSyncCursor()).replicaId,
+      };
+    }),
+  );
   const stamp = async (): Promise<ReplicaQueryStamp> => {
-    const read = await Effect.runPromise(store.readStamp());
+    const read = await runtime.runPromise(store.readStamp());
     return {
       workspaceToken: input.databaseName,
       generationId: read.generationId,
@@ -123,8 +105,10 @@ export const openIndexedDbReplicaHandle = async (
     };
   };
 
-  const querySubset = async (plan: IndexedDbSubsetPlan): Promise<ReplicaSubsetRead> => {
-    const result = await Effect.runPromise(store.querySubset(plan));
+  const readSubset = async (spec: InventorySubsetSpec): Promise<ReplicaSubsetRead> => {
+    const result = await runtime.runPromise(
+      planIndexedDbSubset(spec).pipe(Effect.flatMap((plan) => store.querySubset(plan))),
+    );
     return {
       stamp: {
         workspaceToken: input.databaseName,
@@ -138,27 +122,29 @@ export const openIndexedDbReplicaHandle = async (
   return {
     workspaceToken: input.databaseName,
     engine: "indexeddb",
+    replicaId,
     stamp,
-    querySubset,
-    query: async (_sql: string, _parameters: ReadonlyArray<SqliteParameter>) => {
-      throw new Error(
-        "IndexedDB replica does not expose SQL. Use collection descriptors through the host-neutral query path.",
-      );
-    },
+    readSubset,
+    readOutboxActivity: () => runtime.runPromise(store.readOutboxActivity()),
+    readPendingRowIds: (entity) => runtime.runPromise(store.readPendingRowIds(entity)),
     readOutboxStatuses: async (): Promise<ReadonlyArray<OutboxCommandStatus>> =>
-      Effect.runPromise(store.listOutboxStatuses()),
-    readCommandAllocation: async () => Effect.runPromise(store.readCommandAllocation()),
+      runtime.runPromise(store.listOutboxStatuses()),
+    readCommandAllocation: async () => runtime.runPromise(store.readCommandAllocation()),
     enqueueLocal: async (envelope: SyncCommandEnvelope, createdAt: number) => {
-      const queued = await Effect.runPromise(store.enqueueCommand(envelope, createdAt));
+      const queued = await runtime.runPromise(store.enqueueCommand(envelope, createdAt));
       return { changed: queued.notice !== undefined, status: queued.value.status };
     },
-    wakeSyncUpload: ownedSync
+    wakeSyncUpload: scheduler
       ? () => {
-          void Effect.runPromise(ownedSync.wake("localWrite"));
+          void runtime.runPromise(scheduler.wake("localWrite"));
         }
       : undefined,
     subscribe: publisher.subscribe,
+    subscribeSyncHealth: scheduler ? subscribeSchedulerHealth(scheduler) : undefined,
     publish: publisher.publish,
-    close: lifetime.close,
+    close: () => {
+      publisher.dispose();
+      void runtime.dispose();
+    },
   };
 };

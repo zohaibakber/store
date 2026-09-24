@@ -37,8 +37,6 @@ import {
 } from "../src/repository";
 import { AuthService, authServiceLayer } from "../src/service";
 
-const textEncoder = new TextEncoder();
-
 const testRuntimeContext = Context.make(RuntimeContext, {
   Type: "test",
   id: "auth-service-test",
@@ -46,16 +44,6 @@ const testRuntimeContext = Context.make(RuntimeContext, {
   get: () => Effect.succeed(undefined),
   set: (id) => Effect.succeed(id),
 });
-
-export const refreshTokenHash = async (secret: string) => {
-  const buffer = await crypto.subtle.digest(
-    "SHA-256",
-    textEncoder.encode(`refresh-pepper:${secret}`),
-  );
-  let binary = "";
-  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
 
 export interface Store {
   readonly users: Array<UserRecord>;
@@ -72,7 +60,7 @@ export interface Store {
   readonly sentInvitations: Array<SendInvitationInput>;
 }
 
-export const emptyStore = (): Store => ({
+const emptyStore = (): Store => ({
   users: [],
   organizations: [],
   memberships: [],
@@ -82,7 +70,7 @@ export const emptyStore = (): Store => ({
   sentInvitations: [],
 });
 
-export const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
+const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
 
 export const seedUser = (
   store: Store,
@@ -508,7 +496,7 @@ const countingLimit = (limit: number): AuthRateLimit => {
     });
 };
 
-export const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
+const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
   AccessToken.make(
     btoa(
       JSON.stringify({

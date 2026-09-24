@@ -63,8 +63,16 @@ describe("API Worker bundle", () => {
   it("does not call the database control plane from the Worker runtime", async () => {
     const chunks = await bundleWorker();
     const code = chunks.map((chunk) => chunk.code).join("\n");
-    expect(code).not.toContain("getConnectionURI");
-    expect(code).not.toContain("@distilled.cloud/neon");
+    for (const operation of [
+      "getConnectionURI",
+      "createProject",
+      "deleteProject",
+      "updateProject",
+      "createDatabase",
+      "deleteDatabase",
+    ]) {
+      expect(code).not.toMatch(new RegExp(`\\b${operation}\\s*\\(`));
+    }
     expect(code).not.toContain("@distilled.cloud/planetscale");
   }, 60_000);
 

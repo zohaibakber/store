@@ -30,8 +30,6 @@ import { makeOrganizationOps } from "./organization-ops";
 import { AuthRepository } from "./repository";
 import { makeSessionOps } from "./session-ops";
 
-export { AuthError, type GoogleCallback };
-
 export interface AuthServiceApi {
   readonly identify: (
     input: IdentifyInput,

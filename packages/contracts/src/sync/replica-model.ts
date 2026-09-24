@@ -39,8 +39,6 @@ export const replicaEntitySchemas = {
   stockMovement: ReplicaStockMovementRow,
 } as const satisfies Record<SyncEntity, (typeof syncEntityRows)[SyncEntity]["schema"]>;
 
-export type ReplicaEntityRow<E extends SyncEntity> = SyncEntityRow<E>;
-
 export const CommandStatus = Schema.Literals([
   "pending",
   "sending",
@@ -51,25 +49,22 @@ export const CommandStatus = Schema.Literals([
 ]);
 export type CommandStatus = typeof CommandStatus.Type;
 
-const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
-const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-
 export const ReplicaReadStamp = Schema.Struct({
-  generationId: NonEmptyString,
-  localCommitVersion: NonNegativeInteger,
+  generationId: Schema.NonEmptyString,
+  localCommitVersion: Schema.Natural,
 });
 export type ReplicaReadStamp = typeof ReplicaReadStamp.Type;
 
 export const ReplicaCommitNotice = Schema.Struct({
-  databaseIdentity: NonEmptyString,
-  generationId: NonEmptyString,
-  localCommitVersion: NonNegativeInteger,
+  databaseIdentity: Schema.NonEmptyString,
+  generationId: Schema.NonEmptyString,
+  localCommitVersion: Schema.Natural,
   touchedEntities: Schema.Array(SyncEntity),
   touchedKeys: Schema.Array(Schema.String),
   commandStatuses: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
-        operationId: NonEmptyString,
+        operationId: Schema.NonEmptyString,
         status: CommandStatus,
       }),
     ),

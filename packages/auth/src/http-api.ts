@@ -50,14 +50,12 @@ const RegisterPassword = Schema.Struct({
   client: AuthClientKind,
 });
 
-export const SessionOk = Schema.Struct({ ok: Schema.Literal(true) });
-
-export const authSystemGroup = HttpApiGroup.make("system")
+const authSystemGroup = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("landing", "/", { success: Health }))
   .add(HttpApiEndpoint.get("health", "/health", { success: Health }))
   .add(HttpApiEndpoint.get("jwks", "/.well-known/jwks.json", { success: AuthJwks }));
 
-export const authSessionGroup = HttpApiGroup.make("session")
+const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("identify", "/v1/identify", {
       payload: IdentifyInput,
@@ -117,12 +115,12 @@ export const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("logout", "/v1/session/logout", {
       payload: SignOutInput,
-      success: SessionOk,
+      success: Health,
       error: AuthHttpErrors,
     }),
   );
 
-export const authOrganizationGroup = HttpApiGroup.make("organization")
+const authOrganizationGroup = HttpApiGroup.make("organization")
   .add(
     HttpApiEndpoint.get("roster", "/v1/organization", {
       success: OrganizationRoster,

@@ -43,8 +43,3 @@ export const isSnapshotRequired = (
   error: SnapshotRecoveryError | SyncProtocolError,
 ): error is SyncProtocolError =>
   error instanceof SyncProtocolError && error.code === "SNAPSHOT_REQUIRED";
-
-export const isSnapshotUnavailable = (
-  error: SnapshotRecoveryError | SyncProtocolError,
-): error is SyncProtocolError =>
-  error instanceof SyncProtocolError && error.code === "SNAPSHOT_UNAVAILABLE";

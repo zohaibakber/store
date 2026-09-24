@@ -13,13 +13,21 @@ const forbiddenRendererMarkers = Schema.decodeUnknownSync(ForbiddenRendererMarke
   afterPack.forbiddenRendererMarkers,
 );
 
+const forbiddenRendererReplicaSqlMarkers = Schema.decodeUnknownSync(ForbiddenRendererMarkers)(
+  afterPack.forbiddenRendererReplicaSqlMarkers,
+);
+
 const repoRoot = path.resolve(import.meta.dirname, "../../../..");
 const replicaSql = readFileSync(
   path.join(repoRoot, "packages/db/src/replica/migrations.gen.ts"),
   "utf8",
 );
+const subsetLowering = readFileSync(
+  path.join(repoRoot, "packages/client-db/src/replica/compile.ts"),
+  "utf8",
+);
 const inventorySql = readFileSync(
-  path.join(repoRoot, "packages/db/src/inventory/migrations.gen.ts"),
+  path.join(repoRoot, "scripts/migrate-cloudflare/src/authority-migrations.gen.ts"),
   "utf8",
 );
 
@@ -46,6 +54,13 @@ describe("desktop renderer schema boundary", () => {
     expect(authoritySqlMarkers.length).toBeGreaterThan(0);
     for (const marker of authoritySqlMarkers) {
       expect(inventorySql).toContain(marker);
+    }
+  });
+
+  it("bans the worker-side subset SQL lowering from the renderer", () => {
+    expect(forbiddenRendererReplicaSqlMarkers.length).toBeGreaterThan(0);
+    for (const marker of forbiddenRendererReplicaSqlMarkers) {
+      expect(subsetLowering).toContain(marker);
     }
   });
 });

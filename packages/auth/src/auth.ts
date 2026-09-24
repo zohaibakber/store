@@ -1,9 +1,4 @@
-export {
-  accessTokenFromUrl,
-  bearerToken,
-  bearerTokenFromHeaders,
-  headersWithAccessToken,
-} from "./bearer";
+export { bearerTokenFromHeaders } from "./bearer";
 export {
   AuthClient,
   AuthClientError,

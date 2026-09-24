@@ -7,14 +7,14 @@ export const catalogWriteError = {
 
 export type CatalogStockBatch = {
   readonly productId: string;
-  readonly deletedAt: number | null;
+  readonly deletedAt?: number | null;
   readonly packQuantity: number;
   readonly unitQuantity: number;
 };
 
 export type CatalogCategoryProduct = {
   readonly categoryId: string;
-  readonly deletedAt: number | null;
+  readonly deletedAt?: number | null;
 };
 
 export const batchHasRemainingStock = (batch: {
@@ -25,14 +25,14 @@ export const batchHasRemainingStock = (batch: {
 export const productHasRemainingStock = (batches: Iterable<CatalogStockBatch>, productId: string) =>
   [...batches].some(
     (batch) =>
-      batch.deletedAt === null && batch.productId === productId && batchHasRemainingStock(batch),
+      batch.deletedAt == null && batch.productId === productId && batchHasRemainingStock(batch),
   );
 
 export const categoryHasActiveProducts = (
   products: Iterable<CatalogCategoryProduct>,
   categoryId: string,
 ) =>
-  [...products].some((product) => product.deletedAt === null && product.categoryId === categoryId);
+  [...products].some((product) => product.deletedAt == null && product.categoryId === categoryId);
 
 export const assertCanDeleteCategory = (
   products: Iterable<CatalogCategoryProduct>,
@@ -88,7 +88,6 @@ export const createdMutationMetadata = (
     rowVersion: 1,
     createdAt: now,
     updatedAt: now,
-    deletedAt: null,
   } as const;
 };
 

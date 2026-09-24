@@ -24,9 +24,10 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
+import type { AuthError } from "./errors";
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
 import { resolveRefreshCredential } from "./refresh-credential";
-import { AuthError, AuthService } from "./service";
+import { AuthService } from "./service";
 
 export interface AuthHttpConfiguration {
   readonly baseUrl: string;
@@ -303,7 +304,9 @@ export const authRoutes = (configuration: AuthHttpConfiguration) => {
   const ConfigLive = Layer.succeed(AuthHttpConfig, configuration);
   const ApiRoutes = HttpApiBuilder.layer(AuthHttpApi).pipe(
     Layer.provide(
-      Layer.mergeAll(SystemHandlers, SessionHandlers, OrganizationHandlers, AuthorizationLive),
+      Layer.mergeAll(SystemHandlers, SessionHandlers, OrganizationHandlers).pipe(
+        Layer.provide(AuthorizationLive),
+      ),
     ),
     Layer.provide(ConfigLive),
   );

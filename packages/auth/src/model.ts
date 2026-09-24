@@ -91,7 +91,6 @@ export const AuthClientKind = Schema.Union([
 ]);
 export type AuthClientKind = typeof AuthClientKind.Type;
 
-export const browserClient = (): AuthClientKind => ({ _tag: "Browser" });
 export const nativeClient = (deviceName: string): AuthClientKind => ({
   _tag: "Native",
   deviceName,

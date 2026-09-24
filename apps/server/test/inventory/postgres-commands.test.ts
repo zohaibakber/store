@@ -2,11 +2,12 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  SyncEpoch,
   SyncProtocolError,
   type SyncCommandEnvelope,
   type SyncPullRequest,
 } from "@store/contracts";
-import { decodeOrganizationId } from "@store/contracts/ids";
+import { decodeInvoiceId, decodeOrganizationId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
   LAST_UNIT_BATCH_ID,
@@ -16,6 +17,7 @@ import {
   LAST_UNIT_REPLICA_B,
   lastUnitBuyerACommand,
   lastUnitBuyerAEnvelope,
+  lastUnitBuyerBCommand,
   lastUnitBuyerBEnvelope,
   lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
@@ -90,7 +92,6 @@ const openCommands = (organizationId: string, unitQuantity = 1) =>
       tracksPacks: true,
       createdAt: occurredAt,
       updatedAt: occurredAt,
-      deletedAt: null,
       organizationId,
       createdByUserId: userId,
       updatedByUserId: userId,
@@ -238,8 +239,8 @@ describe("postgres inventory commands", () => {
     const actor = actorFor(organizationId);
     const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
     const otherCommand = {
-      ...envelope.command,
-      payload: { ...envelope.command.payload, invoiceNumber: 2 },
+      _tag: "issueInvoice" as const,
+      payload: { ...lastUnitBuyerACommand, invoiceNumber: 2 },
     };
     const mismatched = {
       ...envelope,
@@ -282,6 +283,157 @@ describe("postgres inventory commands", () => {
     expect(isProtocol(outcome.cause) && outcome.cause.code).toBe("REPLICA_SEQUENCE_GAP");
     expect(outcome.stock).toEqual({ unitQuantity: 1, packQuantity: 0 });
     expect(outcome.stored).toBeUndefined();
+  });
+
+  it("records deterministic command failures as rejected receipts that consume the sequence", async () => {
+    const organizationId = decodeOrganizationId("org-deterministic-rejections");
+    const actor = actorFor(organizationId);
+    const [allocation] = lastUnitBuyerACommand.allocations;
+    if (allocation === undefined) throw new Error("The fixture has no allocation.");
+    const invalidOperation = envelopeFor(
+      organizationId,
+      lastUnitEnvelope({
+        replicaId: LAST_UNIT_REPLICA_A,
+        clientSequence: "1",
+        command: {
+          ...lastUnitBuyerACommand,
+          commandId: "sale-invalid",
+          invoiceId: decodeInvoiceId("sale-invalid"),
+          allocations: [{ ...allocation, quantity: 2 }],
+        },
+      }),
+    );
+    const accepted = envelopeFor(
+      organizationId,
+      lastUnitEnvelope({
+        replicaId: LAST_UNIT_REPLICA_A,
+        clientSequence: "2",
+        command: lastUnitBuyerACommand,
+      }),
+    );
+    const identityConflict = envelopeFor(
+      organizationId,
+      lastUnitEnvelope({
+        replicaId: LAST_UNIT_REPLICA_B,
+        clientSequence: "1",
+        command: {
+          ...lastUnitBuyerBCommand,
+          commandId: "sale-conflict",
+          invoiceId: lastUnitBuyerACommand.invoiceId,
+        },
+      }),
+    );
+    const identityMismatch = {
+      ...envelopeFor(
+        organizationId,
+        lastUnitEnvelope({
+          replicaId: LAST_UNIT_REPLICA_B,
+          clientSequence: "2",
+          command: lastUnitBuyerBCommand,
+        }),
+      ),
+      operationId: "sale-mismatch",
+    };
+    const outOfStock = envelopeFor(
+      organizationId,
+      lastUnitEnvelope({
+        replicaId: LAST_UNIT_REPLICA_B,
+        clientSequence: "3",
+        command: {
+          ...lastUnitBuyerBCommand,
+          input: {
+            ...lastUnitBuyerBCommand.input,
+            items: lastUnitBuyerBCommand.input.items.map((item) => ({ ...item, quantity: 9 })),
+          },
+          allocations: lastUnitBuyerBCommand.allocations.map((take) => ({
+            ...take,
+            quantity: 9,
+          })),
+        },
+      }),
+    );
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCommands(organizationId, 5);
+        const receipts = [];
+        for (const envelope of [
+          invalidOperation,
+          accepted,
+          identityConflict,
+          identityMismatch,
+          outOfStock,
+        ]) {
+          receipts.push(yield* commands.commit(actor, envelope));
+        }
+        const retried = yield* commands.commit(actor, identityMismatch);
+        const stock = yield* batchStock(db, organizationId);
+        const sequences = yield* db
+          .select({ replicaId: replicas.replicaId, last: replicas.lastClientSequence })
+          .from(replicas)
+          .where(eq(replicas.organizationId, organizationId));
+        const pulled = yield* commands.pull(actor, pullFromStart);
+        return { receipts, retried, stock, sequences, pulled };
+      }),
+    );
+    expect(outcome.receipts.map((receipt) => [receipt.decision, receipt.result._tag])).toEqual([
+      ["rejected", "rejected"],
+      ["accepted", "issueInvoice"],
+      ["rejected", "rejected"],
+      ["rejected", "rejected"],
+      ["rejected", "rejected"],
+    ]);
+    expect(
+      outcome.receipts.map((receipt) =>
+        receipt.result._tag === "rejected" ? receipt.result.code : undefined,
+      ),
+    ).toEqual([
+      "INVALID_OPERATION",
+      undefined,
+      "INVOICE_IDENTITY_CONFLICT",
+      "COMMAND_IDENTITY_MISMATCH",
+      "INSUFFICIENT_STOCK",
+    ]);
+    expect(outcome.retried).toEqual(outcome.receipts[3]);
+    expect(outcome.stock).toEqual({ unitQuantity: 4, packQuantity: 0 });
+    expect(Object.fromEntries(outcome.sequences.map((row) => [row.replicaId, row.last]))).toEqual({
+      [LAST_UNIT_REPLICA_A]: "2",
+      [LAST_UNIT_REPLICA_B]: "3",
+    });
+    expect(outcome.pulled.transactions.map((transaction) => transaction.decision)).toEqual([
+      "rejected",
+      "accepted",
+      "rejected",
+      "rejected",
+      "rejected",
+    ]);
+  });
+
+  it("keeps identity and ownership failures as request errors that leave the sequence", async () => {
+    const organizationId = decodeOrganizationId("org-request-failures");
+    const actor = actorFor(organizationId);
+    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands } = yield* openCommands(organizationId);
+        const epoch = yield* commands
+          .commit(actor, { ...envelope, epoch: SyncEpoch.make("2") })
+          .pipe(Effect.flip);
+        const unknown = yield* commands
+          .commit(actor, { ...envelope, replicaId: "replica-unknown" })
+          .pipe(Effect.flip);
+        const foreign = yield* commands
+          .commit({ ...actor, userId: "user-2" }, envelope)
+          .pipe(Effect.flip);
+        const receipt = yield* commands.commit(actor, envelope);
+        return { codes: [epoch, unknown, foreign], receipt };
+      }),
+    );
+    expect(outcome.codes.map((cause) => isProtocol(cause) && cause.code)).toEqual([
+      "EPOCH_MISMATCH",
+      "REPLICA_UNKNOWN",
+      "REPLICA_OWNED_BY_OTHER",
+    ]);
+    expect(outcome.receipt).toMatchObject({ decision: "accepted", clientSequence: "1" });
   });
 
   it("rolls the invoice, stock, receipt, and log back together when a write fails", async () => {

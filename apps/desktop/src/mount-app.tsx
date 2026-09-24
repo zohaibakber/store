@@ -1,5 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
+import { createAppCatalogLifetime, type InventoryHost } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -8,8 +9,6 @@ import ReactDOM from "react-dom/client";
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import { authSession } from "@/lib/auth";
-import type { InventoryHost } from "@/lib/inventory-host";
-import { createAppCatalogLifetime } from "@/lib/inventory/lifetime";
 import { Sentry } from "@/lib/sentry";
 import { makeReplayChannel } from "@/replay-channel";
 import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";

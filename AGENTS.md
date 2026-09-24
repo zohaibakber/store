@@ -48,6 +48,18 @@ other weights or sizes. Follow the rules anyway.
 - **Icons.** Hugeicons, via `<HugeiconsIcon icon={...} />` from
   `@hugeicons/react` with icons from `@hugeicons/core-free-icons`.
 
+## Sync engine boundaries
+
+- Replicas hard-delete. A `delete` change removes the row; client schemas carry
+  no `deletedAt`.
+- The shared entrypoint of `packages/sync` must stay native-free.
+  `packages/sync/test/browser-boundary.test.ts` enforces it; SQLite belongs in
+  `@store/sync/sqlite`, IndexedDB in `@store/sync/browser`.
+- Command state never crosses IPC as SQL. The preload bridge carries domain
+  commands, bounded reads, and notices only.
+- The pull digest is requested on the cadence policy only, when the replica
+  believes it is caught up and the verification interval has elapsed.
+
 ## UI components
 
 `apps/desktop/src/components/ui` is a registry managed by `components.json`, not

@@ -6,13 +6,12 @@ behaviour on top of these layouts.
 
 ## Seams
 
-| Export               | Dialect     | Owns                                                                          | Callers                                                             |
-| -------------------- | ----------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `./store.schema`     | SQLite      | Shared catalog tables (categories → stock movements) and managed-column names | Re-exported by replica + inventory schemas; contracts `entity-rows` |
-| `./replica.schema`   | SQLite      | Client replica control tables + catalog via `store.schema`                    | Electron / sync SQLite adapter                                      |
-| `./inventory.schema` | SQLite      | Durable Object authority control tables + catalog via `store.schema`          | Legacy / DO authority paths                                         |
-| `./postgres/schema`  | Postgres    | Authoritative PlanetScale catalog + receipts + sync control                   | Server inventory commands                                           |
-| `./auth.schema`      | SQLite (D1) | Auth identity, orgs, sessions                                                 | Auth worker                                                         |
+| Export              | Dialect     | Owns                                                                          | Callers                                                    |
+| ------------------- | ----------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `./store.schema`    | SQLite      | Shared catalog tables (categories → stock movements) and managed-column names | Re-exported by the replica schema; contracts `entity-rows` |
+| `./replica.schema`  | SQLite      | Client replica control tables + catalog via `store.schema`                    | Electron / sync SQLite adapter                             |
+| `./postgres/schema` | Postgres    | Authoritative PlanetScale catalog + receipts + sync control                   | Server inventory commands                                  |
+| `./auth.schema`     | SQLite (D1) | Auth identity, orgs, sessions                                                 | Auth worker                                                |
 
 ## Rules
 
@@ -23,8 +22,8 @@ behaviour on top of these layouts.
 2. Do not add domain Effect Schemas here; put those in `@store/contracts`.
 3. Migrations stay append-only. Prefer additive columns with defaults over
    rewrites. Never edit applied migration SQL.
-4. Replica and inventory schemas may re-export catalog tables from
-   `store.schema`; they must not redefine those tables.
+4. The replica schema may re-export catalog tables from `store.schema`; it must
+   not redefine those tables.
 
 ## Managed columns
 

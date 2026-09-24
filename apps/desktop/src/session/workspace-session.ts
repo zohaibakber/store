@@ -1,7 +1,7 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
+import type { CatalogLifetime, CatalogReplica } from "@store/inventory-react";
 
 import { hasAuthenticatedWorkspace, type HostAccessPolicy } from "@/host-access";
-import type { CatalogLifetime, CatalogReplica } from "@/lib/inventory/lifetime";
 import type { ReplayChannel } from "@/replay-channel";
 
 export type SessionChangeBridge = {

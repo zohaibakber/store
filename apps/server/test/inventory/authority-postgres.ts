@@ -38,7 +38,16 @@ type MigrationClient = {
   readonly query: (statement: string) => Promise<void>;
 };
 
-export const startAuthorityPostgres = async (): Promise<AuthorityPostgres> => {
+export type AuthorityPostgresOptions = {
+  readonly seedBeforeMigration?: {
+    readonly migration: string;
+    readonly seed: (query: (statement: string) => Promise<void>) => Promise<void>;
+  };
+};
+
+export const startAuthorityPostgres = async (
+  options: AuthorityPostgresOptions = {},
+): Promise<AuthorityPostgres> => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-authority-"));
   const port = await listenPort();
   const password = "postgres";
@@ -58,11 +67,14 @@ export const startAuthorityPostgres = async (): Promise<AuthorityPostgres> => {
   const client = database.getPgClient("inventory");
   await client.connect();
   try {
-    await applyMigrations({
-      query: async (statement) => {
-        await client.query(statement);
+    await applyMigrations(
+      {
+        query: async (statement) => {
+          await client.query(statement);
+        },
       },
-    });
+      options,
+    );
   } finally {
     await client.end();
   }
@@ -75,12 +87,19 @@ export const startAuthorityPostgres = async (): Promise<AuthorityPostgres> => {
   };
 };
 
-const applyMigrations = async (client: MigrationClient) => {
+const applyMigrations = async (client: MigrationClient, options: AuthorityPostgresOptions) => {
   const entries = (await readdir(migrationsDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
+  const seedBefore = options.seedBeforeMigration;
+  if (seedBefore !== undefined && !entries.includes(seedBefore.migration)) {
+    throw new Error(`Unknown migration ${seedBefore.migration}.`);
+  }
   for (const entry of entries) {
+    if (seedBefore !== undefined && entry === seedBefore.migration) {
+      await seedBefore.seed(client.query);
+    }
     const sql = await readFile(path.join(migrationsDir, entry, "migration.sql"), "utf8");
     for (const statement of sql.split("--> statement-breakpoint")) {
       const trimmed = statement.trim();

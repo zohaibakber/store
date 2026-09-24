@@ -17,9 +17,7 @@ export interface SessionSnapshotHooks {
   readonly http: SessionHttpClient;
   readonly getLocalSnapshot: () => WorkspaceSnapshotType;
   readonly publish: (snapshot: WorkspaceSnapshotType) => WorkspaceSnapshotType;
-  /** Optional clear of persisted tokens/session when auth is rejected (desktop). */
   readonly clearAuthenticated?: () => Promise<void>;
-  /** Optional persist after a successful authenticated session (desktop). */
   readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Promise<void>;
 }
 

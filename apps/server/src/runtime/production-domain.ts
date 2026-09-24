@@ -86,8 +86,3 @@ export const productionSiteOrigin = (
   const hostname = resolveProductionHostname(env);
   return hostname ? `https://${hostname}` : undefined;
 };
-
-export const productionApiOrigin = (env: ProductionDomainEnv = process.env): string | undefined => {
-  const hostname = resolveProductionApiHostname(env);
-  return hostname ? `https://${hostname}` : undefined;
-};

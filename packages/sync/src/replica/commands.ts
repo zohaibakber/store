@@ -1,8 +1,8 @@
 import {
-  compareDecimalSequence,
   CommandReceipt,
   SyncCommandEnvelope,
   syncProtocolError,
+  type RegisterReplicaResult,
 } from "@store/contracts";
 import {
   batches,
@@ -11,21 +11,42 @@ import {
   replicaState,
   stockOverlays,
 } from "@store/db/replica.schema";
-import { eq } from "drizzle-orm";
-import * as Schema from "effect/Schema";
+import { eq, inArray } from "drizzle-orm";
+import * as Array from "effect/Array";
+import * as Effect from "effect/Effect";
 
-import { runWrite } from "../sqlite";
+import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
 import {
-  assertAuthorityHeadNotBehind,
-  assertIncarnationMatch,
+  byClientSequence,
+  checkAuthorityHead,
+  checkIncarnation,
   decideEnqueue,
-  decideOverlays,
   decideReceipt,
-  type VisibleStock,
+  EMPTY_STOCK,
+  isStaleClaim,
+  nextUploadClaim,
+  OUTSTANDING_COMMAND_STATUSES,
+  RELEASED_CLAIM_FIELDS,
+  settledOutboxFields,
+  withOverlays,
 } from "./decisions";
-import type { ReplicaDb } from "./storage";
+import { ReplicaStorageError } from "./errors";
+import { replicaCatalogLookup, restorePendingProjection, writePendingProjection } from "./pending";
+import {
+  checkEnqueueAllowed,
+  type CommandProjection,
+  type PendingRestoreResult,
+} from "./projection";
+import {
+  decideRegistration,
+  UNRECEIPTED_COMMAND_STATUSES,
+  type ReplicaRegistrationOutcome,
+} from "./registration";
+import type { ReplicaDb } from "./sql-client/drizzle";
 
 export type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
+
+type OutboxRow = typeof commandOutbox.$inferSelect;
 
 export type ClaimNextUploadInput = {
   readonly claimId: string;
@@ -41,363 +62,330 @@ export type UploadClaim = {
   readonly envelope: SyncCommandEnvelope;
 };
 
-export type { VisibleStock };
-
-export const loadReplicaState = (tx: ReplicaDb): typeof replicaState.$inferSelect => {
-  const state = tx.select().from(replicaState).get();
-  if (!state) throw new Error("Replica state is missing.");
+export const loadReplicaState = Effect.fn("ReplicaCommands.loadReplicaState")(function* (
+  tx: ReplicaDb,
+) {
+  const state = yield* tx.select().from(replicaState).get();
+  if (!state) {
+    return yield* Effect.fail(ReplicaStorageError.make({ message: "Replica state is missing." }));
+  }
   return state;
-};
+});
 
-const bumpLocalCommitVersion = (tx: ReplicaDb): void => {
-  const state = loadReplicaState(tx);
-  runWrite(
-    tx
-      .update(replicaState)
-      .set({ localCommitVersion: state.localCommitVersion + 1 })
-      .where(eq(replicaState.id, state.id)),
+export const recordCaughtUp = Effect.fn("ReplicaCommands.recordCaughtUp")(function* (
+  tx: ReplicaDb,
+  caughtUpAt: number,
+) {
+  const state = yield* loadReplicaState(tx);
+  yield* tx.update(replicaState).set({ caughtUpAt }).where(eq(replicaState.id, state.id));
+  return state;
+});
+
+const bumpLocalCommitVersion = Effect.fn("ReplicaCommands.bumpLocalCommitVersion")(function* (
+  tx: ReplicaDb,
+) {
+  const state = yield* loadReplicaState(tx);
+  yield* tx
+    .update(replicaState)
+    .set({ localCommitVersion: state.localCommitVersion + 1 })
+    .where(eq(replicaState.id, state.id));
+});
+
+const updateOutbox = (tx: ReplicaDb, operationId: string, fields: Partial<OutboxRow>) =>
+  tx.update(commandOutbox).set(fields).where(eq(commandOutbox.operationId, operationId));
+
+const selectOutboxRow = (tx: ReplicaDb, operationId: string) =>
+  tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get();
+
+export const loadStockIndex = Effect.fn("ReplicaCommands.loadStockIndex")(function* (
+  tx: ReplicaDb,
+) {
+  const productRows = yield* tx.select().from(products).all();
+  const batchRows = yield* tx.select().from(batches).all();
+  const overlayRows = yield* tx.select().from(stockOverlays).all();
+  const unitsPerPack = new Map(productRows.map((row) => [row.id, row.unitsPerPack]));
+  const overlaysByBatch = Array.groupBy(overlayRows, (overlay) => overlay.batchId);
+  const stock = new Map(
+    batchRows.map((batch) => [batch.id, withOverlays(batch, overlaysByBatch[batch.id] ?? [])]),
   );
-};
-
-export const visibleBatchStock = (tx: ReplicaDb, batchId: string): VisibleStock | undefined => {
-  const batch = tx.select().from(batches).where(eq(batches.id, batchId)).get();
-  if (!batch) return undefined;
-  const overlays = tx.select().from(stockOverlays).where(eq(stockOverlays.batchId, batchId)).all();
   return {
-    packQuantity:
-      batch.packQuantity + overlays.reduce((sum, overlay) => sum + overlay.packDelta, 0),
-    unitQuantity:
-      batch.unitQuantity + overlays.reduce((sum, overlay) => sum + overlay.unitDelta, 0),
+    unitsPerPackFor: (productId: string) => unitsPerPack.get(productId) ?? 1,
+    stockFor: (batchId: string) => stock.get(batchId) ?? EMPTY_STOCK,
   };
-};
+});
 
-export const commandStatus = (
+export const visibleBatchStock = Effect.fn("ReplicaCommands.visibleBatchStock")(function* (
+  tx: ReplicaDb,
+  batchId: string,
+) {
+  const batch = yield* tx.select().from(batches).where(eq(batches.id, batchId)).get();
+  if (!batch) return undefined;
+  const overlays = yield* tx
+    .select()
+    .from(stockOverlays)
+    .where(eq(stockOverlays.batchId, batchId))
+    .all();
+  return withOverlays(batch, overlays);
+});
+
+export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function* (
   tx: ReplicaDb,
   operationId: string,
-): CommandOutboxStatus | undefined =>
-  tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get()?.status;
+) {
+  const row = yield* selectOutboxRow(tx, operationId);
+  return row?.status;
+});
 
-const decodeStoredEnvelope = Schema.decodeUnknownSync(Schema.fromJsonString(SyncCommandEnvelope));
-const encodeEnvelopeJson = Schema.encodeSync(Schema.fromJsonString(SyncCommandEnvelope));
-const encodeReceiptJson = Schema.encodeSync(Schema.fromJsonString(CommandReceipt));
+export const parseStoredEnvelope = (row: OutboxRow) => decodeStoredEnvelope(row);
 
-export const parseStoredEnvelope = (
-  row: typeof commandOutbox.$inferSelect,
-): SyncCommandEnvelope => {
-  const envelope = decodeStoredEnvelope(row.envelopeJson);
-  if (envelope.operationId !== row.operationId || envelope.clientSequence !== row.clientSequence) {
-    throw syncProtocolError(
-      "COMMAND_IDENTITY_MISMATCH",
-      "The stored command identity does not match its outbox row.",
-    );
-  }
-  return envelope;
+export type SavedLocalCommand = {
+  readonly status: CommandOutboxStatus;
+  readonly projection: CommandProjection | undefined;
 };
 
-export const overlayForAllocation = (
-  tx: ReplicaDb,
-  envelope: SyncCommandEnvelope,
-): ReadonlyArray<typeof stockOverlays.$inferInsert> =>
-  decideOverlays(
-    envelope,
-    (productId) =>
-      tx.select().from(products).where(eq(products.id, productId)).get()?.unitsPerPack ?? 1,
-    (batchId) => visibleBatchStock(tx, batchId) ?? { packQuantity: 0, unitQuantity: 0 },
-  );
-
-export const saveLocalCommand = (
+export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(function* (
   tx: ReplicaDb,
   envelope: SyncCommandEnvelope,
   createdAt: number,
-): CommandOutboxStatus => {
-  const existing = tx
-    .select()
-    .from(commandOutbox)
-    .where(eq(commandOutbox.operationId, envelope.operationId))
-    .get();
-  const state = loadReplicaState(tx);
-  const decision = decideEnqueue(
-    {
-      organizationId: state.organizationId,
-      epoch: state.epoch,
-      replicaId: state.replicaId,
-      nextClientSequence: state.nextClientSequence,
-    },
-    existing ? { status: existing.status, envelope: parseStoredEnvelope(existing) } : undefined,
-    envelope,
-    (productId) =>
-      tx.select().from(products).where(eq(products.id, productId)).get()?.unitsPerPack ?? 1,
-    (batchId) => visibleBatchStock(tx, batchId) ?? { packQuantity: 0, unitQuantity: 0 },
+) {
+  const existing = yield* selectOutboxRow(tx, envelope.operationId);
+  const state = yield* loadReplicaState(tx);
+  const index = yield* loadStockIndex(tx);
+  const existingEntry = existing
+    ? { status: existing.status, envelope: yield* parseStoredEnvelope(existing) }
+    : undefined;
+  const decision = yield* Effect.fromResult(
+    decideEnqueue(state, existingEntry, envelope, index.unitsPerPackFor, index.stockFor),
   );
-  if (decision._tag === "replay") return decision.status;
+  if (decision._tag === "replay") {
+    return { status: decision.status, projection: undefined } satisfies SavedLocalCommand;
+  }
+  const lookup = yield* replicaCatalogLookup(tx);
+  yield* checkEnqueueAllowed(envelope, lookup, index.unitsPerPackFor, index.stockFor);
   for (const overlay of decision.overlays) {
-    runWrite(tx.insert(stockOverlays).values(overlay));
+    yield* tx.insert(stockOverlays).values(overlay);
   }
-  runWrite(
-    tx.insert(commandOutbox).values({
-      operationId: envelope.operationId,
-      status: "pending",
-      envelopeJson: encodeEnvelopeJson(envelope),
-      receiptJson: null,
-      clientSequence: envelope.clientSequence,
-      createdAt,
-    }),
-  );
-  runWrite(
-    tx
-      .update(replicaState)
-      .set({
-        nextClientSequence: decision.nextClientSequence,
-        localCommitVersion: state.localCommitVersion + 1,
-      })
-      .where(eq(replicaState.id, state.id)),
-  );
-  return "pending" as const;
-};
+  const projection = yield* writePendingProjection(tx, envelope);
+  yield* tx.insert(commandOutbox).values({
+    operationId: envelope.operationId,
+    status: "pending",
+    envelopeJson: encodeEnvelopeJson(envelope),
+    receiptJson: null,
+    clientSequence: envelope.clientSequence,
+    createdAt,
+  });
+  yield* tx
+    .update(replicaState)
+    .set({
+      nextClientSequence: decision.nextClientSequence,
+      localCommitVersion: state.localCommitVersion + 1,
+    })
+    .where(eq(replicaState.id, state.id));
+  return { status: "pending", projection } satisfies SavedLocalCommand;
+});
 
-const lowestPendingRow = (tx: ReplicaDb): typeof commandOutbox.$inferSelect | undefined => {
-  const rows = tx.select().from(commandOutbox).where(eq(commandOutbox.status, "pending")).all();
-  let lowest: typeof commandOutbox.$inferSelect | undefined;
-  for (const row of rows) {
-    if (
-      lowest === undefined ||
-      compareDecimalSequence(row.clientSequence, lowest.clientSequence) < 0
-    ) {
-      lowest = row;
-    }
-  }
-  return lowest;
-};
+const undoLocalEffects = Effect.fn("ReplicaCommands.undoLocalEffects")(function* (
+  tx: ReplicaDb,
+  operationId: string,
+) {
+  yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, operationId));
+  return yield* restorePendingProjection(tx, operationId);
+});
 
-export const claimNextUpload = (
+export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(function* (
   tx: ReplicaDb,
   input: ClaimNextUploadInput,
-): UploadClaim | undefined => {
-  const outstanding = tx
+) {
+  const outstanding = yield* tx
     .select({ operationId: commandOutbox.operationId })
     .from(commandOutbox)
     .where(eq(commandOutbox.status, "sending"))
     .get();
   if (outstanding) return undefined;
-  const row = lowestPendingRow(tx);
+  const pending = yield* tx
+    .select()
+    .from(commandOutbox)
+    .where(eq(commandOutbox.status, "pending"))
+    .all();
+  const row = nextUploadClaim(Array.sort(pending, byClientSequence));
   if (!row) return undefined;
-  const envelope = parseStoredEnvelope(row);
-  runWrite(
-    tx
-      .update(commandOutbox)
-      .set({
-        status: "sending",
-        claimId: input.claimId,
-        claimedAt: input.claimedAt,
-        attempts: row.attempts + 1,
-      })
-      .where(eq(commandOutbox.operationId, row.operationId)),
-  );
-  bumpLocalCommitVersion(tx);
+  const envelope = yield* parseStoredEnvelope(row);
+  const attempts = row.attempts + 1;
+  yield* updateOutbox(tx, row.operationId, {
+    status: "sending",
+    claimId: input.claimId,
+    claimedAt: input.claimedAt,
+    attempts,
+  });
+  yield* bumpLocalCommitVersion(tx);
   return {
     operationId: row.operationId,
     claimId: input.claimId,
     claimedAt: input.claimedAt,
-    attempts: row.attempts + 1,
+    attempts,
     outcomeUncertain: row.outcomeUncertain,
     envelope,
-  };
+  } satisfies UploadClaim;
+});
+
+export type SettledCommand = {
+  readonly status: CommandOutboxStatus;
+  readonly restored: PendingRestoreResult | undefined;
 };
 
-const settleCommandReceipt = (
+const settleCommandReceipt = Effect.fn("ReplicaCommands.settleCommandReceipt")(function* (
   tx: ReplicaDb,
   receipt: CommandReceipt,
   claimId?: string,
-): CommandOutboxStatus | undefined => {
-  const row = tx
-    .select()
-    .from(commandOutbox)
-    .where(eq(commandOutbox.operationId, receipt.operationId))
-    .get();
+) {
+  const row = yield* selectOutboxRow(tx, receipt.operationId);
   if (!row) return undefined;
-  const envelope = parseStoredEnvelope(row);
+  const envelope = yield* parseStoredEnvelope(row);
   const claimMatches =
     claimId === undefined || (row.status === "sending" && row.claimId === claimId);
-  const decision = decideReceipt(row.status, envelope, receipt, claimMatches);
-  if (decision._tag === "noop") return decision.status;
-  if (decision._tag === "refreshIntegrated") {
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({
-          receiptJson: encodeReceiptJson(receipt),
-          commitSequence: receipt.commitSequence,
-          claimId: null,
-          claimedAt: null,
-          outcomeUncertain: false,
-        })
-        .where(eq(commandOutbox.operationId, receipt.operationId)),
-    );
-    return "integrated" as const;
-  }
-  if (decision._tag === "rejected") {
-    runWrite(tx.delete(stockOverlays).where(eq(stockOverlays.commandId, receipt.operationId)));
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({
-          status: "rejected",
-          receiptJson: encodeReceiptJson(receipt),
-          commitSequence: receipt.commitSequence,
-          claimId: null,
-          claimedAt: null,
-          outcomeUncertain: false,
-        })
-        .where(eq(commandOutbox.operationId, receipt.operationId)),
-    );
-    bumpLocalCommitVersion(tx);
-    return "rejected" as const;
-  }
-  runWrite(
-    tx
-      .update(commandOutbox)
-      .set({
-        status: "accepted_awaiting_integration",
-        receiptJson: encodeReceiptJson(receipt),
-        commitSequence: receipt.commitSequence,
-        claimId: null,
-        claimedAt: null,
-        outcomeUncertain: false,
-      })
-      .where(eq(commandOutbox.operationId, receipt.operationId)),
+  const decision = yield* Effect.fromResult(
+    decideReceipt(row.status, envelope, receipt, claimMatches),
   );
-  bumpLocalCommitVersion(tx);
-  return "accepted_awaiting_integration" as const;
-};
+  if (decision._tag === "noop") {
+    return { status: decision.status, restored: undefined } satisfies SettledCommand;
+  }
+  const settled = settledOutboxFields(receipt, encodeReceiptJson(receipt));
+  if (decision._tag === "refreshIntegrated") {
+    yield* updateOutbox(tx, receipt.operationId, settled);
+    return { status: decision.status, restored: undefined } satisfies SettledCommand;
+  }
+  const restored =
+    decision._tag === "rejected" ? yield* undoLocalEffects(tx, receipt.operationId) : undefined;
+  yield* updateOutbox(tx, receipt.operationId, { ...settled, status: decision.status });
+  yield* bumpLocalCommitVersion(tx);
+  return { status: decision.status, restored } satisfies SettledCommand;
+});
 
-export const recordCommandReceipt = (
-  tx: ReplicaDb,
-  receipt: CommandReceipt,
-): CommandOutboxStatus | undefined => settleCommandReceipt(tx, receipt);
+export const recordCommandReceipt = (tx: ReplicaDb, receipt: CommandReceipt) =>
+  settleCommandReceipt(tx, receipt);
 
-export const settleUploadClaim = (
-  tx: ReplicaDb,
-  claimId: string,
-  receipt: CommandReceipt,
-): CommandOutboxStatus | undefined => settleCommandReceipt(tx, receipt, claimId);
+export const settleUploadClaim = (tx: ReplicaDb, claimId: string, receipt: CommandReceipt) =>
+  settleCommandReceipt(tx, receipt, claimId);
 
-export const releaseUploadClaim = (
+export const releaseUploadClaim = Effect.fn("ReplicaCommands.releaseUploadClaim")(function* (
   tx: ReplicaDb,
   operationId: string,
   claimId: string,
-): CommandOutboxStatus | undefined => {
-  const row = tx
-    .select()
-    .from(commandOutbox)
-    .where(eq(commandOutbox.operationId, operationId))
-    .get();
+) {
+  const row = yield* selectOutboxRow(tx, operationId);
   if (!row || row.status !== "sending" || row.claimId !== claimId) return row?.status;
-  runWrite(
-    tx
-      .update(commandOutbox)
-      .set({
-        status: "pending",
-        claimId: null,
-        claimedAt: null,
-        outcomeUncertain: true,
-      })
-      .where(eq(commandOutbox.operationId, operationId)),
-  );
-  bumpLocalCommitVersion(tx);
-  return "pending" as const;
-};
+  yield* updateOutbox(tx, operationId, RELEASED_CLAIM_FIELDS);
+  yield* bumpLocalCommitVersion(tx);
+  return RELEASED_CLAIM_FIELDS.status;
+});
 
-export const hasUnsentCommands = (tx: ReplicaDb): boolean => {
-  const statuses: ReadonlyArray<CommandOutboxStatus> = [
-    "pending",
-    "sending",
-    "accepted_awaiting_integration",
-  ];
-  for (const status of statuses) {
-    const row = tx
-      .select({ operationId: commandOutbox.operationId })
-      .from(commandOutbox)
-      .where(eq(commandOutbox.status, status))
-      .get();
-    if (row) return true;
-  }
-  return false;
-};
+const hasUnsentCommands = (tx: ReplicaDb) =>
+  tx
+    .select({ operationId: commandOutbox.operationId })
+    .from(commandOutbox)
+    .where(inArray(commandOutbox.status, [...OUTSTANDING_COMMAND_STATUSES]))
+    .get()
+    .pipe(Effect.map((row) => row !== undefined));
 
-export const verifyReplicaIncarnation = (tx: ReplicaDb, incarnation: string): void => {
-  assertIncarnationMatch(loadReplicaState(tx).incarnation, incarnation);
-};
+export const verifyReplicaIncarnation = Effect.fn("ReplicaCommands.verifyReplicaIncarnation")(
+  function* (tx: ReplicaDb, incarnation: string) {
+    const state = yield* loadReplicaState(tx);
+    yield* Effect.fromResult(checkIncarnation(state.incarnation, incarnation));
+  },
+);
 
-export const verifyAuthorityHeadNotBehind = (tx: ReplicaDb, authorityHorizon: string): void => {
-  assertAuthorityHeadNotBehind(loadReplicaState(tx).appliedCommitSequence, authorityHorizon);
-};
+export const verifyAuthorityHeadNotBehind = Effect.fn(
+  "ReplicaCommands.verifyAuthorityHeadNotBehind",
+)(function* (tx: ReplicaDb, authorityHorizon: string) {
+  const state = yield* loadReplicaState(tx);
+  yield* Effect.fromResult(checkAuthorityHead(state.appliedCommitSequence, authorityHorizon));
+});
 
-export const openReplicaIdentity = (
+export const openReplicaIdentity = Effect.fn("ReplicaCommands.openReplicaIdentity")(function* (
   tx: ReplicaDb,
   input: {
     readonly replicaId: string;
     readonly adoptPendingOutbox: boolean;
   },
-): void => {
-  const state = loadReplicaState(tx);
+) {
+  const state = yield* loadReplicaState(tx);
   if (state.replicaId === input.replicaId) return;
-  if (!hasUnsentCommands(tx)) {
-    runWrite(
-      tx
-        .update(replicaState)
-        .set({ replicaId: input.replicaId })
-        .where(eq(replicaState.id, state.id)),
-    );
-    return;
-  }
-  if (!input.adoptPendingOutbox) {
-    throw syncProtocolError(
-      "REPLICA_OWNED_BY_OTHER",
-      "Unsent commands remain for the previous replica identity.",
+  const unsent = yield* hasUnsentCommands(tx);
+  if (unsent && !input.adoptPendingOutbox) {
+    return yield* Effect.fail(
+      syncProtocolError(
+        "REPLICA_OWNED_BY_OTHER",
+        "Unsent commands remain for the previous replica identity.",
+      ),
     );
   }
-  const rows = tx.select().from(commandOutbox).all();
-  for (const row of rows) {
-    const envelope = parseStoredEnvelope(row);
-    const adopted = {
-      ...envelope,
-      replicaId: input.replicaId,
-    };
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({ envelopeJson: encodeEnvelopeJson(adopted) })
-        .where(eq(commandOutbox.operationId, row.operationId)),
-    );
+  if (unsent) {
+    const rows = yield* tx.select().from(commandOutbox).all();
+    for (const row of rows) {
+      const envelope = yield* parseStoredEnvelope(row);
+      yield* updateOutbox(tx, row.operationId, {
+        envelopeJson: encodeEnvelopeJson({ ...envelope, replicaId: input.replicaId }),
+      });
+    }
   }
-  runWrite(
-    tx
-      .update(replicaState)
-      .set({ replicaId: input.replicaId })
-      .where(eq(replicaState.id, state.id)),
-  );
-};
+  yield* tx
+    .update(replicaState)
+    .set({ replicaId: input.replicaId, registeredAt: null })
+    .where(eq(replicaState.id, state.id));
+});
 
-export const recoverStaleUploadClaims = (tx: ReplicaDb, staleBefore: number): number => {
-  const stale = tx
-    .select()
-    .from(commandOutbox)
-    .where(eq(commandOutbox.status, "sending"))
-    .all()
-    .filter((row) => row.claimedAt === null || row.claimedAt <= staleBefore);
-  for (const row of stale) {
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({
-          status: "pending",
-          claimId: null,
-          claimedAt: null,
-          outcomeUncertain: true,
-        })
-        .where(eq(commandOutbox.operationId, row.operationId)),
+export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaRegistration")(
+  function* (tx: ReplicaDb, authority: RegisterReplicaResult, registeredAt: number) {
+    const state = yield* loadReplicaState(tx);
+    const rows = yield* tx
+      .select()
+      .from(commandOutbox)
+      .where(inArray(commandOutbox.status, [...UNRECEIPTED_COMMAND_STATUSES]))
+      .all();
+    const outbox = yield* Effect.forEach(rows, (row) =>
+      parseStoredEnvelope(row).pipe(Effect.map((envelope) => ({ ...row, envelope }))),
     );
-  }
-  if (stale.length > 0) bumpLocalCommitVersion(tx);
-  return stale.length;
-};
+    const decision = decideRegistration(state, outbox, authority);
+    if (decision._tag === "refuse") {
+      return {
+        _tag: "refused",
+        code: decision.code,
+        message: decision.message,
+      } satisfies ReplicaRegistrationOutcome;
+    }
+    if (decision._tag === "adopt") {
+      for (const restamped of decision.restamp) {
+        yield* updateOutbox(tx, restamped.operationId, {
+          envelopeJson: encodeEnvelopeJson(restamped.envelope),
+          clientSequence: restamped.envelope.clientSequence,
+        });
+      }
+      yield* tx
+        .update(replicaState)
+        .set({
+          epoch: decision.epoch,
+          incarnation: decision.incarnation,
+          nextClientSequence: decision.nextClientSequence,
+          registeredAt,
+        })
+        .where(eq(replicaState.id, state.id));
+    }
+    return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
+  },
+);
+
+export const recoverStaleUploadClaims = Effect.fn("ReplicaCommands.recoverStaleUploadClaims")(
+  function* (tx: ReplicaDb, staleBefore: number) {
+    const sending = yield* tx
+      .select()
+      .from(commandOutbox)
+      .where(eq(commandOutbox.status, "sending"))
+      .all();
+    const stale = sending.filter((row) => isStaleClaim(row, staleBefore));
+    for (const row of stale) {
+      yield* updateOutbox(tx, row.operationId, RELEASED_CLAIM_FIELDS);
+    }
+    if (stale.length > 0) yield* bumpLocalCommitVersion(tx);
+    return stale.length;
+  },
+);

@@ -1,5 +1,5 @@
-import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
+import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as IndexedDbTable from "@effect/platform-browser/IndexedDbTable";
 import * as IndexedDbVersion from "@effect/platform-browser/IndexedDbVersion";
 import {
@@ -36,6 +36,8 @@ export const ReplicaStateRow = Schema.Struct({
   nextClientSequence: NonEmptyString,
   localCommitVersion: NonNegativeInteger,
   activeGeneration: PositiveInteger,
+  caughtUpAt: Schema.optionalKey(NonNegativeInteger),
+  registeredAt: Schema.optionalKey(NonNegativeInteger),
 });
 export type ReplicaStateRow = typeof ReplicaStateRow.Type;
 
@@ -61,6 +63,7 @@ export const CoverageRow = Schema.Struct({
   state: Schema.Literals(["awaiting_snapshot", "downloaded"]),
   throughCommitSequence: Schema.NullOr(NonEmptyString),
   digest: Schema.NullOr(NonEmptyString),
+  verifiedAt: Schema.optionalKey(Schema.NullOr(NonNegativeInteger)),
 });
 
 export const SnapshotImportRow = Schema.Struct({
@@ -79,6 +82,21 @@ export const StockOverlayRow = Schema.Struct({
   packDelta: SignedInteger,
   unitDelta: SignedInteger,
 });
+
+export const PendingRowMark = Schema.Struct({
+  entity: NonEmptyString,
+  entityId: NonEmptyString,
+  operationId: NonEmptyString,
+});
+export type PendingRowMark = typeof PendingRowMark.Type;
+
+export const PendingRowJournalEntry = Schema.Struct({
+  operationId: NonEmptyString,
+  entity: NonEmptyString,
+  entityId: NonEmptyString,
+  priorRowJson: Schema.NullOr(NonEmptyString),
+});
+export type PendingRowJournalEntry = typeof PendingRowJournalEntry.Type;
 
 export const StagedSnapshotRow = Schema.Struct({
   snapshotId: NonEmptyString,
@@ -136,6 +154,26 @@ export class StagedSnapshotTable extends IndexedDbTable.make({
   keyPath: ["snapshotId", "entity", "entityId"],
   indexes: {
     bySnapshot: "snapshotId",
+  },
+  durability: "strict",
+}) {}
+
+export class PendingRowMarkTable extends IndexedDbTable.make({
+  name: "pending_row_marks",
+  schema: PendingRowMark,
+  keyPath: ["entity", "entityId"],
+  indexes: {
+    byOperation: "operationId",
+  },
+  durability: "strict",
+}) {}
+
+export class PendingRowJournalTable extends IndexedDbTable.make({
+  name: "pending_row_journal",
+  schema: PendingRowJournalEntry,
+  keyPath: ["operationId", "entity", "entityId"],
+  indexes: {
+    byOperation: "operationId",
   },
   durability: "strict",
 }) {}
@@ -216,7 +254,24 @@ export class ReplicaV1 extends IndexedDbVersion.make(
   StockMovementTable,
 ) {}
 
-export class ReplicaIndexedDb extends IndexedDbDatabase.make(
+export class ReplicaV2 extends IndexedDbVersion.make(
+  ReplicaStateTable,
+  OutboxTable,
+  CoverageTable,
+  SnapshotImportTable,
+  StockOverlayTable,
+  StagedSnapshotTable,
+  PendingRowMarkTable,
+  PendingRowJournalTable,
+  CategoryTable,
+  ProductTable,
+  BatchTable,
+  InvoiceTable,
+  InvoiceItemTable,
+  StockMovementTable,
+) {}
+
+export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
   ReplicaV1,
   Effect.fn("ReplicaIndexedDb.init")(function* (api) {
     yield* api.createObjectStore("replica_state");
@@ -245,4 +300,31 @@ export class ReplicaIndexedDb extends IndexedDbDatabase.make(
   }),
 ) {}
 
-export { IndexedDb };
+export class ReplicaIndexedDb extends ReplicaIndexedDbV1.add(
+  ReplicaV2,
+  Effect.fn("ReplicaIndexedDb.addPendingProjections")(function* (_from, api) {
+    yield* api.createObjectStore("pending_row_marks");
+    yield* api.createIndex("pending_row_marks", "byOperation");
+    yield* api.createObjectStore("pending_row_journal");
+    yield* api.createIndex("pending_row_journal", "byOperation");
+  }),
+) {}
+
+export type ReplicaQueryBuilder = IndexedDbQueryBuilder.IndexedDbQueryBuilder<
+  (typeof ReplicaIndexedDb)["version"]
+>;
+
+const statusBounds = (status: CommandStatus): [[CommandStatus], [CommandStatus, []]] => [
+  [status],
+  [status, []],
+];
+
+export const outboxWithStatus = (api: ReplicaQueryBuilder, status: CommandStatus) => {
+  const [lower, upper] = statusBounds(status);
+  return api.from("command_outbox").select("byStatusSequence").between(lower, upper);
+};
+
+export const countOutboxWithStatus = (api: ReplicaQueryBuilder, status: CommandStatus) => {
+  const [lower, upper] = statusBounds(status);
+  return api.from("command_outbox").count("byStatusSequence").between(lower, upper);
+};

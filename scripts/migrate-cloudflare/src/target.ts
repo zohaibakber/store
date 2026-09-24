@@ -1,9 +1,19 @@
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import {
   type AuthorityIncarnation,
   type InventoryImportId,
   type OrganizationId,
   padDecimalSequence,
 } from "@store/contracts";
+import { eq } from "drizzle-orm";
+import * as SqliteDrizzle from "drizzle-orm/effect-sqlite-node";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+
 import {
   batches,
   categories,
@@ -14,16 +24,7 @@ import {
   products,
   replicas,
   stockMovements,
-} from "@store/db/inventory.schema";
-import type Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-
+} from "./authority-schema.ts";
 import { casesHandled } from "./cases.ts";
 import {
   ChunkContentMismatch,
@@ -48,7 +49,7 @@ import {
   SqliteProduct as SqliteProductSchema,
   SqliteStockMovement as SqliteStockMovementSchema,
 } from "./model.ts";
-import { migrateInventoryAuthority, runSqliteTransaction } from "./sqlite.ts";
+import { migrateInventoryAuthority, persistingAs } from "./sqlite.ts";
 
 export interface OrganizationInventoryImportApi {
   readonly prepareImport: (
@@ -98,158 +99,55 @@ const persistenceFail = (operation: string, cause: unknown): PersistenceError =>
     cause,
   });
 
-const AppliedChunkRow = Schema.Struct({ checksum: Schema.String });
+const persisting = (operation: string) =>
+  persistingAs((cause) => persistenceFail(operation, cause));
 
-type InventoryDb = ReturnType<typeof drizzle>;
+type InventoryDb = Effect.Success<ReturnType<typeof SqliteDrizzle.makeWithDefaults>>;
 
 const insertRows = (
   db: InventoryDb,
   table: BusinessTable,
   rows: ReadonlyArray<SqliteBusinessRow>,
-): void => {
+) => {
   switch (table) {
     case "categories":
-      for (const row of rows.filter(Schema.is(SqliteCategorySchema))) {
-        db.insert(categories)
-          .values({
-            id: row.id,
-            name: row.name,
-            tracksPacks: row.tracksPacks === 1,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-            organizationId: row.organizationId,
-            createdByUserId: row.createdByUserId,
-            updatedByUserId: row.updatedByUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            rowVersion: row.rowVersion,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteCategorySchema)),
+        (row) => db.insert(categories).values({ ...row, tracksPacks: row.tracksPacks === 1 }),
+        { discard: true },
+      );
     case "products":
-      for (const row of rows.filter(Schema.is(SqliteProductSchema))) {
-        db.insert(products)
-          .values({
-            id: row.id,
-            name: row.name,
-            categoryId: row.categoryId,
-            aisle: row.aisle,
-            composition: row.composition,
-            strength: row.strength,
-            unitsPerPack: row.unitsPerPack,
-            purchasePrice: row.purchasePrice,
-            retailPrice: row.retailPrice,
-            unitPrice: row.unitPrice,
-            visible: row.visible === 1,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-            organizationId: row.organizationId,
-            createdByUserId: row.createdByUserId,
-            updatedByUserId: row.updatedByUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            rowVersion: row.rowVersion,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteProductSchema)),
+        (row) => db.insert(products).values({ ...row, visible: row.visible === 1 }),
+        { discard: true },
+      );
     case "batches":
-      for (const row of rows.filter(Schema.is(SqliteBatchSchema))) {
-        db.insert(batches)
-          .values({
-            id: row.id,
-            productId: row.productId,
-            batchNumber: row.batchNumber,
-            expiresAt: row.expiresAt,
-            packQuantity: row.packQuantity,
-            unitQuantity: row.unitQuantity,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-            organizationId: row.organizationId,
-            createdByUserId: row.createdByUserId,
-            updatedByUserId: row.updatedByUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            rowVersion: row.rowVersion,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteBatchSchema)),
+        (row) => db.insert(batches).values(row),
+        { discard: true },
+      );
     case "invoices":
-      for (const row of rows.filter(Schema.is(SqliteInvoiceSchema))) {
-        db.insert(invoices)
-          .values({
-            id: row.id,
-            invoiceNumber: row.invoiceNumber,
-            customerName: row.customerName,
-            total: row.total,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-            organizationId: row.organizationId,
-            createdByUserId: row.createdByUserId,
-            updatedByUserId: row.updatedByUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            rowVersion: row.rowVersion,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteInvoiceSchema)),
+        (row) => db.insert(invoices).values(row),
+        { discard: true },
+      );
     case "invoice_items":
-      for (const row of rows.filter(Schema.is(SqliteInvoiceItemSchema))) {
-        db.insert(invoiceItems)
-          .values({
-            id: row.id,
-            invoiceId: row.invoiceId,
-            productId: row.productId,
-            batchId: row.batchId,
-            productName: row.productName,
-            batchNumber: row.batchNumber,
-            quantity: row.quantity,
-            quantityType: row.quantityType,
-            baseUnitQuantity: row.baseUnitQuantity,
-            salePrice: row.salePrice,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-            organizationId: row.organizationId,
-            createdByUserId: row.createdByUserId,
-            updatedByUserId: row.updatedByUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            rowVersion: row.rowVersion,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteInvoiceItemSchema)),
+        (row) => db.insert(invoiceItems).values(row),
+        { discard: true },
+      );
     case "stock_movements":
-      for (const row of rows.filter(Schema.is(SqliteStockMovementSchema))) {
-        db.insert(stockMovements)
-          .values({
-            id: row.id,
-            productId: row.productId,
-            batchId: row.batchId,
-            invoiceId: row.invoiceId,
-            type: row.type,
-            packDelta: row.packDelta,
-            unitDelta: row.unitDelta,
-            note: row.note,
-            organizationId: row.organizationId,
-            actorUserId: row.actorUserId,
-            deviceId: row.deviceId,
-            operationId: row.operationId,
-            createdAt: row.createdAt,
-          })
-          .run();
-      }
-      return;
+      return Effect.forEach(
+        rows.filter(Schema.is(SqliteStockMovementSchema)),
+        (row) => db.insert(stockMovements).values(row),
+        { discard: true },
+      );
     default:
-      casesHandled(table);
+      return casesHandled(table);
   }
 };
 
@@ -264,127 +162,99 @@ const readRows = (
   db: InventoryDb,
   organizationId: OrganizationId,
   table: BusinessTable,
-): Effect.Effect<ReadonlyArray<SqliteBusinessRow>, PersistenceError | TranslationFailed> =>
-  Effect.gen(function* () {
-    switch (table) {
-      case "categories": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db.select().from(categories).where(eq(categories.organizationId, organizationId)).all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteCategorySchema)({
-            ...row,
-            tracksPacks: sqliteFlag(row.tracksPacks),
-          }).pipe(Effect.mapError((cause) => failTranslate(table, cause))),
-        );
-      }
-      case "products": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db.select().from(products).where(eq(products.organizationId, organizationId)).all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteProductSchema)({
-            ...row,
-            visible: sqliteFlag(row.visible),
-          }).pipe(Effect.mapError((cause) => failTranslate(table, cause))),
-        );
-      }
-      case "batches": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db.select().from(batches).where(eq(batches.organizationId, organizationId)).all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteBatchSchema)(row).pipe(
-            Effect.mapError((cause) => failTranslate(table, cause)),
+): Effect.Effect<ReadonlyArray<SqliteBusinessRow>, PersistenceError | TranslationFailed> => {
+  const translate = <S extends Schema.Top & { readonly DecodingServices: never }>(
+    schema: S,
+    rows: ReadonlyArray<unknown>,
+  ) =>
+    Schema.decodeUnknownEffect(Schema.Array(schema))(rows).pipe(
+      Effect.mapError((cause) => failTranslate(table, cause)),
+    );
+  const stored = persisting("readTable");
+  switch (table) {
+    case "categories":
+      return stored(
+        db.select().from(categories).where(eq(categories.organizationId, organizationId)).all(),
+      ).pipe(
+        Effect.flatMap((rows) =>
+          translate(
+            SqliteCategorySchema,
+            rows.map((row) => ({ ...row, tracksPacks: sqliteFlag(row.tracksPacks) })),
           ),
-        );
-      }
-      case "invoices": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db.select().from(invoices).where(eq(invoices.organizationId, organizationId)).all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteInvoiceSchema)(row).pipe(
-            Effect.mapError((cause) => failTranslate(table, cause)),
+        ),
+      );
+    case "products":
+      return stored(
+        db.select().from(products).where(eq(products.organizationId, organizationId)).all(),
+      ).pipe(
+        Effect.flatMap((rows) =>
+          translate(
+            SqliteProductSchema,
+            rows.map((row) => ({ ...row, visible: sqliteFlag(row.visible) })),
           ),
-        );
-      }
-      case "invoice_items": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db
-              .select()
-              .from(invoiceItems)
-              .where(eq(invoiceItems.organizationId, organizationId))
-              .all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteInvoiceItemSchema)(row).pipe(
-            Effect.mapError((cause) => failTranslate(table, cause)),
-          ),
-        );
-      }
-      case "stock_movements": {
-        const stored = yield* Effect.try({
-          try: () =>
-            db
-              .select()
-              .from(stockMovements)
-              .where(eq(stockMovements.organizationId, organizationId))
-              .all(),
-          catch: (cause) => persistenceFail("readTable", cause),
-        });
-        return yield* Effect.forEach(stored, (row) =>
-          Schema.decodeUnknownEffect(SqliteStockMovementSchema)(row).pipe(
-            Effect.mapError((cause) => failTranslate(table, cause)),
-          ),
-        );
-      }
-      default:
-        return casesHandled(table);
-    }
-  });
+        ),
+      );
+    case "batches":
+      return stored(
+        db.select().from(batches).where(eq(batches.organizationId, organizationId)).all(),
+      ).pipe(Effect.flatMap((rows) => translate(SqliteBatchSchema, rows)));
+    case "invoices":
+      return stored(
+        db.select().from(invoices).where(eq(invoices.organizationId, organizationId)).all(),
+      ).pipe(Effect.flatMap((rows) => translate(SqliteInvoiceSchema, rows)));
+    case "invoice_items":
+      return stored(
+        db.select().from(invoiceItems).where(eq(invoiceItems.organizationId, organizationId)).all(),
+      ).pipe(Effect.flatMap((rows) => translate(SqliteInvoiceItemSchema, rows)));
+    case "stock_movements":
+      return stored(
+        db
+          .select()
+          .from(stockMovements)
+          .where(eq(stockMovements.organizationId, organizationId))
+          .all(),
+      ).pipe(Effect.flatMap((rows) => translate(SqliteStockMovementSchema, rows)));
+    default:
+      return casesHandled(table);
+  }
+};
 
-const makeTarget = (sqlite: Database.Database): OrganizationInventoryImportApi => {
-  const db = drizzle({ client: sqlite });
-  const selectApplied = sqlite.prepare(
-    "select checksum from import_applied_chunks where organization_id = ? and table_name = ? and chunk_index = ?",
-  );
-  const insertApplied = sqlite.prepare(
-    "insert into import_applied_chunks (organization_id, table_name, chunk_index, checksum) values (?, ?, ?, ?)",
-  );
+const makeTarget = (
+  sql: SqliteClient.SqliteClient,
+  db: InventoryDb,
+): OrganizationInventoryImportApi => {
+  const selectApplied = SqlSchema.findOneOption({
+    Request: Schema.Struct({
+      organizationId: Schema.String,
+      table: Schema.String,
+      chunkIndex: Schema.Number,
+    }),
+    Result: Schema.Struct({ checksum: Schema.String }),
+    execute: (key) =>
+      sql`select checksum from import_applied_chunks where organization_id = ${key.organizationId} and table_name = ${key.table} and chunk_index = ${key.chunkIndex}`,
+  });
+  const readState = (organizationId: OrganizationId) =>
+    db.select().from(inventoryState).where(eq(inventoryState.organizationId, organizationId)).get();
   const requireImporting = (
     organizationId: OrganizationId,
     importId: InventoryImportId,
     operation: string,
-  ): void => {
-    const state = db
-      .select()
-      .from(inventoryState)
-      .where(eq(inventoryState.organizationId, organizationId))
-      .get();
-    if (state === undefined) {
-      throw new ImportRejected({
-        organizationId,
-        message: `Inventory object is empty during ${operation}.`,
-      });
-    }
-    if (state.status !== "importing" || state.importId !== importId) {
-      throw new ImportRejected({
-        organizationId,
-        message: `Inventory object is not an importing target for ${importId}.`,
-      });
-    }
-  };
+  ) =>
+    Effect.gen(function* () {
+      const state = yield* readState(organizationId);
+      if (state === undefined) {
+        return yield* new ImportRejected({
+          organizationId,
+          message: `Inventory object is empty during ${operation}.`,
+        });
+      }
+      if (state.status !== "importing" || state.importId !== importId) {
+        return yield* new ImportRejected({
+          organizationId,
+          message: `Inventory object is not an importing target for ${importId}.`,
+        });
+      }
+    });
 
   return {
     prepareImport: Effect.fn("Migrate.Target.prepareImport")(function* (
@@ -392,49 +262,36 @@ const makeTarget = (sqlite: Database.Database): OrganizationInventoryImportApi =
       importId: InventoryImportId,
       incarnation: AuthorityIncarnation,
     ) {
-      yield* Effect.try({
-        try: () =>
-          runSqliteTransaction(sqlite, () => {
-            const state = db
-              .select()
-              .from(inventoryState)
-              .where(eq(inventoryState.organizationId, organizationId))
-              .get();
-            if (state === undefined) {
-              db.insert(inventoryState)
-                .values({
-                  organizationId,
-                  status: "importing",
-                  importId,
-                  releaseId: null,
-                  incarnation,
-                  epoch: INITIAL_SYNC_EPOCH,
-                  commitSequence: padDecimalSequence("0"),
-                  retentionFloor: padDecimalSequence("0"),
-                })
-                .run();
-              return;
-            }
-            if (state.status === "ready") {
-              if (state.importId === importId) return;
-              throw new ImportRejected({
-                organizationId,
-                message: "Import attempts against an already active target are rejected.",
-              });
-            }
-            if (state.importId !== importId) {
-              throw new ImportRejected({
-                organizationId,
-                message: "Inventory object is already importing a different dataset.",
-              });
-            }
-          }),
-        catch: (cause) => {
-          if (cause instanceof ImportRejected) return cause;
-          return persistenceFail("prepareImport", cause);
-        },
-      });
-    }),
+      yield* Effect.gen(function* () {
+        const state = yield* readState(organizationId);
+        if (state === undefined) {
+          yield* db.insert(inventoryState).values({
+            organizationId,
+            status: "importing",
+            importId,
+            releaseId: null,
+            incarnation,
+            epoch: INITIAL_SYNC_EPOCH,
+            commitSequence: padDecimalSequence("0"),
+            retentionFloor: padDecimalSequence("0"),
+          });
+          return;
+        }
+        if (state.status === "ready") {
+          if (state.importId === importId) return;
+          return yield* new ImportRejected({
+            organizationId,
+            message: "Import attempts against an already active target are rejected.",
+          });
+        }
+        if (state.importId !== importId) {
+          return yield* new ImportRejected({
+            organizationId,
+            message: "Inventory object is already importing a different dataset.",
+          });
+        }
+      }).pipe(sql.withTransaction);
+    }, persisting("prepareImport")),
     applyChunk: Effect.fn("Migrate.Target.applyChunk")(function* (
       organizationId: OrganizationId,
       importId: InventoryImportId,
@@ -444,55 +301,31 @@ const makeTarget = (sqlite: Database.Database): OrganizationInventoryImportApi =
       rowsJson: string,
     ) {
       const rows = yield* decodeChunkRows(table, rowsJson);
-      const actualChecksum = rowsChecksum(rows);
-      if (actualChecksum !== checksum) {
-        return yield* Effect.fail(
-          new ChunkContentMismatch({
-            organizationId,
-            table,
-            chunkIndex,
-            message: "Imported chunk identity collided with different bytes.",
-          }),
-        );
-      }
-      const owned = rows.every((row) => row.organizationId === organizationId);
-      if (!owned) {
-        return yield* Effect.fail(
-          new ImportRejected({
-            organizationId,
-            message: `Chunk ${table} ${String(chunkIndex)} contains a foreign organization.`,
-          }),
-        );
-      }
-      return yield* Effect.try({
-        try: () =>
-          runSqliteTransaction(sqlite, () => {
-            const existing = Schema.decodeUnknownOption(AppliedChunkRow)(
-              selectApplied.get(organizationId, table, chunkIndex),
-            );
-            if (Option.isSome(existing)) {
-              if (existing.value.checksum !== checksum) {
-                throw new ChunkContentMismatch({
-                  organizationId,
-                  table,
-                  chunkIndex,
-                  message: "Imported chunk identity collided with different bytes.",
-                });
-              }
-              return ApplyChunkOutcomeSchema.cases.duplicate.make({});
-            }
-            requireImporting(organizationId, importId, "applyChunk");
-            insertRows(db, table, rows);
-            insertApplied.run(organizationId, table, chunkIndex, checksum);
-            return ApplyChunkOutcomeSchema.cases.applied.make({});
-          }),
-        catch: (cause) => {
-          if (cause instanceof ChunkContentMismatch || cause instanceof ImportRejected)
-            return cause;
-          return persistenceFail("applyChunk", cause);
-        },
+      const mismatch = new ChunkContentMismatch({
+        organizationId,
+        table,
+        chunkIndex,
+        message: "Imported chunk identity collided with different bytes.",
       });
-    }),
+      if (rowsChecksum(rows) !== checksum) return yield* mismatch;
+      if (!rows.every((row) => row.organizationId === organizationId)) {
+        return yield* new ImportRejected({
+          organizationId,
+          message: `Chunk ${table} ${String(chunkIndex)} contains a foreign organization.`,
+        });
+      }
+      return yield* Effect.gen(function* () {
+        const existing = yield* selectApplied({ organizationId, table, chunkIndex });
+        if (Option.isSome(existing)) {
+          if (existing.value.checksum !== checksum) return yield* mismatch;
+          return ApplyChunkOutcomeSchema.cases.duplicate.make({});
+        }
+        yield* requireImporting(organizationId, importId, "applyChunk");
+        yield* insertRows(db, table, rows);
+        yield* sql`insert into import_applied_chunks (organization_id, table_name, chunk_index, checksum) values (${organizationId}, ${table}, ${chunkIndex}, ${checksum})`;
+        return ApplyChunkOutcomeSchema.cases.applied.make({});
+      }).pipe(sql.withTransaction);
+    }, persisting("applyChunk")),
     readTable: Effect.fn("Migrate.Target.readTable")(function* (
       organizationId: OrganizationId,
       table: BusinessTable,
@@ -502,93 +335,67 @@ const makeTarget = (sqlite: Database.Database): OrganizationInventoryImportApi =
     countReplicas: Effect.fn("Migrate.Target.countReplicas")(function* (
       organizationId: OrganizationId,
     ) {
-      const rows = yield* Effect.try({
-        try: () =>
-          db.select().from(replicas).where(eq(replicas.organizationId, organizationId)).all(),
-        catch: (cause) => persistenceFail("countReplicas", cause),
-      });
+      const rows = yield* db
+        .select()
+        .from(replicas)
+        .where(eq(replicas.organizationId, organizationId))
+        .all();
       return rows.length;
-    }),
+    }, persisting("countReplicas")),
     countReceipts: Effect.fn("Migrate.Target.countReceipts")(function* (
       organizationId: OrganizationId,
     ) {
-      const rows = yield* Effect.try({
-        try: () =>
-          db
-            .select()
-            .from(commandReceipts)
-            .where(eq(commandReceipts.organizationId, organizationId))
-            .all(),
-        catch: (cause) => persistenceFail("countReceipts", cause),
-      });
+      const rows = yield* db
+        .select()
+        .from(commandReceipts)
+        .where(eq(commandReceipts.organizationId, organizationId))
+        .all();
       return rows.length;
-    }),
+    }, persisting("countReceipts")),
     markReady: Effect.fn("Migrate.Target.markReady")(function* (
       organizationId: OrganizationId,
       importId: InventoryImportId,
     ) {
-      yield* Effect.try({
-        try: () =>
-          runSqliteTransaction(sqlite, () => {
-            const state = db
-              .select()
-              .from(inventoryState)
-              .where(eq(inventoryState.organizationId, organizationId))
-              .get();
-            if (state !== undefined && state.status === "ready" && state.importId === importId) {
-              return;
-            }
-            requireImporting(organizationId, importId, "markReady");
-            db.update(inventoryState)
-              .set({ status: "ready" })
-              .where(eq(inventoryState.organizationId, organizationId))
-              .run();
-          }),
-        catch: (cause) => {
-          if (cause instanceof ImportRejected) return cause;
-          return persistenceFail("markReady", cause);
-        },
-      });
-    }),
+      yield* Effect.gen(function* () {
+        const state = yield* readState(organizationId);
+        if (state !== undefined && state.status === "ready" && state.importId === importId) {
+          return;
+        }
+        yield* requireImporting(organizationId, importId, "markReady");
+        yield* db
+          .update(inventoryState)
+          .set({ status: "ready" })
+          .where(eq(inventoryState.organizationId, organizationId));
+      }).pipe(sql.withTransaction);
+    }, persisting("markReady")),
     readImportState: Effect.fn("Migrate.Target.readImportState")(function* (
       organizationId: OrganizationId,
     ) {
-      const state = yield* Effect.try({
-        try: () =>
-          db
-            .select()
-            .from(inventoryState)
-            .where(eq(inventoryState.organizationId, organizationId))
-            .get(),
-        catch: (cause) => persistenceFail("readImportState", cause),
-      });
+      const state = yield* readState(organizationId);
       if (state === undefined) {
         return ImportObjectStateSchema.cases.empty.make({ organizationId });
       }
-      if (state.status === "importing") {
-        return yield* Schema.decodeUnknownEffect(ImportObjectStateSchema)({
-          _tag: "importing",
-          organizationId: state.organizationId,
-          importId: state.importId,
-          epoch: state.epoch,
-          incarnation: state.incarnation,
-        }).pipe(Effect.mapError((cause) => persistenceFail("readImportState", cause)));
-      }
       return yield* Schema.decodeUnknownEffect(ImportObjectStateSchema)({
-        _tag: "ready",
+        _tag: state.status === "importing" ? "importing" : "ready",
         organizationId: state.organizationId,
         importId: state.importId,
         epoch: state.epoch,
         incarnation: state.incarnation,
-      }).pipe(Effect.mapError((cause) => persistenceFail("readImportState", cause)));
-    }),
+      });
+    }, persisting("readImportState")),
   };
 };
 
 export const sqliteTargetLayer = (
-  sqlite: Database.Database,
+  sql: SqliteClient.SqliteClient,
 ): Layer.Layer<OrganizationInventoryImport> =>
-  Layer.sync(OrganizationInventoryImport, () => {
-    migrateInventoryAuthority(sqlite);
-    return OrganizationInventoryImport.of(makeTarget(sqlite));
-  });
+  Layer.effect(
+    OrganizationInventoryImport,
+    Effect.gen(function* () {
+      yield* migrateInventoryAuthority(sql).pipe(Effect.orDie);
+      const db = yield* SqliteDrizzle.makeWithDefaults().pipe(
+        Effect.provideService(SqliteClient.SqliteClient, sql),
+      );
+      return OrganizationInventoryImport.of(makeTarget(sql, db));
+    }),
+  );

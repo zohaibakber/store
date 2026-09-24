@@ -1,16 +1,20 @@
-import type { KVNamespace } from "@cloudflare/workers-types";
+import type { D1Database } from "@cloudflare/workers-types";
+import * as D1Client from "@effect/sql-d1/D1Client";
 import {
+  AuthClientKind,
   AuthorizationCode,
   EmailAddress,
   OtpChallengeId,
   UserId,
-  type AuthClientKind,
   type AuthorizationCode as AuthorizationCodeType,
   type EmailAddress as EmailAddressType,
   type OtpChallengeId as OtpChallengeIdType,
   type OtpCode,
   type UserId as UserIdType,
 } from "@store/auth";
+import { ephemeralRecord } from "@store/db/auth.schema";
+import { and, eq, gt, inArray, lte } from "drizzle-orm";
+import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -19,35 +23,29 @@ import * as Schema from "effect/Schema";
 
 import { sha256 } from "./crypto";
 
-const OtpRecord = Schema.Struct({
+const OtpPayload = Schema.Struct({
   email: EmailAddress,
-  codeHash: Schema.String,
-  expiresAt: Schema.Number,
 });
 
-const OAuthStateRecord = Schema.Struct({
+const OAuthStatePayload = Schema.Struct({
   redirectUri: Schema.String,
   codeChallenge: Schema.String,
-  client: Schema.Union([
-    Schema.Struct({ _tag: Schema.Literal("Browser") }),
-    Schema.Struct({ _tag: Schema.Literal("Native"), deviceName: Schema.String }),
-  ]),
-  expiresAt: Schema.Number,
+  client: AuthClientKind,
 });
-export interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStateRecord> {}
+export interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStatePayload> {
+  readonly expiresAt: number;
+}
 
-const AuthorizationGrantRecord = Schema.Struct({
+const AuthorizationGrantPayload = Schema.Struct({
   userId: UserId,
   codeChallenge: Schema.String,
-  client: Schema.Union([
-    Schema.Struct({ _tag: Schema.Literal("Browser") }),
-    Schema.Struct({ _tag: Schema.Literal("Native"), deviceName: Schema.String }),
-  ]),
-  expiresAt: Schema.Number,
+  client: AuthClientKind,
 });
 export interface AuthorizationGrantRecord extends Schema.Schema.Type<
-  typeof AuthorizationGrantRecord
-> {}
+  typeof AuthorizationGrantPayload
+> {
+  readonly expiresAt: number;
+}
 
 export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>()(
   "Auth.EphemeralStoreError",
@@ -95,130 +93,174 @@ export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralSto
   "@store/auth-worker/EphemeralStore",
 ) {}
 
+type EphemeralKind = typeof ephemeralRecord.$inferSelect.kind;
+
+type AuthDrizzle = Effect.Success<ReturnType<typeof D1Drizzle.makeWithDefaults>>;
+
+export const EXPIRED_SWEEP_LIMIT = 32;
+
 const error = (operation: string, cause: unknown) =>
   new EphemeralStoreError({ operation, message: String(cause), cause });
 
-/**
- * Cloudflare KV refuses `expiration`/`expirationTtl` under 60 seconds. OTP
- * challenges, OAuth state, and authorization grants all last minutes, but
- * flooring an absolute `expiresAt` to remaining seconds can still land under
- * that floor near expiry. KV TTL is only garbage collection: the JSON
- * `expiresAt` is what consume methods honor.
- */
-export const kvExpirationTtlSeconds = (expiresAtMs: number, nowMs: number) =>
-  Math.max(Math.ceil((expiresAtMs - nowMs) / 1_000), 60) + 1;
-
-const digest = (value: string) =>
-  sha256(value).pipe(Effect.mapError((cause) => error("digest", cause)));
-
 const keyId = () => crypto.randomUUID();
 
-export const ephemeralStoreLayer = (namespace: KVNamespace, pepper: string) =>
-  Layer.succeed(
-    EphemeralStore,
-    EphemeralStore.of({
-      createOtp: Effect.fn("EphemeralStore.createOtp")(function* (input) {
-        const now = yield* Clock.currentTimeMillis;
-        const challengeId = OtpChallengeId.make(keyId());
-        const codeHash = yield* digest(`${pepper}:${challengeId}:${input.code}`);
-        const record = {
-          email: input.email,
-          codeHash,
-          expiresAt: input.expiresAt,
-        } satisfies typeof OtpRecord.Type;
-        yield* Effect.tryPromise({
-          try: () =>
-            namespace.put(`otp:${challengeId}`, JSON.stringify(record), {
-              expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
-            }),
-          catch: (cause) => error("createOtp", cause),
-        });
-        return challengeId;
-      }),
-      consumeOtp: Effect.fn("EphemeralStore.consumeOtp")(function* (input) {
-        const raw = yield* Effect.tryPromise({
-          try: () => namespace.get(`otp:${input.challengeId}`, "json"),
-          catch: (cause) => error("consumeOtp.get", cause),
-        });
-        if (raw === null) return null;
-        const record = yield* Schema.decodeUnknownEffect(OtpRecord)(raw).pipe(
-          Effect.mapError((cause) => error("consumeOtp.decode", cause)),
-        );
-        const codeHash = yield* digest(`${pepper}:${input.challengeId}:${input.code}`);
-        if (record.expiresAt <= input.now || codeHash !== record.codeHash) return null;
-        yield* Effect.tryPromise({
-          try: () => namespace.delete(`otp:${input.challengeId}`),
-          catch: (cause) => error("consumeOtp.delete", cause),
-        });
-        return record.email;
-      }),
-      createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
-        const now = yield* Clock.currentTimeMillis;
-        const state = keyId();
-        yield* Effect.tryPromise({
-          try: () =>
-            namespace.put(
-              `oauth-state:${state}`,
-              JSON.stringify(input satisfies typeof OAuthStateRecord.Type),
-              {
-                expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
-              },
-            ),
-          catch: (cause) => error("createOAuthState", cause),
-        });
-        return state;
-      }),
-      consumeOAuthState: Effect.fn("EphemeralStore.consumeOAuthState")(function* (state, now) {
-        const raw = yield* Effect.tryPromise({
-          try: () => namespace.get(`oauth-state:${state}`, "json"),
-          catch: (cause) => error("consumeOAuthState.get", cause),
-        });
-        if (raw === null) return null;
-        const record = yield* Schema.decodeUnknownEffect(OAuthStateRecord)(raw).pipe(
-          Effect.mapError((cause) => error("consumeOAuthState.decode", cause)),
-        );
-        if (record.expiresAt <= now) return null;
-        yield* Effect.tryPromise({
-          try: () => namespace.delete(`oauth-state:${state}`),
-          catch: (cause) => error("consumeOAuthState.delete", cause),
-        });
-        return record;
-      }),
-      createAuthorizationGrant: Effect.fn("EphemeralStore.createAuthorizationGrant")(
-        function* (input) {
-          const now = yield* Clock.currentTimeMillis;
-          const code = AuthorizationCode.make(keyId());
-          yield* Effect.tryPromise({
-            try: () =>
-              namespace.put(
-                `authorization:${code}`,
-                JSON.stringify(input satisfies typeof AuthorizationGrantRecord.Type),
-                {
-                  expirationTtl: kvExpirationTtlSeconds(input.expiresAt, now),
-                },
-              ),
-            catch: (cause) => error("createAuthorizationGrant", cause),
-          });
-          return code;
-        },
-      ),
-      consumeAuthorizationGrant: Effect.fn("EphemeralStore.consumeAuthorizationGrant")(
-        function* (code, now) {
-          const raw = yield* Effect.tryPromise({
-            try: () => namespace.get(`authorization:${code}`, "json"),
-            catch: (cause) => error("consumeAuthorizationGrant.get", cause),
-          });
-          if (raw === null) return null;
-          const record = yield* Schema.decodeUnknownEffect(AuthorizationGrantRecord)(raw).pipe(
-            Effect.mapError((cause) => error("consumeAuthorizationGrant.decode", cause)),
-          );
-          if (record.expiresAt <= now) return null;
-          yield* Effect.tryPromise({
-            try: () => namespace.delete(`authorization:${code}`),
-            catch: (cause) => error("consumeAuthorizationGrant.delete", cause),
-          });
-          return record;
-        },
-      ),
+const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralStoreApi => {
+  const client = database.$client;
+
+  const recordKey = (kind: EphemeralKind, id: string) =>
+    sha256(`${pepper}:${kind}:${id}`).pipe(Effect.mapError((cause) => error("digest", cause)));
+
+  const sweepExpired = (now: number) =>
+    database
+      .delete(ephemeralRecord)
+      .where(
+        inArray(
+          ephemeralRecord.key,
+          database
+            .select({ key: ephemeralRecord.key })
+            .from(ephemeralRecord)
+            .where(lte(ephemeralRecord.expiresAt, now))
+            .limit(EXPIRED_SWEEP_LIMIT),
+        ),
+      );
+
+  const putRecord = <S extends Schema.Codec<unknown, unknown>>(
+    operation: string,
+    kind: EphemeralKind,
+    id: string,
+    schema: S,
+    payload: S["Type"],
+    expiresAt: number,
+  ) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const key = yield* recordKey(kind, id);
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(schema))(payload).pipe(
+        Effect.mapError((cause) => error(`${operation}.encode`, cause)),
+      );
+      const statements = [
+        sweepExpired(now),
+        database
+          .insert(ephemeralRecord)
+          .values({ key, kind, payload: encoded, expiresAt, createdAt: now }),
+      ].map((query) => {
+        const compiled = query.toSQL();
+        return client.unsafe(compiled.sql, compiled.params);
+      });
+      yield* client
+        .batch(statements)
+        .pipe(Effect.mapError((cause) => error(`${operation}.insert`, cause)));
+    });
+
+  const takeRecord = <S extends Schema.Codec<unknown, unknown>>(
+    operation: string,
+    kind: EphemeralKind,
+    id: string,
+    schema: S,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const key = yield* recordKey(kind, id);
+      const [row] = yield* database
+        .delete(ephemeralRecord)
+        .where(
+          and(
+            eq(ephemeralRecord.key, key),
+            eq(ephemeralRecord.kind, kind),
+            gt(ephemeralRecord.expiresAt, now),
+          ),
+        )
+        .returning({ payload: ephemeralRecord.payload, expiresAt: ephemeralRecord.expiresAt })
+        .pipe(Effect.mapError((cause) => error(`${operation}.take`, cause)));
+      if (!row) return null;
+      const payload = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(
+        row.payload,
+      ).pipe(Effect.mapError((cause) => error(`${operation}.decode`, cause)));
+      return { payload, expiresAt: row.expiresAt };
+    });
+
+  return {
+    createOtp: Effect.fn("EphemeralStore.createOtp")(function* (input) {
+      const challengeId = OtpChallengeId.make(keyId());
+      yield* putRecord(
+        "createOtp",
+        "otp",
+        `${challengeId}:${input.code}`,
+        OtpPayload,
+        { email: input.email },
+        input.expiresAt,
+      );
+      return challengeId;
     }),
-  );
+    consumeOtp: Effect.fn("EphemeralStore.consumeOtp")(function* (input) {
+      const taken = yield* takeRecord(
+        "consumeOtp",
+        "otp",
+        `${input.challengeId}:${input.code}`,
+        OtpPayload,
+        input.now,
+      );
+      return taken?.payload.email ?? null;
+    }),
+    createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
+      const state = keyId();
+      yield* putRecord(
+        "createOAuthState",
+        "oauth-state",
+        state,
+        OAuthStatePayload,
+        {
+          redirectUri: input.redirectUri,
+          codeChallenge: input.codeChallenge,
+          client: input.client,
+        },
+        input.expiresAt,
+      );
+      return state;
+    }),
+    consumeOAuthState: Effect.fn("EphemeralStore.consumeOAuthState")(function* (state, now) {
+      const taken = yield* takeRecord(
+        "consumeOAuthState",
+        "oauth-state",
+        state,
+        OAuthStatePayload,
+        now,
+      );
+      return taken ? { ...taken.payload, expiresAt: taken.expiresAt } : null;
+    }),
+    createAuthorizationGrant: Effect.fn("EphemeralStore.createAuthorizationGrant")(
+      function* (input) {
+        const code = AuthorizationCode.make(keyId());
+        yield* putRecord(
+          "createAuthorizationGrant",
+          "authorization",
+          code,
+          AuthorizationGrantPayload,
+          { userId: input.userId, codeChallenge: input.codeChallenge, client: input.client },
+          input.expiresAt,
+        );
+        return code;
+      },
+    ),
+    consumeAuthorizationGrant: Effect.fn("EphemeralStore.consumeAuthorizationGrant")(
+      function* (code, now) {
+        const taken = yield* takeRecord(
+          "consumeAuthorizationGrant",
+          "authorization",
+          code,
+          AuthorizationGrantPayload,
+          now,
+        );
+        return taken ? { ...taken.payload, expiresAt: taken.expiresAt } : null;
+      },
+    ),
+  };
+};
+
+export const ephemeralStoreLayer = (database: D1Database, pepper: string) =>
+  Layer.effect(
+    EphemeralStore,
+    Effect.map(D1Drizzle.makeWithDefaults({}), (drizzle) =>
+      EphemeralStore.of(makeEphemeralStore(drizzle, pepper)),
+    ),
+  ).pipe(Layer.provide(D1Client.layer({ db: database })));

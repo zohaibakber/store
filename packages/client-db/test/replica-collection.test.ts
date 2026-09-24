@@ -1,5 +1,6 @@
 import { decodeCategoryId } from "@store/contracts/ids";
 import { createCollection, IR } from "@tanstack/db";
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { sqliteCollectionOptions } from "../src/replica/collection";
@@ -10,7 +11,7 @@ import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
 import type {
   InventoryCollectionDescriptor,
   ReplicaCommitNotice,
-  ReplicaSqlExecutor,
+  ReplicaSubsetReader,
   SqliteResultRow,
 } from "../src/replica/types";
 import type { CategoryRow } from "../src/rows";
@@ -27,7 +28,6 @@ const categoryRow = (id: string, name: string): CategoryRow => ({
   tracksPacks: true,
   createdAt: 1,
   updatedAt: 1,
-  deletedAt: null,
   organizationId: "org-1",
   createdByUserId: "user-1",
   updatedByUserId: "user-1",
@@ -45,35 +45,25 @@ const descriptor: InventoryCollectionDescriptor<CategoryRow> = {
   decodeRows: decodeCategorySqliteRows,
 };
 
-const insertCategory = (
-  replica: ReturnType<typeof openNodeReplicaSqlite>,
-  id: string,
-  name: string,
-) => {
+type NodeReplica = Awaited<ReturnType<typeof openNodeReplicaSqlite>>;
+
+const insertCategory = (replica: NodeReplica, id: string, name: string) =>
   replica.withWrite(
-    (sqlite) => {
-      sqlite
-        .prepare(
+    (handle) =>
+      Effect.asVoid(
+        handle.sql.unsafe(
           `insert into categories (
-            id, name, tracksPacks, createdAt, updatedAt, deletedAt,
+            id, name, tracksPacks, createdAt, updatedAt,
             organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion
-          ) values (?, ?, 1, 1, 1, null, ?, ?, ?, ?, 'seed', 1)`,
-        )
-        .run(
-          id,
-          name,
-          identity.organizationId,
-          identity.userId,
-          identity.userId,
-          identity.replicaId,
-        );
-    },
+          ) values (?, ?, 1, 1, 1, ?, ?, ?, ?, 'seed', 1)`,
+          [id, name, identity.organizationId, identity.userId, identity.userId, identity.replicaId],
+        ),
+      ),
     ["category"],
     [id],
   );
-};
 
-const startCollection = (replica: ReturnType<typeof openNodeReplicaSqlite>) => {
+const startCollection = (replica: NodeReplica) => {
   const options = sqliteCollectionOptions(descriptor, {
     executor: replica,
     changeFeed: replica,
@@ -90,31 +80,29 @@ describe("sqliteCollectionOptions", () => {
     const late = categoryRow("late", "Late");
     const queued: Array<(notice: ReplicaCommitNotice) => void> = [];
     let reads = 0;
-    const executor: ReplicaSqlExecutor = {
-      stamp: () => ({
-        workspaceToken: token,
-        generationId: generation,
-        localCommitVersion: reads === 0 ? 1 : 2,
-      }),
-      query: () => {
+    const executor: ReplicaSubsetReader = {
+      readSubset: async () => {
         reads += 1;
-        if (reads === 1) return [];
-        return [
-          {
-            id: late.id,
-            name: late.name,
-            tracksPacks: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            deletedAt: null,
-            organizationId: late.organizationId,
-            createdByUserId: late.createdByUserId,
-            updatedByUserId: late.updatedByUserId,
-            deviceId: late.deviceId,
-            operationId: late.operationId,
-            rowVersion: 1,
-          } satisfies SqliteResultRow,
-        ];
+        const stamp = { workspaceToken: token, generationId: generation };
+        if (reads === 1) return { stamp: { ...stamp, localCommitVersion: 1 }, rows: [] };
+        return {
+          stamp: { ...stamp, localCommitVersion: 2 },
+          rows: [
+            {
+              id: late.id,
+              name: late.name,
+              tracksPacks: 1,
+              createdAt: 1,
+              updatedAt: 1,
+              organizationId: late.organizationId,
+              createdByUserId: late.createdByUserId,
+              updatedByUserId: late.updatedByUserId,
+              deviceId: late.deviceId,
+              operationId: late.operationId,
+              rowVersion: 1,
+            } satisfies SqliteResultRow,
+          ],
+        };
       },
     };
     const options = sqliteCollectionOptions(descriptor, {
@@ -144,10 +132,10 @@ describe("sqliteCollectionOptions", () => {
   });
 
   it("reference-counts overlapping acquisitions and releases them independently", async () => {
-    const replica = openNodeReplicaSqlite(identity);
-    insertCategory(replica, "shared", "Shared");
-    insertCategory(replica, "only-a", "Only A");
-    insertCategory(replica, "only-b", "Only B");
+    const replica = await openNodeReplicaSqlite(identity);
+    await insertCategory(replica, "shared", "Shared");
+    await insertCategory(replica, "only-a", "Only A");
+    await insertCategory(replica, "only-b", "Only B");
     const { collection, options } = startCollection(replica);
     const first = {
       where: new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(["shared", "only-a"])]),
@@ -173,8 +161,8 @@ describe("sqliteCollectionOptions", () => {
   });
 
   it("publishes nothing from a disposed workspace", async () => {
-    const replica = openNodeReplicaSqlite(identity);
-    insertCategory(replica, "keep", "Keep");
+    const replica = await openNodeReplicaSqlite(identity);
+    await insertCategory(replica, "keep", "Keep");
     const { collection, options } = startCollection(replica);
     await options.utils.loadSubset({
       where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("keep")]),
@@ -182,13 +170,13 @@ describe("sqliteCollectionOptions", () => {
     });
     expect(collection.get("keep")?.name).toBe("Keep");
     await collection.cleanup();
-    insertCategory(replica, "after", "After");
+    await insertCategory(replica, "after", "After");
     expect(collection.get("after")).toBeUndefined();
     replica.close();
   });
 
   it("fails an unsupported expression instead of scanning", async () => {
-    const replica = openNodeReplicaSqlite(identity);
+    const replica = await openNodeReplicaSqlite(identity);
     const { options } = startCollection(replica);
     await expect(
       options.utils.loadSubset({

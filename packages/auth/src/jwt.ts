@@ -170,7 +170,9 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     typ: "JWT",
     kid: AUTH_JWT_KEY_ID,
   } satisfies typeof JwtHeader.Type;
-  const encodedHeader = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader))(header).pipe(
+  const encodedHeader = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader))(
+    header,
+  ).pipe(
     Effect.mapError(
       (cause) =>
         new JwtError({

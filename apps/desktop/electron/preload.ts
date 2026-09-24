@@ -10,24 +10,23 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
-import {
-  INVENTORY_HTTP_ABORT_CHANNEL,
-  INVENTORY_HTTP_CONFIG_CHANNEL,
-  INVENTORY_HTTP_REQUEST_CHANNEL,
-  type InventoryHttpBridge,
-} from "./inventory-http-channels";
+import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
 import { makeLastValueReplay } from "./last-value-replay";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import {
-  REPLICA_CANCEL_CHANNEL,
+  REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
+  REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_QUERY_CHANNEL,
+  REPLICA_OUTBOX_CHANNEL,
+  REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
+  REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
   type ReplicaIpcBridge,
+  type ReplicaSyncHealthEvent,
 } from "./replica-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
@@ -37,24 +36,52 @@ const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
 
 const inventoryHttp: InventoryHttpBridge = {
   getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),
-  request: (request) => ipcRenderer.invoke(INVENTORY_HTTP_REQUEST_CHANNEL, request),
-  abort: (requestId) => ipcRenderer.send(INVENTORY_HTTP_ABORT_CHANNEL, requestId),
 };
 
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
+const syncHealthReplays = new Map<
+  string,
+  ReturnType<typeof makeLastValueReplay<ReplicaSyncHealthEvent["health"]>>
+>();
+
+const syncHealthReplay = (workspaceToken: string) => {
+  const existing = syncHealthReplays.get(workspaceToken);
+  if (existing) return existing;
+  const created = makeLastValueReplay<ReplicaSyncHealthEvent["health"]>();
+  syncHealthReplays.set(workspaceToken, created);
+  return created;
+};
+
+ipcRenderer.on(REPLICA_SYNC_HEALTH_CHANNEL, (_event, notice: ReplicaSyncHealthEvent) => {
+  syncHealthReplay(notice.workspaceToken).publish(notice.health);
+});
+
 const replica: ReplicaIpcBridge = {
   open: (input) => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL, input),
-  close: (workspaceToken) => ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken),
+  close: (workspaceToken) => {
+    syncHealthReplays.delete(workspaceToken);
+    return ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken);
+  },
   stamp: (workspaceToken) => ipcRenderer.invoke(REPLICA_STAMP_CHANNEL, workspaceToken),
-  query: (input) => ipcRenderer.invoke(REPLICA_QUERY_CHANNEL, input),
+  readSubset: (input) => ipcRenderer.invoke(REPLICA_READ_SUBSET_CHANNEL, input),
+  readOutboxStatuses: (workspaceToken) =>
+    ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
+  readCommandAllocation: (workspaceToken) =>
+    ipcRenderer.invoke(REPLICA_ALLOCATION_CHANNEL, workspaceToken),
+  enqueueLocal: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),
   wakeSyncUpload: (workspaceToken) => ipcRenderer.invoke(REPLICA_WAKE_CHANNEL, workspaceToken),
-  cancel: (requestId) => ipcRenderer.send(REPLICA_CANCEL_CHANNEL, requestId),
   onCommit(callback) {
     const listener = (_event: Electron.IpcRendererEvent, event: ReplicaCommitEvent) =>
       callback(event);
     ipcRenderer.on(REPLICA_COMMIT_CHANNEL, listener);
     return () => ipcRenderer.off(REPLICA_COMMIT_CHANNEL, listener);
+  },
+  onSyncHealth(workspaceToken, callback) {
+    const unsubscribe = syncHealthReplay(workspaceToken).subscribe(callback);
+    return () => {
+      unsubscribe();
+    };
   },
 };
 

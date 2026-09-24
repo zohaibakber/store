@@ -18,7 +18,7 @@ import * as Effect from "effect/Effect";
 import type { InventoryActor } from "./model";
 import { protocol, type InventoryTransaction } from "./postgres";
 
-export type IssuedInvoice = {
+type IssuedInvoice = {
   readonly result: AcceptedInvoiceResult;
   readonly changes: ReadonlyArray<SyncLogChange>;
 };
@@ -135,7 +135,6 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
     rowVersion: 1,
     createdAt: command.occurredAt,
     updatedAt: command.occurredAt,
-    deletedAt: null,
   });
   const inserted = yield* tx
     .insert(invoices)
@@ -214,7 +213,6 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
         rowVersion: 1,
         createdAt: command.occurredAt,
         updatedAt: command.occurredAt,
-        deletedAt: null,
       })
       .returning();
     if (!itemRow) {

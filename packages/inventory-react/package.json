@@ -1,0 +1,29 @@
+{
+  "name": "@store/inventory-react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/inventory-react/test"
+  },
+  "dependencies": {
+    "@effect/atom-react": "catalog:",
+    "@store/client-db": "workspace:*",
+    "@store/contracts": "workspace:*",
+    "@store/services": "workspace:*",
+    "@tanstack/react-db": "0.4.1",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "catalog:",
+    "vitest": "5.0.1"
+  },
+  "peerDependencies": {
+    "react": "*"
+  }
+}

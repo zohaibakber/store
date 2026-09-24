@@ -81,7 +81,7 @@ export default defineConfig(({ command }) => ({
                 main: path.resolve("electron/main.ts"),
                 "replica-worker": path.resolve("electron/replica-worker.ts"),
               },
-              external: ["electron", "electron-updater", "better-sqlite3"],
+              external: ["electron", "electron-updater"],
               output: { entryFileNames: "[name].js" },
             },
           },

@@ -15,11 +15,3 @@ export class ReplicaRowInvalid extends Schema.TaggedError<ReplicaRowInvalid>()(
     source: Schema.String,
   },
 ) {}
-
-export class OrganizationObjectCatalogUnsupported extends Schema.TaggedError<OrganizationObjectCatalogUnsupported>()(
-  "OrganizationObjectCatalogUnsupported",
-  {
-    message: Schema.String,
-    action: Schema.String,
-  },
-) {}

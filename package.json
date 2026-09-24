@@ -7,8 +7,8 @@
     "dev": "turbo run dev",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "turbo run build",
-    "check": "node scripts/check-powersync-migration.mjs && turbo run check",
-    "check:powersync-migration": "node scripts/check-powersync-migration.mjs",
+    "check": "node scripts/check-retired-vendors.mjs && turbo run check",
+    "check:retired-vendors": "node scripts/check-retired-vendors.mjs",
     "migrate:cloudflare": "pnpm --filter @store/migrate-cloudflare start",
     "lint:design": "oxlint -c .oxlintrc.design.json apps/desktop/src",
     "test": "turbo run test",
@@ -23,19 +23,19 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260911.1",
+    "@cloudflare/workers-types": "5.20260923.1",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@oxlint/plugins": "1.83.0",
-    "@shadcn/lint": "0.1.0",
-    "@types/node": "^26.6.1",
+    "@oxlint/plugins": "1.85.0",
+    "@shadcn/lint": "0.2.0",
+    "@types/node": "^26.6.2",
     "alchemy": "catalog:",
     "effect": "catalog:",
-    "oxlint": "1.83.0",
-    "turbo": "^2.10.13",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.2",
-    "vite-plus": "^0.3.2",
-    "wrangler": "^4.132.0"
+    "oxlint": "1.85.0",
+    "turbo": "^2.11.3",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0-rc.0",
+    "vite-plus": "^1.0.0-rc.0",
+    "wrangler": "^4.136.3"
   },
   "devEngines": {
     "packageManager": {

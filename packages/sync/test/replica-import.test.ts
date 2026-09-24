@@ -14,7 +14,8 @@ import {
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
 import { batches, commandOutbox, replicaState, snapshotStagedRows } from "@store/db/replica.schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { commandStatus, saveLocalCommand, visibleBatchStock } from "../src/replica/commands";
@@ -22,10 +23,9 @@ import {
   activateSnapshotGeneration,
   beginSnapshotImport,
   importSnapshotPart,
-  pendingOutboxCount,
 } from "../src/replica/import";
 import { runReplicaTransaction } from "../src/replica/storage";
-import { seedReplicaTenUnits } from "./lib/replica-fixture";
+import { withSeededReplica } from "./lib/replica-fixture";
 
 const manifest: SnapshotManifest = {
   snapshotId: SnapshotId.make("snapshot-1"),
@@ -74,55 +74,92 @@ const partPayload: SnapshotPartPayload = {
 };
 
 describe("replica snapshot import", () => {
-  it("stages snapshot parts without writing live tables", () => {
-    const store = seedReplicaTenUnits();
-    runReplicaTransaction(store.db, (tx) => {
-      beginSnapshotImport(tx, manifest);
-      const first = importSnapshotPart(tx, manifest, partPayload);
-      const second = importSnapshotPart(tx, manifest, partPayload);
-      expect(first).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
-      expect(second).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
-      expect(
-        tx
-          .select()
-          .from(snapshotStagedRows)
-          .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
-          .all(),
-      ).toHaveLength(1);
-      expect(
-        tx.select().from(batches).where(eq(batches.id, LAST_UNIT_BATCH_ID)).get()?.unitQuantity,
-      ).toBe(10);
-    });
-    store.close();
+  it("stages snapshot parts without writing live tables", async () => {
+    const seen = await Effect.runPromise(
+      withSeededReplica((store) =>
+        runReplicaTransaction(store, (tx) =>
+          Effect.gen(function* () {
+            yield* beginSnapshotImport(tx, manifest);
+            const first = yield* importSnapshotPart(tx, manifest, partPayload);
+            const second = yield* importSnapshotPart(tx, manifest, partPayload);
+            const staged = yield* tx
+              .select()
+              .from(snapshotStagedRows)
+              .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
+              .all();
+            const batch = yield* tx
+              .select()
+              .from(batches)
+              .where(eq(batches.id, LAST_UNIT_BATCH_ID))
+              .get();
+            return {
+              first,
+              second,
+              staged: staged.length,
+              unitQuantity: batch?.unitQuantity,
+            };
+          }),
+        ),
+      ),
+    );
+    expect(seen.first).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
+    expect(seen.second).toEqual({ _tag: "caught_up", throughCommitSequence: "3" });
+    expect(seen.staged).toBe(1);
+    expect(seen.unitQuantity).toBe(10);
   });
 
-  it("activates a snapshot generation while preserving pending commands", () => {
-    const store = seedReplicaTenUnits();
-    runReplicaTransaction(store.db, (tx) => {
-      saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
-      beginSnapshotImport(tx, manifest);
-      importSnapshotPart(tx, manifest, partPayload);
-      activateSnapshotGeneration(tx, manifest.snapshotId);
-      expect(pendingOutboxCount(tx)).toBe(1);
-      expect(commandStatus(tx, lastUnitBuyerAEnvelope.operationId)).toBe("pending");
-      expect(visibleBatchStock(tx, LAST_UNIT_BATCH_ID)?.unitQuantity).toBe(7);
-      expect(tx.select().from(replicaState).get()?.activeGeneration).toBe(2);
-      expect(tx.select().from(replicaState).get()?.appliedCommitSequence).toBe("3");
-      expect(
-        tx
-          .select()
-          .from(commandOutbox)
-          .where(eq(commandOutbox.operationId, lastUnitBuyerAEnvelope.operationId))
-          .get(),
-      ).toBeDefined();
-      expect(
-        tx
-          .select()
-          .from(snapshotStagedRows)
-          .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
-          .all(),
-      ).toHaveLength(0);
-    });
-    store.close();
+  it("activates a snapshot generation while preserving pending commands", async () => {
+    const seen = await Effect.runPromise(
+      withSeededReplica((store) =>
+        runReplicaTransaction(store, (tx) =>
+          Effect.gen(function* () {
+            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* beginSnapshotImport(tx, manifest);
+            yield* importSnapshotPart(tx, manifest, partPayload);
+            yield* activateSnapshotGeneration(tx, manifest.snapshotId);
+            const outstanding = (yield* tx
+              .select()
+              .from(commandOutbox)
+              .where(
+                inArray(commandOutbox.status, [
+                  "pending",
+                  "sending",
+                  "accepted_awaiting_integration",
+                ]),
+              )
+              .all()).length;
+            const status = yield* commandStatus(tx, lastUnitBuyerAEnvelope.operationId);
+            const stock = yield* visibleBatchStock(tx, LAST_UNIT_BATCH_ID);
+            const state = yield* tx.select().from(replicaState).get();
+            const outbox = yield* tx
+              .select()
+              .from(commandOutbox)
+              .where(eq(commandOutbox.operationId, lastUnitBuyerAEnvelope.operationId))
+              .get();
+            const staged = yield* tx
+              .select()
+              .from(snapshotStagedRows)
+              .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
+              .all();
+            return {
+              outstanding,
+              status,
+              unitQuantity: stock?.unitQuantity,
+              activeGeneration: state?.activeGeneration,
+              appliedCommitSequence: state?.appliedCommitSequence,
+              outbox: outbox !== undefined,
+              staged: staged.length,
+            };
+          }),
+        ),
+      ),
+    );
+    expect(seen.outstanding).toBe(1);
+    expect(seen.status).toBe("pending");
+    expect(seen.unitQuantity).toBe(7);
+    expect(seen.activeGeneration).toBe(2);
+    expect(seen.appliedCommitSequence).toBe("3");
+    expect(seen.outbox).toBe(true);
+    expect(seen.staged).toBe(0);
   });
 });

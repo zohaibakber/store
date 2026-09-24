@@ -9,21 +9,24 @@ import type { ReplicaChangeFeed, ReplicaChangeUnsubscribe, ReplicaCommitNotice }
 export type ReplicaCommitPublisher = ReplicaChangeFeed & {
   readonly publish: (notice: ReplicaCommitNotice) => void;
   readonly dispose: () => void;
-  readonly commits: Stream.Stream<ReplicaCommitNotice>;
 };
 
 export const createReplicaCommitPublisher = (): ReplicaCommitPublisher => {
   const hub = Effect.runSync(PubSub.unbounded<ReplicaCommitNotice>());
 
   return {
-    commits: Stream.fromPubSub(hub),
     subscribe: (listener: (notice: ReplicaCommitNotice) => void): ReplicaChangeUnsubscribe => {
       if (PubSub.isShutdownUnsafe(hub)) return () => undefined;
       const scope = Effect.runSync(Scope.make());
       Effect.runSync(
-        Stream.fromPubSub(hub).pipe(
-          Stream.runForEach((notice) => Effect.sync(() => listener(notice))),
-          Effect.forkIn(scope),
+        PubSub.subscribe(hub).pipe(
+          Effect.flatMap((subscription) =>
+            Stream.fromSubscription(subscription).pipe(
+              Stream.runForEach((notice) => Effect.sync(() => listener(notice))),
+              Effect.forkScoped,
+            ),
+          ),
+          Scope.provide(scope),
         ),
       );
       return () => {

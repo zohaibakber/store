@@ -12,7 +12,12 @@ import {
   SyncPullRequest,
   SyncPullResult,
 } from "@store/contracts";
-import { SyncTransportUnavailable, type SyncTransport } from "@store/sync";
+import {
+  failureFromStatus,
+  mapSyncFailure,
+  SyncTransportOffline,
+  type SyncTransport,
+} from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -49,9 +54,7 @@ const mapHttpFailure = (status: number, bodyText: string) => {
     });
     if (Option.isSome(decoded)) return decoded.value;
   }
-  return SyncTransportUnavailable.make({
-    message: `Sync request failed with status ${status}.`,
-  });
+  return failureFromStatus(status, `Sync request failed with status ${status}.`);
 };
 
 const decodeJson = <A, I>(schema: Schema.Codec<A, I>, bodyText: string): A =>
@@ -59,25 +62,24 @@ const decodeJson = <A, I>(schema: Schema.Codec<A, I>, bodyText: string): A =>
 
 const encodeJsonBody = Schema.encodeSync(Schema.fromJsonString(Schema.Json));
 
+const asJsonPayload = Schema.decodeUnknownSync(Schema.Json);
+
 export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTransport => {
-  const postJson = <A, I>(pathname: string, schema: Schema.Codec<A, I>, payload: SyncProxyPostBody) =>
+  const postJson = <A, I>(
+    pathname: string,
+    schema: Schema.Codec<A, I>,
+    payload: SyncProxyPostBody,
+  ) =>
     Effect.tryPromise({
       try: async () => {
-        const result = await proxyFetch(
-          "POST",
-          pathname,
-          encodeJsonBody(payload as typeof Schema.Json.Type),
-        );
+        const result = await proxyFetch("POST", pathname, encodeJsonBody(asJsonPayload(payload)));
         if (!result.ok) throw mapHttpFailure(result.status, result.bodyText);
         return decodeJson(schema, result.bodyText);
       },
       catch: (cause) =>
-        cause instanceof SyncProtocolError || cause instanceof SyncTransportUnavailable
-          ? cause
-          : SyncTransportUnavailable.make({
-              message:
-                cause instanceof Error ? cause.message : "The sync transport is unavailable.",
-            }),
+        cause instanceof Error
+          ? mapSyncFailure(cause, Date.now())
+          : SyncTransportOffline.make({ message: "The sync transport is unavailable." }),
     });
 
   return {
@@ -96,12 +98,9 @@ export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTranspor
           return decodeJson(CommandReceipt, result.bodyText);
         },
         catch: (cause) =>
-          cause instanceof SyncProtocolError || cause instanceof SyncTransportUnavailable
-            ? cause
-            : SyncTransportUnavailable.make({
-                message:
-                  cause instanceof Error ? cause.message : "The sync transport is unavailable.",
-              }),
+          cause instanceof Error
+            ? mapSyncFailure(cause, Date.now())
+            : SyncTransportOffline.make({ message: "The sync transport is unavailable." }),
       }),
     pull: (request) => postJson("/api/sync/pull", SyncPullResult, request),
     acquireSnapshot: (request) => postJson("/api/sync/snapshots", AcquireSnapshotResult, request),
@@ -117,12 +116,9 @@ export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTranspor
           return decodeJson(SnapshotPartPayload, result.bodyText);
         },
         catch: (cause) =>
-          cause instanceof SyncProtocolError || cause instanceof SyncTransportUnavailable
-            ? cause
-            : SyncTransportUnavailable.make({
-                message:
-                  cause instanceof Error ? cause.message : "The sync transport is unavailable.",
-              }),
+          cause instanceof Error
+            ? mapSyncFailure(cause, Date.now())
+            : SyncTransportOffline.make({ message: "The sync transport is unavailable." }),
       }),
     mintLiveTicket: (request) => postJson("/api/sync/live-tickets", LiveTicket, request),
   };

@@ -42,7 +42,7 @@ const hostname = (value: string) => {
   }
 };
 
-export const resolveProductionAuthHostname = (input: {
+const resolveProductionAuthHostname = (input: {
   readonly productionDomain: string;
   readonly productionAuthDomain: string;
 }) =>
@@ -57,7 +57,6 @@ export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 export const AuthLive = Auth.make(
   Effect.gen(function* () {
     const database = yield* AuthDatabase;
-    const ephemeral = yield* Cloudflare.KV.Namespace("AuthEphemeral");
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod" || stage === "nightly";
     const productionDomain = process.env.PRODUCTION_DOMAIN ?? "";
@@ -88,7 +87,6 @@ export const AuthLive = Auth.make(
       dev: { port: 8788 },
       env: {
         AUTH_DB: database,
-        AUTH_EPHEMERAL: ephemeral,
         AUTH_BASE_URL: authBaseUrl,
         AUTH_TRUSTED_ORIGINS: trustedOrigins,
       },
@@ -97,9 +95,7 @@ export const AuthLive = Auth.make(
   }),
   Effect.gen(function* () {
     const databaseResource = yield* AuthDatabase;
-    const ephemeralResource = yield* Cloudflare.KV.Namespace("AuthEphemeral");
     const databaseBinding = yield* Cloudflare.D1.QueryDatabase(databaseResource);
-    const ephemeralBinding = yield* Cloudflare.KV.ReadWriteNamespace(ephemeralResource);
     const { stage } = yield* Alchemy.Stack;
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const published = stage === "prod" || stage === "nightly";
@@ -177,10 +173,9 @@ export const AuthLive = Auth.make(
     const DependenciesLive = Layer.unwrap(
       Effect.gen(function* () {
         const database = yield* databaseBinding.raw;
-        const ephemeral = yield* ephemeralBinding.raw;
         return Layer.mergeAll(
           authRepositoryLayer(database),
-          ephemeralStoreLayer(ephemeral, ephemeralPepper),
+          ephemeralStoreLayer(database, ephemeralPepper),
           passwordHasherLayer,
           accessTokenLayer({
             issuer: security.baseURL,
@@ -248,7 +243,6 @@ export const AuthLive = Auth.make(
     return { fetch: handler };
   }).pipe(
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
-    Effect.provide(Cloudflare.KV.ReadWriteNamespaceBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),
 );

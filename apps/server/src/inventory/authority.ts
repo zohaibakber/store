@@ -4,6 +4,11 @@ import * as Layer from "effect/Layer";
 
 import { InventoryCommands, InventoryCommandsUnavailable, makeInventoryCommands } from "./commands";
 import { InventoryLive, InventoryLiveUnavailable, makeInventoryLive } from "./live-tickets";
+import {
+  InventoryMaintenance,
+  InventoryMaintenanceUnavailable,
+  makeInventoryMaintenance,
+} from "./maintenance";
 import { openInventoryDrizzle } from "./postgres";
 import {
   InventorySnapshots,
@@ -18,6 +23,7 @@ export const InventoryAuthorityLive = Layer.effectContext(
       Context.add(InventoryCommands, makeInventoryCommands(db)),
       Context.add(InventorySnapshots, makeInventorySnapshots(db)),
       Context.add(InventoryLive, makeInventoryLive(db)),
+      Context.add(InventoryMaintenance, makeInventoryMaintenance(db)),
     );
   }),
 );
@@ -26,4 +32,5 @@ export const InventoryAuthorityUnavailable = Layer.mergeAll(
   InventoryCommandsUnavailable,
   InventorySnapshotsUnavailable,
   InventoryLiveUnavailable,
+  InventoryMaintenanceUnavailable,
 );

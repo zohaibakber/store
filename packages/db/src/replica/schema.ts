@@ -27,6 +27,8 @@ export const replicaState = sqliteTable("replica_state", {
   nextClientSequence: text().notNull(),
   localCommitVersion: integer({ mode: "number" }).notNull(),
   activeGeneration: integer({ mode: "number" }).notNull().default(1),
+  caughtUpAt: integer({ mode: "number" }),
+  registeredAt: integer({ mode: "number" }),
 });
 
 export const commandOutbox = sqliteTable(
@@ -63,6 +65,7 @@ export const replicaCoverage = sqliteTable("replica_coverage", {
   state: text({ enum: ["awaiting_snapshot", "downloaded"] }).notNull(),
   throughCommitSequence: text(),
   digest: text(),
+  verifiedAt: integer({ mode: "number" }),
 });
 
 export const snapshotImports = sqliteTable("snapshot_imports", {
@@ -107,5 +110,39 @@ export const snapshotStagedRows = sqliteTable(
       columns: [table.snapshotId, table.entity, table.entityId],
     }),
     index("snapshot_staged_rows_snapshot_id_idx").on(table.snapshotId),
+  ],
+);
+
+export const pendingRowMarks = sqliteTable(
+  "pending_row_marks",
+  {
+    entity: text().notNull(),
+    entityId: text().notNull(),
+    operationId: text().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "pending_row_marks_pk",
+      columns: [table.entity, table.entityId],
+    }),
+    index("pending_row_marks_operation_id_idx").on(table.operationId),
+  ],
+);
+
+export const pendingRowJournal = sqliteTable(
+  "pending_row_journal",
+  {
+    operationId: text().notNull(),
+    entity: text().notNull(),
+    entityId: text().notNull(),
+    priorRowJson: text(),
+  },
+  (table) => [
+    primaryKey({
+      name: "pending_row_journal_pk",
+      columns: [table.operationId, table.entity, table.entityId],
+    }),
+    index("pending_row_journal_operation_id_idx").on(table.operationId),
+    index("pending_row_journal_entity_idx").on(table.entity, table.entityId),
   ],
 );

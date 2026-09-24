@@ -1,5 +1,6 @@
 import type {
   CommandReceipt,
+  RegisterReplicaResult,
   SnapshotId,
   SnapshotManifest,
   SnapshotPartPayload,
@@ -9,297 +10,221 @@ import type {
   SyncTransactionGroup,
 } from "@store/contracts";
 import type {
-  CommandStatus,
   Committed,
+  ReplicaCommitNotice,
   ReplicaReadStamp,
 } from "@store/contracts/sync/replica-model";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
-import type { SqliteDatabase } from "../../sqlite";
 import { applyPullResult, applyTransactionGroup } from "../apply";
 import {
+  adoptReplicaRegistration,
   claimNextUpload,
   commandStatus,
   loadReplicaState,
+  recordCaughtUp,
   recoverStaleUploadClaims,
   releaseUploadClaim,
   saveLocalCommand,
   settleUploadClaim,
-  type ClaimNextUploadInput,
-  type UploadClaim,
   verifyAuthorityHeadNotBehind,
   verifyReplicaIncarnation,
+  type ClaimNextUploadInput,
 } from "../commands";
-import { makeReplicaCommitHub, noticeFromState } from "../commit-hub";
-import { markCoverageRepair as markSqliteCoverageRepair } from "../coverage";
-import { mapReplicaStoreFailure } from "../errors";
 import {
-  activateSnapshotGeneration,
-  beginSnapshotImport as beginSqliteSnapshotImport,
-  importSnapshotPart as importSqliteSnapshotPart,
-} from "../import";
-import { runReplicaTransaction, type ReplicaDb } from "../storage";
-import type {
-  AppliedCursor,
-  QueuedCommand,
-  ReplicaStoreContract,
-  VerifyAuthorityInput,
+  makeReplicaCommitHub,
+  noticeFromState,
+  stampOf,
+  touchedEntitiesWithStock,
+} from "../commit-hub";
+import { loadDigestVerification, markCoverageRepair, recordDigestVerification } from "../coverage";
+import { SYNC_ENTITIES } from "../decisions";
+import { mapReplicaStoreFailure } from "../errors";
+import { activateSnapshotGeneration, beginSnapshotImport, importSnapshotPart } from "../import";
+import { listPendingMarks } from "../pending";
+import type { ReplicaDb } from "../sql-client/drizzle";
+import {
+  runReplicaTransaction,
+  SqliteReplica,
+  type SqliteReplicaHandle,
+} from "../sql-client/handle";
+import {
+  ReplicaStore,
+  type ReplicaStoreContract,
+  type ReplicaStoreError,
+  type VerifyAuthorityInput,
 } from "../store";
 
-const storeFailure = mapReplicaStoreFailure;
-
-const withTx = <A>(
-  db: SqliteDatabase,
-  run: (tx: ReplicaDb) => A,
-): Effect.Effect<A, ReturnType<typeof mapReplicaStoreFailure>> =>
-  Effect.try({
-    try: () => runReplicaTransaction(db, run),
-    catch: storeFailure,
-  });
-
 export const makeSqliteReplicaStore = (
-  db: SqliteDatabase,
+  handle: SqliteReplicaHandle,
   databaseIdentity: string,
 ): Effect.Effect<ReplicaStoreContract> =>
   Effect.gen(function* () {
     const { publish, commits } = yield* makeReplicaCommitHub();
 
-    const readStampSync = (): ReplicaReadStamp => {
-      const state = runReplicaTransaction(db, (tx) => loadReplicaState(tx));
-      return {
-        generationId: String(state.activeGeneration),
-        localCommitVersion: state.localCommitVersion,
-      };
-    };
+    const withTx = <A, E>(
+      span: string,
+      run: (tx: ReplicaDb) => Effect.Effect<A, E>,
+    ): Effect.Effect<A, ReplicaStoreError> =>
+      runReplicaTransaction(handle, run).pipe(
+        Effect.mapError(mapReplicaStoreFailure),
+        Effect.withSpan(span),
+      );
 
-    const enqueueCommand = Effect.fn("SqliteReplicaStore.enqueueCommand")(function* (
-      envelope: SyncCommandEnvelope,
-      createdAt: number,
-    ) {
-      const before = readStampSync();
-      const status = yield* withTx(db, (tx) => saveLocalCommand(tx, envelope, createdAt));
-      const after = readStampSync();
-      const changed = after.localCommitVersion !== before.localCommitVersion;
-      const committed: Committed<QueuedCommand> = {
-        value: { operationId: envelope.operationId, status },
-        notice: changed
-          ? noticeFromState(
-              databaseIdentity,
-              after,
-              ["batch"],
-              [],
-              [{ operationId: envelope.operationId, status }],
-            )
-          : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const readStamp = (tx: ReplicaDb) => loadReplicaState(tx).pipe(Effect.map(stampOf));
 
-    const claimUpload = Effect.fn("SqliteReplicaStore.claimNextUpload")(function* (
-      input: ClaimNextUploadInput,
-    ) {
-      const before = readStampSync();
-      const claim = yield* withTx(db, (tx) => claimNextUpload(tx, input));
-      const after = readStampSync();
-      const committed: Committed<UploadClaim | undefined> = {
-        value: claim,
-        notice:
-          claim && after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(
-                databaseIdentity,
-                after,
-                [],
-                [],
-                [{ operationId: claim.operationId, status: "sending" }],
-              )
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const commit = <A, E>(
+      span: string,
+      run: (tx: ReplicaDb) => Effect.Effect<A, E>,
+      notice: (value: A, after: ReplicaReadStamp) => ReplicaCommitNotice | undefined,
+    ): Effect.Effect<Committed<A>, ReplicaStoreError> =>
+      withTx(span, (tx) =>
+        Effect.gen(function* () {
+          const before = yield* readStamp(tx);
+          const value = yield* run(tx);
+          const after = yield* readStamp(tx);
+          const changed = after.localCommitVersion !== before.localCommitVersion;
+          return { value, notice: changed ? notice(value, after) : undefined };
+        }),
+      ).pipe(Effect.tap((committed) => publish(committed.notice)));
 
-    const settleClaim = Effect.fn("SqliteReplicaStore.settleUploadClaim")(function* (
-      claimId: string,
-      receipt: CommandReceipt,
-    ) {
-      const before = readStampSync();
-      const status = yield* withTx(db, (tx) => settleUploadClaim(tx, claimId, receipt));
-      const after = readStampSync();
-      const committed: Committed<CommandStatus | undefined> = {
-        value: status,
-        notice:
-          status && after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(
-                databaseIdentity,
-                after,
-                ["batch"],
-                [],
-                [{ operationId: receipt.operationId, status }],
-              )
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const allEntitiesNotice =
+      <A>(touchedKeys: (value: A) => ReadonlyArray<string>) =>
+      (value: A, after: ReplicaReadStamp) =>
+        noticeFromState(databaseIdentity, after, SYNC_ENTITIES, touchedKeys(value));
 
-    const releaseClaim = Effect.fn("SqliteReplicaStore.releaseUploadClaim")(function* (
-      operationId: string,
-      claimId: string,
-    ) {
-      const before = readStampSync();
-      const status = yield* withTx(db, (tx) => releaseUploadClaim(tx, operationId, claimId));
-      const after = readStampSync();
-      const committed: Committed<CommandStatus | undefined> = {
-        value: status,
-        notice:
-          status && after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(databaseIdentity, after, [], [], [{ operationId, status }])
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const enqueueCommand = (envelope: SyncCommandEnvelope, createdAt: number) =>
+      commit(
+        "SqliteReplicaStore.enqueueCommand",
+        (tx) => saveLocalCommand(tx, envelope, createdAt),
+        (saved, after) =>
+          noticeFromState(
+            databaseIdentity,
+            after,
+            touchedEntitiesWithStock(saved.projection?.touchedEntities),
+            saved.projection?.touchedKeys ?? [],
+            [{ operationId: envelope.operationId, status: saved.status }],
+          ),
+      ).pipe(
+        Effect.map((committed) => ({
+          value: { operationId: envelope.operationId, status: committed.value.status },
+          notice: committed.notice,
+        })),
+      );
 
-    const recoverStale = Effect.fn("SqliteReplicaStore.recoverStaleUploadClaims")(function* (
-      staleBefore: number,
-    ) {
-      const before = readStampSync();
-      const recovered = yield* withTx(db, (tx) => recoverStaleUploadClaims(tx, staleBefore));
-      const after = readStampSync();
-      const committed: Committed<number> = {
-        value: recovered,
-        notice:
-          recovered > 0 && after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(databaseIdentity, after)
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const claimUpload = (input: ClaimNextUploadInput) =>
+      commit(
+        "SqliteReplicaStore.claimNextUpload",
+        (tx) => claimNextUpload(tx, input),
+        (claim, after) =>
+          claim &&
+          noticeFromState(
+            databaseIdentity,
+            after,
+            [],
+            [],
+            [{ operationId: claim.operationId, status: "sending" }],
+          ),
+      );
 
-    const applyRemotePage = Effect.fn("SqliteReplicaStore.applyRemotePage")(function* (
-      page: SyncPullResult,
-    ) {
-      const before = readStampSync();
-      const applied = yield* withTx(db, (tx) => {
-        verifyReplicaIncarnation(tx, page.incarnation);
-        return applyPullResult(tx, page);
-      });
-      const after = readStampSync();
-      const committed: Committed<AppliedCursor> = {
-        value: applied,
-        notice:
-          after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(databaseIdentity, after, [
-                "category",
-                "product",
-                "batch",
-                "invoice",
-                "invoiceItem",
-                "stockMovement",
-              ])
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const settleClaim = (claimId: string, receipt: CommandReceipt) =>
+      commit(
+        "SqliteReplicaStore.settleUploadClaim",
+        (tx) => settleUploadClaim(tx, claimId, receipt),
+        (settled, after) =>
+          settled &&
+          noticeFromState(
+            databaseIdentity,
+            after,
+            touchedEntitiesWithStock(settled.restored?.touchedEntities),
+            settled.restored?.touchedKeys ?? [],
+            [{ operationId: receipt.operationId, status: settled.status }],
+          ),
+      ).pipe(
+        Effect.map((committed) => ({ value: committed.value?.status, notice: committed.notice })),
+      );
 
-    const applyGroup = Effect.fn("SqliteReplicaStore.applyTransactionGroup")(function* (
-      group: SyncTransactionGroup,
-    ) {
-      const before = readStampSync();
-      const appliedThrough = yield* withTx(db, (tx) => applyTransactionGroup(tx, group));
-      const after = readStampSync();
-      const committed: Committed<string> = {
-        value: appliedThrough,
-        notice:
-          after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(databaseIdentity, after, [
-                "category",
-                "product",
-                "batch",
-                "invoice",
-                "invoiceItem",
-                "stockMovement",
-              ])
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const releaseClaim = (operationId: string, claimId: string) =>
+      commit(
+        "SqliteReplicaStore.releaseUploadClaim",
+        (tx) => releaseUploadClaim(tx, operationId, claimId),
+        (status, after) =>
+          status && noticeFromState(databaseIdentity, after, [], [], [{ operationId, status }]),
+      );
 
-    const beginSnapshotImport = Effect.fn("SqliteReplicaStore.beginSnapshotImport")(function* (
-      manifest: SnapshotManifest,
-    ) {
-      yield* withTx(db, (tx) => {
-        beginSqliteSnapshotImport(tx, manifest);
-      });
-    });
+    const recoverStale = (staleBefore: number) =>
+      commit(
+        "SqliteReplicaStore.recoverStaleUploadClaims",
+        (tx) => recoverStaleUploadClaims(tx, staleBefore),
+        (recovered, after) =>
+          recovered > 0 ? noticeFromState(databaseIdentity, after) : undefined,
+      );
 
-    const importSnapshotPart = Effect.fn("SqliteReplicaStore.importSnapshotPart")(function* (
-      manifest: SnapshotManifest,
-      part: SnapshotPartPayload,
-    ) {
-      yield* withTx(db, (tx) => {
-        importSqliteSnapshotPart(tx, manifest, part);
-      });
-    });
+    const applyRemotePage = (page: SyncPullResult) =>
+      commit(
+        "SqliteReplicaStore.applyRemotePage",
+        (tx) =>
+          verifyReplicaIncarnation(tx, page.incarnation).pipe(
+            Effect.andThen(applyPullResult(tx, page)),
+          ),
+        allEntitiesNotice((applied) => applied.touchedKeys),
+      ).pipe(
+        Effect.map((committed) => ({
+          value: {
+            appliedThrough: committed.value.appliedThrough,
+            repairRequired: committed.value.repairRequired,
+            digestVerified: committed.value.digestVerified,
+          },
+          notice: committed.notice,
+        })),
+      );
 
-    const activateSnapshot = Effect.fn("SqliteReplicaStore.activateSnapshot")(function* (
-      snapshotId: SnapshotId,
-    ) {
-      const before = readStampSync();
-      yield* withTx(db, (tx) => {
-        activateSnapshotGeneration(tx, snapshotId);
-      });
-      const after = readStampSync();
-      const committed: Committed<void> = {
-        value: undefined,
-        notice:
-          after.localCommitVersion !== before.localCommitVersion
-            ? noticeFromState(databaseIdentity, after, [
-                "category",
-                "product",
-                "batch",
-                "invoice",
-                "invoiceItem",
-                "stockMovement",
-              ])
-            : undefined,
-      };
-      yield* publish(committed.notice);
-      return committed;
-    });
+    const applyGroup = (group: SyncTransactionGroup) =>
+      commit(
+        "SqliteReplicaStore.applyTransactionGroup",
+        (tx) => applyTransactionGroup(tx, group),
+        allEntitiesNotice((applied) => applied.touchedKeys),
+      ).pipe(
+        Effect.map((committed) => ({
+          value: committed.value.appliedThrough,
+          notice: committed.notice,
+        })),
+      );
 
-    const readSyncCursor = () =>
-      withTx(db, (tx) => {
-        const state = loadReplicaState(tx);
-        return {
-          epoch: state.epoch,
-          appliedCommitSequence: state.appliedCommitSequence,
-        };
-      });
+    const activateSnapshot = (snapshotId: SnapshotId) =>
+      commit(
+        "SqliteReplicaStore.activateSnapshot",
+        (tx) => Effect.asVoid(activateSnapshotGeneration(tx, snapshotId)),
+        allEntitiesNotice(() => []),
+      );
 
-    const verifyAuthority = Effect.fn("SqliteReplicaStore.verifyAuthority")(function* (
-      input: VerifyAuthorityInput,
-    ) {
-      yield* withTx(db, (tx) => {
-        verifyReplicaIncarnation(tx, input.incarnation);
-        verifyAuthorityHeadNotBehind(tx, input.horizon);
-      });
-    });
-
-    const markCoverageRepair = Effect.fn("SqliteReplicaStore.markCoverageRepair")(function* (
-      subscription: SyncSubscription,
-    ) {
-      yield* withTx(db, (tx) => {
-        markSqliteCoverageRepair(tx, subscription);
-      });
-    });
+    const recordCaughtUpAt = (caughtUpAt: number) =>
+      withTx("SqliteReplicaStore.recordCaughtUp", (tx) =>
+        recordCaughtUp(tx, caughtUpAt).pipe(
+          Effect.map((state) => noticeFromState(databaseIdentity, stampOf(state))),
+        ),
+      ).pipe(
+        Effect.tap(publish),
+        Effect.map((notice): Committed<void> => ({ value: undefined, notice })),
+      );
 
     return {
-      readSyncCursor,
+      readSyncCursor: () =>
+        withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
+          loadReplicaState(tx).pipe(
+            Effect.map((state) => ({
+              epoch: state.epoch,
+              appliedCommitSequence: state.appliedCommitSequence,
+              replicaId: state.replicaId,
+              registered: state.registeredAt !== null,
+            })),
+          ),
+        ),
+      adoptRegistration: (authority: RegisterReplicaResult, registeredAt: number) =>
+        withTx("SqliteReplicaStore.adoptRegistration", (tx) =>
+          adoptReplicaRegistration(tx, authority, registeredAt),
+        ),
       enqueueCommand,
       claimNextUpload: claimUpload,
       settleUploadClaim: settleClaim,
@@ -307,13 +232,47 @@ export const makeSqliteReplicaStore = (
       recoverStaleUploadClaims: recoverStale,
       applyRemotePage,
       applyTransactionGroup: applyGroup,
-      beginSnapshotImport,
-      importSnapshotPart,
+      beginSnapshotImport: (manifest: SnapshotManifest) =>
+        withTx("SqliteReplicaStore.beginSnapshotImport", (tx) =>
+          Effect.asVoid(beginSnapshotImport(tx, manifest)),
+        ),
+      importSnapshotPart: (manifest: SnapshotManifest, part: SnapshotPartPayload) =>
+        withTx("SqliteReplicaStore.importSnapshotPart", (tx) =>
+          Effect.asVoid(importSnapshotPart(tx, manifest, part)),
+        ),
       activateSnapshot,
-      verifyAuthority,
-      markCoverageRepair,
-      readCommandStatus: (operationId) => withTx(db, (tx) => commandStatus(tx, operationId)),
-      readStamp: () => Effect.try({ try: readStampSync, catch: storeFailure }),
+      verifyAuthority: (input: VerifyAuthorityInput) =>
+        withTx("SqliteReplicaStore.verifyAuthority", (tx) =>
+          verifyReplicaIncarnation(tx, input.incarnation).pipe(
+            Effect.andThen(verifyAuthorityHeadNotBehind(tx, input.horizon)),
+          ),
+        ),
+      markCoverageRepair: (subscription: SyncSubscription) =>
+        withTx("SqliteReplicaStore.markCoverageRepair", (tx) =>
+          markCoverageRepair(tx, subscription),
+        ),
+      readDigestVerification: (subscription: SyncSubscription) =>
+        withTx("SqliteReplicaStore.readDigestVerification", (tx) =>
+          loadDigestVerification(tx, subscription),
+        ).pipe(Effect.map((verification) => verification.verifiedAt)),
+      recordDigestVerification: (subscription: SyncSubscription, verifiedAt: number) =>
+        withTx("SqliteReplicaStore.recordDigestVerification", (tx) =>
+          recordDigestVerification(tx, subscription, verifiedAt),
+        ),
+      readCommandStatus: (operationId) =>
+        withTx("SqliteReplicaStore.readCommandStatus", (tx) => commandStatus(tx, operationId)),
+      readPendingMarks: () =>
+        withTx("SqliteReplicaStore.readPendingMarks", (tx) => listPendingMarks(tx)),
+      readStamp: () => withTx("SqliteReplicaStore.readStamp", readStamp),
+      recordCaughtUp: recordCaughtUpAt,
       commits,
     } satisfies ReplicaStoreContract;
   });
+
+export const layerSqliteReplicaStore = (
+  databaseIdentity: string,
+): Layer.Layer<ReplicaStore, never, SqliteReplica> =>
+  Layer.effect(
+    ReplicaStore,
+    SqliteReplica.use((handle) => makeSqliteReplicaStore(handle, databaseIdentity)),
+  );

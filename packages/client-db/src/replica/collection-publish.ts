@@ -1,12 +1,14 @@
 import type { SyncConfig } from "@tanstack/db";
-import type * as Equivalence from "effect/Equivalence";
 import * as Schema from "effect/Schema";
 
 import type { InventoryCollectionRow } from "./types";
 
-const rowEquivalence = Schema.toEquivalence(Schema.Json) as Equivalence.Equivalence<
-  InventoryCollectionRow
->;
+const jsonEquivalence = Schema.toEquivalence(Schema.Json);
+
+const toJson = Schema.decodeUnknownSync(Schema.Json);
+
+const rowEquivalence = (previous: InventoryCollectionRow, next: InventoryCollectionRow): boolean =>
+  jsonEquivalence(toJson(previous), toJson(next));
 
 type SyncParams<Row extends InventoryCollectionRow> = Parameters<
   SyncConfig<Row, string>["sync"]

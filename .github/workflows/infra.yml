@@ -62,6 +62,10 @@ jobs:
               exit 1
             fi
           done
+          if [ "${{ inputs.stage }}" = "dev" ] && [ -z "${NEON_API_KEY}" ]; then
+            echo "::error::NEON_API_KEY is empty; the Development stage runs inventory Postgres on Neon."
+            exit 1
+          fi
           if [ "${{ inputs.stage }}" = "dev" ] && [ -z "${AUTH_BASE_URL}" ]; then
             echo "::error::AUTH_BASE_URL is empty for the deployed Development auth Worker."
             exit 1
@@ -124,6 +128,7 @@ jobs:
           PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
           PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
           PLANETSCALE_ORGANIZATION: ${{ vars.PLANETSCALE_ORGANIZATION }}
+          NEON_API_KEY: ${{ inputs.stage == 'dev' && secrets.NEON_API_KEY || '' }}
           AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
           ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
           MOBILE_PROTOCOL: ${{ vars.MOBILE_PROTOCOL }}

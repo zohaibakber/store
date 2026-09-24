@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 
 import { OrganizationId } from "../ids";
+import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
   CommandReceipt,
-  MAX_SYNC_IDENTIFIER_LENGTH,
   OrgCommitSequence,
   SyncEpoch,
   SyncSchemaVersion,
@@ -11,26 +11,15 @@ import {
   SyncTransactionGroup,
 } from "./protocol";
 
-export const MAX_LIVE_FRAME_TRANSACTIONS = 20;
-
-export const MAX_LIVE_UNACKNOWLEDGED_FRAMES = 8;
-
 export const LIVE_TICKET_LIFETIME_MILLIS = 30_000;
 
 export const LIVE_LEASE_LIFETIME_MILLIS = 15 * 60_000;
 
-const Identifier = Schema.String.check(
-  Schema.isMinLength(1),
-  Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
-);
-
-const EpochMillis = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
-
-export const LiveTicketNonce = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+export const LiveTicketNonce = Sha256Hex;
 export type LiveTicketNonce = typeof LiveTicketNonce.Type;
 
 export const LiveTicketRequest = Schema.Struct({
-  replicaId: Identifier,
+  replicaId: SyncIdentifier,
   subscription: SyncSubscription,
 });
 export type LiveTicketRequest = typeof LiveTicketRequest.Type;
@@ -39,7 +28,7 @@ export const LiveTicket = Schema.Struct({
   nonce: LiveTicketNonce,
   organizationId: OrganizationId,
   subscription: SyncSubscription,
-  expiresAt: EpochMillis,
+  expiresAt: PositiveInt,
 });
 export type LiveTicket = typeof LiveTicket.Type;
 
@@ -56,7 +45,7 @@ export const LIVE_LONG_POLL_MAX_MILLIS = 25_000;
 
 export const LiveUpgradeQuery = Schema.Struct({
   nonce: LiveTicketNonce,
-  replicaId: Identifier,
+  replicaId: SyncIdentifier,
   subscription: SyncSubscription,
   afterHorizon: Schema.optionalKey(OrgCommitSequence),
   waitMs: Schema.optionalKey(
@@ -106,21 +95,3 @@ export const SyncLiveServerFrame = Schema.TaggedUnion({
   },
 });
 export type SyncLiveServerFrame = typeof SyncLiveServerFrame.Type;
-
-export const SyncLiveClientFrame = Schema.TaggedUnion({
-  acknowledge: {
-    throughCommitSequence: OrgCommitSequence,
-  },
-});
-export type SyncLiveClientFrame = typeof SyncLiveClientFrame.Type;
-
-export const LiveSessionAttachment = Schema.Struct({
-  version: Schema.Literal(1),
-  organizationId: OrganizationId,
-  replicaId: Identifier,
-  userId: Identifier,
-  subscription: SyncSubscription,
-  leaseExpiresAt: EpochMillis,
-  acknowledgedCommitSequence: OrgCommitSequence,
-});
-export type LiveSessionAttachment = typeof LiveSessionAttachment.Type;

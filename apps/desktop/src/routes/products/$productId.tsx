@@ -36,7 +36,6 @@ import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate, formatPrice } from "@/lib/format";
 import {
-  useBindSelectedProduct,
   useCatalogProduct,
   useCatalogStockMovements,
   useInventoryActions,
@@ -79,7 +78,6 @@ function ProductDetailPage() {
   const product = useCatalogProduct(productId);
   const movements = useCatalogStockMovements(productId);
   const { deleteProduct } = useInventoryActions();
-  useBindSelectedProduct(productId);
   const navigate = useNavigate();
 
   const catalogProduct = product.data;

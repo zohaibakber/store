@@ -14,7 +14,15 @@ import {
   LAST_UNIT_REPLICA_A,
   LAST_UNIT_REPLICA_B,
 } from "@store/contracts/sync/fixtures";
-import { batches, categories, inventoryState, products, replicas } from "@store/db/postgres/schema";
+import {
+  batches,
+  categories,
+  downloadLeases,
+  inventoryState,
+  products,
+  replicas,
+} from "@store/db/postgres/schema";
+import { eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -69,7 +77,6 @@ const openAuthority = (organizationId: string) =>
       tracksPacks: true,
       createdAt: occurredAt,
       updatedAt: occurredAt,
-      deletedAt: null,
       organizationId,
       createdByUserId: userId,
       updatedByUserId: userId,
@@ -276,5 +283,58 @@ describe("postgres snapshot publication and live tickets", () => {
     expect(isProtocol(outcome.reused) && outcome.reused.code).toBe("TICKET_INVALID");
     expect(outcome.horizon.epoch).toBe(LAST_UNIT_EPOCH);
     expect(outcome.horizon.horizon).toMatch(/^[0-9]+$/u);
+  });
+
+  it("grants a download lease only for a replica the actor owns", async () => {
+    const organizationId = decodeOrganizationId("org-snap-lease");
+    const actor = actorFor(organizationId);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        const withoutReplica = yield* snapshots.acquireSnapshot(actor, {
+          epoch: LAST_UNIT_EPOCH,
+          subscription: OPERATIONAL_SUBSCRIPTION,
+        });
+        const leasesBefore = yield* db
+          .select()
+          .from(downloadLeases)
+          .where(eq(downloadLeases.organizationId, organizationId));
+        const withReplica = yield* snapshots.acquireSnapshot(actor, {
+          epoch: LAST_UNIT_EPOCH,
+          subscription: OPERATIONAL_SUBSCRIPTION,
+          replicaId: LAST_UNIT_REPLICA_A,
+        });
+        const leases = yield* db
+          .select()
+          .from(downloadLeases)
+          .where(eq(downloadLeases.organizationId, organizationId));
+        const foreign = yield* snapshots
+          .acquireSnapshot(actorFor(organizationId, "user-2"), {
+            epoch: LAST_UNIT_EPOCH,
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            replicaId: LAST_UNIT_REPLICA_A,
+          })
+          .pipe(Effect.flip);
+        const unknown = yield* snapshots
+          .acquireSnapshot(actor, {
+            epoch: LAST_UNIT_EPOCH,
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            replicaId: LAST_UNIT_REPLICA_B,
+          })
+          .pipe(Effect.flip);
+        return { withoutReplica, leasesBefore, withReplica, leases, foreign, unknown };
+      }),
+    );
+    expect(outcome.withoutReplica._tag).toBe("ready");
+    expect(outcome.leasesBefore).toHaveLength(0);
+    if (outcome.withReplica._tag !== "ready") throw new Error("expected ready snapshot");
+    expect(outcome.leases).toHaveLength(1);
+    expect(outcome.leases[0]).toMatchObject({
+      replicaId: LAST_UNIT_REPLICA_A,
+      snapshotId: outcome.withReplica.manifest.snapshotId,
+      pinnedHorizon: outcome.withReplica.manifest.horizon,
+    });
+    expect(isProtocol(outcome.foreign) && outcome.foreign.code).toBe("REPLICA_OWNED_BY_OTHER");
+    expect(isProtocol(outcome.unknown) && outcome.unknown.code).toBe("REPLICA_UNKNOWN");
   });
 });

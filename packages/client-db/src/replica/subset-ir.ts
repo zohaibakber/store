@@ -3,51 +3,14 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { UnsupportedSubsetQuery } from "./errors";
-import {
-  FILTER_COLUMNS,
-  HISTORY_SOURCES,
-  MAX_IN_VALUES,
-  ORDER_COLUMNS,
-  SOURCE_TABLE,
-  type InventoryCollectionSource,
-} from "./sources";
+import { FILTER_COLUMNS, HISTORY_SOURCES, MAX_IN_VALUES, ORDER_COLUMNS } from "./sources";
 import { ComparisonList, ComparisonScalar } from "./sqlite-row";
+import type { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
 import type {
   CompileSubsetInput,
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
 } from "./types";
-
-export type SubsetScalar = string | number | boolean | null;
-
-export type SubsetLeafPredicate =
-  | {
-      readonly _tag: "compare";
-      readonly column: string;
-      readonly op: "eq" | "gt" | "gte" | "lt" | "lte";
-      readonly value: SubsetScalar;
-    }
-  | { readonly _tag: "in"; readonly column: string; readonly values: ReadonlyArray<SubsetScalar> }
-  | { readonly _tag: "isNull"; readonly column: string };
-
-export type SubsetPredicate =
-  | SubsetLeafPredicate
-  | { readonly _tag: "and"; readonly predicates: ReadonlyArray<SubsetPredicate> }
-  | { readonly _tag: "or"; readonly predicates: ReadonlyArray<SubsetPredicate> }
-  | { readonly _tag: "not"; readonly predicate: SubsetPredicate };
-
-export type InventorySubsetSpec = {
-  readonly source: InventoryCollectionSource;
-  readonly table: string;
-  readonly where: SubsetPredicate | undefined;
-  readonly orderBy: ReadonlyArray<{
-    readonly column: string;
-    readonly direction: "asc" | "desc";
-  }>;
-  readonly limit: number;
-  readonly offset: number;
-  readonly maximumRows: number;
-};
 
 const unsupported = (reason: string): UnsupportedSubsetQuery =>
   new UnsupportedSubsetQuery({
@@ -237,13 +200,11 @@ export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
     if (options.offset !== undefined && options.offset < 0) {
       return yield* fail("offset must be zero or greater");
     }
-    return {
+    const spec: InventorySubsetSpec = {
       source: descriptor.source,
-      table: SOURCE_TABLE[descriptor.source],
-      where,
       orderBy,
       limit: boundedLimit,
       offset: options.offset ?? 0,
-      maximumRows: descriptor.maximumRows,
     };
+    return where ? { ...spec, where } : spec;
   });

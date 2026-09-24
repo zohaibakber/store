@@ -1,3 +1,4 @@
+import { MAX_INVOICE_UPLOAD_BYTES, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import { InvoiceExtractionService, invoiceExtractionLayer } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -5,7 +6,7 @@ import * as Multipart from "effect/unstable/http/Multipart";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { CurrentOrganization } from "../auth/organization";
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, StoreApi } from "../http/api";
+import { StoreApi } from "../http/api";
 import {
   type BadRequest,
   type PayloadTooLarge,
@@ -33,7 +34,7 @@ const multipartFailure = (
       return Effect.fail(
         payloadTooLarge(
           "TOO_MANY_ATTACHMENTS",
-          `Attach at most ${MAX_UPLOAD_FILES} invoice files.`,
+          `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`,
         ),
       );
     case "Parse":
@@ -89,11 +90,11 @@ export const UploadHandlers = HttpApiBuilder.group(
           return yield* Effect.fail(
             badRequest("NO_ATTACHMENTS", "Attach at least one invoice file."),
           );
-        if (files.length > MAX_UPLOAD_FILES)
+        if (files.length > MAX_INVOICE_UPLOAD_FILES)
           return yield* Effect.fail(
             payloadTooLarge(
               "TOO_MANY_ATTACHMENTS",
-              `Attach at most ${MAX_UPLOAD_FILES} invoice files.`,
+              `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`,
             ),
           );
         if (files.some((file) => !isInvoice(file.name)))
@@ -103,7 +104,7 @@ export const UploadHandlers = HttpApiBuilder.group(
               "Only PDF and CSV invoices are accepted.",
             ),
           );
-        if (files.reduce((total, file) => total + file.size, 0) > MAX_UPLOAD_BYTES)
+        if (files.reduce((total, file) => total + file.size, 0) > MAX_INVOICE_UPLOAD_BYTES)
           return yield* Effect.fail(
             payloadTooLarge("ATTACHMENTS_TOO_LARGE", "The attachments are too large."),
           );

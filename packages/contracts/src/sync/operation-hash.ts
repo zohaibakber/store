@@ -5,6 +5,5 @@ import { canonicalJson } from "./canonical-json";
 
 const utf8 = new TextEncoder();
 
-/** Hex SHA-256 of the canonical JSON payload (or `"null"` when undefined). */
 export const canonicalPayloadHash = <Payload>(payload: Payload) =>
   Encoding.encodeHex(sha256(utf8.encode(canonicalJson(payload) ?? "null")));

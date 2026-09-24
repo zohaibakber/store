@@ -1,30 +1,29 @@
-import { replicaMigrations } from "@store/db/replica/migrations";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
+import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 
-import { betterSqliteMigrationTarget } from "../better-sqlite-target";
-import { runMigrations } from "../migrations";
-import { runSqliteTransaction, type SqliteConnection, type SqliteDatabase } from "../sqlite";
+import {
+  openReplicaStoreFromClient,
+  SqliteReplica as SqlClientReplica,
+  type SqliteReplicaHandle,
+} from "./sql-client/handle";
 
-export type ReplicaDb = SqliteConnection;
+export type { ReplicaDb } from "./sql-client/drizzle";
+export { runReplicaTransaction } from "./sql-client/handle";
+export type { SqliteReplicaHandle } from "./sql-client/handle";
 
-export type SqliteReplicaHandle = {
-  readonly sqlite: Database.Database;
-  readonly db: SqliteDatabase;
-  readonly close: () => void;
-};
+export const openReplicaStore = (
+  path = ":memory:",
+): Effect.Effect<SqliteReplicaHandle, never, Scope.Scope> =>
+  SqliteClient.make({ filename: path }).pipe(
+    Effect.provide(Reactivity.layer),
+    Effect.flatMap(openReplicaStoreFromClient),
+    Effect.orDie,
+  );
 
-export const openReplicaStore = (path = ":memory:"): SqliteReplicaHandle => {
-  const sqlite = new Database(path);
-  sqlite.pragma("journal_mode = WAL");
-  runMigrations(replicaMigrations, betterSqliteMigrationTarget(sqlite));
-  const db = drizzle({ client: sqlite });
-  return {
-    sqlite,
-    db,
-    close: () => sqlite.close(),
-  };
-};
-
-export const runReplicaTransaction = <A>(db: SqliteDatabase, run: (tx: ReplicaDb) => A): A =>
-  runSqliteTransaction(db, run);
+export class SqliteReplica extends SqlClientReplica {
+  static readonly layer = (path?: string): Layer.Layer<SqlClientReplica> =>
+    Layer.effect(SqlClientReplica, openReplicaStore(path));
+}

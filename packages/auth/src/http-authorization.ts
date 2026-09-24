@@ -25,7 +25,8 @@ export const refreshCookieSecurity = (secureCookies: boolean) =>
     key: secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh",
   });
 
-export const refreshCookieName = (secureCookies: boolean) => refreshCookieSecurity(secureCookies).key;
+export const refreshCookieName = (secureCookies: boolean) =>
+  refreshCookieSecurity(secureCookies).key;
 
 export const refreshCookieOptions = (secureCookies: boolean) =>
   ({

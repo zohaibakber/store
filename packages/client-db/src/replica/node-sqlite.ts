@@ -1,115 +1,86 @@
-import type { SyncEntity } from "@store/contracts";
-import { replicaMigrations } from "@store/db/replica/migrations";
-import { betterSqliteMigrationTarget } from "@store/sync/better-sqlite-target";
-import { runMigrations } from "@store/sync/migrations";
-import Database from "better-sqlite3";
+import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import { ReplicaStore } from "@store/sync/browser";
+import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "@store/sync/sql-client";
+import {
+  layerSqliteReplicaStore,
+  runReplicaTransaction,
+  SqliteReplica,
+  type SqliteReplicaHandle,
+} from "@store/sync/sqlite";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 
-import { openReplicaHandleScope } from "./handle-scope";
-import { createReplicaCommitPublisher, type ReplicaCommitPublisher } from "./publisher";
-import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
-import type {
-  ReplicaCommitNotice,
-  ReplicaHandle,
-  ReplicaQueryStamp,
-  SqliteParameter,
-  SqliteResultRow,
-} from "./types";
+import { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
+import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
+import { createReplicaCommitPublisher } from "./publisher";
+import {
+  layerSeededReplica,
+  readReplicaStamp,
+  readReplicaSubset,
+  runReplicaQuery,
+  type SqliteReplicaIdentity,
+} from "./sql-client-session";
+import type { ReplicaCommitNotice, ReplicaHandle, SqliteParameter, SqliteResultRow } from "./types";
+import { bootWorkspaceRuntime } from "./workspace-runtime";
 
-const toParameter = (value: SqliteParameter): string | number | bigint | Buffer | null => {
-  if (value instanceof Uint8Array) return Buffer.from(value);
-  return value;
-};
-
-export type NodeReplicaIdentity = {
-  readonly organizationId: string;
-  readonly userId: string;
-  readonly replicaId: string;
-};
+export type NodeReplicaIdentity = SqliteReplicaIdentity;
 
 export type NodeReplicaSqlite = ReplicaHandle & {
-  readonly publish: ReplicaCommitPublisher["publish"];
-  readonly withWrite: (
-    write: (sqlite: Database.Database) => void,
-    touchedEntities: ReadonlyArray<SyncEntity>,
-    touchedKeys: ReadonlyArray<string>,
-  ) => ReplicaCommitNotice;
-};
-
-const readStamp = (sqlite: Database.Database, workspaceToken: string): ReplicaQueryStamp => {
-  const decoded = decodeReplicaStampRow(
-    sqlite
-      .prepare(
-        `select activeGeneration as generation, localCommitVersion as version from replica_state where id = 'singleton'`,
-      )
-      .get(),
-  );
-  return {
-    workspaceToken,
-    generationId: String(decoded.generation),
-    localCommitVersion: decoded.version,
-  };
-};
-
-export const openNodeReplicaSqlite = (
-  identity: NodeReplicaIdentity,
-  path = ":memory:",
-): NodeReplicaSqlite => {
-  const lifetime = openReplicaHandleScope();
-  const sqlite = new Database(path);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  runMigrations(replicaMigrations, betterSqliteMigrationTarget(sqlite));
-  const existing = sqlite.prepare(`select id from replica_state where id = 'singleton'`).get();
-  if (existing === undefined) {
-    sqlite
-      .prepare(
-        `insert into replica_state (
-          id, organizationId, userId, replicaId, epoch, incarnation,
-          appliedCommitSequence, nextClientSequence, localCommitVersion, activeGeneration
-        ) values ('singleton', ?, ?, ?, '1', 'local', '0', '1', 0, 1)`,
-      )
-      .run(identity.organizationId, identity.userId, identity.replicaId);
-  }
-  const workspaceToken = crypto.randomUUID();
-  const publisher = createReplicaCommitPublisher();
-  lifetime.addSyncFinalizer(() => {
-    publisher.dispose();
-    sqlite.close();
-  });
-
-  const query = (
+  readonly query: (
     sql: string,
     parameters: ReadonlyArray<SqliteParameter>,
-  ): ReadonlyArray<SqliteResultRow> => {
-    const statement = sqlite.prepare(sql);
-    const bindings = parameters.map(toParameter);
-    if (!statement.reader) {
-      statement.run(...bindings);
-      return [];
-    }
-    const rows = statement.all(...bindings);
-    const result: Array<SqliteResultRow> = [];
-    for (const row of rows) {
-      result.push(decodeSqliteResultRow(row));
-    }
-    return result;
-  };
+  ) => Promise<ReadonlyArray<SqliteResultRow>>;
+  readonly withWrite: (
+    write: (handle: SqliteReplicaHandle) => Effect.Effect<void, unknown>,
+    touchedEntities: ReadonlyArray<SyncEntity>,
+    touchedKeys: ReadonlyArray<string>,
+  ) => Promise<ReplicaCommitNotice>;
+};
 
-  const withWrite: NodeReplicaSqlite["withWrite"] = (write, touchedEntities, touchedKeys) => {
-    const apply = sqlite.transaction(() => {
-      write(sqlite);
-      sqlite
-        .prepare(
-          `update replica_state set localCommitVersion = localCommitVersion + 1 where id = 'singleton'`,
-        )
-        .run();
-      return readStamp(sqlite, workspaceToken);
-    });
-    const stamp = apply();
+export const layerSeededSqliteReplica = (
+  path: string,
+  identity: NodeReplicaIdentity,
+): Layer.Layer<SqliteReplica> => layerSeededReplica(SqliteReplica.layer(path), identity);
+
+export const openNodeReplicaSqlite = async (
+  identity: NodeReplicaIdentity,
+  path = ":memory:",
+): Promise<NodeReplicaSqlite> => {
+  const workspaceToken = crypto.randomUUID();
+  const runtime = ManagedRuntime.make(
+    layerSqliteReplicaStore(workspaceToken).pipe(
+      Layer.provideMerge(layerSeededSqliteReplica(path, identity)),
+    ),
+  );
+  const replicaStore = await bootWorkspaceRuntime(runtime, ReplicaStore.use(Effect.succeed));
+  const { replicaId } = await runtime.runPromise(replicaStore.readSyncCursor());
+  const publisher = createReplicaCommitPublisher();
+
+  const withHandle = <A, E>(use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E>) =>
+    runtime.runPromise(SqliteReplica.use(use).pipe(Effect.orDie));
+
+  const stamp = () => withHandle((handle) => readReplicaStamp(handle, workspaceToken));
+
+  const query = (sql: string, parameters: ReadonlyArray<SqliteParameter>) =>
+    withHandle((handle) => runReplicaQuery(handle, sql, parameters));
+
+  const withWrite: NodeReplicaSqlite["withWrite"] = async (write, touchedEntities, touchedKeys) => {
+    const written = await withHandle((handle) =>
+      runReplicaTransaction(handle, () =>
+        Effect.gen(function* () {
+          yield* write(handle);
+          yield* handle.sql.unsafe(
+            `update replica_state set localCommitVersion = localCommitVersion + 1 where id = 'singleton'`,
+          );
+          return yield* readReplicaStamp(handle, workspaceToken);
+        }),
+      ),
+    );
     const notice: ReplicaCommitNotice = {
-      workspaceToken: stamp.workspaceToken,
-      generationId: stamp.generationId,
-      localCommitVersion: stamp.localCommitVersion,
+      workspaceToken: written.workspaceToken,
+      generationId: written.generationId,
+      localCommitVersion: written.localCommitVersion,
       touchedEntities,
       touchedKeys,
     };
@@ -117,21 +88,48 @@ export const openNodeReplicaSqlite = (
     return notice;
   };
 
+  const enqueueLocal = async (envelope: SyncCommandEnvelope, createdAt: number) => {
+    const queued = await runtime.runPromise(replicaStore.enqueueCommand(envelope, createdAt));
+    if (queued.notice) {
+      publisher.publish({
+        workspaceToken,
+        generationId: queued.notice.generationId,
+        localCommitVersion: queued.notice.localCommitVersion,
+        touchedEntities: touchedEntitiesForCommand(envelope),
+        touchedKeys: touchedKeysForCommand(envelope),
+      });
+    }
+    return { changed: queued.notice !== undefined, status: queued.value.status };
+  };
+
   return {
     workspaceToken,
-    stamp: () => readStamp(sqlite, workspaceToken),
+    replicaId,
+    stamp,
     query,
-    queryStamped: (sql, parameters) => ({
-      stamp: readStamp(sqlite, workspaceToken),
-      rows: query(sql, parameters),
-    }),
+    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.sql)),
+    readPendingRowIds: (entity) =>
+      withHandle((handle) => readPendingRowIdsSqlite(handle.sql, entity)),
+    readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
+    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
+    enqueueLocal,
+    readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
     subscribe: publisher.subscribe,
     publish: publisher.publish,
     withWrite,
-    close: lifetime.closeSync,
+    close: () => {
+      publisher.dispose();
+      void runtime.dispose();
+    },
   };
 };
 
+export {
+  readReplicaStamp,
+  readReplicaSubset,
+  runReplicaQuery,
+  seedReplicaIdentity,
+} from "./sql-client-session";
 export { openNodeReplicaSyncSession } from "./node-sync";
 export type { NodeReplicaSyncIdentity, NodeReplicaSyncSession } from "./node-sync";
 export { makeProxySyncTransport } from "./proxy-transport";

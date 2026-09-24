@@ -8,7 +8,6 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   SyncLiveSseEvent,
   SyncLiveWakeHint,
-  SyncProtocolError,
   syncProtocolError,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
@@ -18,25 +17,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { InventoryDatabaseError } from "./errors";
 import type { InventoryLiveContract } from "./live-tickets";
 import type { InventorySyncActor } from "./model";
 import {
-  SyncUnavailableError,
+  toSyncAuthorityError,
   type SyncAuthorityError,
   type SyncLiveUpgradeContract,
 } from "./sync-authority";
-
-const mapLiveError = <A, R>(
-  effect: Effect.Effect<A, SyncProtocolError | InventoryDatabaseError, R>,
-): Effect.Effect<A, SyncAuthorityError, R> =>
-  effect.pipe(
-    Effect.mapError((error) =>
-      error._tag === "InventoryDatabaseError"
-        ? SyncUnavailableError.make({ message: error.message })
-        : error,
-    ),
-  );
 
 const clampWaitMs = (waitMs: number | undefined): number => {
   const requested = waitMs ?? LIVE_LONG_POLL_DEFAULT_MILLIS;
@@ -69,7 +56,7 @@ const openLiveSession = (
   actor: InventorySyncActor,
   query: LiveUpgradeQuery,
 ) =>
-  mapLiveError(
+  toSyncAuthorityError(
     live.consumeLiveTicket(actor, {
       nonce: query.nonce,
       replicaId: query.replicaId,
@@ -78,7 +65,7 @@ const openLiveSession = (
   );
 
 const readHorizon = (live: InventoryLiveContract, actor: InventorySyncActor) =>
-  mapLiveError(live.readLiveHorizon(actor));
+  toSyncAuthorityError(live.readLiveHorizon(actor));
 
 const longPollResponse = (
   live: InventoryLiveContract,

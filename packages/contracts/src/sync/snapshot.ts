@@ -1,7 +1,8 @@
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 
+import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
-  MAX_SYNC_IDENTIFIER_LENGTH,
   OrgCommitSequence,
   SyncEpoch,
   SyncLogChange,
@@ -12,33 +13,25 @@ import { SyncEntity } from "./schema";
 
 export const MAX_SNAPSHOT_PART_ROWS = 500;
 
-export const SnapshotId = Schema.String.check(
-  Schema.isMinLength(1),
-  Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
-).pipe(Schema.brand("SnapshotId"));
+export const SnapshotId = SyncIdentifier.pipe(Schema.brand("SnapshotId"));
 export type SnapshotId = typeof SnapshotId.Type;
 
-export const SnapshotPartHash = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+export const SnapshotPartHash = Sha256Hex;
 export type SnapshotPartHash = typeof SnapshotPartHash.Type;
 
-export const SnapshotRow = Schema.Struct({
-  entity: SyncLogChange.fields.entity,
-  entityId: SyncLogChange.fields.entityId,
-  rowVersion: SyncLogChange.fields.rowVersion,
-  row: SyncLogChange.fields.row,
-});
+export const SnapshotRow = SyncLogChange.mapFields(Struct.omit(["action"]));
 export type SnapshotRow = typeof SnapshotRow.Type;
 
 export const SnapshotEntityCount = Schema.Struct({
   entity: SyncEntity,
-  rowCount: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  rowCount: Schema.Natural,
 });
 export type SnapshotEntityCount = typeof SnapshotEntityCount.Type;
 
 export const SnapshotPartRef = Schema.Struct({
-  partNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  objectKey: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
-  byteLength: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  partNumber: PositiveInt,
+  objectKey: Schema.NonEmptyString.check(Schema.isMaxLength(512)),
+  byteLength: Schema.Natural,
   sha256: SnapshotPartHash,
 });
 export type SnapshotPartRef = typeof SnapshotPartRef.Type;
@@ -64,6 +57,7 @@ export type SnapshotPartPayload = typeof SnapshotPartPayload.Type;
 export const AcquireSnapshotRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
+  replicaId: Schema.optionalKey(SyncIdentifier),
 });
 export type AcquireSnapshotRequest = typeof AcquireSnapshotRequest.Type;
 
@@ -73,7 +67,7 @@ export const AcquireSnapshotResult = Schema.TaggedUnion({
   },
   building: {
     snapshotId: SnapshotId,
-    retryAfterMillis: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+    retryAfterMillis: PositiveInt,
   },
 });
 export type AcquireSnapshotResult = typeof AcquireSnapshotResult.Type;

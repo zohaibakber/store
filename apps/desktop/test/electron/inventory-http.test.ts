@@ -1,19 +1,9 @@
-import {
-  connectOrganizationObjectLiveTransport,
-  submitOrganizationObjectCommand,
-} from "@store/client-db";
-import type { CommandReceipt } from "@store/contracts";
-import { OrgCommitSequence } from "@store/contracts";
-import {
-  LAST_UNIT_REPLICA_A,
-  lastUnitBuyerACommand,
-  lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
 import { describe, expect, it } from "vitest";
 
 import {
   MAX_INVENTORY_COMMAND_BODY_BYTES,
   assertInventoryRequestBodySize,
+  makeReplicaSyncApiRequest,
   validatedInventoryUrl,
 } from "../../electron/inventory-http";
 
@@ -155,12 +145,8 @@ describe("desktop inventory HTTP allowlist", () => {
   });
 
   it("rejects command bodies larger than 1 MiB", () => {
-    const oversized = new ArrayBuffer(MAX_INVENTORY_COMMAND_BODY_BYTES + 1);
     expect(() =>
-      assertInventoryRequestBodySize(apiBaseUrl, {
-        url: "https://api.tabaaq.app/api/sync/commands",
-        body: oversized,
-      }),
+      assertInventoryRequestBodySize("x".repeat(MAX_INVENTORY_COMMAND_BODY_BYTES + 1)),
     ).toThrow("The inventory request body exceeds the 1 MiB limit.");
   });
 
@@ -179,129 +165,40 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toThrow("The inventory request is outside the configured inventory API.");
   });
 
-  it("allows the command URL the renderer posts and never sees a token", async () => {
-    const receipt: CommandReceipt = {
-      operationId: "sale-a",
-      replicaId: LAST_UNIT_REPLICA_A,
-      clientSequence: lastUnitBuyerAEnvelope.clientSequence,
-      payloadHash: lastUnitBuyerAEnvelope.payloadHash,
-      decision: "accepted",
-      commitSequence: OrgCommitSequence.make("1"),
-      result: {
-        _tag: "issueInvoice",
-        invoiceId: lastUnitBuyerACommand.invoiceId,
-        invoiceNumber: 1,
-      },
-    };
-    const requests: Array<{
-      readonly url: string;
-      readonly method: string;
-      readonly authorization: string | null;
-    }> = [];
-    const authenticatedFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init);
-      requests.push({
-        url: request.url,
-        method: request.method,
-        authorization: request.headers.get("authorization"),
-      });
-      return new Response(JSON.stringify(receipt), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    };
-    await submitOrganizationObjectCommand(lastUnitBuyerAEnvelope, authenticatedFetch, apiBaseUrl);
+  it("forwards allowlisted worker sync requests through the authenticated fetch", async () => {
+    const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const syncApiRequest = makeReplicaSyncApiRequest(apiBaseUrl, async (url, init) => {
+      requests.push({ url, init });
+      return new Response('{"ok":true}', { status: 200 });
+    });
+    await expect(
+      syncApiRequest("/api/sync/commands", { method: "POST", body: "{}" }),
+    ).resolves.toEqual({ ok: true, status: 200, bodyText: '{"ok":true}' });
     expect(requests).toEqual([
       {
         url: "https://api.tabaaq.app/api/sync/commands",
-        method: "POST",
-        authorization: null,
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
       },
     ]);
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/sync/commands",
-      }),
-    ).toBe("https://api.tabaaq.app/api/sync/commands");
+    await expect(syncApiRequest("/api/inventory/products")).rejects.toThrow(
+      "The inventory request is outside the configured inventory API.",
+    );
+    expect(requests).toHaveLength(1);
   });
 
-  it("mints live tickets through the broker without handing a refresh token to the socket", async () => {
+  it("allows the live ticket mint and its SSE upgrade", () => {
     const nonce = "ab".repeat(32);
-    const requests: Array<{
-      readonly url: string;
-      readonly method: string;
-      readonly authorization: string | null;
-      readonly accept: string | null;
-    }> = [];
-    const authenticatedFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init);
-      requests.push({
-        url: request.url,
-        method: request.method,
-        authorization: request.headers.get("authorization"),
-        accept: request.headers.get("accept"),
-      });
-      if (request.url.includes("/live-tickets")) {
-        return new Response(
-          JSON.stringify({
-            nonce,
-            organizationId: "org-1",
-            subscription: "operational",
-            expiresAt: 1_700_000_030_000,
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        );
-      }
-      return new Response(
-        'event: wake\ndata: {"epoch":"1","subscription":"operational","horizon":"0"}\n\n',
-        {
-          status: 200,
-          headers: { "content-type": "text/event-stream" },
-        },
-      );
-    };
-    const transport = await connectOrganizationObjectLiveTransport(
-      authenticatedFetch,
-      apiBaseUrl,
-      LAST_UNIT_REPLICA_A,
-      {
-        appliedCursor: () => "0",
-        onWake: () => undefined,
-        resumeFromCursor: () => undefined,
-      },
-    );
-    expect(transport).toBeDefined();
-    expect(requests[0]).toEqual({
-      url: "https://api.tabaaq.app/api/sync/live-tickets",
-      method: "POST",
-      authorization: null,
-      accept: null,
-    });
-    expect(requests[1]?.url).toContain(
-      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-    );
-    expect(requests[1]?.method).toBe("GET");
-    expect(requests[1]?.accept).toBe("text/event-stream");
-    expect(requests[1]?.url.includes("refresh")).toBe(false);
-    expect(requests[1]?.url.includes("Bearer")).toBe(false);
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "POST",
         url: "https://api.tabaaq.app/api/sync/live-tickets",
       }),
     ).toBe("https://api.tabaaq.app/api/sync/live-tickets");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-      }),
-    ).toBe(
-      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-    );
-    transport?.close();
+    const live = `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`;
+    expect(validatedInventoryUrl(apiBaseUrl, { method: "GET", url: live })).toBe(live);
   });
 });

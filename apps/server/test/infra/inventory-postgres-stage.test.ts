@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 
-import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
+import {
+  stageUsesInventoryPostgres,
+  stageUsesNeonInventory,
+  stageUsesPlanetscaleInventory,
+} from "@store/db/postgres/stage";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = new URL("../../../../", import.meta.url).pathname;
@@ -13,13 +17,23 @@ describe("inventory Postgres stage", () => {
     expect(stageUsesInventoryPostgres("dev")).toBe(true);
   });
 
-  it("does not load PlanetScale providers or yield a database on nightly", () => {
+  it("runs dev on Neon and every other Postgres stage on PlanetScale", () => {
+    expect(stageUsesNeonInventory("dev")).toBe(true);
+    expect(stageUsesPlanetscaleInventory("dev")).toBe(false);
+    expect(stageUsesPlanetscaleInventory("prod")).toBe(true);
+    expect(stageUsesNeonInventory("prod")).toBe(false);
+    expect(stageUsesNeonInventory("nightly")).toBe(false);
+    expect(stageUsesPlanetscaleInventory("nightly")).toBe(false);
+  });
+
+  it("loads each Postgres provider only on its own stages and none on nightly", () => {
     const stack = readRepo("alchemy.run.ts");
     expect(stack).toContain("stageUsesInventoryPostgres");
     expect(stack).toContain("Planetscale.providers()");
     expect(stack).toContain("Layer.empty");
     expect(stack).toContain("if (!stageUsesInventoryPostgres(stage))");
-    expect(stack).not.toContain("Neon");
+    expect(stack).toContain("stageUsesNeonInventory(stage)");
+    expect(stack).toContain("Neon.providers()");
   });
 
   it("does not require PlanetScale credentials for nightly CI", () => {

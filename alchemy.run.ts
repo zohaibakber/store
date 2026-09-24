@@ -1,14 +1,19 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
+import * as Neon from "alchemy/Neon";
 import * as Planetscale from "alchemy/Planetscale";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Api, ApiLive } from "./apps/server/infra.ts";
-import { InventoryPostgres } from "./packages/db/src/postgres/infra.ts";
-import { stageUsesInventoryPostgres } from "./packages/db/src/postgres/stage.ts";
+import { InventoryDatabaseId } from "./packages/db/src/postgres/infra.ts";
+import {
+  stageUsesInventoryPostgres,
+  stageUsesNeonInventory,
+  stageUsesPlanetscaleInventory,
+} from "./packages/db/src/postgres/stage.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",
@@ -19,7 +24,11 @@ export default Alchemy.Stack(
       Layer.unwrap(
         Alchemy.Stage.pipe(
           Effect.map((stage) =>
-            stageUsesInventoryPostgres(stage) ? Planetscale.providers() : Layer.empty,
+            stageUsesNeonInventory(stage)
+              ? Neon.providers()
+              : stageUsesPlanetscaleInventory(stage)
+                ? Planetscale.providers()
+                : Layer.empty,
           ),
         ),
       ),
@@ -38,13 +47,13 @@ export default Alchemy.Stack(
         workerName: api.workerName,
       };
     }
-    const inventoryPostgres = yield* InventoryPostgres;
+    const inventoryDatabaseId = yield* InventoryDatabaseId;
     return {
       stage,
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
-      inventoryDatabaseId: inventoryPostgres.id,
+      inventoryDatabaseId,
     };
   }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),
 );

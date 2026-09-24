@@ -1,18 +1,12 @@
-import { SyncEntity as SyncEntitySchema } from "@store/contracts";
-import * as Effect from "effect/Effect";
+import { CommandStatus, DecimalSequence, SyncCommandEnvelope, SyncEntity } from "@store/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { openReplicaHandleScope } from "./handle-scope";
 import { createReplicaCommitPublisher } from "./publisher";
 import { decodeSqliteResultRow } from "./sqlite-row";
-import type {
-  ReplicaCommitNotice,
-  ReplicaHandle,
-  ReplicaQueryStamp,
-  SqliteParameter,
-  SqliteResultRow,
-} from "./types";
+import type { ReplicaSyncHealth } from "./status";
+import type { InventorySubsetSpec } from "./subset-spec";
+import type { ReplicaHandle, ReplicaQueryStamp } from "./types";
 
 export type ElectronReplicaOpenIdentity = {
   readonly organizationId: string;
@@ -20,30 +14,23 @@ export type ElectronReplicaOpenIdentity = {
   readonly replicaId: string;
 };
 
-type ReplicaBridge = {
-  readonly open: (input: {
-    readonly organizationId: string;
-    readonly userId: string;
-    readonly replicaId: string;
-    readonly requestId: string;
-  }) => Promise<{ readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" }>;
+type CommitStamp = {
+  readonly generationId: string;
+  readonly localCommitVersion: number;
+};
+
+export type ElectronReplicaBridge = {
+  readonly open: (
+    identity: ElectronReplicaOpenIdentity,
+  ) => Promise<{ readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" }>;
   readonly close: (workspaceToken: string) => Promise<void>;
-  readonly stamp: (workspaceToken: string) => Promise<{
+  readonly stamp: (workspaceToken: string) => Promise<CommitStamp>;
+  readonly readSubset: (input: {
     readonly workspaceToken: string;
-    readonly generationId: string;
-    readonly localCommitVersion: number;
-  }>;
-  readonly query: (input: {
-    readonly workspaceToken: string;
-    readonly sql: string;
-    readonly parameters: ReadonlyArray<string | number | null>;
-    readonly stamped?: boolean;
+    readonly spec: InventorySubsetSpec;
   }) => Promise<{
     readonly rows: ReadonlyArray<Record<string, string | number | null>>;
-    readonly stamp?: {
-      readonly generationId: string;
-      readonly localCommitVersion: number;
-    };
+    readonly stamp: CommitStamp;
   }>;
   readonly onCommit: (
     callback: (event: {
@@ -54,117 +41,98 @@ type ReplicaBridge = {
       readonly touchedKeys: ReadonlyArray<string>;
     }) => void,
   ) => () => void;
-  readonly wakeSyncUpload: (workspaceToken: string) => Promise<{
+  readonly onSyncHealth: (
+    workspaceToken: string,
+    callback: (health: ReplicaSyncHealth) => void,
+  ) => () => void;
+  readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
+  readonly readCommandAllocation: (workspaceToken: string) => Promise<{
+    readonly epoch: string;
+    readonly nextClientSequence: string;
+  }>;
+  readonly enqueueLocal: (input: {
     readonly workspaceToken: string;
+    readonly envelope: typeof SyncCommandEnvelope.Encoded;
+    readonly createdAt: number;
+  }) => Promise<{
+    readonly changed: boolean;
+    readonly status: string;
+  }>;
+  readonly wakeSyncUpload: (workspaceToken: string) => Promise<{
     readonly drained: boolean;
     readonly drainCount: number;
   }>;
 };
 
-const isBigIntParameter = (value: SqliteParameter): value is bigint => typeof value === "bigint";
+const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
+const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
+const encodeEnvelope = Schema.encodeSync(SyncCommandEnvelope);
+const decodeCommandAllocation = Schema.decodeUnknownSync(
+  Schema.Struct({ epoch: DecimalSequence, nextClientSequence: DecimalSequence }),
+);
 
-const toIpcParameter = (value: SqliteParameter): string | number | null => {
-  if (value instanceof Uint8Array) {
-    throw new Error("Binary SQLite parameters are not supported over Electron replica IPC.");
-  }
-  if (isBigIntParameter(value)) return Number(value);
-  return value;
-};
-
-const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntitySchema);
+const decodedSome = <A>(
+  values: ReadonlyArray<string>,
+  decode: (value: string) => Option.Option<A>,
+) => values.flatMap((value) => Option.toArray(decode(value)));
 
 export const openElectronIpcReplicaHandle = async (
-  bridge: ReplicaBridge,
+  bridge: ElectronReplicaBridge,
   identity: ElectronReplicaOpenIdentity,
 ): Promise<ReplicaHandle> => {
-  const lifetime = openReplicaHandleScope();
-
-  const requestId = crypto.randomUUID();
-  const opened = await bridge.open({
-    organizationId: identity.organizationId,
-    userId: identity.userId,
-    replicaId: identity.replicaId,
-    requestId,
-  });
+  const opened = await bridge.open(identity);
+  const { workspaceToken } = opened;
   if (opened.engine !== "sqlite") {
-    await bridge.close(opened.workspaceToken).catch(() => undefined);
+    await bridge.close(workspaceToken).catch(() => undefined);
     throw new Error("Native Electron replica SQLite is unavailable.");
   }
 
-  await lifetime.addFinalizer(Effect.promise(() => bridge.close(opened.workspaceToken)));
-
   const publisher = createReplicaCommitPublisher();
-  lifetime.addSyncFinalizer(() => {
-    publisher.dispose();
-  });
 
   const unsubscribe = bridge.onCommit((event) => {
-    if (event.workspaceToken !== opened.workspaceToken) return;
-    const touchedEntities = event.touchedEntities.flatMap((value) => {
-      const decoded = decodeSyncEntity(value);
-      return Option.isSome(decoded) ? [decoded.value] : [];
-    });
-    const notice: ReplicaCommitNotice = {
-      workspaceToken: event.workspaceToken,
+    if (event.workspaceToken !== workspaceToken) return;
+    publisher.publish({
+      workspaceToken,
       generationId: event.generationId,
       localCommitVersion: event.localCommitVersion,
-      touchedEntities,
+      touchedEntities: decodedSome(event.touchedEntities, decodeSyncEntity),
       touchedKeys: event.touchedKeys,
-    };
-    publisher.publish(notice);
-  });
-  lifetime.addSyncFinalizer(() => {
-    unsubscribe();
-  });
-
-  const stamp = async (): Promise<ReplicaQueryStamp> => {
-    const value = await bridge.stamp(opened.workspaceToken);
-    return {
-      workspaceToken: opened.workspaceToken,
-      generationId: value.generationId,
-      localCommitVersion: value.localCommitVersion,
-    };
-  };
-
-  const query = async (
-    sql: string,
-    parameters: ReadonlyArray<SqliteParameter>,
-  ): Promise<ReadonlyArray<SqliteResultRow>> => {
-    const result = await bridge.query({
-      workspaceToken: opened.workspaceToken,
-      sql,
-      parameters: parameters.map(toIpcParameter),
     });
-    return result.rows.map((row) => decodeSqliteResultRow(row));
-  };
+  });
+
+  const workspaceStamp = (value: CommitStamp): ReplicaQueryStamp => ({
+    workspaceToken,
+    generationId: value.generationId,
+    localCommitVersion: value.localCommitVersion,
+  });
 
   return {
-    workspaceToken: opened.workspaceToken,
+    workspaceToken,
     engine: "sqlite",
-    stamp,
-    query,
-    queryStamped: async (sql, parameters) => {
-      const result = await bridge.query({
-        workspaceToken: opened.workspaceToken,
-        sql,
-        parameters: parameters.map(toIpcParameter),
-        stamped: true,
-      });
-      const queryStamp = result.stamp ?? (await stamp());
+    stamp: async () => workspaceStamp(await bridge.stamp(workspaceToken)),
+    readSubset: async (spec) => {
+      const result = await bridge.readSubset({ workspaceToken, spec });
       return {
-        stamp: {
-          workspaceToken: opened.workspaceToken,
-          generationId: queryStamp.generationId,
-          localCommitVersion: queryStamp.localCommitVersion,
-        },
+        stamp: workspaceStamp(result.stamp),
         rows: result.rows.map((row) => decodeSqliteResultRow(row)),
       };
     },
+    readOutboxStatuses: async () =>
+      decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
+    readCommandAllocation: async () =>
+      decodeCommandAllocation(await bridge.readCommandAllocation(workspaceToken)),
+    enqueueLocal: (envelope, createdAt) =>
+      bridge.enqueueLocal({ workspaceToken, envelope: encodeEnvelope(envelope), createdAt }),
     subscribe: publisher.subscribe,
     publish: publisher.publish,
+    subscribeSyncHealth: (listener) => bridge.onSyncHealth(workspaceToken, listener),
     wakeSyncUpload: () => {
-      void bridge.wakeSyncUpload(opened.workspaceToken);
+      void bridge.wakeSyncUpload(workspaceToken);
     },
-    close: lifetime.close,
+    close: () => {
+      unsubscribe();
+      publisher.dispose();
+      void bridge.close(workspaceToken).catch(() => undefined);
+    },
   };
 };

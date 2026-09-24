@@ -20,6 +20,7 @@
     "./sync.schema": "./src/sync/schema.ts",
     "./sync/protocol": "./src/sync/protocol.ts",
     "./sync/api": "./src/sync/api.ts",
+    "./sync/digest": "./src/sync/digest.ts",
     "./sync/directory": "./src/sync/directory.ts",
     "./sync/http-errors": "./src/sync/http-errors.ts",
     "./sync/live": "./src/sync/live.ts",
@@ -32,14 +33,14 @@
     "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
-    "@noble/hashes": "2.3.0",
+    "@noble/hashes": "2.4.0",
     "@store/db": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.2",
     "typescript": "catalog:",
-    "vitest": "4.1.11"
+    "vitest": "5.0.1"
   }
 }

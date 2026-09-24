@@ -13,7 +13,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "
 
 import { AuthBroker } from "./auth";
 import { loadDeviceId } from "./device-id";
-import { registerInventoryHttpIpc } from "./inventory-http";
+import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
@@ -395,7 +395,6 @@ void app.whenReady().then(async () => {
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
-    auth: authBroker,
     deviceId,
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
@@ -405,19 +404,9 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
-    syncApiRequest: async (pathname, init) => {
-      const url = new URL(pathname, API_BASE_URL.endsWith("/") ? API_BASE_URL : `${API_BASE_URL}/`);
-      const response = await authBroker.apiFetch(url, {
-        method: init?.method ?? "GET",
-        headers: init?.body ? { "content-type": "application/json" } : undefined,
-        body: init?.body ?? undefined,
-      });
-      return {
-        ok: response.ok,
-        status: response.status,
-        bodyText: await response.text(),
-      };
-    },
+    syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, (url, init) =>
+      authBroker.apiFetch(url, init),
+    ),
     allowedOrigins: allowedRendererOrigins,
   }).dispose;
   await authBroker.initialize();

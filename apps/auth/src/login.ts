@@ -44,7 +44,7 @@ export const makeLoginOps = (
     const user = yield* repository.findUserByEmail(normalized);
     if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
     if (user.passwordHash) return LoginRoute.make({ _tag: "Password", email: normalized });
-    const code = generateOtp();
+    const code = yield* generateOtp;
     const expiresAt = now + OTP_TTL_MS;
     const challengeId = yield* ephemeral.createOtp({
       email: normalized,

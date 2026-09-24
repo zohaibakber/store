@@ -77,4 +77,3 @@ export const sqliteCollectionOptions = <Row extends InventoryCollectionRow>(
 };
 
 export { createInvoiceCoherenceGate } from "./coherence";
-export { subsetWindowKey as collectionSubsetWindowKey } from "./subset-window";

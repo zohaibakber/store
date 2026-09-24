@@ -12,7 +12,7 @@ import { ExportStore } from "../src/export-store.ts";
 import { encodeRowsJson, rowsChecksum, translateCategory } from "../src/mapping.ts";
 import { OrganizationInventoryImport } from "../src/target.ts";
 import { runMigration } from "../src/workflow.ts";
-import { ORG, openHarness, PUBLISHED_AT, request, runOn } from "./harness.ts";
+import { allRows, firstRow, ORG, openHarness, PUBLISHED_AT, request, runOn } from "./harness.ts";
 
 const ImportId = Schema.decodeUnknownSync(InventoryImportId)("import-fixed");
 const CountRow = Schema.Struct({ n: Schema.Number });
@@ -58,7 +58,7 @@ describe("cloudflare migration action", () => {
         deletedAt: null,
       });
       expect(category.tracksPacks).toBe(1);
-      const harness = openHarness();
+      const harness = yield* openHarness;
       const result = yield* runOn(harness);
       expect(result.migrationId).toBe("migration-fixed");
       expect(result.importId).toBe("import-fixed");
@@ -67,42 +67,44 @@ describe("cloudflare migration action", () => {
       expect(result.organizationCount).toBe(1);
       expect(
         decodeCategoryPack(
-          harness.target
-            .prepare("select tracksPacks, name from categories where id = ?")
-            .get("cat-1"),
+          yield* firstRow(harness.target, "select tracksPacks, name from categories where id = ?", [
+            "cat-1",
+          ]),
         ),
       ).toEqual({ tracksPacks: 1, name: "General" });
       expect(
         decodeCategoryPack(
-          harness.target
-            .prepare("select tracksPacks, name from categories where id = ?")
-            .get("cat-2"),
+          yield* firstRow(harness.target, "select tracksPacks, name from categories where id = ?", [
+            "cat-2",
+          ]),
         ),
       ).toEqual({ tracksPacks: 0, name: "Loose" });
       expect(
         decodeProductVisible(
-          harness.target
-            .prepare("select visible, unitPrice from products where id = ?")
-            .get("prod-1"),
+          yield* firstRow(harness.target, "select visible, unitPrice from products where id = ?", [
+            "prod-1",
+          ]),
         ),
       ).toEqual({ visible: 1, unitPrice: 10 });
       expect(
         decodeBatchQty(
-          harness.target
-            .prepare("select packQuantity, unitQuantity from batches where id = ?")
-            .get("batch-1"),
+          yield* firstRow(
+            harness.target,
+            "select packQuantity, unitQuantity from batches where id = ?",
+            ["batch-1"],
+          ),
         ),
       ).toEqual({ packQuantity: 2, unitQuantity: 5 });
       expect(
         decodeInvoiceTotal(
-          harness.target.prepare("select total from invoices where id = ?").get("inv-1"),
+          yield* firstRow(harness.target, "select total from invoices where id = ?", ["inv-1"]),
         ),
       ).toEqual({
         total: 200,
       });
       expect(
         decodeState(
-          harness.target.prepare("select epoch, incarnation, status from inventory_state").get(),
+          yield* firstRow(harness.target, "select epoch, incarnation, status from inventory_state"),
         ),
       ).toEqual({
         epoch: "1",
@@ -110,21 +112,20 @@ describe("cloudflare migration action", () => {
         status: "ready",
       });
       expect(
-        decodeCount(harness.target.prepare("select count(*) as n from replicas").get()).n,
+        decodeCount(yield* firstRow(harness.target, "select count(*) as n from replicas")).n,
       ).toBe(0);
       expect(
-        decodeCount(harness.target.prepare("select count(*) as n from command_receipts").get()).n,
+        decodeCount(yield* firstRow(harness.target, "select count(*) as n from command_receipts"))
+          .n,
       ).toBe(0);
-      harness.close();
     }),
   );
 
   it.effect("resumes an interrupted export and produces the identical manifest", () =>
     Effect.gen(function* () {
-      const firstHarness = openHarness();
+      const firstHarness = yield* openHarness;
       const completed = yield* runOn(firstHarness);
-      firstHarness.close();
-      const harness = openHarness();
+      const harness = yield* openHarness;
       const interrupted = yield* Effect.gen(function* () {
         yield* TestClock.setTime(PUBLISHED_AT);
         const checkpoint = yield* MigrationCheckpointTest;
@@ -136,17 +137,16 @@ describe("cloudflare migration action", () => {
         expect(interrupted.failure._tag).toBe("Migrate.Interrupted");
       }
       expect(
-        decodeCount(harness.journal.prepare("select count(*) as n from export_chunk").get()).n,
+        decodeCount(yield* firstRow(harness.journal, "select count(*) as n from export_chunk")).n,
       ).toBe(1);
       const resumed = yield* runOn(harness);
       expect(resumed).toEqual(completed);
-      harness.close();
     }),
   );
 
   it.effect("applies an identical chunk twice without changing rows", () =>
     Effect.gen(function* () {
-      const harness = openHarness();
+      const harness = yield* openHarness;
       yield* runOn(harness);
       const outcome = yield* Effect.gen(function* () {
         const store = yield* ExportStore;
@@ -172,13 +172,12 @@ describe("cloudflare migration action", () => {
       expect(outcome.again).toEqual({ _tag: "duplicate" });
       expect(outcome.after).toEqual(outcome.before);
       expect(outcome.before.length).toBe(3);
-      harness.close();
     }),
   );
 
   it.effect("rejects a chunk whose identity collides with different bytes", () =>
     Effect.gen(function* () {
-      const harness = openHarness();
+      const harness = yield* openHarness;
       yield* runOn(harness);
       const rejected = yield* Effect.gen(function* () {
         const store = yield* ExportStore;
@@ -222,15 +221,14 @@ describe("cloudflare migration action", () => {
         expect(rejected.failure.table).toBe("categories");
       }
       expect(
-        decodeCount(harness.target.prepare("select count(*) as n from categories").get()).n,
+        decodeCount(yield* firstRow(harness.target, "select count(*) as n from categories")).n,
       ).toBe(3);
-      harness.close();
     }),
   );
 
   it.effect("refuses to publish when a row count no longer matches the manifest", () =>
     Effect.gen(function* () {
-      const harness = openHarness();
+      const harness = yield* openHarness;
       const interrupted = yield* Effect.gen(function* () {
         yield* TestClock.setTime(PUBLISHED_AT);
         const checkpoint = yield* MigrationCheckpointTest;
@@ -241,11 +239,10 @@ describe("cloudflare migration action", () => {
       if (Result.isFailure(interrupted)) {
         expect(interrupted.failure._tag).toBe("Migrate.Interrupted");
       }
-      harness.target
-        .prepare(
-          `insert into categories (id, name, tracksPacks, createdAt, updatedAt, deletedAt, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion) values ('cat-x', 'Corrupt', 1, 1, 1, null, 'org-1', 'user-1', 'user-1', 'device-1', 'op-corrupt', 1)`,
-        )
-        .run();
+      yield* allRows(
+        harness.target,
+        `insert into categories (id, name, tracksPacks, createdAt, updatedAt, deletedAt, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion) values ('cat-x', 'Corrupt', 1, 1, 1, null, 'org-1', 'user-1', 'user-1', 'device-1', 'op-corrupt', 1)`,
+      );
       const failed = yield* runOn(harness).pipe(Effect.result);
       expect(Result.isFailure(failed)).toBe(true);
       if (Result.isFailure(failed) && failed.failure._tag === "Migrate.ValidationFailed") {
@@ -256,16 +253,15 @@ describe("cloudflare migration action", () => {
       }
       expect(
         decodeCount(
-          harness.directory.prepare("select count(*) as n from inventory_active_release").get(),
+          yield* firstRow(harness.directory, "select count(*) as n from inventory_active_release"),
         ).n,
       ).toBe(0);
-      harness.close();
     }),
   );
 
   it.effect("resolves a lost publication response by reading the release back once", () =>
     Effect.gen(function* () {
-      const harness = openHarness();
+      const harness = yield* openHarness;
       const result = yield* Effect.gen(function* () {
         yield* TestClock.setTime(PUBLISHED_AT);
         const directory = yield* DatasetReleaseDirectoryTest;
@@ -276,32 +272,33 @@ describe("cloudflare migration action", () => {
       expect(result.publishedAt).toBe(PUBLISHED_AT);
       expect(
         decodePointers(
-          harness.directory
-            .prepare("select id, releaseId, activatedAt from inventory_active_release")
-            .all(),
+          yield* allRows(
+            harness.directory,
+            "select id, releaseId, activatedAt from inventory_active_release",
+          ),
         ),
       ).toEqual([{ id: 1, releaseId: "release-fixed", activatedAt: 1_700_000_000 }]);
       expect(
         decodeReleases(
-          harness.directory.prepare("select id, status from inventory_dataset_release").all(),
+          yield* allRows(harness.directory, "select id, status from inventory_dataset_release"),
         ),
       ).toEqual([{ id: "release-fixed", status: "active" }]);
       const again = yield* runOn(harness);
       expect(again).toEqual(result);
       expect(
         decodePointers(
-          harness.directory
-            .prepare("select id, releaseId, activatedAt from inventory_active_release")
-            .all(),
+          yield* allRows(
+            harness.directory,
+            "select id, releaseId, activatedAt from inventory_active_release",
+          ),
         ),
       ).toEqual([{ id: 1, releaseId: "release-fixed", activatedAt: 1_700_000_000 }]);
-      harness.close();
     }),
   );
 
   it.effect("returns the original completed result when the action is repeated", () =>
     Effect.gen(function* () {
-      const harness = openHarness();
+      const harness = yield* openHarness;
       const first = yield* runOn(harness);
       const second = yield* runOn(harness);
       expect(first.migrationId).toBe("migration-fixed");
@@ -312,10 +309,9 @@ describe("cloudflare migration action", () => {
       expect(second).toEqual(first);
       expect(
         decodeCount(
-          harness.directory.prepare("select count(*) as n from inventory_active_release").get(),
+          yield* firstRow(harness.directory, "select count(*) as n from inventory_active_release"),
         ).n,
       ).toBe(1);
-      harness.close();
     }),
   );
 });

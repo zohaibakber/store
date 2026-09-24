@@ -1,8 +1,7 @@
 import { indexedDbReplicaDatabaseName, openIndexedDbReplicaHandle } from "@store/client-db";
+import type { InventoryHost } from "@store/inventory-react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-
-import type { InventoryHost } from "@/lib/inventory-host";
 
 const DeviceId = Schema.String.check(Schema.isMinLength(1));
 const DEVICE_ID_KEY = "tabaaq.deviceId";
@@ -25,9 +24,8 @@ export const createWebInventoryHost = (): InventoryHost | undefined => {
   const deviceId = deviceIdFromStorage();
   return {
     apiBaseUrl: apiBaseUrl.value,
-    authenticatedFetch: globalThis.fetch.bind(globalThis),
     deviceId,
-    openReplicaSqlite: async (_databaseName, identity) =>
+    openReplica: (identity) =>
       openIndexedDbReplicaHandle({
         databaseName: indexedDbReplicaDatabaseName(identity.organizationId, identity.userId),
         identity: {

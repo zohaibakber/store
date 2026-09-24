@@ -1,42 +1,37 @@
 import {
   compareDecimalSequence,
-  type SyncEntity,
   type SyncLiveServerFrame,
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import {
-  replicaEntitySchemas,
-  type ReplicaBatchRow,
-  type ReplicaCategoryRow,
-  type ReplicaInvoiceItemRow,
-  type ReplicaInvoiceRow,
-  type ReplicaProductRow,
-  type ReplicaStockMovementRow,
-} from "@store/contracts/sync/replica-model";
-import {
-  batches,
-  categories,
-  commandOutbox,
-  invoiceItems,
-  invoices,
-  products,
-  replicaState,
-  stockMovements,
-  stockOverlays,
-} from "@store/db/replica.schema";
+import { commandOutbox, replicaState, stockOverlays } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
-import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
 
-import { runWrite } from "../sqlite";
+import { decodeCategoryRow, decodeInvoiceRow } from "./codecs";
 import { loadReplicaState } from "./commands";
 import { updateCoverageFromPull } from "./coverage";
 import { shouldApplyCommitSequence } from "./decisions";
-import type { ReplicaDb } from "./storage";
+import {
+  clearPendingProjection,
+  renameCollidingShadowCategory,
+  renumberCollidingShadowInvoice,
+  resolveRemoteRow,
+  restorePendingProjection,
+} from "./pending";
+import { removeEntityRow, writeEntityRow } from "./rows";
+import type { ReplicaDb } from "./sql-client/drizzle";
 
-export type PullApplyResult = {
+type PullApplyResult = {
   readonly appliedThrough: string;
   readonly repairRequired: boolean;
+  readonly digestVerified: boolean;
+  readonly touchedKeys: ReadonlyArray<string>;
+};
+
+type GroupApplyResult = {
+  readonly appliedThrough: string;
+  readonly touchedKeys: ReadonlyArray<string>;
 };
 
 export type ReplicaFeedMode =
@@ -48,13 +43,7 @@ export type ReplicaFeedMode =
       readonly _tag: "following";
     };
 
-export const isFollowingFeed = (feed: ReplicaFeedMode): boolean => feed._tag === "following";
-
-export const feedAfterPull = (
-  feed: ReplicaFeedMode,
-  pulled: SyncPullResult,
-  appliedThrough: string,
-): ReplicaFeedMode => {
+export const feedAfterPull = (pulled: SyncPullResult, appliedThrough: string): ReplicaFeedMode => {
   if (compareDecimalSequence(appliedThrough, pulled.horizon) >= 0) {
     return { _tag: "following" };
   }
@@ -64,192 +53,98 @@ export const feedAfterPull = (
   };
 };
 
-const softDelete = (
+const applyChange = Effect.fn("ReplicaApply.applyChange")(function* (
   tx: ReplicaDb,
-  table:
-    | typeof categories
-    | typeof products
-    | typeof batches
-    | typeof invoices
-    | typeof invoiceItems,
-  entityId: string,
-  deletedAt: number,
-): void => {
-  const existing = tx.select().from(table).where(eq(table.id, entityId)).get();
-  if (!existing) return;
-  runWrite(tx.update(table).set({ deletedAt }).where(eq(table.id, entityId)));
-};
-
-const upsertCategory = (tx: ReplicaDb, row: ReplicaCategoryRow): void => {
-  const existing = tx.select().from(categories).where(eq(categories.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(categories).set(row).where(eq(categories.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(categories).values(row));
-};
-
-const upsertProduct = (tx: ReplicaDb, row: ReplicaProductRow): void => {
-  const existing = tx.select().from(products).where(eq(products.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(products).set(row).where(eq(products.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(products).values(row));
-};
-
-const upsertBatch = (tx: ReplicaDb, row: ReplicaBatchRow): void => {
-  const existing = tx.select().from(batches).where(eq(batches.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(batches).set(row).where(eq(batches.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(batches).values(row));
-};
-
-const upsertInvoice = (tx: ReplicaDb, row: ReplicaInvoiceRow): void => {
-  const existing = tx.select().from(invoices).where(eq(invoices.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(invoices).set(row).where(eq(invoices.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(invoices).values(row));
-};
-
-const upsertInvoiceItem = (tx: ReplicaDb, row: ReplicaInvoiceItemRow): void => {
-  const existing = tx.select().from(invoiceItems).where(eq(invoiceItems.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(invoiceItems).set(row).where(eq(invoiceItems.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(invoiceItems).values(row));
-};
-
-const upsertStockMovement = (tx: ReplicaDb, row: ReplicaStockMovementRow): void => {
-  const existing = tx.select().from(stockMovements).where(eq(stockMovements.id, row.id)).get();
-  if (existing) {
-    runWrite(tx.update(stockMovements).set(row).where(eq(stockMovements.id, row.id)));
-    return;
-  }
-  runWrite(tx.insert(stockMovements).values(row));
-};
-
-const deleteTimestamp = (row: {
-  readonly deletedAt?: number | null;
-  readonly updatedAt?: number;
-}): number => row.deletedAt ?? row.updatedAt ?? Date.now();
-
-const applyChange = (tx: ReplicaDb, change: SyncTransactionGroup["changes"][number]): void => {
-  const entity: SyncEntity = change.entity;
+  change: SyncTransactionGroup["changes"][number],
+  operationId: string,
+) {
   if (change.action === "delete") {
-    switch (entity) {
-      case "category": {
-        const row = Schema.decodeUnknownSync(replicaEntitySchemas.category)(change.row);
-        softDelete(tx, categories, change.entityId, deleteTimestamp(row));
-        return;
-      }
-      case "product": {
-        const row = Schema.decodeUnknownSync(replicaEntitySchemas.product)(change.row);
-        softDelete(tx, products, change.entityId, deleteTimestamp(row));
-        return;
-      }
-      case "batch": {
-        const row = Schema.decodeUnknownSync(replicaEntitySchemas.batch)(change.row);
-        softDelete(tx, batches, change.entityId, deleteTimestamp(row));
-        return;
-      }
-      case "invoice": {
-        const row = Schema.decodeUnknownSync(replicaEntitySchemas.invoice)(change.row);
-        softDelete(tx, invoices, change.entityId, deleteTimestamp(row));
-        return;
-      }
-      case "invoiceItem": {
-        const row = Schema.decodeUnknownSync(replicaEntitySchemas.invoiceItem)(change.row);
-        softDelete(tx, invoiceItems, change.entityId, deleteTimestamp(row));
-        return;
-      }
-      case "stockMovement": {
-        runWrite(tx.delete(stockMovements).where(eq(stockMovements.id, change.entityId)));
-        return;
-      }
-    }
+    yield* removeEntityRow(tx, change.entity, change.entityId);
+    return undefined;
   }
-  switch (entity) {
-    case "category":
-      upsertCategory(tx, Schema.decodeUnknownSync(replicaEntitySchemas.category)(change.row));
-      return;
-    case "product":
-      upsertProduct(tx, Schema.decodeUnknownSync(replicaEntitySchemas.product)(change.row));
-      return;
-    case "batch":
-      upsertBatch(tx, Schema.decodeUnknownSync(replicaEntitySchemas.batch)(change.row));
-      return;
-    case "invoice":
-      upsertInvoice(tx, Schema.decodeUnknownSync(replicaEntitySchemas.invoice)(change.row));
-      return;
-    case "invoiceItem":
-      upsertInvoiceItem(tx, Schema.decodeUnknownSync(replicaEntitySchemas.invoiceItem)(change.row));
-      return;
-    case "stockMovement":
-      upsertStockMovement(
-        tx,
-        Schema.decodeUnknownSync(replicaEntitySchemas.stockMovement)(change.row),
-      );
-      return;
-  }
-};
+  const renamed =
+    change.entity === "invoice"
+      ? yield* renumberCollidingShadowInvoice(tx, decodeInvoiceRow(change.row), operationId)
+      : change.entity === "category"
+        ? yield* renameCollidingShadowCategory(tx, decodeCategoryRow(change.row), operationId)
+        : undefined;
+  yield* writeEntityRow(tx, change.entity, change.row);
+  return renamed;
+});
 
-export const applyTransactionGroup = (tx: ReplicaDb, group: SyncTransactionGroup) => {
-  const state = loadReplicaState(tx);
+export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGroup")(function* (
+  tx: ReplicaDb,
+  group: SyncTransactionGroup,
+) {
+  const state = yield* loadReplicaState(tx);
   if (!shouldApplyCommitSequence(state.appliedCommitSequence, group.commitSequence)) {
-    return state.appliedCommitSequence;
+    return {
+      appliedThrough: state.appliedCommitSequence,
+      touchedKeys: [],
+    } satisfies GroupApplyResult;
   }
+  const touchedKeys: Array<string> = [];
   for (const change of group.changes) {
-    applyChange(tx, change);
+    const renumbered = yield* applyChange(tx, change, group.operationId);
+    if (renumbered) touchedKeys.push(renumbered);
+    yield* resolveRemoteRow(tx, change.entity, change.entityId);
   }
-  runWrite(tx.delete(stockOverlays).where(eq(stockOverlays.commandId, group.operationId)));
-  const outbox = tx
+  if (group.decision === "rejected") {
+    yield* restorePendingProjection(tx, group.operationId);
+  } else {
+    yield* clearPendingProjection(tx, group.operationId);
+  }
+  yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, group.operationId));
+  const outbox = yield* tx
     .select()
     .from(commandOutbox)
     .where(eq(commandOutbox.operationId, group.operationId))
     .get();
   if (outbox && outbox.status !== "rejected") {
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({ status: "integrated" })
-        .where(eq(commandOutbox.operationId, group.operationId)),
-    );
+    yield* tx
+      .update(commandOutbox)
+      .set({ status: "integrated" })
+      .where(eq(commandOutbox.operationId, group.operationId));
   }
-  runWrite(
-    tx
-      .update(replicaState)
-      .set({
-        appliedCommitSequence: group.commitSequence,
-        localCommitVersion: state.localCommitVersion + 1,
-      })
-      .where(eq(replicaState.id, state.id)),
-  );
-  return group.commitSequence;
-};
+  yield* tx
+    .update(replicaState)
+    .set({
+      appliedCommitSequence: group.commitSequence,
+      localCommitVersion: state.localCommitVersion + 1,
+    })
+    .where(eq(replicaState.id, state.id));
+  return { appliedThrough: group.commitSequence, touchedKeys } satisfies GroupApplyResult;
+});
 
-export const applyPullResult = (tx: ReplicaDb, pulled: SyncPullResult): PullApplyResult => {
-  let appliedThrough = loadReplicaState(tx).appliedCommitSequence;
+export const applyPullResult = Effect.fn("ReplicaApply.applyPullResult")(function* (
+  tx: ReplicaDb,
+  pulled: SyncPullResult,
+) {
+  const state = yield* loadReplicaState(tx);
+  let appliedThrough = state.appliedCommitSequence;
+  const touchedKeys: Array<string> = [];
   for (const group of pulled.transactions) {
-    appliedThrough = applyTransactionGroup(tx, group);
+    const applied = yield* applyTransactionGroup(tx, group);
+    appliedThrough = applied.appliedThrough;
+    touchedKeys.push(...applied.touchedKeys);
   }
-  const coverage = updateCoverageFromPull(tx, pulled, appliedThrough);
-  return { appliedThrough, repairRequired: coverage.repairRequired };
-};
+  const coverage = yield* updateCoverageFromPull(tx, pulled, appliedThrough);
+  return {
+    appliedThrough,
+    repairRequired: coverage.repairRequired,
+    digestVerified: coverage.digestVerified,
+    touchedKeys,
+  } satisfies PullApplyResult;
+});
 
-export const applyLiveFrame = (
+export const applyLiveFrame = Effect.fn("ReplicaApply.applyLiveFrame")(function* (
   tx: ReplicaDb,
   feed: ReplicaFeedMode,
   frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-): boolean => {
-  if (!isFollowingFeed(feed)) return false;
+) {
+  if (feed._tag !== "following") return false;
   for (const group of frame.transactions) {
-    applyTransactionGroup(tx, group);
+    yield* applyTransactionGroup(tx, group);
   }
   return true;
-};
+});

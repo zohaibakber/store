@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { OtpCode, SessionId } from "@store/auth";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -35,12 +37,7 @@ const platformCrypto = Crypto.make({
 });
 
 export const randomSecret = (bytes: number) =>
-  Effect.runSync(
-    platformCrypto.randomBytes(bytes).pipe(
-      Effect.map(Encoding.encodeBase64Url),
-      Effect.orDie,
-    ),
-  );
+  platformCrypto.randomBytes(bytes).pipe(Effect.map(Encoding.encodeBase64Url), Effect.orDie);
 
 export const sha256 = (value: string) =>
   platformCrypto.digest("SHA-256", textEncoder.encode(value)).pipe(
@@ -54,20 +51,14 @@ export const hashInvitationSecret = (pepper: string, secret: string) =>
   sha256(`${pepper}:invite:${secret}`);
 
 export const safeEqual = (left: string, right: string) => {
-  let difference = left.length ^ right.length;
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
-  }
-  return difference === 0;
+  const leftBytes = textEncoder.encode(left);
+  const rightBytes = textEncoder.encode(right);
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 };
 
-export const generateOtp = () =>
-  Effect.runSync(
-    platformCrypto
-      .randomIntBetween(0, 1_000_000, { halfOpen: true })
-      .pipe(Effect.map((value) => OtpCode.make(String(value).padStart(6, "0")))),
-  );
+export const generateOtp = platformCrypto
+  .randomIntBetween(0, 1_000_000, { halfOpen: true })
+  .pipe(Effect.map((value) => OtpCode.make(String(value).padStart(6, "0"))));
 
 export const parseRefreshToken = (token: string) =>
   Effect.gen(function* () {

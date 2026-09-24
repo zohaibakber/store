@@ -5,9 +5,7 @@ const decodeJsonText = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.U
 const decodePlainObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown));
 const isString = Schema.is(Schema.String);
 
-type ModelJsonEnvelope = {
-  readonly response?: string;
-};
+const isEnvelope = Schema.is(Schema.Struct({ response: Schema.String }));
 
 const parseJsonObjectText = (candidate: string) => {
   const asObject = (text: string) => {
@@ -25,11 +23,6 @@ const parseJsonObjectText = (candidate: string) => {
   return sliced.value;
 };
 
-/**
- * Models sometimes return bare JSON, fenced markdown, or an already-parsed
- * object. Decode the string boundary with Schema; salvage a `{...}` slice only
- * when the first parse fails.
- */
 export const parseModelJson = <Payload>(raw: string | Payload): Payload => {
   if (isString(raw)) {
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -37,9 +30,7 @@ export const parseModelJson = <Payload>(raw: string | Payload): Payload => {
     // SAFETY: Callers name Payload for the Schema decode that follows; this recovers a plain object.
     return parseJsonObjectText(candidate) as Payload;
   }
-  // SAFETY: Optional model SDK envelope; only a string response field is read when present.
-  const envelope = raw as Payload & ModelJsonEnvelope;
-  if (!isString(envelope.response)) return raw;
+  if (!isEnvelope(raw)) return raw;
   // SAFETY: Callers name Payload for the Schema decode that follows; this recovers a plain object.
-  return parseJsonObjectText(envelope.response) as Payload;
+  return parseJsonObjectText(raw.response) as Payload;
 };

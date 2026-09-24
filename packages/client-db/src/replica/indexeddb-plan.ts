@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { UnsupportedSubsetQuery } from "./errors";
-import type { InventorySubsetSpec, SubsetLeafPredicate, SubsetPredicate } from "./subset-ir";
+import type { InventorySubsetSpec, SubsetLeafPredicate, SubsetPredicate } from "./subset-spec";
 
 const isStringScalar = Schema.is(Schema.String);
 const isIndexEqualsScalar = Schema.is(Schema.Union([Schema.String, Schema.Number]));
@@ -54,6 +54,8 @@ const toResidual = (predicate: SubsetPredicate): IndexedDbResidualPredicate => {
       return { _tag: "in", column: predicate.column, values: predicate.values };
     case "isNull":
       return { _tag: "isNull", column: predicate.column };
+    case "like":
+      return { _tag: "like", column: predicate.column, pattern: predicate.pattern };
     case "and":
       return {
         _tag: "and",

@@ -1,105 +1,161 @@
-import { describe, expect, it } from "vitest";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import { describe, expect, it, vi } from "vitest";
 
 import { assertTrustedIpcSender, isTrustedIpcSenderFrame } from "../../electron/ipc-sender";
 import {
-  REPLICA_CANCEL_CHANNEL,
+  REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
+  REPLICA_COMMIT_CHANNEL,
+  REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_QUERY_CHANNEL,
+  REPLICA_OUTBOX_CHANNEL,
+  REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
+  REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  ReplicaWorkerBootInput,
-  type ReplicaWakeResult,
-  type ReplicaWorkerRequest,
-  type ReplicaWorkerResponse,
-  type ReplicaWorkspaceToken,
+  type ReplicaCommitEvent,
+  type ReplicaSyncHealthEvent,
 } from "../../electron/replica-channels";
 import {
   registerReplicaWorkerIpc,
-  type CreateReplicaWorker,
-  type ReplicaWorkerLike,
+  type ReplicaInvokeEvent,
+  type ReplicaIpcListener,
+  type SpawnReplicaWorker,
 } from "../../electron/replica-ipc";
+import {
+  ReplicaWorkerRpcs,
+  type ProxyFetchResult,
+  type ReplicaWorkerBoot,
+} from "../../electron/replica-rpc";
 
-class FakeWorker implements ReplicaWorkerLike {
-  readonly messages: Array<ReplicaWorkerRequest> = [];
-  drainCount = 0;
-  private messageListener: ((message: ReplicaWorkerResponse) => void) | undefined;
+const allowed = ["https://app.tabaaq.local"];
 
-  postMessage(message: ReplicaWorkerRequest) {
-    this.messages.push(message);
-    if (message._tag === "proxyFetchResult") return;
-    const respond = () => {
-      const response: ReplicaWorkerResponse =
-        message._tag === "boot"
-          ? { _tag: "ready", requestId: message.requestId, engine: "sqlite" }
-          : message._tag === "stamp"
-            ? {
-                _tag: "stamp",
-                requestId: message.requestId,
-                generationId: "1",
-                localCommitVersion: 0,
-              }
-            : message._tag === "query"
-              ? {
-                  _tag: "query",
-                  requestId: message.requestId,
-                  rows: [{ id: "1" }],
-                  stamp: message.stamped ? { generationId: "1", localCommitVersion: 0 } : undefined,
-                }
-              : message._tag === "wake"
-                ? (() => {
-                    this.drainCount += 1;
-                    return {
-                      _tag: "woke" as const,
-                      requestId: message.requestId,
-                      drained: true,
-                      drainCount: this.drainCount,
-                    };
-                  })()
-                : { _tag: "disposed", requestId: message.requestId };
-      this.messageListener?.(response);
-    };
-    setTimeout(respond, 0);
-  }
-
-  onMessage(listener: (message: ReplicaWorkerResponse) => void) {
-    this.messageListener = listener;
-  }
-
-  onError(_listener: (cause: Error) => void) {}
-
-  terminate() {
-    return Promise.resolve(0);
-  }
-}
-
-type Handler = {
-  open?: (
-    event: { senderFrame: { url: string }; sender: { id: number } },
-    input: typeof ReplicaWorkerBootInput.Type,
-  ) => Promise<ReplicaWorkspaceToken>;
-  close?: (
-    event: { senderFrame: { url: string }; sender: { id: number } },
-    input: string,
-  ) => Promise<void>;
-  stamp?: (
-    event: { senderFrame: { url: string }; sender: { id: number } },
-    input: string,
-  ) => Promise<{ generationId: string }>;
-  query?: (
-    event: { senderFrame: { url: string }; sender: { id: number } },
-    input: {
-      workspaceToken: string;
-      sql: string;
-      parameters: ReadonlyArray<string | number | null>;
-      stamped?: boolean;
+const envelope = {
+  organizationId: "11111111-1111-4111-8111-111111111111",
+  epoch: "1",
+  replicaId: "device-1",
+  clientSequence: "1",
+  operationId: "op-1",
+  payloadHash: "a".repeat(64),
+  command: {
+    _tag: "catalogWrite",
+    payload: {
+      commandId: "op-1",
+      deviceId: "device-1",
+      occurredAt: 1,
+      writes: [
+        {
+          entity: "category",
+          action: "upsert",
+          id: "22222222-2222-4222-8222-222222222222",
+          expectedRowVersion: null,
+          row: { name: "Tea", tracksPacks: true },
+        },
+      ],
     },
-  ) => Promise<{ rows: ReadonlyArray<Record<string, string | number | null>> }>;
-  wake?: (
-    event: { senderFrame: { url: string }; sender: { id: number } },
-    input: string,
-  ) => Promise<ReplicaWakeResult>;
-  cancel?: (event: { senderFrame: { url: string }; sender: { id: number } }, input: string) => void;
+  },
+};
+
+const openInput = { organizationId: "org-1", userId: "user-1", replicaId: "device-1" };
+
+const decodeOpened = Schema.decodeUnknownSync(
+  Schema.Struct({
+    workspaceToken: Schema.String,
+    engine: Schema.Literals(["sqlite", "unavailable"]),
+  }),
+);
+
+const setupIpc = () => {
+  const boots: Array<typeof ReplicaWorkerBoot.Type> = [];
+  const proxyReplies: Array<{ readonly requestId: string; readonly result: ProxyFetchResult }> = [];
+  const syncRequests: Array<string> = [];
+  let drainCount = 0;
+  const handlers = ReplicaWorkerRpcs.toLayer({
+    Open: (boot) =>
+      Effect.sync(() => {
+        boots.push(boot);
+        return "sqlite" as const;
+      }),
+    Stamp: () => Effect.succeed({ generationId: "1", localCommitVersion: 0 }),
+    ReadSubset: ({ spec }) =>
+      Effect.succeed({
+        stamp: { generationId: "1", localCommitVersion: 0 },
+        rows: [{ id: spec.source }],
+      }),
+    ReadOutboxStatuses: () => Effect.succeed(["pending" as const]),
+    ReadCommandAllocation: () => Effect.succeed({ epoch: "1", nextClientSequence: "4" }),
+    EnqueueLocal: ({ envelope: received }) =>
+      Effect.succeed({ changed: received.operationId === "op-1", status: "pending" }),
+    WakeSyncUpload: () => Effect.sync(() => ({ drained: true, drainCount: ++drainCount })),
+    Commits: () =>
+      Stream.make({
+        generationId: "1",
+        localCommitVersion: 1,
+        touchedEntities: ["category"],
+        touchedKeys: ["c-1"],
+      }),
+    SyncHealth: () =>
+      Stream.make({ _tag: "recoveryRequired" as const, message: "Sync needs recovery." }),
+    ProxyRequests: () =>
+      Stream.make({
+        requestId: "proxy-1",
+        method: "POST" as const,
+        pathname: "/api/sync/pull",
+        bodyText: "{}",
+      }),
+    ProxyRespond: (reply) =>
+      Effect.sync(() => {
+        proxyReplies.push(reply);
+      }),
+  });
+  const spawnWorker: SpawnReplicaWorker = () =>
+    RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
+  const listeners = new Map<string, ReplicaIpcListener>();
+  const registration = registerReplicaWorkerIpc({
+    ipcMain: {
+      handle: (channel, listener) => {
+        listeners.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        listeners.delete(channel);
+      },
+    },
+    userDataPath: "/tmp/store-replica-test",
+    workerPath: "/tmp/replica-worker.js",
+    apiBaseUrl: "https://api.tabaaq.local",
+    syncApiRequest: async (pathname) => {
+      syncRequests.push(pathname);
+      return { ok: true, status: 200, bodyText: "{}" };
+    },
+    allowedOrigins: () => allowed,
+    spawnWorker,
+  });
+  const sent: Array<{
+    readonly channel: string;
+    readonly event: ReplicaCommitEvent | ReplicaSyncHealthEvent;
+  }> = [];
+  const senderEvent = (id: number): ReplicaInvokeEvent => ({
+    senderFrame: { url: allowed[0]! },
+    sender: {
+      id,
+      isDestroyed: () => false,
+      send: (channel, event) => {
+        sent.push({ channel, event });
+      },
+    },
+  });
+  const invoke = <Input>(channel: string, event: ReplicaInvokeEvent, input: Input) => {
+    const listener = listeners.get(channel);
+    if (!listener) throw new Error(`No handler for ${channel}`);
+    // SAFETY: the test sends raw renderer payloads, including malformed ones, to the IPC decoder.
+    return listener(event, input as never);
+  };
+  const open = async (event: ReplicaInvokeEvent) =>
+    decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, openInput));
+  return { boots, proxyReplies, syncRequests, registration, senderEvent, invoke, open, sent };
 };
 
 describe("replica worker IPC contract", () => {
@@ -112,92 +168,128 @@ describe("replica worker IPC contract", () => {
     ).toThrow("Rejected IPC from an untrusted renderer.");
   });
 
-  it("opens, stamps, cancels, and disposes through the typed channels", async () => {
-    const workers: Array<FakeWorker> = [];
-    const createWorker: CreateReplicaWorker = () => {
-      const worker = new FakeWorker();
-      workers.push(worker);
-      return worker;
-    };
-    const handler: Handler = {};
-    const ipcMain = {
-      handle: (channel: string, next: Handler[keyof Handler]) => {
-        if (channel === REPLICA_OPEN_CHANNEL) {
-          // SAFETY: open channel registers the open handler shape.
-          handler.open = next as Handler["open"];
-        }
-        if (channel === REPLICA_CLOSE_CHANNEL) {
-          // SAFETY: close channel registers the close handler shape.
-          handler.close = next as Handler["close"];
-        }
-        if (channel === REPLICA_STAMP_CHANNEL) {
-          // SAFETY: stamp channel registers the stamp handler shape.
-          handler.stamp = next as Handler["stamp"];
-        }
-        if (channel === REPLICA_QUERY_CHANNEL) {
-          // SAFETY: query channel registers the query handler shape.
-          handler.query = next as Handler["query"];
-        }
-        if (channel === REPLICA_WAKE_CHANNEL) {
-          // SAFETY: wake channel registers the wake handler shape.
-          handler.wake = next as Handler["wake"];
-        }
-      },
-      removeHandler: (_channel: string) => undefined,
-      on: (channel: string, next: Handler["cancel"]) => {
-        if (channel === REPLICA_CANCEL_CHANNEL) handler.cancel = next;
-      },
-      off: (_channel: string) => undefined,
-    };
-    const allowed = ["https://app.tabaaq.local"];
-    // SAFETY: test double only implements the IpcMain methods registerReplicaWorkerIpc uses.
-    const registration = registerReplicaWorkerIpc({
-      ipcMain: ipcMain as never,
-      userDataPath: "/tmp/store-replica-test",
-      workerPath: "/tmp/replica-worker.js",
-      apiBaseUrl: "https://api.tabaaq.local",
-      syncApiRequest: async () => ({ ok: true, status: 200, bodyText: "{}" }),
-      allowedOrigins: () => allowed,
-      createWorker,
-    });
+  it("opens a worker, forwards commits and proxy requests, and reads through typed RPCs", async () => {
+    const { boots, proxyReplies, syncRequests, registration, senderEvent, invoke, open, sent } =
+      setupIpc();
+    const event = senderEvent(7);
 
-    const event = {
-      senderFrame: { url: allowed[0]! },
-      sender: { id: 7, isDestroyed: () => false, send: () => undefined },
-    };
-
-    const opened = await handler.open!(event, {
-      organizationId: "org-1",
-      userId: "user-1",
-      replicaId: "device-1",
-      requestId: "req-open-1",
-    });
+    const opened = await open(event);
     expect(opened.engine).toBe("sqlite");
-    expect(workers).toHaveLength(1);
-    expect(workers[0]?.messages[0]?._tag).toBe("boot");
-    expect(workers[0]?.messages[0]).toMatchObject({ apiBaseUrl: "https://api.tabaaq.local" });
+    const token = opened.workspaceToken;
+    expect(boots).toEqual([
+      {
+        ...openInput,
+        databasePath: "/tmp/store-replica-test/replicas/org-1-user-1.sqlite",
+        apiBaseUrl: "https://api.tabaaq.local",
+      },
+    ]);
 
-    const stamp = await handler.stamp!(event, opened.workspaceToken);
-    expect(stamp.generationId).toBe("1");
-
-    const queried = await handler.query!(event, {
-      workspaceToken: opened.workspaceToken,
-      sql: "select 1 as id",
-      parameters: [],
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(2);
+      expect(sent).toContainEqual({
+        channel: REPLICA_COMMIT_CHANNEL,
+        event: {
+          workspaceToken: token,
+          generationId: "1",
+          localCommitVersion: 1,
+          touchedEntities: ["category"],
+          touchedKeys: ["c-1"],
+        },
+      });
+      expect(sent).toContainEqual({
+        channel: REPLICA_SYNC_HEALTH_CHANNEL,
+        event: {
+          workspaceToken: token,
+          health: { _tag: "recoveryRequired", message: "Sync needs recovery." },
+        },
+      });
+      expect(syncRequests).toEqual(["/api/sync/pull"]);
+      expect(proxyReplies).toEqual([
+        { requestId: "proxy-1", result: { ok: true, status: 200, bodyText: "{}" } },
+      ]);
     });
-    expect(queried.rows).toEqual([{ id: "1" }]);
 
-    const woke = await handler.wake!(event, opened.workspaceToken);
-    expect(woke.drained).toBe(true);
-    expect(woke.drainCount).toBe(1);
-    expect(workers[0]?.drainCount).toBe(1);
-    expect(workers[0]?.messages.some((message) => message._tag === "wake")).toBe(true);
+    await expect(invoke(REPLICA_STAMP_CHANNEL, event, token)).resolves.toEqual({
+      generationId: "1",
+      localCommitVersion: 0,
+    });
+    await expect(
+      invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
+        workspaceToken: token,
+        spec: { source: "categories", orderBy: [], limit: 10, offset: 0 },
+      }),
+    ).resolves.toEqual({
+      stamp: { generationId: "1", localCommitVersion: 0 },
+      rows: [{ id: "categories" }],
+    });
+    await expect(invoke(REPLICA_OUTBOX_CHANNEL, event, token)).resolves.toEqual(["pending"]);
+    await expect(invoke(REPLICA_ALLOCATION_CHANNEL, event, token)).resolves.toEqual({
+      epoch: "1",
+      nextClientSequence: "4",
+    });
+    await expect(
+      invoke(REPLICA_ENQUEUE_CHANNEL, event, { workspaceToken: token, envelope, createdAt: 5 }),
+    ).resolves.toEqual({ changed: true, status: "pending" });
+    await expect(invoke(REPLICA_WAKE_CHANNEL, event, token)).resolves.toEqual({
+      drained: true,
+      drainCount: 1,
+    });
+    await expect(invoke(REPLICA_WAKE_CHANNEL, event, token)).resolves.toMatchObject({
+      drainCount: 2,
+    });
 
-    const wokeAgain = await handler.wake!(event, opened.workspaceToken);
-    expect(wokeAgain.drainCount).toBe(2);
+    await invoke(REPLICA_CLOSE_CHANNEL, event, token);
+    await expect(invoke(REPLICA_STAMP_CHANNEL, event, token)).rejects.toThrow(
+      "Unknown replica workspace.",
+    );
+    await registration.dispose();
+  });
 
-    handler.cancel?.(event, "req-open-1");
-    await handler.close!(event, opened.workspaceToken);
+  it("rejects malformed subset specs before they reach the worker", async () => {
+    const { registration, senderEvent, invoke, open } = setupIpc();
+    const event = senderEvent(7);
+    const { workspaceToken } = await open(event);
+    await expect(
+      invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
+        workspaceToken,
+        spec: {
+          source: "categories",
+          where: { _tag: "compare", column: 'id" OR 1=1 --', op: "eq", value: "x" },
+          orderBy: [],
+          limit: 10,
+          offset: 0,
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
+        workspaceToken,
+        sql: "delete from categories",
+        parameters: [],
+      }),
+    ).rejects.toThrow();
+    await registration.dispose();
+  });
+
+  it("rejects replica channels from a different renderer", async () => {
+    const { registration, senderEvent, invoke, open } = setupIpc();
+    const { workspaceToken } = await open(senderEvent(7));
+    const intruder = senderEvent(9);
+    await expect(invoke(REPLICA_OUTBOX_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
+      "Rejected replica outbox read from a different renderer.",
+    );
+    await expect(invoke(REPLICA_ALLOCATION_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
+      "Rejected replica command allocation from a different renderer.",
+    );
+    await expect(
+      invoke(REPLICA_ENQUEUE_CHANNEL, intruder, { workspaceToken, envelope, createdAt: 1 }),
+    ).rejects.toThrow("Rejected replica enqueue from a different renderer.");
+    await expect(invoke(REPLICA_CLOSE_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
+      "Rejected replica close from a different renderer.",
+    );
+    await expect(
+      invoke(REPLICA_OUTBOX_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
+    ).rejects.toThrow("Unknown replica workspace.");
     await registration.dispose();
   });
 });

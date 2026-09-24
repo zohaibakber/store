@@ -1,10 +1,11 @@
 import type {
   CommandReceipt,
+  RegisterReplicaResult,
   SnapshotId,
   SnapshotManifest,
   SnapshotPartPayload,
   SyncCommandEnvelope,
-  SyncProtocolError,
+  SyncEntity,
   SyncPullResult,
   SyncSubscription,
   SyncTransactionGroup,
@@ -20,20 +21,21 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 import type { ClaimNextUploadInput, UploadClaim } from "./commands";
-import type {
-  IndexedDbCorruptRecord,
-  IndexedDbIdentityMismatch,
-  IndexedDbQuotaExceeded,
-  IndexedDbUnavailable,
-  IndexedDbUpgradeBlocked,
-  ReplicaStorageError,
-} from "./errors";
+import type { ReplicaStoreError } from "./errors";
+import type { ReplicaRegistrationOutcome } from "./registration";
 
-export type { ClaimNextUploadInput };
+export type { ReplicaRegistrationOutcome, ReplicaStoreError };
 
 export type AppliedCursor = {
   readonly appliedThrough: string;
   readonly repairRequired: boolean;
+  readonly digestVerified?: boolean;
+};
+
+export type PendingRowMarkEntry = {
+  readonly entity: SyncEntity;
+  readonly entityId: string;
+  readonly operationId: string;
 };
 
 export type QueuedCommand = {
@@ -44,16 +46,9 @@ export type QueuedCommand = {
 export type ReplicaSyncCursor = {
   readonly epoch: string;
   readonly appliedCommitSequence: string;
+  readonly replicaId: string;
+  readonly registered: boolean;
 };
-
-export type ReplicaStoreError =
-  | ReplicaStorageError
-  | SyncProtocolError
-  | IndexedDbUnavailable
-  | IndexedDbQuotaExceeded
-  | IndexedDbUpgradeBlocked
-  | IndexedDbCorruptRecord
-  | IndexedDbIdentityMismatch;
 
 export type VerifyAuthorityInput = {
   readonly incarnation: string;
@@ -62,6 +57,11 @@ export type VerifyAuthorityInput = {
 
 export interface ReplicaStoreContract {
   readonly readSyncCursor: () => Effect.Effect<ReplicaSyncCursor, ReplicaStoreError>;
+
+  readonly adoptRegistration: (
+    authority: RegisterReplicaResult,
+    registeredAt: number,
+  ) => Effect.Effect<ReplicaRegistrationOutcome, ReplicaStoreError>;
 
   readonly enqueueCommand: (
     envelope: SyncCommandEnvelope,
@@ -113,11 +113,29 @@ export interface ReplicaStoreContract {
     subscription: SyncSubscription,
   ) => Effect.Effect<void, ReplicaStoreError>;
 
+  readonly readDigestVerification: (
+    subscription: SyncSubscription,
+  ) => Effect.Effect<number | undefined, ReplicaStoreError>;
+
+  readonly recordDigestVerification: (
+    subscription: SyncSubscription,
+    verifiedAt: number,
+  ) => Effect.Effect<void, ReplicaStoreError>;
+
   readonly readCommandStatus: (
     operationId: string,
   ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
 
+  readonly readPendingMarks: () => Effect.Effect<
+    ReadonlyArray<PendingRowMarkEntry>,
+    ReplicaStoreError
+  >;
+
   readonly readStamp: () => Effect.Effect<ReplicaReadStamp, ReplicaStoreError>;
+
+  readonly recordCaughtUp: (
+    caughtUpAt: number,
+  ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
 
   readonly commits: Stream.Stream<ReplicaCommitNotice>;
 }

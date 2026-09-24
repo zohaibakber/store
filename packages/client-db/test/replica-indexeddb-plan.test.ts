@@ -2,9 +2,9 @@ import { IR } from "@tanstack/db";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { analyzeInventorySubset } from "../src/replica/compile";
 import { planIndexedDbSubset } from "../src/replica/indexeddb-plan";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
+import { analyzeInventorySubset } from "../src/replica/subset-ir";
 import type { InventoryCollectionDescriptor } from "../src/replica/types";
 import type { CategoryRow, InvoiceItemRow, InvoiceRow } from "../src/rows";
 

@@ -5,195 +5,122 @@ import {
   LiveTicketRequest,
   OrgCommitSequence,
   SyncEpoch,
-  SyncProtocolError,
 } from "@store/contracts";
 import { decodeOrganizationId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import { consumedTickets, inventoryState, replicas } from "@store/db/postgres/schema";
+import { consumedTickets } from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { InventoryDatabaseError } from "./errors";
+import type { InventoryError } from "./errors";
 import type { InventoryActor } from "./model";
 import {
-  databaseError,
   integerTextFromNumeric,
   inventoryPostgresUnavailable,
   protocol,
-  requireReady,
+  randomHex,
+  readReadyState,
+  readReplica,
   runTransaction,
   type InventoryDrizzle,
   type InventoryTransaction,
 } from "./postgres";
 
-const secureRandomHex = (byteCount: number): string =>
-  Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(byteCount)));
-
-export type LiveHorizon = {
+type LiveHorizon = {
   readonly epoch: SyncEpoch;
   readonly horizon: OrgCommitSequence;
 };
 
-export const mintLiveTicketInTransaction = (
+type LiveTicketQuery = {
+  readonly nonce: string;
+  readonly replicaId: string;
+  readonly subscription: string;
+};
+
+const requireTicketReplica = Effect.fn("InventoryLive.requireTicketReplica")(function* (
+  tx: InventoryTransaction,
+  actor: InventoryActor,
+  replicaId: string,
+) {
+  yield* readReadyState(tx, actor.organizationId);
+  const replica = yield* readReplica(tx, actor.organizationId, replicaId);
+  if (!replica) {
+    return yield* protocol("TICKET_INVALID", "The replica is not registered.");
+  }
+  if (replica.ownerUserId !== actor.userId) {
+    return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
+  }
+});
+
+const mintLiveTicketInTransaction = Effect.fn("InventoryLive.mintInTransaction")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
   request: LiveTicketRequest,
   now: number,
-): Effect.Effect<LiveTicket, SyncProtocolError | InventoryDatabaseError> =>
-  Effect.gen(function* () {
-    const [state] = yield* tx
-      .select()
-      .from(inventoryState)
-      .where(eq(inventoryState.organizationId, actor.organizationId))
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    yield* requireReady(state);
+) {
+  yield* requireTicketReplica(tx, actor, request.replicaId);
+  const nonce = Schema.decodeUnknownSync(LiveTicketNonce)(randomHex(32));
+  const nonceHash = canonicalPayloadHash(nonce);
+  const expiresAt = now + LIVE_TICKET_LIFETIME_MILLIS;
+  const inserted = yield* tx
+    .insert(consumedTickets)
+    .values({ organizationId: actor.organizationId, nonceHash, expiresAt })
+    .onConflictDoNothing({ target: [consumedTickets.organizationId, consumedTickets.nonceHash] })
+    .returning();
+  if (inserted.length === 0) {
+    return yield* protocol("TICKET_INVALID", "The live ticket nonce was reused.");
+  }
+  return {
+    nonce,
+    organizationId: decodeOrganizationId(actor.organizationId),
+    subscription: request.subscription,
+    expiresAt,
+  } satisfies LiveTicket;
+});
 
-    const [replica] = yield* tx
-      .select()
-      .from(replicas)
-      .where(
-        and(
-          eq(replicas.organizationId, actor.organizationId),
-          eq(replicas.replicaId, request.replicaId),
-        ),
-      )
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    if (!replica) {
-      return yield* protocol("TICKET_INVALID", "The replica is not registered.");
-    }
-    if (replica.ownerUserId !== actor.userId) {
-      return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
-    }
-
-    const nonce = Schema.decodeUnknownSync(LiveTicketNonce)(secureRandomHex(32));
-    const nonceHash = canonicalPayloadHash(nonce);
-    const expiresAt = now + LIVE_TICKET_LIFETIME_MILLIS;
-    const inserted = yield* tx
-      .insert(consumedTickets)
-      .values({
-        organizationId: actor.organizationId,
-        nonceHash,
-        expiresAt,
-      })
-      .onConflictDoNothing({
-        target: [consumedTickets.organizationId, consumedTickets.nonceHash],
-      })
-      .returning()
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    if (inserted.length === 0) {
-      return yield* protocol("TICKET_INVALID", "The live ticket nonce was reused.");
-    }
-
-    return {
-      nonce,
-      organizationId: decodeOrganizationId(actor.organizationId),
-      subscription: request.subscription,
-      expiresAt,
-    } satisfies LiveTicket;
-  });
-
-export const consumeLiveTicketInTransaction = (
+const consumeLiveTicketInTransaction = Effect.fn("InventoryLive.consumeInTransaction")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
-  query: { readonly nonce: string; readonly replicaId: string; readonly subscription: string },
+  query: LiveTicketQuery,
   now: number,
-): Effect.Effect<void, SyncProtocolError | InventoryDatabaseError> =>
-  Effect.gen(function* () {
-    const [state] = yield* tx
-      .select()
-      .from(inventoryState)
-      .where(eq(inventoryState.organizationId, actor.organizationId))
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    yield* requireReady(state);
+) {
+  yield* requireTicketReplica(tx, actor, query.replicaId);
+  const ticket = and(
+    eq(consumedTickets.organizationId, actor.organizationId),
+    eq(consumedTickets.nonceHash, canonicalPayloadHash(query.nonce)),
+  );
+  const [row] = yield* tx.select().from(consumedTickets).where(ticket).limit(1);
+  if (!row || row.expiresAt <= now) {
+    return yield* protocol("TICKET_INVALID", "The live ticket is invalid or expired.");
+  }
+  yield* tx.delete(consumedTickets).where(ticket);
+});
 
-    const [replica] = yield* tx
-      .select()
-      .from(replicas)
-      .where(
-        and(
-          eq(replicas.organizationId, actor.organizationId),
-          eq(replicas.replicaId, query.replicaId),
-        ),
-      )
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    if (!replica) {
-      return yield* protocol("TICKET_INVALID", "The replica is not registered.");
-    }
-    if (replica.ownerUserId !== actor.userId) {
-      return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
-    }
-
-    const nonceHash = canonicalPayloadHash(query.nonce);
-    const [row] = yield* tx
-      .select()
-      .from(consumedTickets)
-      .where(
-        and(
-          eq(consumedTickets.organizationId, actor.organizationId),
-          eq(consumedTickets.nonceHash, nonceHash),
-        ),
-      )
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    if (!row || row.expiresAt <= now) {
-      return yield* protocol("TICKET_INVALID", "The live ticket is invalid or expired.");
-    }
-
-    yield* tx
-      .delete(consumedTickets)
-      .where(
-        and(
-          eq(consumedTickets.organizationId, actor.organizationId),
-          eq(consumedTickets.nonceHash, nonceHash),
-        ),
-      )
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-  });
-
-export const readLiveHorizonInTransaction = (
+const readLiveHorizonInTransaction = Effect.fn("InventoryLive.readHorizonInTransaction")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
-): Effect.Effect<LiveHorizon, SyncProtocolError | InventoryDatabaseError> =>
-  Effect.gen(function* () {
-    const [state] = yield* tx
-      .select()
-      .from(inventoryState)
-      .where(eq(inventoryState.organizationId, actor.organizationId))
-      .limit(1)
-      .pipe(Effect.mapError((cause) => databaseError(cause, "Inventory live ticket failed.")));
-    yield* requireReady(state);
-    if (!state) {
-      return yield* protocol("EPOCH_MISMATCH", "This organization inventory is not ready.");
-    }
-    return {
-      epoch: SyncEpoch.make(state.epoch),
-      horizon: OrgCommitSequence.make(integerTextFromNumeric(state.commitSequence)),
-    };
-  });
-
-export type InventoryLiveError = SyncProtocolError | InventoryDatabaseError;
+) {
+  const state = yield* readReadyState(tx, actor.organizationId);
+  return {
+    epoch: SyncEpoch.make(state.epoch),
+    horizon: OrgCommitSequence.make(integerTextFromNumeric(state.commitSequence)),
+  } satisfies LiveHorizon;
+});
 
 export interface InventoryLiveContract {
   readonly mintLiveTicket: (
     actor: InventoryActor,
     request: LiveTicketRequest,
-  ) => Effect.Effect<LiveTicket, InventoryLiveError>;
+  ) => Effect.Effect<LiveTicket, InventoryError>;
   readonly consumeLiveTicket: (
     actor: InventoryActor,
-    query: { readonly nonce: string; readonly replicaId: string; readonly subscription: string },
-  ) => Effect.Effect<void, InventoryLiveError>;
-  readonly readLiveHorizon: (
-    actor: InventoryActor,
-  ) => Effect.Effect<LiveHorizon, InventoryLiveError>;
+    query: LiveTicketQuery,
+  ) => Effect.Effect<void, InventoryError>;
+  readonly readLiveHorizon: (actor: InventoryActor) => Effect.Effect<LiveHorizon, InventoryError>;
 }
 
 export class InventoryLive extends Context.Service<InventoryLive, InventoryLiveContract>()(

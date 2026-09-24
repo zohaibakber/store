@@ -186,4 +186,69 @@ describe("IndexedDB subset query path", () => {
       indexedDB.deleteDatabase(name);
     }),
   );
+  it.effect("matches like residuals with ASCII case folding and SQL wildcards", () =>
+    Effect.gen(function* () {
+      const name = `${databaseName}-like`;
+      const store = yield* makeIndexedDbReplicaStore({
+        databaseName: name,
+        databaseIdentity: name,
+        identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
+        indexedDB,
+        IDBKeyRange,
+      });
+      const product = (id: string, productName: string, composition: string | null) => ({
+        entity: "product" as const,
+        action: "upsert" as const,
+        entityId: id,
+        rowVersion: 1,
+        row: {
+          id,
+          name: productName,
+          categoryId: "cat-1",
+          aisle: null,
+          composition,
+          strength: null,
+          unitsPerPack: 1,
+          purchasePrice: null,
+          retailPrice: null,
+          unitPrice: null,
+          visible: true,
+          ...managed,
+        },
+      });
+      yield* store.applyTransactionGroup({
+        commitSequence: OrgCommitSequence.make("1"),
+        operationId: "seed-products",
+        decision: "accepted",
+        changes: [
+          product("p-1", "Panadol", "Paracetamol"),
+          product("p-2", "PANADOL Extra", null),
+          product("p-3", "Calpol", "Paracetamol"),
+          product("p-4", "Brufen", "Ibuprofen"),
+          product("p-5", "Adol 50% (syrup)", null),
+        ],
+      });
+      const matching = (column: string, pattern: string) =>
+        store
+          .querySubset({
+            table: "products",
+            scan: { _tag: "generationPrefix", reverse: false },
+            residual: { _tag: "like", column, pattern },
+            orderBy: [{ column: "id", direction: "asc" }],
+            limit: 20,
+            offset: 0,
+          })
+          .pipe(Effect.map((result) => result.rows.map((row) => row["id"])));
+
+      expect(yield* matching("name", "pan%")).toEqual(["p-1", "p-2"]);
+      expect(yield* matching("name", "%DOL%")).toEqual(["p-1", "p-2", "p-5"]);
+      expect(yield* matching("name", "_alpol")).toEqual(["p-3"]);
+      expect(yield* matching("composition", "%PARA%")).toEqual(["p-1", "p-3"]);
+      expect(yield* matching("name", "%(syrup)")).toEqual(["p-5"]);
+      expect(yield* matching("composition", "%")).toEqual(["p-1", "p-3", "p-4"]);
+
+      yield* store.dispose();
+      indexedDB.deleteDatabase(name);
+    }),
+  );
 });

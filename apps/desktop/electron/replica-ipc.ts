@@ -1,35 +1,47 @@
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 
+import * as NodeWorker from "@effect/platform-node/NodeWorker";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as RpcClient from "effect/unstable/rpc/RpcClient";
+import type { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 
-import { assertTrustedIpcSender } from "./ipc-sender";
+import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
-  REPLICA_CANCEL_CHANNEL,
+  REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
+  REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_QUERY_CHANNEL,
+  REPLICA_OUTBOX_CHANNEL,
+  REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
+  REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  ReplicaCommitEvent,
-  ReplicaQueryInput,
-  ReplicaWorkerBootInput,
-  type ReplicaWakeResult,
-  type ReplicaWorkerRequest,
-  type ReplicaWorkerResponse,
-  type ReplicaWorkspaceToken,
+  type ReplicaCommitEvent,
+  type ReplicaIpcBridge,
+  type ReplicaSyncHealthEvent,
 } from "./replica-channels";
+import {
+  ReplicaEnqueueInput,
+  ReplicaOpenInput,
+  ReplicaReadSubsetInput,
+  ReplicaWorkerRpcs,
+  ReplicaWorkspaceToken,
+  type ProxyFetchRequest,
+  type ProxyFetchResult,
+} from "./replica-rpc";
 
-export type ReplicaWorkerLike = {
-  readonly postMessage: (message: ReplicaWorkerRequest) => void;
-  readonly onMessage: (listener: (message: ReplicaWorkerResponse) => void) => void;
-  readonly onError: (listener: (cause: Error) => void) => void;
-  readonly terminate: () => Promise<number>;
-};
+export type ReplicaWorkerClient = RpcClient.FromGroup<typeof ReplicaWorkerRpcs, RpcClientError>;
 
-export type CreateReplicaWorker = (workerPath: string) => ReplicaWorkerLike;
+export type SpawnReplicaWorker = (
+  workerPath: string,
+) => Effect.Effect<ReplicaWorkerClient, never, Scope.Scope>;
 
 export type ReplicaSyncApiRequest = (
   pathname: string,
@@ -37,310 +49,232 @@ export type ReplicaSyncApiRequest = (
     readonly method?: "GET" | "POST";
     readonly body?: string | null;
   },
-) => Promise<{ readonly ok: boolean; readonly status: number; readonly bodyText: string }>;
+) => Promise<ProxyFetchResult>;
 
-const defaultCreateWorker: CreateReplicaWorker = (workerPath) => {
-  const worker = new Worker(workerPath);
-  return {
-    postMessage: (message) => {
-      worker.postMessage(message);
-    },
-    onMessage: (listener) => {
-      worker.on("message", (message: ReplicaWorkerResponse) => {
-        listener(message);
-      });
-    },
-    onError: (listener) => {
-      worker.on("error", listener);
-    },
-    terminate: () => worker.terminate(),
-  };
+type ReplicaSender = {
+  readonly id: number;
+  readonly isDestroyed: () => boolean;
+  readonly send: (channel: string, event: ReplicaCommitEvent | ReplicaSyncHealthEvent) => void;
 };
 
-type PendingReply = {
-  readonly resolve: (value: ReplicaWorkerResponse) => void;
-  readonly reject: (cause: Error) => void;
+export type ReplicaInvokeEvent = {
+  readonly senderFrame: TrustedIpcSenderFrame | null;
+  readonly sender: ReplicaSender;
 };
 
 type Session = {
-  readonly workspaceToken: string;
-  readonly worker: ReplicaWorkerLike;
   readonly senderId: number;
-  readonly contents: WebContents;
-  pending: Map<string, PendingReply>;
-  cancelled: Set<string>;
+  readonly client: ReplicaWorkerClient;
+  readonly scope: Scope.Closeable;
 };
 
-const requestId = () => crypto.randomUUID();
+type BridgeResult<Method> = Method extends (...args: never) => Promise<infer Result>
+  ? Result
+  : never;
 
-const waitForResponse = (
-  session: Session,
-  id: string,
-  send: ReplicaWorkerRequest,
-): Promise<ReplicaWorkerResponse> =>
-  new Promise((resolve, reject) => {
-    if (session.cancelled.has(id)) {
-      reject(new Error("Replica request was cancelled."));
-      return;
-    }
-    session.pending.set(id, { resolve, reject });
-    session.worker.postMessage(send);
-  });
+const CHANNEL_METHODS = {
+  [REPLICA_OPEN_CHANNEL]: "open",
+  [REPLICA_CLOSE_CHANNEL]: "close",
+  [REPLICA_STAMP_CHANNEL]: "stamp",
+  [REPLICA_READ_SUBSET_CHANNEL]: "readSubset",
+  [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
+  [REPLICA_ALLOCATION_CHANNEL]: "readCommandAllocation",
+  [REPLICA_ENQUEUE_CHANNEL]: "enqueueLocal",
+  [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
+} satisfies Record<string, keyof ReplicaIpcBridge>;
+
+type ChannelMethod<Channel extends keyof typeof CHANNEL_METHODS> =
+  ReplicaIpcBridge[(typeof CHANNEL_METHODS)[Channel]];
+
+export type ReplicaIpcInput = Parameters<ChannelMethod<keyof typeof CHANNEL_METHODS>>[0];
+
+type ReplicaIpcHandlers = {
+  readonly [Channel in keyof typeof CHANNEL_METHODS]: (
+    event: ReplicaInvokeEvent,
+    input: ReplicaIpcInput,
+  ) => Promise<BridgeResult<ChannelMethod<Channel>>>;
+};
+
+export type ReplicaIpcResult = BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>;
+
+export type ReplicaIpcListener = (
+  event: ReplicaInvokeEvent,
+  input: ReplicaIpcInput,
+) => Promise<ReplicaIpcResult>;
+
+export const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
+  Layer.build(
+    RpcClient.layerProtocolWorker({ size: 1 }).pipe(
+      Layer.provide(NodeWorker.layer(() => new Worker(workerPath))),
+    ),
+  ).pipe(
+    Effect.flatMap((protocol) =>
+      RpcClient.make(ReplicaWorkerRpcs).pipe(Effect.provideContext(protocol)),
+    ),
+    Effect.orDie,
+  );
+
+const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
+const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
+const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
+const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
 
 export const registerReplicaWorkerIpc = (options: {
-  readonly ipcMain: IpcMain;
+  readonly ipcMain: {
+    readonly handle: (channel: string, listener: ReplicaIpcListener) => void;
+    readonly removeHandler: (channel: string) => void;
+  };
   readonly userDataPath: string;
   readonly workerPath: string;
   readonly apiBaseUrl: string;
   readonly syncApiRequest: ReplicaSyncApiRequest;
   readonly allowedOrigins: () => ReadonlyArray<string>;
-  readonly createWorker?: CreateReplicaWorker;
+  readonly spawnWorker?: SpawnReplicaWorker;
 }) => {
-  const createWorker = options.createWorker ?? defaultCreateWorker;
+  const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const sessions = new Map<string, Session>();
 
-  const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent) =>
+  const disposeSession = (workspaceToken: string, session: Session) => {
+    sessions.delete(workspaceToken);
+    return Effect.runPromise(Scope.close(session.scope, Exit.void));
+  };
+
+  const sessionFor = (event: ReplicaInvokeEvent, workspaceToken: string, action: string) => {
+    const session = sessions.get(workspaceToken);
+    if (!session) throw new Error("Unknown replica workspace.");
+    if (session.senderId !== event.sender.id) {
+      throw new Error(`Rejected replica ${action} from a different renderer.`);
+    }
+    return session;
+  };
+
+  const withSession = async <A, E>(
+    event: ReplicaInvokeEvent,
+    input: ReplicaIpcInput,
+    action: string,
+    use: (client: ReplicaWorkerClient) => Effect.Effect<A, E>,
+  ): Promise<A> => {
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
-
-  const disposeSession = async (session: Session) => {
-    const id = requestId();
-    try {
-      await waitForResponse(session, id, { _tag: "dispose", requestId: id });
-    } catch {
-      // Worker may already be gone.
-    }
-    await session.worker.terminate();
-    for (const pending of session.pending.values()) {
-      pending.reject(new Error("Replica workspace closed."));
-    }
-    session.pending.clear();
-    sessions.delete(session.workspaceToken);
+    const { client } = sessionFor(event, decodeWorkspaceToken(input), action);
+    return Effect.runPromise(use(client));
   };
 
-  const fulfillProxyFetch = async (
-    session: Session,
-    message: Extract<ReplicaWorkerResponse, { readonly _tag: "proxyFetch" }>,
-  ) => {
-    try {
-      const response = await options.syncApiRequest(message.pathname, {
-        method: message.method,
-        body: message.bodyText,
-      });
-      session.worker.postMessage({
-        _tag: "proxyFetchResult",
-        requestId: message.requestId,
-        ok: response.ok,
-        status: response.status,
-        bodyText: response.bodyText,
-      });
-    } catch (cause) {
-      session.worker.postMessage({
-        _tag: "proxyFetchResult",
-        requestId: message.requestId,
-        ok: false,
-        status: 503,
-        bodyText: cause instanceof Error ? cause.message : "Sync proxy failed.",
-      });
-    }
-  };
-
-  const attachWorker = (session: Session) => {
-    session.worker.onMessage((message) => {
-      if (message._tag === "commit") {
-        if (!session.contents.isDestroyed()) {
-          session.contents.send(REPLICA_COMMIT_CHANNEL, {
-            workspaceToken: session.workspaceToken,
-            generationId: message.generationId,
-            localCommitVersion: message.localCommitVersion,
-            touchedEntities: message.touchedEntities,
-            touchedKeys: message.touchedKeys,
-          } satisfies ReplicaCommitEvent);
-        }
-        return;
-      }
-      if (message._tag === "proxyFetch") {
-        void fulfillProxyFetch(session, message);
-        return;
-      }
-      if (message._tag === "error") {
-        const pending = message.requestId ? session.pending.get(message.requestId) : undefined;
-        if (pending && message.requestId) {
-          session.pending.delete(message.requestId);
-          pending.reject(new Error(message.message));
-        }
-        return;
-      }
-      const pending = session.pending.get(message.requestId);
-      if (!pending) return;
-      session.pending.delete(message.requestId);
-      pending.resolve(message);
-    });
-    session.worker.onError((cause) => {
-      for (const pending of session.pending.values()) {
-        pending.reject(cause);
-      }
-      session.pending.clear();
-    });
-  };
-
-  const handleOpen = async (
-    event: IpcMainInvokeEvent,
-    input: ReplicaWorkerBootInput,
-  ): Promise<ReplicaWorkspaceToken> => {
-    assertSender(event);
-    const boot = Schema.decodeUnknownSync(ReplicaWorkerBootInput)(input);
-    if ([...sessions.values()].some((session) => session.cancelled.has(boot.requestId))) {
-      throw new Error("Replica open request was cancelled.");
-    }
-    const workspaceToken = crypto.randomUUID();
-    const databasePath = path.join(
-      options.userDataPath,
-      "replicas",
-      `${boot.organizationId}-${boot.userId}.sqlite`,
+  const fulfilProxyRequest = (
+    client: ReplicaWorkerClient,
+    request: typeof ProxyFetchRequest.Type,
+  ) =>
+    Effect.tryPromise({
+      try: () =>
+        options.syncApiRequest(request.pathname, {
+          method: request.method,
+          body: request.bodyText,
+        }),
+      catch: (cause) => (cause instanceof Error ? cause.message : "Sync proxy failed."),
+    }).pipe(
+      Effect.catch((message) => Effect.succeed({ ok: false, status: 503, bodyText: message })),
+      Effect.flatMap((result) => client.ProxyRespond({ requestId: request.requestId, result })),
     );
-    const worker = createWorker(options.workerPath);
-    const session: Session = {
-      workspaceToken,
-      worker,
-      senderId: event.sender.id,
-      contents: event.sender,
-      pending: new Map(),
-      cancelled: new Set(),
-    };
-    attachWorker(session);
-    sessions.set(workspaceToken, session);
-    try {
-      const ready = await waitForResponse(session, boot.requestId, {
-        _tag: "boot",
-        requestId: boot.requestId,
-        databasePath,
-        organizationId: boot.organizationId,
-        userId: boot.userId,
-        replicaId: boot.replicaId,
+
+  const openSession = (
+    sender: ReplicaSender,
+    identity: typeof ReplicaOpenInput.Type,
+    workspaceToken: string,
+    scope: Scope.Closeable,
+  ) =>
+    Effect.gen(function* () {
+      const client = yield* spawnWorker(options.workerPath);
+      yield* client.Commits().pipe(
+        Stream.runForEach((notice) =>
+          Effect.sync(() => {
+            if (!sender.isDestroyed()) {
+              sender.send(REPLICA_COMMIT_CHANNEL, { workspaceToken, ...notice });
+            }
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      yield* client.SyncHealth().pipe(
+        Stream.runForEach((health) =>
+          Effect.sync(() => {
+            if (!sender.isDestroyed()) {
+              sender.send(REPLICA_SYNC_HEALTH_CHANNEL, { workspaceToken, health });
+            }
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      yield* client.ProxyRequests().pipe(
+        Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
+          concurrency: "unbounded",
+        }),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      const engine = yield* client.Open({
+        ...identity,
+        databasePath: path.join(
+          options.userDataPath,
+          "replicas",
+          `${identity.organizationId}-${identity.userId}.sqlite`,
+        ),
         apiBaseUrl: options.apiBaseUrl,
       });
-      if (ready._tag !== "ready") {
-        throw new Error("Replica worker did not become ready.");
-      }
-      if (session.cancelled.has(boot.requestId)) {
-        await disposeSession(session);
-        throw new Error("Replica open was cancelled.");
-      }
-      return { workspaceToken, engine: ready.engine };
-    } catch (cause) {
-      await disposeSession(session);
-      throw cause;
-    }
+      return { client, engine };
+    }).pipe(
+      Scope.provide(scope),
+      Effect.onError(() => Scope.close(scope, Exit.void)),
+    );
+
+  const handlers: ReplicaIpcHandlers = {
+    [REPLICA_OPEN_CHANNEL]: async (event, input) => {
+      assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
+      const identity = decodeOpenInput(input);
+      const workspaceToken = crypto.randomUUID();
+      const scope = Effect.runSync(Scope.make());
+      const opened = await Effect.runPromise(
+        openSession(event.sender, identity, workspaceToken, scope),
+      );
+      sessions.set(workspaceToken, { senderId: event.sender.id, client: opened.client, scope });
+      return { workspaceToken, engine: opened.engine };
+    },
+    [REPLICA_CLOSE_CHANNEL]: async (event, input) => {
+      assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
+      const workspaceToken = decodeWorkspaceToken(input);
+      if (!sessions.has(workspaceToken)) return;
+      await disposeSession(workspaceToken, sessionFor(event, workspaceToken, "close"));
+    },
+    [REPLICA_STAMP_CHANNEL]: (event, input) =>
+      withSession(event, input, "stamp", (client) => client.Stamp()),
+    [REPLICA_READ_SUBSET_CHANNEL]: async (event, input) => {
+      const read = decodeReadSubsetInput(input);
+      return withSession(event, read.workspaceToken, "subset read", (client) =>
+        client.ReadSubset({ spec: read.spec }),
+      );
+    },
+    [REPLICA_OUTBOX_CHANNEL]: (event, input) =>
+      withSession(event, input, "outbox read", (client) => client.ReadOutboxStatuses()),
+    [REPLICA_ALLOCATION_CHANNEL]: (event, input) =>
+      withSession(event, input, "command allocation", (client) => client.ReadCommandAllocation()),
+    [REPLICA_ENQUEUE_CHANNEL]: async (event, input) => {
+      const enqueue = decodeEnqueueInput(input);
+      return withSession(event, enqueue.workspaceToken, "enqueue", (client) =>
+        client.EnqueueLocal({ envelope: enqueue.envelope, createdAt: enqueue.createdAt }),
+      );
+    },
+    [REPLICA_WAKE_CHANNEL]: (event, input) =>
+      withSession(event, input, "wake", (client) => client.WakeSyncUpload()),
   };
 
-  const handleClose = async (event: IpcMainInvokeEvent, input: string) => {
-    assertSender(event);
-    const workspaceToken = Schema.decodeUnknownSync(Schema.String)(input);
-    const session = sessions.get(workspaceToken);
-    if (!session) return;
-    if (session.senderId !== event.sender.id) {
-      throw new Error("Rejected replica close from a different renderer.");
-    }
-    await disposeSession(session);
-  };
-
-  const handleStamp = async (event: IpcMainInvokeEvent, input: string) => {
-    assertSender(event);
-    const workspaceToken = Schema.decodeUnknownSync(Schema.String)(input);
-    const session = sessions.get(workspaceToken);
-    if (!session) throw new Error("Unknown replica workspace.");
-    if (session.senderId !== event.sender.id) {
-      throw new Error("Rejected replica stamp from a different renderer.");
-    }
-    const id = requestId();
-    const response = await waitForResponse(session, id, { _tag: "stamp", requestId: id });
-    if (response._tag !== "stamp") throw new Error("Replica stamp failed.");
-    return {
-      workspaceToken,
-      generationId: response.generationId,
-      localCommitVersion: response.localCommitVersion,
-    };
-  };
-
-  const handleQuery = async (event: IpcMainInvokeEvent, input: ReplicaQueryInput) => {
-    assertSender(event);
-    const query = Schema.decodeUnknownSync(ReplicaQueryInput)(input);
-    const session = sessions.get(query.workspaceToken);
-    if (!session) throw new Error("Unknown replica workspace.");
-    if (session.senderId !== event.sender.id) {
-      throw new Error("Rejected replica query from a different renderer.");
-    }
-    const id = requestId();
-    const response = await waitForResponse(session, id, {
-      _tag: "query",
-      requestId: id,
-      sql: query.sql,
-      parameters: query.parameters,
-      stamped: query.stamped === true,
-    });
-    if (response._tag !== "query") throw new Error("Replica query failed.");
-    return {
-      rows: response.rows,
-      stamp: response.stamp,
-    };
-  };
-
-  const handleWake = async (
-    event: IpcMainInvokeEvent,
-    input: string,
-  ): Promise<ReplicaWakeResult> => {
-    assertSender(event);
-    const workspaceToken = Schema.decodeUnknownSync(Schema.String)(input);
-    const session = sessions.get(workspaceToken);
-    if (!session) throw new Error("Unknown replica workspace.");
-    if (session.senderId !== event.sender.id) {
-      throw new Error("Rejected replica wake from a different renderer.");
-    }
-    const id = requestId();
-    const response = await waitForResponse(session, id, { _tag: "wake", requestId: id });
-    if (response._tag !== "woke") throw new Error("Replica wake failed.");
-    return {
-      workspaceToken,
-      drained: response.drained,
-      drainCount: response.drainCount,
-    };
-  };
-
-  const handleCancel = (event: IpcMainEvent, input: string) => {
-    assertSender(event);
-    const id = Schema.decodeUnknownSync(Schema.String)(input);
-    for (const session of sessions.values()) {
-      if (session.senderId !== event.sender.id) continue;
-      session.cancelled.add(id);
-      const pending = session.pending.get(id);
-      if (pending) {
-        session.pending.delete(id);
-        pending.reject(new Error("Replica request was cancelled."));
-      }
-    }
-  };
-
-  options.ipcMain.handle(REPLICA_OPEN_CHANNEL, handleOpen);
-  options.ipcMain.handle(REPLICA_CLOSE_CHANNEL, handleClose);
-  options.ipcMain.handle(REPLICA_STAMP_CHANNEL, handleStamp);
-  options.ipcMain.handle(REPLICA_QUERY_CHANNEL, handleQuery);
-  options.ipcMain.handle(REPLICA_WAKE_CHANNEL, handleWake);
-  options.ipcMain.on(REPLICA_CANCEL_CHANNEL, handleCancel);
+  for (const [channel, handler] of Object.entries(handlers)) {
+    options.ipcMain.handle(channel, handler);
+  }
 
   return {
     dispose: async () => {
-      options.ipcMain.removeHandler(REPLICA_OPEN_CHANNEL);
-      options.ipcMain.removeHandler(REPLICA_CLOSE_CHANNEL);
-      options.ipcMain.removeHandler(REPLICA_STAMP_CHANNEL);
-      options.ipcMain.removeHandler(REPLICA_QUERY_CHANNEL);
-      options.ipcMain.removeHandler(REPLICA_WAKE_CHANNEL);
-      options.ipcMain.off(REPLICA_CANCEL_CHANNEL, handleCancel);
-      await Promise.all([...sessions.values()].map((session) => disposeSession(session)));
-    },
-    publishCommit: (workspaceToken: string, event: ReplicaCommitEvent) => {
-      const session = sessions.get(workspaceToken);
-      if (!session || session.contents.isDestroyed()) return;
-      session.contents.send(REPLICA_COMMIT_CHANNEL, event);
+      for (const channel of Object.keys(handlers)) options.ipcMain.removeHandler(channel);
+      await Promise.all(
+        [...sessions].map(([workspaceToken, session]) => disposeSession(workspaceToken, session)),
+      );
     },
   };
 };

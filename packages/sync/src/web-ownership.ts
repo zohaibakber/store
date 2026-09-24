@@ -1,3 +1,4 @@
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -13,6 +14,8 @@ const CrossTabNoticeSchema = Schema.Struct({
   generationId: Schema.String,
   localCommitVersion: Schema.Number,
 });
+
+const decodeCrossTabNotice = Schema.decodeUnknownOption(CrossTabNoticeSchema);
 
 export type WebNetworkOwnership = {
   readonly tryAcquire: (
@@ -31,6 +34,31 @@ const hasWebLocks = (): boolean => {
   }
 };
 
+const queueForWebLock = (
+  lockName: string,
+  onOwner: () => Effect.Effect<void>,
+): Effect.Effect<{ readonly release: Effect.Effect<void> }> =>
+  Effect.gen(function* () {
+    const released = yield* Deferred.make<void>();
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const abort = new AbortController();
+    const holder = Effect.gen(function* () {
+      if (yield* Deferred.isDone(released)) return;
+      yield* onOwner();
+      yield* Deferred.await(released);
+    });
+    yield* Effect.sync(() => {
+      globalThis.navigator.locks
+        .request(lockName, { signal: abort.signal }, () => runPromise(holder))
+        .catch(() => undefined);
+    });
+    return {
+      release: Deferred.succeed(released, undefined).pipe(
+        Effect.andThen(Effect.sync(() => abort.abort())),
+      ),
+    };
+  });
+
 export const makeWebNetworkOwnership = (
   databaseIdentity: string,
 ): Effect.Effect<WebNetworkOwnership> =>
@@ -44,46 +72,18 @@ export const makeWebNetworkOwnership = (
 
     if (channel) {
       channel.onmessage = (event: MessageEvent) => {
-        const decoded = Schema.decodeUnknownOption(CrossTabNoticeSchema)(event.data);
-        if (Option.isNone(decoded)) return;
-        void Effect.runFork(PubSub.publish(hub, decoded.value));
+        const decoded = decodeCrossTabNotice(event.data);
+        if (Option.isSome(decoded)) PubSub.publishUnsafe(hub, decoded.value);
       };
     }
 
-    const tryAcquire = (
-      onOwner: () => Effect.Effect<void>,
-    ): Effect.Effect<{ readonly release: Effect.Effect<void> }> =>
-      Effect.callback((resume) => {
-        if (!hasWebLocks()) {
-          void Effect.runFork(onOwner());
-          resume(Effect.succeed({ release: Effect.void }));
-          return;
-        }
-        let released = false;
-        let releaseHold: (() => void) | undefined;
-        const release = Effect.sync(() => {
-          released = true;
-          releaseHold?.();
-        });
-        void globalThis.navigator.locks.request(lockName, async () => {
-          if (released) {
-            resume(Effect.succeed({ release }));
-            return;
-          }
-          await Effect.runPromise(onOwner());
-          resume(Effect.succeed({ release }));
-          await new Promise<void>((resolve) => {
-            if (released) {
-              resolve();
-              return;
-            }
-            releaseHold = resolve;
-          });
-        });
-      });
-
     return {
-      tryAcquire,
+      tryAcquire: (onOwner) =>
+        Effect.suspend(() =>
+          hasWebLocks()
+            ? queueForWebLock(lockName, onOwner)
+            : onOwner().pipe(Effect.as({ release: Effect.void })),
+        ),
       publishCrossTab: (notice) =>
         Effect.sync(() => {
           channel?.postMessage(notice);

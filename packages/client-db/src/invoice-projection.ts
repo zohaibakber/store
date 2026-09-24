@@ -12,7 +12,7 @@ import type {
   IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
 
-import type { CatalogActor, CatalogWriteIds } from "./catalog-writes";
+import type { CatalogActor, CatalogWriteIds } from "./catalog-projection";
 import {
   persistableRow,
   type BatchRow,
@@ -43,7 +43,7 @@ const activeBatchesForProduct = (
   productId: string,
 ): AllocatableBatch[] =>
   [...batches]
-    .filter((batch) => batch.deletedAt === null && batch.productId === productId)
+    .filter((batch) => batch.productId === productId)
     .map((batch) => ({
       id: batch.id,
       packQuantity: batch.packQuantity,
@@ -84,12 +84,11 @@ export const projectIssuedInvoice = (input: {
     rowVersion: 1,
     createdAt: input.occurredAt,
     updatedAt: input.occurredAt,
-    deletedAt: null,
   } as const;
 
   for (const line of input.sale.items) {
     const product = input.products.state.get(line.productId);
-    if (!product || product.deletedAt !== null) {
+    if (!product) {
       throw new Error("One of the products no longer exists.");
     }
     const takes = allocateInvoiceLine(
@@ -209,6 +208,5 @@ export const projectIssuedInvoice = (input: {
   };
 };
 
-export const replicaInvoiceNumber = (
-  invoices: Iterable<{ readonly deletedAt: number | null; readonly invoiceNumber: number }>,
-) => nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));
+export const replicaInvoiceNumber = (invoices: Iterable<{ readonly invoiceNumber: number }>) =>
+  nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));

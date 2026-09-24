@@ -143,7 +143,7 @@ export const makeOrganizationOps = (
         "This person is already in the organization.",
       );
     }
-    const secret = randomSecret(32);
+    const secret = yield* randomSecret(32);
     const tokenHash = yield* hashInvite(secret);
     const expiresAt = now + INVITATION_TTL_MS;
     const invitation = yield* repository.createInvitation({

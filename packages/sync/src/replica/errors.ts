@@ -1,4 +1,4 @@
-import { SyncProtocolError } from "@store/contracts";
+import { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
 export class ReplicaStorageError extends Schema.TaggedError<ReplicaStorageError>()(
@@ -44,8 +44,15 @@ export class IndexedDbIdentityMismatch extends Schema.TaggedError<IndexedDbIdent
   },
 ) {}
 
-export type MappedReplicaStoreFailure =
-  | SyncProtocolError
+export class SyncRecoveryRequired extends Schema.TaggedError<SyncRecoveryRequired>()(
+  "SyncRecoveryRequired",
+  {
+    code: SyncProtocolCode,
+    message: Schema.String,
+  },
+) {}
+
+export type ReplicaStorageFailure =
   | ReplicaStorageError
   | IndexedDbUnavailable
   | IndexedDbQuotaExceeded
@@ -53,14 +60,18 @@ export type MappedReplicaStoreFailure =
   | IndexedDbCorruptRecord
   | IndexedDbIdentityMismatch;
 
-export const mapReplicaStoreFailure = (cause: unknown): MappedReplicaStoreFailure => {
-  if (cause instanceof SyncProtocolError) return cause;
-  if (cause instanceof ReplicaStorageError) return cause;
-  if (cause instanceof IndexedDbUnavailable) return cause;
-  if (cause instanceof IndexedDbQuotaExceeded) return cause;
-  if (cause instanceof IndexedDbUpgradeBlocked) return cause;
-  if (cause instanceof IndexedDbCorruptRecord) return cause;
-  if (cause instanceof IndexedDbIdentityMismatch) return cause;
+export type ReplicaStoreError = SyncProtocolError | ReplicaStorageFailure;
+
+export const isReplicaStorageFailure = (cause: unknown): cause is ReplicaStorageFailure =>
+  cause instanceof ReplicaStorageError ||
+  cause instanceof IndexedDbUnavailable ||
+  cause instanceof IndexedDbQuotaExceeded ||
+  cause instanceof IndexedDbUpgradeBlocked ||
+  cause instanceof IndexedDbCorruptRecord ||
+  cause instanceof IndexedDbIdentityMismatch;
+
+export const mapReplicaStoreFailure = (cause: unknown): ReplicaStoreError => {
+  if (cause instanceof SyncProtocolError || isReplicaStorageFailure(cause)) return cause;
   return ReplicaStorageError.make({
     message: cause instanceof Error ? cause.message : "Replica storage failed.",
   });

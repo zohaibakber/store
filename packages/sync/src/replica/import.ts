@@ -1,6 +1,6 @@
 import {
   compareDecimalSequence,
-  SyncEntity,
+  subscriptionEntities,
   syncProtocolError,
   type SnapshotManifest,
   type SnapshotPartPayload,
@@ -8,64 +8,54 @@ import {
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
-  batches,
-  categories,
   commandOutbox,
-  invoiceItems,
-  invoices,
-  products,
   replicaState,
   snapshotImports,
   snapshotStagedRows,
-  stockMovements,
   stockOverlays,
 } from "@store/db/replica.schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import * as Array from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { runWrite } from "../sqlite";
-import {
-  loadReplicaState,
-  overlayForAllocation,
-  parseStoredEnvelope,
-  type CommandOutboxStatus,
-} from "./commands";
-import type { ReplicaDb } from "./storage";
+import { decodeEntity, decodeRowJson, decodeSubscription, encodeRowJson } from "./codecs";
+import { loadReplicaState, loadStockIndex, parseStoredEnvelope } from "./commands";
+import { byClientSequence, byEntityDependency, decideOverlays } from "./decisions";
+import { clearPendingProjection, reapplyPendingProjections } from "./pending";
+import { clearEntityRows, writeEntityRow } from "./rows";
+import type { ReplicaDb } from "./sql-client/drizzle";
 
-const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-
-const parseSubscription = (subscription: string): SyncSubscription => {
-  if (subscription === "operational") return "operational";
-  throw syncProtocolError("SCHEMA_VERSION_UNSUPPORTED", "The snapshot subscription is invalid.");
-};
-
-export type SnapshotActivation = {
+type SnapshotActivation = {
   readonly activeGeneration: number;
   readonly subscription: SyncSubscription;
 };
 
-export type SnapshotImportStage =
+type SnapshotImportStage =
   | { readonly _tag: "importing"; readonly partsImported: number; readonly partsTotal: number }
   | { readonly _tag: "caught_up"; readonly throughCommitSequence: string }
   | { readonly _tag: "activated" };
 
-const entityTables = {
-  category: categories,
-  product: products,
-  batch: batches,
-  invoice: invoices,
-  invoiceItem: invoiceItems,
-  stockMovement: stockMovements,
-} as const;
+const stageOf = (row: {
+  readonly stage: string;
+  readonly horizon: string;
+  readonly partsImported: number;
+  readonly partsTotal: number;
+}): SnapshotImportStage => {
+  if (row.stage === "activated") return { _tag: "activated" };
+  if (row.stage === "caught_up") return { _tag: "caught_up", throughCommitSequence: row.horizon };
+  return { _tag: "importing", partsImported: row.partsImported, partsTotal: row.partsTotal };
+};
 
-const stageSnapshotRow = (
+const stageSnapshotRow = Effect.fn("ReplicaImport.stageSnapshotRow")(function* (
   tx: ReplicaDb,
   snapshotId: string,
   row: SnapshotPartPayload["rows"][number],
-): void => {
+) {
   const schema = syncEntityRows[row.entity].schema;
   Schema.decodeUnknownSync(schema)(row.row);
-  const existing = tx
+  const existing = yield* tx
     .select()
     .from(snapshotStagedRows)
     .where(
@@ -79,314 +69,203 @@ const stageSnapshotRow = (
   if (existing && existing.rowVersion > row.rowVersion) return;
   const rowJson = encodeRowJson(row.row);
   if (existing) {
-    runWrite(
-      tx
-        .update(snapshotStagedRows)
-        .set({ rowVersion: row.rowVersion, rowJson })
-        .where(
-          and(
-            eq(snapshotStagedRows.snapshotId, snapshotId),
-            eq(snapshotStagedRows.entity, row.entity),
-            eq(snapshotStagedRows.entityId, row.entityId),
-          ),
+    yield* tx
+      .update(snapshotStagedRows)
+      .set({ rowVersion: row.rowVersion, rowJson })
+      .where(
+        and(
+          eq(snapshotStagedRows.snapshotId, snapshotId),
+          eq(snapshotStagedRows.entity, row.entity),
+          eq(snapshotStagedRows.entityId, row.entityId),
         ),
-    );
+      );
     return;
   }
-  runWrite(
-    tx.insert(snapshotStagedRows).values({
-      snapshotId,
-      entity: row.entity,
-      entityId: row.entityId,
-      rowVersion: row.rowVersion,
-      rowJson,
-    }),
-  );
-};
-
-const promoteStagedRow = (
-  tx: ReplicaDb,
-  entity: SyncEntity,
-  entityId: string,
-  rowJson: string,
-): void => {
-  const table = entityTables[entity];
-  const schema = syncEntityRows[entity].schema;
-  const parsed = Schema.decodeUnknownSync(Schema.fromJsonString(schema))(rowJson);
-  const existing = tx.select().from(table).where(eq(table.id, entityId)).get();
-  if (existing) {
-    runWrite(tx.update(table).set(parsed).where(eq(table.id, entityId)));
-    return;
-  }
-  runWrite(tx.insert(table).values(parsed));
-};
-
-const promoteStagedSnapshot = (tx: ReplicaDb, snapshotId: string): void => {
-  const staged = [
-    ...tx
-      .select()
-      .from(snapshotStagedRows)
-      .where(eq(snapshotStagedRows.snapshotId, snapshotId))
-      .all(),
-  ].sort((left, right) => {
-    const order = (entity: string): number => {
-      switch (entity) {
-        case "category":
-          return 0;
-        case "product":
-          return 1;
-        case "batch":
-          return 2;
-        case "invoice":
-          return 3;
-        case "invoiceItem":
-          return 4;
-        case "stockMovement":
-          return 5;
-        default:
-          return 6;
-      }
-    };
-    return order(left.entity) - order(right.entity);
+  yield* tx.insert(snapshotStagedRows).values({
+    snapshotId,
+    entity: row.entity,
+    entityId: row.entityId,
+    rowVersion: row.rowVersion,
+    rowJson,
   });
-  for (const row of staged) {
-    promoteStagedRow(
-      tx,
-      Schema.decodeUnknownSync(SyncEntity)(row.entity),
-      row.entityId,
-      row.rowJson,
-    );
-  }
-  runWrite(tx.delete(snapshotStagedRows).where(eq(snapshotStagedRows.snapshotId, snapshotId)));
-};
+});
 
-export const beginSnapshotImport = (
+const promoteStagedSnapshot = Effect.fn("ReplicaImport.promoteStagedSnapshot")(function* (
+  tx: ReplicaDb,
+  snapshotId: string,
+  subscription: SyncSubscription,
+) {
+  const rows = yield* tx
+    .select()
+    .from(snapshotStagedRows)
+    .where(eq(snapshotStagedRows.snapshotId, snapshotId))
+    .all();
+  for (const entity of subscriptionEntities(subscription)) {
+    yield* clearEntityRows(tx, entity);
+  }
+  const staged = Array.sort(
+    rows.map((row) => ({ entity: decodeEntity(row.entity), rowJson: row.rowJson })),
+    byEntityDependency,
+  );
+  for (const row of staged) {
+    yield* writeEntityRow(tx, row.entity, decodeRowJson(row.rowJson));
+  }
+  yield* tx.delete(snapshotStagedRows).where(eq(snapshotStagedRows.snapshotId, snapshotId));
+});
+
+export const beginSnapshotImport = Effect.fn("ReplicaImport.beginSnapshotImport")(function* (
   tx: ReplicaDb,
   manifest: SnapshotManifest,
-): SnapshotImportStage => {
-  const state = loadReplicaState(tx);
-  const existing = tx
+) {
+  const state = yield* loadReplicaState(tx);
+  const existing = yield* tx
     .select()
     .from(snapshotImports)
     .where(eq(snapshotImports.snapshotId, manifest.snapshotId))
     .get();
-  if (existing) {
-    if (existing.stage === "activated") return { _tag: "activated" };
-    if (existing.stage === "caught_up") {
-      return {
-        _tag: "caught_up",
-        throughCommitSequence: existing.horizon,
-      };
-    }
-    return {
-      _tag: "importing",
-      partsImported: existing.partsImported,
-      partsTotal: existing.partsTotal,
-    };
-  }
-  runWrite(
-    tx.insert(snapshotImports).values({
-      snapshotId: manifest.snapshotId,
-      generation: state.activeGeneration + 1,
-      subscription: manifest.subscription,
-      horizon: manifest.horizon,
-      stage: "importing",
-      partsImported: 0,
-      partsTotal: manifest.parts.length,
-    }),
-  );
-  return { _tag: "importing", partsImported: 0, partsTotal: manifest.parts.length };
-};
+  if (existing) return stageOf(existing);
+  yield* tx.insert(snapshotImports).values({
+    snapshotId: manifest.snapshotId,
+    generation: state.activeGeneration + 1,
+    subscription: manifest.subscription,
+    horizon: manifest.horizon,
+    stage: "importing",
+    partsImported: 0,
+    partsTotal: manifest.parts.length,
+  });
+  return stageOf({
+    stage: "importing",
+    horizon: manifest.horizon,
+    partsImported: 0,
+    partsTotal: manifest.parts.length,
+  });
+});
 
-export const importSnapshotPart = (
+export const importSnapshotPart = Effect.fn("ReplicaImport.importSnapshotPart")(function* (
   tx: ReplicaDb,
   manifest: SnapshotManifest,
   part: SnapshotPartPayload,
-): SnapshotImportStage => {
-  const importRow = tx
+) {
+  const importRow = yield* tx
     .select()
     .from(snapshotImports)
     .where(eq(snapshotImports.snapshotId, manifest.snapshotId))
     .get();
   if (!importRow || importRow.stage === "activated") {
-    throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot import is not active.");
+    return yield* Effect.fail(
+      syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot import is not active."),
+    );
   }
   const manifestPart = manifest.parts.find((entry) => entry.partNumber === part.partNumber);
   if (!manifestPart) {
-    throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part is not in the manifest.");
+    return yield* Effect.fail(
+      syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part is not in the manifest."),
+    );
   }
   if (part.snapshotId !== manifest.snapshotId) {
-    throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part identity does not match.");
+    return yield* Effect.fail(
+      syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part identity does not match."),
+    );
   }
   if (part.partNumber <= importRow.partsImported) {
-    if (importRow.stage === "caught_up") {
-      return { _tag: "caught_up", throughCommitSequence: importRow.horizon };
-    }
-    return {
-      _tag: "importing",
-      partsImported: importRow.partsImported,
-      partsTotal: importRow.partsTotal,
-    };
+    return stageOf(importRow);
   }
   if (part.partNumber !== importRow.partsImported + 1) {
-    throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order.");
+    return yield* Effect.fail(
+      syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order."),
+    );
   }
   for (const row of part.rows) {
-    stageSnapshotRow(tx, manifest.snapshotId, row);
+    yield* stageSnapshotRow(tx, manifest.snapshotId, row);
   }
   const partsImported = importRow.partsImported + 1;
   const stage = partsImported === importRow.partsTotal ? "caught_up" : "importing";
-  runWrite(
-    tx
-      .update(snapshotImports)
-      .set({ partsImported, stage })
-      .where(eq(snapshotImports.snapshotId, manifest.snapshotId)),
-  );
-  if (stage === "caught_up") {
-    return { _tag: "caught_up", throughCommitSequence: importRow.horizon };
-  }
-  return { _tag: "importing", partsImported, partsTotal: importRow.partsTotal };
-};
+  yield* tx
+    .update(snapshotImports)
+    .set({ partsImported, stage })
+    .where(eq(snapshotImports.snapshotId, manifest.snapshotId));
+  return stageOf({ ...importRow, partsImported, stage });
+});
 
-const integrateCoveredCommands = (tx: ReplicaDb, horizon: string): void => {
-  const covered = tx
+const integrateCoveredCommands = Effect.fn("ReplicaImport.integrateCoveredCommands")(function* (
+  tx: ReplicaDb,
+  horizon: string,
+) {
+  const rows = yield* tx
     .select()
     .from(commandOutbox)
     .where(eq(commandOutbox.status, "accepted_awaiting_integration"))
-    .all()
-    .filter(
-      (row) =>
-        row.commitSequence !== null && compareDecimalSequence(row.commitSequence, horizon) <= 0,
-    );
+    .all();
+  const covered = rows.filter(
+    (row) =>
+      row.commitSequence !== null && compareDecimalSequence(row.commitSequence, horizon) <= 0,
+  );
   for (const row of covered) {
-    runWrite(
-      tx
-        .update(commandOutbox)
-        .set({ status: "integrated" })
-        .where(eq(commandOutbox.operationId, row.operationId)),
-    );
-    runWrite(tx.delete(stockOverlays).where(eq(stockOverlays.commandId, row.operationId)));
+    yield* tx
+      .update(commandOutbox)
+      .set({ status: "integrated" })
+      .where(eq(commandOutbox.operationId, row.operationId));
+    yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, row.operationId));
+    yield* clearPendingProjection(tx, row.operationId);
   }
-};
+});
 
-const recomputePendingOverlays = (tx: ReplicaDb): void => {
-  runWrite(tx.delete(stockOverlays));
-  const pending = tx
+const recomputePendingOverlays = Effect.fn("ReplicaImport.recomputePendingOverlays")(function* (
+  tx: ReplicaDb,
+) {
+  yield* tx.delete(stockOverlays);
+  const outstanding = yield* tx
     .select()
     .from(commandOutbox)
-    .where(eq(commandOutbox.status, "pending"))
-    .all()
-    .concat(
-      tx
-        .select()
-        .from(commandOutbox)
-        .where(eq(commandOutbox.status, "accepted_awaiting_integration"))
-        .all(),
-    )
-    .sort((left, right) => compareDecimalSequence(left.clientSequence, right.clientSequence));
-  for (const row of pending) {
-    const envelope = parseStoredEnvelope(row);
-    for (const overlay of overlayForAllocation(tx, envelope)) {
-      runWrite(tx.insert(stockOverlays).values(overlay));
+    .where(inArray(commandOutbox.status, ["pending", "accepted_awaiting_integration"]))
+    .all();
+  const index = yield* loadStockIndex(tx);
+  for (const row of Array.sort(outstanding, byClientSequence)) {
+    const envelope = yield* parseStoredEnvelope(row);
+    for (const overlay of decideOverlays(envelope, index.unitsPerPackFor, index.stockFor)) {
+      yield* tx.insert(stockOverlays).values(overlay);
     }
   }
-};
+});
 
-export const activateSnapshotGeneration = (
-  tx: ReplicaDb,
-  snapshotId: string,
-): SnapshotActivation => {
-  const importRow = tx
-    .select()
-    .from(snapshotImports)
-    .where(eq(snapshotImports.snapshotId, snapshotId))
-    .get();
-  if (!importRow || importRow.stage !== "caught_up") {
-    throw syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot is not ready to activate.");
-  }
-  const state = loadReplicaState(tx);
-  promoteStagedSnapshot(tx, snapshotId);
-  integrateCoveredCommands(tx, importRow.horizon);
-  recomputePendingOverlays(tx);
-  runWrite(
-    tx
+export const activateSnapshotGeneration = Effect.fn("ReplicaImport.activateSnapshotGeneration")(
+  function* (tx: ReplicaDb, snapshotId: string) {
+    const importRow = yield* tx
+      .select()
+      .from(snapshotImports)
+      .where(eq(snapshotImports.snapshotId, snapshotId))
+      .get();
+    if (!importRow || importRow.stage !== "caught_up") {
+      return yield* Effect.fail(
+        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot is not ready to activate."),
+      );
+    }
+    const subscription = decodeSubscription(importRow.subscription);
+    if (Option.isNone(subscription)) {
+      return yield* Effect.fail(
+        syncProtocolError("SCHEMA_VERSION_UNSUPPORTED", "The snapshot subscription is invalid."),
+      );
+    }
+    const state = yield* loadReplicaState(tx);
+    yield* promoteStagedSnapshot(tx, snapshotId, subscription.value);
+    yield* integrateCoveredCommands(tx, importRow.horizon);
+    yield* recomputePendingOverlays(tx);
+    yield* reapplyPendingProjections(tx);
+    yield* tx
       .update(replicaState)
       .set({
         activeGeneration: importRow.generation,
         appliedCommitSequence: importRow.horizon,
         localCommitVersion: state.localCommitVersion + 1,
       })
-      .where(eq(replicaState.id, state.id)),
-  );
-  runWrite(
-    tx
+      .where(eq(replicaState.id, state.id));
+    yield* tx
       .update(snapshotImports)
       .set({ stage: "activated" })
-      .where(eq(snapshotImports.snapshotId, snapshotId)),
-  );
-  return {
-    activeGeneration: importRow.generation,
-    subscription: parseSubscription(importRow.subscription),
-  };
-};
-
-export const markSnapshotCaughtUp = (
-  tx: ReplicaDb,
-  snapshotId: string,
-  throughCommitSequence: string,
-): void => {
-  const importRow = tx
-    .select()
-    .from(snapshotImports)
-    .where(eq(snapshotImports.snapshotId, snapshotId))
-    .get();
-  if (!importRow) return;
-  if (compareDecimalSequence(throughCommitSequence, importRow.horizon) < 0) return;
-  runWrite(
-    tx
-      .update(snapshotImports)
-      .set({ stage: "caught_up" })
-      .where(eq(snapshotImports.snapshotId, snapshotId)),
-  );
-};
-
-export const snapshotImportStatus = (
-  tx: ReplicaDb,
-  snapshotId: string,
-): SnapshotImportStage | undefined => {
-  const importRow = tx
-    .select()
-    .from(snapshotImports)
-    .where(eq(snapshotImports.snapshotId, snapshotId))
-    .get();
-  if (!importRow) return undefined;
-  if (importRow.stage === "activated") return { _tag: "activated" };
-  if (importRow.stage === "caught_up") {
-    return { _tag: "caught_up", throughCommitSequence: importRow.horizon };
-  }
-  return {
-    _tag: "importing",
-    partsImported: importRow.partsImported,
-    partsTotal: importRow.partsTotal,
-  };
-};
-
-export const pendingOutboxCount = (tx: ReplicaDb): number =>
-  tx
-    .select({ operationId: commandOutbox.operationId })
-    .from(commandOutbox)
-    .where(eq(commandOutbox.status, "pending"))
-    .all().length +
-  tx
-    .select({ operationId: commandOutbox.operationId })
-    .from(commandOutbox)
-    .where(eq(commandOutbox.status, "sending"))
-    .all().length +
-  tx
-    .select({ operationId: commandOutbox.operationId })
-    .from(commandOutbox)
-    .where(eq(commandOutbox.status, "accepted_awaiting_integration"))
-    .all().length;
-
-export const outboxStatus = (tx: ReplicaDb, operationId: string): CommandOutboxStatus | undefined =>
-  tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get()?.status;
+      .where(eq(snapshotImports.snapshotId, snapshotId));
+    return {
+      activeGeneration: importRow.generation,
+      subscription: subscription.value,
+    } satisfies SnapshotActivation;
+  },
+);
