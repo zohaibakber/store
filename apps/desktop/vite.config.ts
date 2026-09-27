@@ -3,6 +3,8 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { Plugin } from "vite";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
@@ -28,7 +30,78 @@ const desktopDevSplash = (): Plugin => ({
   },
 });
 
-export default defineConfig(({ command }) => ({
+/** Must match the renderer fallbacks in `src/web/api-base-url.ts` and `src/lib/first-party-auth.ts`. */
+const WEB_ORIGIN_FALLBACKS = {
+  VITE_API_URL: "http://localhost:8787",
+  VITE_AUTH_URL: "http://localhost:8788",
+} as const;
+
+const decodeDefinedString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String));
+
+/**
+ * Electron applies its CSP from the main-process protocol handler. The web
+ * build has no such hook, so the policy ships as a meta tag. `connect-src`
+ * names the API and auth origins this bundle calls. They are read from the
+ * resolved `define` first, because Alchemy's Website build injects them there.
+ */
+const webContentSecurityPolicy = (): Plugin => {
+  let connectOrigins: ReadonlyArray<string> = [];
+  return {
+    name: "web-content-security-policy",
+    apply: "build",
+    configResolved(config) {
+      const origins = (["VITE_API_URL", "VITE_AUTH_URL"] as const).map((key) => {
+        const configured = decodeDefinedString(config.define?.[`import.meta.env.${key}`]).pipe(
+          Option.orElse(() => Option.fromNullishOr(config.env[key])),
+          Option.map((value) => value.trim()),
+          Option.filter((value) => value.length > 0),
+          Option.getOrElse(() => WEB_ORIGIN_FALLBACKS[key]),
+        );
+        return new URL(configured).origin;
+      });
+      connectOrigins = [...new Set(origins)];
+    },
+    transformIndexHtml: () => [
+      {
+        tag: "meta",
+        attrs: {
+          "http-equiv": "Content-Security-Policy",
+          content: [
+            "default-src 'self'",
+            "script-src 'self'",
+            [
+              "connect-src 'self'",
+              ...connectOrigins,
+              "https://*.ingest.sentry.io",
+              "https://*.ingest.us.sentry.io",
+            ].join(" "),
+            "img-src 'self' data: blob: https:",
+            "style-src 'self' 'unsafe-inline'",
+            "font-src 'self' data:",
+            "worker-src 'self'",
+            "form-action 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+          ].join("; "),
+        },
+        injectTo: "head-prepend",
+      },
+    ],
+  };
+};
+
+/**
+ * `--mode web` builds the browser host: the renderer alone, into `dist-web`.
+ * Alchemy's Website build cannot pass a mode, so its documented injection flag
+ * selects the web build too.
+ */
+const isWebBuild = (mode: string) =>
+  mode === "web" || process.env["ALCHEMY_CLOUDFLARE_VITE_INJECTED"] === "1";
+
+/** Auth and the API trust `http://localhost:5174` as a browser origin, not `127.0.0.1`. */
+const webServer = { host: "localhost", port: 5174, strictPort: true };
+
+export default defineConfig(({ command, mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
@@ -38,20 +111,24 @@ export default defineConfig(({ command }) => ({
   worker: {
     format: "es",
   },
-  server: {
-    host: "127.0.0.1",
-    port: 5174,
-    strictPort: true,
-  },
+  build: isWebBuild(mode) ? { outDir: "dist-web", emptyOutDir: true } : {},
+  server: isWebBuild(mode)
+    ? webServer
+    : {
+        host: "127.0.0.1",
+        port: 5174,
+        strictPort: true,
+      },
+  preview: isWebBuild(mode) ? webServer : {},
   staged: {
     "*": "vp check --fix",
   },
   fmt: {
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+    ignorePatterns: ["dist/**", "dist-web/**", "dist-electron/**", "src/routeTree.gen.ts"],
   },
   lint: {
     env: { browser: true, node: true, es2020: true },
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+    ignorePatterns: ["dist/**", "dist-web/**", "dist-electron/**", "src/routeTree.gen.ts"],
     plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
@@ -67,42 +144,44 @@ export default defineConfig(({ command }) => ({
   },
   plugins: lazyPlugins(async () => [
     desktopDevSplash(),
-    ...(await electron({
-      main: {
-        entry: "electron/main.ts",
-        vite: {
-          define: electronDefines,
-          build: {
-            outDir: "dist-electron",
-            emptyOutDir: command === "build",
-            sourcemap: true,
-            rolldownOptions: {
-              input: {
-                main: path.resolve("electron/main.ts"),
-                "replica-worker": path.resolve("electron/replica-worker.ts"),
+    ...(isWebBuild(mode)
+      ? [webContentSecurityPolicy()]
+      : await electron({
+          main: {
+            entry: "electron/main.ts",
+            vite: {
+              define: electronDefines,
+              build: {
+                outDir: "dist-electron",
+                emptyOutDir: command === "build",
+                sourcemap: true,
+                rolldownOptions: {
+                  input: {
+                    main: path.resolve("electron/main.ts"),
+                    "replica-worker": path.resolve("electron/replica-worker.ts"),
+                  },
+                  external: ["electron", "electron-updater"],
+                  output: { entryFileNames: "[name].js" },
+                },
               },
-              external: ["electron", "electron-updater"],
-              output: { entryFileNames: "[name].js" },
             },
           },
-        },
-      },
-      preload: {
-        input: "electron/preload.ts",
-        vite: {
-          define: electronDefines,
-          build: {
-            outDir: "dist-electron",
-            emptyOutDir: false,
-            sourcemap: true,
-            rolldownOptions: {
-              external: ["electron"],
-              output: { entryFileNames: "preload.cjs" },
+          preload: {
+            input: "electron/preload.ts",
+            vite: {
+              define: electronDefines,
+              build: {
+                outDir: "dist-electron",
+                emptyOutDir: false,
+                sourcemap: true,
+                rolldownOptions: {
+                  external: ["electron"],
+                  output: { entryFileNames: "preload.cjs" },
+                },
+              },
             },
           },
-        },
-      },
-    })),
+        })),
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     tailwindcss(),
     react({ compiler: true }),

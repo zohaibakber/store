@@ -1,22 +1,22 @@
-import type { Product } from "@store/contracts";
+import type { ProductRow } from "@store/client-db";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
   createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_equalsString,
+  functionalUpdate,
   metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
-  sortFn_alphanumeric,
-  sortFn_text,
   tableFeatures,
   useTable,
+  type ColumnFiltersState,
+  type PaginationState,
+  type SortingState,
+  type Updater,
 } from "@tanstack/react-table";
+import * as Schema from "effect/Schema";
 
 import {
   DataTableColumnHeader,
@@ -24,24 +24,43 @@ import {
   DataTableFilterOption,
 } from "@/components/shared/data-table";
 import { formatDate } from "@/lib/format";
+import type { ProductFacets, ProductSortColumn } from "@/lib/inventory";
 
 const features = tableFeatures({
   columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
   rowSortingFeature,
-  filteredRowModel: createFilteredRowModel(),
-  paginatedRowModel: createPaginatedRowModel(),
-  sortedRowModel: createSortedRowModel(),
-  filterFns: { equalsString: filterFn_equalsString },
-  sortFns: {
-    alphanumeric: sortFn_alphanumeric,
-    text: sortFn_text,
-  },
   columnMeta: metaHelper<{ label?: string }>(),
 });
 
-const columnHelper = createColumnHelper<typeof features, Product>();
+export type ProductListRow = ProductRow & { readonly categoryName: string };
+
+export const PRODUCT_PAGE_SIZES = [10, 20, 30, 50] as const;
+export type ProductPageSize = (typeof PRODUCT_PAGE_SIZES)[number];
+
+export type ProductListView = {
+  readonly q?: string;
+  readonly category?: string;
+  readonly aisle?: string;
+  readonly composition?: string;
+  readonly strength?: string;
+  readonly sort: ProductSortColumn;
+  readonly desc: boolean;
+  readonly page: number;
+  readonly size: ProductPageSize;
+};
+
+export const DEFAULT_PRODUCT_LIST_VIEW: ProductListView = {
+  sort: "name",
+  desc: false,
+  page: 0,
+  size: 10,
+};
+
+type CategoryOption = { readonly id: string; readonly name: string };
+
+const columnHelper = createColumnHelper<typeof features, ProductListRow>();
 
 const columns = columnHelper.columns([
   columnHelper.accessor("name", {
@@ -59,17 +78,16 @@ const columns = columnHelper.columns([
     enableHiding: false,
     meta: { label: "Name" },
   }),
-  columnHelper.accessor((product) => product.category.name, {
+  columnHelper.accessor("categoryName", {
     id: "category",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-    filterFn: "equalsString",
+    header: "Category",
+    enableSorting: false,
     meta: { label: "Category" },
   }),
   columnHelper.accessor((product) => product.aisle ?? "", {
     id: "aisle",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Aisle" />,
     cell: ({ getValue }) => getValue() || "—",
-    filterFn: "equalsString",
     meta: { label: "Aisle" },
   }),
   columnHelper.accessor((product) => product.composition ?? "", {
@@ -77,7 +95,6 @@ const columns = columnHelper.columns([
     header: "Composition",
     cell: ({ getValue }) => <span>{getValue() || "—"}</span>,
     enableSorting: false,
-    filterFn: "equalsString",
     meta: { label: "Composition" },
   }),
   columnHelper.accessor((product) => product.strength ?? "", {
@@ -85,7 +102,6 @@ const columns = columnHelper.columns([
     header: "Strength",
     cell: ({ getValue }) => getValue() || "—",
     enableSorting: false,
-    filterFn: "equalsString",
     meta: { label: "Strength" },
   }),
   columnHelper.accessor("unitsPerPack", {
@@ -122,56 +138,130 @@ const columns = columnHelper.columns([
     meta: { label: "Updated" },
   }),
 ]);
-export function useProductsTable(products: readonly Product[]) {
+const SORTABLE: ReadonlySet<string> = new Set<ProductSortColumn>([
+  "name",
+  "aisle",
+  "unitsPerPack",
+  "purchasePrice",
+  "retailPrice",
+  "unitPrice",
+  "updatedAt",
+]);
+
+const isSortColumn = (id: string): id is ProductSortColumn => SORTABLE.has(id);
+
+const isText = Schema.is(Schema.String);
+
+const textFilter = (filters: ColumnFiltersState, id: string) => {
+  const value = filters.find((filter) => filter.id === id)?.value;
+  return isText(value) && value.trim() !== "" ? value : undefined;
+};
+
+export const productTableFilters = (
+  view: ProductListView,
+  categories: ReadonlyArray<CategoryOption>,
+): ColumnFiltersState => {
+  const categoryName = categories.find((category) => category.id === view.category)?.name;
+  return [
+    ...(view.q ? [{ id: "name", value: view.q }] : []),
+    ...(categoryName ? [{ id: "category", value: categoryName }] : []),
+    ...(view.aisle ? [{ id: "aisle", value: view.aisle }] : []),
+    ...(view.composition ? [{ id: "composition", value: view.composition }] : []),
+    ...(view.strength ? [{ id: "strength", value: view.strength }] : []),
+  ];
+};
+
+export const viewWithFilters = (
+  view: ProductListView,
+  filters: ColumnFiltersState,
+  categories: ReadonlyArray<CategoryOption>,
+): ProductListView => {
+  const categoryName = textFilter(filters, "category");
+  return {
+    sort: view.sort,
+    desc: view.desc,
+    size: view.size,
+    page: 0,
+    q: textFilter(filters, "name"),
+    category: categories.find((category) => category.name === categoryName)?.id,
+    aisle: textFilter(filters, "aisle"),
+    composition: textFilter(filters, "composition"),
+    strength: textFilter(filters, "strength"),
+  };
+};
+
+export const viewWithSorting = (view: ProductListView, sorting: SortingState): ProductListView => {
+  const [first] = sorting;
+  return first && isSortColumn(first.id)
+    ? { ...view, sort: first.id, desc: first.desc, page: 0 }
+    : { ...view, sort: DEFAULT_PRODUCT_LIST_VIEW.sort, desc: false, page: 0 };
+};
+
+const pageSizeFrom = (size: number): ProductPageSize =>
+  PRODUCT_PAGE_SIZES.find((candidate) => candidate === size) ?? DEFAULT_PRODUCT_LIST_VIEW.size;
+
+export const viewWithPagination = (
+  view: ProductListView,
+  pagination: PaginationState,
+): ProductListView => {
+  const size = pageSizeFrom(pagination.pageSize);
+  return { ...view, size, page: size === view.size ? Math.max(0, pagination.pageIndex) : 0 };
+};
+
+export function useProductsTable(input: {
+  readonly rows: ReadonlyArray<ProductListRow>;
+  readonly total: number;
+  readonly view: ProductListView;
+  readonly categories: ReadonlyArray<CategoryOption>;
+  readonly onViewChange: (view: ProductListView) => void;
+}) {
+  const { view, categories, onViewChange } = input;
+  const pagination: PaginationState = { pageIndex: view.page, pageSize: view.size };
+  const sorting: SortingState = [{ id: view.sort, desc: view.desc }];
+  const columnFilters = productTableFilters(view, categories);
   return useTable({
     features,
     columns,
-    data: products,
+    data: input.rows,
     getRowId: (product) => product.id,
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true,
+    rowCount: input.total,
+    state: { pagination, sorting, columnFilters },
+    onPaginationChange: (updater: Updater<PaginationState>) =>
+      onViewChange(viewWithPagination(view, functionalUpdate(updater, pagination))),
+    onSortingChange: (updater: Updater<SortingState>) =>
+      onViewChange(viewWithSorting(view, functionalUpdate(updater, sorting))),
+    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
+      onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters), categories)),
     initialState: {
       columnVisibility: { unitsPerPack: false, updatedAt: false },
-      pagination: { pageIndex: 0, pageSize: 10 },
-      sorting: [{ id: "name", desc: false }],
     },
   });
 }
 
-const distinctValues = (
-  products: readonly Product[],
-  valueOf: (product: Product) => string | null,
-) =>
-  [
-    ...new Map(
-      products.flatMap((product) => {
-        const value = valueOf(product)?.trim();
-        return value ? [[value.toLocaleLowerCase(), value] as const] : [];
-      }),
-    ).values(),
-  ].sort((left, right) => left.localeCompare(right));
-
-export function ProductTableFilters({ products }: { products: readonly Product[] }) {
+export function ProductTableFilters({
+  facets,
+  categories,
+}: {
+  readonly facets: ProductFacets;
+  readonly categories: ReadonlyArray<CategoryOption>;
+}) {
   return (
     <DataTableFilterMenu aria-label="Filter products">
       <DataTableFilterOption
         columnId="category"
         label="Category"
-        options={distinctValues(products, (product) => product.category.name)}
+        options={categories.map((category) => category.name)}
       />
       <DataTableFilterOption
         columnId="composition"
         label="Composition"
-        options={distinctValues(products, (product) => product.composition)}
+        options={facets.composition}
       />
-      <DataTableFilterOption
-        columnId="aisle"
-        label="Aisle"
-        options={distinctValues(products, (product) => product.aisle)}
-      />
-      <DataTableFilterOption
-        columnId="strength"
-        label="Strength"
-        options={distinctValues(products, (product) => product.strength)}
-      />
+      <DataTableFilterOption columnId="aisle" label="Aisle" options={facets.aisle} />
+      <DataTableFilterOption columnId="strength" label="Strength" options={facets.strength} />
     </DataTableFilterMenu>
   );
 }

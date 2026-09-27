@@ -23,7 +23,13 @@ import {
   type ReplicaEntityRowImage,
 } from "../projection";
 import { generationBounds } from "./query";
-import { outboxWithStatus, type PendingRowJournalEntry, type ReplicaQueryBuilder } from "./schema";
+import {
+  outboxWithStatus,
+  productImage,
+  storedProduct,
+  type PendingRowJournalEntry,
+  type ReplicaQueryBuilder,
+} from "./schema";
 
 const firstImage = <A extends { readonly generation: number }>(
   rows: ReadonlyArray<A>,
@@ -45,7 +51,11 @@ const selectEntityRow = (
     case "category":
       return api.from("categories").select().equals(key).pipe(Effect.map(firstImage));
     case "product":
-      return api.from("products").select().equals(key).pipe(Effect.map(firstImage));
+      return api
+        .from("products")
+        .select()
+        .equals(key)
+        .pipe(Effect.map((rows) => (rows[0] ? productImage(rows[0]) : undefined)));
     case "batch":
       return api.from("batches").select().equals(key).pipe(Effect.map(firstImage));
     case "invoice":
@@ -74,10 +84,11 @@ export const writeEntityRow = (
         ...Schema.decodeUnknownSync(replicaEntitySchemas.category)(row),
       });
     case "product":
-      return api.from("products").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.product)(row),
-      });
+      return api
+        .from("products")
+        .upsert(
+          storedProduct(generation, Schema.decodeUnknownSync(replicaEntitySchemas.product)(row)),
+        );
     case "batch":
       return api.from("batches").upsert({
         generation,

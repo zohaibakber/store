@@ -1,34 +1,55 @@
 import {
   EMPTY_SYNC_ACTIVITY,
+  type InventorySubsetSummary,
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
   type ReplicaChangeFeed,
+  type ReplicaCommitNotice,
 } from "@store/client-db";
-import type { Invoice, Product, SyncEntity } from "@store/contracts";
+import type { ReplicaInsightsFacts, ReplicaInsightsWindow, SyncEntity } from "@store/contracts";
 import {
   DEFAULT_STOCK_POLICY,
-  StockRecommendationService,
-  stockRecommendationLayer,
-  type StockPolicy,
-  type StockReport,
-} from "@store/services/stock-recommendations";
-import { Effect, Schedule } from "effect";
+  InsightsService,
+  insightsLayer,
+  insightsWindowFor,
+  StockPolicy,
+  type InsightsError,
+  type InsightsReport,
+  type ProductInsight,
+} from "@store/services/insights";
+import { Duration, Effect, Layer, Queue, Stream } from "effect";
+import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
-export const stockPolicyAtom = Atom.make(DEFAULT_STOCK_POLICY);
+import { WorkspaceReadFailure } from "./errors";
+import {
+  facetsFrom,
+  PRODUCT_FACET_COLUMNS,
+  type ProductFacetColumn,
+  type ProductFacets,
+  type ProductListFilters,
+  type ProductListRequest,
+} from "./product-list";
 
-export const minuteClockAtom = Atom.make((get) => {
-  const fiber = Effect.runFork(
-    Effect.sync(() => get.setSelf(Date.now())).pipe(Effect.schedule(Schedule.spaced("1 minute"))),
-  );
-  get.addFinalizer(() => {
-    fiber.interruptUnsafe();
-  });
-  return Date.now();
-});
+let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
+
+export const configureInventoryPreferences = (store: Layer.Layer<KeyValueStore.KeyValueStore>) => {
+  preferenceStore = store;
+};
+
+const preferencesRuntime = Atom.runtime(() => preferenceStore);
+
+export const stockPolicyAtom = Atom.kvs({
+  runtime: preferencesRuntime,
+  key: "tabaaq.stock-policy.v2",
+  schema: StockPolicy,
+  defaultValue: () => DEFAULT_STOCK_POLICY,
+}).pipe(Atom.keepAlive);
+
+export const minuteClockAtom = Atom.make(() => Date.now()).pipe(Atom.withRefresh("1 minute"));
 
 export type CommandExecutionState =
   | { readonly _tag: "idle" }
@@ -36,14 +57,7 @@ export type CommandExecutionState =
   | { readonly _tag: "pending"; readonly operationId: string; readonly status: string }
   | { readonly _tag: "failed"; readonly operationId: string; readonly message: string };
 
-type StockRecommendationArg = {
-  readonly products: ReadonlyArray<Product>;
-  readonly invoices: ReadonlyArray<Invoice>;
-  readonly policy: StockPolicy;
-  readonly refresh: number;
-};
-
-type WorkspaceReadError = { readonly message: string };
+type WorkspaceReadError = WorkspaceReadFailure;
 
 export type WorkspaceAtomSources = {
   readonly changes: ReplicaChangeFeed;
@@ -54,6 +68,19 @@ export type WorkspaceAtomSources = {
     query: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
+  readonly readInsights: (
+    window: ReplicaInsightsWindow,
+  ) => Effect.Effect<ReplicaInsightsFacts, WorkspaceReadError>;
+  readonly readProductPage: (
+    request: ProductListRequest,
+  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
+  readonly summarizeProducts: (
+    filters: ProductListFilters,
+    distinct: ReadonlyArray<ProductFacetColumn>,
+  ) => Effect.Effect<InventorySubsetSummary, WorkspaceReadError>;
+  readonly findProductsByNames: (
+    names: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -63,6 +90,19 @@ const emptySources: WorkspaceAtomSources = {
   changes: { subscribe: () => () => undefined },
   readPendingRowIds: () => Effect.succeed(NO_PENDING_ROWS),
   searchProducts: () => Effect.succeed([]),
+  readProductPage: () => Effect.succeed([]),
+  summarizeProducts: () => Effect.succeed({ count: 0, distinct: [] }),
+  findProductsByNames: () => Effect.succeed([]),
+  readInsights: (window) =>
+    Effect.succeed({
+      window,
+      products: [],
+      batches: [],
+      sales: [],
+      days: [],
+      hours: [],
+      truncated: false,
+    }),
 };
 
 const sameRowIds = (
@@ -74,21 +114,59 @@ const sameRowIds = (
   left.value.size === right.value.size &&
   [...left.value].every((id) => right.value.has(id));
 
-const stockRecommendationRuntime = Atom.runtime(stockRecommendationLayer);
+const insightsRuntime = Atom.runtime(insightsLayer);
 
-const refreshedOnCommits = <A>(
-  sources: WorkspaceAtomSources,
-  entity: SyncEntity,
-  read: () => Effect.Effect<A, WorkspaceReadError>,
-): Atom.Atom<AsyncResult.AsyncResult<A, WorkspaceReadError>> =>
-  Atom.make((get) => {
-    get.addFinalizer(
-      sources.changes.subscribe((notice) => {
-        if (notice.touchedEntities.includes(entity)) get.refreshSelf();
+const INSIGHT_ENTITIES: ReadonlySet<SyncEntity> = new Set([
+  "category",
+  "product",
+  "batch",
+  "invoice",
+  "invoiceItem",
+]);
+const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
+const INSIGHTS_SETTLE = Duration.millis(750);
+const INSIGHTS_ROLLOVER = Duration.minutes(15);
+
+const localUtcOffsetMinutes = (at: number) => -new Date(at).getTimezoneOffset();
+
+const commitNotices = (feed: ReplicaChangeFeed) =>
+  Stream.callback<ReplicaCommitNotice>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() => feed.subscribe((notice) => Queue.offerUnsafe(queue, notice))),
+      (unsubscribe) => Effect.sync(unsubscribe),
+    ),
+  );
+
+const touching = (entities: ReadonlySet<SyncEntity>) => (notice: ReplicaCommitNotice) =>
+  notice.touchedEntities.some((entity) => entities.has(entity));
+
+const refreshOnCommits =
+  (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>, settle?: Duration.Duration) =>
+  <A extends Atom.Atom<unknown>>(self: A) => {
+    const relevant = commitNotices(sources.changes).pipe(Stream.filter(touching(entities)));
+    return Atom.makeRefreshOnSignal(
+      Atom.make(settle === undefined ? relevant : relevant.pipe(Stream.debounce(settle))),
+    )(self);
+  };
+
+const insightsReportAtom = (sources: WorkspaceAtomSources) => {
+  const facts = Atom.make(() => {
+    const now = Date.now();
+    return sources.readInsights(insightsWindowFor(now, localUtcOffsetMinutes(now)));
+  }).pipe(
+    Atom.withRefresh(INSIGHTS_ROLLOVER),
+    refreshOnCommits(sources, INSIGHT_ENTITIES, INSIGHTS_SETTLE),
+  );
+  return insightsRuntime
+    .atom((get) =>
+      Effect.gen(function* () {
+        const current = yield* get.result(facts);
+        const policy = get(stockPolicyAtom);
+        return yield* InsightsService.use((service) => service.analyze({ facts: current, policy }));
       }),
-    );
-    return read();
-  });
+    )
+    .pipe(Atom.keepAlive);
+};
 
 export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
@@ -103,38 +181,78 @@ export type WorkspaceAtoms = {
     query: string,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
   readonly commandExecution: Atom.Writable<CommandExecutionState>;
-  readonly stockRecommendations: Atom.AtomResultFn<StockRecommendationArg, StockReport, string>;
+  readonly insights: Atom.Atom<
+    AsyncResult.AsyncResult<InsightsReport, WorkspaceReadError | InsightsError>
+  >;
+  readonly productPage: (
+    request: ProductListRequest,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
+  readonly productCount: (
+    filters: ProductListFilters,
+  ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
+  readonly productFacets: Atom.Atom<AsyncResult.AsyncResult<ProductFacets, WorkspaceReadError>>;
+  readonly productLookup: Atom.AtomResultFn<
+    ReadonlyArray<string>,
+    ReadonlyArray<ProductRow>,
+    WorkspaceReadError
+  >;
+  readonly productInsight: (
+    productId: string,
+  ) => Atom.Atom<
+    AsyncResult.AsyncResult<ProductInsight | null, WorkspaceReadError | InsightsError>
+  >;
+};
+
+const productInsightFamily = (
+  insights: WorkspaceAtoms["insights"],
+): WorkspaceAtoms["productInsight"] => {
+  const index = Atom.mapResult(
+    insights,
+    (report) => new Map(report.products.map((insight) => [insight.productId, insight])),
+  );
+  return Atom.family((productId: string) =>
+    Atom.mapResult(index, (byId) => byId.get(productId) ?? null),
+  );
 };
 
 export const createWorkspaceAtoms = (
-  organizationId: string,
   initialSync: InventorySyncStatus = { _tag: "caughtUp" },
   sources: WorkspaceAtomSources = emptySources,
-): WorkspaceAtoms => ({
-  registry: AtomRegistry.make({ defaultIdleTTL: 30_000 }),
-  syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
-  syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
-  pendingRowIds: Atom.family((entity: SyncEntity) =>
-    refreshedOnCommits(sources, entity, () => sources.readPendingRowIds(entity)).pipe(
-      Atom.withEquality(sameRowIds),
+): WorkspaceAtoms => {
+  const insights = insightsReportAtom(sources);
+  return {
+    registry: AtomRegistry.make({ defaultIdleTTL: 30_000 }),
+    syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
+    syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
+    pendingRowIds: Atom.family((entity: SyncEntity) =>
+      Atom.make(sources.readPendingRowIds(entity)).pipe(
+        refreshOnCommits(sources, new Set([entity])),
+        Atom.withEquality(sameRowIds),
+      ),
     ),
-  ),
-  productSearch: Atom.family((limit: number) =>
-    Atom.family((query: string) =>
-      refreshedOnCommits(sources, "product", () => sources.searchProducts(query, limit)),
+    productSearch: Atom.family((limit: number) =>
+      Atom.family((query: string) =>
+        Atom.make(sources.searchProducts(query, limit)).pipe(
+          refreshOnCommits(sources, PRODUCT_ENTITIES),
+        ),
+      ),
     ),
-  ),
-  commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
-  stockRecommendations: stockRecommendationRuntime
-    .fn((arg: StockRecommendationArg) =>
-      StockRecommendationService.use((service) =>
-        service.analyze({
-          products: arg.products,
-          invoices: arg.invoices,
-          policy: arg.policy,
-          organizationId,
-        }),
-      ).pipe(Effect.mapError((failure) => failure.message)),
-    )
-    .pipe(Atom.keepAlive),
-});
+    productPage: Atom.family((request: ProductListRequest) =>
+      Atom.make(sources.readProductPage(request)).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+    productCount: Atom.family((filters: ProductListFilters) =>
+      Atom.make(
+        sources.summarizeProducts(filters, []).pipe(Effect.map((summary) => summary.count)),
+      ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+    productFacets: Atom.make(
+      sources.summarizeProducts({}, PRODUCT_FACET_COLUMNS).pipe(Effect.map(facetsFrom)),
+    ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    productLookup: Atom.fn((names: ReadonlyArray<string>) => sources.findProductsByNames(names), {
+      concurrent: true,
+    }),
+    commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
+    insights,
+    productInsight: productInsightFamily(insights),
+  };
+};

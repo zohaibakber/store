@@ -14,6 +14,13 @@ export class CatalogOpenFailure extends Schema.TaggedError<CatalogOpenFailure>()
   },
 ) {}
 
+export class WorkspaceReadFailure extends Schema.TaggedError<WorkspaceReadFailure>()(
+  "WorkspaceReadFailure",
+  {
+    message: Schema.String,
+  },
+) {}
+
 export const staleCatalogLease = () =>
   new StaleCatalogLease({ message: "Catalog lease is no longer current." });
 

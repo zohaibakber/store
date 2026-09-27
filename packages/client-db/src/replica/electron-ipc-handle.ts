@@ -1,11 +1,22 @@
-import { CommandStatus, DecimalSequence, SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import {
+  CommandStatus,
+  DecimalSequence,
+  ReplicaInsightsFacts,
+  SyncCommandEnvelope,
+  SyncEntity,
+  type ReplicaInsightsWindow,
+} from "@store/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { createReplicaCommitPublisher } from "./publisher";
 import { decodeSqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
-import type { InventorySubsetSpec } from "./subset-spec";
+import {
+  InventorySubsetSummary,
+  type InventorySubsetSpec,
+  type InventorySubsetSummarySpec,
+} from "./subset-spec";
 import type { ReplicaHandle, ReplicaQueryStamp } from "./types";
 
 export type ElectronReplicaOpenIdentity = {
@@ -30,6 +41,20 @@ export type ElectronReplicaBridge = {
     readonly spec: InventorySubsetSpec;
   }) => Promise<{
     readonly rows: ReadonlyArray<Record<string, string | number | null>>;
+    readonly stamp: CommitStamp;
+  }>;
+  readonly summarizeSubset: (input: {
+    readonly workspaceToken: string;
+    readonly spec: InventorySubsetSummarySpec;
+  }) => Promise<{
+    readonly summary: InventorySubsetSummary;
+    readonly stamp: CommitStamp;
+  }>;
+  readonly readInsights: (input: {
+    readonly workspaceToken: string;
+    readonly window: ReplicaInsightsWindow;
+  }) => Promise<{
+    readonly facts: typeof ReplicaInsightsFacts.Encoded;
     readonly stamp: CommitStamp;
   }>;
   readonly onCommit: (
@@ -64,6 +89,8 @@ export type ElectronReplicaBridge = {
   }>;
 };
 
+const decodeSummary = Schema.decodeUnknownSync(InventorySubsetSummary);
+const decodeInsightsFacts = Schema.decodeUnknownSync(ReplicaInsightsFacts);
 const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
 const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
 const encodeEnvelope = Schema.encodeSync(SyncCommandEnvelope);
@@ -116,6 +143,14 @@ export const openElectronIpcReplicaHandle = async (
         stamp: workspaceStamp(result.stamp),
         rows: result.rows.map((row) => decodeSqliteResultRow(row)),
       };
+    },
+    summarizeSubset: async (spec) => {
+      const result = await bridge.summarizeSubset({ workspaceToken, spec });
+      return { stamp: workspaceStamp(result.stamp), summary: decodeSummary(result.summary) };
+    },
+    readInsights: async (window) => {
+      const result = await bridge.readInsights({ workspaceToken, window });
+      return { stamp: workspaceStamp(result.stamp), facts: decodeInsightsFacts(result.facts) };
     },
     readOutboxStatuses: async () =>
       decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),

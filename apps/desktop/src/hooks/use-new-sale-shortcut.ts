@@ -2,31 +2,30 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
-
-const isNewSaleKeyboardEvent = (event: KeyboardEvent): boolean =>
-  event.code === "KeyN" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
+import { appHost } from "@/host";
 
 export function useNewSaleShortcut(): void {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
 
   useEffect(() => {
+    const host = appHost();
     const go = () => {
       if (isMobile) setOpenMobile(false);
       void navigate({ to: "/invoices/new" });
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isNewSaleKeyboardEvent(event)) return;
+      if (!host.newSaleShortcut.matches(event)) return;
       event.preventDefault();
       go();
     };
 
     window.addEventListener("keydown", onKeyDown, true);
-    const stopDesktop = window.desktopShell?.onNewSale(go);
+    const stopShell = host.shell?.onNewSale(go);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
-      stopDesktop?.();
+      stopShell?.();
     };
   }, [isMobile, navigate, setOpenMobile]);
 }

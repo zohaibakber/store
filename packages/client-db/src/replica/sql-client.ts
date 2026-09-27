@@ -61,6 +61,8 @@ export const openSqlClientReplicaHandle = async <E>(
     readPendingRowIds: session.readPendingRowIds,
     stamp: session.stamp,
     readSubset: session.readSubset,
+    readInsights: session.readInsights,
+    summarizeSubset: session.summarizeSubset,
     readOutboxStatuses: session.readOutboxStatuses,
     readCommandAllocation: session.readCommandAllocation,
     enqueueLocal: session.enqueueLocal,

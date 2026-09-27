@@ -293,3 +293,28 @@
     min-width: 8rem;
   }
 }
+
+@layer base {
+  [data-performance="lite"] *,
+  [data-performance="lite"] ::before,
+  [data-performance="lite"] ::after {
+    backdrop-filter: none !important;
+  }
+
+  [data-performance="lite"] [data-slot="sheet-backdrop"],
+  [data-performance="lite"] [data-slot="dialog-backdrop"],
+  [data-performance="lite"] [data-slot="alert-dialog-backdrop"] {
+    background-color: color-mix(in srgb, var(--background) 72%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

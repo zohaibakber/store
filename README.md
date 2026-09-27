@@ -1,7 +1,7 @@
 # Store
 
-pnpm workspace for offline-first inventory: an Electron desktop app and a
-Cloudflare Worker API. Inventory commands commit in PlanetScale Postgres
+pnpm workspace for offline-first inventory: an Electron desktop app, the same
+renderer as a web app, and a Cloudflare Worker API. Inventory commands commit in PlanetScale Postgres
 through Hyperdrive. `dev` and `prod` provision that database; nightly does not.
 
 ## Workspace boundaries
@@ -12,6 +12,8 @@ through Hyperdrive. `dev` and `prod` provision that database; nightly does not.
   proxies authenticated sync HTTP. Live inventory is the local replica, owned
   by a main-process worker on `@effect/sql-sqlite-node` over `node:sqlite`.
   The renderer never sees SQL. Desktop requires sign-in before inventory.
+  The same renderer also runs as a browser SPA (`--mode web`): an HttpOnly
+  refresh cookie, an in-memory access token, and the IndexedDB replica.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
@@ -40,7 +42,9 @@ shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
 Desktop inventory reads come from TanStack DB live queries over the local
-replica. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
+replica. Analytics use one bounded aggregate read instead: the replica groups
+sales by product and local day (`readInsights`), and `@store/services/insights`
+turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
 sync commands: they commit locally first, project pending rows, then upload to
 `/api/sync/commands`, where one organization-locked PostgreSQL transaction
 decides them and appends to the change log that `/api/sync/pull` serves.
@@ -57,6 +61,13 @@ vp run dev
 Turborepo starts the API/auth Workers and the desktop workspace. The desktop's
 plain `vp dev` task starts the renderer on `:5174`, builds main and preload, and
 launches Electron. Use a Turbo filter when you only need one workspace.
+
+```sh
+vp run dev:web
+```
+
+That starts the same Workers and serves the renderer as a web app on
+`http://localhost:5174`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
@@ -115,8 +126,8 @@ There is no domain baked into source. Published deploys fail if
 `PRODUCTION_DOMAIN` is missing. In `Nightly`, the name still refers to that
 environment's public hostname, not the production hostname.
 
-- `PRODUCTION_DOMAIN`. Base hostname (example: `tabaaq.app`) used to derive the
-  API and auth hostnames.
+- `PRODUCTION_DOMAIN`. Base hostname (example: `tabaaq.app`). It serves the web
+  app and derives the API and auth hostnames.
 - `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`) baked into the
   desktop release. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
 - `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
@@ -133,7 +144,8 @@ cron is not registered. Desktop still runs against its local replica.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
-to the desktop custom scheme after PKCE verification.
+to the desktop custom scheme, or to the web app's `/sign-in`, after PKCE
+verification.
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
@@ -153,8 +165,10 @@ merging `nightly` into `main`, then manually dispatching the production run.
 
 Run all workspace checks with `vp check` and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production
-deploys run `pnpm exec alchemy deploy`, which serves the API from
-`api.<PRODUCTION_DOMAIN>` and auth at `auth.<PRODUCTION_DOMAIN>`.
+deploys run `pnpm exec alchemy deploy`, which serves the web app from
+`PRODUCTION_DOMAIN`, the API from `api.<PRODUCTION_DOMAIN>`, and auth at
+`auth.<PRODUCTION_DOMAIN>`. The `dev` stage has no web app deployment; use
+`vp run dev:web`.
 
 ## Install
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "turbo run dev",
+    "dev:web": "turbo run dev:web",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "turbo run build",
     "check": "node scripts/check-retired-vendors.mjs && turbo run check",

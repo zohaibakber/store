@@ -1,5 +1,15 @@
-import { InventorySubsetSpec } from "@store/client-db/subset-spec";
-import { CommandStatus, DecimalSequence, SyncCommandEnvelope } from "@store/contracts";
+import {
+  InventorySubsetSpec,
+  InventorySubsetSummary,
+  InventorySubsetSummarySpec,
+} from "@store/client-db/subset-spec";
+import {
+  CommandStatus,
+  DecimalSequence,
+  ReplicaInsightsFacts,
+  ReplicaInsightsWindow,
+  SyncCommandEnvelope,
+} from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -18,6 +28,16 @@ export const ReplicaOpenInput = Schema.Struct({
 export const ReplicaReadSubsetInput = Schema.Struct({
   workspaceToken: NonEmptyString,
   spec: InventorySubsetSpec,
+});
+
+export const ReplicaSummarizeSubsetInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  spec: InventorySubsetSummarySpec,
+});
+
+export const ReplicaReadInsightsInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  window: ReplicaInsightsWindow,
 });
 
 export const ReplicaEnqueueInput = Schema.Struct({
@@ -92,6 +112,16 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("ReadSubset", {
     payload: { spec: InventorySubsetSpec },
     success: ReplicaSubsetRows,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("SummarizeSubset", {
+    payload: { spec: InventorySubsetSummarySpec },
+    success: Schema.Struct({ stamp: ReplicaCommitStamp, summary: InventorySubsetSummary }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("ReadInsights", {
+    payload: { window: ReplicaInsightsWindow },
+    success: Schema.Struct({ stamp: ReplicaCommitStamp, facts: ReplicaInsightsFacts }),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("ReadOutboxStatuses", {

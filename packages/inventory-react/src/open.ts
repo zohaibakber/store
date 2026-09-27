@@ -33,8 +33,9 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 
 import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
-import { catalogOpenFailure } from "./errors";
+import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
+import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
 
@@ -98,7 +99,7 @@ const readSyncSnapshot = (replica: ReplicaHandle): Effect.Effect<OutboxSnapshot>
     })),
   );
 
-const workspaceReadFailure = () => ({ message: STORAGE_FAILED });
+const workspaceReadFailure = () => new WorkspaceReadFailure({ message: STORAGE_FAILED });
 
 const workspaceSources = (
   replica: ReplicaHandle,
@@ -114,6 +115,18 @@ const workspaceSources = (
     );
   },
   searchProducts: (query, limit) => searchCatalogProducts(replica, query, limit),
+  readProductPage: (request) => readProductPage(replica, request),
+  summarizeProducts: (filters, distinct) =>
+    summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
+  findProductsByNames: (names) => findProductsByNames(replica, names),
+  readInsights: (window) =>
+    Effect.tryPromise({
+      try: () => replica.readInsights(window),
+      catch: workspaceReadFailure,
+    }).pipe(
+      Effect.map((read) => read.facts),
+      Effect.withSpan("InventoryInsights.readFacts"),
+    ),
 });
 
 type CollectionDeps = {
@@ -268,11 +281,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
     const atoms = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        createWorkspaceAtoms(
-          scope.organizationId,
-          outbox.status,
-          workspaceSources(replica, outbox.activity),
-        ),
+        createWorkspaceAtoms(outbox.status, workspaceSources(replica, outbox.activity)),
       ),
       (opened) => Effect.sync(() => opened.registry.dispose()),
     );

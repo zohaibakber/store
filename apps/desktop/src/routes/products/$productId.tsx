@@ -11,6 +11,7 @@ import { formatPrice } from "@store/services/format";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
+import { ProductStockPlan } from "@/components/insights/product-stock-plan";
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
 import { ProductVisibilityCard } from "@/components/products/visibility";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -36,7 +37,11 @@ import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
-import { useCatalogProduct, useCatalogStockMovements, useInventoryActions } from "@/lib/inventory";
+import {
+  useInventoryActions,
+  useSuspenseCatalogProduct,
+  useSuspenseCatalogStockMovements,
+} from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/$productId")({
   component: ProductDetailPage,
@@ -72,21 +77,12 @@ function BackToProducts() {
 
 function ProductDetailPage() {
   const { productId } = Route.useParams();
-  const product = useCatalogProduct(productId);
-  const movements = useCatalogStockMovements(productId);
+  const catalogProduct = useSuspenseCatalogProduct(productId);
+  const movements = useSuspenseCatalogStockMovements(productId);
   const { deleteProduct } = useInventoryActions();
   const navigate = useNavigate();
 
-  const catalogProduct = product.data;
-  if (!catalogProduct) {
-    if (product.isError || movements.isError) {
-      return <ProductDetailError error={new Error("The product data could not be loaded.")} />;
-    }
-    if (product.isReady) {
-      return <ProductDetailError error={new Error(`Product ${productId} was not found.`)} />;
-    }
-    return null;
-  }
+  if (!catalogProduct) throw new Error(`Product ${productId} was not found.`);
 
   const removeProduct = async () => {
     try {
@@ -99,11 +95,7 @@ function ProductDetailPage() {
   };
 
   return (
-    <ProductDetailContent
-      movements={movements.data}
-      onDelete={removeProduct}
-      product={catalogProduct}
-    />
+    <ProductDetailContent movements={movements} onDelete={removeProduct} product={catalogProduct} />
   );
 }
 
@@ -212,6 +204,7 @@ function ProductDetailContent({
             </dl>
           </FrameCard>
 
+          <ProductStockPlan productId={product.id} />
           <ProductBatchesCard product={product} />
         </div>
 

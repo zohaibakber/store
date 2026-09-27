@@ -1,20 +1,38 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import { createAppCatalogLifetime, type InventoryHost } from "@store/inventory-react";
+import {
+  configureInventoryPreferences,
+  createAppCatalogLifetime,
+  type InventoryHost,
+} from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
+import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import { authSession } from "@/lib/auth";
-import { Sentry } from "@/lib/sentry";
 import { makeReplayChannel } from "@/replay-channel";
 import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
 import { getRouter } from "./router";
+
+const browserStorage = (): Storage | null => {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const preferenceStore = () => {
+  const storage = browserStorage();
+  return storage === null ? KeyValueStore.layerMemory : KeyValueStore.layerStorage(() => storage);
+};
 
 export const mountApp = (input: {
   readonly snapshot: WorkspaceSnapshot;
@@ -22,6 +40,7 @@ export const mountApp = (input: {
   readonly access: HostAccessPolicy;
   readonly inventory?: InventoryHost;
 }) => {
+  configureInventoryPreferences(preferenceStore());
   const session = makeReplayChannel<WorkspaceSession>();
   session.publish({ _tag: "Steady", snapshot: input.snapshot });
   const catalog = createAppCatalogLifetime();
@@ -47,7 +66,7 @@ export const mountApp = (input: {
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <Sentry.ErrorBoundary
+      <AppErrorBoundary
         fallback={
           <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
         }
@@ -55,7 +74,7 @@ export const mountApp = (input: {
         <RegistryContext.Provider value={registry}>
           <ThemeProvider>{app}</ThemeProvider>
         </RegistryContext.Provider>
-      </Sentry.ErrorBoundary>
+      </AppErrorBoundary>
     </React.StrictMode>,
   );
 };

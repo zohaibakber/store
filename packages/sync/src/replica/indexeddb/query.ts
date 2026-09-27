@@ -1,8 +1,9 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
-import type { ReplicaQueryBuilder } from "./schema";
+import { foldAsciiCase, type ReplicaQueryBuilder } from "./schema";
 
 export type IndexedDbEntityTable =
   | "categories"
@@ -11,6 +12,8 @@ export type IndexedDbEntityTable =
   | "invoices"
   | "invoice_items"
   | "stock_movements";
+
+type IndexedDbIndexName = Extract<IndexedDbScan, { readonly _tag: "indexPrefix" }>["index"];
 
 export type IndexedDbScan =
   | { readonly _tag: "primaryEquals"; readonly id: string }
@@ -30,10 +33,17 @@ export type IndexedDbScan =
       readonly index:
         | "byCreatedAt"
         | "byName"
+        | "byNameKey"
         | "byCategory"
         | "byProduct"
         | "byOperation"
         | "byInvoice";
+      readonly reverse: boolean;
+    }
+  | {
+      readonly _tag: "indexEqualsOrdered";
+      readonly index: "byCategoryName";
+      readonly value: string;
       readonly reverse: boolean;
     }
   | { readonly _tag: "generationPrefix"; readonly reverse: boolean };
@@ -138,9 +148,6 @@ const matchesCompare = (
   }
 };
 
-const foldAsciiCase = (value: string): string =>
-  value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
-
 const REGEXP_SPECIALS = /[.*+?^${}()|[\]\\/]/u;
 
 const likeExpression = (pattern: string): RegExp => {
@@ -197,10 +204,12 @@ const matchesResidual = (
 const IndexedDbStoredRow = Schema.Record(Schema.String, IndexedDbCellValue);
 type IndexedDbStoredRow = typeof IndexedDbStoredRow.Type;
 
+const HIDDEN_COLUMNS: ReadonlySet<string> = new Set(["generation", "nameKey"]);
+
 const stripGeneration = (row: IndexedDbStoredRow) => {
   const entries: Array<[string, IndexedDbCellValue]> = [];
   for (const [key, value] of Object.entries(row)) {
-    if (key === "generation") continue;
+    if (HIDDEN_COLUMNS.has(key)) continue;
     entries.push([key, value]);
   }
   return Object.fromEntries(entries) satisfies IndexedDbSubsetRow;
@@ -303,7 +312,10 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
         return scan.reverse ? query.reverse() : query;
       }
       case "products": {
-        const query = api.from("products").select("byCategory").between(lower, upper);
+        const query =
+          scan.index === "byNameKey"
+            ? api.from("products").select("byNameKey").between(lower, upper)
+            : api.from("products").select("byCategory").between(lower, upper);
         return scan.reverse ? query.reverse() : query;
       }
       case "batches": {
@@ -328,46 +340,465 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
     }
   }
 
+  if (scan._tag === "indexEqualsOrdered") {
+    const query = api
+      .from("products")
+      .select("byCategoryName")
+      .between([generation, scan.value], [generation, scan.value, []]);
+    return scan.reverse ? query.reverse() : query;
+  }
+
   const prefix = fromPrimary().between(lower, upper);
   return scan._tag === "generationPrefix" && scan.reverse ? prefix.reverse() : prefix;
 };
 
-const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
-  if (plan.orderBy.length !== 1) return plan.orderBy.length === 0;
-  const clause = plan.orderBy[0];
-  if (!clause) return true;
-  if (plan.scan._tag === "indexPrefix") {
-    if (plan.scan.index === "byCreatedAt" && clause.column === "createdAt") {
-      return (clause.direction === "desc") === plan.scan.reverse;
-    }
-    if (plan.scan.index === "byName" && clause.column === "name") {
-      return (clause.direction === "desc") === plan.scan.reverse;
-    }
+const indexOrderColumn = (index: IndexedDbIndexName) => {
+  switch (index) {
+    case "byCreatedAt":
+      return "createdAt";
+    case "byName":
+    case "byNameKey":
+      return "name";
+    case "byCategory":
+    case "byProduct":
+    case "byOperation":
+    case "byInvoice":
+      return undefined;
   }
-  if (plan.scan._tag === "generationPrefix" && clause.column === "id") {
-    return (clause.direction === "desc") === plan.scan.reverse;
-  }
-  return false;
 };
+
+const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
+  const [first, tieBreak, ...rest] = plan.orderBy;
+  if (first === undefined) return true;
+  if (rest.length > 0) return false;
+  if (
+    tieBreak !== undefined &&
+    (tieBreak.column !== "id" || tieBreak.direction !== first.direction)
+  ) {
+    return false;
+  }
+  const descending = first.direction === "desc";
+  switch (plan.scan._tag) {
+    case "indexPrefix":
+      return indexOrderColumn(plan.scan.index) === first.column && descending === plan.scan.reverse;
+    case "indexEqualsOrdered":
+      return first.column === "name" && descending === plan.scan.reverse;
+    case "generationPrefix":
+      return first.column === "id" && descending === plan.scan.reverse;
+    case "primaryEquals":
+    case "indexEquals":
+      return false;
+  }
+};
+
+const SCAN_CHUNK_ROWS = 500;
+const PAGE_FETCH_CONCURRENCY = 8;
+
+const decodeStoredRow = Schema.decodeUnknownSync(IndexedDbStoredRow);
+
+const primaryChunk = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+  after: Option.Option<string>,
+) => {
+  const lower: [number] | [number, string] = Option.match(after, {
+    onNone: () => [generation],
+    onSome: (id) => [generation, id],
+  });
+  const upper: [number, []] = [generation, []];
+  const range = { excludeLowerBound: Option.isSome(after) };
+  switch (table) {
+    case "categories":
+      return api.from("categories").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "products":
+      return api.from("products").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "batches":
+      return api.from("batches").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "invoices":
+      return api.from("invoices").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "invoice_items":
+      return api.from("invoice_items").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "stock_movements":
+      return api
+        .from("stock_movements")
+        .select()
+        .between(lower, upper, range)
+        .limit(SCAN_CHUNK_ROWS);
+  }
+};
+
+const primaryKeysetRows = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+) =>
+  Stream.paginate(Option.none<string>(), (after) =>
+    primaryChunk(api, table, generation, after).pipe(
+      Effect.map((raw) => {
+        const rows = raw.map((row) => decodeStoredRow(row));
+        const last = rows.at(-1);
+        const next =
+          rows.length < SCAN_CHUNK_ROWS || last === undefined
+            ? Option.none()
+            : Option.some(Option.some(stringifyCell(cell(last, "id") ?? null)));
+        return [rows, next] as const;
+      }),
+    ),
+  );
+
+type IndexCursor = {
+  readonly key: Option.Option<IndexedDbCellValue>;
+  readonly seen: number;
+};
+
+const keyedBounds = <Key>(
+  generation: number,
+  key: Option.Option<Key>,
+  reverse: boolean,
+): { readonly lower: [number] | [number, Key]; readonly upper: [number, []] | [number, Key] } =>
+  Option.match(key, {
+    onNone: () => ({ lower: [generation], upper: [generation, []] }),
+    onSome: (value) =>
+      reverse
+        ? { lower: [generation], upper: [generation, value] }
+        : { lower: [generation, value], upper: [generation, []] },
+  });
+
+const categoryNameBounds = (
+  generation: number,
+  categoryId: string,
+  key: Option.Option<string>,
+  reverse: boolean,
+): {
+  readonly lower: [number, string] | [number, string, string];
+  readonly upper: [number, string, []] | [number, string, string];
+} =>
+  Option.match(key, {
+    onNone: () => ({ lower: [generation, categoryId], upper: [generation, categoryId, []] }),
+    onSome: (value) =>
+      reverse
+        ? { lower: [generation, categoryId], upper: [generation, categoryId, value] }
+        : { lower: [generation, categoryId, value], upper: [generation, categoryId, []] },
+  });
+
+type KeysetScan =
+  | {
+      readonly _tag: "indexPrefix";
+      readonly index: "byName" | "byNameKey" | "byCreatedAt";
+      readonly reverse: boolean;
+    }
+  | Extract<IndexedDbScan, { readonly _tag: "indexEqualsOrdered" }>;
+
+const orderedIndexChunk = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  scan: KeysetScan,
+  cursor: IndexCursor,
+) => {
+  const limit = SCAN_CHUNK_ROWS + cursor.seen;
+  const text = Option.flatMap(cursor.key, decodeString);
+  if (scan._tag === "indexEqualsOrdered") {
+    const { lower, upper } = categoryNameBounds(generation, scan.value, text, scan.reverse);
+    const query = api.from("products").select("byCategoryName").between(lower, upper);
+    return (scan.reverse ? query.reverse() : query).limit(limit);
+  }
+  switch (scan.index) {
+    case "byName": {
+      const { lower, upper } = keyedBounds(generation, text, scan.reverse);
+      const query = api.from("categories").select("byName").between(lower, upper);
+      return (scan.reverse ? query.reverse() : query).limit(limit);
+    }
+    case "byNameKey": {
+      const { lower, upper } = keyedBounds(generation, text, scan.reverse);
+      const query = api.from("products").select("byNameKey").between(lower, upper);
+      return (scan.reverse ? query.reverse() : query).limit(limit);
+    }
+    case "byCreatedAt": {
+      const { lower, upper } = keyedBounds(
+        generation,
+        Option.flatMap(cursor.key, decodeNumber),
+        scan.reverse,
+      );
+      const query = api.from("invoices").select("byCreatedAt").between(lower, upper);
+      return (scan.reverse ? query.reverse() : query).limit(limit);
+    }
+  }
+};
+
+const keyFieldOf = (scan: KeysetScan) => {
+  if (scan._tag === "indexEqualsOrdered") return "nameKey";
+  switch (scan.index) {
+    case "byName":
+      return "name";
+    case "byNameKey":
+      return "nameKey";
+    case "byCreatedAt":
+      return "createdAt";
+  }
+};
+
+const indexKeysetRows = (api: ReplicaQueryBuilder, generation: number, scan: KeysetScan) => {
+  const field = keyFieldOf(scan);
+  return Stream.paginate<IndexCursor, IndexedDbStoredRow, unknown>(
+    { key: Option.none(), seen: 0 },
+    (cursor) =>
+      orderedIndexChunk(api, generation, scan, cursor).pipe(
+        Effect.map((raw) => {
+          const rows = raw.slice(cursor.seen).map((row) => decodeStoredRow(row));
+          const last = rows.at(-1);
+          if (rows.length < SCAN_CHUNK_ROWS || last === undefined) {
+            return [rows, Option.none()] as const;
+          }
+          const key = cell(last, field) ?? null;
+          const repeated = rows.filter((row) => cell(row, field) === key).length;
+          const carried = Option.contains(cursor.key, key) ? cursor.seen : 0;
+          return [rows, Option.some({ key: Option.some(key), seen: carried + repeated })] as const;
+        }),
+      ),
+  );
+};
+
+const keysetScan = (
+  table: IndexedDbEntityTable,
+  scan: IndexedDbScan,
+  order: "scan" | "any",
+): KeysetScan | undefined => {
+  switch (scan._tag) {
+    case "indexEqualsOrdered":
+      return scan;
+    case "indexEquals":
+      return order === "any" && table === "products" && scan.index === "byCategory"
+        ? {
+            _tag: "indexEqualsOrdered",
+            index: "byCategoryName",
+            value: String(scan.value),
+            reverse: false,
+          }
+        : undefined;
+    case "indexPrefix":
+      switch (scan.index) {
+        case "byName":
+        case "byNameKey":
+        case "byCreatedAt":
+          return { _tag: "indexPrefix", index: scan.index, reverse: scan.reverse };
+        case "byCategory":
+        case "byProduct":
+        case "byOperation":
+        case "byInvoice":
+          return undefined;
+      }
+    case "primaryEquals":
+    case "generationPrefix":
+      return undefined;
+  }
+};
+
+const scannedRows = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+  order: "scan" | "any",
+) => {
+  const keyset = keysetScan(plan.table, plan.scan, order);
+  if (keyset !== undefined) return indexKeysetRows(api, generation, keyset);
+  if (plan.scan._tag === "generationPrefix" && (order === "any" || !plan.scan.reverse)) {
+    return primaryKeysetRows(api, plan.table, generation);
+  }
+  return Stream.map(
+    selectRows(api, plan, generation).stream({ chunkSize: SCAN_CHUNK_ROWS }),
+    (row) => decodeStoredRow(row),
+  );
+};
+
+const matchingRows = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+  order: "scan" | "any",
+) =>
+  Stream.filter(scannedRows(api, generation, plan, order), (row) =>
+    matchesResidual(row, plan.residual),
+  );
+
+type SortEntry = {
+  readonly id: string;
+  readonly keys: ReadonlyArray<IndexedDbCellValue | undefined>;
+};
+
+const compareEntries =
+  (orderBy: IndexedDbSubsetPlan["orderBy"]) =>
+  (left: SortEntry, right: SortEntry): number => {
+    for (const [index, clause] of orderBy.entries()) {
+      const ranking = compareValues(left.keys[index], right.keys[index]);
+      if (ranking !== 0) return clause.direction === "desc" ? -ranking : ranking;
+    }
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  };
+
+const insertBounded = (
+  entries: Array<SortEntry>,
+  entry: SortEntry,
+  capacity: number,
+  compare: (left: SortEntry, right: SortEntry) => number,
+) => {
+  const last = entries.at(-1);
+  if (entries.length >= capacity && last !== undefined && compare(entry, last) >= 0) {
+    return entries;
+  }
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const pivot = entries[middle];
+    if (pivot !== undefined && compare(pivot, entry) <= 0) low = middle + 1;
+    else high = middle;
+  }
+  entries.splice(low, 0, entry);
+  if (entries.length > capacity) entries.pop();
+  return entries;
+};
+
+const rowById =
+  (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) => (id: string) =>
+    selectRows(api, { ...plan, scan: { _tag: "primaryEquals", id } }, generation).pipe(
+      Effect.map((rows) => rows.map((row) => decodeStoredRow(row))),
+    );
+
+const sortedPage = (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) =>
+  Effect.gen(function* () {
+    const compare = compareEntries(plan.orderBy);
+    const capacity = plan.offset + plan.limit;
+    const leaders = yield* Stream.runFold(
+      matchingRows(api, generation, plan, "any"),
+      (): Array<SortEntry> => [],
+      (entries, row) =>
+        insertBounded(
+          entries,
+          {
+            id: stringifyCell(cell(row, "id") ?? null),
+            keys: plan.orderBy.map((clause) => cell(row, clause.column)),
+          },
+          capacity,
+          compare,
+        ),
+    );
+    const rows = yield* Effect.forEach(
+      leaders.slice(plan.offset).map((entry) => entry.id),
+      rowById(api, generation, plan),
+      { concurrency: PAGE_FETCH_CONCURRENCY },
+    );
+    return rows.flat();
+  });
+
+const scanPage = (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) =>
+  plan.residual === undefined
+    ? selectRows(api, plan, generation)
+        .offset(plan.offset)
+        .limit(plan.limit)
+        .pipe(Effect.map((rows) => rows.map((row) => decodeStoredRow(row))))
+    : Stream.runCollect(
+        Stream.take(
+          Stream.drop(matchingRows(api, generation, plan, "scan"), plan.offset),
+          plan.limit,
+        ),
+      );
 
 export const executeIndexedDbSubset = (
   api: ReplicaQueryBuilder,
   generation: number,
   plan: IndexedDbSubsetPlan,
 ): Effect.Effect<ReadonlyArray<IndexedDbSubsetRow>, unknown> =>
-  Effect.gen(function* () {
-    const raw = yield* selectRows(api, plan, generation);
-    const rows = raw.map((row) => Schema.decodeUnknownSync(IndexedDbStoredRow)(row));
-    const filtered = rows.filter((row) => matchesResidual(row, plan.residual));
-    const ordered = orderMatchesScan(plan)
-      ? filtered
-      : [...filtered].sort((left, right) => {
-          for (const clause of plan.orderBy) {
-            const ranking = compareValues(cell(left, clause.column), cell(right, clause.column));
-            if (ranking !== 0) return clause.direction === "desc" ? -ranking : ranking;
+  (orderMatchesScan(plan)
+    ? scanPage(api, generation, plan)
+    : sortedPage(api, generation, plan)
+  ).pipe(Effect.map((rows) => Array.from(rows, stripGeneration)));
+
+export type IndexedDbSubsetSummary = {
+  readonly count: number;
+  readonly distinct: ReadonlyArray<{
+    readonly column: string;
+    readonly values: ReadonlyArray<string>;
+  }>;
+};
+
+const countCategory = (api: ReplicaQueryBuilder, generation: number, categoryId: string) =>
+  api.from("products").count("byCategory").equals([generation, categoryId]);
+
+const nativeCount = (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) => {
+  if (plan.residual !== undefined) return undefined;
+  switch (plan.scan._tag) {
+    case "generationPrefix":
+      return countGeneration(api, plan.table, generation);
+    case "indexEquals":
+      return plan.table === "products" && plan.scan.index === "byCategory"
+        ? countCategory(api, generation, String(plan.scan.value))
+        : undefined;
+    case "indexEqualsOrdered":
+      return countCategory(api, generation, plan.scan.value);
+    case "primaryEquals":
+    case "indexPrefix":
+      return undefined;
+  }
+};
+
+const countGeneration = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+) => {
+  const [lower, upper] = generationBounds(generation);
+  switch (table) {
+    case "categories":
+      return api.from("categories").count().between(lower, upper);
+    case "products":
+      return api.from("products").count().between(lower, upper);
+    case "batches":
+      return api.from("batches").count().between(lower, upper);
+    case "invoices":
+      return api.from("invoices").count().between(lower, upper);
+    case "invoice_items":
+      return api.from("invoice_items").count().between(lower, upper);
+    case "stock_movements":
+      return api.from("stock_movements").count().between(lower, upper);
+  }
+};
+
+export const summarizeIndexedDbSubset = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+  distinct: ReadonlyArray<string>,
+  maximumValues: number,
+): Effect.Effect<IndexedDbSubsetSummary, unknown> => {
+  const counted = distinct.length === 0 ? nativeCount(api, generation, plan) : undefined;
+  return counted !== undefined
+    ? counted.pipe(Effect.map((count) => ({ count, distinct: [] })))
+    : Stream.runFold(
+        matchingRows(api, generation, plan, "any"),
+        () => ({ count: 0, values: distinct.map(() => new Map<string, string>()) }),
+        (summary, row) => {
+          summary.count += 1;
+          for (const [index, column] of distinct.entries()) {
+            const value = cell(row, column);
+            const text = value === null || value === undefined ? "" : stringifyCell(value).trim();
+            if (text === "") continue;
+            const values = summary.values[index];
+            const key = text.toLowerCase();
+            const existing = values?.get(key);
+            if (existing === undefined || text < existing) values?.set(key, text);
           }
-          return compareValues(cell(left, "id"), cell(right, "id"));
-        });
-    const paged = ordered.slice(plan.offset, plan.offset + plan.limit);
-    return paged.map(stripGeneration);
-  });
+          return summary;
+        },
+      ).pipe(
+        Effect.map((summary) => ({
+          count: summary.count,
+          distinct: distinct.map((column, index) => ({
+            column,
+            values: [...(summary.values[index]?.values() ?? [])]
+              .sort((left, right) => left.localeCompare(right))
+              .slice(0, maximumValues),
+          })),
+        })),
+      );
+};

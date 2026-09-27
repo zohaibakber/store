@@ -28,7 +28,11 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "dist-electron/**", "release/**"]
+      "outputs": ["dist/**", "dist-web/**", "dist-electron/**", "release/**"]
+    },
+    "build:web": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist-web/**"]
     },
     "check": {
       "dependsOn": ["^check"]
@@ -39,6 +43,11 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "dev:web": {
+      "cache": false,
+      "persistent": true,
+      "with": ["@store/server#dev"]
     }
   }
 }

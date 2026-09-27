@@ -8,6 +8,8 @@ import {
 } from "@store/inventory-react";
 import type * as React from "react";
 
+import { PageSkeleton } from "@/components/app/page-skeleton";
+
 import { InventorySyncStatusView } from "./sync-status";
 
 export function InventoryProvider({
@@ -43,7 +45,7 @@ function InventoryOpenFailure({ children }: { readonly children: React.ReactNode
 
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
   const state = useInventoryState();
-  if (state._tag !== "Ready") return null;
+  if (state._tag !== "Ready") return <PageSkeleton />;
   return (
     <>
       <InventoryReadyStatus />

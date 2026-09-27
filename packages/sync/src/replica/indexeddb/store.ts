@@ -13,6 +13,10 @@ import {
   type SyncTransactionGroup,
 } from "@store/contracts";
 import type {
+  ReplicaInsightsFacts,
+  ReplicaInsightsWindow,
+} from "@store/contracts/sync/replica-insights";
+import type {
   CommandStatus,
   Committed,
   ReplicaCommitNotice,
@@ -85,6 +89,7 @@ import {
   type ReplicaStoreError,
   type VerifyAuthorityInput,
 } from "../store";
+import { readIndexedDbInsights } from "./insights";
 import {
   clearIndexedDbPendingProjection,
   indexedDbCatalogLookup,
@@ -98,6 +103,8 @@ import {
 } from "./pending";
 import {
   executeIndexedDbSubset,
+  summarizeIndexedDbSubset,
+  type IndexedDbSubsetSummary,
   generationBounds,
   type IndexedDbSubsetPlan,
   type IndexedDbSubsetRow,
@@ -105,6 +112,7 @@ import {
 import {
   countOutboxWithStatus,
   outboxWithStatus,
+  productImage,
   ReplicaIndexedDb,
   type OutboxRow,
   type ReplicaQueryBuilder,
@@ -236,10 +244,7 @@ const indexedDbLocalDigest = (api: ReplicaQueryBuilder, page: SyncPullResult) =>
         entity: "category" as const,
         row,
       })),
-      ...productRows.map(({ generation: _generation, ...row }) => ({
-        entity: "product" as const,
-        row,
-      })),
+      ...productRows.map((row) => ({ entity: "product" as const, row: productImage(row) })),
       ...batchRows.map(({ generation: _generation, ...row }) => ({
         entity: "batch" as const,
         row,
@@ -268,6 +273,20 @@ interface IndexedDbSubsetReader {
     plan: IndexedDbSubsetPlan,
   ) => Effect.Effect<
     { readonly stamp: ReplicaReadStamp; readonly rows: ReadonlyArray<IndexedDbSubsetRow> },
+    ReplicaStoreError
+  >;
+  readonly summarizeSubset: (
+    plan: IndexedDbSubsetPlan,
+    distinct: ReadonlyArray<string>,
+    maximumValues: number,
+  ) => Effect.Effect<
+    { readonly stamp: ReplicaReadStamp; readonly summary: IndexedDbSubsetSummary },
+    ReplicaStoreError
+  >;
+  readonly queryInsights: (
+    window: ReplicaInsightsWindow,
+  ) => Effect.Effect<
+    { readonly stamp: ReplicaReadStamp; readonly facts: ReplicaInsightsFacts },
     ReplicaStoreError
   >;
 }
@@ -892,6 +911,32 @@ const makeScopedIndexedDbReplicaStore = (
             }),
           ),
         ),
+      summarizeSubset: (
+        plan: IndexedDbSubsetPlan,
+        distinct: ReadonlyArray<string>,
+        maximumValues: number,
+      ) =>
+        withQuery((api) =>
+          Effect.gen(function* () {
+            const state = yield* requireState(api);
+            const summary = yield* summarizeIndexedDbSubset(
+              api,
+              state.activeGeneration,
+              plan,
+              distinct,
+              maximumValues,
+            );
+            return { stamp: stampOf(state), summary };
+          }),
+        ),
+      queryInsights: (window: ReplicaInsightsWindow) =>
+        withQuery((api) =>
+          Effect.gen(function* () {
+            const state = yield* requireState(api);
+            const facts = yield* readIndexedDbInsights(api, state.activeGeneration, window);
+            return { stamp: stampOf(state), facts };
+          }),
+        ),
       commits,
     };
   });
@@ -928,4 +973,5 @@ export type {
   IndexedDbScan,
   IndexedDbSubsetPlan,
   IndexedDbSubsetRow,
+  IndexedDbSubsetSummary,
 } from "./query";

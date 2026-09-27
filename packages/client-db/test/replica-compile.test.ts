@@ -71,7 +71,7 @@ describe("lowerSqliteSubset", () => {
     expect(() =>
       Effect.runSync(
         compileSqliteSubset(products, {
-          orderBy: [{ expression: new IR.PropRef(["retailPrice"]), compareOptions: compare }],
+          orderBy: [{ expression: new IR.PropRef(["composition"]), compareOptions: compare }],
           limit: 20,
         }),
       ),
@@ -114,7 +114,7 @@ describe("lowerSqliteSubset", () => {
       Effect.runSync(
         lowerSqliteSubset({
           source: "products",
-          orderBy: [{ column: "retailPrice", direction: "asc" }],
+          orderBy: [{ column: "composition", direction: "asc" }],
           limit: 10,
           offset: 0,
         }),

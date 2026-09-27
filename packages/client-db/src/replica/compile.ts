@@ -3,11 +3,18 @@ import * as Effect from "effect/Effect";
 import { UnsupportedSubsetQuery } from "./errors";
 import {
   CASE_INSENSITIVE_ORDER_COLUMNS,
+  DISTINCT_COLUMNS,
   FILTER_COLUMNS,
+  MAX_DISTINCT_VALUES,
   ORDER_COLUMNS,
   SOURCE_TABLE,
 } from "./sources";
-import type { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
+import type {
+  InventorySubsetSpec,
+  InventorySubsetSummarySpec,
+  SubsetPredicate,
+  SubsetScalar,
+} from "./subset-spec";
 import type { SqliteParameter } from "./types";
 
 type SqliteSubsetStatement = {
@@ -110,4 +117,71 @@ export const lowerSqliteSubset = (
       sql: `SELECT * FROM "${SOURCE_TABLE[spec.source]}"${whereSql}${orderSql} LIMIT ?${offsetSql}`,
       parameters: [...(where?.parameters ?? []), spec.limit, ...offsetParameters],
     };
+  });
+
+export type SqliteSummaryStatements = {
+  readonly count: SqliteSubsetStatement;
+  readonly distinct: ReadonlyArray<{
+    readonly column: string;
+    readonly statement: SqliteSubsetStatement;
+  }>;
+};
+
+export const lowerSqliteSummary = (
+  spec: InventorySubsetSummarySpec,
+): Effect.Effect<SqliteSummaryStatements, UnsupportedSubsetQuery> =>
+  Effect.gen(function* () {
+    const table = `"${SOURCE_TABLE[spec.source]}"`;
+    const where = spec.where
+      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source])
+      : undefined;
+    const whereSql = where ? ` WHERE ${where.sql}` : "";
+    const whereParameters = where?.parameters ?? [];
+    const distinct = yield* Effect.forEach(spec.distinct, (column) =>
+      allowlisted(column, DISTINCT_COLUMNS[spec.source]).pipe(
+        Effect.map((quoted) => ({
+          column,
+          statement: {
+            sql: `SELECT min(trim(${quoted})) AS value FROM ${table}${whereSql}${
+              where ? " AND" : " WHERE"
+            } ${quoted} IS NOT NULL AND trim(${quoted}) <> '' GROUP BY lower(trim(${quoted})) ORDER BY value COLLATE NOCASE LIMIT ?`,
+            parameters: [...whereParameters, MAX_DISTINCT_VALUES],
+          },
+        })),
+      ),
+    );
+    return {
+      count: {
+        sql: `SELECT count(*) AS count FROM ${table}${whereSql}`,
+        parameters: whereParameters,
+      },
+      distinct,
+    };
+  });
+
+const predicateColumns = (predicate: SubsetPredicate): ReadonlyArray<string> => {
+  switch (predicate._tag) {
+    case "and":
+    case "or":
+      return predicate.predicates.flatMap(predicateColumns);
+    case "not":
+      return predicateColumns(predicate.predicate);
+    case "compare":
+    case "in":
+    case "isNull":
+    case "like":
+      return [predicate.column];
+  }
+};
+
+export const validateSummarySpec = (
+  spec: InventorySubsetSummarySpec,
+): Effect.Effect<InventorySubsetSummarySpec, UnsupportedSubsetQuery> =>
+  Effect.gen(function* () {
+    const filters = spec.where ? predicateColumns(spec.where) : [];
+    yield* Effect.forEach(filters, (column) => allowlisted(column, FILTER_COLUMNS[spec.source]));
+    yield* Effect.forEach(spec.distinct, (column) =>
+      allowlisted(column, DISTINCT_COLUMNS[spec.source]),
+    );
+    return spec;
   });

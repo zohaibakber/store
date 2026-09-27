@@ -1,0 +1,149 @@
+import { formatPrice } from "@store/services/format";
+import type { InsightsReport, SalesPeriod } from "@store/services/insights";
+
+import { Badge } from "@/components/ui/badge";
+
+import { changeTone, formatChange, formatCount, formatShare } from "./presentation";
+
+const SPARK_WIDTH = 120;
+const SPARK_HEIGHT = 28;
+
+function Sparkline({
+  values,
+  label,
+}: {
+  readonly values: ReadonlyArray<number>;
+  readonly label: string;
+}) {
+  if (values.length < 2 || values.every((value) => value === 0)) return null;
+  const max = Math.max(...values, 1);
+  const step = SPARK_WIDTH / (values.length - 1);
+  const points = values
+    .map(
+      (value, index) =>
+        `${(index * step).toFixed(1)},${(SPARK_HEIGHT - (value / max) * SPARK_HEIGHT).toFixed(1)}`,
+    )
+    .join(" ");
+  return (
+    <svg
+      aria-label={label}
+      className="h-7 w-full text-primary"
+      preserveAspectRatio="none"
+      role="img"
+      viewBox={`0 -1 ${SPARK_WIDTH} ${SPARK_HEIGHT + 2}`}
+    >
+      <polyline
+        fill="none"
+        points={points}
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+function Delta({ value }: { readonly value: number | null }) {
+  const label = formatChange(value);
+  if (label === null) return null;
+  const tone = changeTone(value);
+  return (
+    <Badge size="sm" variant={tone === "secondary" ? "secondary" : tone}>
+      <span className="tabular-nums">{label}</span>
+    </Badge>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  change,
+  detail,
+  children,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly change?: number | null;
+  readonly detail: string;
+  readonly children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 bg-card p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-sm text-muted-foreground">{label}</span>
+        {change === undefined ? null : <Delta value={change} />}
+      </div>
+      <span className="truncate text-2xl font-medium tabular-nums">{value}</span>
+      <span className="truncate text-xs text-muted-foreground">{detail}</span>
+      {children}
+    </div>
+  );
+}
+
+export function KpiGrid({
+  period,
+  report,
+}: {
+  readonly period: SalesPeriod;
+  readonly report: InsightsReport;
+}) {
+  const span = `previous ${period.days} days`;
+  const series = period.series.map((day) => day.revenue);
+  return (
+    <section
+      aria-label="Key figures"
+      className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-4"
+    >
+      <Kpi
+        change={period.revenueChange}
+        detail={`${formatPrice(period.previousRevenue)} in the ${span}`}
+        label="Revenue"
+        value={formatPrice(period.revenue)}
+      >
+        <Sparkline label={`Daily revenue, last ${period.days} days`} values={series} />
+      </Kpi>
+      <Kpi
+        detail={
+          period.grossProfit === null
+            ? "Add purchase prices to see profit"
+            : period.costCoverage < 0.995
+              ? `Covers ${formatShare(period.costCoverage)} of sales with known costs`
+              : "Revenue minus purchase cost"
+        }
+        label="Gross profit"
+        value={period.grossProfit === null ? "—" : formatPrice(period.grossProfit)}
+      >
+        {period.margin === null ? null : (
+          <span className="text-xs tabular-nums">{formatShare(period.margin)} margin</span>
+        )}
+      </Kpi>
+      <Kpi
+        change={period.invoicesChange}
+        detail={
+          period.averageBasket === null
+            ? "No sales in this period"
+            : `${formatPrice(period.averageBasket)} average sale`
+        }
+        label="Sales"
+        value={formatCount(period.invoices)}
+      >
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatCount(report.sales.today.invoices)} today ·{" "}
+          {formatPrice(report.sales.today.revenue)}
+        </span>
+      </Kpi>
+      <Kpi
+        detail={`${formatPrice(report.inventory.valueAtRetail)} at retail`}
+        label="Stock value"
+        value={formatPrice(report.inventory.valueAtCost)}
+      >
+        {report.inventory.deadStockValue > 0 ? (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {formatPrice(report.inventory.deadStockValue)} not selling
+          </span>
+        ) : null}
+      </Kpi>
+    </section>
+  );
+}

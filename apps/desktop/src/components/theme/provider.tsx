@@ -4,6 +4,8 @@ import * as Schema from "effect/Schema";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
+import { appHost } from "@/host";
+
 export type ThemePreference = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
 
@@ -63,7 +65,7 @@ export function ThemeProvider({
   }, [theme]);
 
   React.useEffect(() => {
-    window.electronTheme?.setSource(preference);
+    appHost().theme?.setSource(preference);
   }, [preference]);
 
   const setTheme = React.useCallback(

@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceCreatePage } from "@/components/invoices/create-page";
-import { useCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/invoices/new")({
   component: NewInvoiceRoute,
@@ -9,9 +8,5 @@ export const Route = createFileRoute("/invoices/new")({
 });
 
 function NewInvoiceRoute() {
-  const products = useCatalogProducts();
-  if (products.isError && products.data.length === 0) {
-    return <p className="p-6 text-sm text-destructive">Could not load products.</p>;
-  }
-  return <InvoiceCreatePage products={products.data} />;
+  return <InvoiceCreatePage />;
 }

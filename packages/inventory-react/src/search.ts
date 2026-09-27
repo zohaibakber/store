@@ -7,8 +7,10 @@ import {
   type ReplicaSubsetReader,
   type SubsetPredicate,
 } from "@store/client-db";
-import type { StockPolicy, StockStatus } from "@store/services/stock-recommendations";
+import type { StockPolicy, StockStatus } from "@store/services/insights";
 import * as Effect from "effect/Effect";
+
+import { WorkspaceReadFailure } from "./errors";
 
 export const MAX_PRODUCT_SEARCH_RESULTS = 200;
 
@@ -31,7 +33,7 @@ export type ProductStockSummary = {
   readonly onHandUnits: number;
   readonly availableUnits: number;
   readonly expiredUnits: number;
-  readonly status: StockStatus;
+  readonly status: Extract<StockStatus, "out" | "low" | "healthy">;
   readonly lowStock: boolean;
   readonly nearestExpiry: number | null;
 };
@@ -44,7 +46,7 @@ export type CatalogProductSearchResult<Product = ProductRow> = {
 const normalizeSearchText = (value: string | null) =>
   (value ?? "").toLowerCase().replace(/\s+/gu, " ").trim();
 
-const searchTokens = (query: string) => {
+export const searchTokens = (query: string) => {
   const normalized = normalizeSearchText(query);
   return normalized ? normalized.split(" ") : [];
 };
@@ -74,7 +76,7 @@ const clampLimit = (limit: number) =>
 
 const BY_NAME: InventorySubsetSpec["orderBy"] = [{ column: "name", direction: "asc" }];
 
-const containsToken = (token: string): SubsetPredicate => ({
+export const containsToken = (token: string): SubsetPredicate => ({
   _tag: "or",
   predicates: SEARCH_COLUMNS.map((column) => ({ _tag: "like", column, pattern: `%${token}%` })),
 });
@@ -124,11 +126,8 @@ export const matchCatalogProducts = <Product extends SearchableProduct>(
     .map((entry) => entry.product);
 };
 
-type ProductSearchFailure = { readonly message: string };
-
-const searchFailure = (): ProductSearchFailure => ({
-  message: "Could not search products on this device.",
-});
+const searchFailure = () =>
+  new WorkspaceReadFailure({ message: "Could not search products on this device." });
 
 const uniqueProducts = (products: ReadonlyArray<ProductRow>): ReadonlyArray<ProductRow> => [
   ...new Map(products.map((product) => [product.id, product])).values(),
@@ -138,7 +137,7 @@ export const searchCatalogProducts = (
   reader: ReplicaSubsetReader,
   query: string,
   limit: number,
-): Effect.Effect<ReadonlyArray<ProductRow>, ProductSearchFailure> =>
+): Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadFailure> =>
   Effect.forEach(productSearchSpecs(query, limit), (spec) =>
     Effect.tryPromise({ try: () => reader.readSubset(spec), catch: searchFailure }).pipe(
       Effect.flatMap((read) => decodeProductSqliteRows(read.rows)),
@@ -168,7 +167,7 @@ export const summarizeProductStock = (
         nearestExpiry === null ? batch.expiresAt : Math.min(nearestExpiry, batch.expiresAt);
     }
   }
-  const status: StockStatus =
+  const status: ProductStockSummary["status"] =
     availableUnits === 0 ? "out" : availableUnits <= policy.minimumUnits ? "low" : "healthy";
   return {
     onHandUnits,

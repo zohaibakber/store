@@ -1,4 +1,4 @@
-import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import type { ReplicaInsightsWindow, SyncCommandEnvelope, SyncEntity } from "@store/contracts";
 import {
   layerOwnedHttpSync,
   ReplicaStore,
@@ -19,9 +19,11 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Schema from "effect/Schema";
 
 import { layerCommitForwarding } from "./commit-forwarding";
-import { lowerSqliteSubset } from "./compile";
+import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
+import { readSqliteInsightsFacts } from "./insights-sqlite";
 import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
 import {
@@ -30,11 +32,15 @@ import {
   type OutboxCommandStatus,
 } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
-import type { InventorySubsetSpec } from "./subset-spec";
+import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
   ReplicaCommitNotice,
+  ReplicaInsightsRead,
+  ReplicaInsightsReader,
   ReplicaQueryStamp,
+  ReplicaSummaryRead,
+  ReplicaSummaryReader,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
   SqliteParameter,
@@ -83,6 +89,38 @@ export const readReplicaSubset = Effect.fn("ReplicaNodeSqlite.readSubset")(funct
   return { stamp, rows } satisfies ReplicaSubsetRead;
 });
 
+export const readReplicaInsights = Effect.fn("ReplicaNodeSqlite.readInsights")(function* (
+  handle: SqliteReplicaHandle,
+  workspaceToken: string,
+  window: ReplicaInsightsWindow,
+) {
+  const stamp = yield* readReplicaStamp(handle, workspaceToken);
+  const facts = yield* readSqliteInsightsFacts(handle, window);
+  return { stamp, facts } satisfies ReplicaInsightsRead;
+});
+
+const SummaryCountRow = Schema.Struct({ count: Schema.Number });
+const SummaryValueRow = Schema.Struct({ value: Schema.String });
+
+export const readReplicaSummary = Effect.fn("ReplicaNodeSqlite.summarizeSubset")(function* (
+  handle: SqliteReplicaHandle,
+  workspaceToken: string,
+  spec: InventorySubsetSummarySpec,
+) {
+  const statements = yield* lowerSqliteSummary(spec);
+  const stamp = yield* readReplicaStamp(handle, workspaceToken);
+  const [countRow] = yield* Schema.decodeUnknownEffect(Schema.Array(SummaryCountRow))(
+    yield* handle.sql.unsafe(statements.count.sql, statements.count.parameters),
+  );
+  const distinct = yield* Effect.forEach(statements.distinct, ({ column, statement }) =>
+    handle.sql.unsafe(statement.sql, statement.parameters).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(SummaryValueRow))),
+      Effect.map((rows) => ({ column, values: rows.map((row) => row.value) })),
+    ),
+  );
+  return { stamp, summary: { count: countRow?.count ?? 0, distinct } } satisfies ReplicaSummaryRead;
+});
+
 export const seedReplicaIdentity = Effect.fn("ReplicaNodeSqlite.seedIdentity")(function* (
   handle: SqliteReplicaHandle,
   identity: SqliteReplicaIdentity,
@@ -106,34 +144,36 @@ export const layerSeededReplica = <E, R>(
     SqliteReplica.use((handle) => seedReplicaIdentity(handle, identity).pipe(Effect.orDie)),
   ).pipe(Layer.provideMerge(replica));
 
-export type SqliteReplicaSyncSession = ReplicaSubsetReader & {
-  readonly engine: "sqlite";
-  readonly replicaId: string;
-  readonly readOutboxActivity: () => Promise<ReplicaOutboxActivity>;
-  readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
-  readonly stamp: () => Promise<ReplicaQueryStamp>;
-  readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
-  readonly readCommandAllocation: () => Promise<{
-    readonly epoch: string;
-    readonly nextClientSequence: string;
-  }>;
-  readonly enqueueLocal: (
-    envelope: SyncCommandEnvelope,
-    createdAt: number,
-  ) => Promise<{ readonly changed: boolean; readonly status: string }>;
-  readonly wakeSyncUpload: () => Promise<{
-    readonly drained: boolean;
-    readonly drainCount: number;
-  }>;
-  readonly wake: (reason: SyncWakeReason) => Promise<void>;
-  readonly setVisible: (visible: boolean) => Promise<void>;
-  readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
-  readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => () => void;
-  readonly subscribeSyncHealth: (listener: (health: ReplicaSyncHealth) => void) => () => void;
-  readonly publish: (notice: ReplicaCommitNotice) => void;
-  readonly close: () => void;
-  readonly dispose: () => Promise<void>;
-};
+export type SqliteReplicaSyncSession = ReplicaSubsetReader &
+  ReplicaInsightsReader &
+  ReplicaSummaryReader & {
+    readonly engine: "sqlite";
+    readonly replicaId: string;
+    readonly readOutboxActivity: () => Promise<ReplicaOutboxActivity>;
+    readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
+    readonly stamp: () => Promise<ReplicaQueryStamp>;
+    readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
+    readonly readCommandAllocation: () => Promise<{
+      readonly epoch: string;
+      readonly nextClientSequence: string;
+    }>;
+    readonly enqueueLocal: (
+      envelope: SyncCommandEnvelope,
+      createdAt: number,
+    ) => Promise<{ readonly changed: boolean; readonly status: string }>;
+    readonly wakeSyncUpload: () => Promise<{
+      readonly drained: boolean;
+      readonly drainCount: number;
+    }>;
+    readonly wake: (reason: SyncWakeReason) => Promise<void>;
+    readonly setVisible: (visible: boolean) => Promise<void>;
+    readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
+    readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => () => void;
+    readonly subscribeSyncHealth: (listener: (health: ReplicaSyncHealth) => void) => () => void;
+    readonly publish: (notice: ReplicaCommitNotice) => void;
+    readonly close: () => void;
+    readonly dispose: () => Promise<void>;
+  };
 
 type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
   readonly replica: Layer.Layer<SqliteReplica, ReplicaError>;
@@ -205,6 +245,10 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
       withHandle((handle) => readPendingRowIdsSqlite(handle.sql, entity)),
     stamp: () => withHandle((handle) => readReplicaStamp(handle, workspaceToken)),
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
+    readInsights: (window) =>
+      withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
+    summarizeSubset: (spec) =>
+      withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
     readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
     enqueueLocal: async (envelope, createdAt) => {

@@ -1,5 +1,5 @@
 import { decodeProductId } from "@store/contracts/ids";
-import { DEFAULT_STOCK_POLICY } from "@store/services/stock-recommendations";
+import { DEFAULT_STOCK_POLICY } from "@store/services/insights";
 import { describe, expect, it } from "vitest";
 
 import {

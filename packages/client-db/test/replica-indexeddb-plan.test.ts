@@ -89,4 +89,71 @@ describe("planIndexedDbSubset", () => {
     });
     expect(plan.limit).toBe(25);
   });
+
+  it("plans name-ordered product pages onto byNameKey, including searches", () => {
+    const page = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        orderBy: [
+          { column: "name", direction: "desc" },
+          { column: "id", direction: "desc" },
+        ],
+        limit: 50,
+        offset: 100,
+      }),
+    );
+    expect(page.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: true });
+    expect(page.residual).toBeUndefined();
+
+    const search = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where: {
+          _tag: "or",
+          predicates: [
+            { _tag: "like", column: "name", pattern: "%pan%" },
+            { _tag: "like", column: "composition", pattern: "%pan%" },
+          ],
+        },
+        orderBy: [
+          { column: "name", direction: "asc" },
+          { column: "id", direction: "asc" },
+        ],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(search.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: false });
+  });
+
+  it("orders a category filter by name through byCategoryName", () => {
+    const where = { _tag: "compare", column: "categoryId", op: "eq", value: "c-1" } as const;
+    const byName = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where,
+        orderBy: [{ column: "name", direction: "desc" }],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(byName.scan).toEqual({
+      _tag: "indexEqualsOrdered",
+      index: "byCategoryName",
+      value: "c-1",
+      reverse: true,
+    });
+    expect(byName.residual).toBeUndefined();
+
+    const byPrice = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where,
+        orderBy: [{ column: "retailPrice", direction: "asc" }],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(byPrice.scan).toEqual({ _tag: "indexEquals", index: "byCategory", value: "c-1" });
+  });
 });
