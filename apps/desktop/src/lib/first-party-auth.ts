@@ -1,7 +1,6 @@
 import {
   AuthorizationCode,
   makeAuthClient,
-  nativeClient,
   type AuthClientKind,
   type IdentifyInput,
   type LoginCommand,
@@ -12,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Schema from "effect/Schema";
 
+import { appHost } from "@/host";
 import { authSession } from "@/lib/auth";
 
 const PKCE_KEY = "tabaaq-oauth-pkce";
@@ -21,12 +21,7 @@ export const authBaseUrl = (configuredAuthUrl || "http://localhost:8788").replac
 
 const client = makeAuthClient({ baseUrl: authBaseUrl });
 
-const currentClient = (): AuthClientKind => nativeClient("Tabaaq Desktop");
-
-const desktopAuth = () => {
-  if (!window.auth) throw new Error("Desktop authentication bridge is unavailable.");
-  return window.auth;
-};
+const currentClient = (): AuthClientKind => appHost().signIn.client;
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
@@ -49,16 +44,16 @@ const pkce = async () => {
 export const beginGoogle = async () => {
   const { verifier, challenge } = await pkce();
   sessionStorage.setItem(PKCE_KEY, verifier);
-  const bridge = desktopAuth();
-  const redirectUri = await bridge.getOAuthRedirectUri();
+  const signIn = appHost().signIn;
+  const redirectUri = await signIn.oauthRedirectUri();
   const authorization = await run(
     client.beginGoogle({
       redirectUri,
       codeChallenge: challenge,
-      client: currentClient(),
+      client: signIn.client,
     }),
   );
-  await bridge.openExternal(authorization.url);
+  await signIn.openAuthorization(authorization.url);
 };
 
 export const completeGoogle = async (callbackUrl: string) => {

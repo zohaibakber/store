@@ -14,6 +14,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
+import { appHost } from "@/host";
 
 type AppRoute = "/" | "/products" | "/invoices";
 
@@ -26,6 +27,7 @@ export type NavMainItem = {
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const { open: openCommandMenu } = useCommandMenu();
+  const newSaleShortcut = appHost().newSaleShortcut;
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -40,14 +42,14 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="New Sale"
-              aria-keyshortcuts="Control+N"
+              aria-keyshortcuts={newSaleShortcut.ariaKeyShortcuts}
               render={<Link to="/invoices/new" onClick={closeMobileSidebar} />}
             >
               <HugeiconsIcon icon={PlusSignCircleIcon} />
               <span>New Sale</span>
             </SidebarMenuButton>
             <SidebarMenuBadge>
-              <Kbd>Ctrl+N</Kbd>
+              <Kbd>{newSaleShortcut.label}</Kbd>
             </SidebarMenuBadge>
           </SidebarMenuItem>
           <SidebarMenuItem>

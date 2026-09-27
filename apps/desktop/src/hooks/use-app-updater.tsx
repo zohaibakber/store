@@ -5,6 +5,7 @@ import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { useContext, useEffect } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import { appHost } from "@/host";
 
 const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
@@ -36,7 +37,7 @@ const showDownloadProgress = (value: number, description: string) => {
 };
 
 const startDownload = (version: string) => {
-  const updater = window.updater;
+  const updater = appHost().updater;
   if (!updater) return;
   showDownloadProgress(0, `Downloading version ${version}.`);
   void updater
@@ -72,10 +73,10 @@ const startDownload = (version: string) => {
     });
 };
 
-export const canCheckForAppUpdate = () => Boolean(window.updater);
+export const canCheckForAppUpdate = () => Boolean(appHost().updater);
 
 const checkForAppUpdate = (registry: AtomRegistry.AtomRegistry) => {
-  const updater = window.updater;
+  const updater = appHost().updater;
   if (!updater) return;
   registry.set(manualUpdateCheckAtom, true);
   toastManager.add({
@@ -109,7 +110,7 @@ export const useCheckForAppUpdate = () => {
 export function useAppUpdater() {
   const registry = useContext(RegistryContext);
   useEffect(() => {
-    const updater = window.updater;
+    const updater = appHost().updater;
     if (!updater) return;
 
     const unsubscribe = updater.onEvent((event) => {

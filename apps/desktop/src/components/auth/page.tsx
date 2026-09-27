@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { appHost } from "@/host";
 import {
   authenticate,
   beginGoogle,
@@ -312,7 +313,7 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
 
   React.useEffect(
     () =>
-      window.auth?.onOAuthCallback((url) => {
+      appHost().signIn.onOAuthCallback?.((url) => {
         void completeGoogle(url).catch((cause: unknown) => {
           reportError(cause, { op: "google-sign-in-callback" });
           setError(
