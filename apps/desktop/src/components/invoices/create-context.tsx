@@ -38,7 +38,6 @@ interface InvoiceCreateActions {
 }
 
 interface InvoiceCreateMeta {
-  products: readonly Product[];
   errors: Array<string | null>;
   subtotal: number;
   discountTotal: number;
@@ -125,13 +124,7 @@ const lineTotal = (line: SaleLine, bulkDiscount = 0) => {
   return line.quantity * price;
 };
 
-function InvoiceCreateProvider({
-  children,
-  products,
-}: {
-  children: ReactNode;
-  products: readonly Product[];
-}) {
+function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
   const [customerName, setCustomerName] = useState("");
@@ -265,7 +258,6 @@ function InvoiceCreateProvider({
           completeSale,
         },
         meta: {
-          products,
           errors,
           subtotal,
           discountTotal,

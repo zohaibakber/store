@@ -1,6 +1,11 @@
 import * as Schema from "effect/Schema";
 
-import { INVENTORY_COLLECTION_SOURCES, MAX_IN_VALUES, MAX_LIKE_PATTERN_LENGTH } from "./sources";
+import {
+  INVENTORY_COLLECTION_SOURCES,
+  MAX_DISTINCT_COLUMNS,
+  MAX_IN_VALUES,
+  MAX_LIKE_PATTERN_LENGTH,
+} from "./sources";
 
 export const SubsetScalar = Schema.Union([
   Schema.String,
@@ -55,3 +60,18 @@ export const InventorySubsetSpec = Schema.Struct({
   offset: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
 });
 export type InventorySubsetSpec = typeof InventorySubsetSpec.Type;
+
+export const InventorySubsetSummarySpec = Schema.Struct({
+  source: Schema.Literals(INVENTORY_COLLECTION_SOURCES),
+  where: Schema.optionalKey(SubsetPredicate),
+  distinct: Schema.Array(SubsetColumn).check(Schema.isMaxLength(MAX_DISTINCT_COLUMNS)),
+});
+export type InventorySubsetSummarySpec = typeof InventorySubsetSummarySpec.Type;
+
+export const InventorySubsetSummary = Schema.Struct({
+  count: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  distinct: Schema.Array(
+    Schema.Struct({ column: SubsetColumn, values: Schema.Array(Schema.String) }),
+  ),
+});
+export type InventorySubsetSummary = typeof InventorySubsetSummary.Type;

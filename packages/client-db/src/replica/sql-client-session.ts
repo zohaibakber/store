@@ -19,9 +19,10 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Schema from "effect/Schema";
 
 import { layerCommitForwarding } from "./commit-forwarding";
-import { lowerSqliteSubset } from "./compile";
+import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
 import { readSqliteInsightsFacts } from "./insights-sqlite";
 import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
@@ -31,13 +32,15 @@ import {
   type OutboxCommandStatus,
 } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
-import type { InventorySubsetSpec } from "./subset-spec";
+import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
   ReplicaCommitNotice,
   ReplicaInsightsRead,
   ReplicaInsightsReader,
   ReplicaQueryStamp,
+  ReplicaSummaryRead,
+  ReplicaSummaryReader,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
   SqliteParameter,
@@ -96,6 +99,28 @@ export const readReplicaInsights = Effect.fn("ReplicaNodeSqlite.readInsights")(f
   return { stamp, facts } satisfies ReplicaInsightsRead;
 });
 
+const SummaryCountRow = Schema.Struct({ count: Schema.Number });
+const SummaryValueRow = Schema.Struct({ value: Schema.String });
+
+export const readReplicaSummary = Effect.fn("ReplicaNodeSqlite.summarizeSubset")(function* (
+  handle: SqliteReplicaHandle,
+  workspaceToken: string,
+  spec: InventorySubsetSummarySpec,
+) {
+  const statements = yield* lowerSqliteSummary(spec);
+  const stamp = yield* readReplicaStamp(handle, workspaceToken);
+  const [countRow] = yield* Schema.decodeUnknownEffect(Schema.Array(SummaryCountRow))(
+    yield* handle.sql.unsafe(statements.count.sql, statements.count.parameters),
+  );
+  const distinct = yield* Effect.forEach(statements.distinct, ({ column, statement }) =>
+    handle.sql.unsafe(statement.sql, statement.parameters).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(SummaryValueRow))),
+      Effect.map((rows) => ({ column, values: rows.map((row) => row.value) })),
+    ),
+  );
+  return { stamp, summary: { count: countRow?.count ?? 0, distinct } } satisfies ReplicaSummaryRead;
+});
+
 export const seedReplicaIdentity = Effect.fn("ReplicaNodeSqlite.seedIdentity")(function* (
   handle: SqliteReplicaHandle,
   identity: SqliteReplicaIdentity,
@@ -120,7 +145,8 @@ export const layerSeededReplica = <E, R>(
   ).pipe(Layer.provideMerge(replica));
 
 export type SqliteReplicaSyncSession = ReplicaSubsetReader &
-  ReplicaInsightsReader & {
+  ReplicaInsightsReader &
+  ReplicaSummaryReader & {
     readonly engine: "sqlite";
     readonly replicaId: string;
     readonly readOutboxActivity: () => Promise<ReplicaOutboxActivity>;
@@ -221,6 +247,8 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
     readInsights: (window) =>
       withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
+    summarizeSubset: (spec) =>
+      withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
     readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
     enqueueLocal: async (envelope, createdAt) => {

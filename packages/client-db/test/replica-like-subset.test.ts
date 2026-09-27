@@ -110,7 +110,7 @@ describe("like subset predicates", () => {
 
   it("rejects like predicates on columns outside the allowlist", () => {
     expect(() =>
-      Effect.runSync(lowerSqliteSubset({ ...likeSpec("aisle", "%a%"), source: "products" })),
+      Effect.runSync(lowerSqliteSubset({ ...likeSpec("retailPrice", "%1%"), source: "products" })),
     ).toThrow();
   });
 });

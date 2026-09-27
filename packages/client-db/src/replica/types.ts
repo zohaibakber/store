@@ -21,7 +21,11 @@ import type { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
 import type { OutboxCommandStatus, SqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
-import type { InventorySubsetSpec } from "./subset-spec";
+import type {
+  InventorySubsetSpec,
+  InventorySubsetSummary,
+  InventorySubsetSummarySpec,
+} from "./subset-spec";
 
 export type InventoryCollectionRow =
   | CategoryRow
@@ -70,6 +74,15 @@ export interface ReplicaSubsetReader {
   readonly readSubset: (spec: InventorySubsetSpec) => Promise<ReplicaSubsetRead>;
 }
 
+export type ReplicaSummaryRead = {
+  readonly stamp: ReplicaQueryStamp;
+  readonly summary: InventorySubsetSummary;
+};
+
+export interface ReplicaSummaryReader {
+  readonly summarizeSubset: (spec: InventorySubsetSummarySpec) => Promise<ReplicaSummaryRead>;
+}
+
 export type ReplicaInsightsRead = {
   readonly stamp: ReplicaQueryStamp;
   readonly facts: ReplicaInsightsFacts;
@@ -114,6 +127,7 @@ export type ReplicaHandle = ReplicaHandleIdentity &
   ReplicaHandleLifecycle &
   ReplicaSubsetReader &
   ReplicaInsightsReader &
+  ReplicaSummaryReader &
   ReplicaChangeFeed &
   ReplicaSyncHealthFeed &
   ReplicaMutationSurface &

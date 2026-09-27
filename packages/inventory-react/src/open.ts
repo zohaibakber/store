@@ -35,6 +35,7 @@ import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
+import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
 
@@ -114,6 +115,10 @@ const workspaceSources = (
     );
   },
   searchProducts: (query, limit) => searchCatalogProducts(replica, query, limit),
+  readProductPage: (request) => readProductPage(replica, request),
+  summarizeProducts: (filters, distinct) =>
+    summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
+  findProductsByNames: (names) => findProductsByNames(replica, names),
   readInsights: (window) =>
     Effect.tryPromise({
       try: () => replica.readInsights(window),

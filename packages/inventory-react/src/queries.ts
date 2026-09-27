@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomSuspense, useAtomValue } from "@effect/atom-react";
 import type {
   BatchRow,
   CategoryRow,
@@ -24,11 +24,13 @@ import {
   type InitialQueryBuilder,
   type Ref,
 } from "@tanstack/react-db";
+import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as React from "react";
 
 import { minuteClockAtom, stockPolicyAtom } from "./atoms";
+import { useSuspenseProductFacets } from "./product-list-hooks";
 import { useCatalogReplica } from "./provider";
 import { catalogProductSearchResults, type CatalogProductSearchResult } from "./search";
 import type { Inventory } from "./types";
@@ -271,27 +273,54 @@ export const useSuspenseInventoryInvoices = (limit = 50): ReadonlyArray<Invoice>
 export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
   useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data[0];
 
-export const useCatalogSuggestions = (): ProductSuggestions => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery({
-    query: (query) =>
-      query.from({ product: inventory.products }).select(({ product }) => ({
-        name: product.name,
-        aisle: product.aisle,
-        composition: product.composition,
-      })),
-  });
-  const distinct = (values: ReadonlyArray<string | null>) =>
-    [...new Set(values.flatMap((value) => (value?.trim() ? [value.trim()] : [])))].sort((a, b) =>
-      a.localeCompare(b),
-    );
-  const rows = live.data;
-  return {
-    names: distinct(rows.map((product) => product.name)),
-    aisles: distinct(rows.map((product) => product.aisle)),
-    compositions: distinct(rows.map((product) => product.composition)),
-  };
+const batchesForIds = (
+  builder: InitialQueryBuilder,
+  inventory: Pick<Inventory, "batches">,
+  productIds: ReadonlyArray<string>,
+) => {
+  const chunks = chunked(productIds, PRODUCT_IDS_PER_PREDICATE);
+  return builder
+    .from({ batch: inventory.batches })
+    .where(({ batch }) => {
+      const [first = [], second, ...rest] = chunks;
+      return second
+        ? or(
+            inArray(batch.productId, first),
+            inArray(batch.productId, second),
+            ...rest.map((ids) => inArray(batch.productId, ids)),
+          )
+        : inArray(batch.productId, first);
+    })
+    .select(({ batch }) => batchFields(batch));
 };
+
+export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArray<Product> => {
+  const inventory = useCatalogReplica();
+  const rows = useAtomSuspense(inventory.atoms.productSearch(limit)(query)).value;
+  const ids = rows.map((row) => row.id);
+  const categories = useLiveSuspenseQuery({ query: categoriesQuery(inventory) }).data;
+  const batches = useLiveSuspenseQuery({
+    query: (builder) => batchesForIds(builder, inventory, ids),
+  }).data;
+  return React.useMemo(() => {
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
+    return rows.flatMap((row) => {
+      const category = categoryById.get(row.categoryId);
+      return category === undefined
+        ? []
+        : [{ ...row, category, batches: batchesByProduct[row.id] ?? [] }];
+    });
+  }, [rows, categories, batches]);
+};
+
+export const useSuspenseCatalogSuggestions = (): ProductSuggestions => {
+  const facets = useSuspenseProductFacets();
+  return { names: facets.name, aisles: facets.aisle, compositions: facets.composition };
+};
+
+export const useCatalogProductLookup = () =>
+  useAtomSet(useCatalogReplica().atoms.productLookup, { mode: "promise" });
 
 export const batchesForProducts = (
   builder: InitialQueryBuilder,

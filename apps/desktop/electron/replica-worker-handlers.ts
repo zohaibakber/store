@@ -162,6 +162,16 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
               rows: toIpcRows(read.rows),
             })),
           ),
+        SummarizeSubset: ({ spec }) =>
+          withSession((current) => current.summarizeSubset(spec)).pipe(
+            Effect.map((read) => ({
+              stamp: {
+                generationId: read.stamp.generationId,
+                localCommitVersion: read.stamp.localCommitVersion,
+              },
+              summary: read.summary,
+            })),
+          ),
         ReadInsights: ({ window }) =>
           withSession((current) => current.readInsights(window)).pipe(
             Effect.map((read) => ({

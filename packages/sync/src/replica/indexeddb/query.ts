@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import type { ReplicaQueryBuilder } from "./schema";
 
@@ -350,24 +351,228 @@ const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
   return false;
 };
 
+const SCAN_CHUNK_ROWS = 500;
+const PAGE_FETCH_CONCURRENCY = 8;
+
+const decodeStoredRow = Schema.decodeUnknownSync(IndexedDbStoredRow);
+
+const primaryChunk = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+  after: Option.Option<string>,
+) => {
+  const lower: [number] | [number, string] = Option.match(after, {
+    onNone: () => [generation],
+    onSome: (id) => [generation, id],
+  });
+  const upper: [number, []] = [generation, []];
+  const range = { excludeLowerBound: Option.isSome(after) };
+  switch (table) {
+    case "categories":
+      return api.from("categories").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "products":
+      return api.from("products").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "batches":
+      return api.from("batches").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "invoices":
+      return api.from("invoices").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "invoice_items":
+      return api.from("invoice_items").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
+    case "stock_movements":
+      return api
+        .from("stock_movements")
+        .select()
+        .between(lower, upper, range)
+        .limit(SCAN_CHUNK_ROWS);
+  }
+};
+
+const primaryKeysetRows = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+) =>
+  Stream.paginate(Option.none<string>(), (after) =>
+    primaryChunk(api, table, generation, after).pipe(
+      Effect.map((raw) => {
+        const rows = raw.map((row) => decodeStoredRow(row));
+        const last = rows.at(-1);
+        const next =
+          rows.length < SCAN_CHUNK_ROWS || last === undefined
+            ? Option.none()
+            : Option.some(Option.some(stringifyCell(cell(last, "id") ?? null)));
+        return [rows, next] as const;
+      }),
+    ),
+  );
+
+const matchingRows = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+  order: "scan" | "any",
+) =>
+  Stream.filter(
+    order === "any" && plan.scan._tag === "generationPrefix"
+      ? primaryKeysetRows(api, plan.table, generation)
+      : Stream.map(
+          selectRows(api, plan, generation).stream({ chunkSize: SCAN_CHUNK_ROWS }),
+          (row) => decodeStoredRow(row),
+        ),
+    (row) => matchesResidual(row, plan.residual),
+  );
+
+type SortEntry = {
+  readonly id: string;
+  readonly keys: ReadonlyArray<IndexedDbCellValue | undefined>;
+};
+
+const compareEntries =
+  (orderBy: IndexedDbSubsetPlan["orderBy"]) =>
+  (left: SortEntry, right: SortEntry): number => {
+    for (const [index, clause] of orderBy.entries()) {
+      const ranking = compareValues(left.keys[index], right.keys[index]);
+      if (ranking !== 0) return clause.direction === "desc" ? -ranking : ranking;
+    }
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  };
+
+const insertBounded = (
+  entries: Array<SortEntry>,
+  entry: SortEntry,
+  capacity: number,
+  compare: (left: SortEntry, right: SortEntry) => number,
+) => {
+  const last = entries.at(-1);
+  if (entries.length >= capacity && last !== undefined && compare(entry, last) >= 0) {
+    return entries;
+  }
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const pivot = entries[middle];
+    if (pivot !== undefined && compare(pivot, entry) <= 0) low = middle + 1;
+    else high = middle;
+  }
+  entries.splice(low, 0, entry);
+  if (entries.length > capacity) entries.pop();
+  return entries;
+};
+
+const rowById =
+  (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) => (id: string) =>
+    selectRows(api, { ...plan, scan: { _tag: "primaryEquals", id } }, generation).pipe(
+      Effect.map((rows) => rows.map((row) => decodeStoredRow(row))),
+    );
+
+const sortedPage = (api: ReplicaQueryBuilder, generation: number, plan: IndexedDbSubsetPlan) =>
+  Effect.gen(function* () {
+    const compare = compareEntries(plan.orderBy);
+    const capacity = plan.offset + plan.limit;
+    const leaders = yield* Stream.runFold(
+      matchingRows(api, generation, plan, "any"),
+      (): Array<SortEntry> => [],
+      (entries, row) =>
+        insertBounded(
+          entries,
+          {
+            id: stringifyCell(cell(row, "id") ?? null),
+            keys: plan.orderBy.map((clause) => cell(row, clause.column)),
+          },
+          capacity,
+          compare,
+        ),
+    );
+    const rows = yield* Effect.forEach(
+      leaders.slice(plan.offset).map((entry) => entry.id),
+      rowById(api, generation, plan),
+      { concurrency: PAGE_FETCH_CONCURRENCY },
+    );
+    return rows.flat();
+  });
+
 export const executeIndexedDbSubset = (
   api: ReplicaQueryBuilder,
   generation: number,
   plan: IndexedDbSubsetPlan,
 ): Effect.Effect<ReadonlyArray<IndexedDbSubsetRow>, unknown> =>
-  Effect.gen(function* () {
-    const raw = yield* selectRows(api, plan, generation);
-    const rows = raw.map((row) => Schema.decodeUnknownSync(IndexedDbStoredRow)(row));
-    const filtered = rows.filter((row) => matchesResidual(row, plan.residual));
-    const ordered = orderMatchesScan(plan)
-      ? filtered
-      : [...filtered].sort((left, right) => {
-          for (const clause of plan.orderBy) {
-            const ranking = compareValues(cell(left, clause.column), cell(right, clause.column));
-            if (ranking !== 0) return clause.direction === "desc" ? -ranking : ranking;
+  (orderMatchesScan(plan)
+    ? Stream.runCollect(
+        Stream.take(
+          Stream.drop(matchingRows(api, generation, plan, "scan"), plan.offset),
+          plan.limit,
+        ),
+      )
+    : sortedPage(api, generation, plan)
+  ).pipe(Effect.map((rows) => Array.from(rows, stripGeneration)));
+
+export type IndexedDbSubsetSummary = {
+  readonly count: number;
+  readonly distinct: ReadonlyArray<{
+    readonly column: string;
+    readonly values: ReadonlyArray<string>;
+  }>;
+};
+
+const countGeneration = (
+  api: ReplicaQueryBuilder,
+  table: IndexedDbEntityTable,
+  generation: number,
+) => {
+  const [lower, upper] = generationBounds(generation);
+  switch (table) {
+    case "categories":
+      return api.from("categories").count().between(lower, upper);
+    case "products":
+      return api.from("products").count().between(lower, upper);
+    case "batches":
+      return api.from("batches").count().between(lower, upper);
+    case "invoices":
+      return api.from("invoices").count().between(lower, upper);
+    case "invoice_items":
+      return api.from("invoice_items").count().between(lower, upper);
+    case "stock_movements":
+      return api.from("stock_movements").count().between(lower, upper);
+  }
+};
+
+export const summarizeIndexedDbSubset = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+  distinct: ReadonlyArray<string>,
+  maximumValues: number,
+): Effect.Effect<IndexedDbSubsetSummary, unknown> =>
+  distinct.length === 0 && plan.residual === undefined && plan.scan._tag === "generationPrefix"
+    ? countGeneration(api, plan.table, generation).pipe(
+        Effect.map((count) => ({ count, distinct: [] })),
+      )
+    : Stream.runFold(
+        matchingRows(api, generation, plan, "any"),
+        () => ({ count: 0, values: distinct.map(() => new Map<string, string>()) }),
+        (summary, row) => {
+          summary.count += 1;
+          for (const [index, column] of distinct.entries()) {
+            const value = cell(row, column);
+            const text = value === null || value === undefined ? "" : stringifyCell(value).trim();
+            if (text === "") continue;
+            const values = summary.values[index];
+            const key = text.toLowerCase();
+            const existing = values?.get(key);
+            if (existing === undefined || text < existing) values?.set(key, text);
           }
-          return compareValues(cell(left, "id"), cell(right, "id"));
-        });
-    const paged = ordered.slice(plan.offset, plan.offset + plan.limit);
-    return paged.map(stripGeneration);
-  });
+          return summary;
+        },
+      ).pipe(
+        Effect.map((summary) => ({
+          count: summary.count,
+          distinct: distinct.map((column, index) => ({
+            column,
+            values: [...(summary.values[index]?.values() ?? [])]
+              .sort((left, right) => left.localeCompare(right))
+              .slice(0, maximumValues),
+          })),
+        })),
+      );

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useCatalogSuggestions, useSuspenseCatalogCategories } from "@/lib/inventory";
+import { useSuspenseCatalogSuggestions, useSuspenseCatalogCategories } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/new")({
   component: NewProductPage,
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/products/new")({
 
 function NewProductPage() {
   const categories = useSuspenseCatalogCategories();
-  const suggestions = useCatalogSuggestions();
+  const suggestions = useSuspenseCatalogSuggestions();
   return <NewProductForm categories={categories} suggestions={suggestions} />;
 }
 

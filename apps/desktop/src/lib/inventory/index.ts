@@ -1,6 +1,7 @@
 export {
+  PRODUCT_SORT_COLUMNS,
   useCatalogIsReady,
-  useCatalogSuggestions,
+  useCatalogProductLookup,
   useInventoryActions,
   useInventoryInsights,
   useProductInsight,
@@ -10,8 +11,17 @@ export {
   useSuspenseCatalogProduct,
   useSuspenseCatalogProducts,
   useSuspenseCatalogStockMovements,
+  useSuspenseCatalogSuggestions,
   useSuspenseInventoryInvoice,
   useSuspenseInventoryInvoices,
+  useSuspenseProductCount,
+  useSuspenseProductFacets,
+  useSuspenseProductPage,
+  useSuspenseProductSearch,
   type InventoryActions,
+  type ProductFacets,
+  type ProductListFilters,
+  type ProductListRequest,
+  type ProductSortColumn,
 } from "@store/inventory-react";
 export { InventoryProvider, InventoryReady } from "./provider";

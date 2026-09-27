@@ -46,7 +46,7 @@ export type CatalogProductSearchResult<Product = ProductRow> = {
 const normalizeSearchText = (value: string | null) =>
   (value ?? "").toLowerCase().replace(/\s+/gu, " ").trim();
 
-const searchTokens = (query: string) => {
+export const searchTokens = (query: string) => {
   const normalized = normalizeSearchText(query);
   return normalized ? normalized.split(" ") : [];
 };
@@ -76,7 +76,7 @@ const clampLimit = (limit: number) =>
 
 const BY_NAME: InventorySubsetSpec["orderBy"] = [{ column: "name", direction: "asc" }];
 
-const containsToken = (token: string): SubsetPredicate => ({
+export const containsToken = (token: string): SubsetPredicate => ({
   _tag: "or",
   predicates: SEARCH_COLUMNS.map((column) => ({ _tag: "like", column, pattern: `%${token}%` })),
 });

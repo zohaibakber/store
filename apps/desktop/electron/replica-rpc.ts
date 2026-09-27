@@ -1,4 +1,8 @@
-import { InventorySubsetSpec } from "@store/client-db/subset-spec";
+import {
+  InventorySubsetSpec,
+  InventorySubsetSummary,
+  InventorySubsetSummarySpec,
+} from "@store/client-db/subset-spec";
 import {
   CommandStatus,
   DecimalSequence,
@@ -24,6 +28,11 @@ export const ReplicaOpenInput = Schema.Struct({
 export const ReplicaReadSubsetInput = Schema.Struct({
   workspaceToken: NonEmptyString,
   spec: InventorySubsetSpec,
+});
+
+export const ReplicaSummarizeSubsetInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  spec: InventorySubsetSummarySpec,
 });
 
 export const ReplicaReadInsightsInput = Schema.Struct({
@@ -103,6 +112,11 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("ReadSubset", {
     payload: { spec: InventorySubsetSpec },
     success: ReplicaSubsetRows,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("SummarizeSubset", {
+    payload: { spec: InventorySubsetSummarySpec },
+    success: Schema.Struct({ stamp: ReplicaCommitStamp, summary: InventorySubsetSummary }),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("ReadInsights", {

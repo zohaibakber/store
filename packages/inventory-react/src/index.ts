@@ -36,7 +36,7 @@ export {
   useCatalogProducts,
   useCatalogProductSearch,
   useCatalogStockMovements,
-  useCatalogSuggestions,
+  useCatalogProductLookup,
   useInventoryInvoice,
   useInventoryInvoices,
   usePendingRowIds,
@@ -44,8 +44,10 @@ export {
   useSuspenseCatalogProduct,
   useSuspenseCatalogProducts,
   useSuspenseCatalogStockMovements,
+  useSuspenseCatalogSuggestions,
   useSuspenseInventoryInvoice,
   useSuspenseInventoryInvoices,
+  useSuspenseProductSearch,
 } from "./queries";
 export {
   matchCatalogProducts,
@@ -54,6 +56,21 @@ export {
   type ProductStockSummary,
   type SearchableProduct,
 } from "./search";
+export {
+  MAX_PRODUCT_PAGE_SIZE,
+  PRODUCT_FACET_COLUMNS,
+  PRODUCT_SORT_COLUMNS,
+  type ProductFacetColumn,
+  type ProductFacets,
+  type ProductListFilters,
+  type ProductListRequest,
+  type ProductSortColumn,
+} from "./product-list";
+export {
+  useSuspenseProductCount,
+  useSuspenseProductFacets,
+  useSuspenseProductPage,
+} from "./product-list-hooks";
 export {
   useInventoryInsights,
   useProductInsight,

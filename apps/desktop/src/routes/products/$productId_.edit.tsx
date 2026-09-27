@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
 import {
-  useCatalogSuggestions,
+  useSuspenseCatalogSuggestions,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
 } from "@/lib/inventory";
@@ -20,7 +20,7 @@ function EditProductPage() {
   const id = Schema.decodeUnknownSync(ProductId)(productId);
   const categories = useSuspenseCatalogCategories();
   const product = useSuspenseCatalogProduct(id);
-  const suggestions = useCatalogSuggestions();
+  const suggestions = useSuspenseCatalogSuggestions();
   if (!product) throw new Error(`Product ${productId} was not found in this catalog.`);
   return <EditProductForm categories={categories} product={product} suggestions={suggestions} />;
 }

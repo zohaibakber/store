@@ -3,6 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
+import { Suspense, useDeferredValue, useState } from "react";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
@@ -14,29 +15,35 @@ import {
   AutocompletePopup,
 } from "@/components/ui/autocomplete";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSuspenseProductSearch } from "@/lib/inventory";
 
-const matches = (product: Product, query: string) => {
-  const term = query.trim().toLowerCase();
-  if (term.length === 0) return true;
-  return (
-    product.name.toLowerCase().includes(term) ||
-    (product.composition?.toLowerCase().includes(term) ?? false)
-  );
-};
+const RESULT_LIMIT = 20;
 
 function InvoiceProductPicker() {
   const {
     state: { pickerKey },
     actions: { addProduct },
-    meta: { products },
   } = useInvoiceCreate();
+  return (
+    <Suspense fallback={<Skeleton className="h-9 w-full" />}>
+      <ProductPickerSearch key={pickerKey} onPick={addProduct} />
+    </Suspense>
+  );
+}
+
+function ProductPickerSearch({ onPick }: { readonly onPick: (product: Product) => void }) {
+  const [query, setQuery] = useState("");
+  const searchQuery = useDeferredValue(query);
+  const products = useSuspenseProductSearch(searchQuery.trim(), RESULT_LIMIT);
 
   return (
     <Autocomplete
-      filter={matches}
+      filter={null}
       items={[...products]}
       itemToStringValue={(item) => item.name}
-      key={pickerKey}
+      onValueChange={setQuery}
+      value={query}
     >
       <AutocompleteInput
         autoFocus
@@ -52,11 +59,7 @@ function InvoiceProductPicker() {
           {(product: Product) => {
             const stock = productStock(product);
             return (
-              <AutocompleteItem
-                key={product.id}
-                onClick={() => addProduct(product)}
-                value={product}
-              >
+              <AutocompleteItem key={product.id} onClick={() => onPick(product)} value={product}>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate capitalize">
                     {product.name}

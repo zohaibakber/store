@@ -22,6 +22,7 @@ import {
   REPLICA_READ_INSIGHTS_CHANNEL,
   REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
+  REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
@@ -33,6 +34,7 @@ import {
   ReplicaOpenInput,
   ReplicaReadInsightsInput,
   ReplicaReadSubsetInput,
+  ReplicaSummarizeSubsetInput,
   ReplicaWorkerRpcs,
   ReplicaWorkspaceToken,
   type ProxyFetchRequest,
@@ -81,6 +83,7 @@ const CHANNEL_METHODS = {
   [REPLICA_STAMP_CHANNEL]: "stamp",
   [REPLICA_READ_SUBSET_CHANNEL]: "readSubset",
   [REPLICA_READ_INSIGHTS_CHANNEL]: "readInsights",
+  [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: "summarizeSubset",
   [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
   [REPLICA_ALLOCATION_CHANNEL]: "readCommandAllocation",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueLocal",
@@ -122,6 +125,7 @@ const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
 const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
 const decodeReadInsightsInput = Schema.decodeUnknownSync(ReplicaReadInsightsInput);
+const decodeSummarizeSubsetInput = Schema.decodeUnknownSync(ReplicaSummarizeSubsetInput);
 const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
 
 export const registerReplicaWorkerIpc = (options: {
@@ -266,6 +270,12 @@ export const registerReplicaWorkerIpc = (options: {
       const read = decodeReadInsightsInput(input);
       return withSession(event, read.workspaceToken, "insights read", (client) =>
         client.ReadInsights({ window: read.window }),
+      );
+    },
+    [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: async (event, input) => {
+      const read = decodeSummarizeSubsetInput(input);
+      return withSession(event, read.workspaceToken, "subset summary", (client) =>
+        client.SummarizeSubset({ spec: read.spec }),
       );
     },
     [REPLICA_OUTBOX_CHANNEL]: (event, input) =>

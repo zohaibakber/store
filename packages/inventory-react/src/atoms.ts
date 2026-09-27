@@ -1,5 +1,6 @@
 import {
   EMPTY_SYNC_ACTIVITY,
+  type InventorySubsetSummary,
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
@@ -24,6 +25,14 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { WorkspaceReadFailure } from "./errors";
+import {
+  facetsFrom,
+  PRODUCT_FACET_COLUMNS,
+  type ProductFacetColumn,
+  type ProductFacets,
+  type ProductListFilters,
+  type ProductListRequest,
+} from "./product-list";
 
 let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
 
@@ -62,6 +71,16 @@ export type WorkspaceAtomSources = {
   readonly readInsights: (
     window: ReplicaInsightsWindow,
   ) => Effect.Effect<ReplicaInsightsFacts, WorkspaceReadError>;
+  readonly readProductPage: (
+    request: ProductListRequest,
+  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
+  readonly summarizeProducts: (
+    filters: ProductListFilters,
+    distinct: ReadonlyArray<ProductFacetColumn>,
+  ) => Effect.Effect<InventorySubsetSummary, WorkspaceReadError>;
+  readonly findProductsByNames: (
+    names: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -71,6 +90,9 @@ const emptySources: WorkspaceAtomSources = {
   changes: { subscribe: () => () => undefined },
   readPendingRowIds: () => Effect.succeed(NO_PENDING_ROWS),
   searchProducts: () => Effect.succeed([]),
+  readProductPage: () => Effect.succeed([]),
+  summarizeProducts: () => Effect.succeed({ count: 0, distinct: [] }),
+  findProductsByNames: () => Effect.succeed([]),
   readInsights: (window) =>
     Effect.succeed({
       window,
@@ -162,6 +184,18 @@ export type WorkspaceAtoms = {
   readonly insights: Atom.Atom<
     AsyncResult.AsyncResult<InsightsReport, WorkspaceReadError | InsightsError>
   >;
+  readonly productPage: (
+    request: ProductListRequest,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
+  readonly productCount: (
+    filters: ProductListFilters,
+  ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
+  readonly productFacets: Atom.Atom<AsyncResult.AsyncResult<ProductFacets, WorkspaceReadError>>;
+  readonly productLookup: Atom.AtomResultFn<
+    ReadonlyArray<string>,
+    ReadonlyArray<ProductRow>,
+    WorkspaceReadError
+  >;
   readonly productInsight: (
     productId: string,
   ) => Atom.Atom<
@@ -203,6 +237,20 @@ export const createWorkspaceAtoms = (
         ),
       ),
     ),
+    productPage: Atom.family((request: ProductListRequest) =>
+      Atom.make(sources.readProductPage(request)).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+    productCount: Atom.family((filters: ProductListFilters) =>
+      Atom.make(
+        sources.summarizeProducts(filters, []).pipe(Effect.map((summary) => summary.count)),
+      ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+    productFacets: Atom.make(
+      sources.summarizeProducts({}, PRODUCT_FACET_COLUMNS).pipe(Effect.map(facetsFrom)),
+    ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    productLookup: Atom.fn((names: ReadonlyArray<string>) => sources.findProductsByNames(names), {
+      concurrent: true,
+    }),
     commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
     insights,
     productInsight: productInsightFamily(insights),

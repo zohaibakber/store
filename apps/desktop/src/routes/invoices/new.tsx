@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceCreatePage } from "@/components/invoices/create-page";
-import { useSuspenseCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/invoices/new")({
   component: NewInvoiceRoute,
@@ -9,5 +8,5 @@ export const Route = createFileRoute("/invoices/new")({
 });
 
 function NewInvoiceRoute() {
-  return <InvoiceCreatePage products={useSuspenseCatalogProducts()} />;
+  return <InvoiceCreatePage />;
 }

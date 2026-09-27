@@ -1,5 +1,11 @@
 export { analyzeInventorySubset } from "./subset-ir";
-export { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
+export {
+  InventorySubsetSpec,
+  InventorySubsetSummary,
+  InventorySubsetSummarySpec,
+  SubsetPredicate,
+  SubsetScalar,
+} from "./subset-spec";
 export {
   decodeBatchSqliteRows,
   decodeCategorySqliteRows,
@@ -45,6 +51,8 @@ export type {
   ReplicaInsightsRead,
   ReplicaInsightsReader,
   ReplicaQueryStamp,
+  ReplicaSummaryRead,
+  ReplicaSummaryReader,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
   ReplicaSyncHealthFeed,

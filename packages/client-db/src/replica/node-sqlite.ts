@@ -18,6 +18,7 @@ import {
   layerSeededReplica,
   readReplicaInsights,
   readReplicaStamp,
+  readReplicaSummary,
   readReplicaSubset,
   runReplicaQuery,
   type SqliteReplicaIdentity,
@@ -117,6 +118,8 @@ export const openNodeReplicaSqlite = async (
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
     readInsights: (window) =>
       withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
+    summarizeSubset: (spec) =>
+      withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
     subscribe: publisher.subscribe,
     publish: publisher.publish,
     withWrite,
@@ -130,6 +133,7 @@ export const openNodeReplicaSqlite = async (
 export {
   readReplicaInsights,
   readReplicaStamp,
+  readReplicaSummary,
   readReplicaSubset,
   runReplicaQuery,
   seedReplicaIdentity,

@@ -4,7 +4,7 @@ import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,94 +20,10 @@ import {
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAuth } from "@/lib/auth";
-import { useCatalogIsReady, useSuspenseCatalogProducts } from "@/lib/inventory";
+import { useCatalogIsReady, useSuspenseProductSearch } from "@/lib/inventory";
 import { Route as RootRoute } from "@/routes/__root";
 
 const RESULT_LIMIT = 20;
-
-const normalize = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .toLowerCase();
-
-const trigrams = (value: string) => {
-  const result = new Set<string>();
-  for (const word of normalize(value)
-    .split(/[^a-z0-9]+/u)
-    .filter(Boolean)) {
-    const padded = `  ${word} `;
-    for (let index = 0; index + 3 <= padded.length; index += 1) {
-      result.add(padded.slice(index, index + 3));
-    }
-  }
-  return result;
-};
-
-const similarity = (left: ReadonlySet<string>, right: ReadonlySet<string>) => {
-  let shared = 0;
-  for (const gram of left) if (right.has(gram)) shared += 1;
-  const union = left.size + right.size - shared;
-  return union === 0 ? 0 : shared / union;
-};
-
-interface PreparedProduct {
-  readonly product: Product;
-  readonly name: string;
-  readonly composition: string;
-  readonly nameTrigrams: ReadonlySet<string>;
-  readonly compositionTrigrams: ReadonlySet<string>;
-}
-
-const prepareProduct = (product: Product): PreparedProduct => ({
-  product,
-  name: normalize(product.name),
-  composition: normalize(product.composition ?? ""),
-  nameTrigrams: trigrams(product.name),
-  compositionTrigrams: trigrams(product.composition ?? ""),
-});
-
-const rankProducts = (
-  products: ReadonlyArray<PreparedProduct>,
-  rawQuery: string,
-): ReadonlyArray<Product> => {
-  const query = normalize(rawQuery.trim());
-  const queryTrigrams = trigrams(query);
-  return products
-    .flatMap((entry) => {
-      const nameSimilarity = similarity(entry.nameTrigrams, queryTrigrams);
-      const compositionSimilarity = similarity(entry.compositionTrigrams, queryTrigrams);
-      const startsWithName = entry.name.startsWith(query);
-      const containsName = entry.name.includes(query);
-      const containsComposition = entry.composition.includes(query);
-      if (
-        !startsWithName &&
-        !containsName &&
-        !containsComposition &&
-        nameSimilarity <= 0.15 &&
-        compositionSimilarity <= 0.2
-      ) {
-        return [];
-      }
-      return [
-        {
-          product: entry.product,
-          score:
-            nameSimilarity +
-            compositionSimilarity * 0.5 +
-            (startsWithName ? 1 : 0) +
-            (containsName ? 0.5 : 0) +
-            (containsComposition ? 0.25 : 0),
-        },
-      ];
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score || left.product.name.localeCompare(right.product.name),
-    )
-    .slice(0, RESULT_LIMIT)
-    .map((entry) => entry.product);
-};
 
 export function InventoryCommandDialog({
   onOpenChange,
@@ -141,35 +57,37 @@ function LiveCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boole
 
 function ProductCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boolean) => void }) {
   const [query, setQuery] = useState("");
-  const navigate = useNavigate();
-  const products = useSuspenseCatalogProducts();
-  const normalizedQuery = query.trim();
-
-  const prepared = useMemo(
-    () => (normalizedQuery.length >= 2 ? products.map(prepareProduct) : []),
-    [normalizedQuery.length, products],
+  const searchQuery = useDeferredValue(query);
+  return (
+    <ProductCommandResults
+      onOpenChange={onOpenChange}
+      onQueryChange={setQuery}
+      query={query}
+      searchQuery={searchQuery}
+    />
   );
-  const results = useMemo(() => {
-    if (normalizedQuery.length === 0) return products.slice(0, RESULT_LIMIT);
-    if (normalizedQuery.length < 2) {
-      const term = normalize(normalizedQuery);
-      return products
-        .filter(
-          (product) =>
-            normalize(product.name).includes(term) ||
-            normalize(product.composition ?? "").includes(term),
-        )
-        .slice(0, RESULT_LIMIT);
-    }
-    return rankProducts(prepared, normalizedQuery);
-  }, [normalizedQuery, prepared, products]);
+}
+
+function ProductCommandResults({
+  onOpenChange,
+  onQueryChange,
+  query,
+  searchQuery,
+}: {
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onQueryChange: (query: string) => void;
+  readonly query: string;
+  readonly searchQuery: string;
+}) {
+  const navigate = useNavigate();
+  const results = useSuspenseProductSearch(searchQuery.trim(), RESULT_LIMIT);
 
   const handleOpenProduct = (product: Product) => {
     onOpenChange(false);
     void navigate({ to: "/products/$productId", params: { productId: product.id } });
   };
 
-  const emptyMessage = products.length === 0 ? "No products yet." : "No products found.";
+  const emptyMessage = searchQuery.trim() === "" ? "No products yet." : "No products found.";
 
   return (
     <Command
@@ -179,7 +97,7 @@ function ProductCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: bo
       items={[...results]}
       itemToStringValue={(item) => item.name}
       keepHighlight
-      onValueChange={setQuery}
+      onValueChange={onQueryChange}
       open
       value={query}
     >

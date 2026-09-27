@@ -15,7 +15,7 @@ import { UploadAttachmentList } from "@/components/uploads/attachment-list";
 import { UploadProvider, useUpload } from "@/components/uploads/context";
 import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
-import { useSuspenseCatalogCategories, useSuspenseCatalogProducts } from "@/lib/inventory";
+import { useSuspenseCatalogCategories } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/upload")({
   component: UploadInvoicesRoute,
@@ -23,10 +23,9 @@ export const Route = createFileRoute("/products/upload")({
 });
 
 function UploadInvoicesRoute() {
-  const products = useSuspenseCatalogProducts();
   const categories = useSuspenseCatalogCategories();
   return (
-    <UploadProvider products={products} categories={categories}>
+    <UploadProvider categories={categories}>
       <UploadPage />
     </UploadProvider>
   );

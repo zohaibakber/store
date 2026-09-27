@@ -103,6 +103,8 @@ import {
 } from "./pending";
 import {
   executeIndexedDbSubset,
+  summarizeIndexedDbSubset,
+  type IndexedDbSubsetSummary,
   generationBounds,
   type IndexedDbSubsetPlan,
   type IndexedDbSubsetRow,
@@ -273,6 +275,14 @@ interface IndexedDbSubsetReader {
     plan: IndexedDbSubsetPlan,
   ) => Effect.Effect<
     { readonly stamp: ReplicaReadStamp; readonly rows: ReadonlyArray<IndexedDbSubsetRow> },
+    ReplicaStoreError
+  >;
+  readonly summarizeSubset: (
+    plan: IndexedDbSubsetPlan,
+    distinct: ReadonlyArray<string>,
+    maximumValues: number,
+  ) => Effect.Effect<
+    { readonly stamp: ReplicaReadStamp; readonly summary: IndexedDbSubsetSummary },
     ReplicaStoreError
   >;
   readonly queryInsights: (
@@ -903,6 +913,24 @@ const makeScopedIndexedDbReplicaStore = (
             }),
           ),
         ),
+      summarizeSubset: (
+        plan: IndexedDbSubsetPlan,
+        distinct: ReadonlyArray<string>,
+        maximumValues: number,
+      ) =>
+        withQuery((api) =>
+          Effect.gen(function* () {
+            const state = yield* requireState(api);
+            const summary = yield* summarizeIndexedDbSubset(
+              api,
+              state.activeGeneration,
+              plan,
+              distinct,
+              maximumValues,
+            );
+            return { stamp: stampOf(state), summary };
+          }),
+        ),
       queryInsights: (window: ReplicaInsightsWindow) =>
         withQuery((api) =>
           Effect.gen(function* () {
@@ -947,4 +975,5 @@ export type {
   IndexedDbScan,
   IndexedDbSubsetPlan,
   IndexedDbSubsetRow,
+  IndexedDbSubsetSummary,
 } from "./query";

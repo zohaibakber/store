@@ -1,4 +1,4 @@
-import type { Category, InvoiceExtractionLine, Product, ProductId } from "@store/contracts";
+import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
 import { invoiceUploadRejection } from "@store/contracts";
 import { createContext, use, useRef, useState, type ReactNode } from "react";
 
@@ -9,7 +9,7 @@ import {
 } from "@/components/uploads/same-product";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
-import { useInventoryActions } from "@/lib/inventory";
+import { useCatalogProductLookup, useInventoryActions } from "@/lib/inventory";
 import { analyseInvoices } from "@/lib/server-api";
 
 type ExtractedLine = InvoiceExtractionLine;
@@ -54,14 +54,13 @@ const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
 
 function UploadProvider({
   children,
-  products,
   categories,
 }: {
   children: ReactNode;
-  products: readonly Product[];
   categories: readonly Category[];
 }) {
   const inventory = useInventoryActions();
+  const lookupProducts = useCatalogProductLookup();
   const isOnline = useOnline();
   const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -122,6 +121,7 @@ function UploadProvider({
       if (stockLines.length === 0) {
         throw new Error("No received stock was found in the attachments.");
       }
+      const products = await lookupProducts(stockLines.map((line) => line.name));
       setChanges(
         stockLines.map((line) => {
           const match = importProductMatch(line, products);

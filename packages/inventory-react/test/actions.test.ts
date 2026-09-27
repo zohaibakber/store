@@ -78,6 +78,9 @@ const harness = (rows?: {
     readInsights: async () => {
       throw new Error("unused");
     },
+    summarizeSubset: async () => {
+      throw new Error("unused");
+    },
     readOutboxStatuses: async () => [],
     readCommandAllocation: async () => ({
       epoch: "1",

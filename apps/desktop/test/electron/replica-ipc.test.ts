@@ -15,6 +15,7 @@ import {
   REPLICA_READ_INSIGHTS_CHANNEL,
   REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
+  REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
@@ -87,6 +88,14 @@ const setupIpc = () => {
       Effect.succeed({
         stamp: { generationId: "1", localCommitVersion: 0 },
         rows: [{ id: spec.source }],
+      }),
+    SummarizeSubset: ({ spec }) =>
+      Effect.succeed({
+        stamp: { generationId: "1", localCommitVersion: 0 },
+        summary: {
+          count: 42,
+          distinct: spec.distinct.map((column) => ({ column, values: ["A"] })),
+        },
       }),
     ReadInsights: ({ window }) =>
       Effect.succeed({
@@ -276,6 +285,21 @@ describe("replica worker IPC contract", () => {
       invoke(REPLICA_READ_INSIGHTS_CHANNEL, event, {
         workspaceToken: token,
         window: { since: 2_000, until: 1_000, utcOffsetMinutes: 0 },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      invoke(REPLICA_SUMMARIZE_SUBSET_CHANNEL, event, {
+        workspaceToken: token,
+        spec: { source: "products", distinct: ["aisle"] },
+      }),
+    ).resolves.toEqual({
+      stamp: { generationId: "1", localCommitVersion: 0 },
+      summary: { count: 42, distinct: [{ column: "aisle", values: ["A"] }] },
+    });
+    await expect(
+      invoke(REPLICA_SUMMARIZE_SUBSET_CHANNEL, event, {
+        workspaceToken: token,
+        spec: { source: "products", distinct: ["a", "b", "c", "d", "e", "f"] },
       }),
     ).rejects.toThrow();
     await expect(invoke(REPLICA_OUTBOX_CHANNEL, event, token)).resolves.toEqual(["pending"]);

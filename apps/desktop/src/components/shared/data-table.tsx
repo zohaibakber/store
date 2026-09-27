@@ -101,6 +101,7 @@ interface DataTableInstance {
   previousPage(): void;
   nextPage(): void;
   lastPage(): void;
+  clearFilters(): void;
 }
 
 interface DataTablePaginationAccess {
@@ -113,6 +114,7 @@ interface DataTablePaginationAccess {
   previousPage(): void;
   nextPage(): void;
   lastPage(): void;
+  setColumnFilters(filters: Array<never>): void;
 }
 
 interface DataTableContextValue {
@@ -142,7 +144,7 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   className,
   ...props
 }: DataTableProps<TFeatures, TData>) {
-  // SAFETY: All app tables install the pagination feature; the generic feature map
+  // SAFETY: All app tables install the pagination and filtering features; the generic feature map
   // does not expose those methods until its concrete instantiation reaches callers.
   const configuredTable = table as ReactTable<TFeatures, TData> & DataTablePaginationAccess;
   const adaptColumn = (column: Column<TFeatures, TData, unknown> | undefined) => {
@@ -191,6 +193,7 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
     previousPage: () => configuredTable.previousPage(),
     nextPage: () => configuredTable.nextPage(),
     lastPage: () => configuredTable.lastPage(),
+    clearFilters: () => configuredTable.setColumnFilters([]),
   };
 
   return (
@@ -295,10 +298,7 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
           {children}
         </MenuGroup>
         <MenuSeparator />
-        <MenuItem
-          disabled={filteredColumns.length === 0}
-          onClick={() => filteredColumns.forEach((column) => column.setFilterValue?.(undefined))}
-        >
+        <MenuItem disabled={filteredColumns.length === 0} onClick={() => table.clearFilters()}>
           <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
           Clear filters
         </MenuItem>
