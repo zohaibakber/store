@@ -3,10 +3,9 @@ import { unauthenticatedWorkspace } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
+import { appHost, type AuthSessionBridge } from "@/host";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { refreshBoundWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
-
-type AuthSessionBridge = NonNullable<Window["auth"]>;
 
 type AuthContextValue = {
   readonly refresh: () => Promise<void>;
@@ -18,11 +17,7 @@ type AuthContextValue = {
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 
-export const authSession = (): AuthSessionBridge => {
-  const bridge = globalThis.window?.auth;
-  if (!bridge) throw new Error("Desktop authentication bridge is unavailable.");
-  return bridge;
-};
+export const authSession = (): AuthSessionBridge => appHost().auth;
 
 export async function signOut() {
   try {
