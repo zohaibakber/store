@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 
-type AppRoute = "/" | "/products" | "/invoices";
+type AppRoute = "/" | "/restock" | "/products" | "/invoices";
 
 export type NavMainItem = {
   title: string;
   url: AppRoute;
   icon: React.ReactNode;
+  badge?: React.ReactNode;
 };
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
@@ -79,6 +80,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                 {item.icon}
                 <span>{item.title}</span>
               </SidebarMenuButton>
+              {item.badge}
             </SidebarMenuItem>
           ))}
         </SidebarMenu>

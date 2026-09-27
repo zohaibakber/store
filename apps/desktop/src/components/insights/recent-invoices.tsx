@@ -1,6 +1,5 @@
 import { ArrowRight01Icon, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { DashboardAnalytics } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
@@ -16,8 +15,10 @@ import {
 } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
+import { useInventoryInvoices } from "@/lib/inventory";
 
-export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["recentInvoices"] }) {
+export function RecentInvoices() {
+  const invoices = useInventoryInvoices(5).data;
   return (
     <FrameCard
       action={

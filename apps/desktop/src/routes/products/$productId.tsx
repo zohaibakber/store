@@ -11,6 +11,7 @@ import { formatPrice } from "@store/services/format";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
+import { ProductStockPlan } from "@/components/insights/product-stock-plan";
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
 import { ProductVisibilityCard } from "@/components/products/visibility";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -212,6 +213,7 @@ function ProductDetailContent({
             </dl>
           </FrameCard>
 
+          <ProductStockPlan productId={product.id} />
           <ProductBatchesCard product={product} />
         </div>
 

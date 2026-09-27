@@ -1,11 +1,31 @@
+import { SALES_RANGES, type SalesRange } from "@store/services/insights";
 import { createFileRoute } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
-import { HomePage } from "@/components/dashboard/home-page";
+import { OverviewPage } from "@/components/insights/overview-page";
+import { formValidator } from "@/lib/form-schema";
+import { lenientSearchParam } from "@/lib/search-param";
+
+const DEFAULT_RANGE: SalesRange = 30;
+
+const overviewSearch = formValidator(
+  Schema.Struct({ range: lenientSearchParam(Schema.Literals(SALES_RANGES)) }),
+);
 
 export const Route = createFileRoute("/")({
-  component: DashboardRoute,
+  validateSearch: overviewSearch,
+  component: OverviewRoute,
 });
 
-function DashboardRoute() {
-  return <HomePage />;
+function OverviewRoute() {
+  const { range = DEFAULT_RANGE } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  return (
+    <OverviewPage
+      onRangeChange={(next) =>
+        void navigate({ search: next === DEFAULT_RANGE ? {} : { range: next }, replace: true })
+      }
+      range={range}
+    />
+  );
 }

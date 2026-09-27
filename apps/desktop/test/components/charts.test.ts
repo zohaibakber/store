@@ -1,50 +1,39 @@
-import { decodeProductId } from "@store/contracts";
 import { createChartScene } from "@tanstack/charts";
 import { describe, expect, it } from "vitest";
 
-import { createRevenueChart } from "@/components/dashboard/revenue-chart";
-import { createTopProductsChart } from "@/components/dashboard/top-products";
+import { createRevenueTrendChart, createWeekdayChart } from "@/components/insights/charts";
 import { createStockMovementsChart } from "@/components/products/batches";
 
 const sceneSize = { width: 640, height: 224 };
 
-describe("createRevenueChart", () => {
-  it("emits one interaction point per day", () => {
-    const rows = [
-      { date: "2026-08-01", revenue: 12_000, invoices: 2 },
-      { date: "2026-08-02", revenue: 0, invoices: 0 },
-      { date: "2026-08-03", revenue: 4_500, invoices: 1 },
-    ];
-    const scene = createChartScene(createRevenueChart(rows), sceneSize);
-    expect(scene.points).toHaveLength(3);
-    expect(scene.points.map((point) => point.datum.date)).toEqual([
-      "2026-08-01",
-      "2026-08-02",
-      "2026-08-03",
-    ]);
+const DAY = 86_400_000;
+
+describe("createRevenueTrendChart", () => {
+  it("plots the period and its comparison line for each day", () => {
+    const rows = [0, 1, 2].map((offset) => ({
+      day: 20_000 + offset,
+      date: (20_000 + offset) * DAY,
+      revenue: offset * 1_000,
+      invoices: offset,
+      previousRevenue: 500,
+    }));
+    const scene = createChartScene(createRevenueTrendChart(rows), sceneSize);
+    const current = scene.points.filter((point) => point.markId === "revenue");
+    const previous = scene.points.filter((point) => point.markId === "previous");
+    expect(current).toHaveLength(3);
+    expect(previous).toHaveLength(3);
   });
 });
 
-describe("createTopProductsChart", () => {
-  it("emits one bar point per product", () => {
-    const rows = [
-      {
-        productId: decodeProductId("panadol"),
-        productName: "Panadol",
-        unitsSold: 12,
-        revenue: 24_000,
-      },
-      {
-        productId: decodeProductId("brufen"),
-        productName: "Brufen",
-        unitsSold: 4,
-        revenue: 8_000,
-      },
-    ];
-    const scene = createChartScene(createTopProductsChart(rows), sceneSize);
-    const barPoints = scene.points.filter((point) => point.markId === "product-bars");
-    expect(barPoints).toHaveLength(2);
-    expect(barPoints.map((point) => point.datum.productName)).toEqual(["Panadol", "Brufen"]);
+describe("createWeekdayChart", () => {
+  it("emits one bar per weekday", () => {
+    const rows = Array.from({ length: 7 }, (_, weekday) => ({
+      weekday,
+      revenue: weekday * 100,
+      peak: weekday === 6,
+    }));
+    const scene = createChartScene(createWeekdayChart(rows), sceneSize);
+    expect(scene.points.filter((point) => point.markId === "weekday")).toHaveLength(7);
   });
 });
 

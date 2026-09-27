@@ -1,7 +1,12 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import { createAppCatalogLifetime, type InventoryHost } from "@store/inventory-react";
+import {
+  configureInventoryPreferences,
+  createAppCatalogLifetime,
+  type InventoryHost,
+} from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
+import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -16,12 +21,26 @@ import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace
 
 import { getRouter } from "./router";
 
+const browserStorage = (): Storage | null => {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const preferenceStore = () => {
+  const storage = browserStorage();
+  return storage === null ? KeyValueStore.layerMemory : KeyValueStore.layerStorage(() => storage);
+};
+
 export const mountApp = (input: {
   readonly snapshot: WorkspaceSnapshot;
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
   readonly inventory?: InventoryHost;
 }) => {
+  configureInventoryPreferences(preferenceStore());
   const session = makeReplayChannel<WorkspaceSession>();
   session.publish({ _tag: "Steady", snapshot: input.snapshot });
   const catalog = createAppCatalogLifetime();

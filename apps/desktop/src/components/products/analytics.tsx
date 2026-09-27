@@ -1,31 +1,14 @@
 import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Product } from "@store/contracts";
-import { productStock, productStockValue } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
+import type { RestockView } from "@/components/insights/restock-page";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-
-const LOW_STOCK_THRESHOLD = 10;
-
-const summarize = (products: readonly Product[]) => {
-  let outOfStock = 0;
-  let lowStock = 0;
-  let hidden = 0;
-  let stockValue = 0;
-
-  for (const product of products) {
-    const stock = productStock(product);
-    if (!product.visible) hidden += 1;
-    if (stock === 0) outOfStock += 1;
-    else if (stock <= LOW_STOCK_THRESHOLD) lowStock += 1;
-    stockValue += productStockValue(product);
-  }
-
-  return { outOfStock, lowStock, hidden, stockValue };
-};
+import { useInventoryInsights } from "@/lib/inventory";
+import { cn } from "@/lib/utils";
 
 function PrivateStockValue({ value }: { value: string }) {
   const [visible, setVisible] = useState(false);
@@ -33,10 +16,10 @@ function PrivateStockValue({ value }: { value: string }) {
 
   return (
     <div className="relative bg-background px-3 py-2">
-      <p className="truncate text-xs text-muted-foreground">Stock value</p>
+      <p className="truncate text-xs text-muted-foreground">Stock value at cost</p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}
-        className="font-mono text-lg font-medium tabular-nums"
+        className="text-lg font-medium tabular-nums"
       >
         {visible ? value : "••••••"}
       </p>
@@ -63,43 +46,58 @@ function PrivateStockValue({ value }: { value: string }) {
   );
 }
 
-export function ProductAnalytics({ products }: { products: readonly Product[] }) {
-  const { outOfStock, lowStock, hidden, stockValue } = summarize(products);
+function StockTile({
+  label,
+  value,
+  view,
+  tone,
+}: {
+  readonly label: string;
+  readonly value: number | null;
+  readonly view: RestockView;
+  readonly tone: "error" | "warning" | "none";
+}) {
+  return (
+    <Link
+      className="bg-background px-3 py-2 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+      search={{ view }}
+      to="/restock"
+    >
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "text-lg font-medium tabular-nums",
+          value !== null && value > 0 && tone === "error" && "text-destructive-foreground",
+          value !== null && value > 0 && tone === "warning" && "text-warning-foreground",
+        )}
+      >
+        {value === null ? "—" : value}
+      </p>
+    </Link>
+  );
+}
 
-  const tiles: ReadonlyArray<{ label: string; value: string; tone?: string }> = [
-    { label: "Products", value: String(products.length) },
-    {
-      label: "Out of stock",
-      value: String(outOfStock),
-      tone: outOfStock > 0 ? "text-destructive-foreground" : undefined,
-    },
-    {
-      label: `Low stock (≤${LOW_STOCK_THRESHOLD})`,
-      value: String(lowStock),
-      tone: lowStock > 0 ? "text-warning-foreground" : undefined,
-    },
-    { label: "Hidden", value: String(hidden) },
-  ];
-
+export function ProductAnalytics() {
+  const insights = useInventoryInsights();
+  const report = insights._tag === "Ready" ? insights.report : null;
+  const counts = report?.counts;
   return (
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
-      {tiles.slice(0, 3).map((tile) => (
-        <div className="bg-background px-3 py-2" key={tile.label}>
-          <p className="truncate text-xs text-muted-foreground">{tile.label}</p>
-          <p className={`font-mono text-lg font-medium tabular-nums ${tile.tone ?? ""}`}>
-            {tile.value}
-          </p>
-        </div>
-      ))}
-      <PrivateStockValue value={formatPrice(stockValue)} />
-      {tiles.slice(3).map((tile) => (
-        <div className="bg-background px-3 py-2" key={tile.label}>
-          <p className="truncate text-xs text-muted-foreground">{tile.label}</p>
-          <p className={`font-mono text-lg font-medium tabular-nums ${tile.tone ?? ""}`}>
-            {tile.value}
-          </p>
-        </div>
-      ))}
+      <StockTile label="Out of stock" tone="error" value={counts?.out ?? null} view="out" />
+      <StockTile
+        label="Running low"
+        tone="warning"
+        value={counts ? counts.critical + counts.low : null}
+        view="action"
+      />
+      <StockTile label="Not selling" tone="none" value={counts?.dead ?? null} view="dead" />
+      <StockTile
+        label="Overstocked"
+        tone="none"
+        value={counts?.overstock ?? null}
+        view="overstock"
+      />
+      <PrivateStockValue value={report ? formatPrice(report.inventory.valueAtCost) : "—"} />
     </div>
   );
 }

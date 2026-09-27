@@ -6,9 +6,12 @@ export {
   useCatalogStockMovements,
   useCatalogSuggestions,
   useInventoryActions,
-  useInventoryDashboardAnalytics,
+  useInventoryInsights,
   useInventoryInvoice,
   useInventoryInvoices,
+  useProductInsight,
+  useProductInsightIndex,
+  useStockPolicy,
   type InventoryActions,
 } from "@store/inventory-react";
 export { InventoryProvider, InventoryReady } from "./provider";

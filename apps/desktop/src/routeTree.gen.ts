@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as ProductsRouteImport } from './routes/products'
+import { Route as RestockRouteImport } from './routes/restock'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as InvoicesIndexRouteImport } from './routes/invoices/index'
@@ -42,6 +43,11 @@ const InvoicesRoute = InvoicesRouteImport.update({
 const ProductsRoute = ProductsRouteImport.update({
   id: '/products',
   path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RestockRoute = RestockRouteImport.update({
+  id: '/restock',
+  path: '/restock',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
+  '/restock': typeof RestockRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
@@ -148,6 +155,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/restock': typeof RestockRoute
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
+  '/restock': typeof RestockRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
@@ -192,6 +201,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invoices'
     | '/products'
+    | '/restock'
     | '/settings'
     | '/sign-in'
     | '/invoices/$invoiceId'
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/restock'
     | '/sign-in'
     | '/invoices/$invoiceId'
     | '/invoices/new'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invoices'
     | '/products'
+    | '/restock'
     | '/settings'
     | '/sign-in'
     | '/invoices/$invoiceId'
@@ -253,6 +265,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InvoicesRoute: typeof InvoicesRouteWithChildren
   ProductsRoute: typeof ProductsRouteWithChildren
+  RestockRoute: typeof RestockRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SignInRoute: typeof SignInRoute
 }
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       path: '/products'
       fullPath: '/products'
       preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/restock': {
+      id: '/restock'
+      path: '/restock'
+      fullPath: '/restock'
+      preLoaderRoute: typeof RestockRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -457,6 +477,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InvoicesRoute: InvoicesRouteWithChildren,
   ProductsRoute: ProductsRouteWithChildren,
+  RestockRoute: RestockRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SignInRoute: SignInRoute,
 }

@@ -4,8 +4,12 @@ export type {
   RejectedCommand,
   RejectedCommandTarget,
 } from "@store/client-db";
-export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
-export { useInventoryDashboardAnalytics } from "./dashboard";
+export {
+  configureInventoryPreferences,
+  minuteClockAtom,
+  stockPolicyAtom,
+  type CommandExecutionState,
+} from "./atoms";
 export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
 export type { InventoryHost, InventoryScope, ReplicaOpenIdentity } from "./host";
 export {
@@ -44,6 +48,12 @@ export {
   type ProductStockSummary,
   type SearchableProduct,
 } from "./search";
-export type { RecommendationState } from "./stock-recommendations";
+export {
+  useInventoryInsights,
+  useProductInsight,
+  useProductInsightIndex,
+  useStockPolicy,
+  type InsightsState,
+} from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
 export type { Inventory, InventoryActions, InventoryState } from "./types";

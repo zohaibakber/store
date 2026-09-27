@@ -7,7 +7,7 @@ import {
   type ReplicaSubsetReader,
   type SubsetPredicate,
 } from "@store/client-db";
-import type { StockPolicy, StockStatus } from "@store/services/stock-recommendations";
+import type { StockPolicy, StockStatus } from "@store/services/insights";
 import * as Effect from "effect/Effect";
 
 export const MAX_PRODUCT_SEARCH_RESULTS = 200;
@@ -31,7 +31,7 @@ export type ProductStockSummary = {
   readonly onHandUnits: number;
   readonly availableUnits: number;
   readonly expiredUnits: number;
-  readonly status: StockStatus;
+  readonly status: Extract<StockStatus, "out" | "low" | "healthy">;
   readonly lowStock: boolean;
   readonly nearestExpiry: number | null;
 };
@@ -168,7 +168,7 @@ export const summarizeProductStock = (
         nearestExpiry === null ? batch.expiresAt : Math.min(nearestExpiry, batch.expiresAt);
     }
   }
-  const status: StockStatus =
+  const status: ProductStockSummary["status"] =
     availableUnits === 0 ? "out" : availableUnits <= policy.minimumUnits ? "low" : "healthy";
   return {
     onHandUnits,

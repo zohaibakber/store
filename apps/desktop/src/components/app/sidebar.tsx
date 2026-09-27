@@ -1,5 +1,5 @@
 import {
-  BubbleChatIcon,
+  DeliveryTruck01Icon,
   HomeIcon,
   Invoice01Icon,
   SettingsIcon,
@@ -18,16 +18,41 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
+
+function RestockCountReady() {
+  const insights = useInventoryInsights();
+  if (insights._tag !== "Ready") return null;
+  const { out, critical, low } = insights.report.counts;
+  const count = out + critical + low;
+  if (count === 0) return null;
+  return (
+    <SidebarMenuBadge aria-label={`${count} products need restocking`}>
+      <span className="tabular-nums">{count > 99 ? "99+" : count}</span>
+    </SidebarMenuBadge>
+  );
+}
+
+function RestockCount() {
+  return useCatalogIsReady() ? <RestockCountReady /> : null;
+}
 
 const navMain = [
   {
     title: "Home",
     url: "/",
     icon: <HugeiconsIcon icon={HomeIcon} />,
+  },
+  {
+    title: "Restock",
+    url: "/restock",
+    icon: <HugeiconsIcon icon={DeliveryTruck01Icon} />,
+    badge: <RestockCount />,
   },
   {
     title: "Products",
@@ -62,15 +87,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <HugeiconsIcon icon={SettingsIcon} />
               <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Feedback"
-              render={<a href="#" onClick={(event) => event.preventDefault()} />}
-            >
-              <HugeiconsIcon icon={BubbleChatIcon} />
-              <span>Feedback</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

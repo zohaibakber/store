@@ -114,6 +114,14 @@ const workspaceSources = (
     );
   },
   searchProducts: (query, limit) => searchCatalogProducts(replica, query, limit),
+  readInsights: (window) =>
+    Effect.tryPromise({
+      try: () => replica.readInsights(window),
+      catch: workspaceReadFailure,
+    }).pipe(
+      Effect.map((read) => read.facts),
+      Effect.withSpan("InventoryInsights.readFacts"),
+    ),
 });
 
 type CollectionDeps = {
@@ -268,11 +276,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
     const atoms = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        createWorkspaceAtoms(
-          scope.organizationId,
-          outbox.status,
-          workspaceSources(replica, outbox.activity),
-        ),
+        createWorkspaceAtoms(outbox.status, workspaceSources(replica, outbox.activity)),
       ),
       (opened) => Effect.sync(() => opened.registry.dispose()),
     );

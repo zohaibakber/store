@@ -82,7 +82,7 @@ function ProductsContent({ products }: { readonly products: ReadonlyArray<Produc
           </PageAction>
         </PageHeader>
         <PageContent>
-          <ProductAnalytics products={products} />
+          <ProductAnalytics />
           <DataTableContent>
             <DataTableFooter>
               <DataTablePagination />

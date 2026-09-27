@@ -5,20 +5,35 @@ import {
   type ProductRow,
   type ReplicaChangeFeed,
 } from "@store/client-db";
-import type { Invoice, Product, SyncEntity } from "@store/contracts";
+import type { ReplicaInsightsFacts, ReplicaInsightsWindow, SyncEntity } from "@store/contracts";
 import {
   DEFAULT_STOCK_POLICY,
-  StockRecommendationService,
-  stockRecommendationLayer,
-  type StockPolicy,
-  type StockReport,
-} from "@store/services/stock-recommendations";
-import { Effect, Schedule } from "effect";
+  InsightsService,
+  insightsLayer,
+  insightsWindowFor,
+  StockPolicy,
+  type InsightsReport,
+} from "@store/services/insights";
+import { Effect, Layer, Schedule } from "effect";
+import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
-export const stockPolicyAtom = Atom.make(DEFAULT_STOCK_POLICY);
+let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
+
+export const configureInventoryPreferences = (store: Layer.Layer<KeyValueStore.KeyValueStore>) => {
+  preferenceStore = store;
+};
+
+const preferencesRuntime = Atom.runtime(() => preferenceStore);
+
+export const stockPolicyAtom = Atom.kvs({
+  runtime: preferencesRuntime,
+  key: "tabaaq.stock-policy.v2",
+  schema: StockPolicy,
+  defaultValue: () => DEFAULT_STOCK_POLICY,
+}).pipe(Atom.keepAlive);
 
 export const minuteClockAtom = Atom.make((get) => {
   const fiber = Effect.runFork(
@@ -36,13 +51,6 @@ export type CommandExecutionState =
   | { readonly _tag: "pending"; readonly operationId: string; readonly status: string }
   | { readonly _tag: "failed"; readonly operationId: string; readonly message: string };
 
-type StockRecommendationArg = {
-  readonly products: ReadonlyArray<Product>;
-  readonly invoices: ReadonlyArray<Invoice>;
-  readonly policy: StockPolicy;
-  readonly refresh: number;
-};
-
 type WorkspaceReadError = { readonly message: string };
 
 export type WorkspaceAtomSources = {
@@ -54,6 +62,9 @@ export type WorkspaceAtomSources = {
     query: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
+  readonly readInsights: (
+    window: ReplicaInsightsWindow,
+  ) => Effect.Effect<ReplicaInsightsFacts, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -63,6 +74,16 @@ const emptySources: WorkspaceAtomSources = {
   changes: { subscribe: () => () => undefined },
   readPendingRowIds: () => Effect.succeed(NO_PENDING_ROWS),
   searchProducts: () => Effect.succeed([]),
+  readInsights: (window) =>
+    Effect.succeed({
+      window,
+      products: [],
+      batches: [],
+      sales: [],
+      days: [],
+      hours: [],
+      truncated: false,
+    }),
 };
 
 const sameRowIds = (
@@ -74,7 +95,38 @@ const sameRowIds = (
   left.value.size === right.value.size &&
   [...left.value].every((id) => right.value.has(id));
 
-const stockRecommendationRuntime = Atom.runtime(stockRecommendationLayer);
+const insightsRuntime = Atom.runtime(insightsLayer);
+
+const INSIGHT_ENTITIES: ReadonlySet<SyncEntity> = new Set([
+  "category",
+  "product",
+  "batch",
+  "invoice",
+  "invoiceItem",
+]);
+const INSIGHTS_SETTLE_MILLIS = 750;
+const INSIGHTS_DAY_ROLLOVER_MILLIS = 15 * 60_000;
+
+const localUtcOffsetMinutes = (at: number) => -new Date(at).getTimezoneOffset();
+
+const insightsFactsAtom = (sources: WorkspaceAtomSources) =>
+  Atom.make((get) => {
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    get.addFinalizer(
+      sources.changes.subscribe((notice) => {
+        if (!notice.touchedEntities.some((entity) => INSIGHT_ENTITIES.has(entity))) return;
+        clearTimeout(settle);
+        settle = setTimeout(() => get.refreshSelf(), INSIGHTS_SETTLE_MILLIS);
+      }),
+    );
+    const rollover = setInterval(() => get.refreshSelf(), INSIGHTS_DAY_ROLLOVER_MILLIS);
+    get.addFinalizer(() => {
+      clearTimeout(settle);
+      clearInterval(rollover);
+    });
+    const now = Date.now();
+    return sources.readInsights(insightsWindowFor(now, localUtcOffsetMinutes(now)));
+  });
 
 const refreshedOnCommits = <A>(
   sources: WorkspaceAtomSources,
@@ -90,6 +142,21 @@ const refreshedOnCommits = <A>(
     return read();
   });
 
+const insightsReportAtom = (sources: WorkspaceAtomSources) => {
+  const facts = insightsFactsAtom(sources);
+  return insightsRuntime
+    .atom((get) =>
+      Effect.gen(function* () {
+        const current = yield* get.result(facts);
+        const policy = get(stockPolicyAtom);
+        return yield* InsightsService.use((service) =>
+          service.analyze({ facts: current, policy }),
+        ).pipe(Effect.mapError((failure) => ({ message: failure.message })));
+      }),
+    )
+    .pipe(Atom.keepAlive);
+};
+
 export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Writable<InventorySyncStatus>;
@@ -103,11 +170,10 @@ export type WorkspaceAtoms = {
     query: string,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
   readonly commandExecution: Atom.Writable<CommandExecutionState>;
-  readonly stockRecommendations: Atom.AtomResultFn<StockRecommendationArg, StockReport, string>;
+  readonly insights: Atom.Atom<AsyncResult.AsyncResult<InsightsReport, WorkspaceReadError>>;
 };
 
 export const createWorkspaceAtoms = (
-  organizationId: string,
   initialSync: InventorySyncStatus = { _tag: "caughtUp" },
   sources: WorkspaceAtomSources = emptySources,
 ): WorkspaceAtoms => ({
@@ -125,16 +191,5 @@ export const createWorkspaceAtoms = (
     ),
   ),
   commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
-  stockRecommendations: stockRecommendationRuntime
-    .fn((arg: StockRecommendationArg) =>
-      StockRecommendationService.use((service) =>
-        service.analyze({
-          products: arg.products,
-          invoices: arg.invoices,
-          policy: arg.policy,
-          organizationId,
-        }),
-      ).pipe(Effect.mapError((failure) => failure.message)),
-    )
-    .pipe(Atom.keepAlive),
+  insights: insightsReportAtom(sources),
 });
