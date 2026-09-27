@@ -4,7 +4,7 @@ import type { PartitionDigest, SyncSubscription } from "./protocol";
 import type { SyncEntity } from "./schema";
 import type { SnapshotRow } from "./snapshot";
 
-export const PARTITION_DIGEST_DOMAIN = "store.sync.partition-digest.v1";
+const PARTITION_DIGEST_DOMAIN = "store.sync.partition-digest.v1";
 
 const PARTITION_ENTITIES = [
   "category",

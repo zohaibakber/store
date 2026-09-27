@@ -5,7 +5,7 @@ import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { storeErrorMessage } from "@/lib/errors";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 
 const AUTO_BATCH = "auto";
 

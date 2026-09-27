@@ -9,6 +9,7 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
@@ -16,7 +17,11 @@ import { loadDeviceId } from "./device-id";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
-import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
+import {
+  isOAuthCallbackUrl,
+  OAUTH_CALLBACK_CHANNEL,
+  oauthCallbackRedirectUri,
+} from "./oauth-callback";
 import {
   desktopRendererOrigin,
   desktopRendererUrl,
@@ -36,9 +41,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 process.env.APP_ROOT = path.join(__dirname, "..");
 
-export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
+const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
+const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
@@ -114,9 +119,20 @@ registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
 const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
-const oauthCallbacks = makeOAuthCallbackMailbox(ELECTRON_PROTOCOL, () => {
-  win?.webContents.send("auth:oauth-callback-available");
-});
+
+let pendingOAuthCallback: string | null = null;
+
+const deliverOAuthCallback = () => {
+  if (!pendingOAuthCallback || !win || win.webContents.isLoading()) return;
+  win.webContents.send(OAUTH_CALLBACK_CHANNEL, pendingOAuthCallback);
+  pendingOAuthCallback = null;
+};
+
+const publishOAuthCallback = (url: string) => {
+  if (!isOAuthCallbackUrl(url, ELECTRON_PROTOCOL)) return;
+  pendingOAuthCallback = url;
+  deliverOAuthCallback();
+};
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
@@ -144,16 +160,10 @@ function registerRendererCsp() {
   });
 }
 
-let authTransition: Promise<void> = Promise.resolve();
+const authTransitions = Semaphore.makeUnsafe(1);
 
-const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> => {
-  const result = authTransition.then(transition, transition);
-  authTransition = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
-};
+const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> =>
+  Effect.runPromise(authTransitions.withPermit(Effect.promise(transition)));
 
 const publishSession = (snapshot: WorkspaceSnapshot) => {
   win?.webContents.send("auth:session-changed", snapshot);
@@ -179,11 +189,7 @@ function registerAuthIpc() {
   });
   ipcMain.handle("auth:get-oauth-redirect-uri", (event) => {
     assertRendererIpc(event.senderFrame);
-    return `${ELECTRON_PROTOCOL}://auth/callback`;
-  });
-  ipcMain.handle("auth:take-oauth-callback", (event) => {
-    assertRendererIpc(event.senderFrame);
-    return oauthCallbacks.take();
+    return oauthCallbackRedirectUri(ELECTRON_PROTOCOL);
   });
   ipcMain.handle("auth:adopt-session", async (event, input) => {
     assertRendererIpc(event.senderFrame);
@@ -286,6 +292,7 @@ function createWindow() {
   app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
+  win.webContents.on("did-finish-load", deliverOAuthCallback);
   forwardRendererLogs(win);
 
   win.on("closed", () => {
@@ -353,10 +360,6 @@ app.on("before-quit", shutdown);
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-
-const publishOAuthCallback = (url: string) => {
-  oauthCallbacks.offer(url);
-};
 
 app.on("open-url", (event, url) => {
   event.preventDefault();

@@ -4,20 +4,13 @@ export type {
   RejectedCommand,
   RejectedCommandTarget,
 } from "@store/client-db";
-export {
-  minuteClockAtom,
-  stockPolicyAtom,
-  type CommandExecutionState,
-  type WorkspaceAtoms,
-  type WorkspaceAtomSources,
-  type WorkspaceReadError,
-} from "./atoms";
+export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
 export { useInventoryDashboardAnalytics } from "./dashboard";
+export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
 export type { InventoryHost, InventoryScope, ReplicaOpenIdentity } from "./host";
 export {
   createAppCatalogLifetime,
   createCatalogLifetime,
-  StaleCatalogLease,
   type CatalogLease,
   type CatalogLifetime,
   type CatalogReplica,
@@ -32,7 +25,6 @@ export {
   useInventoryState,
   useInventorySyncActivity,
   useInventorySyncStatus,
-  type InventoryProviderProps,
 } from "./provider";
 export {
   useCatalogCategories,
@@ -46,27 +38,12 @@ export {
   usePendingRowIds,
 } from "./queries";
 export {
-  catalogProductSearchResults,
   matchCatalogProducts,
-  MAX_PRODUCT_SEARCH_RESULTS,
-  productSearchRank,
-  productSearchSpecs,
-  searchCatalogProducts,
   summarizeProductStock,
   type CatalogProductSearchResult,
-  type ProductSearchFailure,
   type ProductStockSummary,
   type SearchableProduct,
-  type StockBatch,
 } from "./search";
-export { useStockRecommendations, type RecommendationState } from "./stock-recommendations";
+export type { RecommendationState } from "./stock-recommendations";
 export { inventorySyncStatusLabel } from "./sync-status";
-export type {
-  CreatedProductWithBatch,
-  CreateProductWithBatchInput,
-  Inventory,
-  InventoryActions,
-  InventoryActor,
-  InventoryCollection,
-  InventoryState,
-} from "./types";
+export type { Inventory, InventoryActions, InventoryState } from "./types";

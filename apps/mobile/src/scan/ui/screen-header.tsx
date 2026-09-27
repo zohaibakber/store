@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, space, touch } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Icon } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
@@ -38,11 +39,7 @@ export function ScreenHeader({
         )}
       </View>
       {action === undefined ? null : (
-        <Pressable accessibilityRole="button" onPress={action.onPress} style={styles.action}>
-          <Text size="sm" weight="medium">
-            {action.label}
-          </Text>
-        </Pressable>
+        <ActionButton label={action.label} onPress={action.onPress} variant="text" />
       )}
     </View>
   );
@@ -65,9 +62,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   titles: { flex: 1, gap: 2, paddingVertical: space[2] },
-  action: {
-    minHeight: touch.minimum,
-    justifyContent: "center",
-    paddingHorizontal: space[3],
-  },
 });

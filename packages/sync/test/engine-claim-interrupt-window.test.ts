@@ -25,7 +25,7 @@ const unusedTransport: SyncTransport = {
   mintLiveTicket: () => Effect.die("unused"),
 };
 
-it.live("holds an interrupt that lands between claiming a command and sending it", () =>
+it.effect("holds an interrupt that lands between claiming a command and sending it", () =>
   withSeededReplica((store) =>
     Effect.gen(function* () {
       yield* runReplicaTransaction(store, (tx) => saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1));
@@ -65,8 +65,9 @@ it.live("holds an interrupt that lands between claiming a command and sending it
       expect(duringClaim?.status).toBe("sending");
       expect(duringClaim?.claimId).not.toBeNull();
 
-      const interrupting = yield* Effect.forkChild(Fiber.interrupt(upload));
-      yield* Effect.sleep("20 millis");
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(upload), {
+        startImmediately: true,
+      });
       yield* Deferred.succeed(proceed, undefined);
       yield* Fiber.join(interrupting);
 

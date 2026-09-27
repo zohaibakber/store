@@ -1,12 +1,11 @@
 import { Sentry } from "@/lib/sentry";
 
-export interface ReportedErrorContext {
+interface ReportedErrorContext {
   readonly op: string;
   readonly scopeId?: string;
 }
 
-export const asError = (cause: unknown) =>
-  cause instanceof Error ? cause : new Error(String(cause));
+const asError = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)));
 
 export const reportError = (cause: unknown, context: ReportedErrorContext) => {
   const error = asError(cause);

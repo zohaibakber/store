@@ -2,6 +2,7 @@ import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 
 import {
@@ -14,7 +15,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
-import { formatDateTime, formatPrice } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 function BackToInvoices() {
   return (
@@ -93,7 +94,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
               {invoice.items.length} {invoice.items.length === 1 ? "line" : "lines"} · {unitsSold}
             </span>
           </div>
-          <div className="flex items-center justify-between text-xl font-medium">
+          <div className="flex items-center justify-between text-lg font-medium">
             <span>Total</span>
             <span className="font-mono tabular-nums">{formatPrice(invoice.total)}</span>
           </div>

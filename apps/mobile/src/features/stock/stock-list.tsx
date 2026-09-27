@@ -14,9 +14,9 @@ import * as React from "react";
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
 import { colors, space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
-import { ActionButton } from "../action-button";
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
 import { SCAN_FAB_CLEARANCE } from "../scan-fab";
 import { unsyncedOperationId } from "../sync/pending";

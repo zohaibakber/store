@@ -21,11 +21,7 @@ const CategoryPackRow = Schema.Struct({ tracksPacks: Schema.Number, name: Schema
 const ProductVisibleRow = Schema.Struct({ visible: Schema.Number, unitPrice: Schema.Number });
 const BatchQtyRow = Schema.Struct({ packQuantity: Schema.Number, unitQuantity: Schema.Number });
 const InvoiceTotalRow = Schema.Struct({ total: Schema.Number });
-const StateRow = Schema.Struct({
-  epoch: Schema.String,
-  incarnation: Schema.String,
-  status: Schema.String,
-});
+const TableNameRow = Schema.Struct({ name: Schema.String });
 const PointerRow = Schema.Struct({
   id: Schema.Number,
   releaseId: Schema.String,
@@ -36,7 +32,7 @@ const decodeCategoryPack = Schema.decodeUnknownSync(CategoryPackRow);
 const decodeProductVisible = Schema.decodeUnknownSync(ProductVisibleRow);
 const decodeBatchQty = Schema.decodeUnknownSync(BatchQtyRow);
 const decodeInvoiceTotal = Schema.decodeUnknownSync(InvoiceTotalRow);
-const decodeState = Schema.decodeUnknownSync(StateRow);
+const decodeTableNames = Schema.decodeUnknownSync(Schema.Array(TableNameRow));
 const decodePointers = Schema.decodeUnknownSync(Schema.Array(PointerRow));
 const decodeReleases = Schema.decodeUnknownSync(Schema.Array(ReleaseRow));
 
@@ -102,22 +98,28 @@ describe("cloudflare migration action", () => {
       ).toEqual({
         total: 200,
       });
+      const state = yield* Effect.gen(function* () {
+        const target = yield* OrganizationInventoryImport;
+        return yield* target.readImportState(ORG);
+      }).pipe(Effect.provide(harness.layer));
+      expect(state).toEqual({ _tag: "ready", organizationId: ORG, importId: "import-fixed" });
       expect(
-        decodeState(
-          yield* firstRow(harness.target, "select epoch, incarnation, status from inventory_state"),
-        ),
-      ).toEqual({
-        epoch: "1",
-        incarnation: "incarnation-fixed",
-        status: "ready",
-      });
-      expect(
-        decodeCount(yield* firstRow(harness.target, "select count(*) as n from replicas")).n,
-      ).toBe(0);
-      expect(
-        decodeCount(yield* firstRow(harness.target, "select count(*) as n from command_receipts"))
-          .n,
-      ).toBe(0);
+        decodeTableNames(
+          yield* allRows(
+            harness.target,
+            "select name from sqlite_master where type = 'table' order by name",
+          ),
+        ).map((row) => row.name),
+      ).toEqual([
+        "batches",
+        "categories",
+        "import_applied_chunks",
+        "import_state",
+        "invoice_items",
+        "invoices",
+        "products",
+        "stock_movements",
+      ]);
     }),
   );
 

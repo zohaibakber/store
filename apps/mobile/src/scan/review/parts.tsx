@@ -1,7 +1,10 @@
 import { Host } from "@expo/ui";
 import {
+  FilterChip,
+  FlowRow,
   SegmentedButton,
   SingleChoiceSegmentedButtonRow,
+  SuggestionChip,
   Text as ComposeText,
 } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
@@ -17,6 +20,7 @@ import * as React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { colors, fonts, radius, space, touch, type } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Icon } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
@@ -211,6 +215,22 @@ export function MatchCard({
   );
 }
 
+const chipBorder = { width: 1, color: colors.hairline };
+const categoryColors = {
+  containerColor: colors.ground,
+  labelColor: colors.ink,
+  selectedContainerColor: colors.ink,
+  selectedLabelColor: colors.ground,
+};
+const lineColors = { containerColor: colors.ground, labelColor: colors.ink };
+const chipLabel = {
+  fontFamily: fonts.regular,
+  fontSize: type.sm.fontSize,
+  lineHeight: type.sm.lineHeight,
+};
+const lineLabel = { ...chipLabel, fontFamily: fonts.mono };
+const chipGap = { spacedBy: space[2] };
+
 export function CategoryPicker({
   choices,
   selectedId,
@@ -235,24 +255,23 @@ export function CategoryPicker({
       <Text size="xs" tone="muted">
         Category
       </Text>
-      <View style={styles.chips}>
-        {choices.map((category) => {
-          const selected = category.id === selectedId;
-          return (
-            <Pressable
+      <Host matchContents={{ vertical: true }} style={styles.chipHost}>
+        <FlowRow horizontalArrangement={chipGap}>
+          {choices.map((category) => (
+            <FilterChip
               key={category.id}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              onPress={() => onSelect(category.id)}
-              style={[styles.chip, selected && styles.chipSelected]}
+              selected={category.id === selectedId}
+              onClick={() => onSelect(category.id)}
+              colors={categoryColors}
+              border={chipBorder}
             >
-              <Text size="sm" style={{ color: selected ? colors.ground : colors.ink }}>
-                {category.name}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+              <FilterChip.Label>
+                <ComposeText style={chipLabel}>{category.name}</ComposeText>
+              </FilterChip.Label>
+            </FilterChip>
+          ))}
+        </FlowRow>
+      </Host>
     </View>
   );
 }
@@ -274,22 +293,23 @@ export function TextChips({
           ? "Recognised text · select a field, then tap to fill it"
           : `Recognised text · tap to fill ${target}`}
       </Text>
-      <View style={styles.chips}>
-        {lines.map((line) => (
-          <Pressable
-            key={line}
-            accessibilityRole="button"
-            accessibilityLabel={target === null ? line : `Fill ${target} with ${line}`}
-            disabled={target === null}
-            onPress={() => onPick(line)}
-            style={[styles.chip, target === null && styles.chipIdle]}
-          >
-            <Text size="sm" mono>
-              {line}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <Host matchContents={{ vertical: true }} style={styles.chipHost}>
+        <FlowRow horizontalArrangement={chipGap}>
+          {lines.map((line) => (
+            <SuggestionChip
+              key={line}
+              enabled={target !== null}
+              onClick={() => onPick(line)}
+              colors={lineColors}
+              border={chipBorder}
+            >
+              <SuggestionChip.Label>
+                <ComposeText style={lineLabel}>{line}</ComposeText>
+              </SuggestionChip.Label>
+            </SuggestionChip>
+          ))}
+        </FlowRow>
+      </Host>
     </View>
   );
 }
@@ -316,11 +336,7 @@ export function Banner({
         {message}
       </Text>
       {action === undefined ? null : (
-        <Pressable accessibilityRole="button" onPress={action.onPress} style={styles.bannerAction}>
-          <Text size="sm" weight="medium">
-            {action.label}
-          </Text>
-        </Pressable>
+        <ActionButton label={action.label} onPress={action.onPress} variant="text" />
       )}
     </View>
   );
@@ -422,18 +438,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairline,
   },
   chipSection: { gap: space[2], paddingVertical: space[3] },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: space[2] },
-  chip: {
-    minHeight: touch.minimum - 8,
-    justifyContent: "center",
-    paddingHorizontal: space[3],
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.ground,
-  },
-  chipSelected: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipIdle: { opacity: 0.6 },
+  chipHost: { alignSelf: "stretch" },
   banner: {
     flexDirection: "row",
     alignItems: "center",
@@ -443,11 +448,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   bannerText: { flex: 1 },
-  bannerAction: {
-    minHeight: touch.minimum,
-    justifyContent: "center",
-    paddingHorizontal: space[2],
-  },
   commitBar: {
     gap: space[2],
     paddingHorizontal: space[4],

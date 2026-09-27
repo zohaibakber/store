@@ -7,6 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
+import { formatPrice } from "@store/services/format";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -34,12 +35,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { formatDate, formatPrice } from "@/lib/format";
-import {
-  useCatalogProduct,
-  useCatalogStockMovements,
-  useInventoryActions,
-} from "@/lib/inventory-db";
+import { formatDate } from "@/lib/format";
+import { useCatalogProduct, useCatalogStockMovements, useInventoryActions } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/$productId")({
   component: ProductDetailPage,

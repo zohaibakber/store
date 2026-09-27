@@ -1,6 +1,6 @@
 const MAX_UNITS_PER_PACK = 10_000;
 
-export type PrintedPackSize = string | number;
+type PrintedPackSize = string | number;
 
 const isPrintedPackCount = (value: PrintedPackSize): value is number => typeof value === "number";
 

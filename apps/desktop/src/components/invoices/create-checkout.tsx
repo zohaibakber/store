@@ -1,3 +1,5 @@
+import { formatPrice } from "@store/services/format";
+
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   ControlGroup,
@@ -9,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
-import { formatPrice } from "@/lib/format";
 
 function InvoiceCompleteSaleAction() {
   const {

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export const MAX_SYNC_IDENTIFIER_LENGTH = 200;
+const MAX_SYNC_IDENTIFIER_LENGTH = 200;
 
 export const SyncIdentifier = Schema.NonEmptyString.check(
   Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),

@@ -7,7 +7,7 @@ import * as Ref from "effect/Ref";
 import { MigrationInterrupted } from "./errors.ts";
 import type { CheckpointName } from "./model.ts";
 
-export interface CheckpointApi {
+interface CheckpointApi {
   readonly pass: (name: CheckpointName) => Effect.Effect<void, MigrationInterrupted>;
 }
 
@@ -15,7 +15,7 @@ export class MigrationCheckpoint extends Context.Service<MigrationCheckpoint, Ch
   "@store/migrate/Checkpoint",
 ) {}
 
-export interface CheckpointTestApi extends CheckpointApi {
+interface CheckpointTestApi extends CheckpointApi {
   readonly failOnce: (name: CheckpointName) => Effect.Effect<void>;
 }
 

@@ -1,4 +1,5 @@
 import type { Product } from "@store/contracts";
+import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
@@ -22,7 +23,7 @@ import {
   DataTableFilterMenu,
   DataTableFilterOption,
 } from "@/components/shared/data-table";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
 const features = tableFeatures({
   columnFilteringFeature,

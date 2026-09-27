@@ -67,13 +67,12 @@ export const SyncLiveSseEvent = Schema.Struct({
 });
 export type SyncLiveSseEvent = typeof SyncLiveSseEvent.Type;
 
-export const LiveResumeReason = Schema.Literals([
+const LiveResumeReason = Schema.Literals([
   "send_window_lost",
   "retention_passed",
   "epoch_changed",
   "lease_expired",
 ]);
-export type LiveResumeReason = typeof LiveResumeReason.Type;
 
 export const SyncLiveServerFrame = Schema.TaggedUnion({
   transactions: {

@@ -1,7 +1,7 @@
 import type { TokenSet } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
 
-export type JsonSerializable =
+type JsonSerializable =
   | string
   | number
   | boolean
@@ -19,7 +19,7 @@ export type JsonApiResponse =
   | JsonApiObject
   | readonly JsonApiResponse[];
 
-export interface JsonApiObject {
+interface JsonApiObject {
   readonly [key: string]: JsonApiResponse;
 }
 

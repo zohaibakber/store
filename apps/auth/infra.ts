@@ -1,15 +1,19 @@
 import {
-  DEFAULT_ELECTRON_PROTOCOL,
-  DEFAULT_MOBILE_PROTOCOL,
   accessTokenLayer,
   decodeJsonWebKeyText,
   disabledEmailLayer,
   developmentEmailLayer,
-  fallbackIfBlank,
-  parseTrustedOrigins,
   passwordHasherLayer,
-  resolveAuthSecurity,
 } from "@store/auth";
+import {
+  DEFAULT_ELECTRON_PROTOCOL,
+  DEFAULT_MOBILE_PROTOCOL,
+  fallbackIfBlank,
+  LOCAL_WEB_ORIGINS,
+  parseTrustedOrigins,
+  publicHostnameFrom,
+  resolveAuthSecurity,
+} from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -30,27 +34,13 @@ import { authRepositoryLayer } from "./src/repository";
 import { authServiceLayer } from "./src/service";
 
 const LOCAL_AUTH_ORIGIN = "http://localhost:8788";
-const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
-
-const hostname = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  try {
-    return new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`).hostname;
-  } catch {
-    return undefined;
-  }
-};
-
 const resolveProductionAuthHostname = (input: {
   readonly productionDomain: string;
   readonly productionAuthDomain: string;
-}) =>
-  hostname(input.productionAuthDomain) ??
-  (() => {
-    const root = hostname(input.productionDomain);
-    return root ? `auth.${root}` : undefined;
-  })();
+}) => {
+  const root = publicHostnameFrom(input.productionDomain);
+  return publicHostnameFrom(input.productionAuthDomain) ?? (root ? `auth.${root}` : undefined);
+};
 
 export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 
@@ -59,8 +49,10 @@ export const AuthLive = Auth.make(
     const database = yield* AuthDatabase;
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod" || stage === "nightly";
-    const productionDomain = process.env.PRODUCTION_DOMAIN ?? "";
-    const productionAuthDomain = process.env.PRODUCTION_AUTH_DOMAIN ?? "";
+    const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
+    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
+      Config.withDefault(""),
+    );
     const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
     const trustedOrigins = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
       Config.withDefault(""),
@@ -125,6 +117,7 @@ export const AuthLive = Auth.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
+    const siteHostname = publicHostnameFrom(productionDomain);
     const security = resolveAuthSecurity({
       baseURL: baseUrl,
       electronProtocol,
@@ -132,8 +125,8 @@ export const AuthLive = Auth.make(
       trustedOrigins: [
         ...parseTrustedOrigins(trustedOriginsRaw),
         ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
-        ...(productionDomain ? [`https://${hostname(productionDomain)}`] : []),
-      ].filter((origin): origin is string => Boolean(origin)),
+        ...(siteHostname ? [`https://${siteHostname}`] : []),
+      ],
     });
 
     const privateJwkText = Redacted.value(yield* Config.Redacted("AUTH_JWT_PRIVATE_JWK"));

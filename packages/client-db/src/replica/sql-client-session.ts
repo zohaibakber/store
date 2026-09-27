@@ -134,7 +134,7 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader & {
   readonly dispose: () => Promise<void>;
 };
 
-export type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
+type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
   readonly replica: Layer.Layer<SqliteReplica, ReplicaError>;
   readonly identity: SqliteReplicaIdentity;
   readonly databaseIdentity: string;

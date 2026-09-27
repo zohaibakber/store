@@ -29,7 +29,7 @@ import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-call
 import { resolveRefreshCredential } from "./refresh-credential";
 import { AuthService } from "./service";
 
-export interface AuthHttpConfiguration {
+interface AuthHttpConfiguration {
   readonly baseUrl: string;
   readonly publicJwk: JwtConfiguration["publicJwk"];
   readonly secureCookies: boolean;

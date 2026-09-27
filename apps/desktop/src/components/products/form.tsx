@@ -25,7 +25,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 type StrengthUnit = (typeof strengthUnits)[number];

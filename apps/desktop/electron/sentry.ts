@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/electron/main";
 import { app } from "electron";
 
-export interface DesktopErrorContext {
+interface DesktopErrorContext {
   readonly op: string;
   readonly databasePath?: string;
 }

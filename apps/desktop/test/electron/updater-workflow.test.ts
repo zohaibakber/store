@@ -2,10 +2,12 @@ import { assert, it } from "@effect/vitest";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
 import {
   makeUpdaterWorkflow,
+  sampleDownloadProgress,
   type UpdaterProvider,
   type UpdaterProviderEvent,
   type UpdaterWorkflowConfig,
@@ -194,5 +196,47 @@ it.effect("serializes downloads and releases provider resources on disposal", ()
     yield* workflow.dispose;
     yield* workflow.dispose;
     assert.strictEqual(test.isUnsubscribed(), true);
+  }),
+);
+
+const progress = (percent: number): UpdaterProviderEvent => ({ type: "progress", percent });
+
+it.effect("samples download progress without dropping lifecycle events or completion", () =>
+  Effect.gen(function* () {
+    const sampled = yield* Stream.fromIterable<UpdaterProviderEvent>([
+      { type: "checking" },
+      { type: "available", version: "1.2.3" },
+      progress(10),
+      progress(10),
+      progress(20),
+      progress(30),
+      progress(100),
+      { type: "downloaded", version: "1.2.3" },
+    ]).pipe(sampleDownloadProgress("250 millis"), Stream.runCollect);
+
+    assert.deepStrictEqual(sampled, [
+      { type: "checking" },
+      { type: "available", version: "1.2.3" },
+      progress(10),
+      progress(100),
+      { type: "downloaded", version: "1.2.3" },
+    ]);
+  }),
+);
+
+it.effect("admits the next download progress once the interval elapses", () =>
+  Effect.gen(function* () {
+    const sampled = yield* Stream.fromIterable([progress(10), progress(20), progress(30)]).pipe(
+      Stream.rechunk(1),
+      Stream.tap((event) =>
+        event.type === "progress" && event.percent === 20
+          ? TestClock.adjust("250 millis")
+          : Effect.void,
+      ),
+      sampleDownloadProgress("250 millis"),
+      Stream.runCollect,
+    );
+
+    assert.deepStrictEqual(sampled, [progress(10), progress(20)]);
   }),
 );

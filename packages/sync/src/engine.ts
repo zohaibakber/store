@@ -14,12 +14,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
-import { shouldRecordCaughtUp } from "./replica/activity";
+import { CAUGHT_UP_RECORD_INTERVAL_MILLIS } from "./replica/activity";
 import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
-import {
-  DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
-  shouldRequestDigest,
-} from "./replica/digest-cadence";
+import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS, dueSince } from "./replica/cadence";
 import { ReplicaCoverageRepairRequired, SyncRecoveryRequired } from "./replica/errors";
 import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
 import { SyncTransportService, type SyncTransport, type SyncTransportError } from "./transport";
@@ -169,12 +166,9 @@ export const makeSyncEngineFromReplicaStore = (
         const lastVerifiedAt = yield* withPermit(
           store.readDigestVerification(request.subscription),
         );
-        const includeDigest = shouldRequestDigest({
-          believesCaughtUp: yield* Ref.get(believesCaughtUp),
-          lastVerifiedAtMillis: lastVerifiedAt,
-          nowMillis: pulledAt,
-          intervalMillis: digestIntervalMillis,
-        });
+        const includeDigest =
+          (yield* Ref.get(believesCaughtUp)) &&
+          dueSince(lastVerifiedAt, pulledAt, digestIntervalMillis);
         const pullRequest = includeDigest ? { ...request, includeDigest: true } : request;
         const pulled = yield* transport.pull(pullRequest).pipe(
           Effect.catchIf(isSnapshotRequired, () =>
@@ -207,7 +201,8 @@ export const makeSyncEngineFromReplicaStore = (
         }
         if (nextFeed._tag === "following") {
           const caughtUpAt = yield* Clock.currentTimeMillis;
-          if (shouldRecordCaughtUp(yield* Ref.get(caughtUpRecordedAt), caughtUpAt)) {
+          const lastCaughtUpAt = yield* Ref.get(caughtUpRecordedAt);
+          if (dueSince(lastCaughtUpAt, caughtUpAt, CAUGHT_UP_RECORD_INTERVAL_MILLIS)) {
             yield* withPermit(store.recordCaughtUp(caughtUpAt));
             yield* Ref.set(caughtUpRecordedAt, caughtUpAt);
           }

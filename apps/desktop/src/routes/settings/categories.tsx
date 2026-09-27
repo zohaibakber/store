@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { CategorySettings } from "@/components/settings/category-settings";
-import { useCatalogCategories } from "@/lib/inventory-db";
+import { useCatalogCategories } from "@/lib/inventory";
 
 export const Route = createFileRoute("/settings/categories")({
   component: LiveCategorySettings,

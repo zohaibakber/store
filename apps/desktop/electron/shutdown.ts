@@ -1,8 +1,8 @@
-export interface BeforeQuitEvent {
+interface BeforeQuitEvent {
   readonly preventDefault: () => void;
 }
 
-export interface ShutdownCoordinatorOptions {
+interface ShutdownCoordinatorOptions {
   readonly dispose: () => Promise<void>;
   readonly quit: () => void;
   readonly reportError?: (cause: unknown) => void;

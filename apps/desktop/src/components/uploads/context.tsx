@@ -9,7 +9,7 @@ import {
 } from "@/components/uploads/same-product";
 import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 import { analyseInvoices } from "@/lib/server-api";
 
 type ExtractedLine = InvoiceExtractionLine;

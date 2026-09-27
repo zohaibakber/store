@@ -149,23 +149,28 @@ describe("openSqlClientReplicaHandle", () => {
   });
 
   it("stops network work once disposed", async () => {
-    const network = unavailableFetch();
-    const handle = await openSqlClientReplicaHandle({
-      sqlClient: sqlClientLayer,
-      databaseName: "sql-client-dispose",
-      identity,
-      sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: network.fetch },
-      policy: {
-        activePollMillis: 5,
-        backoffMillis: [5],
-        hiddenPollMillis: 5,
-        liveIdlePollMillis: 5,
-      },
-    });
-    await vi.waitFor(() => expect(network.requested.length).toBeGreaterThan(0));
-    await handle.dispose();
-    const settled = network.requested.length;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(network.requested.length).toBe(settled);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      const network = unavailableFetch();
+      const handle = await openSqlClientReplicaHandle({
+        sqlClient: sqlClientLayer,
+        databaseName: "sql-client-dispose",
+        identity,
+        sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: network.fetch },
+        policy: {
+          activePollMillis: 5,
+          backoffMillis: [5],
+          hiddenPollMillis: 5,
+          liveIdlePollMillis: 5,
+        },
+      });
+      await vi.waitFor(() => expect(network.requested.length).toBeGreaterThan(1));
+      await handle.dispose();
+      const settled = network.requested.length;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(network.requested.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

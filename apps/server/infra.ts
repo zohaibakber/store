@@ -3,7 +3,9 @@ import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
+  LOCAL_WEB_ORIGINS,
   parseTrustedOrigins,
+  publicHostnameFrom,
   resolveAuthSecurity,
 } from "@store/auth/security";
 import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
@@ -38,13 +40,12 @@ import {
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
+  productionDomainConfig,
   productionSiteOrigin,
   requireProductionApiHostname,
   resolveProductionApiHostname,
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
-
-const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
 export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
@@ -53,10 +54,12 @@ export const ApiLive = Api.make(
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod" || stage === "nightly";
     // Domain attachment is deploy-time only. This generator is also the Worker
-    // entry (`main: import.meta.url`); `require*` reads `process.env`, which is
-    // empty in workerd and 1101'd every request (including CORS preflight).
+    // entry (`main: import.meta.url`); workerd has no deploy variables, so a
+    // hostname check there would 1101 every request (including CORS preflight).
     const apiHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && published ? requireProductionApiHostname() : undefined;
+      !globalThis.__ALCHEMY_RUNTIME__ && published
+        ? requireProductionApiHostname(yield* productionDomainConfig)
+        : undefined;
     const worker = {
       main: import.meta.url,
       // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
@@ -116,18 +119,8 @@ export const ApiLive = Api.make(
     const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
       Config.withDefault(""),
     );
-    const trustedOriginsRaw = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
-      Config.withDefault(""),
-    );
-    const trustedOrigins = parseTrustedOrigins(trustedOriginsRaw);
-    const productionDomainEnv = {
-      PRODUCTION_DOMAIN: yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault("")),
-      PRODUCTION_API_DOMAIN: yield* Config.String("PRODUCTION_API_DOMAIN").pipe(
-        Config.withDefault(""),
-      ),
-      VITE_API_URL: yield* Config.String("VITE_API_URL").pipe(Config.withDefault("")),
-      AUTH_TRUSTED_ORIGINS: trustedOriginsRaw,
-    };
+    const productionDomainEnv = yield* productionDomainConfig;
+    const trustedOrigins = parseTrustedOrigins(productionDomainEnv.AUTH_TRUSTED_ORIGINS);
     const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
@@ -153,7 +146,7 @@ export const ApiLive = Api.make(
     }
     const siteOrigin = productionSiteOrigin(productionDomainEnv);
     const authHostname =
-      productionAuthDomain.trim() ||
+      publicHostnameFrom(productionAuthDomain) ??
       (productionHostname ? `auth.${productionHostname}` : undefined);
     const authOrigin =
       authBaseUrl.trim() ||

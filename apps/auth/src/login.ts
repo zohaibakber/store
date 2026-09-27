@@ -18,7 +18,7 @@ import { enforceAuthLimit, type AuthLimits } from "./limits";
 import type { AuthRepositoryApi } from "./repository";
 import type { SessionOps } from "./session-ops";
 
-export interface LoginOpsConfiguration {
+interface LoginOpsConfiguration {
   readonly developmentOtp: boolean;
 }
 
@@ -143,5 +143,3 @@ export const makeLoginOps = (
 
   return { identify, authenticate };
 };
-
-export type LoginOps = ReturnType<typeof makeLoginOps>;

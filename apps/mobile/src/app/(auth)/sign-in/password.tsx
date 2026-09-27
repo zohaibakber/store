@@ -3,9 +3,9 @@ import { Redirect, useRouter } from "expo-router";
 import * as React from "react";
 
 import { useAuthActions, useSignInFlow, type AuthProblem } from "@/auth";
-import { ActionButton } from "@/auth/ui/action-button";
 import { AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
+import { ActionButton } from "@/ui/action-button";
 
 function PasswordForm({ email }: { readonly email: string }) {
   const { signInWithPassword } = useAuthActions();
@@ -29,7 +29,13 @@ function PasswordForm({ email }: { readonly email: string }) {
       title="Enter your password"
       description={`Signing in as ${email}.`}
       footer={
-        <ActionButton label="Use another email" variant="quiet" disabled={busy} onPress={back} />
+        <ActionButton
+          size="large"
+          label="Use another email"
+          variant="text"
+          disabled={busy}
+          onPress={back}
+        />
       }
     >
       <Field
@@ -51,6 +57,7 @@ function PasswordForm({ email }: { readonly email: string }) {
       />
       <ProblemMessage problem={problem} />
       <ActionButton
+        size="large"
         label="Sign in"
         loading={busy}
         disabled={password.length === 0}

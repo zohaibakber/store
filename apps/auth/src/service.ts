@@ -30,7 +30,7 @@ import { makeOrganizationOps } from "./organization-ops";
 import { AuthRepository } from "./repository";
 import { makeSessionOps } from "./session-ops";
 
-export interface AuthServiceApi {
+interface AuthServiceApi {
   readonly identify: (
     input: IdentifyInput,
   ) => Effect.Effect<LoginRouteType, AuthError, RuntimeContext>;
@@ -63,7 +63,7 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
   "@store/auth-worker/AuthService",
 ) {}
 
-export interface AuthServiceConfiguration {
+interface AuthServiceConfiguration {
   readonly developmentOtp: boolean;
   readonly trustedRedirects: ReadonlyArray<string>;
   readonly refreshTokenPepper: string;

@@ -13,10 +13,11 @@ import { Separator } from "@/components/ui/separator";
 import {
   authenticate,
   beginGoogle,
+  completeGoogle,
   currentAuthClient,
-  GOOGLE_AUTH_ERROR_EVENT,
   identify,
 } from "@/lib/first-party-auth";
+import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
 
 type AuthStep =
@@ -309,14 +310,19 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
   const [busy, setBusy] = React.useState<"idle" | "email" | "google">("idle");
   const [error, setError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    const receiveGoogleError = (event: WindowEventMap[typeof GOOGLE_AUTH_ERROR_EVENT]) => {
-      setError(event.detail);
-      setBusy("idle");
-    };
-    window.addEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
-    return () => window.removeEventListener(GOOGLE_AUTH_ERROR_EVENT, receiveGoogleError);
-  }, []);
+  React.useEffect(
+    () =>
+      window.auth?.onOAuthCallback((url) => {
+        void completeGoogle(url).catch((cause: unknown) => {
+          reportError(cause, { op: "google-sign-in-callback" });
+          setError(
+            cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
+          );
+          setBusy("idle");
+        });
+      }),
+    [],
+  );
 
   const run = async (lane: "email" | "google", operation: () => Promise<void>) => {
     setBusy(lane);

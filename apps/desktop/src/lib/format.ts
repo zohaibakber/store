@@ -1,11 +1,5 @@
 import { format, isValid, parse } from "date-fns";
 
-const currency = new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR" });
-
-// Prices are stored in the smallest currency unit (paisa).
-export const formatPrice = (value: number | null) =>
-  value == null ? "—" : currency.format(value / 100);
-
 export const formatDate = (value: number) => format(value, "d MMM yyyy");
 
 export const formatDateTime = (value: number) => format(value, "d MMM yyyy, h:mm a");
@@ -40,10 +34,14 @@ export const parseExpiryDate = (value: string | null): number | null => {
   return null;
 };
 
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+const utcDay = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/**
+ * Labels a `yyyy-MM-dd` chart bucket. Charts bucket by UTC day, so the label
+ * reads the key in UTC to show the same calendar day the data was counted in.
+ */
+export const formatUtcDay = (day: string) => utcDay.format(new Date(`${day}T00:00:00Z`));

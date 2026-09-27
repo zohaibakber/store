@@ -34,13 +34,13 @@ export type ReplicaCatalogLookup = {
   readonly batchesByProduct: (productId: string) => ReadonlyArray<ReplicaBatchRow>;
 };
 
-export type ProjectedRemoval = {
+type ProjectedRemoval = {
   readonly entity: SyncEntity;
   readonly entityId: string;
   readonly row: null;
 };
 
-export type ProjectedUpsert =
+type ProjectedUpsert =
   | { readonly entity: "category"; readonly entityId: string; readonly row: ReplicaCategoryRow }
   | { readonly entity: "product"; readonly entityId: string; readonly row: ReplicaProductRow }
   | { readonly entity: "batch"; readonly entityId: string; readonly row: ReplicaBatchRow }

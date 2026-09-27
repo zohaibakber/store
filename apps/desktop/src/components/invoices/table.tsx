@@ -1,5 +1,6 @@
 import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
@@ -24,7 +25,7 @@ import {
   DataTableFooter,
   DataTablePagination,
 } from "@/components/shared/data-table";
-import { formatDateTime, formatPrice } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 const features = tableFeatures({
   columnFilteringFeature,

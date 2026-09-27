@@ -1,6 +1,7 @@
 import { ChartBarLineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DashboardAnalytics } from "@store/contracts";
+import { formatPrice } from "@store/services/format";
 import { barX, defineChart, text, type ChartPoint } from "@tanstack/charts";
 import { decorative } from "@tanstack/charts/mark/decorative";
 import { scaleBand } from "@tanstack/charts/scales/band";
@@ -22,7 +23,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { formatPrice } from "@/lib/format";
 
 type TopProduct = DashboardAnalytics["topProducts"][number];
 

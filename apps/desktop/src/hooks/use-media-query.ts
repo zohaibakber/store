@@ -58,7 +58,7 @@ function getServerSnapshot(): boolean {
   return false;
 }
 
-export type MediaQueryInput = {
+type MediaQueryInput = {
   min?: Breakpoint | number;
   max?: Breakpoint | number;
   /** Touch-like input (finger). Use "fine" for mouse/trackpad. */
@@ -83,8 +83,4 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
   }, [mediaQuery]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
-export function useIsMobile(): boolean {
-  return useMediaQuery("max-md");
 }

@@ -1,5 +1,6 @@
 import { ArrowDown01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { formatPrice } from "@store/services/format";
 
 import {
   AUTO_BATCH,
@@ -28,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatPrice } from "@/lib/format";
 
 const quantityItems = [
   { label: "Unit", value: "unit" },

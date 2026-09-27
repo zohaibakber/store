@@ -1,40 +1,32 @@
-import * as Atom from "effect/unstable/reactivity/Atom";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
-
 /**
- * Replay bus backed by Effect Atom. Keeps publish/current/subscribe for
- * non-React writers (session admit, tests) while React reads through
- * `useAtomValue` on {@link ReplayChannel.atom} under {@link ReplayChannel.registry}.
+ * Latest-value channel: a subscriber first receives the current value, if one
+ * has been published, and then every later publication.
+ *
+ * Dependency-free on purpose. The sandboxed preload uses it to hold IPC
+ * notices that arrive before the renderer subscribes, and the renderer uses it
+ * for the workspace session, which React reads through `useSyncExternalStore`.
  */
 export type ReplayChannel<Value> = {
-  readonly registry: AtomRegistry.AtomRegistry;
-  readonly atom: Atom.Writable<Value | undefined>;
   readonly publish: (value: Value) => void;
   readonly current: () => Value | undefined;
   readonly subscribe: (listener: (value: Value) => void) => () => void;
-  readonly dispose: () => void;
 };
 
 export const makeReplayChannel = <Value>(): ReplayChannel<Value> => {
-  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
-  const atom = Atom.make<Value | undefined>(undefined).pipe(Atom.keepAlive);
+  const listeners = new Set<(value: Value) => void>();
+  let latest: Value | undefined;
   return {
-    registry,
-    atom,
     publish: (value) => {
-      registry.set(atom, value);
+      latest = value;
+      for (const listener of listeners) listener(value);
     },
-    current: () => registry.get(atom),
-    subscribe: (listener) =>
-      registry.subscribe(
-        atom,
-        (value) => {
-          if (value !== undefined) listener(value);
-        },
-        { immediate: true },
-      ),
-    dispose: () => {
-      registry.dispose();
+    current: () => latest,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      if (latest !== undefined) listener(latest);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 };

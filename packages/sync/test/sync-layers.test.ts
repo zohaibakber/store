@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { describe, expect, it } from "@effect/vitest";
 import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
@@ -13,12 +14,18 @@ import {
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import { TestClock } from "effect/testing";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach } from "vitest";
 
 import { IndexedDbReplicaStore as BrowserIndexedDbReplicaStore } from "../src/browser";
 import { SyncEngine } from "../src/engine";
@@ -63,7 +70,10 @@ const emptyPage: SyncPullResult = {
   retentionFloor: OrgCommitSequence.make("0"),
 };
 
-const countingTransport = (pullFailure?: ReturnType<typeof syncProtocolError>) => {
+const countingTransport = (
+  pullFailure?: ReturnType<typeof syncProtocolError>,
+  pulls?: Queue.Enqueue<number>,
+) => {
   const counts = { pulls: 0, snapshots: 0 };
   const transport: SyncTransport = {
     registerReplica: (request) =>
@@ -81,8 +91,12 @@ const countingTransport = (pullFailure?: ReturnType<typeof syncProtocolError>) =
     pull: () =>
       Effect.suspend(() => {
         counts.pulls += 1;
-        return pullFailure === undefined ? Effect.succeed(emptyPage) : Effect.fail(pullFailure);
-      }),
+        return pulls === undefined ? Effect.void : Queue.offer(pulls, counts.pulls);
+      }).pipe(
+        Effect.andThen(() =>
+          pullFailure === undefined ? Effect.succeed(emptyPage) : Effect.fail(pullFailure),
+        ),
+      ),
     acquireSnapshot: () =>
       Effect.sync(() => {
         counts.snapshots += 1;
@@ -98,27 +112,34 @@ const countingTransport = (pullFailure?: ReturnType<typeof syncProtocolError>) =
   return { counts, transport };
 };
 
-const settle = (millis: number) => new Promise((resolve) => setTimeout(resolve, millis));
+const driveClock = TestClock.adjust("10 millis").pipe(Effect.forever, Effect.forkScoped);
+
+const advanceWithoutWork = Effect.repeat(TestClock.adjust("50 millis"), { times: 10 });
 
 afterEach(() => {
   indexedDB.deleteDatabase(databaseName);
 });
 
 describe("sync layers", () => {
-  it("keeps polling after the fiber that started owned sync has finished", async () => {
-    const { counts, transport } = countingTransport();
-    const store = await Effect.runPromise(makeIndexedDbReplicaStore(storeInput));
-    const owned = await Effect.runPromise(
-      startOwnedHttpSync(store, transport, databaseName, undefined, fastPolicy),
-    );
-    await settle(80);
-    expect(counts.pulls).toBeGreaterThan(1);
-    await Effect.runPromise(owned.dispose);
-    const afterDispose = counts.pulls;
-    await settle(40);
-    expect(counts.pulls).toBe(afterDispose);
-    await Effect.runPromise(store.dispose());
-  });
+  it.effect("keeps polling after the fiber that started owned sync has finished", () =>
+    Effect.gen(function* () {
+      const pulls = yield* Queue.unbounded<number>();
+      const { counts, transport } = countingTransport(undefined, pulls);
+      const store = yield* makeIndexedDbReplicaStore(storeInput);
+      const starter = yield* Effect.forkChild(
+        startOwnedHttpSync(store, transport, databaseName, undefined, fastPolicy),
+      );
+      const owned = yield* Fiber.join(starter);
+      yield* driveClock;
+      yield* Queue.take(pulls);
+      yield* Queue.take(pulls);
+      yield* owned.dispose;
+      const afterDispose = counts.pulls;
+      yield* advanceWithoutWork;
+      expect(counts.pulls).toBe(afterDispose);
+      yield* store.dispose();
+    }),
+  );
 
   it("provides the typed IndexedDB store alongside the generic replica store", async () => {
     const runtime = ManagedRuntime.make(layerIndexedDbReplicaStore(storeInput));
@@ -138,31 +159,39 @@ describe("sync layers", () => {
     expect(seen.statuses).toEqual([]);
   });
 
-  it("composes one ManagedRuntime from the store, transport, and owned sync layers", async () => {
-    const { counts, transport } = countingTransport();
-    const runtime = ManagedRuntime.make(
-      layerOwnedHttpSync({ databaseIdentity: databaseName, policy: fastPolicy }).pipe(
-        Layer.provideMerge(layerIndexedDbReplicaStore(storeInput)),
-        Layer.provide(Layer.succeed(SyncTransportService, transport)),
-      ),
-    );
-    const status = await runtime.runPromise(
-      Effect.gen(function* () {
-        const store = yield* ReplicaStore;
-        const scheduler = yield* SyncScheduler;
-        yield* SyncEngine;
-        yield* scheduler.wake("focus");
-        return (yield* store.readCommandStatus(lastUnitBuyerAEnvelope.operationId)) ?? "absent";
-      }),
-    );
-    expect(status).toBe("absent");
-    await settle(80);
-    expect(counts.pulls).toBeGreaterThan(1);
-    await runtime.dispose();
-    const afterDispose = counts.pulls;
-    await settle(40);
-    expect(counts.pulls).toBe(afterDispose);
-  });
+  it.effect("composes one ManagedRuntime from the store, transport, and owned sync layers", () =>
+    Effect.gen(function* () {
+      const pulls = yield* Queue.unbounded<number>();
+      const { counts, transport } = countingTransport(undefined, pulls);
+      const clock = yield* Clock.clockWith(Effect.succeed);
+      const runtime = ManagedRuntime.make(
+        layerOwnedHttpSync({ databaseIdentity: databaseName, policy: fastPolicy }).pipe(
+          Layer.provideMerge(layerIndexedDbReplicaStore(storeInput)),
+          Layer.provide(Layer.succeed(SyncTransportService, transport)),
+          Layer.provide(Layer.succeed(Clock.Clock, clock)),
+        ),
+      );
+      const status = yield* Effect.promise(() =>
+        runtime.runPromise(
+          Effect.gen(function* () {
+            const store = yield* ReplicaStore;
+            const scheduler = yield* SyncScheduler;
+            yield* SyncEngine;
+            yield* scheduler.wake("focus");
+            return (yield* store.readCommandStatus(lastUnitBuyerAEnvelope.operationId)) ?? "absent";
+          }),
+        ),
+      );
+      expect(status).toBe("absent");
+      yield* driveClock;
+      yield* Queue.take(pulls);
+      yield* Queue.take(pulls);
+      yield* Effect.promise(() => runtime.dispose());
+      const afterDispose = counts.pulls;
+      yield* advanceWithoutWork;
+      expect(counts.pulls).toBe(afterDispose);
+    }),
+  );
 
   it("layers the SQLite store over the shared replica handle service", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "store-sync-layer-")), "replica.sqlite");
@@ -190,20 +219,30 @@ describe("sync layers", () => {
     });
   });
 
-  it("stops with a recovery status on an epoch mismatch instead of restoring a snapshot", async () => {
-    const { counts, transport } = countingTransport(
-      syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed."),
-    );
-    const store = await Effect.runPromise(makeIndexedDbReplicaStore(storeInput));
-    const owned = await Effect.runPromise(
-      startOwnedHttpSync(store, transport, databaseName, undefined, fastPolicy),
-    );
-    await settle(60);
-    const status = await Effect.runPromise(SubscriptionRef.get(owned.scheduler.status));
-    expect(status._tag).toBe("recoveryRequired");
-    expect(counts.snapshots).toBe(0);
-    expect(counts.pulls).toBe(1);
-    await Effect.runPromise(owned.dispose);
-    await Effect.runPromise(store.dispose());
-  });
+  it.effect(
+    "stops with a recovery status on an epoch mismatch instead of restoring a snapshot",
+    () =>
+      Effect.gen(function* () {
+        const { counts, transport } = countingTransport(
+          syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed."),
+        );
+        const store = yield* makeIndexedDbReplicaStore(storeInput);
+        const owned = yield* startOwnedHttpSync(
+          store,
+          transport,
+          databaseName,
+          undefined,
+          fastPolicy,
+        );
+        const settled = yield* SubscriptionRef.changes(owned.scheduler.status).pipe(
+          Stream.filter((current) => current._tag !== "running"),
+          Stream.runHead,
+        );
+        expect(Option.getOrUndefined(settled)).toMatchObject({ _tag: "recoveryRequired" });
+        expect(counts.snapshots).toBe(0);
+        expect(counts.pulls).toBe(1);
+        yield* owned.dispose;
+        yield* store.dispose();
+      }),
+  );
 });

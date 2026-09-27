@@ -143,11 +143,9 @@ for (const leftover of ["apps/android", "powersync", ".github/workflows/android.
 
 forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
-forbidText(
-  read("apps/desktop/src/lib/inventory-db.tsx"),
-  "migrateLegacyCatalog",
-  "inventory database",
-);
+if (runtimeSource.some((source) => source.includes("migrateLegacyCatalog"))) {
+  throw new Error("Runtime source still contains migrateLegacyCatalog.");
+}
 forbidText(read("apps/server/src/http/app.ts"), '"/api/powersync/credentials"', "server routes");
 forbidText(read(".github/workflows/ci.yml"), "POWERSYNC_URL", "CI workflow");
 forbidText(read(".github/workflows/infra.yml"), "POWERSYNC_URL", "deployment workflow");

@@ -34,7 +34,7 @@ export const compareDecimalSequence: Order.Order<string> = Order.mapInput(
 
 export const incrementDecimalSequence = (value: string): string => String(BigInt(value) + 1n);
 
-export const DECIMAL_SEQUENCE_DIGITS = 20;
+const DECIMAL_SEQUENCE_DIGITS = 20;
 
 export const padDecimalSequence = (value: string): string =>
   String(BigInt(value)).padStart(DECIMAL_SEQUENCE_DIGITS, "0");
@@ -50,8 +50,7 @@ export type OrgCommitSequence = typeof OrgCommitSequence.Type;
 export const ReplicaClientSequence = DecimalSequence.pipe(Schema.brand("ReplicaClientSequence"));
 export type ReplicaClientSequence = typeof ReplicaClientSequence.Type;
 
-export const PayloadHash = Sha256Hex;
-export type PayloadHash = typeof PayloadHash.Type;
+const PayloadHash = Sha256Hex;
 
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
@@ -60,8 +59,6 @@ export const AuthorityIncarnation = SyncIdentifier.pipe(Schema.brand("AuthorityI
 export type AuthorityIncarnation = typeof AuthorityIncarnation.Type;
 
 export const MAX_TRANSPORT_PAYLOAD_BYTES = 900_000;
-
-export const MAX_COMMAND_ATTEMPTS = 8;
 
 export const SyncProtocolCode = Schema.Literals([
   "ORGANIZATION_MISMATCH",
@@ -102,17 +99,15 @@ export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()(
 export const syncProtocolError = (code: SyncProtocolCode, message: string): SyncProtocolError =>
   SyncProtocolError.make({ code, message });
 
-export const IssueInvoiceSyncCommand = Schema.Struct({
+const IssueInvoiceSyncCommand = Schema.Struct({
   _tag: Schema.Literal("issueInvoice"),
   payload: IssueInvoiceCommand,
 });
-export type IssueInvoiceSyncCommand = typeof IssueInvoiceSyncCommand.Type;
 
-export const CatalogWriteSyncCommand = Schema.Struct({
+const CatalogWriteSyncCommand = Schema.Struct({
   _tag: Schema.Literal("catalogWrite"),
   payload: CatalogWriteCommand,
 });
-export type CatalogWriteSyncCommand = typeof CatalogWriteSyncCommand.Type;
 
 export const SyncCommand = Schema.Union([IssueInvoiceSyncCommand, CatalogWriteSyncCommand]);
 export type SyncCommand = typeof SyncCommand.Type;
@@ -128,8 +123,7 @@ export const SyncCommandEnvelope = Schema.Struct({
 });
 export type SyncCommandEnvelope = typeof SyncCommandEnvelope.Type;
 
-export const CommandDecision = Schema.Literals(["accepted", "rejected"]);
-export type CommandDecision = typeof CommandDecision.Type;
+const CommandDecision = Schema.Literals(["accepted", "rejected"]);
 
 export const AcceptedInvoiceResult = Schema.Struct({
   _tag: Schema.Literal("issueInvoice"),

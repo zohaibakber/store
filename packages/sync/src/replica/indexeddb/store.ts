@@ -263,13 +263,16 @@ const undoLocalEffects = (
     .equals(operationId)
     .pipe(Effect.andThen(restoreIndexedDbPendingProjection(api, generation, operationId)));
 
-export type IndexedDbReplicaStoreContract = ReplicaStoreContract & {
+interface IndexedDbSubsetReader {
   readonly querySubset: (
     plan: IndexedDbSubsetPlan,
   ) => Effect.Effect<
     { readonly stamp: ReplicaReadStamp; readonly rows: ReadonlyArray<IndexedDbSubsetRow> },
     ReplicaStoreError
   >;
+}
+
+interface IndexedDbOutboxReader {
   readonly listOutboxStatuses: () => Effect.Effect<ReadonlyArray<CommandStatus>, ReplicaStoreError>;
   readonly readOutboxActivity: () => Effect.Effect<ReplicaOutboxActivity, ReplicaStoreError>;
   readonly readPendingRowIds: (
@@ -279,7 +282,11 @@ export type IndexedDbReplicaStoreContract = ReplicaStoreContract & {
     { readonly epoch: string; readonly nextClientSequence: string },
     ReplicaStoreError
   >;
-};
+}
+
+export type IndexedDbReplicaStoreContract = ReplicaStoreContract &
+  IndexedDbSubsetReader &
+  IndexedDbOutboxReader;
 
 export type DisposableIndexedDbReplicaStore = IndexedDbReplicaStoreContract & {
   readonly dispose: () => Effect.Effect<void>;
@@ -892,8 +899,6 @@ export const layerIndexedDbReplicaStore = (
       ),
     ),
   );
-
-export const requireIndexedDbPrimitives = () => requirePrimitives(undefined, undefined);
 
 export {
   IndexedDbCorruptRecord,

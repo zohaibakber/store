@@ -1,9 +1,5 @@
 import { OrgCommitSequence } from "@store/contracts";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_PRODUCT_ID,
-  lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
+import { LAST_UNIT_BATCH_ID, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import * as Result from "effect/Result";
 import { describe, expect, it } from "vitest";
 
@@ -87,9 +83,5 @@ describe("replica decisions", () => {
         () => ({ packQuantity: 0, unitQuantity: 10 }),
       ),
     ).toEqual([]);
-  });
-
-  it("uses product id in overlay calculation", () => {
-    expect(LAST_UNIT_PRODUCT_ID).toBeTruthy();
   });
 });

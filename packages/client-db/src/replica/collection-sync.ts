@@ -6,8 +6,10 @@ import type {
   SyncConfigRes,
   UnloadSubsetFn,
 } from "@tanstack/db";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as TxSemaphore from "effect/TxSemaphore";
+import * as Latch from "effect/Latch";
+import * as Semaphore from "effect/Semaphore";
 
 import type { InvoiceCoherenceEntity, InvoiceCoherenceGate } from "./coherence";
 import { decrementRowRef, publishSubsetWindow } from "./collection-publish";
@@ -51,9 +53,8 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
   const queued: Array<ReplicaCommitNotice> = [];
   let syncStarted = false;
   let disposed = false;
-  const serial = Effect.runSync(TxSemaphore.make(1));
-  let coalesceTarget: number | undefined;
-  let coalesceRunning = false;
+  const serial = Semaphore.makeUnsafe(1);
+  const refreshRequested = Latch.makeUnsafe(false);
   const coherence: InvoiceCoherenceGate | undefined = dependencies.coherence;
   const unregisterCoherence =
     descriptor.coherenceEntity && coherence
@@ -61,15 +62,16 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       : undefined;
   let lastTouched: ReadonlyArray<SyncEntity> = [];
 
-  const enqueue = (work: () => Promise<void>): Promise<void> =>
-    Effect.runPromise(
-      TxSemaphore.withPermit(serial)(
-        Effect.tryPromise({
-          try: work,
-          catch: (cause) => cause,
-        }).pipe(Effect.orDie),
-      ),
+  const serialized = (work: () => Promise<void>): Effect.Effect<void> =>
+    Semaphore.withPermit(
+      serial,
+      Effect.tryPromise({
+        try: work,
+        catch: (cause) => cause,
+      }).pipe(Effect.orDie),
     );
+
+  const enqueue = (work: () => Promise<void>): Promise<void> => Effect.runPromise(serialized(work));
 
   const fenced = (notice: ReplicaCommitNotice): boolean =>
     !disposed &&
@@ -125,35 +127,25 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     await applyPublished(acquisition, current, touchedEntities, signal);
   };
 
-  const drainCoalesced = async (): Promise<void> => {
-    if (coalesceRunning) return;
-    coalesceRunning = true;
-    try {
-      while (coalesceTarget !== undefined && !disposed) {
-        coalesceTarget = undefined;
-        const touched = lastTouched;
-        for (const acquisition of acquisitions.values()) {
-          await refillAcquisition(acquisition, touched);
-        }
-      }
-    } finally {
-      coalesceRunning = false;
-      if (coalesceTarget !== undefined && !disposed) {
-        void enqueue(async () => {
-          await drainCoalesced();
-        });
-      }
+  const refreshAcquisitions = async (): Promise<void> => {
+    const touched = lastTouched;
+    for (const acquisition of acquisitions.values()) {
+      await refillAcquisition(acquisition, touched);
     }
   };
 
-  const requestCoalescedRefresh = (version: number, touchedEntities: ReadonlyArray<SyncEntity>) => {
-    lastTouched = touchedEntities;
-    if (coalesceTarget !== undefined && coalesceTarget >= version) return;
-    coalesceTarget = version;
-    void enqueue(async () => {
-      await drainCoalesced();
-    });
-  };
+  const refreshWorker = Effect.gen(function* () {
+    yield* refreshRequested.await;
+    yield* refreshRequested.close;
+    yield* serialized(refreshAcquisitions);
+  }).pipe(
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) => Effect.logError("ReplicaCollection.refresh_failed", cause),
+    ),
+    Effect.forever,
+    Effect.runFork,
+  );
 
   const replay = async (fromVersion: number, signal?: AbortSignal): Promise<void> => {
     const notices = queued.splice(0);
@@ -179,7 +171,8 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         return;
       }
       if (!fenced(notice) || !relevant(notice)) return;
-      requestCoalescedRefresh(notice.localCommitVersion, notice.touchedEntities);
+      lastTouched = notice.touchedEntities;
+      refreshRequested.openUnsafe();
     });
 
   const unsubscribe = beginListeningForCommits();
@@ -238,7 +231,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       disposed = true;
       activeToken = undefined;
       activeGeneration = undefined;
-      coalesceTarget = undefined;
+      refreshWorker.interruptUnsafe();
       queued.length = 0;
       acquisitions.clear();
       rowRefs.clear();

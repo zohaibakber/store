@@ -5,14 +5,14 @@ export const catalogWriteError = {
   batchHasStock: "Clear remaining stock before deleting this batch.",
 } as const;
 
-export type CatalogStockBatch = {
+type CatalogStockBatch = {
   readonly productId: string;
   readonly deletedAt?: number | null;
   readonly packQuantity: number;
   readonly unitQuantity: number;
 };
 
-export type CatalogCategoryProduct = {
+type CatalogCategoryProduct = {
   readonly categoryId: string;
   readonly deletedAt?: number | null;
 };

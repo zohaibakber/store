@@ -15,7 +15,6 @@ import * as Schema from "effect/Schema";
 import { authSession } from "@/lib/auth";
 
 const PKCE_KEY = "tabaaq-oauth-pkce";
-export const GOOGLE_AUTH_ERROR_EVENT = "tabaaq:google-auth-error";
 const configuredAuthUrl = import.meta.env.VITE_AUTH_URL?.trim();
 
 export const authBaseUrl = (configuredAuthUrl || "http://localhost:8788").replace(/\/+$/u, "");
@@ -78,11 +77,6 @@ export const completeGoogle = async (callbackUrl: string) => {
   );
   await authSession().adoptSession(tokens);
   return true;
-};
-
-export const reportGoogleAuthError = (cause: unknown) => {
-  const message = cause instanceof Error ? cause.message : "Google sign-in could not be completed.";
-  window.dispatchEvent(new CustomEvent(GOOGLE_AUTH_ERROR_EVENT, { detail: message }));
 };
 
 export const currentAuthClient = currentClient;

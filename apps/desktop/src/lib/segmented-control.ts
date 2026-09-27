@@ -1,8 +1,8 @@
 import { cva } from "class-variance-authority";
 
-export type SegmentedControlSize = "default" | "lg" | "sm";
+type SegmentedControlSize = "default" | "lg" | "sm";
 
-export const segmentedControlItemSizeClassNames = {
+const segmentedControlItemSizeClassNames = {
   default: "h-8.5 px-2.5 sm:h-7.5",
   lg: "h-9.5 px-3 sm:h-8.5",
   sm: "h-7.5 px-2 sm:h-6.5",
@@ -11,7 +11,7 @@ export const segmentedControlItemSizeClassNames = {
 export const segmentedControlRootClassName =
   "relative z-0 flex w-fit items-center justify-center gap-0.5 rounded-lg bg-muted p-0.5";
 
-export const segmentedControlItemLayoutClassName =
+const segmentedControlItemLayoutClassName =
   "gap-1.5 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0";
 
 export const segmentedControlItemVariants = cva(

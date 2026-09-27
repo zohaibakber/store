@@ -1,7 +1,7 @@
 import { BottomSheet, RNHostView } from "@expo/ui";
 import { Tick02Icon } from "@hugeicons/core-free-icons";
 import * as React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import Animated, {
   FadeIn,
   LinearTransition,
@@ -12,7 +12,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { colors, motion, radius, space, touch } from "@/theme/tokens";
+import { colors, motion, space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Icon } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
@@ -131,28 +132,6 @@ const stepDetail = (phase: SheetPhase, index: number): string | null => {
   return null;
 };
 
-function SheetButton({
-  label,
-  onPress,
-  primary = false,
-}: {
-  readonly label: string;
-  readonly onPress: () => void;
-  readonly primary?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[styles.button, primary ? styles.buttonPrimary : styles.buttonSecondary]}
-    >
-      <Text size="sm" weight="medium" style={{ color: primary ? colors.ground : colors.ink }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function SheetContent({
   phase,
   onDiscard,
@@ -175,11 +154,11 @@ function SheetContent({
         />
       ))}
       <View style={styles.actions}>
-        <SheetButton label="Retake" onPress={onDiscard} />
+        <ActionButton label="Retake" onPress={onDiscard} variant="outlined" />
         {phase._tag === "Failed" && phase.canRetry ? (
-          <SheetButton label="Try again" onPress={onRetry} />
+          <ActionButton label="Try again" onPress={onRetry} variant="outlined" />
         ) : null}
-        <SheetButton label="Fill in by hand" onPress={onManual} primary />
+        <ActionButton label="Fill in by hand" onPress={onManual} />
       </View>
     </View>
   );
@@ -231,15 +210,11 @@ const styles = StyleSheet.create({
   dotActive: { backgroundColor: colors.highlight },
   dotWaiting: { borderWidth: 2, borderColor: colors.hairline },
   dotStopped: { borderWidth: 2, borderColor: colors.ink, backgroundColor: colors.highlight },
-  actions: { flexDirection: "row", gap: space[2], marginTop: space[2] },
-  button: {
-    flex: 1,
-    minHeight: touch.minimum,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: space[3],
-    borderRadius: radius.md,
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    gap: space[2],
+    marginTop: space[2],
   },
-  buttonPrimary: { backgroundColor: colors.ink },
-  buttonSecondary: { borderWidth: 1, borderColor: colors.hairline },
 });

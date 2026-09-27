@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useCatalogCategories, useCatalogSuggestions } from "@/lib/inventory-db";
+import { useCatalogCategories, useCatalogSuggestions } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/new")({
   component: NewProductPage,

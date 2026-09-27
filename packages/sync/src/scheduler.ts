@@ -10,7 +10,7 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "./replica/digest-cadence";
+import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "./replica/cadence";
 import {
   classifySyncFailure,
   dispositionFor,

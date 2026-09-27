@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 
 interface CategoryOption {
   readonly id: string;

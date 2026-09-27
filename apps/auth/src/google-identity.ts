@@ -16,7 +16,7 @@ import { enforceAuthLimit, type AuthLimits } from "./limits";
 import type { AuthRepositoryApi, UserRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
 
-export interface GoogleIdentityConfiguration {
+interface GoogleIdentityConfiguration {
   readonly trustedRedirects: ReadonlyArray<string>;
 }
 
@@ -162,5 +162,3 @@ export const makeGoogleIdentityOps = (
 
   return { beginGoogle, completeGoogle, exchangeGoogle, exchangeGoogleIdToken };
 };
-
-export type GoogleIdentityOps = ReturnType<typeof makeGoogleIdentityOps>;

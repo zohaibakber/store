@@ -24,14 +24,19 @@ import {
   type JsonRequestInit,
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { makeAuthenticatedFetch } from "./authenticated-fetch";
 import {
+  SESSION_ENDED_NOTICE,
   accountFromWorkspace,
   initialAuthState,
   transition,
@@ -137,13 +142,19 @@ const canRename = (role: string) => role === "owner" || role === "admin";
 
 const decodeSnapshot = Schema.decodeUnknownOption(WorkspaceSnapshot);
 
+const sessionEnded = failed(problem("sessionEnded", SESSION_ENDED_NOTICE));
+
 export const createAuthController = (options: AuthControllerOptions): AuthController => {
   const now = options.now ?? Date.now;
   const registry = AtomRegistry.make();
   const stateAtom = Atom.make<AuthState>(initialAuthState).pipe(Atom.keepAlive);
   const flowAtom = Atom.make<SignInFlow | null>(null).pipe(Atom.keepAlive);
   const tokens = new MemoryTokenStore();
-  let generation = 0;
+  const sessionWork = Effect.runSync(
+    FiberSet.make<ActionResult | TokenSet | null, AuthClientError>().pipe(
+      Scope.provide(Scope.makeUnsafe()),
+    ),
+  );
   let started: Promise<void> | null = null;
 
   const getState = () => registry.get(stateAtom);
@@ -169,53 +180,58 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
   const failure = async (cause: unknown, codeIssuedAt?: number) =>
     failed(await describe(failureFacts(cause), codeIssuedAt));
 
+  const failedWith = (facts: FailureFacts) =>
+    Effect.promise(() => describe(facts)).pipe(Effect.map(failed));
+
   const lastOrganization = () => options.vault.loadLastOrganization().catch(() => null);
 
-  const persist = async (account: Account) => {
-    const current = tokens.get();
-    if (current === null) return;
-    await options.vault.save({ version: 1, tokens: current, account }).catch(() => undefined);
-  };
+  const persist = (account: Account) =>
+    Effect.promise(async () => {
+      const current = tokens.get();
+      if (current === null) return;
+      await options.vault.save({ version: 1, tokens: current, account }).catch(() => undefined);
+    }).pipe(Effect.uninterruptible);
 
-  const endSession = async () => {
-    generation += 1;
-    tokens.set(null);
-    setFlow(null);
-    dispatch({ _tag: "SessionEnded" });
-    await options.vault.clear().catch(() => undefined);
-  };
+  const inSession = <A extends ActionResult | TokenSet | null, E extends AuthClientError>(
+    work: Effect.Effect<A, E>,
+    whenInterrupted: A,
+  ) =>
+    Effect.runPromise(
+      FiberSet.run(sessionWork, work).pipe(
+        Effect.flatMap(Fiber.await),
+        Effect.flatMap((exit) =>
+          Exit.hasInterrupts(exit) ? Effect.succeed(whenInterrupted) : exit,
+        ),
+      ),
+    );
 
-  const refreshSession = async (): Promise<TokenSet | null> => {
-    const current = tokens.get();
-    if (!current?.refreshToken) return null;
-    const startedIn = generation;
-    const result = await run(options.authClient.refresh({ refreshToken: current.refreshToken }));
-    if (startedIn !== generation) return null;
+  const leaveSession = (event: AuthEvent) =>
+    Effect.gen(function* () {
+      tokens.set(null);
+      setFlow(null);
+      dispatch(event);
+      yield* FiberSet.clear(sessionWork);
+      yield* Effect.promise(() => options.vault.clear().catch(() => undefined));
+    });
+
+  const endSession = Effect.forkDetach(leaveSession({ _tag: "SessionEnded" }), {
+    startImmediately: true,
+  });
+
+  const refreshTokens = Effect.fn("MobileAuth.refreshTokens")(function* () {
+    const refreshToken = tokens.get()?.refreshToken;
+    if (!refreshToken) return null;
+    const result = yield* Effect.result(options.authClient.refresh({ refreshToken }));
     if (Result.isFailure(result)) {
-      if (!rejectsRefresh(failureFacts(result.failure))) throw result.failure;
-      await endSession();
+      if (!rejectsRefresh(failureFacts(result.failure))) return yield* Effect.fail(result.failure);
+      yield* endSession;
       return null;
     }
     tokens.set(result.success);
     const account = activeAccount();
-    if (account !== null) await persist(account);
+    if (account !== null) yield* persist(account);
     return result.success;
-  };
-
-  const http: SessionHttpClient = new SessionHttpClient({
-    apiBaseUrl: options.apiBaseUrl,
-    authBaseUrl: options.authBaseUrl,
-    tokens,
-    fetch: options.fetch,
-    needsRefresh: refreshTokenNeedsRefresh,
-    refreshSession,
-    afterRefresh: async () => {
-      setTimeout(() => void reloadAccount(), 0);
-    },
   });
-
-  const authRequest = (pathname: string, init?: JsonRequestInit) =>
-    http.authRequest(pathname, init);
 
   const loadAccount = async (): Promise<Account> => {
     const snapshot = decodeSnapshot(await http.apiRequest("/api/auth/session"));
@@ -236,43 +252,60 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     return accountFromWorkspace(snapshot.value);
   };
 
-  const reloadAccount = async (): Promise<ActionResult> => {
-    const startedIn = generation;
-    try {
-      const account = await loadAccount();
-      if (startedIn !== generation || getState()._tag !== "Active") return done;
-      await persist(account);
-      dispatch({
-        _tag: "AccountRefreshed",
-        account,
-        lastOrganization: await lastOrganization(),
-      });
-      return done;
-    } catch (cause) {
-      const facts = failureFacts(cause);
-      if (startedIn === generation && endsSession(facts)) await endSession();
-      return failed(await describe(facts));
+  const fetchAccount = Effect.tryPromise({ try: loadAccount, catch: failureFacts });
+
+  const refreshAccount = Effect.fn("MobileAuth.refreshAccount")(function* () {
+    const loaded = yield* Effect.result(fetchAccount);
+    if (Result.isFailure(loaded)) {
+      if (endsSession(loaded.failure)) yield* endSession;
+      return yield* failedWith(loaded.failure);
     }
-  };
+    if (getState()._tag !== "Active") return done;
+    yield* persist(loaded.success);
+    const remembered = yield* Effect.promise(lastOrganization);
+    dispatch({ _tag: "AccountRefreshed", account: loaded.success, lastOrganization: remembered });
+    return done;
+  });
+
+  const reloadAccount = () => inSession(refreshAccount(), sessionEnded);
+
+  const http: SessionHttpClient = new SessionHttpClient({
+    apiBaseUrl: options.apiBaseUrl,
+    authBaseUrl: options.authBaseUrl,
+    tokens,
+    fetch: options.fetch,
+    needsRefresh: refreshTokenNeedsRefresh,
+    refreshSession: () => inSession(refreshTokens(), null),
+    afterRefresh: async () => {
+      void reloadAccount();
+    },
+  });
+
+  const authRequest = (pathname: string, init?: JsonRequestInit) =>
+    http.authRequest(pathname, init);
+
+  const signInWith = Effect.fn("MobileAuth.signInWith")(function* (issued: TokenSet) {
+    const loaded = yield* Effect.result(fetchAccount);
+    if (Result.isFailure(loaded)) {
+      tokens.set(null);
+      if (issued.refreshToken) {
+        yield* Effect.forkDetach(
+          Effect.ignore(options.authClient.signOut({ refreshToken: issued.refreshToken })),
+        );
+      }
+      return yield* failedWith(loaded.failure);
+    }
+    yield* persist(loaded.success);
+    const remembered = yield* Effect.promise(lastOrganization);
+    setFlow(null);
+    dispatch({ _tag: "SignedIn", account: loaded.success, lastOrganization: remembered });
+    return done;
+  });
 
   const adopt = async (issued: TokenSet): Promise<ActionResult> => {
-    generation += 1;
-    const startedIn = generation;
+    await Effect.runPromise(FiberSet.clear(sessionWork));
     tokens.set(issued);
-    try {
-      const account = await loadAccount();
-      if (startedIn !== generation) return done;
-      await persist(account);
-      const remembered = await lastOrganization();
-      setFlow(null);
-      dispatch({ _tag: "SignedIn", account, lastOrganization: remembered });
-      return done;
-    } catch (cause) {
-      if (startedIn === generation) tokens.set(null);
-      if (issued.refreshToken)
-        void run(options.authClient.signOut({ refreshToken: issued.refreshToken }));
-      return failure(cause);
-    }
+    return inSession(signInWith(issued), done);
   };
 
   const identify = async (email: string): Promise<IdentifyResult> => {
@@ -458,12 +491,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
 
   const signOut = async () => {
     await http.awaitRefreshInFlight()?.catch(() => null);
-    generation += 1;
     const refreshToken = tokens.get()?.refreshToken;
-    tokens.set(null);
-    setFlow(null);
-    dispatch({ _tag: "SignedOut" });
-    await options.vault.clear().catch(() => undefined);
+    await Effect.runPromise(leaveSession({ _tag: "SignedOut" }));
     await options.google?.forget().catch(() => undefined);
     if (refreshToken) void run(options.authClient.signOut({ refreshToken }));
   };
@@ -499,7 +528,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     confirmOrganization,
     joinOrganization,
     signOut,
-    authenticatedFetch: makeAuthenticatedFetch({ http, fetch: options.fetch }),
+    authenticatedFetch: makeAuthenticatedFetch(http),
   };
 };
 

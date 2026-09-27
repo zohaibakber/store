@@ -13,7 +13,7 @@ import type { ReplicaHandle } from "./types";
 
 export type { SqliteReplicaIdentity } from "./sql-client-session";
 
-export type OpenSqlClientReplicaInput<E> = {
+type OpenSqlClientReplicaInput<E> = {
   readonly sqlClient: Layer.Layer<SqlClient, E>;
   readonly databaseName: string;
   readonly identity: SqliteReplicaIdentity;

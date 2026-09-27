@@ -3,7 +3,7 @@ import { useEffect } from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
 
-export const isNewSaleKeyboardEvent = (event: KeyboardEvent): boolean =>
+const isNewSaleKeyboardEvent = (event: KeyboardEvent): boolean =>
   event.code === "KeyN" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
 
 export function useNewSaleShortcut(): void {

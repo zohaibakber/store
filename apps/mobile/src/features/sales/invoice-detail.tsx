@@ -1,6 +1,7 @@
 import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
 import type { Invoice, InvoiceItem } from "@store/contracts";
 import { useInventoryInvoice } from "@store/inventory-react";
+import { formatPrice } from "@store/services/format";
 import { Stack } from "expo-router";
 import * as React from "react";
 import { StyleSheet, View } from "react-native";
@@ -10,7 +11,7 @@ import { colors, space } from "@/theme/tokens";
 import { Text } from "@/ui/text";
 
 import { detailHeaderOptions } from "../detail-header";
-import { formatDateTime, formatPrice } from "../format";
+import { formatDateTime } from "../format";
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
 import { invoiceItemQuantity, invoiceTitle, itemCountLabel } from "./invoice-text";
 

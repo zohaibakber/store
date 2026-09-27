@@ -41,14 +41,14 @@ interface InvoiceLineModel {
   readonly packPrice?: ModelScalar;
 }
 
-export interface InvoiceModelObject {
+interface InvoiceModelObject {
   readonly response?: string;
   readonly supplier?: ModelScalar;
   readonly invoiceNumber?: ModelScalar;
   readonly lines?: ReadonlyArray<InvoiceLineModel> | ModelScalar;
 }
 
-export type InvoiceModelOutput = string | InvoiceModelObject;
+type InvoiceModelOutput = string | InvoiceModelObject;
 
 export type ConvertedDocument =
   | { readonly kind: "ok"; readonly name: string; readonly data: string }
@@ -68,7 +68,7 @@ export interface InvoiceAiClient {
   }) => Promise<InvoiceModelOutput>;
 }
 
-export interface InvoiceAiConfig {
+interface InvoiceAiConfig {
   readonly ai: InvoiceAiClient;
 }
 

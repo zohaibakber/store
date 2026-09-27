@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./stock-recommendations": "./src/stock-recommendations/service.ts"
+    "./stock-recommendations": "./src/stock-recommendations/service.ts",
+    "./format": "./src/format.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
@@ -17,8 +18,8 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "typescript": "catalog:",
-    "vitest": "5.0.1"
+    "vitest": "5.0.2"
   }
 }

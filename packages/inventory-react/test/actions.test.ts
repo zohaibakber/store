@@ -90,9 +90,7 @@ const harness = (rows?: {
     publish: () => undefined,
     close: () => undefined,
   };
-  const atoms = createWorkspaceAtoms(undefined, async () => {
-    throw new Error("unused");
-  });
+  const atoms = createWorkspaceAtoms(actor.organizationId);
   const tables = {
     batches: collectionOf(rows?.batches ?? []),
     categories: collectionOf(rows?.categories ?? [category]),

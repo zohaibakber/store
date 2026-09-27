@@ -65,16 +65,16 @@ export interface ReplicaSubsetReader {
   readonly readSubset: (spec: InventorySubsetSpec) => Promise<ReplicaSubsetRead>;
 }
 
-export type ReplicaHandleIdentity = {
+type ReplicaHandleIdentity = {
   readonly workspaceToken: string;
   readonly engine?: "sqlite" | "indexeddb";
 };
 
-export type ReplicaHandleLifecycle = {
+type ReplicaHandleLifecycle = {
   readonly close: () => void;
 };
 
-export type ReplicaMutationSurface = {
+type ReplicaMutationSurface = {
   readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
   readonly readCommandAllocation: () => Promise<{
     readonly epoch: string;

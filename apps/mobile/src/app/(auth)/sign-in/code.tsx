@@ -4,10 +4,10 @@ import * as React from "react";
 import { View } from "react-native";
 
 import { useAuthActions, useSignInFlow, type AuthProblem } from "@/auth";
-import { ActionButton } from "@/auth/ui/action-button";
 import { AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
 import { space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
 const CODE_LENGTH = 6;
@@ -58,8 +58,9 @@ function CodeForm({ email, developmentCode }: CodeFormProps) {
       description={`Enter the 6-digit code we sent to ${email}.`}
       footer={
         <ActionButton
+          size="large"
           label="Use another email"
-          variant="quiet"
+          variant="text"
           disabled={busy !== null}
           onPress={back}
         />
@@ -93,6 +94,7 @@ function CodeForm({ email, developmentCode }: CodeFormProps) {
       <ProblemMessage problem={problem} />
       <View style={{ gap: space[2] }}>
         <ActionButton
+          size="large"
           label="Verify"
           loading={busy === "verify"}
           disabled={busy === "resend" || code.length !== CODE_LENGTH}
@@ -100,8 +102,9 @@ function CodeForm({ email, developmentCode }: CodeFormProps) {
         />
         <View style={{ alignItems: "center" }}>
           <ActionButton
+            size="large"
             label={resent ? "New code sent" : "Send a new code"}
-            variant="quiet"
+            variant="text"
             loading={busy === "resend"}
             disabled={busy === "verify" || resent}
             onPress={() => void resend()}

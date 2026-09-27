@@ -1,4 +1,6 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { isSqlError, type SqlError } from "effect/unstable/sql/SqlError";
 
 export class MigrationInterrupted extends Schema.TaggedError<MigrationInterrupted>()(
   "Migrate.Interrupted",
@@ -90,3 +92,21 @@ export type MigrationError =
   | PublicationFailed
   | PersistenceError
   | ConfigurationError;
+
+type StorageFailure = SqlError | Schema.SchemaError;
+
+const isStorageFailure = (cause: unknown): boolean =>
+  isSqlError(cause) || Schema.isSchemaError(cause);
+
+export const persistingAs =
+  <Failure>(fail: (cause: StorageFailure) => Failure) =>
+  <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, Exclude<E, Extract<E, StorageFailure>> | Failure, R> =>
+    effect.pipe(
+      Effect.catchIf(
+        (cause): cause is Extract<E, StorageFailure> => isStorageFailure(cause),
+        (cause) => Effect.fail(fail(cause)),
+        Effect.fail,
+      ),
+    );

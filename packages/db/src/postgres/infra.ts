@@ -41,7 +41,7 @@ export const InventoryPostgres = Effect.gen(function* () {
  * This is not the branch default role. Alchemy migrates with the database
  * resource; Hyperdrive uses this role's direct origin.
  */
-export const InventoryPostgresRole = Effect.gen(function* () {
+const InventoryPostgresRole = Effect.gen(function* () {
   const database = yield* InventoryPostgres;
   return yield* Planetscale.PostgresRole("InventoryPostgresRole", {
     database,
@@ -53,7 +53,7 @@ export const InventoryPostgresRole = Effect.gen(function* () {
  * Development inventory database on Neon. Alchemy applies the same Drizzle
  * migrations as production.
  */
-export const InventoryNeon = Effect.gen(function* () {
+const InventoryNeon = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Neon.Project("InventoryNeon", {
     name: "tabaaq-inventory-dev",

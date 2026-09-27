@@ -1,6 +1,7 @@
 import { UserRemove01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { AuthOrganizationMembership, OrganizationMember, OrganizationRole } from "@store/auth";
+import { initials } from "@store/services/format";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import {
@@ -26,7 +27,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
-import { initials } from "@/lib/format";
 import { useOrganization } from "@/lib/organization";
 
 const roles = [

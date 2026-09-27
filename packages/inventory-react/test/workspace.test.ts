@@ -198,12 +198,12 @@ describe("openInventoryWorkspace", () => {
         created.product.id,
       ]);
       expect(currentValue(registry.get(pendingProducts))).toEqual(new Set([created.product.id]));
-    });
-    expect(registry.get(inventory.atoms.syncActivity)).toMatchObject({
-      pendingCount: 2,
-      rejectedCount: 0,
-      rejected: [],
-      lastCaughtUpAt: null,
+      expect(registry.get(inventory.atoms.syncActivity)).toMatchObject({
+        pendingCount: 2,
+        rejectedCount: 0,
+        rejected: [],
+        lastCaughtUpAt: null,
+      });
     });
     unmountSearch();
     unmountPending();

@@ -16,7 +16,7 @@ export const touchedEntitiesForCommand = (
   return [...entities];
 };
 
-export const touchedKey = (entity: SyncEntity, id: string): string => `${entity}:${id}`;
+const touchedKey = (entity: SyncEntity, id: string): string => `${entity}:${id}`;
 
 export const touchedKeysForCommand = (envelope: SyncCommandEnvelope): ReadonlyArray<string> => {
   if (envelope.command._tag === "issueInvoice") {

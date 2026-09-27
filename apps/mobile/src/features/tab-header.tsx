@@ -1,3 +1,4 @@
+import { initials } from "@store/services/format";
 import { useRouter } from "expo-router";
 import type * as React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -6,8 +7,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "@/auth";
 import { colors, radius, space, touch } from "@/theme/tokens";
 import { Text } from "@/ui/text";
-
-import { initialsOf } from "./format";
 
 export function TabHeader({
   title,
@@ -47,7 +46,7 @@ export function AccountAvatar() {
     >
       <View style={styles.avatar}>
         <Text size="xs" weight="medium">
-          {initialsOf(name) || "?"}
+          {initials(name) || "?"}
         </Text>
       </View>
     </Pressable>

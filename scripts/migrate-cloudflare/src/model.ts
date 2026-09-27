@@ -1,12 +1,10 @@
 import {
-  AuthorityIncarnation,
   InventoryImportId,
   InventoryObjectName,
   InventoryReleaseId,
   OrganizationId,
   PositiveInt,
   Sha256Hex as Sha256HexText,
-  SyncEpoch,
 } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
@@ -49,12 +47,11 @@ export const OrganizationSelection = Schema.Struct({
 });
 export interface OrganizationSelection extends Schema.Schema.Type<typeof OrganizationSelection> {}
 
-export const ChunkCursor = Schema.Struct({
+const ChunkCursor = Schema.Struct({
   organizationId: OrganizationId,
   table: BusinessTable,
   chunkIndex: Schema.Natural,
 });
-export interface ChunkCursor extends Schema.Schema.Type<typeof ChunkCursor> {}
 
 export const SqliteFlag = Schema.Literals([0, 1]);
 export type SqliteFlag = typeof SqliteFlag.Type;
@@ -250,14 +247,10 @@ export const ImportObjectState = Schema.TaggedUnion({
   importing: {
     organizationId: OrganizationId,
     importId: InventoryImportId,
-    epoch: SyncEpoch,
-    incarnation: AuthorityIncarnation,
   },
   ready: {
     organizationId: OrganizationId,
     importId: InventoryImportId,
-    epoch: SyncEpoch,
-    incarnation: AuthorityIncarnation,
   },
 });
 export type ImportObjectState = typeof ImportObjectState.Type;
@@ -322,7 +315,6 @@ export const MigrationRequest = Schema.Struct({
 export interface MigrationRequest extends Schema.Schema.Type<typeof MigrationRequest> {}
 
 export const DEFAULT_CHUNK_SIZE = 500;
-export const INITIAL_SYNC_EPOCH = SyncEpoch.make("1");
 
 export const DriverScalar = Schema.Union([
   Schema.String,

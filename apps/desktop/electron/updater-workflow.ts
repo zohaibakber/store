@@ -7,12 +7,14 @@ import {
   type UpdatePhase,
 } from "@store/contracts/updater";
 import * as Clock from "effect/Clock";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FiberSet from "effect/FiberSet";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 
 export type UpdaterProviderEvent =
   | { readonly type: "checking" }
@@ -29,6 +31,27 @@ export interface UpdaterProvider {
   readonly subscribe: (listener: (event: UpdaterProviderEvent) => void) => () => void;
 }
 
+const sameProgress = (left: UpdaterProviderEvent, right: UpdaterProviderEvent) =>
+  left.type === "progress" && right.type === "progress" && left.percent === right.percent;
+
+/**
+ * Drops repeated progress and samples intermediate progress to one event per
+ * `interval`. Lifecycle events and 100% completion always pass, in order.
+ */
+export const sampleDownloadProgress =
+  (interval: Duration.Input) =>
+  <E, R>(events: Stream.Stream<UpdaterProviderEvent, E, R>) =>
+    events.pipe(
+      Stream.changesWith(sameProgress),
+      Stream.rechunk(1),
+      Stream.throttle({
+        cost: ([event]) => (event.type === "progress" && event.percent < 100 ? 1 : 0),
+        units: 1,
+        duration: interval,
+        strategy: "enforce",
+      }),
+    );
+
 export interface UpdaterWorkflowConfig {
   readonly initialCheckDelay: number;
   readonly checkInterval: number;
@@ -37,7 +60,7 @@ export interface UpdaterWorkflowConfig {
   readonly periodicChecks: boolean;
 }
 
-export interface UpdaterWorkflow {
+interface UpdaterWorkflow {
   readonly check: (force?: boolean) => Effect.Effect<void>;
   readonly download: Effect.Effect<void, Error>;
   readonly install: Effect.Effect<void>;

@@ -4,10 +4,11 @@ import { useState } from "react";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
-import { canCheckForAppUpdate, checkForAppUpdate } from "@/hooks/use-app-updater";
+import { canCheckForAppUpdate, useCheckForAppUpdate } from "@/hooks/use-app-updater";
 
 export function AboutSettings() {
   const [supportsUpdates] = useState(canCheckForAppUpdate);
+  const checkForAppUpdate = useCheckForAppUpdate();
 
   return (
     <FrameCard title="About Tabaaq">

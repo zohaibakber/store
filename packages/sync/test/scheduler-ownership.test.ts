@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import { TestClock } from "effect/testing";
 
 import { makeSyncScheduler } from "../src/scheduler";
 import { makeWebNetworkOwnership } from "../src/web-ownership";
@@ -67,8 +69,14 @@ const queuedLocks = (): LockManagerLike => {
   };
 };
 
-const settle = (millis: number) =>
-  Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)));
+const recordOwner = (
+  owners: Ref.Ref<ReadonlyArray<string>>,
+  name: string,
+  granted: Deferred.Deferred<void>,
+) =>
+  Ref.update(owners, (current) => [...current, name]).pipe(
+    Effect.andThen(Deferred.succeed(granted, undefined)),
+  );
 
 describe("web network ownership", () => {
   it.effect("acquires immediately when Web Locks are unavailable", () =>
@@ -85,25 +93,26 @@ describe("web network ownership", () => {
     ),
   );
 
-  it.live("releases leadership so a later acquirer can become owner", () =>
+  it.effect("releases leadership so a later acquirer can become owner", () =>
     withNavigatorLocks(
       queuedLocks(),
       Effect.gen(function* () {
         const first = yield* makeWebNetworkOwnership("leader-loss-a");
         const second = yield* makeWebNetworkOwnership("leader-loss-a");
         const owners = yield* Ref.make<ReadonlyArray<string>>([]);
+        const firstGranted = yield* Deferred.make<void>();
+        const secondGranted = yield* Deferred.make<void>();
         const firstHandle = yield* first.tryAcquire(() =>
-          Ref.update(owners, (current) => [...current, "first"]),
+          recordOwner(owners, "first", firstGranted),
         );
-        yield* settle(10);
+        yield* Deferred.await(firstGranted);
         expect(yield* Ref.get(owners)).toEqual(["first"]);
         const secondHandle = yield* second.tryAcquire(() =>
-          Ref.update(owners, (current) => [...current, "second"]),
+          recordOwner(owners, "second", secondGranted),
         );
-        yield* settle(20);
         expect(yield* Ref.get(owners)).toEqual(["first"]);
         yield* firstHandle.release;
-        yield* settle(10);
+        yield* Deferred.await(secondGranted);
         expect(yield* Ref.get(owners)).toEqual(["first", "second"]);
         yield* secondHandle.release;
         yield* first.dispose;
@@ -112,14 +121,17 @@ describe("web network ownership", () => {
     ),
   );
 
-  it.live("opens a follower tab without waiting for the lock", () =>
+  it.effect("opens a follower tab without waiting for the lock", () =>
     withNavigatorLocks(
       queuedLocks(),
       Effect.gen(function* () {
         const leader = yield* makeWebNetworkOwnership("follower-open");
         const follower = yield* makeWebNetworkOwnership("follower-open");
-        const leaderHandle = yield* leader.tryAcquire(() => Effect.void);
-        yield* settle(10);
+        const leaderGranted = yield* Deferred.make<void>();
+        const leaderHandle = yield* leader.tryAcquire(() =>
+          Deferred.succeed(leaderGranted, undefined),
+        );
+        yield* Deferred.await(leaderGranted);
         const followerHandle = yield* follower
           .tryAcquire(() => Effect.void)
           .pipe(Effect.timeoutOption("50 millis"));
@@ -130,7 +142,7 @@ describe("web network ownership", () => {
     ),
   );
 
-  it.live("a follower released before the grant never becomes owner", () =>
+  it.effect("a follower released before the grant never becomes owner", () =>
     withNavigatorLocks(
       queuedLocks(),
       Effect.gen(function* () {
@@ -138,24 +150,29 @@ describe("web network ownership", () => {
         const follower = yield* makeWebNetworkOwnership("follower-cancel");
         const third = yield* makeWebNetworkOwnership("follower-cancel");
         const owners = yield* Ref.make<ReadonlyArray<string>>([]);
-        const leaderHandle = yield* leader.tryAcquire(() => Effect.void);
-        yield* settle(10);
+        const leaderGranted = yield* Deferred.make<void>();
+        const followerGranted = yield* Deferred.make<void>();
+        const thirdGranted = yield* Deferred.make<void>();
+        const leaderHandle = yield* leader.tryAcquire(() =>
+          Deferred.succeed(leaderGranted, undefined),
+        );
+        yield* Deferred.await(leaderGranted);
         const followerHandle = yield* follower.tryAcquire(() =>
-          Ref.update(owners, (current) => [...current, "follower"]),
+          recordOwner(owners, "follower", followerGranted),
         );
         const thirdHandle = yield* third.tryAcquire(() =>
-          Ref.update(owners, (current) => [...current, "third"]),
+          recordOwner(owners, "third", thirdGranted),
         );
         yield* followerHandle.release;
         yield* leaderHandle.release;
-        yield* settle(20);
+        yield* Deferred.await(thirdGranted);
         expect(yield* Ref.get(owners)).toEqual(["third"]);
         yield* thirdHandle.release;
       }),
     ),
   );
 
-  it.live("publishCrossTab delivers invalidation notices to siblings", () =>
+  it.effect("publishCrossTab delivers invalidation notices to siblings", () =>
     Effect.gen(function* () {
       class Channel {
         static peers = new Map<string, Set<Channel>>();
@@ -193,8 +210,8 @@ describe("web network ownership", () => {
             Stream.take(1),
             Stream.runForEach((notice) => Ref.update(notices, (current) => [...current, notice])),
           ),
+          { startImmediately: true },
         );
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 20)));
         yield* publisher.publishCrossTab({ generationId: "2", localCommitVersion: 9 });
         yield* Fiber.join(fiber);
         expect(yield* Ref.get(notices)).toEqual([{ generationId: "2", localCommitVersion: 9 }]);
@@ -211,7 +228,7 @@ describe("web network ownership", () => {
 });
 
 describe("sync scheduler ownership gate", () => {
-  it.live("drains upload only while network owner", () =>
+  it.effect("drains upload only while network owner", () =>
     Effect.gen(function* () {
       const drains = yield* Ref.make(0);
       const scheduler = yield* makeSyncScheduler({
@@ -219,16 +236,16 @@ describe("sync scheduler ownership gate", () => {
         catchUp: () => Effect.void,
       });
       yield* scheduler.wake("localWrite");
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      yield* TestClock.adjust("1 hour");
       expect(yield* Ref.get(drains)).toBe(0);
       yield* scheduler.setNetworkOwner(true);
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      yield* TestClock.adjust("0 millis");
       expect(yield* Ref.get(drains)).toBeGreaterThan(0);
       yield* scheduler.shutdown;
     }),
   );
 
-  it.live("follower wakes never drain after ownership is released", () =>
+  it.effect("follower wakes never drain after ownership is released", () =>
     Effect.gen(function* () {
       const drains = yield* Ref.make(0);
       const scheduler = yield* makeSyncScheduler(
@@ -245,14 +262,14 @@ describe("sync scheduler ownership gate", () => {
       );
       yield* scheduler.setNetworkOwner(true);
       yield* scheduler.wake("localWrite");
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 20)));
+      yield* TestClock.adjust("0 millis");
       const whileOwner = yield* Ref.get(drains);
       expect(whileOwner).toBeGreaterThan(0);
       yield* scheduler.setNetworkOwner(false);
       yield* scheduler.wake("localWrite");
       yield* scheduler.wake("live");
       yield* scheduler.wake("reconnect");
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 40)));
+      yield* TestClock.adjust("1 minute");
       expect(yield* Ref.get(drains)).toBe(whileOwner);
       yield* scheduler.shutdown;
     }),

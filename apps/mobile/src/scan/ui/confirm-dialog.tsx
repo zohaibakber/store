@@ -2,8 +2,8 @@ import { Host } from "@expo/ui";
 import { AlertDialog, Text } from "@expo/ui/jetpack-compose";
 import { StyleSheet } from "react-native";
 
-import { ComposeActionButton } from "@/features/action-button";
 import { colors, fonts, type } from "@/theme/tokens";
+import { ComposeActionButton } from "@/ui/action-button";
 
 const dialogColors = {
   containerColor: colors.ground,

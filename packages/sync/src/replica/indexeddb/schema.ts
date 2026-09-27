@@ -58,7 +58,7 @@ export const OutboxRow = Schema.Struct({
 });
 export type OutboxRow = typeof OutboxRow.Type;
 
-export const CoverageRow = Schema.Struct({
+const CoverageRow = Schema.Struct({
   subscription: NonEmptyString,
   state: Schema.Literals(["awaiting_snapshot", "downloaded"]),
   throughCommitSequence: Schema.NullOr(NonEmptyString),
@@ -66,7 +66,7 @@ export const CoverageRow = Schema.Struct({
   verifiedAt: Schema.optionalKey(Schema.NullOr(NonNegativeInteger)),
 });
 
-export const SnapshotImportRow = Schema.Struct({
+const SnapshotImportRow = Schema.Struct({
   snapshotId: NonEmptyString,
   generation: PositiveInteger,
   subscription: NonEmptyString,
@@ -76,19 +76,18 @@ export const SnapshotImportRow = Schema.Struct({
   partsTotal: NonNegativeInteger,
 });
 
-export const StockOverlayRow = Schema.Struct({
+const StockOverlayRow = Schema.Struct({
   commandId: NonEmptyString,
   batchId: NonEmptyString,
   packDelta: SignedInteger,
   unitDelta: SignedInteger,
 });
 
-export const PendingRowMark = Schema.Struct({
+const PendingRowMark = Schema.Struct({
   entity: NonEmptyString,
   entityId: NonEmptyString,
   operationId: NonEmptyString,
 });
-export type PendingRowMark = typeof PendingRowMark.Type;
 
 export const PendingRowJournalEntry = Schema.Struct({
   operationId: NonEmptyString,
@@ -98,7 +97,7 @@ export const PendingRowJournalEntry = Schema.Struct({
 });
 export type PendingRowJournalEntry = typeof PendingRowJournalEntry.Type;
 
-export const StagedSnapshotRow = Schema.Struct({
+const StagedSnapshotRow = Schema.Struct({
   snapshotId: NonEmptyString,
   entity: NonEmptyString,
   entityId: NonEmptyString,
@@ -106,14 +105,14 @@ export const StagedSnapshotRow = Schema.Struct({
   rowJson: NonEmptyString,
 });
 
-export class ReplicaStateTable extends IndexedDbTable.make({
+class ReplicaStateTable extends IndexedDbTable.make({
   name: "replica_state",
   schema: ReplicaStateRow,
   keyPath: "id",
   durability: "strict",
 }) {}
 
-export class OutboxTable extends IndexedDbTable.make({
+class OutboxTable extends IndexedDbTable.make({
   name: "command_outbox",
   schema: OutboxRow,
   keyPath: "operationId",
@@ -123,21 +122,21 @@ export class OutboxTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class CoverageTable extends IndexedDbTable.make({
+class CoverageTable extends IndexedDbTable.make({
   name: "replica_coverage",
   schema: CoverageRow,
   keyPath: "subscription",
   durability: "strict",
 }) {}
 
-export class SnapshotImportTable extends IndexedDbTable.make({
+class SnapshotImportTable extends IndexedDbTable.make({
   name: "snapshot_imports",
   schema: SnapshotImportRow,
   keyPath: "snapshotId",
   durability: "strict",
 }) {}
 
-export class StockOverlayTable extends IndexedDbTable.make({
+class StockOverlayTable extends IndexedDbTable.make({
   name: "stock_overlays",
   schema: StockOverlayRow,
   keyPath: ["commandId", "batchId"],
@@ -148,7 +147,7 @@ export class StockOverlayTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class StagedSnapshotTable extends IndexedDbTable.make({
+class StagedSnapshotTable extends IndexedDbTable.make({
   name: "snapshot_staged_rows",
   schema: StagedSnapshotRow,
   keyPath: ["snapshotId", "entity", "entityId"],
@@ -158,7 +157,7 @@ export class StagedSnapshotTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class PendingRowMarkTable extends IndexedDbTable.make({
+class PendingRowMarkTable extends IndexedDbTable.make({
   name: "pending_row_marks",
   schema: PendingRowMark,
   keyPath: ["entity", "entityId"],
@@ -168,7 +167,7 @@ export class PendingRowMarkTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class PendingRowJournalTable extends IndexedDbTable.make({
+class PendingRowJournalTable extends IndexedDbTable.make({
   name: "pending_row_journal",
   schema: PendingRowJournalEntry,
   keyPath: ["operationId", "entity", "entityId"],
@@ -178,7 +177,7 @@ export class PendingRowJournalTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class CategoryTable extends IndexedDbTable.make({
+class CategoryTable extends IndexedDbTable.make({
   name: "categories",
   schema: withGeneration(ReplicaCategoryRow.fields),
   keyPath: ["generation", "id"],
@@ -188,7 +187,7 @@ export class CategoryTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class ProductTable extends IndexedDbTable.make({
+class ProductTable extends IndexedDbTable.make({
   name: "products",
   schema: withGeneration(ReplicaProductRow.fields),
   keyPath: ["generation", "id"],
@@ -198,7 +197,7 @@ export class ProductTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class BatchTable extends IndexedDbTable.make({
+class BatchTable extends IndexedDbTable.make({
   name: "batches",
   schema: withGeneration(ReplicaBatchRow.fields),
   keyPath: ["generation", "id"],
@@ -208,7 +207,7 @@ export class BatchTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class InvoiceTable extends IndexedDbTable.make({
+class InvoiceTable extends IndexedDbTable.make({
   name: "invoices",
   schema: withGeneration(ReplicaInvoiceRow.fields),
   keyPath: ["generation", "id"],
@@ -219,7 +218,7 @@ export class InvoiceTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class InvoiceItemTable extends IndexedDbTable.make({
+class InvoiceItemTable extends IndexedDbTable.make({
   name: "invoice_items",
   schema: withGeneration(ReplicaInvoiceItemRow.fields),
   keyPath: ["generation", "id"],
@@ -229,7 +228,7 @@ export class InvoiceItemTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class StockMovementTable extends IndexedDbTable.make({
+class StockMovementTable extends IndexedDbTable.make({
   name: "stock_movements",
   schema: withGeneration(ReplicaStockMovementRow.fields),
   keyPath: ["generation", "id"],
@@ -239,7 +238,7 @@ export class StockMovementTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-export class ReplicaV1 extends IndexedDbVersion.make(
+class ReplicaV1 extends IndexedDbVersion.make(
   ReplicaStateTable,
   OutboxTable,
   CoverageTable,
@@ -254,7 +253,7 @@ export class ReplicaV1 extends IndexedDbVersion.make(
   StockMovementTable,
 ) {}
 
-export class ReplicaV2 extends IndexedDbVersion.make(
+class ReplicaV2 extends IndexedDbVersion.make(
   ReplicaStateTable,
   OutboxTable,
   CoverageTable,

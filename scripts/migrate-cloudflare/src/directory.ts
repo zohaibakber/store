@@ -14,12 +14,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-import { PersistenceError, PublicationFailed } from "./errors.ts";
+import { PersistenceError, persistingAs, PublicationFailed } from "./errors.ts";
 import {
   type ActiveReleasePointer,
   ActiveReleasePointer as ActiveReleasePointerSchema,
 } from "./model.ts";
-import { migrateDirectory, persistingAs } from "./sqlite.ts";
+import { migrateDirectory } from "./sqlite.ts";
 
 export const ReleaseEntry = Schema.Struct({
   organizationId: OrganizationId,
@@ -29,7 +29,7 @@ export const ReleaseEntry = Schema.Struct({
 });
 export interface ReleaseEntry extends Schema.Schema.Type<typeof ReleaseEntry> {}
 
-export interface DatasetReleaseDirectoryApi {
+interface DatasetReleaseDirectoryApi {
   readonly ensureOrganization: (
     organizationId: OrganizationId,
   ) => Effect.Effect<void, PersistenceError>;
@@ -49,7 +49,7 @@ export interface DatasetReleaseDirectoryApi {
   ) => Effect.Effect<Option.Option<string>, PersistenceError>;
 }
 
-export interface DatasetReleaseDirectoryTestApi extends DatasetReleaseDirectoryApi {
+interface DatasetReleaseDirectoryTestApi extends DatasetReleaseDirectoryApi {
   readonly loseNextActivation: () => Effect.Effect<void>;
 }
 

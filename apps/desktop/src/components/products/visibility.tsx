@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible" },

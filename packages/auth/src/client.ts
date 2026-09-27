@@ -194,4 +194,4 @@ export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClie
 };
 
 export const authClientLayer = (configuration: AuthClientConfiguration) =>
-  Layer.succeed(AuthClient, makeAuthClient(configuration));
+  Layer.sync(AuthClient, () => makeAuthClient(configuration));

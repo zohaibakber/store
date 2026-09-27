@@ -15,7 +15,7 @@ import { UploadAttachmentList } from "@/components/uploads/attachment-list";
 import { UploadProvider, useUpload } from "@/components/uploads/context";
 import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
-import { useCatalogCategories, useCatalogProducts } from "@/lib/inventory-db";
+import { useCatalogCategories, useCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/upload")({
   component: UploadInvoicesRoute,

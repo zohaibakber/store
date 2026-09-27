@@ -1,5 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ProductRow } from "@store/client-db";
+import type {
+  BatchRow,
+  CategoryRow,
+  InvoiceItemRow,
+  InvoiceRow,
+  ProductRow,
+} from "@store/client-db";
 import type {
   Category,
   Invoice,
@@ -15,6 +21,7 @@ import {
   toArray,
   useLiveQuery,
   type InitialQueryBuilder,
+  type Ref,
 } from "@tanstack/react-db";
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
@@ -32,6 +39,127 @@ const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
     values.slice(index * size, (index + 1) * size),
   );
 
+const categoryFields = (category: Ref<CategoryRow>) => ({
+  id: category.id,
+  name: category.name,
+  tracksPacks: category.tracksPacks,
+  organizationId: category.organizationId,
+  createdByUserId: category.createdByUserId,
+  updatedByUserId: category.updatedByUserId,
+  deviceId: category.deviceId,
+  operationId: category.operationId,
+  rowVersion: category.rowVersion,
+  createdAt: category.createdAt,
+  updatedAt: category.updatedAt,
+});
+
+const batchFields = (batch: Ref<BatchRow>) => ({
+  id: batch.id,
+  productId: batch.productId,
+  batchNumber: batch.batchNumber,
+  expiresAt: batch.expiresAt,
+  packQuantity: batch.packQuantity,
+  unitQuantity: batch.unitQuantity,
+  organizationId: batch.organizationId,
+  createdByUserId: batch.createdByUserId,
+  updatedByUserId: batch.updatedByUserId,
+  deviceId: batch.deviceId,
+  operationId: batch.operationId,
+  rowVersion: batch.rowVersion,
+  createdAt: batch.createdAt,
+  updatedAt: batch.updatedAt,
+});
+
+const invoiceItemFields = (item: Ref<InvoiceItemRow>) => ({
+  id: item.id,
+  invoiceId: item.invoiceId,
+  productId: item.productId,
+  batchId: item.batchId,
+  productName: item.productName,
+  batchNumber: item.batchNumber,
+  quantity: item.quantity,
+  quantityType: item.quantityType,
+  baseUnitQuantity: item.baseUnitQuantity,
+  salePrice: item.salePrice,
+  organizationId: item.organizationId,
+  createdByUserId: item.createdByUserId,
+  updatedByUserId: item.updatedByUserId,
+  deviceId: item.deviceId,
+  operationId: item.operationId,
+  rowVersion: item.rowVersion,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+});
+
+const catalogProductFields = (
+  query: InitialQueryBuilder,
+  inventory: Pick<Inventory, "batches">,
+  product: Ref<ProductRow>,
+  category: Ref<CategoryRow>,
+) => ({
+  id: product.id,
+  name: product.name,
+  categoryId: product.categoryId,
+  aisle: product.aisle,
+  composition: product.composition,
+  strength: product.strength,
+  unitsPerPack: product.unitsPerPack,
+  purchasePrice: product.purchasePrice,
+  retailPrice: product.retailPrice,
+  unitPrice: product.unitPrice,
+  visible: product.visible,
+  organizationId: product.organizationId,
+  createdByUserId: product.createdByUserId,
+  updatedByUserId: product.updatedByUserId,
+  deviceId: product.deviceId,
+  operationId: product.operationId,
+  rowVersion: product.rowVersion,
+  createdAt: product.createdAt,
+  updatedAt: product.updatedAt,
+  category: categoryFields(category),
+  batches: toArray(
+    query
+      .from({ batch: inventory.batches })
+      .where(({ batch }) => eq(batch.productId, product.id))
+      .select(({ batch }) => batchFields(batch)),
+  ),
+});
+
+const invoiceFields = (
+  query: InitialQueryBuilder,
+  inventory: Pick<Inventory, "invoiceItems">,
+  invoice: Ref<InvoiceRow>,
+) => ({
+  id: invoice.id,
+  invoiceNumber: invoice.invoiceNumber,
+  customerName: invoice.customerName,
+  total: invoice.total,
+  organizationId: invoice.organizationId,
+  createdByUserId: invoice.createdByUserId,
+  updatedByUserId: invoice.updatedByUserId,
+  deviceId: invoice.deviceId,
+  operationId: invoice.operationId,
+  rowVersion: invoice.rowVersion,
+  createdAt: invoice.createdAt,
+  updatedAt: invoice.updatedAt,
+  items: toArray(
+    query
+      .from({ item: inventory.invoiceItems })
+      .where(({ item }) => eq(item.invoiceId, invoice.id))
+      .select(({ item }) => invoiceItemFields(item)),
+  ),
+});
+
+const productsWithCategory = (
+  query: InitialQueryBuilder,
+  inventory: Pick<Inventory, "products" | "categories">,
+) =>
+  query
+    .from({ product: inventory.products })
+    .innerJoin({ category: inventory.categories }, ({ product, category }) =>
+      eq(product.categoryId, category.id),
+    );
+
 export const useCatalogCategories = () => {
   const inventory = useCatalogReplica();
   const live = useLiveQuery(
@@ -39,19 +167,7 @@ export const useCatalogCategories = () => {
       query
         .from({ category: inventory.categories })
         .orderBy(({ category }) => category.name, "asc")
-        .select(({ category }) => ({
-          id: category.id,
-          name: category.name,
-          tracksPacks: category.tracksPacks,
-          organizationId: category.organizationId,
-          createdByUserId: category.createdByUserId,
-          updatedByUserId: category.updatedByUserId,
-          deviceId: category.deviceId,
-          operationId: category.operationId,
-          rowVersion: category.rowVersion,
-          createdAt: category.createdAt,
-          updatedAt: category.updatedAt,
-        })),
+        .select(({ category }) => categoryFields(category)),
     [inventory],
   );
   const data: ReadonlyArray<Category> = live.data;
@@ -62,69 +178,13 @@ export const useCatalogProducts = (limit = 100) => {
   const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
-      query
-        .from({ product: inventory.products })
-        .innerJoin({ category: inventory.categories }, ({ product, category }) =>
-          eq(product.categoryId, category.id),
-        )
+      productsWithCategory(query, inventory)
         .orderBy(({ product }) => product.name, "asc")
         .limit(limit)
-        .select(({ product, category }) => ({
-          id: product.id,
-          name: product.name,
-          categoryId: product.categoryId,
-          aisle: product.aisle,
-          composition: product.composition,
-          strength: product.strength,
-          unitsPerPack: product.unitsPerPack,
-          purchasePrice: product.purchasePrice,
-          retailPrice: product.retailPrice,
-          unitPrice: product.unitPrice,
-          visible: product.visible,
-          organizationId: product.organizationId,
-          createdByUserId: product.createdByUserId,
-          updatedByUserId: product.updatedByUserId,
-          deviceId: product.deviceId,
-          operationId: product.operationId,
-          rowVersion: product.rowVersion,
-          createdAt: product.createdAt,
-          updatedAt: product.updatedAt,
-          category: {
-            id: category.id,
-            name: category.name,
-            tracksPacks: category.tracksPacks,
-            organizationId: category.organizationId,
-            createdByUserId: category.createdByUserId,
-            updatedByUserId: category.updatedByUserId,
-            deviceId: category.deviceId,
-            operationId: category.operationId,
-            rowVersion: category.rowVersion,
-            createdAt: category.createdAt,
-            updatedAt: category.updatedAt,
-          },
-          batches: toArray(
-            query
-              .from({ batch: inventory.batches })
-              .where(({ batch }) => eq(batch.productId, product.id))
-              .select(({ batch }) => ({
-                id: batch.id,
-                productId: batch.productId,
-                batchNumber: batch.batchNumber,
-                expiresAt: batch.expiresAt,
-                packQuantity: batch.packQuantity,
-                unitQuantity: batch.unitQuantity,
-                organizationId: batch.organizationId,
-                createdByUserId: batch.createdByUserId,
-                updatedByUserId: batch.updatedByUserId,
-                deviceId: batch.deviceId,
-                operationId: batch.operationId,
-                rowVersion: batch.rowVersion,
-                createdAt: batch.createdAt,
-                updatedAt: batch.updatedAt,
-              })),
-          ),
-        })),
-    [inventory],
+        .select(({ product, category }) =>
+          catalogProductFields(query, inventory, product, category),
+        ),
+    [inventory, limit],
   );
   const data: ReadonlyArray<Product> = live.data;
   return { ...live, data };
@@ -134,67 +194,11 @@ export const useCatalogProduct = (productId: string) => {
   const inventory = useCatalogReplica();
   const live = useLiveQuery(
     (query) =>
-      query
-        .from({ product: inventory.products })
-        .innerJoin({ category: inventory.categories }, ({ product, category }) =>
-          eq(product.categoryId, category.id),
-        )
+      productsWithCategory(query, inventory)
         .where(({ product }) => eq(product.id, productId))
-        .select(({ product, category }) => ({
-          id: product.id,
-          name: product.name,
-          categoryId: product.categoryId,
-          aisle: product.aisle,
-          composition: product.composition,
-          strength: product.strength,
-          unitsPerPack: product.unitsPerPack,
-          purchasePrice: product.purchasePrice,
-          retailPrice: product.retailPrice,
-          unitPrice: product.unitPrice,
-          visible: product.visible,
-          organizationId: product.organizationId,
-          createdByUserId: product.createdByUserId,
-          updatedByUserId: product.updatedByUserId,
-          deviceId: product.deviceId,
-          operationId: product.operationId,
-          rowVersion: product.rowVersion,
-          createdAt: product.createdAt,
-          updatedAt: product.updatedAt,
-          category: {
-            id: category.id,
-            name: category.name,
-            tracksPacks: category.tracksPacks,
-            organizationId: category.organizationId,
-            createdByUserId: category.createdByUserId,
-            updatedByUserId: category.updatedByUserId,
-            deviceId: category.deviceId,
-            operationId: category.operationId,
-            rowVersion: category.rowVersion,
-            createdAt: category.createdAt,
-            updatedAt: category.updatedAt,
-          },
-          batches: toArray(
-            query
-              .from({ batch: inventory.batches })
-              .where(({ batch }) => eq(batch.productId, product.id))
-              .select(({ batch }) => ({
-                id: batch.id,
-                productId: batch.productId,
-                batchNumber: batch.batchNumber,
-                expiresAt: batch.expiresAt,
-                packQuantity: batch.packQuantity,
-                unitQuantity: batch.unitQuantity,
-                organizationId: batch.organizationId,
-                createdByUserId: batch.createdByUserId,
-                updatedByUserId: batch.updatedByUserId,
-                deviceId: batch.deviceId,
-                operationId: batch.operationId,
-                rowVersion: batch.rowVersion,
-                createdAt: batch.createdAt,
-                updatedAt: batch.updatedAt,
-              })),
-          ),
-        })),
+        .select(({ product, category }) =>
+          catalogProductFields(query, inventory, product, category),
+        ),
     [inventory, productId],
   );
   const data: Product | undefined = live.data[0];
@@ -225,7 +229,7 @@ export const useCatalogStockMovements = (productId: string, limit = 50) => {
           operationId: movement.operationId,
           createdAt: movement.createdAt,
         })),
-    [inventory, productId],
+    [inventory, productId, limit],
   );
   const data: ReadonlyArray<StockMovement> = live.data;
   return { ...live, data };
@@ -239,46 +243,8 @@ export const useInventoryInvoices = (limit = 50) => {
         .from({ invoice: inventory.invoices })
         .orderBy(({ invoice }) => invoice.createdAt, "desc")
         .limit(limit)
-        .select(({ invoice }) => ({
-          id: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          customerName: invoice.customerName,
-          total: invoice.total,
-          organizationId: invoice.organizationId,
-          createdByUserId: invoice.createdByUserId,
-          updatedByUserId: invoice.updatedByUserId,
-          deviceId: invoice.deviceId,
-          operationId: invoice.operationId,
-          rowVersion: invoice.rowVersion,
-          createdAt: invoice.createdAt,
-          updatedAt: invoice.updatedAt,
-          items: toArray(
-            query
-              .from({ item: inventory.invoiceItems })
-              .where(({ item }) => eq(item.invoiceId, invoice.id))
-              .select(({ item }) => ({
-                id: item.id,
-                invoiceId: item.invoiceId,
-                productId: item.productId,
-                batchId: item.batchId,
-                productName: item.productName,
-                batchNumber: item.batchNumber,
-                quantity: item.quantity,
-                quantityType: item.quantityType,
-                baseUnitQuantity: item.baseUnitQuantity,
-                salePrice: item.salePrice,
-                organizationId: item.organizationId,
-                createdByUserId: item.createdByUserId,
-                updatedByUserId: item.updatedByUserId,
-                deviceId: item.deviceId,
-                operationId: item.operationId,
-                rowVersion: item.rowVersion,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-              })),
-          ),
-        })),
-    [inventory],
+        .select(({ invoice }) => invoiceFields(query, inventory, invoice)),
+    [inventory, limit],
   );
   const data: ReadonlyArray<Invoice> = live.data;
   return { ...live, data };
@@ -291,45 +257,7 @@ export const useInventoryInvoice = (invoiceId: string) => {
       query
         .from({ invoice: inventory.invoices })
         .where(({ invoice }) => eq(invoice.id, invoiceId))
-        .select(({ invoice }) => ({
-          id: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          customerName: invoice.customerName,
-          total: invoice.total,
-          organizationId: invoice.organizationId,
-          createdByUserId: invoice.createdByUserId,
-          updatedByUserId: invoice.updatedByUserId,
-          deviceId: invoice.deviceId,
-          operationId: invoice.operationId,
-          rowVersion: invoice.rowVersion,
-          createdAt: invoice.createdAt,
-          updatedAt: invoice.updatedAt,
-          items: toArray(
-            query
-              .from({ item: inventory.invoiceItems })
-              .where(({ item }) => eq(item.invoiceId, invoice.id))
-              .select(({ item }) => ({
-                id: item.id,
-                invoiceId: item.invoiceId,
-                productId: item.productId,
-                batchId: item.batchId,
-                productName: item.productName,
-                batchNumber: item.batchNumber,
-                quantity: item.quantity,
-                quantityType: item.quantityType,
-                baseUnitQuantity: item.baseUnitQuantity,
-                salePrice: item.salePrice,
-                organizationId: item.organizationId,
-                createdByUserId: item.createdByUserId,
-                updatedByUserId: item.updatedByUserId,
-                deviceId: item.deviceId,
-                operationId: item.operationId,
-                rowVersion: item.rowVersion,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-              })),
-          ),
-        })),
+        .select(({ invoice }) => invoiceFields(query, inventory, invoice)),
     [inventory, invoiceId],
   );
   const data: Invoice | undefined = live.data[0];

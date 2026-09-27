@@ -32,7 +32,7 @@ export type AppliedCursor = {
   readonly digestVerified?: boolean;
 };
 
-export type PendingRowMarkEntry = {
+type PendingRowMarkEntry = {
   readonly entity: SyncEntity;
   readonly entityId: string;
   readonly operationId: string;
@@ -55,19 +55,27 @@ export type VerifyAuthorityInput = {
   readonly horizon: string;
 };
 
-export interface ReplicaStoreContract {
+interface ReplicaRegistrationStore {
   readonly readSyncCursor: () => Effect.Effect<ReplicaSyncCursor, ReplicaStoreError>;
 
   readonly adoptRegistration: (
     authority: RegisterReplicaResult,
     registeredAt: number,
   ) => Effect.Effect<ReplicaRegistrationOutcome, ReplicaStoreError>;
+}
 
+interface ReplicaCommandStore {
   readonly enqueueCommand: (
     envelope: SyncCommandEnvelope,
     createdAt: number,
   ) => Effect.Effect<Committed<QueuedCommand>, ReplicaStoreError>;
 
+  readonly readCommandStatus: (
+    operationId: string,
+  ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
+}
+
+interface ReplicaUploadClaimStore {
   readonly claimNextUpload: (
     input: ClaimNextUploadInput,
   ) => Effect.Effect<Committed<UploadClaim | undefined>, ReplicaStoreError>;
@@ -85,7 +93,9 @@ export interface ReplicaStoreContract {
   readonly recoverStaleUploadClaims: (
     staleBefore: number,
   ) => Effect.Effect<Committed<number>, ReplicaStoreError>;
+}
 
+interface ReplicaRemoteApplyStore {
   readonly applyRemotePage: (
     page: SyncPullResult,
   ) => Effect.Effect<Committed<AppliedCursor>, ReplicaStoreError>;
@@ -94,6 +104,10 @@ export interface ReplicaStoreContract {
     group: SyncTransactionGroup,
   ) => Effect.Effect<Committed<string>, ReplicaStoreError>;
 
+  readonly verifyAuthority: (input: VerifyAuthorityInput) => Effect.Effect<void, ReplicaStoreError>;
+}
+
+export interface ReplicaSnapshotImportStore {
   readonly beginSnapshotImport: (
     manifest: SnapshotManifest,
   ) => Effect.Effect<void, ReplicaStoreError>;
@@ -106,9 +120,9 @@ export interface ReplicaStoreContract {
   readonly activateSnapshot: (
     snapshotId: SnapshotId,
   ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
+}
 
-  readonly verifyAuthority: (input: VerifyAuthorityInput) => Effect.Effect<void, ReplicaStoreError>;
-
+interface ReplicaCoverageStore {
   readonly markCoverageRepair: (
     subscription: SyncSubscription,
   ) => Effect.Effect<void, ReplicaStoreError>;
@@ -122,23 +136,32 @@ export interface ReplicaStoreContract {
     verifiedAt: number,
   ) => Effect.Effect<void, ReplicaStoreError>;
 
-  readonly readCommandStatus: (
-    operationId: string,
-  ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
+  readonly recordCaughtUp: (
+    caughtUpAt: number,
+  ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
+}
 
+interface ReplicaPendingMarkStore {
   readonly readPendingMarks: () => Effect.Effect<
     ReadonlyArray<PendingRowMarkEntry>,
     ReplicaStoreError
   >;
+}
 
+interface ReplicaCommitFeed {
   readonly readStamp: () => Effect.Effect<ReplicaReadStamp, ReplicaStoreError>;
-
-  readonly recordCaughtUp: (
-    caughtUpAt: number,
-  ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
 
   readonly commits: Stream.Stream<ReplicaCommitNotice>;
 }
+
+export type ReplicaStoreContract = ReplicaRegistrationStore &
+  ReplicaCommandStore &
+  ReplicaUploadClaimStore &
+  ReplicaRemoteApplyStore &
+  ReplicaSnapshotImportStore &
+  ReplicaCoverageStore &
+  ReplicaPendingMarkStore &
+  ReplicaCommitFeed;
 
 export class ReplicaStore extends Context.Service<ReplicaStore, ReplicaStoreContract>()(
   "@store/sync/ReplicaStore",

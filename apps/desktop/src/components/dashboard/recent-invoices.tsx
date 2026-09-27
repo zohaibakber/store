@@ -2,6 +2,7 @@ import { ArrowRight01Icon, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DashboardAnalytics } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 
 import { FrameCard } from "@/components/shared/frame-card";
@@ -14,7 +15,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { formatPrice, formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/format";
 
 export function RecentInvoices({ invoices }: { invoices: DashboardAnalytics["recentInvoices"] }) {
   return (

@@ -5,14 +5,14 @@ import {
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
-import type { ReplicaStoreContract, ReplicaStoreError } from "./replica/store";
+import type { ReplicaSnapshotImportStore, ReplicaStoreError } from "./replica/store";
 import type { SyncTransport, SyncTransportError } from "./transport";
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
 
 export const recoverRequiredSnapshot = (
   transport: SyncTransport,
-  store: ReplicaStoreContract,
+  store: ReplicaSnapshotImportStore,
   request: AcquireSnapshotRequest,
 ): Effect.Effect<void, SnapshotRecoveryError> =>
   Effect.gen(function* () {

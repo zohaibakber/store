@@ -22,19 +22,17 @@ export type SnapshotPartHash = typeof SnapshotPartHash.Type;
 export const SnapshotRow = SyncLogChange.mapFields(Struct.omit(["action"]));
 export type SnapshotRow = typeof SnapshotRow.Type;
 
-export const SnapshotEntityCount = Schema.Struct({
+const SnapshotEntityCount = Schema.Struct({
   entity: SyncEntity,
   rowCount: Schema.Natural,
 });
-export type SnapshotEntityCount = typeof SnapshotEntityCount.Type;
 
-export const SnapshotPartRef = Schema.Struct({
+const SnapshotPartRef = Schema.Struct({
   partNumber: PositiveInt,
   objectKey: Schema.NonEmptyString.check(Schema.isMaxLength(512)),
   byteLength: Schema.Natural,
   sha256: SnapshotPartHash,
 });
-export type SnapshotPartRef = typeof SnapshotPartRef.Type;
 
 export const SnapshotManifest = Schema.Struct({
   snapshotId: SnapshotId,

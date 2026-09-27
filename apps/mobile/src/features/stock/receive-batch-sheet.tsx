@@ -6,9 +6,9 @@ import * as React from "react";
 import { StyleSheet, View, type KeyboardTypeOptions } from "react-native";
 
 import { colors, fonts, radius, space, touch, type } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
-import { ActionButton } from "../action-button";
 import {
   emptyReceiveBatchFields,
   expiryHint,

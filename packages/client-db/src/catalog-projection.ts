@@ -3,6 +3,8 @@ import {
   assertCanDeleteBatch,
   assertCanDeleteCategory,
   assertCanDeleteProduct,
+  createdMutationMetadata,
+  updatedMutationMetadata,
 } from "@store/contracts/catalog-rules";
 import { MAX_CATALOG_WRITE_ROWS, type CatalogRowWrite } from "@store/contracts/catalog-write";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
@@ -30,13 +32,13 @@ export type CatalogWriteIds = {
   readonly rowId: () => string;
 };
 
-export const CATALOG_IMPORT_ROWS_PER_LINE = 2;
+const CATALOG_IMPORT_ROWS_PER_LINE = 2;
 
 export const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(
   MAX_CATALOG_WRITE_ROWS / CATALOG_IMPORT_ROWS_PER_LINE,
 );
 
-export type CatalogReadableCollection<Row extends { readonly id: string }> = {
+type CatalogReadableCollection<Row extends { readonly id: string }> = {
   readonly state: {
     get: (id: string) => Row | undefined;
     values: () => Iterable<Row>;
@@ -57,16 +59,16 @@ export type CatalogProjectionContext = {
   readonly tables: CatalogProjectionTables;
 };
 
-export type CatalogRowProjection<Row> = {
+type CatalogRowProjection<Row> = {
   readonly writes: ReadonlyArray<CatalogRowWrite>;
   readonly row: Row;
 };
 
-export type CatalogDeleteProjection = {
+type CatalogDeleteProjection = {
   readonly writes: ReadonlyArray<CatalogRowWrite>;
 };
 
-export type CatalogImportProjection = {
+type CatalogImportProjection = {
   readonly chunks: ReadonlyArray<ReadonlyArray<CatalogRowWrite>>;
   readonly createdProducts: number;
   readonly createdBatches: number;
@@ -83,26 +85,10 @@ const requireNonNegativeQuantity = (quantity: number, label: string) => {
   }
 };
 
-const insertMetadata = (context: CatalogProjectionContext) =>
-  ({
-    organizationId: context.actor.organizationId,
-    createdByUserId: context.actor.userId,
-    updatedByUserId: context.actor.userId,
-    deviceId: context.actor.deviceId,
-    operationId: context.commandId,
-    rowVersion: 1,
-    createdAt: context.occurredAt,
-    updatedAt: context.occurredAt,
-  }) as const;
-
-const updateMetadata = (context: CatalogProjectionContext, rowVersion: number) =>
-  ({
-    updatedByUserId: context.actor.userId,
-    deviceId: context.actor.deviceId,
-    operationId: context.commandId,
-    rowVersion: rowVersion + 1,
-    updatedAt: context.occurredAt,
-  }) as const;
+const commandIds = (context: CatalogProjectionContext) => ({
+  now: () => context.occurredAt,
+  operationId: () => context.commandId,
+});
 
 const activeCategory = (tables: CatalogProjectionTables, categoryId: string) => {
   const category = tables.categories.state.get(categoryId);
@@ -156,7 +142,7 @@ export const projectCreateCategory = (
     id: decodeCategoryId(input.id ?? context.ids.rowId()),
     name,
     tracksPacks: input.tracksPacks ?? true,
-    ...insertMetadata(context),
+    ...createdMutationMetadata(context.actor, commandIds(context)),
   };
   return {
     writes: [
@@ -189,7 +175,10 @@ export const projectUpdateCategory = (
     ...current,
     name,
     tracksPacks: input.tracksPacks,
-    ...updateMetadata(context, current.rowVersion),
+    ...updatedMutationMetadata(
+      { ...context.actor, rowVersion: current.rowVersion },
+      commandIds(context),
+    ),
   });
   return {
     writes: [
@@ -243,7 +232,7 @@ export const projectCreateProduct = (
     retailPrice: input.retailPrice ?? null,
     unitPrice: input.unitPrice ?? null,
     visible: input.visible ?? true,
-    ...insertMetadata(context),
+    ...createdMutationMetadata(context.actor, commandIds(context)),
   };
   return {
     writes: [
@@ -281,7 +270,10 @@ export const projectUpdateProduct = (
     retailPrice: input.retailPrice ?? null,
     unitPrice: input.unitPrice ?? null,
     visible: input.visible ?? true,
-    ...updateMetadata(context, current.rowVersion),
+    ...updatedMutationMetadata(
+      { ...context.actor, rowVersion: current.rowVersion },
+      commandIds(context),
+    ),
   });
   return {
     writes: [
@@ -331,7 +323,7 @@ export const projectCreateBatch = (
     expiresAt: input.expiresAt ?? null,
     packQuantity,
     unitQuantity,
-    ...insertMetadata(context),
+    ...createdMutationMetadata(context.actor, commandIds(context)),
   };
   return {
     writes: [
@@ -366,7 +358,10 @@ export const projectUpdateBatch = (
     expiresAt: input.expiresAt,
     packQuantity: input.packQuantity ?? current.packQuantity,
     unitQuantity: input.unitQuantity ?? current.unitQuantity,
-    ...updateMetadata(context, current.rowVersion),
+    ...updatedMutationMetadata(
+      { ...context.actor, rowVersion: current.rowVersion },
+      commandIds(context),
+    ),
   });
   return {
     writes: [
@@ -402,7 +397,7 @@ export const projectDeleteBatch = (
   };
 };
 
-export type CatalogImportContext = {
+type CatalogImportContext = {
   readonly ids: CatalogWriteIds;
   readonly tables: CatalogProjectionTables;
 };

@@ -14,7 +14,7 @@ export const PLACEHOLDER_INCARNATION = "local";
 
 export const UNRECEIPTED_COMMAND_STATUSES: ReadonlyArray<CommandStatus> = ["pending", "sending"];
 
-export type RegistrationReplicaState = {
+type RegistrationReplicaState = {
   readonly replicaId: string;
   readonly epoch: string;
   readonly incarnation: string;
@@ -22,7 +22,7 @@ export type RegistrationReplicaState = {
   readonly registeredAt?: number | null | undefined;
 };
 
-export type RegistrationOutboxCommand = {
+type RegistrationOutboxCommand = {
   readonly operationId: string;
   readonly clientSequence: string;
   readonly status: CommandStatus;
@@ -30,12 +30,12 @@ export type RegistrationOutboxCommand = {
   readonly envelope: SyncCommandEnvelope;
 };
 
-export type RegistrationRestamp = {
+type RegistrationRestamp = {
   readonly operationId: string;
   readonly envelope: SyncCommandEnvelope;
 };
 
-export type RegistrationDecision =
+type RegistrationDecision =
   | { readonly _tag: "unchanged" }
   | {
       readonly _tag: "adopt";

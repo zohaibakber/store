@@ -112,14 +112,13 @@ export const UpdateProductInput = Schema.Struct({
 export type UpdateProductInput = typeof UpdateProductInput.Type;
 
 const { productId: _batchLineProductId, ...batchLineFields } = createBatchFields;
-export const ImportInventoryLine = Schema.Struct({
+const ImportInventoryLine = Schema.Struct({
   productId: Schema.NullOr(ProductId),
   name: createProductFields.name,
   unitsPerPack: createProductFields.unitsPerPack,
   purchasePrice: createProductFields.purchasePrice,
   ...batchLineFields,
 });
-export type ImportInventoryLine = typeof ImportInventoryLine.Type;
 
 export const ImportInventoryInput = Schema.Struct({
   categoryId: CategoryId,
@@ -127,11 +126,10 @@ export const ImportInventoryInput = Schema.Struct({
 });
 export type ImportInventoryInput = typeof ImportInventoryInput.Type;
 
-export const ImportInventoryResult = Schema.Struct({
+const ImportInventoryResult = Schema.Struct({
   createdProducts: Schema.Natural,
   createdBatches: Schema.Natural,
 });
-export type ImportInventoryResult = typeof ImportInventoryResult.Type;
 
 export const InvoiceItem = Schema.Struct({
   id: InvoiceItemId,

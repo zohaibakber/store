@@ -4,11 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import {
-  useCatalogCategories,
-  useCatalogProducts,
-  useCatalogSuggestions,
-} from "@/lib/inventory-db";
+import { useCatalogCategories, useCatalogProducts, useCatalogSuggestions } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   component: EditProductPage,

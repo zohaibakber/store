@@ -23,7 +23,7 @@ import { TestClock } from "effect/testing";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
-import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/digest-cadence";
+import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";

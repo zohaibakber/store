@@ -11,6 +11,7 @@ import {
   ChunkContentMismatch,
   ManifestIncomplete,
   PersistenceError,
+  persistingAs,
   type TranslationFailed,
 } from "./errors.ts";
 import { checksumValue } from "./hash.ts";
@@ -30,7 +31,7 @@ import {
   SQLITE_MAPPING_VERSION,
   type TableChecksum,
 } from "./model.ts";
-import { migrateJournal, persistingAs } from "./sqlite.ts";
+import { migrateJournal } from "./sqlite.ts";
 
 const StoredRecord = Schema.fromJsonString(MigrationRecordSchema);
 const StoredManifest = Schema.fromJsonString(ExportManifestSchema);
@@ -44,7 +45,7 @@ const ChunkKey = Schema.Struct({
 });
 const TableKey = Schema.Struct({ organizationId: Schema.String, table: BusinessTable });
 
-export interface ExportStoreApi {
+interface ExportStoreApi {
   readonly loadRecord: () => Effect.Effect<Option.Option<MigrationRecord>, PersistenceError>;
   readonly saveRecord: (record: MigrationRecord) => Effect.Effect<void, PersistenceError>;
   readonly saveChunk: (

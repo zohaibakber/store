@@ -22,7 +22,7 @@ import {
   type StockMovementRow,
 } from "./rows";
 
-export type SaleProjection = {
+type SaleProjection = {
   readonly command: IssueInvoiceCommand;
   readonly invoice: InvoiceRow;
   readonly items: ReadonlyArray<InvoiceItemRow>;

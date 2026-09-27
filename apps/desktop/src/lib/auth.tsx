@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { unauthenticatedWorkspace } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
@@ -7,7 +6,7 @@ import * as React from "react";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { refreshBoundWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
-export type AuthSessionBridge = NonNullable<Window["auth"]>;
+type AuthSessionBridge = NonNullable<Window["auth"]>;
 
 type AuthContextValue = {
   readonly refresh: () => Promise<void>;
@@ -49,11 +48,11 @@ const fallbackSession = (): WorkspaceSession => ({
   snapshot: unauthenticatedWorkspace({ isOnline: false }),
 });
 
-/** Requires the session registry on `RegistryContext` (mounted in `mountApp`). */
 export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
   const router = useRouter();
   const session = router.options.context.session;
-  const current = useAtomValue(session.atom) ?? fallbackSession();
+  const current =
+    React.useSyncExternalStore(session.subscribe, session.current) ?? fallbackSession();
 
   const refresh = React.useCallback(async () => {
     try {

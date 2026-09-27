@@ -26,7 +26,7 @@ export class ProductScanService extends Context.Service<
 
 type ModelScalar = string | number | boolean | null;
 
-export interface ProductScanModelObject {
+interface ProductScanModelObject {
   readonly response?: string;
   readonly name?: ModelScalar;
   readonly productName?: ModelScalar;
@@ -38,7 +38,7 @@ export interface ProductScanModelObject {
   readonly confidence?: ModelScalar;
 }
 
-export type ProductScanModelOutput = string | ProductScanModelObject;
+type ProductScanModelOutput = string | ProductScanModelObject;
 
 export interface ProductScanAiClient {
   readonly generate: (input: {
@@ -51,7 +51,7 @@ export interface ProductScanAiClient {
   }) => Promise<ProductScanModelOutput>;
 }
 
-export interface ProductScanConfig {
+interface ProductScanConfig {
   readonly ai: ProductScanAiClient;
 }
 

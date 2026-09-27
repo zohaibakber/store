@@ -45,7 +45,7 @@ import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { useInventoryActions } from "@/lib/inventory";
 
 const CategoryFormSchema = Schema.Struct({
   name: Schema.Trim.check(

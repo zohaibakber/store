@@ -2,6 +2,7 @@ import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
@@ -13,7 +14,6 @@ import {
   AutocompletePopup,
 } from "@/components/ui/autocomplete";
 import { Badge } from "@/components/ui/badge";
-import { formatPrice } from "@/lib/format";
 
 const matches = (product: Product, query: string) => {
   const term = query.trim().toLowerCase();

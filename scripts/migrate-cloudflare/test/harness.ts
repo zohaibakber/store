@@ -160,7 +160,6 @@ const buildLayer = (
       migrationId: "migration-fixed",
       importId: "import-fixed",
       releaseId: "release-fixed",
-      incarnation: "incarnation-fixed",
     }),
     testCheckpointLayer,
   );

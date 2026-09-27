@@ -7,7 +7,7 @@ export const sameProduct = (
   product.name.trim().toLocaleLowerCase() === line.name.trim().toLocaleLowerCase() &&
   product.unitsPerPack === line.unitsPerPack;
 
-export type ImportProductMatch =
+type ImportProductMatch =
   | { readonly _tag: "none" }
   | { readonly _tag: "one"; readonly id: ProductId }
   | { readonly _tag: "many" };

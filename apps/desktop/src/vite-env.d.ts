@@ -12,10 +12,6 @@ interface ImportMeta {
 
 declare global {
   const __APP_VERSION__: string;
-
-  interface WindowEventMap {
-    "tabaaq:google-auth-error": CustomEvent<string>;
-  }
 }
 
 export {};

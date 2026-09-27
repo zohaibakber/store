@@ -4,10 +4,10 @@ import * as React from "react";
 import { View } from "react-native";
 
 import { useAuthActions, useSession, type AuthProblem, type IdentifyResult } from "@/auth";
-import { ActionButton } from "@/auth/ui/action-button";
 import { Attention, AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
 import { colors, space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
 const nextStep = {
@@ -81,6 +81,7 @@ export default function SignInScreen() {
       />
       <ProblemMessage problem={problem} />
       <ActionButton
+        size="large"
         label="Continue"
         loading={busy === "email"}
         disabled={busy === "google" || email.trim().length === 0}
@@ -90,6 +91,7 @@ export default function SignInScreen() {
         <>
           <Divider />
           <ActionButton
+            size="large"
             label="Continue with Google"
             variant="secondary"
             loading={busy === "google"}

@@ -1,5 +1,12 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 import type { CatalogLifetime, CatalogReplica } from "@store/inventory-react";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FiberHandle from "effect/FiberHandle";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 
 import { hasAuthenticatedWorkspace, type HostAccessPolicy } from "@/host-access";
 import type { ReplayChannel } from "@/replay-channel";
@@ -43,50 +50,54 @@ export type ApplyWorkspaceSnapshotPorts = {
   readonly access: HostAccessPolicy;
   readonly invalidate: () => Promise<void>;
   readonly flush: (fn: () => void) => void;
-  readonly isCurrent: () => boolean;
 };
 
 /**
  * The only writer of WorkspaceSession. Does not navigate, admit, or await
- * catalog dispose.
+ * catalog dispose. A newer commit supersedes this one by interrupting its
+ * fiber, so a superseded commit never settles `Switching`.
  */
-export const applyWorkspaceSnapshot = async (
+export const applyWorkspaceSnapshot = (
   ports: ApplyWorkspaceSnapshotPorts,
   next: WorkspaceSnapshot,
-): Promise<void> => {
-  const current = ports.session.current();
-  const from = current ? workspaceScope(current.snapshot, ports.access) : { _tag: "None" as const };
-  const to = workspaceScope(next, ports.access);
-  if (sameScope(from, to) && current) {
-    ports.session.publish({ _tag: "Steady", snapshot: next });
-    return;
-  }
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const current = ports.session.current();
+    const from = current
+      ? workspaceScope(current.snapshot, ports.access)
+      : { _tag: "None" as const };
+    const to = workspaceScope(next, ports.access);
+    if (sameScope(from, to) && current) {
+      ports.session.publish({ _tag: "Steady", snapshot: next });
+      return;
+    }
 
-  ports.flush(() => {
-    ports.session.publish({ _tag: "Switching", snapshot: next });
-  });
+    ports.flush(() => {
+      ports.session.publish({ _tag: "Switching", snapshot: next });
+    });
 
-  if (to._tag === "None") {
-    ports.catalog.release();
-  } else {
-    const scope = ports.access.inventoryScope(next);
+    const scope = to._tag === "None" ? null : ports.access.inventoryScope(next);
     if (scope) ports.catalog.claim(scope);
     else ports.catalog.release();
-  }
 
-  await ports.invalidate().catch(() => undefined);
-  if (!ports.isCurrent()) return;
-  const latest = ports.session.current();
-  if (latest?._tag === "Switching" && latest.snapshot === next) {
-    ports.session.publish({ _tag: "Steady", snapshot: next });
-  }
+    yield* Effect.ignore(Effect.tryPromise(() => ports.invalidate()));
+    const latest = ports.session.current();
+    if (latest?._tag === "Switching" && latest.snapshot === next) {
+      ports.session.publish({ _tag: "Steady", snapshot: next });
+    }
+  });
+
+export type WorkspaceSessionBinding = {
+  readonly refresh: () => Promise<void>;
+  readonly stop: () => void;
 };
 
-let boundRefresh: (() => Promise<void>) | undefined;
+const boundSession = Ref.makeUnsafe(Option.none<WorkspaceSessionBinding>());
 
 export const refreshBoundWorkspaceSession = async () => {
-  if (!boundRefresh) throw new Error("Workspace session is not bound.");
-  await boundRefresh();
+  const binding = Ref.getUnsafe(boundSession);
+  if (Option.isNone(binding)) throw new Error("Workspace session is not bound.");
+  await binding.value.refresh();
 };
 
 export const bindWorkspaceSession = (input: {
@@ -96,34 +107,29 @@ export const bindWorkspaceSession = (input: {
   readonly bridge: SessionChangeBridge;
   readonly invalidate: () => Promise<void>;
   readonly flush: (fn: () => void) => void;
-}) => {
-  let epoch = 0;
-  const commit = (snapshot: WorkspaceSnapshot) => {
-    const thisEpoch = ++epoch;
-    return applyWorkspaceSnapshot(
-      {
-        session: input.session,
-        catalog: input.catalog,
-        access: input.access,
-        invalidate: input.invalidate,
-        flush: input.flush,
-        isCurrent: () => thisEpoch === epoch,
-      },
-      snapshot,
-    );
-  };
-  const refresh = async () => {
-    await commit(await input.bridge.getSession());
-  };
-  boundRefresh = refresh;
-  const stop = input.bridge.onSessionChange((snapshot) => {
-    void commit(snapshot);
+}): WorkspaceSessionBinding => {
+  const scope = Scope.makeUnsafe();
+  const commits = Effect.runSync(FiberHandle.make<void>().pipe(Scope.provide(scope)));
+  const commit = (snapshot: WorkspaceSnapshot) =>
+    FiberHandle.run(commits, applyWorkspaceSnapshot(input, snapshot));
+  const unsubscribe = input.bridge.onSessionChange((snapshot) => {
+    Effect.runSync(commit(snapshot));
   });
-  return {
-    stop: () => {
-      stop();
-      if (boundRefresh === refresh) boundRefresh = undefined;
+  const binding: WorkspaceSessionBinding = {
+    refresh: async () => {
+      const snapshot = await input.bridge.getSession();
+      await Effect.runPromise(Effect.flatMap(commit(snapshot), Fiber.await));
     },
-    refresh,
+    stop: () => {
+      unsubscribe();
+      Effect.runSync(
+        Ref.update(boundSession, (current) =>
+          Option.isSome(current) && current.value === binding ? Option.none() : current,
+        ),
+      );
+      Effect.runFork(Scope.close(scope, Exit.void));
+    },
   };
+  Effect.runSync(Ref.set(boundSession, Option.some(binding)));
+  return binding;
 };

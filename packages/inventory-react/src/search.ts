@@ -25,7 +25,7 @@ export type SearchableProduct = {
   readonly strength: string | null;
 };
 
-export type StockBatch = Pick<BatchRow, "packQuantity" | "unitQuantity" | "expiresAt">;
+type StockBatch = Pick<BatchRow, "packQuantity" | "unitQuantity" | "expiresAt">;
 
 export type ProductStockSummary = {
   readonly onHandUnits: number;
@@ -79,10 +79,7 @@ const containsToken = (token: string): SubsetPredicate => ({
   predicates: SEARCH_COLUMNS.map((column) => ({ _tag: "like", column, pattern: `%${token}%` })),
 });
 
-export const productSearchSpecs = (
-  query: string,
-  limit: number,
-): ReadonlyArray<InventorySubsetSpec> => {
+const productSearchSpecs = (query: string, limit: number): ReadonlyArray<InventorySubsetSpec> => {
   const bounded = clampLimit(limit);
   const tokens = searchTokens(query.slice(0, MAX_SEARCH_QUERY_LENGTH));
   if (tokens.length === 0) {
@@ -127,7 +124,7 @@ export const matchCatalogProducts = <Product extends SearchableProduct>(
     .map((entry) => entry.product);
 };
 
-export type ProductSearchFailure = { readonly message: string };
+type ProductSearchFailure = { readonly message: string };
 
 const searchFailure = (): ProductSearchFailure => ({
   message: "Could not search products on this device.",

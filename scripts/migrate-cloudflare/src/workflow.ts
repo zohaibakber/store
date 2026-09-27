@@ -2,6 +2,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import { MigrationCheckpoint } from "./checkpoint.ts";
 import { DatasetReleaseDirectory, type ReleaseEntry } from "./directory.ts";
@@ -123,55 +124,86 @@ const manifestChecksumOf = (
   }
 };
 
+interface ExportCursor {
+  readonly afterId: string;
+  readonly chunkIndex: number;
+}
+
+const remainingChunks = (
+  organizationId: OrganizationSelection["organizationId"],
+  table: BusinessTable,
+  chunkSize: number,
+): Stream.Stream<ExportChunk, MigrationError, SourceCatalog | ExportStore> =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const source = yield* SourceCatalog;
+      const store = yield* ExportStore;
+      const existing = yield* store.loadChunks(organizationId, table);
+      const lastChunk = existing[existing.length - 1];
+      const start: ExportCursor = {
+        afterId: lastChunk === undefined ? "" : yield* lastRowId(lastChunk),
+        chunkIndex: existing.length,
+      };
+      return Stream.paginate(start, (cursor: ExportCursor) =>
+        Effect.gen(function* () {
+          const page = yield* source.readPage(organizationId, table, cursor.afterId, chunkSize);
+          const rows = yield* translateDriverRows(table, page);
+          const last = rows[rows.length - 1];
+          if (last === undefined) {
+            return [[], Option.none<ExportCursor>()] as const;
+          }
+          const chunk = ExportChunkSchema.make({
+            organizationId,
+            table,
+            chunkIndex: cursor.chunkIndex,
+            checksum: rowsChecksum(rows),
+            rowsJson: encodeRowsJson(rows),
+          });
+          const next: ExportCursor = { afterId: last.id, chunkIndex: cursor.chunkIndex + 1 };
+          return [[chunk], rows.length < chunkSize ? Option.none() : Option.some(next)] as const;
+        }),
+      );
+    }),
+  );
+
 const exportRemaining = Effect.fn("Migrate.exportRemaining")(function* (
   record: MigrationRecord,
   chunkSize: number,
 ) {
-  const source = yield* SourceCatalog;
   const store = yield* ExportStore;
   const checkpoint = yield* MigrationCheckpoint;
-  let current = record;
-  for (const selection of record.organizations) {
-    for (const table of BUSINESS_TABLES) {
-      const existing = yield* store.loadChunks(selection.organizationId, table);
-      const lastChunk = existing[existing.length - 1];
-      let afterId = lastChunk === undefined ? "" : yield* lastRowId(lastChunk);
-      let chunkIndex = existing.length;
-      while (true) {
-        const page = yield* source.readPage(selection.organizationId, table, afterId, chunkSize);
-        if (page.length === 0) break;
-        const rows = yield* translateDriverRows(table, page);
-        const chunk = ExportChunkSchema.make({
-          organizationId: selection.organizationId,
-          table,
-          chunkIndex,
-          checksum: rowsChecksum(rows),
-          rowsJson: encodeRowsJson(rows),
-        });
+  const frozen =
+    record.phase._tag === "Checking"
+      ? yield* savePhase(store, record, MigrationPhaseSchema.cases.Frozen.make({}))
+      : record;
+  const tables = record.organizations.flatMap((selection) =>
+    BUSINESS_TABLES.map((table) => ({ organizationId: selection.organizationId, table })),
+  );
+  yield* Stream.fromIterable(tables).pipe(
+    Stream.flatMap((entry) => remainingChunks(entry.organizationId, entry.table, chunkSize)),
+    Stream.runForEach((chunk) =>
+      Effect.gen(function* () {
         yield* store.saveChunk(chunk);
-        const last = rows[rows.length - 1];
-        afterId = last === undefined ? afterId : last.id;
-        current = yield* savePhase(
+        yield* savePhase(
           store,
-          current,
+          frozen,
           MigrationPhaseSchema.cases.Exporting.make({
             lastCompletedChunk: {
-              organizationId: selection.organizationId,
-              table,
-              chunkIndex,
+              organizationId: chunk.organizationId,
+              table: chunk.table,
+              chunkIndex: chunk.chunkIndex,
             },
           }),
         );
         yield* checkpoint.pass("export.afterChunk");
-        chunkIndex += 1;
-      }
-    }
-  }
+      }),
+    ),
+  );
   const manifest = yield* store.buildManifest(record.organizations);
   yield* store.saveManifest(manifest);
   return yield* savePhase(
     store,
-    current,
+    frozen,
     MigrationPhaseSchema.cases.ManifestReady.make({ manifestChecksum: manifest.checksum }),
   );
 });
@@ -179,7 +211,6 @@ const exportRemaining = Effect.fn("Migrate.exportRemaining")(function* (
 const importRemaining = Effect.fn("Migrate.importRemaining")(function* (record: MigrationRecord) {
   const store = yield* ExportStore;
   const target = yield* OrganizationInventoryImport;
-  const ids = yield* MigrationIds;
   const checkpoint = yield* MigrationCheckpoint;
   const manifest = yield* store.loadManifest();
   if (Option.isNone(manifest)) {
@@ -196,9 +227,8 @@ const importRemaining = Effect.fn("Migrate.importRemaining")(function* (record: 
     );
   }
   let current = record;
-  const incarnation = yield* ids.nextIncarnation();
   for (const selection of record.organizations) {
-    yield* target.prepareImport(selection.organizationId, record.importId, incarnation);
+    yield* target.prepareImport(selection.organizationId, record.importId);
     for (const table of BUSINESS_TABLES) {
       const chunks = yield* store.loadChunks(selection.organizationId, table);
       for (const chunk of chunks) {
@@ -395,17 +425,16 @@ const beginRecord = Effect.fn("Migrate.beginRecord")(function* (request: Migrati
 
 export const runMigration = Effect.fn("Migrate.run")(function* (request: MigrationRequest) {
   const source = yield* SourceCatalog;
-  const store = yield* ExportStore;
   let record = yield* beginRecord(request);
   if (record.phase._tag === "Completed") {
     return completedFrom(record, record.phase);
   }
-  yield* source.freezeWrites();
-  if (record.phase._tag === "Checking") {
-    record = yield* savePhase(store, record, MigrationPhaseSchema.cases.Frozen.make({}));
-  }
-  if (record.phase._tag === "Frozen" || record.phase._tag === "Exporting") {
-    record = yield* exportRemaining(record, request.chunkSize);
+  if (
+    record.phase._tag === "Checking" ||
+    record.phase._tag === "Frozen" ||
+    record.phase._tag === "Exporting"
+  ) {
+    record = yield* source.withSnapshot(exportRemaining(record, request.chunkSize));
   }
   if (record.phase._tag === "ManifestReady" || record.phase._tag === "Importing") {
     record = yield* importRemaining(record);

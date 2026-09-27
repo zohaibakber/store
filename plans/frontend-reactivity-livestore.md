@@ -72,7 +72,7 @@ Provide an already-open `InventoryClient` to frontend Effect layers. Do not buil
 
 ## Query design and correctness
 
-First fix the current subscription breadth in `apps/desktop/src/lib/inventory/queries.ts`: `useCatalogProduct(id)` calls the whole product-list hook and then `.find()`, and `useInventoryInvoice(id)` does the same for invoices. Replace these with queries constrained by ID, with only their required relations. Paginate lists and movement histories. Fetch nested batches or invoice items only where the screen needs them. Give dashboard totals dedicated aggregate queries rather than requiring every invoice in React.
+The query hooks live in `packages/inventory-react/src/queries.ts`. `useCatalogProduct(id)` and `useInventoryInvoice(id)` query by ID with only their required relations, list and movement hooks take a bounded `limit`, and list and detail hooks share one selector per entity. Still open: paginate lists and movement histories, fetch nested batches or invoice items only where the screen needs them (`useCatalogProducts` and `useInventoryInvoices` still nest them for every row), and give dashboard totals dedicated aggregate queries rather than requiring every invoice in React.
 
 Then fix `packages/client-db/src/replica/collection.ts`: it currently refreshes every acquisition for a relevant entity notice, and `publishWindow` writes every returned row even if unchanged. Preserve row references, publish actual inserts/updates/deletes, deduplicate equivalent query windows, and coalesce pending refreshes to the newest required commit version.
 

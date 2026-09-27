@@ -1,4 +1,5 @@
 import type { DashboardAnalytics } from "@store/contracts";
+import { formatPrice } from "@store/services/format";
 import { areaY, d3Curve, defineChart, type ChartPoint } from "@tanstack/charts";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scalePoint } from "@tanstack/charts/scales/point";
@@ -13,24 +14,16 @@ import {
   chartTheme,
   chartTooltip,
 } from "@/components/ui/chart";
-import { formatPrice } from "@/lib/format";
+import { formatUtcDay } from "@/lib/format";
 
 type RevenueDay = DashboardAnalytics["revenueByDay"][number];
-
-const dayTick = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
-const dayLabel = (value: string) => dayTick.format(new Date(`${value}T00:00:00Z`));
 
 const revenueTooltip = (points: readonly ChartPoint<RevenueDay>[]) => {
   const point = points[0];
   if (!point) return { rows: [] };
   const invoices = point.datum.invoices;
   return {
-    title: dayLabel(String(point.xValue ?? "")),
+    title: formatUtcDay(String(point.xValue ?? "")),
     rows: [
       {
         color: point.color,
@@ -67,7 +60,7 @@ export function createRevenueChart(rows: readonly RevenueDay[]) {
             ticks: {
               size: 0,
               padding: 8,
-              format: (value: string) => dayLabel(value),
+              format: (value: string) => formatUtcDay(value),
             },
             tickLabels: {
               thin: { minGap: 24, priority: "ends" },

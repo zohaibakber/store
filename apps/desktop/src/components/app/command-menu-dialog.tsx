@@ -2,6 +2,7 @@ import { ArrowDown01Icon, ArrowUp01Icon, CornerDownLeftIcon } from "@hugeicons/c
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
@@ -19,8 +20,7 @@ import {
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAuth } from "@/lib/auth";
-import { formatPrice } from "@/lib/format";
-import { useCatalogIsReady, useCatalogProducts } from "@/lib/inventory-db";
+import { useCatalogIsReady, useCatalogProducts } from "@/lib/inventory";
 import { Route as RootRoute } from "@/routes/__root";
 
 const RESULT_LIMIT = 20;

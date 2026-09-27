@@ -11,7 +11,7 @@ export type AllocatableBatch = {
   readonly batchNumber: string | null;
 };
 
-export type InvoiceLineTake = {
+type InvoiceLineTake = {
   readonly batchId: BatchId;
   readonly batchNumber: string | null;
   readonly quantity: number;
@@ -28,7 +28,7 @@ export const nextInvoiceNumber = (replicaNumbers: Iterable<number>): number => {
   return last + 1;
 };
 
-export const compareBatchesFefo = (left: AllocatableBatch, right: AllocatableBatch) => {
+const compareBatchesFefo = (left: AllocatableBatch, right: AllocatableBatch) => {
   if (left.expiresAt === null && right.expiresAt !== null) return 1;
   if (left.expiresAt !== null && right.expiresAt === null) return -1;
   if (left.expiresAt !== null && right.expiresAt !== null && left.expiresAt !== right.expiresAt) {

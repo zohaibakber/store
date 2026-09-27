@@ -24,7 +24,7 @@ export const MAINTENANCE_POLICY = {
   snapshotStepsPerOrganization: 64,
 } as const;
 
-export type MaintenanceProgress = {
+type MaintenanceProgress = {
   readonly organizations: number;
   readonly enqueuedSnapshots: number;
   readonly retention: ReadonlyArray<RetentionProgress>;
@@ -32,7 +32,7 @@ export type MaintenanceProgress = {
   readonly more: boolean;
 };
 
-export interface InventoryMaintenanceContract {
+interface InventoryMaintenanceContract {
   readonly runScheduled: (
     budgetMillis?: number,
   ) => Effect.Effect<MaintenanceProgress, InventoryError>;

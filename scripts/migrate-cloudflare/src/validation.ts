@@ -155,14 +155,6 @@ export const validateOrganization = (
         );
       }
     }
-    const replicaCount = yield* target.countReplicas(organizationId);
-    const receiptCount = yield* target.countReceipts(organizationId);
-    if (replicaCount !== 0 || receiptCount !== 0) {
-      return yield* fail(
-        organizationId,
-        "Imported organizations must start with no replica registrations or receipts.",
-      );
-    }
   }).pipe(
     Effect.mapError((error) => {
       if (error instanceof ValidationFailed) return error;

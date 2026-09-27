@@ -4,7 +4,6 @@ import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Command from "effect/unstable/cli/Command";
 import * as Flag from "effect/unstable/cli/Flag";
@@ -14,7 +13,12 @@ import { sqliteDirectoryLayer } from "./src/directory.ts";
 import { ConfigurationError } from "./src/errors.ts";
 import { journalLayerFromSqlite } from "./src/export-store.ts";
 import { liveIdsLayer } from "./src/ids.ts";
-import { DEFAULT_CHUNK_SIZE, MigrationRequest, OrganizationSelection } from "./src/model.ts";
+import {
+  CompletedMigration,
+  DEFAULT_CHUNK_SIZE,
+  MigrationRequest,
+  OrganizationSelection,
+} from "./src/model.ts";
 import { postgresSourceLayer } from "./src/postgres-source.ts";
 import { openSqlite } from "./src/sqlite.ts";
 import { sqliteTargetLayer } from "./src/target.ts";
@@ -28,6 +32,7 @@ const text = (flag: string, variable: string) =>
 
 const parseOrganizations = Schema.decodeUnknownEffect(Schema.NonEmptyArray(OrganizationSelection));
 const decodeRequest = Schema.decodeUnknownEffect(MigrationRequest);
+const encodeResult = Schema.encodeEffect(Schema.fromJsonString(CompletedMigration));
 
 const selectionsFrom = (organizations: string) =>
   parseOrganizations(
@@ -81,10 +86,10 @@ const migrate = Command.make(
         sqliteDirectoryLayer(yield* openSqlite(input.directoryPath)),
         liveIdsLayer,
         liveCheckpointLayer,
-        postgresSourceLayer({ connectionString: Redacted.value(input.connectionString) }),
+        postgresSourceLayer(input.connectionString),
       );
       const result = yield* runMigration(request).pipe(Effect.provide(layer));
-      yield* Console.log(JSON.stringify(result));
+      yield* Console.log(yield* encodeResult(result).pipe(Effect.orDie));
     }).pipe(
       Effect.scoped,
       Effect.tapError((error) => Console.error(error.message)),

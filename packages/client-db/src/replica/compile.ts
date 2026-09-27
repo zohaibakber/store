@@ -10,7 +10,7 @@ import {
 import type { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
 import type { SqliteParameter } from "./types";
 
-export type SqliteSubsetStatement = {
+type SqliteSubsetStatement = {
   readonly sql: string;
   readonly parameters: ReadonlyArray<SqliteParameter>;
 };

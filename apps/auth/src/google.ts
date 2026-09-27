@@ -67,7 +67,7 @@ export class GoogleOAuth extends Context.Service<GoogleOAuth, GoogleOAuthApi>()(
   "@store/auth-worker/GoogleOAuth",
 ) {}
 
-export interface GoogleOAuthConfiguration {
+interface GoogleOAuthConfiguration {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly callbackUrl: string;

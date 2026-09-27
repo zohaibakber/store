@@ -1,7 +1,6 @@
 import { createHashHistory } from "@tanstack/react-router";
 
 import { bootstrapAuth } from "@/lib/auth";
-import { completeGoogle, reportGoogleAuthError } from "@/lib/first-party-auth";
 import { createElectronInventoryHost } from "@/lib/inventory/host-electron";
 import { reportError } from "@/lib/report-error";
 import { initClientSentry } from "@/lib/sentry";
@@ -20,11 +19,5 @@ export const startElectron = async () => {
     history: createHashHistory(),
     access: hostAccess(),
     inventory,
-  });
-  window.auth?.onOAuthCallback((url) => {
-    void completeGoogle(url).catch((cause) => {
-      reportError(cause, { op: "google-sign-in-callback" });
-      reportGoogleAuthError(cause);
-    });
   });
 };

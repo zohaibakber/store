@@ -29,10 +29,3 @@ export type ReplicaOutboxActivity = {
   readonly rejected: ReadonlyArray<OutboxActivityRow>;
   readonly caughtUpAt: number | null;
 };
-
-export const shouldRecordCaughtUp = (
-  lastRecordedAtMillis: number | undefined,
-  nowMillis: number,
-): boolean =>
-  lastRecordedAtMillis === undefined ||
-  nowMillis - lastRecordedAtMillis >= CAUGHT_UP_RECORD_INTERVAL_MILLIS;

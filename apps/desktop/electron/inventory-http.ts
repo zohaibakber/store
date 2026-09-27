@@ -19,13 +19,7 @@ const inventoryApiPath = (apiBaseUrl: string) => {
   return (basePath.endsWith("/api") ? basePath : `${basePath}/api`).replace(/^\/\//u, "/");
 };
 
-export const SYNC_COMMAND_PATHS = [
-  "replicas",
-  "commands",
-  "pull",
-  "snapshots",
-  "live-tickets",
-] as const;
+const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull", "snapshots", "live-tickets"] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 

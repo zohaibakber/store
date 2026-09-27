@@ -53,7 +53,7 @@ export const invoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(InvoiceEx
   generateDescriptions: true,
 }).schema;
 
-export const MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH = 12_000;
+const MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH = 12_000;
 
 export const ProductScanMode = Schema.Literals(["product", "batch"]);
 export type ProductScanMode = typeof ProductScanMode.Type;

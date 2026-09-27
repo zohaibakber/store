@@ -22,7 +22,7 @@ export function InventoryProvider({
   readonly lease: CatalogLease;
 }) {
   return (
-    <SharedInventoryProvider catalog={catalog} host={host} scope={lease.scope}>
+    <SharedInventoryProvider catalog={catalog} host={host} lease={lease} scope={lease.scope}>
       <InventoryOpenFailure>{children}</InventoryOpenFailure>
     </SharedInventoryProvider>
   );

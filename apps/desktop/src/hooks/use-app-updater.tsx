@@ -1,5 +1,8 @@
+import { RegistryContext } from "@effect/atom-react";
 import { classifyUpdateFailure, updateFailureMessage } from "@store/contracts";
-import { useEffect } from "react";
+import * as Atom from "effect/unstable/reactivity/Atom";
+import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import { useContext, useEffect } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 
@@ -7,7 +10,14 @@ const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
 const UPDATE_CHECK_TOAST_ID = "app-update-check";
 
-let manualCheck = false;
+/** Whether the user asked for the check in flight, so its outcome gets a toast. */
+const manualUpdateCheckAtom = Atom.make(false).pipe(Atom.keepAlive);
+
+const claimManualUpdateCheck = (registry: AtomRegistry.AtomRegistry) => {
+  if (!registry.get(manualUpdateCheckAtom)) return false;
+  registry.set(manualUpdateCheckAtom, false);
+  return true;
+};
 
 const showDownloadProgress = (value: number, description: string) => {
   toastManager.add({
@@ -64,10 +74,10 @@ const startDownload = (version: string) => {
 
 export const canCheckForAppUpdate = () => Boolean(window.updater);
 
-export const checkForAppUpdate = () => {
+const checkForAppUpdate = (registry: AtomRegistry.AtomRegistry) => {
   const updater = window.updater;
   if (!updater) return;
-  manualCheck = true;
+  registry.set(manualUpdateCheckAtom, true);
   toastManager.add({
     id: UPDATE_CHECK_TOAST_ID,
     timeout: 0,
@@ -75,8 +85,7 @@ export const checkForAppUpdate = () => {
     type: "loading",
   });
   void updater.check().catch((error) => {
-    if (!manualCheck) return;
-    manualCheck = false;
+    if (!claimManualUpdateCheck(registry)) return;
     const message = error instanceof Error ? error.message : "";
     const offline = classifyUpdateFailure(message) === "network";
     toastManager.add({
@@ -91,7 +100,14 @@ export const checkForAppUpdate = () => {
   });
 };
 
+/** Returns a handler for the user's "Check for updates" action. */
+export const useCheckForAppUpdate = () => {
+  const registry = useContext(RegistryContext);
+  return () => checkForAppUpdate(registry);
+};
+
 export function useAppUpdater() {
+  const registry = useContext(RegistryContext);
   useEffect(() => {
     const updater = window.updater;
     if (!updater) return;
@@ -99,7 +115,7 @@ export function useAppUpdater() {
     const unsubscribe = updater.onEvent((event) => {
       switch (event.type) {
         case "available":
-          manualCheck = false;
+          registry.set(manualUpdateCheckAtom, false);
           toastManager.close(UPDATE_CHECK_TOAST_ID);
           toastManager.add({
             id: UPDATE_AVAILABLE_TOAST_ID,
@@ -116,8 +132,7 @@ export function useAppUpdater() {
           });
           break;
         case "not-available":
-          if (manualCheck) {
-            manualCheck = false;
+          if (claimManualUpdateCheck(registry)) {
             toastManager.add({
               description: `Version ${__APP_VERSION__} is the latest.`,
               id: UPDATE_CHECK_TOAST_ID,
@@ -130,8 +145,7 @@ export function useAppUpdater() {
           showDownloadProgress(event.percent, "Almost ready to install.");
           break;
         case "error":
-          if (!manualCheck) break;
-          manualCheck = false;
+          if (!claimManualUpdateCheck(registry)) break;
           if (event.failure === "network") {
             toastManager.add({
               description: "Tabaaq will check for updates when you're back online.",
@@ -160,5 +174,5 @@ export function useAppUpdater() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [registry]);
 }

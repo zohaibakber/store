@@ -12,8 +12,7 @@ export const SyncEntity = Schema.Literals([
 ]);
 export type SyncEntity = typeof SyncEntity.Type;
 
-export const SyncAction = Schema.Literals(["upsert", "delete"]);
-export type SyncAction = typeof SyncAction.Type;
+const SyncAction = Schema.Literals(["upsert", "delete"]);
 
 export const SyncEntityChange = Schema.Struct({
   entity: SyncEntity,

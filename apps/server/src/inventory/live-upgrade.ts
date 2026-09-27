@@ -14,6 +14,7 @@ import type { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -67,6 +68,14 @@ const openLiveSession = (
 const readHorizon = (live: InventoryLiveContract, actor: InventorySyncActor) =>
   toSyncAuthorityError(live.readLiveHorizon(actor));
 
+const longPollSchedule = (deadline: number) =>
+  Schedule.spaced(LIVE_SSE_POLL_MILLIS).pipe(
+    Schedule.while(({ now }) => now < deadline),
+    Schedule.modifyDelay(({ now, duration }) =>
+      Effect.succeed(Duration.min(duration, Duration.millis(deadline - now))),
+    ),
+  );
+
 const longPollResponse = (
   live: InventoryLiveContract,
   actor: InventorySyncActor,
@@ -74,27 +83,27 @@ const longPollResponse = (
 ): Effect.Effect<SyncLiveWakeHint | void, SyncAuthorityError, RuntimeContext> =>
   Effect.gen(function* () {
     yield* openLiveSession(live, actor, query);
-    const waitMs = clampWaitMs(query.waitMs);
-    const deadline = (yield* Clock.currentTimeMillis) + waitMs;
-    let last = query.afterHorizon ?? "0";
+    const deadline = (yield* Clock.currentTimeMillis) + clampWaitMs(query.waitMs);
+    const afterHorizon = query.afterHorizon ?? "0";
 
-    while ((yield* Clock.currentTimeMillis) < deadline) {
-      const now = yield* Clock.currentTimeMillis;
-      if (now >= actor.authorizationExpiresAt) {
+    const pollOnce = Effect.gen(function* () {
+      if ((yield* Clock.currentTimeMillis) >= actor.authorizationExpiresAt) {
         return yield* Effect.fail(
           syncProtocolError("TICKET_INVALID", "The authorization lease has expired."),
         );
       }
       const current = yield* readHorizon(live, actor);
-      if (compareDecimalSequence(current.horizon, last) > 0) {
-        return wakeHintFromHorizon(current);
-      }
-      const remaining = deadline - now;
-      if (remaining <= 0) break;
-      yield* Effect.sleep(Duration.millis(Math.min(LIVE_SSE_POLL_MILLIS, remaining)));
-    }
+      return compareDecimalSequence(current.horizon, afterHorizon) > 0
+        ? wakeHintFromHorizon(current)
+        : undefined;
+    });
 
-    return undefined;
+    return yield* pollOnce.pipe(
+      Effect.repeat({
+        schedule: longPollSchedule(deadline),
+        until: (hint): boolean => hint !== undefined,
+      }),
+    );
   });
 
 const sseResponse = (
@@ -110,45 +119,28 @@ const sseResponse = (
       actor.authorizationExpiresAt,
     );
     const initial = yield* readHorizon(live, actor);
-    const lastHorizon = query.afterHorizon ?? initial.horizon;
     const runtime = yield* Effect.context<RuntimeContext>();
 
-    type SseState = {
-      readonly lastHorizon: typeof initial.horizon;
-      readonly sentInitial: boolean;
-    };
+    const leaseOpen = Clock.currentTimeMillis.pipe(Effect.map((now) => now < leaseEndsAt));
+
+    const polledEvents = Stream.fromSchedule(Schedule.spaced(LIVE_SSE_POLL_MILLIS)).pipe(
+      Stream.takeWhileEffect(() => leaseOpen),
+      Stream.mapEffect(() => readHorizon(live, actor).pipe(Effect.orDie)),
+      Stream.mapAccum(
+        () => initial.horizon,
+        (last, current) =>
+          compareDecimalSequence(current.horizon, last) > 0
+            ? [current.horizon, [wakeEvent(wakeHintFromHorizon(current))]]
+            : [last, [pingEvent()]],
+      ),
+    );
+
+    const events = Stream.make(wakeEvent(wakeHintFromHorizon(initial))).pipe(
+      Stream.concat(polledEvents),
+    );
 
     return Stream.provideContext(
-      Stream.unfold({ lastHorizon, sentInitial: false } satisfies SseState, (state: SseState) =>
-        Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
-          if (now >= leaseEndsAt) return undefined;
-
-          if (!state.sentInitial) {
-            return [
-              wakeEvent(wakeHintFromHorizon(initial)),
-              { lastHorizon: initial.horizon, sentInitial: true } satisfies SseState,
-            ] as const;
-          }
-
-          yield* Effect.sleep(Duration.millis(LIVE_SSE_POLL_MILLIS));
-          const pollNow = yield* Clock.currentTimeMillis;
-          if (pollNow >= leaseEndsAt) return undefined;
-
-          const current = yield* readHorizon(live, actor).pipe(Effect.orDie);
-          if (compareDecimalSequence(current.horizon, state.lastHorizon) > 0) {
-            return [
-              wakeEvent(wakeHintFromHorizon(current)),
-              { lastHorizon: current.horizon, sentInitial: true } satisfies SseState,
-            ] as const;
-          }
-
-          return [
-            pingEvent(),
-            { lastHorizon: state.lastHorizon, sentInitial: true } satisfies SseState,
-          ] as const;
-        }),
-      ),
+      Stream.unwrap(leaseOpen.pipe(Effect.map((open) => (open ? events : Stream.empty)))),
       runtime,
     );
   });

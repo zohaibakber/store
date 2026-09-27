@@ -11,7 +11,7 @@ import { StockRecommendations } from "@/components/dashboard/stock-recommendatio
 import { TopProducts } from "@/components/dashboard/top-products";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useInventoryDashboardAnalytics } from "@/lib/inventory-db";
+import { useInventoryDashboardAnalytics } from "@/lib/inventory";
 
 export function HomePage() {
   const policy = useAtomValue(stockPolicyAtom);

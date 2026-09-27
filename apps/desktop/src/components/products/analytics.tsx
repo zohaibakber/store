@@ -2,11 +2,11 @@ import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { productStock, productStockValue } from "@store/contracts/store-helpers";
+import { formatPrice } from "@store/services/format";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatPrice } from "@/lib/format";
 
 const LOW_STOCK_THRESHOLD = 10;
 

@@ -10,20 +10,16 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@effect/sql-pg": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@store/contracts": "workspace:*",
-    "@store/db": "workspace:*",
-    "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "nanoid": "^6.0.1",
-    "pg": "^8.23.0",
     "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.2",
-    "@types/pg": "^8.23.1",
+    "@types/node": "^26.6.3",
     "typescript": "catalog:",
-    "vitest": "5.0.1"
+    "vitest": "5.0.2"
   }
 }

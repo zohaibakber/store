@@ -17,8 +17,11 @@ import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
@@ -126,13 +129,18 @@ const registration = (identity: AuthorityIdentity): RegisterReplicaResult => ({
   schemaVersion: 1,
 });
 
+type AuthorityCall = "register" | "pull";
+
 const makeAuthority = (
   identity: AuthorityIdentity,
   options: {
     readonly offlineRegistrations?: number;
     readonly pullFailure?: SyncProtocolError;
+    readonly calls?: Queue.Enqueue<AuthorityCall>;
   } = {},
 ) => {
+  const record = (call: AuthorityCall) =>
+    options.calls === undefined ? Effect.void : Queue.offer(options.calls, call);
   const counts = { registers: 0, pulls: 0, commits: 0 };
   let offline = options.offlineRegistrations ?? 0;
   let lastSequence = BigInt(identity.nextClientSequence) - 1n;
@@ -141,12 +149,16 @@ const makeAuthority = (
     registerReplica: (request) =>
       Effect.suspend(() => {
         counts.registers += 1;
-        if (offline > 0) {
-          offline -= 1;
-          return Effect.fail(SyncTransportOffline.make({ message: "offline" }));
-        }
-        return Effect.succeed({ ...registration(identity), replicaId: request.replicaId });
-      }),
+        return record("register");
+      }).pipe(
+        Effect.andThen(() => {
+          if (offline > 0) {
+            offline -= 1;
+            return Effect.fail(SyncTransportOffline.make({ message: "offline" }));
+          }
+          return Effect.succeed({ ...registration(identity), replicaId: request.replicaId });
+        }),
+      ),
     submitCommand: (envelope) =>
       Effect.suspend(() => {
         if (envelope.epoch !== identity.epoch) {
@@ -165,21 +177,25 @@ const makeAuthority = (
     pull: (request) =>
       Effect.suspend(() => {
         counts.pulls += 1;
-        if (options.pullFailure !== undefined) return Effect.fail(options.pullFailure);
-        if (request.epoch !== identity.epoch) {
-          return Effect.fail(syncProtocolError("EPOCH_MISMATCH", "epoch"));
-        }
-        return Effect.succeed({
-          epoch: SyncEpoch.make(identity.epoch),
-          incarnation: AuthorityIncarnation.make(identity.incarnation),
-          subscription: OPERATIONAL_SUBSCRIPTION,
-          schemaVersion: 1,
-          transactions: [],
-          nextCommitSequence: request.afterCommitSequence,
-          horizon: OrgCommitSequence.make("0"),
-          retentionFloor: OrgCommitSequence.make("0"),
-        });
-      }),
+        return record("pull");
+      }).pipe(
+        Effect.andThen(() => {
+          if (options.pullFailure !== undefined) return Effect.fail(options.pullFailure);
+          if (request.epoch !== identity.epoch) {
+            return Effect.fail(syncProtocolError("EPOCH_MISMATCH", "epoch"));
+          }
+          return Effect.succeed({
+            epoch: SyncEpoch.make(identity.epoch),
+            incarnation: AuthorityIncarnation.make(identity.incarnation),
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            schemaVersion: 1,
+            transactions: [],
+            nextCommitSequence: request.afterCommitSequence,
+            horizon: OrgCommitSequence.make("0"),
+            retentionFloor: OrgCommitSequence.make("0"),
+          });
+        }),
+      ),
     acquireSnapshot: () => Effect.die("unused"),
     readSnapshotPart: () => Effect.die("unused"),
     mintLiveTicket: () => Effect.die("unused"),
@@ -227,6 +243,15 @@ const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
   );
 
 const statusOf = (owned: OwnedHttpSync) => SubscriptionRef.get(owned.scheduler.status);
+
+const firstSettledStatus = (owned: OwnedHttpSync) =>
+  SubscriptionRef.changes(owned.scheduler.status).pipe(
+    Stream.filter((status) => status._tag !== "running"),
+    Stream.runHead,
+  );
+
+const awaitCall = (calls: Queue.Dequeue<AuthorityCall>, call: AuthorityCall) =>
+  Queue.take(calls).pipe(Effect.repeat({ until: (taken) => taken === call }), Effect.asVoid);
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("adopts the authority identity into a fresh replica", () =>
@@ -335,7 +360,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
     ),
   );
 
-  it.live("stops with recovery when a registered replica meets a restored authority", () =>
+  it.effect("stops with recovery when a registered replica meets a restored authority", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
         const identity = { epoch: "1", incarnation: "authority-f", nextClientSequence: "1" };
@@ -351,22 +376,25 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           undefined,
           fastPolicy,
         );
-        yield* Effect.sleep("60 millis");
-        const status = yield* statusOf(owned);
+        const settled = yield* firstSettledStatus(owned);
         yield* owned.dispose;
-        expect(status).toMatchObject({ _tag: "recoveryRequired", code: "EPOCH_MISMATCH" });
+        expect(Option.getOrUndefined(settled)).toMatchObject({
+          _tag: "recoveryRequired",
+          code: "EPOCH_MISMATCH",
+        });
         expect(authority.counts.registers).toBe(0);
         expect(authority.counts.pulls).toBe(1);
       }),
     ),
   );
 
-  it.live("retries an offline registration on the next wake without blocking local writes", () =>
+  it.effect("retries an offline registration on the next wake without blocking local writes", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
+        const calls = yield* Queue.unbounded<AuthorityCall>();
         const authority = makeAuthority(
           { epoch: "1", incarnation: "authority-g", nextClientSequence: "1" },
-          { offlineRegistrations: 2 },
+          { offlineRegistrations: 2, calls },
         );
         const owned = yield* startOwnedHttpSync(
           store,
@@ -375,12 +403,13 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           undefined,
           { ...fastPolicy, activePollMillis: 60_000, backoffMillis: [60_000] },
         );
-        yield* Effect.sleep("30 millis");
+        yield* awaitCall(calls, "register");
+        yield* awaitCall(calls, "register");
         expect(authority.counts).toMatchObject({ registers: 2, pulls: 0 });
         expect(yield* statusOf(owned)).toEqual({ _tag: "running" });
         yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
         yield* owned.wake("reconnect");
-        yield* Effect.sleep("60 millis");
+        yield* awaitCall(calls, "pull");
         const status = yield* statusOf(owned);
         yield* owned.dispose;
         expect(status).toEqual({ _tag: "running" });

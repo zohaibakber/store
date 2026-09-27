@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/detail-page";
-import { useInventoryInvoice } from "@/lib/inventory-db";
+import { useInventoryInvoice } from "@/lib/inventory";
 
 export const Route = createFileRoute("/invoices/$invoiceId")({
   component: InvoiceDetailRoute,

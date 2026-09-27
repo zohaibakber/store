@@ -22,15 +22,18 @@ import {
   type ReplicaHandle,
   type ReplicaSyncHealth,
 } from "@store/client-db";
-import {
-  StockRecommendationService,
-  stockRecommendationLayer,
-} from "@store/services/stock-recommendations";
 import { collectionOptions, DbClient } from "@tanstack/react-db";
-import { Effect, Fiber, ManagedRuntime, Queue, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Queue from "effect/Queue";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Atom from "effect/unstable/reactivity/Atom";
 
 import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
+import { catalogOpenFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
@@ -47,21 +50,6 @@ const actorFor = (
   userId: scope.userId,
   deviceId: replica.replicaId ?? host.deviceId,
 });
-
-const recommendStockFor = (scope: InventoryScope) => {
-  const recommendations = ManagedRuntime.make(stockRecommendationLayer);
-  return {
-    recommendStock: (snapshot: Parameters<Inventory["recommendStock"]>[0], signal: AbortSignal) =>
-      recommendations.runPromise(
-        Effect.gen(function* () {
-          const service = yield* StockRecommendationService;
-          return yield* service.analyze({ ...snapshot, organizationId: scope.organizationId });
-        }).pipe(Effect.result),
-        { signal },
-      ),
-    disposeRecommendations: () => recommendations.dispose(),
-  };
-};
 
 const replicaDescriptor = <Row extends InventoryCollectionRow>(
   id: string,
@@ -199,67 +187,98 @@ const openCollections = (dbClient: DbClient, scopeId: string, deps: CollectionDe
   ),
 });
 
-const followSyncStatus = (replica: ReplicaHandle, atoms: WorkspaceAtoms) => {
-  const changes = Effect.runSync(Queue.sliding<void>(1));
-  let health: ReplicaSyncHealth = { _tag: "running" };
-  const unsubscribeCommits = replica.subscribe((notice) => {
-    if (notice.workspaceToken === replica.workspaceToken) Queue.offerUnsafe(changes, undefined);
-  });
-  const unsubscribeHealth = replica.subscribeSyncHealth?.((next) => {
-    health = next;
-    Queue.offerUnsafe(changes, undefined);
-  });
-  const fiber = Stream.fromQueue(changes).pipe(
-    Stream.mapEffect(() => readSyncSnapshot(replica)),
-    Stream.runForEach((snapshot) =>
-      Effect.sync(() => {
-        atoms.registry.set(atoms.syncStatus, syncStatusWithHealth(snapshot.status, health));
-        if (snapshot.activity !== undefined) {
-          atoms.registry.set(atoms.syncActivity, snapshot.activity);
-        }
-      }),
-    ),
-    Effect.runFork,
+const commitWakes = (replica: ReplicaHandle) =>
+  Stream.callback<void>(
+    (queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() =>
+          replica.subscribe((notice) => {
+            if (notice.workspaceToken === replica.workspaceToken) {
+              Queue.offerUnsafe(queue, undefined);
+            }
+          }),
+        ),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      ),
+    { bufferSize: 1, strategy: "sliding" },
   );
-  return Fiber.interrupt(fiber).pipe(
-    Effect.ensuring(
-      Effect.sync(() => {
-        unsubscribeCommits();
-        unsubscribeHealth?.();
-      }),
-    ),
-  );
-};
 
-export const openInventoryWorkspace = async (
-  host: InventoryHost,
-  scope: InventoryScope,
-): Promise<Inventory> => {
-  const scopeId = inventoryScopeId(host, scope);
-  const replica = await host.openReplica({
-    organizationId: scope.organizationId,
-    userId: scope.userId,
-    replicaId: host.deviceId,
+const followSyncHealth = (replica: ReplicaHandle) =>
+  Effect.gen(function* () {
+    const health = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        replica.subscribeSyncHealth?.((next) => {
+          Effect.runSync(SubscriptionRef.set(health, next));
+        }),
+      ),
+      (unsubscribe) => Effect.sync(() => unsubscribe?.()),
+    );
+    return health;
   });
-  const dbClient = new DbClient();
-  const collections = openCollections(dbClient, scopeId, {
-    executor: replica,
-    changeFeed: replica,
-    coherence: createInvoiceCoherenceGate(),
+
+const followSyncStatus = (replica: ReplicaHandle, atoms: WorkspaceAtoms) =>
+  Effect.gen(function* () {
+    const health = yield* followSyncHealth(replica);
+    yield* Stream.merge(commitWakes(replica), SubscriptionRef.changes(health)).pipe(
+      Stream.buffer({ capacity: 1, strategy: "sliding" }),
+      Stream.mapEffect(() => Effect.all([readSyncSnapshot(replica), SubscriptionRef.get(health)])),
+      Stream.runForEach(([snapshot, current]) =>
+        Effect.sync(() => {
+          Atom.batch(() => {
+            atoms.registry.set(atoms.syncStatus, syncStatusWithHealth(snapshot.status, current));
+            if (snapshot.activity !== undefined) {
+              atoms.registry.set(atoms.syncActivity, snapshot.activity);
+            }
+          });
+        }),
+      ),
+      Effect.forkScoped,
+    );
   });
-  const { recommendStock, disposeRecommendations } = recommendStockFor(scope);
-  const outbox = await Effect.runPromise(readOutboxSnapshot(replica));
-  const atoms = createWorkspaceAtoms(
-    outbox.status,
-    recommendStock,
-    workspaceSources(replica, outbox.activity),
+
+const acquireReplica = (host: InventoryHost, scope: InventoryScope) =>
+  Effect.acquireRelease(
+    Effect.tryPromise({
+      try: () =>
+        host.openReplica({
+          organizationId: scope.organizationId,
+          userId: scope.userId,
+          replicaId: host.deviceId,
+        }),
+      catch: catalogOpenFailure,
+    }),
+    (replica) => Effect.sync(() => replica.close()),
   );
-  const stopFollowingSyncStatus = followSyncStatus(replica, atoms);
-  const tables = { dbClient, ...collections };
-  return {
-    ...tables,
-    atoms,
-    actions: makeInventoryActions(
+
+const acquireDbClient = Effect.acquireRelease(
+  Effect.sync(() => new DbClient()),
+  (dbClient) => Effect.promise(() => dbClient.cleanup()),
+);
+
+const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
+  Effect.gen(function* () {
+    const replica = yield* acquireReplica(host, scope);
+    const dbClient = yield* acquireDbClient;
+    const collections = openCollections(dbClient, inventoryScopeId(host, scope), {
+      executor: replica,
+      changeFeed: replica,
+      coherence: createInvoiceCoherenceGate(),
+    });
+    const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
+    const atoms = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        createWorkspaceAtoms(
+          scope.organizationId,
+          outbox.status,
+          workspaceSources(replica, outbox.activity),
+        ),
+      ),
+      (opened) => Effect.sync(() => opened.registry.dispose()),
+    );
+    yield* followSyncStatus(replica, atoms);
+    const tables = { dbClient, ...collections };
+    const actions = makeInventoryActions(
       tables,
       actorFor(host, scope, replica),
       replica,
@@ -267,17 +286,24 @@ export const openInventoryWorkspace = async (
         replica.wakeSyncUpload?.();
       },
       atoms,
-    ),
-    recommendStock,
-    dispose: async () => {
-      await Effect.runPromise(stopFollowingSyncStatus);
-      atoms.registry.dispose();
-      try {
-        await disposeRecommendations();
-        await dbClient.cleanup();
-      } finally {
-        replica.close();
-      }
-    },
-  };
-};
+    );
+    return { ...tables, atoms, actions };
+  });
+
+export const openInventoryWorkspace = (
+  host: InventoryHost,
+  scope: InventoryScope,
+): Promise<Inventory> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const workspaceScope = yield* Scope.make();
+      const workspace = yield* acquireWorkspace(host, scope).pipe(
+        Scope.provide(workspaceScope),
+        Effect.onError(() => Scope.close(workspaceScope, Exit.void)),
+      );
+      return {
+        ...workspace,
+        dispose: () => Effect.runPromise(Scope.close(workspaceScope, Exit.void)),
+      };
+    }),
+  );

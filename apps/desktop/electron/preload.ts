@@ -10,9 +10,10 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
+import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
 import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
-import { makeLastValueReplay } from "./last-value-replay";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
+import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
   REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
@@ -40,15 +41,12 @@ const inventoryHttp: InventoryHttpBridge = {
 
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
-const syncHealthReplays = new Map<
-  string,
-  ReturnType<typeof makeLastValueReplay<ReplicaSyncHealthEvent["health"]>>
->();
+const syncHealthReplays = new Map<string, ReplayChannel<ReplicaSyncHealthEvent["health"]>>();
 
 const syncHealthReplay = (workspaceToken: string) => {
   const existing = syncHealthReplays.get(workspaceToken);
   if (existing) return existing;
-  const created = makeLastValueReplay<ReplicaSyncHealthEvent["health"]>();
+  const created = makeReplayChannel<ReplicaSyncHealthEvent["health"]>();
   syncHealthReplays.set(workspaceToken, created);
   return created;
 };
@@ -77,19 +75,27 @@ const replica: ReplicaIpcBridge = {
     ipcRenderer.on(REPLICA_COMMIT_CHANNEL, listener);
     return () => ipcRenderer.off(REPLICA_COMMIT_CHANNEL, listener);
   },
-  onSyncHealth(workspaceToken, callback) {
-    const unsubscribe = syncHealthReplay(workspaceToken).subscribe(callback);
-    return () => {
-      unsubscribe();
-    };
-  },
+  onSyncHealth: (workspaceToken, callback) => syncHealthReplay(workspaceToken).subscribe(callback),
 };
 
 contextBridge.exposeInMainWorld("replica", replica);
 
-const sessionReplay = makeLastValueReplay<WorkspaceSnapshot>();
+const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {
   sessionReplay.publish(snapshot);
+});
+
+const oauthCallbackScheme = globalThis.location.protocol.slice(0, -1);
+const oauthCallbackListeners = new Set<(url: string) => void>();
+let unclaimedOAuthCallback: string | null = null;
+
+ipcRenderer.on(OAUTH_CALLBACK_CHANNEL, (_event, url: string) => {
+  if (!isOAuthCallbackUrl(url, oauthCallbackScheme)) return;
+  if (oauthCallbackListeners.size === 0) {
+    unclaimedOAuthCallback = url;
+    return;
+  }
+  for (const listener of oauthCallbackListeners) listener(url);
 });
 
 contextBridge.exposeInMainWorld("auth", {
@@ -118,34 +124,12 @@ contextBridge.exposeInMainWorld("auth", {
   openExternal: (url: string) => invoke<void, [string]>("auth:open-external", url),
   getOAuthRedirectUri: () => invoke<string>("auth:get-oauth-redirect-uri"),
   onOAuthCallback(callback: (url: string) => void) {
-    let active = true;
-    let draining = false;
-    let drainAgain = false;
-    const drain = async () => {
-      if (draining) {
-        drainAgain = true;
-        return;
-      }
-      draining = true;
-      try {
-        do {
-          drainAgain = false;
-          while (active) {
-            const url = await invoke<string | null>("auth:take-oauth-callback");
-            if (!url) break;
-            callback(url);
-          }
-        } while (active && drainAgain);
-      } finally {
-        draining = false;
-      }
-    };
-    const listener = () => void drain();
-    ipcRenderer.on("auth:oauth-callback-available", listener);
-    void drain();
+    oauthCallbackListeners.add(callback);
+    const unclaimed = unclaimedOAuthCallback;
+    unclaimedOAuthCallback = null;
+    if (unclaimed) callback(unclaimed);
     return () => {
-      active = false;
-      ipcRenderer.off("auth:oauth-callback-available", listener);
+      oauthCallbackListeners.delete(callback);
     };
   },
   onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {

@@ -30,7 +30,7 @@ export const getRouter = (input: {
     scrollRestoration: true,
   });
 
-export type AppRouter = ReturnType<typeof getRouter>;
+type AppRouter = ReturnType<typeof getRouter>;
 
 declare module "@tanstack/react-router" {
   interface Register {

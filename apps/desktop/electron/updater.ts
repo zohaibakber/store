@@ -3,13 +3,17 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
 
 import { assertTrustedIpcSender } from "./ipc-sender";
 import {
   makeUpdaterWorkflow,
+  sampleDownloadProgress,
   type UpdaterProvider,
   type UpdaterProviderEvent,
 } from "./updater-workflow";
@@ -20,7 +24,7 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const RETRY_CHECK_DELAY_MS = 30_000;
 const INITIAL_CHECK_DELAY_MS = 5_000;
-const PROGRESS_EVENT_INTERVAL_MS = 250;
+const PROGRESS_EVENT_INTERVAL = "250 millis";
 
 const PendingUpdateInfo = Schema.Struct({
   fileName: Schema.optional(Schema.String),
@@ -36,7 +40,7 @@ const versionFromPendingFileName = (fileName: string) => {
 
 const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
 
-export const clearStalePendingUpdate = async (currentVersion: string) => {
+const clearStalePendingUpdate = async (currentVersion: string) => {
   const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
   try {
     const info = Schema.decodeUnknownSync(Schema.fromJsonString(PendingUpdateInfo))(
@@ -55,49 +59,56 @@ export const clearStalePendingUpdate = async (currentVersion: string) => {
   } catch {}
 };
 
+const clampPercent = (percent: number) => Math.min(100, Math.max(0, Math.round(percent)));
+
+const updaterEvents = Stream.callback<UpdaterProviderEvent>((queue) => {
+  const emit = (event: UpdaterProviderEvent) => {
+    Queue.offerUnsafe(queue, event);
+  };
+  const listeners = {
+    "checking-for-update": () => emit({ type: "checking" }),
+    "update-available": (info: { version: string }) =>
+      emit({ type: "available", version: info.version }),
+    "update-not-available": () => emit({ type: "not-available" }),
+    "download-progress": (info: { percent: number }) =>
+      emit({ type: "progress", percent: clampPercent(info.percent) }),
+    "update-downloaded": (info: { version: string }) =>
+      emit({ type: "downloaded", version: info.version }),
+    error: (cause: Error) => {
+      // Official Electron autoUpdater sample: log update errors, don't surface
+      // them as application failures. https://www.electronjs.org/docs/latest/tutorial/updates
+      console.error("There was a problem updating the application");
+      console.error(cause);
+      emit({ type: "error", error: cause });
+    },
+  };
+  return Effect.acquireRelease(
+    Effect.sync(() => {
+      autoUpdater.on("checking-for-update", listeners["checking-for-update"]);
+      autoUpdater.on("update-available", listeners["update-available"]);
+      autoUpdater.on("update-not-available", listeners["update-not-available"]);
+      autoUpdater.on("download-progress", listeners["download-progress"]);
+      autoUpdater.on("update-downloaded", listeners["update-downloaded"]);
+      autoUpdater.on("error", listeners.error);
+    }),
+    () =>
+      Effect.sync(() => {
+        autoUpdater.off("checking-for-update", listeners["checking-for-update"]);
+        autoUpdater.off("update-available", listeners["update-available"]);
+        autoUpdater.off("update-not-available", listeners["update-not-available"]);
+        autoUpdater.off("download-progress", listeners["download-progress"]);
+        autoUpdater.off("update-downloaded", listeners["update-downloaded"]);
+        autoUpdater.off("error", listeners.error);
+      }),
+  );
+}).pipe(sampleDownloadProgress(PROGRESS_EVENT_INTERVAL));
+
 const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
-  let lastProgressAt = 0;
-  let lastProgress = -1;
-  const checking = () => listener({ type: "checking" });
-  const available = (info: { version: string }) =>
-    listener({ type: "available", version: info.version });
-  const notAvailable = () => listener({ type: "not-available" });
-  const progress = (info: { percent: number }) => {
-    const percent = Math.min(100, Math.max(0, Math.round(info.percent)));
-    const now = Date.now();
-    if (
-      percent === lastProgress ||
-      (percent < 100 && now - lastProgressAt < PROGRESS_EVENT_INTERVAL_MS)
-    )
-      return;
-    lastProgress = percent;
-    lastProgressAt = now;
-    listener({ type: "progress", percent });
-  };
-  const downloaded = (info: { version: string }) =>
-    listener({ type: "downloaded", version: info.version });
-  const error = (cause: Error) => {
-    // Official Electron autoUpdater sample: log update errors, don't surface
-    // them as application failures. https://www.electronjs.org/docs/latest/tutorial/updates
-    console.error("There was a problem updating the application");
-    console.error(cause);
-    listener({ type: "error", error: cause });
-  };
-
-  autoUpdater.on("checking-for-update", checking);
-  autoUpdater.on("update-available", available);
-  autoUpdater.on("update-not-available", notAvailable);
-  autoUpdater.on("download-progress", progress);
-  autoUpdater.on("update-downloaded", downloaded);
-  autoUpdater.on("error", error);
-
+  const fiber = Effect.runFork(
+    Stream.runForEach(updaterEvents, (event) => Effect.sync(() => listener(event))),
+  );
   return () => {
-    autoUpdater.off("checking-for-update", checking);
-    autoUpdater.off("update-available", available);
-    autoUpdater.off("update-not-available", notAvailable);
-    autoUpdater.off("download-progress", progress);
-    autoUpdater.off("update-downloaded", downloaded);
-    autoUpdater.off("error", error);
+    Effect.runFork(Fiber.interrupt(fiber));
   };
 };
 

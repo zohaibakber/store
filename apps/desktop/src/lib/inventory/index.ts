@@ -1,13 +1,10 @@
 export {
-  inventoryScopeId,
-  openInventoryWorkspace,
   useCatalogCategories,
   useCatalogIsReady,
   useCatalogProduct,
   useCatalogProducts,
   useCatalogStockMovements,
   useCatalogSuggestions,
-  useCommandExecution,
   useInventoryActions,
   useInventoryDashboardAnalytics,
   useInventoryInvoice,

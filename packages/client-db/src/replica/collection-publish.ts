@@ -14,7 +14,7 @@ type SyncParams<Row extends InventoryCollectionRow> = Parameters<
   SyncConfig<Row, string>["sync"]
 >[0];
 
-export const incrementRowRef = (counts: Map<string, number>, key: string): void => {
+const incrementRowRef = (counts: Map<string, number>, key: string): void => {
   counts.set(key, (counts.get(key) ?? 0) + 1);
 };
 

@@ -1,3 +1,10 @@
+import { Host } from "@expo/ui";
+import {
+  SegmentedButton,
+  SingleChoiceSegmentedButtonRow,
+  Text as ComposeText,
+} from "@expo/ui/jetpack-compose";
+import { defaultMinSize } from "@expo/ui/jetpack-compose/modifiers";
 import {
   Alert02Icon,
   Loading03Icon,
@@ -11,7 +18,7 @@ import * as React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition, ZoomIn } from "react-native-reanimated";
 
-import { colors, motion, radius, space, touch } from "@/theme/tokens";
+import { colors, fonts, motion, radius, space, touch, type } from "@/theme/tokens";
 import { Icon, type IconProps } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
@@ -74,6 +81,21 @@ const MODES: ReadonlyArray<{ readonly mode: ProductScanMode; readonly label: str
   { mode: "batch", label: "Batch" },
 ];
 
+const modeColors = {
+  activeContainerColor: colors.onCamera,
+  activeContentColor: colors.ink,
+  activeBorderColor: colors.onCamera,
+  inactiveContainerColor: colors.cameraChip,
+  inactiveContentColor: colors.onCamera,
+  inactiveBorderColor: colors.cameraChip,
+};
+const modeLabel = {
+  fontFamily: fonts.medium,
+  fontSize: type.sm.fontSize,
+  lineHeight: type.sm.lineHeight,
+};
+const modeButton = [defaultMinSize({ minWidth: 96, minHeight: touch.minimum })];
+
 export function ModeToggle({
   mode,
   onChange,
@@ -82,28 +104,23 @@ export function ModeToggle({
   readonly onChange: (mode: ProductScanMode) => void;
 }) {
   return (
-    <View accessibilityRole="radiogroup" style={styles.modeToggle}>
-      {MODES.map((option) => {
-        const selected = option.mode === mode;
-        return (
-          <Pressable
+    <Host matchContents style={styles.modeToggle}>
+      <SingleChoiceSegmentedButtonRow>
+        {MODES.map((option) => (
+          <SegmentedButton
             key={option.mode}
-            accessibilityRole="radio"
-            accessibilityState={{ selected }}
-            onPress={() => onChange(option.mode)}
-            style={[styles.modeOption, selected && styles.modeOptionSelected]}
+            selected={option.mode === mode}
+            onClick={() => onChange(option.mode)}
+            colors={modeColors}
+            modifiers={modeButton}
           >
-            <Text
-              size="sm"
-              weight="medium"
-              style={{ color: selected ? colors.ink : colors.onCamera }}
-            >
-              {option.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+            <SegmentedButton.Label>
+              <ComposeText style={modeLabel}>{option.label}</ComposeText>
+            </SegmentedButton.Label>
+          </SegmentedButton>
+        ))}
+      </SingleChoiceSegmentedButtonRow>
+    </Host>
   );
 }
 
@@ -265,22 +282,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.cameraChip,
   },
-  modeToggle: {
-    flexDirection: "row",
-    alignSelf: "center",
-    padding: space[1],
-    borderRadius: radius.full,
-    backgroundColor: colors.cameraChip,
-  },
-  modeOption: {
-    minHeight: 40,
-    minWidth: 96,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: space[4],
-    borderRadius: radius.full,
-  },
-  modeOptionSelected: { backgroundColor: colors.onCamera },
+  modeToggle: { alignSelf: "center" },
   shutterRing: {
     width: 80,
     height: 80,

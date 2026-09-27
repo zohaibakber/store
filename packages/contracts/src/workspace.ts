@@ -2,16 +2,16 @@ import * as Schema from "effect/Schema";
 
 import { OrganizationId, UserId } from "./ids";
 
-export const WorkspaceUser = Schema.Struct({
+const WorkspaceUser = Schema.Struct({
   id: UserId,
   name: Schema.String,
   email: Schema.String,
   image: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
-export interface WorkspaceUser extends Schema.Schema.Type<typeof WorkspaceUser> {}
+interface WorkspaceUser extends Schema.Schema.Type<typeof WorkspaceUser> {}
 
-export const WorkspaceOrganization = Schema.Struct({
+const WorkspaceOrganization = Schema.Struct({
   id: OrganizationId,
   name: Schema.String,
   slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -19,7 +19,7 @@ export const WorkspaceOrganization = Schema.Struct({
   role: Schema.String,
 });
 
-export interface WorkspaceOrganization extends Schema.Schema.Type<typeof WorkspaceOrganization> {}
+interface WorkspaceOrganization extends Schema.Schema.Type<typeof WorkspaceOrganization> {}
 
 const workspaceCommon = {
   organizations: Schema.Array(WorkspaceOrganization),
@@ -38,14 +38,14 @@ export interface AuthenticatedWorkspaceSnapshot extends Schema.Schema.Type<
   typeof AuthenticatedWorkspaceSnapshot
 > {}
 
-export const UnauthenticatedWorkspaceSnapshot = Schema.Struct({
+const UnauthenticatedWorkspaceSnapshot = Schema.Struct({
   status: Schema.Literal("unauthenticated"),
   user: Schema.Null,
   activeOrganization: Schema.Null,
   ...workspaceCommon,
 });
 
-export interface UnauthenticatedWorkspaceSnapshot extends Schema.Schema.Type<
+interface UnauthenticatedWorkspaceSnapshot extends Schema.Schema.Type<
   typeof UnauthenticatedWorkspaceSnapshot
 > {}
 

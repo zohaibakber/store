@@ -51,6 +51,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
+import { runD1Batch, type AuthDrizzle, type CompilableQuery } from "./d1-batch";
+
 const UserRecord = Schema.Struct({
   id: UserId,
   email: EmailAddress,
@@ -104,7 +106,7 @@ export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth
   cause: Schema.optionalKey(Schema.Defect()),
 }) {}
 
-export interface NewSession {
+interface NewSession {
   readonly id: SessionIdType;
   readonly familyId: string;
   readonly userId: UserIdType;
@@ -114,7 +116,7 @@ export interface NewSession {
   readonly expiresAt: number;
 }
 
-export interface NewInvitation {
+interface NewInvitation {
   readonly organizationId: OrganizationIdType;
   readonly email: EmailAddressType;
   readonly role: OrganizationRoleType;
@@ -235,12 +237,6 @@ const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
 
 const at = (milliseconds: number) => /* @__PURE__ */ new Date(milliseconds);
 const millis = (value: Date | null) => (value === null ? null : value.getTime());
-
-type AuthDrizzle = Effect.Success<ReturnType<typeof D1Drizzle.makeWithDefaults>>;
-
-interface Compilable {
-  readonly toSQL: () => { readonly sql: string; readonly params: ReadonlyArray<unknown> };
-}
 
 interface ReturnedId {
   readonly id: string;
@@ -382,25 +378,16 @@ const startingOrganization = (name: string) => ({
 });
 
 const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
-  const client = database.$client;
   const fail = (operation: string) =>
     Effect.mapError((cause: unknown) => repositoryError(operation, cause));
 
   /**
-   * D1 has no transactions, only atomic batches, so every statement a guard
-   * depends on is compiled from its query builder and sent as one request.
+   * Every statement a guard depends on goes out in one atomic D1 batch.
    * `RETURNING` is what reports whether a guarded statement matched, because a
    * batch answers with rows rather than with an affected-row count.
    */
-  const batch = (operation: string, queries: ReadonlyArray<Compilable>) =>
-    client
-      .batch(
-        queries.map((query) => {
-          const compiled = query.toSQL();
-          return client.unsafe<ReturnedId>(compiled.sql, compiled.params);
-        }),
-      )
-      .pipe(fail(operation));
+  const batch = (operation: string, queries: ReadonlyArray<CompilableQuery>) =>
+    runD1Batch<ReturnedId>(database, queries).pipe(fail(operation));
 
   const invitationById = (invitationId: string) =>
     database

@@ -1,5 +1,6 @@
 import { LogoutIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 
 import { useTheme } from "@/components/theme/provider";
@@ -17,7 +18,6 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { signOut, useAuth } from "@/lib/auth";
-import { initials } from "@/lib/format";
 
 export function NavUser() {
   const auth = useAuth();

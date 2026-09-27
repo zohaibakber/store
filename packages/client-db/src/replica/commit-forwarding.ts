@@ -7,7 +7,7 @@ import * as Stream from "effect/Stream";
 import type { ReplicaCommitPublisher } from "./publisher";
 import type { ReplicaCommitNotice } from "./types";
 
-export const toClientNotice = (
+const toClientNotice = (
   workspaceToken: string,
   notice: StoreCommitNotice,
 ): ReplicaCommitNotice => ({

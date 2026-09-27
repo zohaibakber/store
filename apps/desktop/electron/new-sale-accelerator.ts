@@ -2,7 +2,7 @@ import { app } from "electron";
 
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 
-export type AcceleratorInput = {
+type AcceleratorInput = {
   readonly type: string;
   readonly key: string;
   readonly code?: string;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
+import { isOAuthCallbackUrl } from "../../electron/oauth-callback";
 import { developmentRendererTarget } from "../../electron/protocol";
 import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
 
@@ -103,5 +104,32 @@ describe("desktop renderer navigation allowlist", () => {
         "com.tabaaq.desktop://app",
       ]),
     ).toBe(true);
+  });
+});
+
+describe("desktop OAuth callback allow-list", () => {
+  it("accepts only the app scheme's auth callback path", () => {
+    expect(
+      isOAuthCallbackUrl(
+        "com.tabaaq.desktop://auth/callback?code=authorization-code",
+        "com.tabaaq.desktop",
+      ),
+    ).toBe(true);
+    expect(
+      isOAuthCallbackUrl("https://auth/callback?code=authorization-code", "com.tabaaq.desktop"),
+    ).toBe(false);
+    expect(
+      isOAuthCallbackUrl(
+        "com.tabaaq.desktop://auth/not-callback?code=authorization-code",
+        "com.tabaaq.desktop",
+      ),
+    ).toBe(false);
+    expect(
+      isOAuthCallbackUrl(
+        "com.tabaaq.desktop://app/callback?code=authorization-code",
+        "com.tabaaq.desktop",
+      ),
+    ).toBe(false);
+    expect(isOAuthCallbackUrl("not a url", "com.tabaaq.desktop")).toBe(false);
   });
 });

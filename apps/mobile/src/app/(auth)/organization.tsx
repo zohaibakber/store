@@ -4,10 +4,10 @@ import * as React from "react";
 import { View } from "react-native";
 
 import { useAuthActions, useSession, type AuthProblem, type SessionOrganization } from "@/auth";
-import { ActionButton } from "@/auth/ui/action-button";
 import { AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
 import { colors, radius, space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Icon } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
@@ -102,8 +102,9 @@ function OrganizationForm({
       description={`Signed in as ${email}.`}
       footer={
         <ActionButton
+          size="large"
           label="Sign out"
-          variant="quiet"
+          variant="text"
           loading={busy === "signOut"}
           disabled={busy !== null && busy !== "signOut"}
           onPress={() => void leave()}
@@ -129,6 +130,7 @@ function OrganizationForm({
             />
           ) : null}
           <ActionButton
+            size="large"
             label="Continue"
             loading={busy === "continue"}
             disabled={busy !== null && busy !== "continue"}
@@ -159,6 +161,7 @@ function OrganizationForm({
           editable={busy === null}
         />
         <ActionButton
+          size="large"
           label="Join store"
           variant={organization === null ? "primary" : "secondary"}
           loading={busy === "join"}

@@ -1,12 +1,12 @@
 import { Login01Icon, LogoutIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { signOut, useAuth } from "@/lib/auth";
-import { initials } from "@/lib/format";
 
 export function AccountSettings() {
   const auth = useAuth();

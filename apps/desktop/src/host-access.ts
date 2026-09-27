@@ -1,11 +1,11 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 
-export interface AccessLocation {
+interface AccessLocation {
   readonly pathname: string;
 }
 
 /** Outcome of one admit() call. */
-export type AccessVerdict =
+type AccessVerdict =
   | { readonly _tag: "Allow" }
   | {
       readonly _tag: "Redirect";
@@ -13,10 +13,10 @@ export type AccessVerdict =
       readonly replace: true;
     };
 
-export type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
+type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
 /** Signed organization inventory. Neither host opens a guest catalog. */
-export type HostInventoryScope = {
+type HostInventoryScope = {
   readonly organizationId: string;
   readonly userId: string;
 };

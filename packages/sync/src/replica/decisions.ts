@@ -313,7 +313,7 @@ export const checkAuthorityHead = (
       )
     : Result.void;
 
-export type CoverageAfterPull<Digest extends string> =
+type CoverageAfterPull<Digest extends string> =
   | { readonly _tag: "unchanged" }
   | { readonly _tag: "repair" }
   | { readonly _tag: "record"; readonly digest: Digest; readonly verified: boolean };
@@ -338,7 +338,7 @@ const AUTHORITY_SOFT_DELETE_ENTITIES: ReadonlySet<PartitionEntity> = new Set<Par
   "batch",
 ]);
 
-export const authorityRowImage = (source: PartitionRowSource): SnapshotRow => ({
+const authorityRowImage = (source: PartitionRowSource): SnapshotRow => ({
   entity: source.entity,
   entityId: source.row.id,
   rowVersion: source.row.rowVersion,
@@ -371,7 +371,7 @@ export type JournalHolder = {
   readonly clientSequence: string;
 };
 
-export type JournalRestoreDecision =
+type JournalRestoreDecision =
   | { readonly _tag: "restore"; readonly nextMark: string | undefined }
   | { readonly _tag: "handDown"; readonly successor: string }
   | { readonly _tag: "leave" };

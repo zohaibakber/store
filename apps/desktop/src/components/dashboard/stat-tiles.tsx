@@ -1,7 +1,7 @@
 import type { DashboardAnalytics } from "@store/contracts";
+import { formatPrice } from "@store/services/format";
 
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
-import { formatPrice } from "@/lib/format";
 
 interface StatTile {
   readonly label: string;

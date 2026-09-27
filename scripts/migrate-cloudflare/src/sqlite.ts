@@ -1,94 +1,112 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
-import { isSqlError, type SqlError } from "effect/unstable/sql/SqlError";
-
-import { inventoryAuthorityMigrations } from "./authority-migrations.gen.ts";
-
-const STATEMENT_SEPARATOR = "--> statement-breakpoint";
-const LEDGER_TABLE = "__store_migrate_migrations";
-const MIGRATION_KEY_PATTERN = /^[0-9a-z_]+$/u;
-
-const decodeLedgerRows = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ key: Schema.String })),
-);
+import type { SqlError } from "effect/unstable/sql/SqlError";
 
 export const openSqlite = (
   filename: string,
 ): Effect.Effect<SqliteClient.SqliteClient, never, Scope.Scope> =>
   SqliteClient.make({ filename }).pipe(Effect.provide(Reactivity.layer));
 
-type StorageFailure =
-  | SqlError
-  | Schema.SchemaError
-  | { readonly _tag: "EffectDrizzleQueryError" }
-  | { readonly _tag: "EffectDrizzleError" };
-
-const isStorageFailure = (cause: unknown): boolean =>
-  isSqlError(cause) ||
-  Schema.isSchemaError(cause) ||
-  Predicate.isTagged(cause, "EffectDrizzleQueryError") ||
-  Predicate.isTagged(cause, "EffectDrizzleError");
-
-export const persistingAs =
-  <Failure>(fail: (cause: StorageFailure) => Failure) =>
-  <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, Exclude<E, Extract<E, StorageFailure>> | Failure, R> =>
-    effect.pipe(
-      Effect.catchIf(
-        (cause): cause is Extract<E, StorageFailure> => isStorageFailure(cause),
-        (cause) => Effect.fail(fail(cause)),
-        Effect.fail,
-      ),
-    );
-
 const executeAll = (sql: SqliteClient.SqliteClient, statements: ReadonlyArray<string>) =>
   Effect.forEach(statements, (statement) => sql.unsafe(statement), { discard: true });
 
-const migrationStatements = (migration: string): ReadonlyArray<string> =>
-  migration
-    .split(STATEMENT_SEPARATOR)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
+const MUTABLE_COLUMNS = `createdAt integer not null,
+      updatedAt integer not null,
+      deletedAt integer,
+      organizationId text not null,
+      createdByUserId text not null,
+      updatedByUserId text not null,
+      deviceId text not null,
+      operationId text not null,
+      rowVersion integer not null`;
 
-const runMigrations = (sql: SqliteClient.SqliteClient, migrations: Record<string, string>) =>
-  Effect.gen(function* () {
-    yield* sql.unsafe(`create table if not exists ${LEDGER_TABLE} (key text primary key not null)`);
-    const ledger = yield* sql
-      .unsafe(`select key from ${LEDGER_TABLE}`)
-      .pipe(Effect.flatMap(decodeLedgerRows), Effect.orDie);
-    const applied = new Set(ledger.map((row) => row.key));
-    for (const key of Object.keys(migrations).sort()) {
-      if (applied.has(key)) continue;
-      if (!MIGRATION_KEY_PATTERN.test(key)) {
-        return yield* Effect.die(new Error(`Migration key ${key} is not a safe identifier.`));
-      }
-      const migration = migrations[key];
-      if (migration === undefined) continue;
-      yield* executeAll(sql, migrationStatements(migration));
-      yield* sql.unsafe(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
-    }
-  });
-
-export const migrateInventoryAuthority = (
-  sql: SqliteClient.SqliteClient,
-): Effect.Effect<void, SqlError> =>
-  runMigrations(sql, inventoryAuthorityMigrations).pipe(
-    Effect.andThen(
-      sql.unsafe(`create table if not exists import_applied_chunks (
-        organization_id text not null,
-        table_name text not null,
-        chunk_index integer not null,
-        checksum text not null,
-        primary key (organization_id, table_name, chunk_index)
-      )`),
-    ),
-    Effect.asVoid,
-  );
+export const migrateStaging = (sql: SqliteClient.SqliteClient): Effect.Effect<void, SqlError> =>
+  executeAll(sql, [
+    `create table if not exists categories (
+      id text not null,
+      name text not null,
+      tracksPacks integer not null,
+      ${MUTABLE_COLUMNS},
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists products (
+      id text not null,
+      name text not null,
+      categoryId text not null,
+      aisle text,
+      composition text,
+      strength text,
+      unitsPerPack integer not null,
+      purchasePrice integer,
+      retailPrice integer,
+      unitPrice integer,
+      visible integer not null,
+      ${MUTABLE_COLUMNS},
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists batches (
+      id text not null,
+      productId text not null,
+      batchNumber text,
+      expiresAt integer,
+      packQuantity integer not null,
+      unitQuantity integer not null,
+      ${MUTABLE_COLUMNS},
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists invoices (
+      id text not null,
+      invoiceNumber integer not null,
+      customerName text,
+      total integer not null,
+      ${MUTABLE_COLUMNS},
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists invoice_items (
+      id text not null,
+      invoiceId text not null,
+      productId text not null,
+      batchId text not null,
+      productName text not null,
+      batchNumber text,
+      quantity integer not null,
+      quantityType text not null,
+      baseUnitQuantity integer not null,
+      salePrice integer not null,
+      ${MUTABLE_COLUMNS},
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists stock_movements (
+      id text not null,
+      productId text not null,
+      batchId text not null,
+      invoiceId text,
+      type text not null,
+      packDelta integer not null,
+      unitDelta integer not null,
+      note text,
+      organizationId text not null,
+      actorUserId text not null,
+      deviceId text not null,
+      operationId text not null,
+      createdAt integer not null,
+      primary key (organizationId, id)
+    )`,
+    `create table if not exists import_state (
+      organization_id text primary key not null,
+      import_id text not null,
+      status text not null check (status in ('importing', 'ready'))
+    )`,
+    `create table if not exists import_applied_chunks (
+      organization_id text not null,
+      table_name text not null,
+      chunk_index integer not null,
+      checksum text not null,
+      primary key (organization_id, table_name, chunk_index)
+    )`,
+  ]);
 
 export const migrateDirectory = (sql: SqliteClient.SqliteClient): Effect.Effect<void, SqlError> =>
   executeAll(sql, [

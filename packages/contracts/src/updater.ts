@@ -1,4 +1,4 @@
-export type UpdateFailure = "network" | "pending-release" | "other";
+type UpdateFailure = "network" | "pending-release" | "other";
 
 export type UpdaterEvent =
   | { type: "checking" }

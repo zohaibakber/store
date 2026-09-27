@@ -21,7 +21,7 @@ import {
 } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useCatalogProducts } from "@/lib/inventory-db";
+import { useCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/")({
   component: ProductsPage,

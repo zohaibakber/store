@@ -44,7 +44,7 @@ import {
 } from "./registration";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
-export type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
+type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
 
 type OutboxRow = typeof commandOutbox.$inferSelect;
 
@@ -138,7 +138,7 @@ export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function
 
 export const parseStoredEnvelope = (row: OutboxRow) => decodeStoredEnvelope(row);
 
-export type SavedLocalCommand = {
+type SavedLocalCommand = {
   readonly status: CommandOutboxStatus;
   readonly projection: CommandProjection | undefined;
 };
@@ -228,7 +228,7 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
   } satisfies UploadClaim;
 });
 
-export type SettledCommand = {
+type SettledCommand = {
   readonly status: CommandOutboxStatus;
   readonly restored: PendingRestoreResult | undefined;
 };

@@ -9,9 +9,11 @@ import * as Schema from "effect/Schema";
 import { SourceError } from "./errors.ts";
 import { type BusinessTable, type DriverRow, DriverRow as DriverRowSchema } from "./model.ts";
 
-export interface SourceCatalogApi {
+interface SourceCatalogApi {
   readonly identity: () => Effect.Effect<string, SourceError>;
-  readonly freezeWrites: () => Effect.Effect<void, SourceError>;
+  readonly withSnapshot: <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | SourceError, R>;
   readonly readPage: (
     organizationId: OrganizationId,
     table: BusinessTable,
@@ -58,20 +60,22 @@ export const inMemorySourceLayer = (input: {
     Effect.gen(function* () {
       const frozen = yield* Ref.make<SourceTableRows | null>(null);
       const live = input.rows;
+      const capture = Effect.sync((): SourceTableRows => ({
+        categories: decodeDriverRows(live.categories),
+        products: decodeDriverRows(live.products),
+        batches: decodeDriverRows(live.batches),
+        invoices: decodeDriverRows(live.invoices),
+        invoice_items: decodeDriverRows(live.invoice_items),
+        stock_movements: decodeDriverRows(live.stock_movements),
+      }));
       return SourceCatalog.of({
         identity: () => Effect.succeed(input.identity),
-        freezeWrites: Effect.fn("Migrate.Source.freeze")(function* () {
-          const current = yield* Ref.get(frozen);
-          if (current !== null) return;
-          yield* Ref.set(frozen, {
-            categories: decodeDriverRows(live.categories),
-            products: decodeDriverRows(live.products),
-            batches: decodeDriverRows(live.batches),
-            invoices: decodeDriverRows(live.invoices),
-            invoice_items: decodeDriverRows(live.invoice_items),
-            stock_movements: decodeDriverRows(live.stock_movements),
-          });
-        }),
+        withSnapshot: (effect) =>
+          Effect.acquireUseRelease(
+            capture.pipe(Effect.flatMap((snapshot) => Ref.set(frozen, snapshot))),
+            () => effect,
+            () => Ref.set(frozen, null),
+          ).pipe(Effect.withSpan("Migrate.Source.withSnapshot")),
         readPage: Effect.fn("Migrate.Source.readPage")(function* (
           organizationId: OrganizationId,
           table: BusinessTable,
@@ -83,7 +87,7 @@ export const inMemorySourceLayer = (input: {
             return yield* Effect.fail(
               new SourceError({
                 operation: "readPage",
-                message: "Source writes are not frozen.",
+                message: "Source reads require a snapshot.",
               }),
             );
           }

@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { sha256 } from "./crypto";
+import { runD1Batch, type AuthDrizzle } from "./d1-batch";
 
 const OtpPayload = Schema.Struct({
   email: EmailAddress,
@@ -32,7 +33,7 @@ const OAuthStatePayload = Schema.Struct({
   codeChallenge: Schema.String,
   client: AuthClientKind,
 });
-export interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStatePayload> {
+interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStatePayload> {
   readonly expiresAt: number;
 }
 
@@ -41,9 +42,7 @@ const AuthorizationGrantPayload = Schema.Struct({
   codeChallenge: Schema.String,
   client: AuthClientKind,
 });
-export interface AuthorizationGrantRecord extends Schema.Schema.Type<
-  typeof AuthorizationGrantPayload
-> {
+interface AuthorizationGrantRecord extends Schema.Schema.Type<typeof AuthorizationGrantPayload> {
   readonly expiresAt: number;
 }
 
@@ -95,8 +94,6 @@ export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralSto
 
 type EphemeralKind = typeof ephemeralRecord.$inferSelect.kind;
 
-type AuthDrizzle = Effect.Success<ReturnType<typeof D1Drizzle.makeWithDefaults>>;
-
 export const EXPIRED_SWEEP_LIMIT = 32;
 
 const error = (operation: string, cause: unknown) =>
@@ -105,8 +102,6 @@ const error = (operation: string, cause: unknown) =>
 const keyId = () => crypto.randomUUID();
 
 const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralStoreApi => {
-  const client = database.$client;
-
   const recordKey = (kind: EphemeralKind, id: string) =>
     sha256(`${pepper}:${kind}:${id}`).pipe(Effect.mapError((cause) => error("digest", cause)));
 
@@ -138,18 +133,12 @@ const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralSto
       const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(schema))(payload).pipe(
         Effect.mapError((cause) => error(`${operation}.encode`, cause)),
       );
-      const statements = [
+      yield* runD1Batch(database, [
         sweepExpired(now),
         database
           .insert(ephemeralRecord)
           .values({ key, kind, payload: encoded, expiresAt, createdAt: now }),
-      ].map((query) => {
-        const compiled = query.toSQL();
-        return client.unsafe(compiled.sql, compiled.params);
-      });
-      yield* client
-        .batch(statements)
-        .pipe(Effect.mapError((cause) => error(`${operation}.insert`, cause)));
+      ]).pipe(Effect.mapError((cause) => error(`${operation}.insert`, cause)));
     });
 
   const takeRecord = <S extends Schema.Codec<unknown, unknown>>(

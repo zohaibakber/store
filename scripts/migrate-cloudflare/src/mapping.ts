@@ -30,7 +30,7 @@ import {
   SqliteStockMovement as SqliteStockMovementSchema,
 } from "./model.ts";
 
-export const sqliteFlag = (value: boolean): SqliteFlag => (value ? 1 : 0);
+const sqliteFlag = (value: boolean): SqliteFlag => (value ? 1 : 0);
 
 export const translateCategory = (row: PostgresCategory): SqliteCategory =>
   SqliteCategorySchema.make({
@@ -131,7 +131,7 @@ export const encodeRowsJson = (rows: ReadonlyArray<SqliteBusinessRow>): string =
   return encoded === undefined ? "[]" : encoded;
 };
 
-const chunkRowsSchema = (table: BusinessTable) => {
+export const tableRowsSchema = (table: BusinessTable) => {
   switch (table) {
     case "categories":
       return Schema.Array(SqliteCategorySchema);
@@ -154,7 +154,7 @@ export const decodeChunkRows = (
   table: BusinessTable,
   rowsJson: string,
 ): Effect.Effect<ReadonlyArray<SqliteBusinessRow>, TranslationFailed> =>
-  Schema.decodeUnknownEffect(Schema.fromJsonString(chunkRowsSchema(table)))(rowsJson).pipe(
+  Schema.decodeUnknownEffect(Schema.fromJsonString(tableRowsSchema(table)))(rowsJson).pipe(
     Effect.mapError(
       (cause) =>
         new TranslationFailed({

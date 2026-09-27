@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -26,10 +26,11 @@ const subsetLowering = readFileSync(
   path.join(repoRoot, "packages/client-db/src/replica/compile.ts"),
   "utf8",
 );
-const inventorySql = readFileSync(
-  path.join(repoRoot, "scripts/migrate-cloudflare/src/authority-migrations.gen.ts"),
-  "utf8",
-);
+const postgresMigrations = path.join(repoRoot, "packages/db/migrations/postgres");
+const inventorySql = readdirSync(postgresMigrations)
+  .map((entry) => path.join(postgresMigrations, entry, "migration.sql"))
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
 
 const authoritySqlMarkers = forbiddenRendererMarkers.filter(
   (marker) =>

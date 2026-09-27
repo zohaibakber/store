@@ -1,3 +1,6 @@
+import { publicHostnameFrom } from "@store/auth/security";
+import * as Config from "effect/Config";
+
 /**
  * Production hostnames for the Website (apex) and API (`api.` subdomain).
  *
@@ -13,33 +16,22 @@ export const PRODUCTION_DOMAIN_MISSING_MESSAGE =
 export const PRODUCTION_API_DOMAIN_MISSING_MESSAGE =
   "Published API hostname is not configured. Set PRODUCTION_DOMAIN (API becomes api.<domain>), PRODUCTION_API_DOMAIN, or VITE_API_URL (https://api.example.com) on the stage's GitHub Environment.";
 
-export type ProductionDomainEnv = {
+type ProductionDomainEnv = {
   readonly PRODUCTION_DOMAIN?: string;
   readonly PRODUCTION_API_DOMAIN?: string;
   readonly VITE_API_URL?: string;
   readonly AUTH_TRUSTED_ORIGINS?: string;
 };
 
-const unquote = (value: string) =>
-  value
-    .trim()
-    .replace(/^['"]+/u, "")
-    .replace(/['"]+$/u, "")
-    .trim();
+const blankWhenUnset = (name: string) => Config.String(name).pipe(Config.withDefault(""));
 
-const hostnameFrom = (value: string | undefined): string | undefined => {
-  const trimmed = unquote(value ?? "");
-  if (!trimmed || /[*?]/u.test(trimmed)) return undefined;
-  try {
-    const url = trimmed.includes("://") ? new URL(trimmed) : new URL(`https://${trimmed}`);
-    if (!url.hostname || url.hostname === "localhost" || url.hostname.endsWith(".localhost")) {
-      return undefined;
-    }
-    return url.hostname;
-  } catch {
-    return undefined;
-  }
-};
+/** Reads every variable the production hostnames derive from; unset ones read as blank. */
+export const productionDomainConfig = Config.all({
+  PRODUCTION_DOMAIN: blankWhenUnset("PRODUCTION_DOMAIN"),
+  PRODUCTION_API_DOMAIN: blankWhenUnset("PRODUCTION_API_DOMAIN"),
+  VITE_API_URL: blankWhenUnset("VITE_API_URL"),
+  AUTH_TRUSTED_ORIGINS: blankWhenUnset("AUTH_TRUSTED_ORIGINS"),
+});
 
 const siteFromApiHostname = (hostname: string | undefined): string | undefined => {
   if (!hostname?.startsWith("api.")) return undefined;
@@ -47,42 +39,36 @@ const siteFromApiHostname = (hostname: string | undefined): string | undefined =
   return parent.includes(".") ? parent : undefined;
 };
 
-export const resolveProductionHostname = (
-  env: ProductionDomainEnv = process.env,
-): string | undefined =>
-  hostnameFrom(env.PRODUCTION_DOMAIN) ??
+export const resolveProductionHostname = (env: ProductionDomainEnv): string | undefined =>
+  publicHostnameFrom(env.PRODUCTION_DOMAIN) ??
   (env.AUTH_TRUSTED_ORIGINS ?? "")
     .split(/[\s,]+/u)
-    .map(hostnameFrom)
+    .map(publicHostnameFrom)
     .find(Boolean) ??
-  siteFromApiHostname(hostnameFrom(env.VITE_API_URL));
+  siteFromApiHostname(publicHostnameFrom(env.VITE_API_URL));
 
-export const resolveProductionApiHostname = (
-  env: ProductionDomainEnv = process.env,
-): string | undefined => {
+export const resolveProductionApiHostname = (env: ProductionDomainEnv): string | undefined => {
   const site = resolveProductionHostname(env);
-  const dedicated = hostnameFrom(env.PRODUCTION_API_DOMAIN);
+  const dedicated = publicHostnameFrom(env.PRODUCTION_API_DOMAIN);
   if (dedicated) return dedicated;
-  const fromUrl = hostnameFrom(env.VITE_API_URL);
+  const fromUrl = publicHostnameFrom(env.VITE_API_URL);
   if (fromUrl && fromUrl !== site) return fromUrl;
   return site ? `api.${site}` : undefined;
 };
 
-export const requireProductionHostname = (env: ProductionDomainEnv = process.env): string => {
+export const requireProductionHostname = (env: ProductionDomainEnv): string => {
   const hostname = resolveProductionHostname(env);
   if (!hostname) throw new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE);
   return hostname;
 };
 
-export const requireProductionApiHostname = (env: ProductionDomainEnv = process.env): string => {
+export const requireProductionApiHostname = (env: ProductionDomainEnv): string => {
   const hostname = resolveProductionApiHostname(env);
   if (!hostname) throw new Error(PRODUCTION_API_DOMAIN_MISSING_MESSAGE);
   return hostname;
 };
 
-export const productionSiteOrigin = (
-  env: ProductionDomainEnv = process.env,
-): string | undefined => {
+export const productionSiteOrigin = (env: ProductionDomainEnv): string | undefined => {
   const hostname = resolveProductionHostname(env);
   return hostname ? `https://${hostname}` : undefined;
 };

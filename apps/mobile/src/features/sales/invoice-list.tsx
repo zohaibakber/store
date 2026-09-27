@@ -1,6 +1,7 @@
 import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
 import type { Invoice } from "@store/contracts";
 import { useInventoryInvoices } from "@store/inventory-react";
+import { formatPrice } from "@store/services/format";
 import { useRouter } from "expo-router";
 import * as React from "react";
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
@@ -8,7 +9,6 @@ import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } f
 import { colors, space } from "@/theme/tokens";
 import { Text } from "@/ui/text";
 
-import { formatPrice } from "../format";
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
 import { SCAN_FAB_CLEARANCE } from "../scan-fab";
 import { InvoiceRow } from "./invoice-row";

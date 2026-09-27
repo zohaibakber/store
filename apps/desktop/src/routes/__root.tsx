@@ -17,11 +17,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { InventoryProvider, InventoryReady } from "@/lib/inventory-db";
+import { InventoryProvider, InventoryReady } from "@/lib/inventory";
 import type { ReplayChannel } from "@/replay-channel";
 import type { WorkspaceSession } from "@/session/workspace-session";
 
-export interface RouterContext {
+interface RouterContext {
   readonly session: ReplayChannel<WorkspaceSession>;
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;

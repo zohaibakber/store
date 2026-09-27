@@ -1,4 +1,5 @@
 import type { RecommendationState } from "@store/inventory-react";
+import { formatPrice } from "@store/services/format";
 import type { StockPolicy, StockRecommendation } from "@store/services/stock-recommendations";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -8,7 +9,6 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatPrice } from "@/lib/format";
 import { stockBuyListCsv } from "@/lib/inventory/stock-buy-list";
 
 type Filter = "attention" | "out" | "low" | "buy" | "slow" | "all";

@@ -10,6 +10,7 @@ import { barY, defineChart, type ChartPoint } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { useForm } from "@tanstack/react-form";
+import { format, isValid, parse } from "date-fns";
 import * as Schema from "effect/Schema";
 import { useMemo, useState, type ReactNode } from "react";
 
@@ -48,19 +49,17 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
-import { formatDate } from "@/lib/format";
-import { useInventoryActions } from "@/lib/inventory-db";
+import { formatDate, formatUtcDay } from "@/lib/format";
+import { useInventoryActions } from "@/lib/inventory";
+
+const ISO_DATE = "yyyy-MM-dd";
 
 const parseISODate = (value: string): Date | undefined => {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return undefined;
-  return new Date(year, month - 1, day);
+  const parsed = parse(value, ISO_DATE, new Date());
+  return isValid(parsed) ? parsed : undefined;
 };
 
-const formatISODate = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
+const formatISODate = (date: Date): string => format(date, ISO_DATE);
 
 // Expiries are stored as local midnight, matching `parseExpiryDate` on the
 // import path, so a date written here reads back as the same calendar day.
@@ -691,18 +690,11 @@ type DayTotal = { date: string; net: number };
 
 const dayKey = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
 
-const dayTick = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  day: "numeric",
-});
-
-const formatDayTick = (value: string) => dayTick.format(new Date(value));
-
 const movementsTooltip = (points: readonly ChartPoint<DayTotal>[]) => {
   const point = points[0];
   if (!point) return { rows: [] };
   return {
-    title: formatDayTick(String(point.xValue ?? "")),
+    title: formatUtcDay(String(point.xValue ?? "")),
     rows: [
       {
         color: point.color,
@@ -734,7 +726,7 @@ export function createStockMovementsChart(rows: readonly DayTotal[]) {
             ticks: {
               size: 0,
               padding: 8,
-              format: (value: string) => formatDayTick(value),
+              format: (value: string) => formatUtcDay(value),
             },
             tickLabels: {
               thin: { minGap: 24, priority: "ends" },

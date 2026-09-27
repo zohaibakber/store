@@ -22,7 +22,7 @@ import { enforceAuthLimit, type AuthLimits } from "./limits";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
 
-export interface OrganizationOpsConfiguration {
+interface OrganizationOpsConfiguration {
   readonly refreshTokenPepper: string;
 }
 
@@ -362,5 +362,3 @@ export const makeOrganizationOps = (
 
   return { roster, organize };
 };
-
-export type OrganizationOps = ReturnType<typeof makeOrganizationOps>;

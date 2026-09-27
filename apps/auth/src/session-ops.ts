@@ -27,7 +27,7 @@ import {
   type UserRecord,
 } from "./repository";
 
-export interface SessionOpsConfiguration {
+interface SessionOpsConfiguration {
   readonly refreshTokenPepper: string;
 }
 

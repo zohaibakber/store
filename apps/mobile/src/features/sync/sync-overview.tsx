@@ -14,8 +14,8 @@ import * as React from "react";
 import { StyleSheet } from "react-native";
 
 import { colors, fonts, space, type } from "@/theme/tokens";
+import { ComposeActionButton } from "@/ui/action-button";
 
-import { ComposeActionButton } from "../action-button";
 import { firstFixableProduct, syncActivityView, type RejectedRowView } from "./sync-activity";
 import { syncHealthView, type SyncTone } from "./sync-health";
 

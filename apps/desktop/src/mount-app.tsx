@@ -2,6 +2,7 @@ import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { createAppCatalogLifetime, type InventoryHost } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
+import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
@@ -42,6 +43,7 @@ export const mountApp = (input: {
     invalidate: () => router.invalidate().then(() => undefined),
     flush: flushSync,
   });
+  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
@@ -50,7 +52,7 @@ export const mountApp = (input: {
           <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
         }
       >
-        <RegistryContext.Provider value={session.registry}>
+        <RegistryContext.Provider value={registry}>
           <ThemeProvider>{app}</ThemeProvider>
         </RegistryContext.Provider>
       </Sentry.ErrorBoundary>

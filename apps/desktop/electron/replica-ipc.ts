@@ -37,7 +37,7 @@ import {
   type ProxyFetchResult,
 } from "./replica-rpc";
 
-export type ReplicaWorkerClient = RpcClient.FromGroup<typeof ReplicaWorkerRpcs, RpcClientError>;
+type ReplicaWorkerClient = RpcClient.FromGroup<typeof ReplicaWorkerRpcs, RpcClientError>;
 
 export type SpawnReplicaWorker = (
   workerPath: string,
@@ -86,7 +86,7 @@ const CHANNEL_METHODS = {
 type ChannelMethod<Channel extends keyof typeof CHANNEL_METHODS> =
   ReplicaIpcBridge[(typeof CHANNEL_METHODS)[Channel]];
 
-export type ReplicaIpcInput = Parameters<ChannelMethod<keyof typeof CHANNEL_METHODS>>[0];
+type ReplicaIpcInput = Parameters<ChannelMethod<keyof typeof CHANNEL_METHODS>>[0];
 
 type ReplicaIpcHandlers = {
   readonly [Channel in keyof typeof CHANNEL_METHODS]: (
@@ -95,14 +95,14 @@ type ReplicaIpcHandlers = {
   ) => Promise<BridgeResult<ChannelMethod<Channel>>>;
 };
 
-export type ReplicaIpcResult = BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>;
+type ReplicaIpcResult = BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>;
 
 export type ReplicaIpcListener = (
   event: ReplicaInvokeEvent,
   input: ReplicaIpcInput,
 ) => Promise<ReplicaIpcResult>;
 
-export const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
+const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
   Layer.build(
     RpcClient.layerProtocolWorker({ size: 1 }).pipe(
       Layer.provide(NodeWorker.layer(() => new Worker(workerPath))),

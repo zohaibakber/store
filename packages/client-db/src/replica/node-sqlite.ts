@@ -24,7 +24,7 @@ import {
 import type { ReplicaCommitNotice, ReplicaHandle, SqliteParameter, SqliteResultRow } from "./types";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
 
-export type NodeReplicaIdentity = SqliteReplicaIdentity;
+type NodeReplicaIdentity = SqliteReplicaIdentity;
 
 export type NodeReplicaSqlite = ReplicaHandle & {
   readonly query: (

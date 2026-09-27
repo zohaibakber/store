@@ -14,7 +14,7 @@ export class SyncMigrationKeyInvalid extends Schema.TaggedError<SyncMigrationKey
   { key: Schema.String },
 ) {}
 
-export type SqliteMigrationTarget<E> = {
+type SqliteMigrationTarget<E> = {
   readonly execute: (
     statement: string,
     parameters: ReadonlyArray<string>,

@@ -1,6 +1,6 @@
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
-export const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
+const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
 /** Host used with the privileged custom scheme so the renderer origin is `scheme://app`. */
 export const ELECTRON_RENDERER_HOST = "app";
 
@@ -13,6 +13,9 @@ export const fallbackIfBlank = (value: string | undefined, fallback: string) => 
   return trimmed || fallback;
 };
 
+/** The local Vite dev servers for the Website and the desktop renderer. */
+export const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
+
 /** No origin holds a quote, so strip them wherever a value editor left them. */
 const unquote = (value: string) =>
   value
@@ -20,6 +23,25 @@ const unquote = (value: string) =>
     .replace(/^['"]+/, "")
     .replace(/['"]+$/, "")
     .trim();
+
+/**
+ * Reads the public hostname out of a configured domain, which may be a bare
+ * host (`example.com`) or an origin (`https://example.com`). Wildcards,
+ * localhost, and unparseable values have no public hostname.
+ */
+export const publicHostnameFrom = (value: string | undefined): string | undefined => {
+  const trimmed = unquote(value ?? "");
+  if (!trimmed || /[*?]/.test(trimmed)) return undefined;
+  try {
+    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    if (!url.hostname || url.hostname === "localhost" || url.hostname.endsWith(".localhost")) {
+      return undefined;
+    }
+    return url.hostname;
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * Splits the `AUTH_TRUSTED_ORIGINS` variable. Commas are the documented
@@ -34,23 +56,23 @@ export const parseTrustedOrigins = (value: string | undefined) =>
     .map(unquote)
     .filter(Boolean);
 
-export interface AuthSecurityInput {
+interface AuthSecurityInput {
   readonly baseURL: string;
   readonly electronProtocol: string;
   readonly mobileProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
-export interface RejectedTrustedOrigin {
+interface RejectedTrustedOrigin {
   readonly value: string;
   readonly reason: string;
 }
 
-export interface RejectedAuthSetting extends RejectedTrustedOrigin {
+interface RejectedAuthSetting extends RejectedTrustedOrigin {
   readonly setting: string;
 }
 
-export interface AuthSecurityConfig {
+interface AuthSecurityConfig {
   readonly baseURL: string;
   readonly electronOrigin: string;
   readonly electronProtocol: string;

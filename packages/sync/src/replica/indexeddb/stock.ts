@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import { EMPTY_STOCK, withOverlays, type StockOverlayDelta, type VisibleStock } from "../decisions";
 import type { ReplicaQueryBuilder } from "./schema";
 
-export type IndexedDbStockCache = {
+type IndexedDbStockCache = {
   readonly load: (envelope: SyncCommandEnvelope) => Effect.Effect<void, unknown>;
   readonly unitsPerPackFor: (productId: string) => number;
   readonly stockFor: (batchId: string) => VisibleStock;

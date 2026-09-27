@@ -8,17 +8,18 @@ import {
   useCatalogProduct,
   useCatalogStockMovements,
 } from "@store/inventory-react";
+import { formatPrice } from "@store/services/format";
 import { Stack, useRouter } from "expo-router";
 import * as React from "react";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, space } from "@/theme/tokens";
+import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
-import { ActionButton } from "../action-button";
 import { detailHeaderOptions } from "../detail-header";
-import { formatDateTime, formatExpiry, formatPrice } from "../format";
+import { formatDateTime, formatExpiry } from "../format";
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
 import { movementDelta, movementLabel } from "./movement-text";
 import { AttentionMark } from "./product-row";

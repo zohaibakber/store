@@ -1,7 +1,7 @@
 import { RefreshToken, type AuthClientKind } from "@store/auth";
 import * as Schema from "effect/Schema";
 
-export type ResolvedRefresh = {
+type ResolvedRefresh = {
   readonly client: AuthClientKind;
   readonly refreshToken: typeof RefreshToken.Type;
 };

@@ -14,7 +14,7 @@ import { ReplicaStorageError } from "./errors";
 
 const EnvelopeJson = Schema.fromJsonString(SyncCommandEnvelope);
 
-export const decodeEnvelopeJson = <E>(json: string, onError: (message: string) => E) =>
+const decodeEnvelopeJson = <E>(json: string, onError: (message: string) => E) =>
   Schema.decodeUnknownEffect(EnvelopeJson)(json).pipe(
     Effect.mapError((error) => onError(error.message)),
   );
