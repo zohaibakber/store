@@ -154,6 +154,22 @@ const pickScan = (
     }
     case "products": {
       const byCategory = indexEq("categoryId", "byCategory");
+      const [first] = orderBy;
+      if (
+        byCategory?.scan._tag === "indexEquals" &&
+        isStringScalar(byCategory.scan.value) &&
+        first?.column === "name"
+      ) {
+        return {
+          scan: {
+            _tag: "indexEqualsOrdered",
+            index: "byCategoryName",
+            value: byCategory.scan.value,
+            reverse: first.direction === "desc",
+          },
+          consumed: byCategory.consumed,
+        };
+      }
       if (byCategory) return byCategory;
       break;
     }

@@ -219,6 +219,7 @@ class ProductTable extends IndexedDbTable.make({
   indexes: {
     byCategory: ["generation", "categoryId"],
     byNameKey: ["generation", "nameKey"],
+    byCategoryName: ["generation", "categoryId", "nameKey"],
   },
   durability: "strict",
 }) {}
@@ -356,6 +357,7 @@ export class ReplicaIndexedDb extends ReplicaIndexedDbV2.add(
   ReplicaV3,
   Effect.fn("ReplicaIndexedDb.addProductNameOrder")(function* (from, api) {
     yield* api.createIndex("products", "byNameKey");
+    yield* api.createIndex("products", "byCategoryName");
     const rows = yield* from.from("products").select();
     yield* api
       .from("products")

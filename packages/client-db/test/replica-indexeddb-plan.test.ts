@@ -126,16 +126,34 @@ describe("planIndexedDbSubset", () => {
     expect(search.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: false });
   });
 
-  it("keeps an equality index ahead of the name order", () => {
-    const plan = Effect.runSync(
+  it("orders a category filter by name through byCategoryName", () => {
+    const where = { _tag: "compare", column: "categoryId", op: "eq", value: "c-1" } as const;
+    const byName = Effect.runSync(
       planIndexedDbSubset({
         source: "products",
-        where: { _tag: "compare", column: "categoryId", op: "eq", value: "c-1" },
-        orderBy: [{ column: "name", direction: "asc" }],
+        where,
+        orderBy: [{ column: "name", direction: "desc" }],
         limit: 50,
         offset: 0,
       }),
     );
-    expect(plan.scan).toEqual({ _tag: "indexEquals", index: "byCategory", value: "c-1" });
+    expect(byName.scan).toEqual({
+      _tag: "indexEqualsOrdered",
+      index: "byCategoryName",
+      value: "c-1",
+      reverse: true,
+    });
+    expect(byName.residual).toBeUndefined();
+
+    const byPrice = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where,
+        orderBy: [{ column: "retailPrice", direction: "asc" }],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(byPrice.scan).toEqual({ _tag: "indexEquals", index: "byCategory", value: "c-1" });
   });
 });

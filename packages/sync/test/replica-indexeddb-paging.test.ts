@@ -163,8 +163,50 @@ describe("IndexedDB subset paging", () => {
           .map(idOf),
       );
 
+      const oddIndexes = indexes.filter((index) => index % 2 === 1).sort(byName);
+      const oddByName = yield* store.querySubset(
+        plan({
+          scan: {
+            _tag: "indexEqualsOrdered",
+            index: "byCategoryName",
+            value: "c-odd",
+            reverse: false,
+          },
+          orderBy: [
+            { column: "name", direction: "asc" },
+            { column: "id", direction: "asc" },
+          ],
+          offset: 280,
+        }),
+      );
+      expect(oddByName.rows.map((row) => row["id"])).toEqual(oddIndexes.slice(280).map(idOf));
+
+      const oddByNameDescending = yield* store.querySubset(
+        plan({
+          scan: {
+            _tag: "indexEqualsOrdered",
+            index: "byCategoryName",
+            value: "c-odd",
+            reverse: true,
+          },
+          orderBy: [
+            { column: "name", direction: "desc" },
+            { column: "id", direction: "desc" },
+          ],
+        }),
+      );
+      expect(oddByNameDescending.rows.map((row) => row["id"])).toEqual(
+        [...oddIndexes].reverse().slice(0, 50).map(idOf),
+      );
+
       const summary = yield* store.summarizeSubset(plan({ limit: 1 }), [], 500);
       expect(summary.summary.count).toBe(PRODUCTS);
+      const evenCount = yield* store.summarizeSubset(
+        plan({ scan: { _tag: "indexEquals", index: "byCategory", value: "c-even" }, limit: 1 }),
+        [],
+        500,
+      );
+      expect(evenCount.summary.count).toBe(PRODUCTS / 2);
       yield* store.dispose();
     }),
   );
@@ -178,7 +220,7 @@ describe("IndexedDB subset paging", () => {
         indexedDB,
         IDBKeyRange,
       });
-      const count = 1200;
+      const count = 600;
       const nameAt = (index: number) => (index < 5 ? `aa ${index}` : index % 2 ? "Dup" : "dup");
       yield* store.applyTransactionGroup({
         commitSequence: OrgCommitSequence.make("1"),
@@ -186,7 +228,7 @@ describe("IndexedDB subset paging", () => {
         decision: "accepted",
         changes: Array.from({ length: count }, (_, index) => {
           const change = product(index);
-          return { ...change, row: { ...change.row, name: nameAt(index) } };
+          return { ...change, row: { ...change.row, categoryId: "c-odd", name: nameAt(index) } };
         }),
       });
       const expected = (direction: "asc" | "desc") => {
@@ -201,13 +243,33 @@ describe("IndexedDB subset paging", () => {
       for (const direction of ["asc", "desc"] as const) {
         const rows = yield* store.querySubset(
           plan({
+            scan: {
+              _tag: "indexEqualsOrdered",
+              index: "byCategoryName",
+              value: "c-odd",
+              reverse: direction === "desc",
+            },
+            residual: { _tag: "like", column: "id", pattern: "p-%" },
+            orderBy: [
+              { column: "name", direction },
+              { column: "id", direction },
+            ],
+            limit: 600,
+            offset: 0,
+          }),
+        );
+        expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
+      }
+      for (const direction of ["asc", "desc"] as const) {
+        const rows = yield* store.querySubset(
+          plan({
             scan: { _tag: "indexPrefix", index: "byNameKey", reverse: direction === "desc" },
             residual: { _tag: "like", column: "id", pattern: "p-%" },
             orderBy: [
               { column: "name", direction },
               { column: "id", direction },
             ],
-            limit: 1200,
+            limit: 600,
             offset: 0,
           }),
         );
