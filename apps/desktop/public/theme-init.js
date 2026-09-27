@@ -18,3 +18,12 @@ const theme =
 
 document.documentElement.classList.add(theme);
 document.documentElement.style.colorScheme = theme;
+
+// Weak GPUs stall on backdrop blur and long transitions. Decide before first
+// paint so the app never renders the expensive path on those devices.
+const lowMemory = (navigator.deviceMemory ?? 8) <= 4;
+const fewCores = (navigator.hardwareConcurrency ?? 8) <= 4;
+const reducedTransparency = matchMedia("(prefers-reduced-transparency: reduce)").matches;
+if (lowMemory || fewCores || reducedTransparency) {
+  document.documentElement.dataset.performance = "lite";
+}

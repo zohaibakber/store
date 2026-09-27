@@ -195,8 +195,8 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
         />
       ) : (
         <InsightList aria-label="Top sellers">
-          {period.topProducts.slice(0, 6).map((product) => (
-            <InsightRow className="flex-col items-stretch gap-2" key={product.productId}>
+          {period.topProducts.slice(0, 7).map((product) => (
+            <InsightRow className="flex-col items-stretch gap-1.5" key={product.productId}>
               <div className="flex items-center gap-2">
                 <InsightRowLink
                   className="flex-1"
@@ -206,16 +206,22 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
                   {product.name}
                 </InsightRowLink>
                 <TrendIcon trend={product.trend} />
-                <span className="text-sm tabular-nums">{formatPrice(product.revenue)}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {formatCount(product.units)} units
+                </span>
+                <span className="w-28 text-right text-sm tabular-nums">
+                  {formatPrice(product.revenue)}
+                </span>
               </div>
-              <Meter aria-label={`${product.name} revenue share`} max={1} value={product.share}>
+              <Meter
+                aria-label={`${product.name}: ${formatShare(product.share)} of product revenue`}
+                max={1}
+                value={product.share}
+              >
                 <MeterTrack>
                   <MeterIndicator />
                 </MeterTrack>
               </Meter>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {formatCount(product.units)} units · {formatShare(product.share)}
-              </span>
             </InsightRow>
           ))}
         </InsightList>
@@ -236,6 +242,10 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
   );
   const definition = React.useMemo(() => createWeekdayChart(rows), [rows]);
   const peakHour = report.sales.peakHour;
+  const busiestHours = [...report.sales.hours]
+    .filter((entry) => entry.invoices > 0)
+    .sort((left, right) => right.invoices - left.invoices)
+    .slice(0, 3);
   return (
     <FrameCard
       description={
@@ -247,14 +257,36 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
       }
       title="Sales rhythm"
     >
-      <ChartContainer className="aspect-auto h-56 w-full">
-        <Chart
-          ariaLabel="Average revenue by weekday over the last eight weeks"
-          className="w-full"
-          definition={definition}
-          height={CHART_HEIGHT}
-        />
-      </ChartContainer>
+      <div className="flex flex-col gap-4">
+        <ChartContainer className="aspect-auto h-56 w-full">
+          <Chart
+            ariaLabel="Average revenue by weekday over the last eight weeks"
+            className="w-full"
+            definition={definition}
+            height={CHART_HEIGHT}
+          />
+        </ChartContainer>
+        {busiestHours.length === 0 ? null : (
+          <div className="flex flex-col gap-3">
+            <span className="text-xs text-muted-foreground">Busiest hours</span>
+            {busiestHours.map((entry) => (
+              <Meter
+                key={entry.hour}
+                max={Math.max(busiestHours[0]?.invoices ?? 1, 1)}
+                value={entry.invoices}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <MeterLabel>{formatHour(entry.hour)}</MeterLabel>
+                  <MeterValue>{(_formatted, value) => `${formatCount(value)} sales`}</MeterValue>
+                </div>
+                <MeterTrack>
+                  <MeterIndicator />
+                </MeterTrack>
+              </Meter>
+            ))}
+          </div>
+        )}
+      </div>
     </FrameCard>
   );
 }

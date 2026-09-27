@@ -93,7 +93,7 @@ export function KpiGrid({
   return (
     <section
       aria-label="Key figures"
-      className="grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-4"
+      className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-4"
     >
       <Kpi
         change={period.revenueChange}

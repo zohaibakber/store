@@ -56,7 +56,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
   {
     key: "minimumUnits",
     label: "Minimum on shelf",
-    description: "Never plan below this, even for slow sellers.",
+    description: "Reorder below this, unless stock already lasts a full order cycle.",
     unit: "units",
     min: 0,
     max: 10_000,

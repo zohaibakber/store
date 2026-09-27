@@ -42,7 +42,9 @@ shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
 Desktop inventory reads come from TanStack DB live queries over the local
-replica. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
+replica. Analytics use one bounded aggregate read instead: the replica groups
+sales by product and local day (`readInsights`), and `@store/services/insights`
+turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
 sync commands: they commit locally first, project pending rows, then upload to
 `/api/sync/commands`, where one organization-locked PostgreSQL transaction
 decides them and appends to the change log that `/api/sync/pull` serves.

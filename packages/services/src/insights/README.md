@@ -34,7 +34,8 @@ its creation day. Today is excluded because it is partial.
 
 - Class: ABC by 90-day revenue (A until 80% cumulative, B until 95%). Service
   level is the policy target, +2 points for A and −5 for C.
-- Safety stock `z·σ·√L`; reorder point `rate·L + SS`, never below the minimum;
+- Safety stock `z·σ·√L`; reorder point `rate·L + SS`, never below the minimum
+  unless usable stock already covers a full order cycle;
   order-up-to `rate·(L+R) + z·σ·√(L+R)` where `R` is the cover period.
 - Expiry: sell first-expiry-first-out against the forecast. Units that cannot
   sell before their batch expires inside the horizon are at risk and do not

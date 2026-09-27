@@ -5,14 +5,7 @@ import type { InsightsReport, ProductInsight, StockStatus } from "@store/service
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
-import {
-  PageAction,
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +31,7 @@ import {
 import { useInventoryInsights } from "@/lib/inventory";
 
 import { buyListCsv, downloadText } from "./buy-list";
+import { InsightsHeader } from "./header";
 import { PlanningSheet } from "./planning-sheet";
 import {
   describeDemand,
@@ -234,10 +228,25 @@ export function RestockPage({
   const orders = report?.inventory.reorderCount ?? 0;
   return (
     <PageLayout contentClassName="max-w-6xl gap-4">
-      <PageHeader>
-        <PageHeading className="text-lg">Restock</PageHeading>
-        <PageDescription>
-          {report === null
+      <InsightsHeader
+        actions={
+          <>
+            <Button
+              disabled={orders === 0}
+              onClick={() =>
+                report &&
+                downloadText("buy-list.csv", buyListCsv(report.products), "text/csv;charset=utf-8")
+              }
+              variant="outline"
+            >
+              <HugeiconsIcon aria-hidden="true" icon={Download01Icon} />
+              Export
+            </Button>
+            <PlanningSheet />
+          </>
+        }
+        description={
+          report === null
             ? "Reorder points and order sizes from your sales and stock."
             : orders === 0
               ? "Nothing needs ordering right now."
@@ -245,23 +254,10 @@ export function RestockPage({
                   report.inventory.reorderCost > 0
                     ? ` · about ${formatPrice(report.inventory.reorderCost)}`
                     : ""
-                }.`}
-        </PageDescription>
-        <PageAction className="flex items-center gap-2">
-          <Button
-            disabled={orders === 0}
-            onClick={() =>
-              report &&
-              downloadText("buy-list.csv", buyListCsv(report.products), "text/csv;charset=utf-8")
-            }
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={Download01Icon} />
-            Export
-          </Button>
-          <PlanningSheet />
-        </PageAction>
-      </PageHeader>
+                }.`
+        }
+        title="Restock"
+      />
       <PageContent>
         {insights._tag === "Error" ? (
           <Alert variant="error">

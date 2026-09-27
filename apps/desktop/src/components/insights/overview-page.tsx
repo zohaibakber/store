@@ -2,19 +2,13 @@ import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { InsightsReport, SalesRange } from "@store/services/insights";
 
-import {
-  PageAction,
-  PageContent,
-  PageDescription,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInventoryInsights } from "@/lib/inventory";
 
+import { InsightsHeader } from "./header";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
@@ -45,7 +39,7 @@ function OverviewLoading() {
   return (
     <div aria-busy="true" aria-label="Loading insights" className="flex flex-col gap-4">
       <Skeleton className="h-32 w-full" />
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Skeleton className="h-72 lg:col-span-2" />
         <Skeleton className="h-72" />
       </div>
@@ -65,18 +59,18 @@ function OverviewBody({
   return (
     <>
       <KpiGrid period={period} report={report} />
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <AttentionFeed report={report} />
         </div>
         <StockHealth report={report} />
       </div>
       <RevenueTrend period={period} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TopSellers period={period} />
         <SalesRhythm report={report} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ExpiringSoon report={report} />
         <RecentInvoices />
       </div>
@@ -94,23 +88,25 @@ export function OverviewPage({
   const insights = useInventoryInsights();
   return (
     <PageLayout contentClassName="max-w-6xl gap-4">
-      <PageHeader>
-        <PageHeading className="text-lg">{greeting(new Date().getHours())}</PageHeading>
-        <PageDescription>
-          {insights._tag === "Ready" && insights.refreshing
+      <InsightsHeader
+        actions={
+          <>
+            <SegmentedRadio
+              label="Reporting period"
+              onValueChange={(value) => onRangeChange(RANGE_FROM_VALUE[value])}
+              options={RANGE_OPTIONS}
+              value={VALUE_FROM_RANGE[range]}
+            />
+            <PlanningSheet />
+          </>
+        }
+        description={
+          insights._tag === "Ready" && insights.refreshing
             ? "Refreshing from this device…"
-            : "Sales, stock, and what to do next, from data on this device."}
-        </PageDescription>
-        <PageAction className="flex items-center gap-2">
-          <SegmentedRadio
-            label="Reporting period"
-            onValueChange={(value) => onRangeChange(RANGE_FROM_VALUE[value])}
-            options={RANGE_OPTIONS}
-            value={VALUE_FROM_RANGE[range]}
-          />
-          <PlanningSheet />
-        </PageAction>
-      </PageHeader>
+            : "Sales, stock, and what to do next, from data on this device."
+        }
+        title={greeting(new Date().getHours())}
+      />
       <PageContent>
         {insights._tag === "Loading" ? <OverviewLoading /> : null}
         {insights._tag === "Error" ? (

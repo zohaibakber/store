@@ -384,7 +384,9 @@ const analyzeProduct = (input: {
   const lead = Math.max(1, policy.leadDays);
   const cycle = lead + policy.coverDays;
   const safetyStock = rate > 0 ? Math.ceil(z * demand.dailyDeviation * Math.sqrt(lead)) : 0;
-  const reorderPoint = Math.max(policy.minimumUnits, Math.ceil(rate * lead) + safetyStock);
+  const coveredForCycle = rate > 0 && usableUnits / rate >= cycle;
+  const floor = coveredForCycle ? 0 : policy.minimumUnits;
+  const reorderPoint = Math.max(floor, Math.ceil(rate * lead) + safetyStock);
   const orderUpTo = Math.max(
     reorderPoint,
     Math.ceil(rate * cycle + (rate > 0 ? z * demand.dailyDeviation * Math.sqrt(cycle) : 0)),

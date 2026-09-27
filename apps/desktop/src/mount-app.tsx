@@ -12,10 +12,10 @@ import React from "react";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import { authSession } from "@/lib/auth";
-import { Sentry } from "@/lib/sentry";
 import { makeReplayChannel } from "@/replay-channel";
 import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
@@ -66,7 +66,7 @@ export const mountApp = (input: {
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <Sentry.ErrorBoundary
+      <AppErrorBoundary
         fallback={
           <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
         }
@@ -74,7 +74,7 @@ export const mountApp = (input: {
         <RegistryContext.Provider value={registry}>
           <ThemeProvider>{app}</ThemeProvider>
         </RegistryContext.Provider>
-      </Sentry.ErrorBoundary>
+      </AppErrorBoundary>
     </React.StrictMode>,
   );
 };

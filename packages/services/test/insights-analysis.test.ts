@@ -111,6 +111,23 @@ describe("analyzeInsights", () => {
     expect(byId.get("stale")?.status).toBe("dead");
   });
 
+  it("does not flag a slow seller whose stock covers a full order cycle", () => {
+    const slowSales = Array.from({ length: 18 }, (_, index): InsightsSaleFact => ({
+      productId: "slow",
+      day: today - 1 - index * 5,
+      units: 1,
+      revenue: 150,
+    }));
+    const slow = analyzeInsights(
+      facts({ products: [product("slow")], batches: [batch("slow", 9)], sales: slowSales }),
+      DEFAULT_STOCK_POLICY,
+      now,
+    ).products[0];
+    expect(slow?.daysOfCover).toBeGreaterThan(28);
+    expect(slow?.status).toBe("healthy");
+    expect(slow?.order).toBeNull();
+  });
+
   it("sizes orders with service-level safety stock and whole packs", () => {
     const runner = byId.get("runner");
     expect(runner?.demand.dailyRate).toBeCloseTo(6, 0);

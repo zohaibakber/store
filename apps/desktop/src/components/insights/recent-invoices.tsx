@@ -48,7 +48,7 @@ export function RecentInvoices() {
                 <TableCell>
                   <span className="font-medium">
                     <Link
-                      className="font-mono tabular-nums hover:underline"
+                      className="tabular-nums hover:underline"
                       params={{ invoiceId: invoice.id }}
                       to="/invoices/$invoiceId"
                     >
@@ -57,17 +57,17 @@ export function RecentInvoices() {
                   </span>
                 </TableCell>
                 <TableCell className="w-full">
-                  <span className="block max-w-56 truncate text-muted-foreground">
+                  <span className="block max-w-32 truncate text-muted-foreground sm:max-w-56">
                     {invoice.customerName ?? "Walk-in customer"}
                   </span>
                 </TableCell>
-                <TableCell>
-                  <span className="font-mono whitespace-nowrap text-muted-foreground tabular-nums">
+                <TableCell className="max-sm:hidden">
+                  <span className="whitespace-nowrap text-muted-foreground tabular-nums">
                     {formatRelativeTime(invoice.createdAt)}
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
-                  <span className="font-mono whitespace-nowrap tabular-nums">
+                  <span className="whitespace-nowrap tabular-nums">
                     {formatPrice(invoice.total)}
                   </span>
                 </TableCell>

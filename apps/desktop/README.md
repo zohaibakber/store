@@ -27,6 +27,19 @@ path or a table. Sales and catalog edits are the same two sync commands
 (`issueInvoice`, `catalogWrite`): they commit locally, show as pending rows,
 and settle when the authority's decision arrives through the pull.
 
+## Insights
+
+The Overview (`/`) and Restock (`/restock`) pages read one `InsightsReport`
+from `@store/inventory-react`. It re-reads aggregated replica facts after
+commits that touch stock or sales, settled so a sync burst costs one read.
+Planning settings persist per device through `Atom.kvs` over `localStorage`.
+The method is documented in `packages/services/src/insights/README.md`.
+
+Low-end devices get a lite rendering path: `public/theme-init.js` marks
+`data-performance="lite"` before first paint when memory or cores are scarce
+or the user prefers reduced transparency, and `styles.css` drops backdrop
+blur there. Sentry loads only when `VITE_SENTRY_DSN` is set.
+
 ## Development
 
 From the repository root:
