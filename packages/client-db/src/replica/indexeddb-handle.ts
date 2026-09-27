@@ -1,4 +1,4 @@
-import type { SyncCommandEnvelope } from "@store/contracts";
+import type { ReplicaInsightsWindow, SyncCommandEnvelope } from "@store/contracts";
 import { layerOwnedHttpSync, SyncScheduler, SyncTransportService } from "@store/sync/browser";
 import {
   layerIndexedDbReplicaStore,
@@ -19,7 +19,13 @@ import { createReplicaCommitPublisher } from "./publisher";
 import { decodeSqliteResultRow, type OutboxCommandStatus } from "./sqlite-row";
 import type { InventorySubsetSpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
-import type { ReplicaHandle, ReplicaQueryStamp, ReplicaSubsetRead, SqliteResultRow } from "./types";
+import type {
+  ReplicaHandle,
+  ReplicaInsightsRead,
+  ReplicaQueryStamp,
+  ReplicaSubsetRead,
+  SqliteResultRow,
+} from "./types";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
 
 export type OpenIndexedDbReplicaInput = {
@@ -119,12 +125,25 @@ export const openIndexedDbReplicaHandle = async (
     };
   };
 
+  const readInsights = async (window: ReplicaInsightsWindow): Promise<ReplicaInsightsRead> => {
+    const result = await runtime.runPromise(store.queryInsights(window));
+    return {
+      stamp: {
+        workspaceToken: input.databaseName,
+        generationId: result.stamp.generationId,
+        localCommitVersion: result.stamp.localCommitVersion,
+      },
+      facts: result.facts,
+    };
+  };
+
   return {
     workspaceToken: input.databaseName,
     engine: "indexeddb",
     replicaId,
     stamp,
     readSubset,
+    readInsights,
     readOutboxActivity: () => runtime.runPromise(store.readOutboxActivity()),
     readPendingRowIds: (entity) => runtime.runPromise(store.readPendingRowIds(entity)),
     readOutboxStatuses: async (): Promise<ReadonlyArray<OutboxCommandStatus>> =>

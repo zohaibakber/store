@@ -1,4 +1,9 @@
-import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import type {
+  ReplicaInsightsFacts,
+  ReplicaInsightsWindow,
+  SyncCommandEnvelope,
+  SyncEntity,
+} from "@store/contracts";
 import type { ReplicaOutboxActivity } from "@store/sync/browser";
 import { IR, type CollectionConfig, type LoadSubsetOptions } from "@tanstack/db";
 import type * as Effect from "effect/Effect";
@@ -65,6 +70,15 @@ export interface ReplicaSubsetReader {
   readonly readSubset: (spec: InventorySubsetSpec) => Promise<ReplicaSubsetRead>;
 }
 
+export type ReplicaInsightsRead = {
+  readonly stamp: ReplicaQueryStamp;
+  readonly facts: ReplicaInsightsFacts;
+};
+
+export interface ReplicaInsightsReader {
+  readonly readInsights: (window: ReplicaInsightsWindow) => Promise<ReplicaInsightsRead>;
+}
+
 type ReplicaHandleIdentity = {
   readonly workspaceToken: string;
   readonly engine?: "sqlite" | "indexeddb";
@@ -99,6 +113,7 @@ export type ReplicaActivitySurface = {
 export type ReplicaHandle = ReplicaHandleIdentity &
   ReplicaHandleLifecycle &
   ReplicaSubsetReader &
+  ReplicaInsightsReader &
   ReplicaChangeFeed &
   ReplicaSyncHealthFeed &
   ReplicaMutationSurface &

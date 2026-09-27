@@ -16,6 +16,7 @@ import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-ou
 import { createReplicaCommitPublisher } from "./publisher";
 import {
   layerSeededReplica,
+  readReplicaInsights,
   readReplicaStamp,
   readReplicaSubset,
   runReplicaQuery,
@@ -114,6 +115,8 @@ export const openNodeReplicaSqlite = async (
     readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
     enqueueLocal,
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
+    readInsights: (window) =>
+      withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
     subscribe: publisher.subscribe,
     publish: publisher.publish,
     withWrite,
@@ -125,6 +128,7 @@ export const openNodeReplicaSqlite = async (
 };
 
 export {
+  readReplicaInsights,
   readReplicaStamp,
   readReplicaSubset,
   runReplicaQuery,

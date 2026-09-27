@@ -13,6 +13,10 @@ import {
   type SyncTransactionGroup,
 } from "@store/contracts";
 import type {
+  ReplicaInsightsFacts,
+  ReplicaInsightsWindow,
+} from "@store/contracts/sync/replica-insights";
+import type {
   CommandStatus,
   Committed,
   ReplicaCommitNotice,
@@ -85,6 +89,7 @@ import {
   type ReplicaStoreError,
   type VerifyAuthorityInput,
 } from "../store";
+import { readIndexedDbInsights } from "./insights";
 import {
   clearIndexedDbPendingProjection,
   indexedDbCatalogLookup,
@@ -268,6 +273,12 @@ interface IndexedDbSubsetReader {
     plan: IndexedDbSubsetPlan,
   ) => Effect.Effect<
     { readonly stamp: ReplicaReadStamp; readonly rows: ReadonlyArray<IndexedDbSubsetRow> },
+    ReplicaStoreError
+  >;
+  readonly queryInsights: (
+    window: ReplicaInsightsWindow,
+  ) => Effect.Effect<
+    { readonly stamp: ReplicaReadStamp; readonly facts: ReplicaInsightsFacts },
     ReplicaStoreError
   >;
 }
@@ -891,6 +902,14 @@ const makeScopedIndexedDbReplicaStore = (
               return { stamp: stampOf(state), rows };
             }),
           ),
+        ),
+      queryInsights: (window: ReplicaInsightsWindow) =>
+        withQuery((api) =>
+          Effect.gen(function* () {
+            const state = yield* requireState(api);
+            const facts = yield* readIndexedDbInsights(api, state.activeGeneration, window);
+            return { stamp: stampOf(state), facts };
+          }),
         ),
       commits,
     };

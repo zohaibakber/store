@@ -21,6 +21,7 @@ import {
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_OUTBOX_CHANNEL,
+  REPLICA_READ_INSIGHTS_CHANNEL,
   REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
@@ -63,6 +64,7 @@ const replica: ReplicaIpcBridge = {
   },
   stamp: (workspaceToken) => ipcRenderer.invoke(REPLICA_STAMP_CHANNEL, workspaceToken),
   readSubset: (input) => ipcRenderer.invoke(REPLICA_READ_SUBSET_CHANNEL, input),
+  readInsights: (input) => ipcRenderer.invoke(REPLICA_READ_INSIGHTS_CHANNEL, input),
   readOutboxStatuses: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
   readCommandAllocation: (workspaceToken) =>

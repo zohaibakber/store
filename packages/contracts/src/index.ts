@@ -12,6 +12,7 @@ export * from "./sync/directory";
 export * from "./sync/entity-semantics";
 export * from "./sync/live";
 export * from "./sync/protocol";
+export * from "./sync/replica-insights";
 export * from "./sync/replica-model";
 export * from "./sync/schema";
 export * from "./sync/snapshot";

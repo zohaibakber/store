@@ -75,6 +75,9 @@ const harness = (rows?: {
     readSubset: async () => {
       throw new Error("unused");
     },
+    readInsights: async () => {
+      throw new Error("unused");
+    },
     readOutboxStatuses: async () => [],
     readCommandAllocation: async () => ({
       epoch: "1",
@@ -90,7 +93,7 @@ const harness = (rows?: {
     publish: () => undefined,
     close: () => undefined,
   };
-  const atoms = createWorkspaceAtoms(actor.organizationId);
+  const atoms = createWorkspaceAtoms();
   const tables = {
     batches: collectionOf(rows?.batches ?? []),
     categories: collectionOf(rows?.categories ?? [category]),

@@ -42,6 +42,8 @@ export type {
   ReplicaChangeFeed,
   ReplicaCommitNotice,
   ReplicaHandle,
+  ReplicaInsightsRead,
+  ReplicaInsightsReader,
   ReplicaQueryStamp,
   ReplicaSubsetRead,
   ReplicaSubsetReader,

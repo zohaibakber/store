@@ -19,6 +19,7 @@ import {
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_OUTBOX_CHANNEL,
+  REPLICA_READ_INSIGHTS_CHANNEL,
   REPLICA_READ_SUBSET_CHANNEL,
   REPLICA_STAMP_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
@@ -30,6 +31,7 @@ import {
 import {
   ReplicaEnqueueInput,
   ReplicaOpenInput,
+  ReplicaReadInsightsInput,
   ReplicaReadSubsetInput,
   ReplicaWorkerRpcs,
   ReplicaWorkspaceToken,
@@ -78,6 +80,7 @@ const CHANNEL_METHODS = {
   [REPLICA_CLOSE_CHANNEL]: "close",
   [REPLICA_STAMP_CHANNEL]: "stamp",
   [REPLICA_READ_SUBSET_CHANNEL]: "readSubset",
+  [REPLICA_READ_INSIGHTS_CHANNEL]: "readInsights",
   [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
   [REPLICA_ALLOCATION_CHANNEL]: "readCommandAllocation",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueLocal",
@@ -118,6 +121,7 @@ const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
 const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
 const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
+const decodeReadInsightsInput = Schema.decodeUnknownSync(ReplicaReadInsightsInput);
 const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
 
 export const registerReplicaWorkerIpc = (options: {
@@ -256,6 +260,12 @@ export const registerReplicaWorkerIpc = (options: {
       const read = decodeReadSubsetInput(input);
       return withSession(event, read.workspaceToken, "subset read", (client) =>
         client.ReadSubset({ spec: read.spec }),
+      );
+    },
+    [REPLICA_READ_INSIGHTS_CHANNEL]: async (event, input) => {
+      const read = decodeReadInsightsInput(input);
+      return withSession(event, read.workspaceToken, "insights read", (client) =>
+        client.ReadInsights({ window: read.window }),
       );
     },
     [REPLICA_OUTBOX_CHANNEL]: (event, input) =>
