@@ -1,7 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as GitHub from "alchemy/GitHub";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -18,7 +17,7 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
-    const accountId = yield* Config.String("CLOUDFLARE_ACCOUNT_ID");
+    const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
 
     const ciToken = yield* Cloudflare.ApiToken.AccountApiToken("CIToken", {
       name: "tabaaq-github-actions",

@@ -1,29 +1,20 @@
+import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
+import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Effect from "effect/Effect";
 
-/**
- * Wired the way Alchemy documents for D1 + Drizzle (`alchemy.run/cloudflare/data/d1-drizzle`):
- * `Drizzle.Schema` regenerates pending SQL from `schema.ts` on every deploy, and
- * `migrationsDir` applies it. Both resources move together on a schema change,
- * which is why they share a file.
- *
- * Paths are relative to the process working directory, the repo root where
- * `alchemy.run.ts` lives.
- */
 export const AuthDatabase = Effect.gen(function* () {
+  const { stage } = yield* Alchemy.Stack;
   const schema = yield* Drizzle.Schema("AuthSchema", {
     schema: "packages/db/src/auth/schema.ts",
     out: "packages/db/migrations/auth",
     dialect: "sqlite",
   });
 
+  // Alchemy ignores `table` on the `{ out }` (Drizzle.Schema) form; the
+  // bookkeeping table is the one each stage's state already records.
   return yield* Cloudflare.D1.Database("AuthDatabase", {
-    migrations: {
-      out: schema.out,
-      // drizzle-kit's own tracking table name, so a migration applied by
-      // `drizzle-kit migrate` and one applied by a deploy are the same row.
-      table: "drizzle_migrations",
-    },
-  });
+    migrations: schema,
+  }).pipe(RemovalPolicy.retain(stage === "prod"));
 });

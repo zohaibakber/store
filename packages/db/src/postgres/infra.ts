@@ -20,27 +20,16 @@ const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
   dialect: "postgres",
 });
 
-/**
- * Authoritative inventory database on PlanetScale.
- *
- * Alchemy applies the reviewed Drizzle migrations. The Worker does not.
- * The database is retained: replacing or removing the resource never
- * deletes the physical database.
- */
 export const InventoryPostgres = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Planetscale.PostgresDatabase("InventoryPostgres", {
-    clusterSize: "PS_10",
+    region: { slug: "ap-south" },
+    clusterSize: "PS_5",
+    replicas: 0,
     migrations: schema,
   }).pipe(RemovalPolicy.retain());
 });
 
-/**
- * Role the Worker uses to connect.
- *
- * This is not the branch default role. Alchemy migrates with the database
- * resource; Hyperdrive uses this role's direct origin.
- */
 const InventoryPostgresRole = Effect.gen(function* () {
   const database = yield* InventoryPostgres;
   return yield* Planetscale.PostgresRole("InventoryPostgresRole", {
@@ -49,10 +38,6 @@ const InventoryPostgresRole = Effect.gen(function* () {
   });
 });
 
-/**
- * Development inventory database on Neon. Alchemy applies the same Drizzle
- * migrations as production.
- */
 const InventoryNeon = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Neon.Project("InventoryNeon", {
