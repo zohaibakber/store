@@ -112,6 +112,7 @@ import {
 import {
   countOutboxWithStatus,
   outboxWithStatus,
+  productImage,
   ReplicaIndexedDb,
   type OutboxRow,
   type ReplicaQueryBuilder,
@@ -243,10 +244,7 @@ const indexedDbLocalDigest = (api: ReplicaQueryBuilder, page: SyncPullResult) =>
         entity: "category" as const,
         row,
       })),
-      ...productRows.map(({ generation: _generation, ...row }) => ({
-        entity: "product" as const,
-        row,
-      })),
+      ...productRows.map((row) => ({ entity: "product" as const, row: productImage(row) })),
       ...batchRows.map(({ generation: _generation, ...row }) => ({
         entity: "batch" as const,
         row,

@@ -187,12 +187,38 @@ class CategoryTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-class ProductTable extends IndexedDbTable.make({
+class ProductTableV1 extends IndexedDbTable.make({
   name: "products",
   schema: withGeneration(ReplicaProductRow.fields),
   keyPath: ["generation", "id"],
   indexes: {
     byCategory: ["generation", "categoryId"],
+  },
+  durability: "strict",
+}) {}
+
+export const foldAsciiCase = (value: string): string =>
+  value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
+
+const StoredProductRow = withGeneration({ ...ReplicaProductRow.fields, nameKey: Schema.String });
+type StoredProductRow = typeof StoredProductRow.Type;
+
+export const storedProduct = (generation: number, row: typeof ReplicaProductRow.Type) =>
+  ({ generation, ...row, nameKey: foldAsciiCase(row.name) }) satisfies StoredProductRow;
+
+export const productImage = ({
+  generation: _generation,
+  nameKey: _nameKey,
+  ...row
+}: StoredProductRow) => row;
+
+class ProductTable extends IndexedDbTable.make({
+  name: "products",
+  schema: StoredProductRow,
+  keyPath: ["generation", "id"],
+  indexes: {
+    byCategory: ["generation", "categoryId"],
+    byNameKey: ["generation", "nameKey"],
   },
   durability: "strict",
 }) {}
@@ -246,7 +272,7 @@ class ReplicaV1 extends IndexedDbVersion.make(
   StockOverlayTable,
   StagedSnapshotTable,
   CategoryTable,
-  ProductTable,
+  ProductTableV1,
   BatchTable,
   InvoiceTable,
   InvoiceItemTable,
@@ -254,6 +280,23 @@ class ReplicaV1 extends IndexedDbVersion.make(
 ) {}
 
 class ReplicaV2 extends IndexedDbVersion.make(
+  ReplicaStateTable,
+  OutboxTable,
+  CoverageTable,
+  SnapshotImportTable,
+  StockOverlayTable,
+  StagedSnapshotTable,
+  PendingRowMarkTable,
+  PendingRowJournalTable,
+  CategoryTable,
+  ProductTableV1,
+  BatchTable,
+  InvoiceTable,
+  InvoiceItemTable,
+  StockMovementTable,
+) {}
+
+class ReplicaV3 extends IndexedDbVersion.make(
   ReplicaStateTable,
   OutboxTable,
   CoverageTable,
@@ -299,13 +342,24 @@ export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
   }),
 ) {}
 
-export class ReplicaIndexedDb extends ReplicaIndexedDbV1.add(
+class ReplicaIndexedDbV2 extends ReplicaIndexedDbV1.add(
   ReplicaV2,
   Effect.fn("ReplicaIndexedDb.addPendingProjections")(function* (_from, api) {
     yield* api.createObjectStore("pending_row_marks");
     yield* api.createIndex("pending_row_marks", "byOperation");
     yield* api.createObjectStore("pending_row_journal");
     yield* api.createIndex("pending_row_journal", "byOperation");
+  }),
+) {}
+
+export class ReplicaIndexedDb extends ReplicaIndexedDbV2.add(
+  ReplicaV3,
+  Effect.fn("ReplicaIndexedDb.addProductNameOrder")(function* (from, api) {
+    yield* api.createIndex("products", "byNameKey");
+    const rows = yield* from.from("products").select();
+    yield* api
+      .from("products")
+      .upsertAll(rows.map(({ generation, ...row }) => storedProduct(generation, row)));
   }),
 ) {}
 

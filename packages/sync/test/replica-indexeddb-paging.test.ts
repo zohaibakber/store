@@ -34,7 +34,7 @@ const product = (index: number) => ({
   rowVersion: 1,
   row: {
     id: idOf(index),
-    name: `Product ${index}`,
+    name: nameOf(index),
     categoryId: index % 2 === 0 ? "c-even" : "c-odd",
     aisle: null,
     composition: null,
@@ -47,6 +47,15 @@ const product = (index: number) => ({
     ...managed,
   },
 });
+
+const nameOf = (index: number) => `${index % 2 === 0 ? "alpha" : "Beta"} ${index % 97}`;
+
+const byName = (left: number, right: number) => {
+  const leftKey = nameOf(left).toLowerCase();
+  const rightKey = nameOf(right).toLowerCase();
+  if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+  return idOf(left) < idOf(right) ? -1 : 1;
+};
 
 const indexes = Array.from({ length: PRODUCTS }, (_, index) => index);
 
@@ -107,8 +116,103 @@ describe("IndexedDB subset paging", () => {
           .map(idOf),
       );
 
+      const nameAscending = yield* store.querySubset(
+        plan({
+          scan: { _tag: "indexPrefix", index: "byNameKey", reverse: false },
+          orderBy: [
+            { column: "name", direction: "asc" },
+            { column: "id", direction: "asc" },
+          ],
+          offset: 510,
+        }),
+      );
+      expect(nameAscending.rows.map((row) => row["id"])).toEqual(
+        [...indexes].sort(byName).slice(510, 560).map(idOf),
+      );
+
+      const nameDescending = yield* store.querySubset(
+        plan({
+          scan: { _tag: "indexPrefix", index: "byNameKey", reverse: true },
+          orderBy: [
+            { column: "name", direction: "desc" },
+            { column: "id", direction: "desc" },
+          ],
+          offset: 40,
+        }),
+      );
+      expect(nameDescending.rows.map((row) => row["id"])).toEqual(
+        [...indexes].sort(byName).reverse().slice(40, 90).map(idOf),
+      );
+
+      const searched = yield* store.querySubset(
+        plan({
+          scan: { _tag: "indexPrefix", index: "byNameKey", reverse: false },
+          residual: { _tag: "like", column: "name", pattern: "%beta%" },
+          orderBy: [
+            { column: "name", direction: "asc" },
+            { column: "id", direction: "asc" },
+          ],
+          offset: 280,
+        }),
+      );
+      expect(searched.rows.map((row) => row["id"])).toEqual(
+        indexes
+          .filter((index) => index % 2 === 1)
+          .sort(byName)
+          .slice(280)
+          .map(idOf),
+      );
+
       const summary = yield* store.summarizeSubset(plan({ limit: 1 }), [], 500);
       expect(summary.summary.count).toBe(PRODUCTS);
+      yield* store.dispose();
+    }),
+  );
+
+  it.effect("continues a name-ordered scan across chunks full of duplicate names", () =>
+    Effect.gen(function* () {
+      const store = yield* makeIndexedDbReplicaStore({
+        databaseName,
+        databaseIdentity: databaseName,
+        identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
+        indexedDB,
+        IDBKeyRange,
+      });
+      const count = 1200;
+      const nameAt = (index: number) => (index < 5 ? `aa ${index}` : index % 2 ? "Dup" : "dup");
+      yield* store.applyTransactionGroup({
+        commitSequence: OrgCommitSequence.make("1"),
+        operationId: "seed",
+        decision: "accepted",
+        changes: Array.from({ length: count }, (_, index) => {
+          const change = product(index);
+          return { ...change, row: { ...change.row, name: nameAt(index) } };
+        }),
+      });
+      const expected = (direction: "asc" | "desc") => {
+        const ordered = Array.from({ length: count }, (_, index) => index).sort((left, right) => {
+          const leftKey = nameAt(left).toLowerCase();
+          const rightKey = nameAt(right).toLowerCase();
+          if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+          return idOf(left) < idOf(right) ? -1 : 1;
+        });
+        return (direction === "asc" ? ordered : ordered.reverse()).map(idOf);
+      };
+      for (const direction of ["asc", "desc"] as const) {
+        const rows = yield* store.querySubset(
+          plan({
+            scan: { _tag: "indexPrefix", index: "byNameKey", reverse: direction === "desc" },
+            residual: { _tag: "like", column: "id", pattern: "p-%" },
+            orderBy: [
+              { column: "name", direction },
+              { column: "id", direction },
+            ],
+            limit: 1200,
+            offset: 0,
+          }),
+        );
+        expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
+      }
       yield* store.dispose();
     }),
   );

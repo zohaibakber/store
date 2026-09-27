@@ -88,6 +88,25 @@ const andLeaves = (
   return [predicate];
 };
 
+const ORDERED_INDEXES = {
+  invoices: { column: "createdAt", index: "byCreatedAt" },
+  products: { column: "name", index: "byNameKey" },
+} as const;
+
+const unfilteredScan = (
+  source: InventorySubsetSpec["source"],
+  orderBy: InventorySubsetSpec["orderBy"],
+): IndexedDbScan => {
+  const [first] = orderBy;
+  const reverse = first?.direction === "desc";
+  const ordered =
+    source === "invoices" || source === "products" ? ORDERED_INDEXES[source] : undefined;
+  if (first !== undefined && ordered?.column === first.column) {
+    return { _tag: "indexPrefix", index: ordered.index, reverse };
+  }
+  return { _tag: "generationPrefix", reverse: orderBy.length === 1 && reverse };
+};
+
 const pickScan = (
   source: InventorySubsetSpec["source"],
   leaves: ReadonlyArray<SubsetLeafPredicate>,
@@ -148,16 +167,6 @@ const pickScan = (
       if (byOperation) return byOperation;
       const byCreatedAt = indexEq("createdAt", "byCreatedAt");
       if (byCreatedAt) return byCreatedAt;
-      if (orderBy.length === 1 && orderBy[0]?.column === "createdAt") {
-        return {
-          scan: {
-            _tag: "indexPrefix",
-            index: "byCreatedAt",
-            reverse: orderBy[0].direction === "desc",
-          },
-          consumed,
-        };
-      }
       break;
     }
     case "invoiceItems": {
@@ -172,8 +181,7 @@ const pickScan = (
     }
   }
 
-  const reverse = orderBy.length === 1 && orderBy[0]?.direction === "desc";
-  return { scan: { _tag: "generationPrefix", reverse }, consumed };
+  return { scan: unfilteredScan(source, orderBy), consumed };
 };
 
 const residualFromLeaves = (
@@ -197,10 +205,7 @@ export const planIndexedDbSubset = (
       }
       return {
         table: tableFor(spec),
-        scan: {
-          _tag: "generationPrefix",
-          reverse: spec.orderBy.length === 1 && spec.orderBy[0]?.direction === "desc",
-        },
+        scan: unfilteredScan(spec.source, spec.orderBy),
         residual: toResidual(spec.where),
         orderBy: spec.orderBy,
         limit: spec.limit,

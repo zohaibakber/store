@@ -89,4 +89,53 @@ describe("planIndexedDbSubset", () => {
     });
     expect(plan.limit).toBe(25);
   });
+
+  it("plans name-ordered product pages onto byNameKey, including searches", () => {
+    const page = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        orderBy: [
+          { column: "name", direction: "desc" },
+          { column: "id", direction: "desc" },
+        ],
+        limit: 50,
+        offset: 100,
+      }),
+    );
+    expect(page.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: true });
+    expect(page.residual).toBeUndefined();
+
+    const search = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where: {
+          _tag: "or",
+          predicates: [
+            { _tag: "like", column: "name", pattern: "%pan%" },
+            { _tag: "like", column: "composition", pattern: "%pan%" },
+          ],
+        },
+        orderBy: [
+          { column: "name", direction: "asc" },
+          { column: "id", direction: "asc" },
+        ],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(search.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: false });
+  });
+
+  it("keeps an equality index ahead of the name order", () => {
+    const plan = Effect.runSync(
+      planIndexedDbSubset({
+        source: "products",
+        where: { _tag: "compare", column: "categoryId", op: "eq", value: "c-1" },
+        orderBy: [{ column: "name", direction: "asc" }],
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    expect(plan.scan).toEqual({ _tag: "indexEquals", index: "byCategory", value: "c-1" });
+  });
 });

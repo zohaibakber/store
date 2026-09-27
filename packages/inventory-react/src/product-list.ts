@@ -81,7 +81,7 @@ export const productPageSpec = (request: ProductListRequest): InventorySubsetSpe
     source: "products",
     orderBy: [
       { column: request.sort.column, direction: request.sort.direction },
-      { column: "id", direction: "asc" },
+      { column: "id", direction: request.sort.direction },
     ],
     limit: pageSize,
     offset: Math.max(0, Math.floor(request.pageIndex)) * pageSize,
