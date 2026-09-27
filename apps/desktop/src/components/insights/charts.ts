@@ -44,13 +44,20 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
     {
       marks: [
         areaY(rows, {
+          id: "revenue-area",
+          x: (row) => String(row.day),
+          y: "revenue",
+          key: (row) => `area-${row.day}`,
+          curve: d3Curve(curveMonotoneX),
+          fill: "var(--chart-1)",
+          fillOpacity: 0.08,
+        }),
+        lineY(rows, {
           id: "revenue",
           x: (row) => String(row.day),
           y: "revenue",
           key: (row) => String(row.day),
           curve: d3Curve(curveMonotoneX),
-          fill: "var(--chart-1)",
-          fillOpacity: 0.08,
           stroke: "var(--chart-1)",
           strokeWidth: 2,
         }),
