@@ -16,17 +16,29 @@ const deviceIdFromStorage = (): string => {
   return id;
 };
 
-export const createWebInventoryHost = (): InventoryHost | undefined => {
-  const apiBaseUrl = Schema.decodeUnknownOption(Schema.String)(import.meta.env.VITE_API_URL).pipe(
-    Option.filter((value) => value.length > 0),
-  );
-  if (apiBaseUrl._tag === "None") return undefined;
+let persistenceRequested = false;
+
+/** The browser may evict IndexedDB under storage pressure unless the origin asks to persist. */
+const requestPersistentStorage = () => {
+  const storage = globalThis.navigator?.storage;
+  if (persistenceRequested || !storage?.persist) return;
+  persistenceRequested = true;
+  void storage
+    .persisted()
+    .then((persisted) => persisted || storage.persist())
+    .catch(() => false);
+};
+
+export const createWebInventoryHost = (input: {
+  readonly apiBaseUrl: string;
+  readonly authenticatedFetch: typeof fetch;
+}): InventoryHost => {
   const deviceId = deviceIdFromStorage();
   return {
-    apiBaseUrl: apiBaseUrl.value,
+    apiBaseUrl: input.apiBaseUrl,
     deviceId,
-    openReplica: (identity) =>
-      openIndexedDbReplicaHandle({
+    openReplica: async (identity) => {
+      const handle = await openIndexedDbReplicaHandle({
         databaseName: indexedDbReplicaDatabaseName(identity.organizationId, identity.userId),
         identity: {
           organizationId: identity.organizationId,
@@ -34,9 +46,12 @@ export const createWebInventoryHost = (): InventoryHost | undefined => {
           replicaId: identity.replicaId,
         },
         sync: {
-          apiBaseUrl: apiBaseUrl.value,
-          authenticatedFetch: globalThis.fetch.bind(globalThis),
+          apiBaseUrl: input.apiBaseUrl,
+          authenticatedFetch: input.authenticatedFetch,
         },
-      }),
+      });
+      requestPersistentStorage();
+      return handle;
+    },
   };
 };
