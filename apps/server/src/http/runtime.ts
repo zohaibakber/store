@@ -9,6 +9,15 @@ import type * as Scope from "effect/Scope";
 
 import type { AuthError } from "../auth/session";
 
+/**
+ * Cloudflare rate-limit windows for the AI-backed routes. The period also sets
+ * the `Retry-After` a limited caller receives.
+ */
+export const RATE_LIMITS = {
+  invoiceExtraction: { limit: 10, period: 60 },
+  productScan: { limit: 30, period: 60 },
+} as const;
+
 export interface ServerRuntimeContract {
   readonly electronProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;

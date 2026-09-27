@@ -233,7 +233,7 @@ describe("sync scheduler ownership gate", () => {
       const drains = yield* Ref.make(0);
       const scheduler = yield* makeSyncScheduler({
         drainUpload: () => Ref.update(drains, (n) => n + 1),
-        catchUp: () => Effect.void,
+        catchUp: () => Effect.succeed("unchanged"),
       });
       yield* scheduler.wake("localWrite");
       yield* TestClock.adjust("1 hour");
@@ -251,7 +251,7 @@ describe("sync scheduler ownership gate", () => {
       const scheduler = yield* makeSyncScheduler(
         {
           drainUpload: () => Ref.update(drains, (n) => n + 1),
-          catchUp: () => Effect.void,
+          catchUp: () => Effect.succeed("unchanged"),
         },
         {
           activePollMillis: 5_000,

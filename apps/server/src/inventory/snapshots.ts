@@ -25,7 +25,7 @@ import {
   snapshotParts,
   snapshotStagedRows,
 } from "@store/db/postgres/schema";
-import { and, asc, desc, eq, gt, inArray, lte, max, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lte, max, or, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -33,16 +33,17 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
-import type { InventoryActor } from "./model";
-import { countPartitionRows, readPartitionPage, readPartitionRows } from "./partition";
+import type { EncodedSnapshotPart, InventoryActor } from "./model";
+import { readPartitionPage } from "./partition";
 import {
+  databaseError,
   integerTextFromNumeric,
   inventoryPostgresUnavailable,
   lockOrganization,
   protocol,
   randomHex,
-  readReadyState,
-  readReplica,
+  requireReady,
+  runStatement,
   runTransaction,
   type InventoryDrizzle,
   type InventoryTransaction,
@@ -73,20 +74,27 @@ const isPartitionEntity = (value: string): boolean =>
 const isActiveStage = (stage: SnapshotStage): boolean =>
   ACTIVE_SNAPSHOT_STAGES.some((active) => active === stage);
 
-const chunkRows = <A>(rows: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
-  if (rows.length === 0) return [[]];
-  const chunks: Array<ReadonlyArray<A>> = [];
-  for (let index = 0; index < rows.length; index += size) {
-    chunks.push(rows.slice(index, index + size));
-  }
-  return chunks;
+type StoredPartRef = {
+  readonly partNumber: number;
+  readonly objectKey: string;
+  readonly byteLength: number;
+  readonly sha256: string;
 };
+
+const StoredEntityCounts = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Number));
+const encodeEntityCounts = Schema.encodeSync(StoredEntityCounts);
+const decodeEntityCounts = Schema.decodeUnknownEffect(StoredEntityCounts);
+
+const manifestEntityCounts = (
+  counts: Readonly<Record<string, number>>,
+): SnapshotManifest["entityCounts"] =>
+  PARTITION_ENTITIES.map((entity) => ({ entity, rowCount: counts[entity] ?? 0 }));
 
 const buildManifest = (
   snapshotId: SnapshotId,
   epoch: string,
   horizon: string,
-  parts: ReadonlyArray<typeof snapshotParts.$inferSelect>,
+  parts: ReadonlyArray<StoredPartRef>,
   entityCounts: SnapshotManifest["entityCounts"],
 ): SnapshotManifest => ({
   snapshotId,
@@ -125,18 +133,6 @@ const writeSnapshotPart = Effect.fn("InventorySnapshots.writeSnapshotPart")(func
     payloadJson,
   });
 });
-
-const readSnapshotParts = (tx: InventoryTransaction, organizationId: string, snapshotId: string) =>
-  tx
-    .select()
-    .from(snapshotParts)
-    .where(
-      and(
-        eq(snapshotParts.organizationId, organizationId),
-        eq(snapshotParts.snapshotId, snapshotId),
-      ),
-    )
-    .orderBy(asc(snapshotParts.partNumber));
 
 export type SnapshotRefreshPolicy = {
   readonly lagTransactions: number;
@@ -191,118 +187,7 @@ const activeJob = Effect.fn("InventorySnapshots.activeJob")(function* (
   return job;
 });
 
-const readPublishedManifest = Effect.fn("InventorySnapshots.readPublishedManifest")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  epoch: string,
-  snapshotId: string,
-  horizon: string,
-) {
-  const parts = yield* readSnapshotParts(tx, organizationId, snapshotId);
-  const entityCounts: Array<SnapshotManifest["entityCounts"][number]> = [];
-  for (const entity of PARTITION_ENTITIES) {
-    entityCounts.push({ entity, rowCount: yield* countPartitionRows(tx, organizationId, entity) });
-  }
-  return buildManifest(SnapshotId.make(snapshotId), epoch, horizon, parts, entityCounts);
-});
-
-const buildSnapshotSynchronously = Effect.fn("InventorySnapshots.buildSnapshotSynchronously")(
-  function* (
-    tx: InventoryTransaction,
-    organizationId: string,
-    epoch: string,
-    head: string,
-    now: number,
-  ) {
-    const snapshotId = SnapshotId.make(randomHex(16));
-    yield* tx.insert(snapshotJobs).values({
-      organizationId,
-      snapshotId,
-      subscription: OPERATIONAL_SUBSCRIPTION,
-      stage: "exporting",
-      fence: 1,
-      ownerToken: randomHex(8),
-      startedAtCommitSequence: head,
-      horizon: head,
-      copyEntity: null,
-      copyCursor: null,
-      stepDueAt: now,
-    });
-
-    const allRows: SnapshotRow[] = [];
-    const entityCounts: Array<SnapshotManifest["entityCounts"][number]> = [];
-    for (const entity of PARTITION_ENTITIES) {
-      const rows = yield* readPartitionRows(tx, organizationId, entity);
-      entityCounts.push({ entity, rowCount: rows.length });
-      allRows.push(...rows);
-    }
-
-    let partNumber = 1;
-    for (const chunk of chunkRows(allRows, MAX_SNAPSHOT_PART_ROWS)) {
-      yield* writeSnapshotPart(tx, organizationId, snapshotId, partNumber, chunk);
-      partNumber += 1;
-    }
-
-    yield* tx
-      .update(snapshotJobs)
-      .set({ stage: "published", fence: 2, stepDueAt: now })
-      .where(
-        and(
-          eq(snapshotJobs.organizationId, organizationId),
-          eq(snapshotJobs.snapshotId, snapshotId),
-        ),
-      );
-
-    const parts = yield* readSnapshotParts(tx, organizationId, snapshotId);
-    return buildManifest(snapshotId, epoch, head, parts, entityCounts);
-  },
-);
-
-const resolveSnapshot = Effect.fn("InventorySnapshots.resolveSnapshot")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  now: number,
-  policy: SnapshotRefreshPolicy,
-) {
-  const state = yield* lockOrganization(tx, actor.organizationId);
-  const head = integerTextFromNumeric(state.commitSequence);
-  const existing = yield* newestPublishedJob(tx, actor.organizationId);
-  const active = yield* activeJob(tx, actor.organizationId);
-
-  if (existing && existing.horizon !== null) {
-    const horizon = integerTextFromNumeric(existing.horizon);
-    if (!active && snapshotIsStale(head, horizon, policy)) {
-      yield* ensureSnapshotJobInTransaction(tx, actor.organizationId, policy);
-    }
-    const manifest = yield* readPublishedManifest(
-      tx,
-      actor.organizationId,
-      state.epoch,
-      existing.snapshotId,
-      horizon,
-    );
-    return { _tag: "ready", manifest } satisfies AcquireSnapshotResult;
-  }
-
-  if (active) {
-    return {
-      _tag: "building",
-      snapshotId: SnapshotId.make(active.snapshotId),
-      retryAfterMillis: policy.retryAfterMillis,
-    } satisfies AcquireSnapshotResult;
-  }
-
-  const manifest = yield* buildSnapshotSynchronously(
-    tx,
-    actor.organizationId,
-    state.epoch,
-    head,
-    now,
-  );
-  return { _tag: "ready", manifest } satisfies AcquireSnapshotResult;
-});
-
-const grantLease = (tx: InventoryTransaction, lease: typeof downloadLeases.$inferInsert) =>
+const grantLease = (tx: InventoryDrizzle, lease: typeof downloadLeases.$inferInsert) =>
   tx
     .insert(downloadLeases)
     .values(lease)
@@ -315,90 +200,249 @@ const grantLease = (tx: InventoryTransaction, lease: typeof downloadLeases.$infe
       },
     });
 
-const acquireSnapshotInTransaction = Effect.fn("InventorySnapshots.acquireSnapshotInTransaction")(
-  function* (
-    tx: InventoryTransaction,
-    actor: InventoryActor,
-    request: AcquireSnapshotRequest,
-    now: number,
-    policy: SnapshotRefreshPolicy,
-  ) {
-    const state = yield* readReadyState(tx, actor.organizationId);
-    if (state.epoch !== request.epoch) {
-      return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
-    }
-    if (request.subscription !== OPERATIONAL_SUBSCRIPTION) {
-      return yield* protocol(
-        "SCHEMA_VERSION_UNSUPPORTED",
-        "Only the operational subscription is published.",
-      );
-    }
-    if (request.replicaId !== undefined) {
-      const replica = yield* readReplica(tx, actor.organizationId, request.replicaId);
-      if (!replica) {
-        return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
-      }
-      if (replica.ownerUserId !== actor.userId) {
-        return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
-      }
-    }
+const AcquireLookupRow = Schema.Struct({
+  status: Schema.String,
+  release_id: Schema.NullOr(Schema.String),
+  epoch: Schema.String,
+  head: Schema.String,
+  replica_owner: Schema.NullOr(Schema.String),
+  published_id: Schema.NullOr(Schema.String),
+  published_horizon: Schema.NullOr(Schema.String),
+  published_counts: Schema.NullOr(Schema.String),
+  published_parts: Schema.NullOr(Schema.String),
+  active_id: Schema.NullOr(Schema.String),
+});
 
-    const result: AcquireSnapshotResult = yield* resolveSnapshot(tx, actor, now, policy);
-    if (request.replicaId !== undefined && result._tag === "ready") {
-      yield* grantLease(tx, {
-        organizationId: actor.organizationId,
-        replicaId: request.replicaId,
-        snapshotId: result.manifest.snapshotId,
-        pinnedHorizon: result.manifest.horizon,
-        expiresAt: now + LIVE_LEASE_LIFETIME_MILLIS,
-      });
-    }
-    return result;
+const StoredPartRefs = Schema.fromJsonString(
+  Schema.Array(
+    Schema.Struct({
+      partNumber: Schema.Number,
+      objectKey: Schema.String,
+      byteLength: Schema.Number,
+      sha256: Schema.String,
+    }),
+  ),
+);
+
+const decodeAcquireLookup = Schema.decodeUnknownEffect(Schema.Array(AcquireLookupRow));
+const decodeStoredPartRefs = Schema.decodeUnknownEffect(StoredPartRefs);
+
+const acquireLookupStatement = (organizationId: string, replicaId: string | null) => sql`
+  select "s"."status", "s"."release_id", "s"."epoch", "s"."commit_sequence"::text as "head",
+    "r"."owner_user_id" as "replica_owner",
+    "p"."snapshot_id" as "published_id", "p"."horizon"::text as "published_horizon",
+    "p"."entity_counts_json" as "published_counts", "parts"."refs" as "published_parts",
+    "a"."snapshot_id" as "active_id"
+  from "inventory_state" as "s"
+  left join "replicas" as "r"
+    on "r"."organization_id" = "s"."organization_id" and "r"."replica_id" = ${replicaId}
+  left join lateral (
+    select "snapshot_id", "horizon", "entity_counts_json"
+    from "snapshot_jobs"
+    where "organization_id" = "s"."organization_id"
+      and "stage" = 'published'
+      and "subscription" = ${OPERATIONAL_SUBSCRIPTION}
+      and "horizon" is not null
+    order by "horizon" desc, "snapshot_id" asc
+    limit 1
+  ) as "p" on true
+  left join lateral (
+    select json_agg(
+      json_build_object(
+        'partNumber', "part_number",
+        'objectKey', "object_key",
+        'byteLength', "byte_length",
+        'sha256', "sha256"
+      )
+      order by "part_number"
+    )::text as "refs"
+    from "snapshot_parts"
+    where "organization_id" = "s"."organization_id" and "snapshot_id" = "p"."snapshot_id"
+  ) as "parts" on true
+  left join lateral (
+    select "snapshot_id"
+    from "snapshot_jobs"
+    where "organization_id" = "s"."organization_id"
+      and "subscription" = ${OPERATIONAL_SUBSCRIPTION}
+      and "stage" in ('copying', 'repairing', 'frozen', 'exporting')
+    order by "snapshot_id" asc
+    limit 1
+  ) as "a" on true
+  where "s"."organization_id" = ${organizationId}
+`;
+
+const countPublishedPartRows = (organizationId: string, snapshotId: string) => sql`
+  update "snapshot_jobs" as "j"
+  set "entity_counts_json" = coalesce((
+    select json_object_agg("counted"."entity", "counted"."row_count")::text
+    from (
+      select "row" ->> 'entity' as "entity", count(*) as "row_count"
+      from "snapshot_parts" as "p"
+      cross join lateral jsonb_array_elements(("p"."payload_json")::jsonb -> 'rows') as "row"
+      where "p"."organization_id" = "j"."organization_id"
+        and "p"."snapshot_id" = "j"."snapshot_id"
+      group by 1
+    ) as "counted"
+  ), '{}')
+  where "j"."organization_id" = ${organizationId}
+    and "j"."snapshot_id" = ${snapshotId}
+  returning "j"."entity_counts_json" as "counts"
+`;
+
+const CountsRow = Schema.Struct({ counts: Schema.NullOr(Schema.String) });
+const decodeCountsRows = Schema.decodeUnknownEffect(Schema.Array(CountsRow));
+
+const publishedEntityCounts = Effect.fn("InventorySnapshots.publishedEntityCounts")(function* (
+  db: InventoryDrizzle,
+  organizationId: string,
+  snapshotId: string,
+  stored: string | null,
+) {
+  if (stored !== null) {
+    return yield* decodeEntityCounts(stored).pipe(Effect.mapError(databaseError));
+  }
+  const raw = yield* runStatement(
+    db.execute(countPublishedPartRows(organizationId, snapshotId), "objects"),
+  );
+  const [row] = yield* decodeCountsRows(raw).pipe(Effect.mapError(databaseError));
+  return yield* decodeEntityCounts(row?.counts ?? "{}").pipe(Effect.mapError(databaseError));
+});
+
+const enqueueOrJoinSnapshotJob = Effect.fn("InventorySnapshots.enqueueOrJoinSnapshotJob")(
+  function* (tx: InventoryTransaction, organizationId: string) {
+    yield* lockOrganization(tx, organizationId);
+    const active = yield* activeJob(tx, organizationId);
+    if (active) return SnapshotId.make(active.snapshotId);
+    return yield* enqueueSnapshotJobInTransaction(tx, organizationId);
   },
 );
 
-const readSnapshotPartInTransaction = Effect.fn("InventorySnapshots.readSnapshotPartInTransaction")(
-  function* (
-    tx: InventoryTransaction,
-    actor: InventoryActor,
-    snapshotId: SnapshotId,
-    partNumber: number,
-  ) {
-    yield* readReadyState(tx, actor.organizationId);
+const acquireSnapshotWith = Effect.fn("InventorySnapshots.acquireSnapshotWith")(function* (
+  db: InventoryDrizzle,
+  actor: InventoryActor,
+  request: AcquireSnapshotRequest,
+  now: number,
+  policy: SnapshotRefreshPolicy,
+) {
+  const transact = runTransaction(db);
+  const raw = yield* runStatement(
+    db.execute(acquireLookupStatement(actor.organizationId, request.replicaId ?? null), "objects"),
+  );
+  const [first] = yield* decodeAcquireLookup(raw).pipe(Effect.mapError(databaseError));
+  const state = yield* requireReady(
+    first === undefined ? undefined : { ...first, releaseId: first.release_id },
+  );
+  if (state.epoch !== request.epoch) {
+    return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
+  }
+  if (request.subscription !== OPERATIONAL_SUBSCRIPTION) {
+    return yield* protocol(
+      "SCHEMA_VERSION_UNSUPPORTED",
+      "Only the operational subscription is published.",
+    );
+  }
+  if (request.replicaId !== undefined) {
+    if (state.replica_owner === null) {
+      return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
+    }
+    if (state.replica_owner !== actor.userId) {
+      return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
+    }
+  }
 
-    const [job] = yield* tx
-      .select()
-      .from(snapshotJobs)
-      .where(
+  if (state.published_id === null || state.published_horizon === null) {
+    const snapshotId =
+      state.active_id === null
+        ? yield* transact("read committed", "read write", (tx) =>
+            enqueueOrJoinSnapshotJob(tx, actor.organizationId),
+          )
+        : SnapshotId.make(state.active_id);
+    return {
+      _tag: "building",
+      snapshotId,
+      retryAfterMillis: policy.retryAfterMillis,
+    } satisfies AcquireSnapshotResult;
+  }
+
+  const head = integerTextFromNumeric(state.head);
+  const horizon = integerTextFromNumeric(state.published_horizon);
+  if (state.active_id === null && snapshotIsStale(head, horizon, policy)) {
+    yield* ensureSnapshotJob(db, policy)(actor.organizationId);
+  }
+  const parts = yield* decodeStoredPartRefs(state.published_parts ?? "[]").pipe(
+    Effect.mapError(databaseError),
+  );
+  const counts = yield* publishedEntityCounts(
+    db,
+    actor.organizationId,
+    state.published_id,
+    state.published_counts,
+  );
+  const manifest = buildManifest(
+    SnapshotId.make(state.published_id),
+    state.epoch,
+    horizon,
+    parts,
+    manifestEntityCounts(counts),
+  );
+  if (request.replicaId !== undefined) {
+    yield* runStatement(
+      grantLease(db, {
+        organizationId: actor.organizationId,
+        replicaId: request.replicaId,
+        snapshotId: manifest.snapshotId,
+        pinnedHorizon: manifest.horizon,
+        expiresAt: now + LIVE_LEASE_LIFETIME_MILLIS,
+      }),
+    );
+  }
+  return { _tag: "ready", manifest } satisfies AcquireSnapshotResult;
+});
+
+const readEncodedSnapshotPart = Effect.fn("InventorySnapshots.readEncodedSnapshotPart")(function* (
+  db: InventoryDrizzle,
+  actor: InventoryActor,
+  snapshotId: SnapshotId,
+  partNumber: number,
+) {
+  const [row] = yield* runStatement(
+    db
+      .select({
+        status: inventoryState.status,
+        releaseId: inventoryState.releaseId,
+        publishedId: snapshotJobs.snapshotId,
+        payloadJson: snapshotParts.payloadJson,
+        sha256: snapshotParts.sha256,
+      })
+      .from(inventoryState)
+      .leftJoin(
+        snapshotJobs,
         and(
-          eq(snapshotJobs.organizationId, actor.organizationId),
+          eq(snapshotJobs.organizationId, inventoryState.organizationId),
           eq(snapshotJobs.snapshotId, snapshotId),
           eq(snapshotJobs.stage, "published"),
         ),
       )
-      .limit(1);
-    if (!job) {
-      return yield* protocol("SNAPSHOT_UNAVAILABLE", "No snapshot is published for this id.");
-    }
-
-    const [part] = yield* tx
-      .select()
-      .from(snapshotParts)
-      .where(
+      .leftJoin(
+        snapshotParts,
         and(
-          eq(snapshotParts.organizationId, actor.organizationId),
-          eq(snapshotParts.snapshotId, snapshotId),
+          eq(snapshotParts.organizationId, snapshotJobs.organizationId),
+          eq(snapshotParts.snapshotId, snapshotJobs.snapshotId),
           eq(snapshotParts.partNumber, partNumber),
         ),
       )
-      .limit(1);
-    if (!part) {
-      return yield* protocol("SNAPSHOT_UNAVAILABLE", "The snapshot part does not exist.");
-    }
-
-    return yield* decodePartPayload(part.payloadJson);
-  },
-);
+      .where(eq(inventoryState.organizationId, actor.organizationId))
+      .limit(1),
+  );
+  const found = yield* requireReady(row);
+  if (found.publishedId === null) {
+    return yield* protocol("SNAPSHOT_UNAVAILABLE", "No snapshot is published for this id.");
+  }
+  if (found.payloadJson === null || found.sha256 === null) {
+    return yield* protocol("SNAPSHOT_UNAVAILABLE", "The snapshot part does not exist.");
+  }
+  return { json: found.payloadJson, sha256: found.sha256 } satisfies EncodedSnapshotPart;
+});
 
 export type SnapshotStepProgress = {
   readonly organizationId: string;
@@ -413,6 +457,7 @@ type StageAdvance = {
   readonly horizon?: string;
   readonly copyEntity?: string | null;
   readonly copyCursor?: string | null;
+  readonly entityCountsJson?: string;
 };
 
 const ExportCursor = Schema.Struct({ entity: Schema.String, entityId: Schema.String });
@@ -569,6 +614,29 @@ const stepRepairing = Effect.fn("InventorySnapshots.stepRepairing")(function* (
   } satisfies StageAdvance;
 });
 
+const publishedAdvance = Effect.fn("InventorySnapshots.publishedAdvance")(function* (
+  tx: InventoryTransaction,
+  job: SnapshotJobRow,
+) {
+  const counted = yield* tx
+    .select({ entity: snapshotStagedRows.entity, rowCount: count() })
+    .from(snapshotStagedRows)
+    .where(
+      and(
+        eq(snapshotStagedRows.organizationId, job.organizationId),
+        eq(snapshotStagedRows.snapshotId, job.snapshotId),
+      ),
+    )
+    .groupBy(snapshotStagedRows.entity);
+  return {
+    stage: "published",
+    copyCursor: null,
+    entityCountsJson: encodeEntityCounts(
+      Object.fromEntries(counted.map((row) => [row.entity, row.rowCount])),
+    ),
+  } satisfies StageAdvance;
+});
+
 const stepExporting = Effect.fn("InventorySnapshots.stepExporting")(function* (
   tx: InventoryTransaction,
   job: SnapshotJobRow,
@@ -609,12 +677,12 @@ const stepExporting = Effect.fn("InventorySnapshots.stepExporting")(function* (
     if (lastPart === 0) {
       yield* writeSnapshotPart(tx, job.organizationId, snapshotId, 1, []);
     }
-    return { stage: "published", copyCursor: null } satisfies StageAdvance;
+    return yield* publishedAdvance(tx, job);
   }
   const rows = yield* decodeStoredRows(staged);
   yield* writeSnapshotPart(tx, job.organizationId, snapshotId, lastPart + 1, rows);
   if (staged.length < MAX_SNAPSHOT_PART_ROWS) {
-    return { stage: "published", copyCursor: null } satisfies StageAdvance;
+    return yield* publishedAdvance(tx, job);
   }
   const last = staged[staged.length - 1];
   return {
@@ -730,6 +798,7 @@ export const stepClaimedSnapshotJobInTransaction = Effect.fn(
       horizon: advance.horizon ?? job.horizon,
       copyEntity: advance.copyEntity === undefined ? job.copyEntity : advance.copyEntity,
       copyCursor: advance.copyCursor === undefined ? job.copyCursor : advance.copyCursor,
+      entityCountsJson: advance.entityCountsJson ?? job.entityCountsJson,
       ownerToken: null,
       stepDueAt: now,
     })
@@ -822,6 +891,11 @@ export interface InventorySnapshotsContract {
     snapshotId: SnapshotId,
     partNumber: number,
   ) => Effect.Effect<SnapshotPartPayload, InventoryError>;
+  readonly readSnapshotPartEncoded: (
+    actor: InventoryActor,
+    snapshotId: SnapshotId,
+    partNumber: number,
+  ) => Effect.Effect<EncodedSnapshotPart, InventoryError>;
 }
 
 export class InventorySnapshots extends Context.Service<
@@ -833,21 +907,23 @@ export const makeInventorySnapshots = (
   db: InventoryDrizzle,
   policy: SnapshotRefreshPolicy = SNAPSHOT_REFRESH_POLICY,
 ): InventorySnapshotsContract => {
-  const transact = runTransaction(db);
+  const readSnapshotPartEncoded = Effect.fn("InventorySnapshots.readSnapshotPartEncoded")(
+    function* (actor: InventoryActor, snapshotId: SnapshotId, partNumber: number) {
+      return yield* readEncodedSnapshotPart(db, actor, snapshotId, partNumber);
+    },
+  );
   return InventorySnapshots.of({
     acquireSnapshot: Effect.fn("InventorySnapshots.acquireSnapshot")(function* (actor, request) {
       const now = yield* Clock.currentTimeMillis;
-      return yield* transact("read committed", "read write", (tx) =>
-        acquireSnapshotInTransaction(tx, actor, request, now, policy),
-      );
+      return yield* acquireSnapshotWith(db, actor, request, now, policy);
     }),
     readSnapshotPart: Effect.fn("InventorySnapshots.readSnapshotPart")(
       function* (actor, snapshotId, partNumber) {
-        return yield* transact("repeatable read", "read only", (tx) =>
-          readSnapshotPartInTransaction(tx, actor, snapshotId, partNumber),
-        );
+        const encoded = yield* readSnapshotPartEncoded(actor, snapshotId, partNumber);
+        return yield* decodePartPayload(encoded.json).pipe(Effect.mapError(databaseError));
       },
     ),
+    readSnapshotPartEncoded,
   });
 };
 
@@ -856,5 +932,6 @@ export const InventorySnapshotsUnavailable = Layer.succeed(
   InventorySnapshots.of({
     acquireSnapshot: () => Effect.fail(inventoryPostgresUnavailable),
     readSnapshotPart: () => Effect.fail(inventoryPostgresUnavailable),
+    readSnapshotPartEncoded: () => Effect.fail(inventoryPostgresUnavailable),
   }),
 );

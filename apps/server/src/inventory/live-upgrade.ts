@@ -3,6 +3,7 @@ import {
   LIVE_LEASE_LIFETIME_MILLIS,
   LIVE_LONG_POLL_DEFAULT_MILLIS,
   LIVE_LONG_POLL_MAX_MILLIS,
+  LIVE_SSE_KEEPALIVE_MILLIS,
   LIVE_SSE_POLL_MILLIS,
   LiveUpgradeQuery,
   OPERATIONAL_SUBSCRIPTION,
@@ -52,18 +53,25 @@ const pingEvent = (): SyncLiveSseEvent => ({
   data: "{}",
 });
 
+type SseCursor = {
+  readonly horizon: SyncLiveWakeHint["horizon"];
+  readonly lastSentAt: number;
+};
+
 const openLiveSession = (
   live: InventoryLiveContract,
   actor: InventorySyncActor,
   query: LiveUpgradeQuery,
 ) =>
-  toSyncAuthorityError(
-    live.consumeLiveTicket(actor, {
-      nonce: query.nonce,
-      replicaId: query.replicaId,
-      subscription: query.subscription,
-    }),
-  );
+  query.nonce === undefined
+    ? Effect.void
+    : toSyncAuthorityError(
+        live.consumeLiveTicket(actor, {
+          nonce: query.nonce,
+          replicaId: query.replicaId,
+          subscription: query.subscription,
+        }),
+      );
 
 const readHorizon = (live: InventoryLiveContract, actor: InventorySyncActor) =>
   toSyncAuthorityError(live.readLiveHorizon(actor));
@@ -125,13 +133,26 @@ const sseResponse = (
 
     const polledEvents = Stream.fromSchedule(Schedule.spaced(LIVE_SSE_POLL_MILLIS)).pipe(
       Stream.takeWhileEffect(() => leaseOpen),
-      Stream.mapEffect(() => readHorizon(live, actor).pipe(Effect.orDie)),
+      Stream.mapEffect(() =>
+        Effect.all({
+          current: readHorizon(live, actor).pipe(Effect.orDie),
+          now: Clock.currentTimeMillis,
+        }),
+      ),
       Stream.mapAccum(
-        () => initial.horizon,
-        (last, current) =>
-          compareDecimalSequence(current.horizon, last) > 0
-            ? [current.horizon, [wakeEvent(wakeHintFromHorizon(current))]]
-            : [last, [pingEvent()]],
+        (): SseCursor => ({ horizon: initial.horizon, lastSentAt: startedAt }),
+        (cursor, { current, now }): readonly [SseCursor, ReadonlyArray<SyncLiveSseEvent>] => {
+          if (compareDecimalSequence(current.horizon, cursor.horizon) > 0) {
+            return [
+              { horizon: current.horizon, lastSentAt: now },
+              [wakeEvent(wakeHintFromHorizon(current))],
+            ];
+          }
+          if (now - cursor.lastSentAt >= LIVE_SSE_KEEPALIVE_MILLIS) {
+            return [{ horizon: cursor.horizon, lastSentAt: now }, [pingEvent()]];
+          }
+          return [cursor, []];
+        },
       ),
     );
 

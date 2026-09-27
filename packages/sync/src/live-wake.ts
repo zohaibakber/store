@@ -5,6 +5,7 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   SyncLiveWakeHint,
 } from "@store/contracts";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -25,22 +26,26 @@ export type LiveWakeHost = {
   readonly replicaId: string;
   readonly fetch: typeof globalThis.fetch;
   readonly preferSse: boolean;
+  readonly credentials?: "bearer" | "ticket";
 };
+
+const LIVE_UNREACHABLE_RETRY: Duration.Input = "30 seconds";
+const LIVE_SSE_REOPEN_RETRY: Duration.Input = "5 seconds";
 
 const decodeWakeData = Schema.decodeUnknownOption(Schema.fromJsonString(SyncLiveWakeHint));
 
 const liveUrl = (
   host: LiveWakeHost,
-  ticket: LiveTicket,
+  ticket: LiveTicket | undefined,
   afterHorizon: string | undefined,
   waitMs: number | undefined,
 ): string => {
   const root = host.apiBaseUrl.replace(/\/+$/u, "");
   const apiRoot = root.endsWith("/api") ? root : `${root}/api`;
   const live = new URL(`${apiRoot}/sync/live`);
-  live.searchParams.set("nonce", ticket.nonce);
+  if (ticket !== undefined) live.searchParams.set("nonce", ticket.nonce);
   live.searchParams.set("replicaId", host.replicaId);
-  live.searchParams.set("subscription", ticket.subscription);
+  live.searchParams.set("subscription", ticket?.subscription ?? OPERATIONAL_SUBSCRIPTION);
   if (afterHorizon !== undefined) live.searchParams.set("afterHorizon", afterHorizon);
   if (waitMs !== undefined) live.searchParams.set("waitMs", String(waitMs));
   return live.href;
@@ -74,12 +79,20 @@ export const wakeHintsFromSseBody = (
     }),
   );
 
+type LongPollOutcome =
+  | { readonly _tag: "wake"; readonly hint: SyncLiveWakeHint }
+  | { readonly _tag: "idle" }
+  | { readonly _tag: "failed" };
+
+const LONG_POLL_IDLE: LongPollOutcome = { _tag: "idle" };
+const LONG_POLL_FAILED: LongPollOutcome = { _tag: "failed" };
+
 const longPollOnce = (
   client: HttpClient.HttpClient,
   host: LiveWakeHost,
-  ticket: LiveTicket,
+  ticket: LiveTicket | undefined,
   afterHorizon: string | undefined,
-): Effect.Effect<SyncLiveWakeHint | undefined> =>
+): Effect.Effect<LongPollOutcome> =>
   client
     .execute(
       HttpClientRequest.get(
@@ -87,18 +100,22 @@ const longPollOnce = (
       ).pipe(HttpClientRequest.acceptJson),
     )
     .pipe(
-      Effect.flatMap((response) =>
-        response.status === 204 || response.status < 200 || response.status >= 300
-          ? Effect.succeed(undefined)
-          : HttpClientResponse.schemaBodyJson(SyncLiveWakeHint)(response),
-      ),
-      Effect.orElseSucceed(() => undefined),
+      Effect.flatMap((response) => {
+        if (response.status === 204) return Effect.succeed(LONG_POLL_IDLE);
+        if (response.status < 200 || response.status >= 300) {
+          return Effect.succeed(LONG_POLL_FAILED);
+        }
+        return HttpClientResponse.schemaBodyJson(SyncLiveWakeHint)(response).pipe(
+          Effect.map((hint): LongPollOutcome => ({ _tag: "wake", hint })),
+        );
+      }),
+      Effect.orElseSucceed(() => LONG_POLL_FAILED),
     );
 
 const openSseWakeStream = (
   client: HttpClient.HttpClient,
   host: LiveWakeHost,
-  ticket: LiveTicket,
+  ticket: LiveTicket | undefined,
   afterHorizon: string | undefined,
 ): Effect.Effect<Stream.Stream<SyncLiveWakeHint> | undefined> =>
   client
@@ -122,27 +139,29 @@ export const runLiveWakeLoop = (
     const client = yield* HttpClient.HttpClient;
     const afterHorizon = yield* Ref.make<string | undefined>(undefined);
     const wakeFrom = (hint: SyncLiveWakeHint) =>
-      Ref.set(afterHorizon, hint.horizon).pipe(Effect.andThen(scheduler.wake("live")));
+      Ref.set(afterHorizon, hint.horizon).pipe(Effect.andThen(scheduler.wake("live", hint)));
+
+    const disconnected = (retryAfter: Duration.Input) =>
+      scheduler.setLiveConnected(false).pipe(Effect.andThen(Effect.sleep(retryAfter)));
 
     const pass = Effect.gen(function* () {
-      const ticket = yield* transport
-        .mintLiveTicket({
-          replicaId: host.replicaId,
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        } satisfies LiveTicketRequest)
-        .pipe(Effect.orElseSucceed(() => undefined));
-      if (ticket === undefined) {
-        yield* scheduler.setLiveConnected(false);
-        yield* Effect.sleep("30 seconds");
-        return;
+      const ticketed = host.credentials === "ticket";
+      const ticket = ticketed
+        ? yield* transport
+            .mintLiveTicket({
+              replicaId: host.replicaId,
+              subscription: OPERATIONAL_SUBSCRIPTION,
+            } satisfies LiveTicketRequest)
+            .pipe(Effect.orElseSucceed(() => undefined))
+        : undefined;
+      if (ticketed && ticket === undefined) {
+        return yield* disconnected(LIVE_UNREACHABLE_RETRY);
       }
 
       if (host.preferSse) {
         const stream = yield* openSseWakeStream(client, host, ticket, yield* Ref.get(afterHorizon));
         if (stream === undefined) {
-          yield* scheduler.setLiveConnected(false);
-          yield* Effect.sleep("5 seconds");
-          return;
+          return yield* disconnected(ticketed ? LIVE_SSE_REOPEN_RETRY : LIVE_UNREACHABLE_RETRY);
         }
         yield* scheduler.setLiveConnected(true);
         yield* stream.pipe(Stream.runForEach(wakeFrom), Effect.ignore);
@@ -150,13 +169,18 @@ export const runLiveWakeLoop = (
         return;
       }
 
-      const hint = yield* longPollOnce(client, host, ticket, yield* Ref.get(afterHorizon));
-      if (hint === undefined) {
-        yield* scheduler.setLiveConnected(false);
-        return;
+      const outcome = yield* longPollOnce(client, host, ticket, yield* Ref.get(afterHorizon));
+      switch (outcome._tag) {
+        case "wake":
+          yield* scheduler.setLiveConnected(true);
+          return yield* wakeFrom(outcome.hint);
+        case "idle":
+          return yield* scheduler.setLiveConnected(true);
+        case "failed":
+          return yield* ticketed
+            ? scheduler.setLiveConnected(false)
+            : disconnected(LIVE_UNREACHABLE_RETRY);
       }
-      yield* scheduler.setLiveConnected(true);
-      yield* wakeFrom(hint);
     });
 
     return yield* Effect.forever(pass);

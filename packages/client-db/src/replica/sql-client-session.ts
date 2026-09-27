@@ -2,7 +2,6 @@ import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
 import {
   layerOwnedHttpSync,
   ReplicaStore,
-  SyncEngine,
   SyncScheduler,
   SyncTransportService,
   type ReplicaOutboxActivity,
@@ -173,14 +172,13 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
       Layer.provide(input.transport),
     ),
   );
-  const { store, scheduler, engine, replicaId } = await bootWorkspaceRuntime(
+  const { store, scheduler, replicaId } = await bootWorkspaceRuntime(
     runtime,
     Effect.gen(function* () {
       const store = yield* ReplicaStore;
       return {
         store,
         scheduler: yield* SyncScheduler,
-        engine: yield* SyncEngine,
         replicaId: (yield* store.readSyncCursor()).replicaId,
       };
     }),
@@ -212,15 +210,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     },
     wakeSyncUpload: async () => {
       drainCount += 1;
-      await runtime.runPromise(
-        scheduler
-          .wake("localWrite")
-          .pipe(
-            Effect.andThen(
-              engine.ensureRegistered().pipe(Effect.andThen(engine.uploadOnce()), Effect.ignore),
-            ),
-          ),
-      );
+      await runtime.runPromise(scheduler.wake("localWrite"));
       return { drained: true, drainCount };
     },
     wake: (reason) => runtime.runPromise(scheduler.wake(reason)),

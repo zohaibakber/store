@@ -1,4 +1,7 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as HttpEffect from "effect/unstable/http/HttpEffect";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
 const PublicErrorBody = Schema.Struct({
@@ -49,3 +52,20 @@ export const tooManyRequests = (code: string, message: string) =>
   TooManyRequests.make(publicError(code, message));
 export const badGateway = (code: string, message: string) =>
   BadGateway.make(publicError(code, message));
+
+/**
+ * Adds `Retry-After` (whole seconds, rounded up) to whatever response this
+ * request ends with, including a typed error encoded by `HttpApi`. Use it only
+ * where the server knows the delay: a rate-limit window or a snapshot build
+ * interval.
+ */
+export const retryAfter = (delayMillis: number) =>
+  HttpEffect.appendPreResponseHandler((_request, response) =>
+    Effect.succeed(
+      HttpServerResponse.setHeader(
+        response,
+        "retry-after",
+        String(Math.max(1, Math.ceil(delayMillis / 1_000))),
+      ),
+    ),
+  );

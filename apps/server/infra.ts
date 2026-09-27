@@ -1,4 +1,4 @@
-import { decodeJsonWebKeyText } from "@store/auth";
+import { decodeJsonWebKeyText, makeAccessTokenVerifier } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
@@ -23,8 +23,13 @@ import {
   loadWorkspaceSnapshot,
   type AuthVerificationConfig,
 } from "./src/auth/session";
-import { recoverUnexpected, ServerRoutes } from "./src/http/app";
-import { ServerRuntime } from "./src/http/runtime";
+import {
+  buildOncePerIsolate,
+  recoverUnexpected,
+  ServerRoutes,
+  workerRuntimeServices,
+} from "./src/http/app";
+import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
 import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
 import { InventoryLive } from "./src/inventory/live-tickets";
@@ -104,12 +109,12 @@ export const ApiLive = Api.make(
       "INVOICE_EXTRACTION_RATE_LIMIT",
       {
         namespaceId: 1002,
-        simple: { limit: 10, period: 60 },
+        simple: RATE_LIMITS.invoiceExtraction,
       },
     );
     const productScanRateLimit = yield* Cloudflare.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
       namespaceId: 1001,
-      simple: { limit: 30, period: 60 },
+      simple: RATE_LIMITS.productScan,
     });
     // Alchemy binds every Config read during Worker Init onto Cloudflare.
     // GitHub Actions turns unset Environment vars into "", which would
@@ -180,11 +185,12 @@ export const ApiLive = Api.make(
       audience: "tabaaq-api",
       publicJwk,
     };
+    const verifyAccessToken = yield* makeAccessTokenVerifier(jwtConfig);
     const RuntimeLive = Layer.succeed(ServerRuntime, {
       electronProtocol: security.electronProtocol,
       trustedOrigins: security.trustedOrigins,
-      getSession: (headers) => authenticateHeaders(headers, jwtConfig),
-      loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, jwtConfig),
+      getSession: (headers) => authenticateHeaders(headers, verifyAccessToken),
+      loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, verifyAccessToken),
       invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
       limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
       productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
@@ -197,8 +203,13 @@ export const ApiLive = Api.make(
       Layer.provide(HttpServer.layerServices),
     );
 
+    const serveRequest = yield* buildOncePerIsolate(
+      HttpRouter.toHttpEffect(routes),
+      yield* workerRuntimeServices,
+    );
+
     return {
-      fetch: recoverUnexpected(Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(routes)))),
+      fetch: recoverUnexpected(serveRequest),
     };
   }).pipe(
     Effect.provide(Cloudflare.Workers.CronEventSourceLive),

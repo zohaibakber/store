@@ -101,11 +101,23 @@ describe("desktop inventory HTTP allowlist", () => {
     );
   });
 
-  it("rejects live sync without a nonce and unknown sync paths", () => {
+  it("allows a bearer long-poll without a ticket nonce", () => {
+    const live =
+      "https://api.tabaaq.app/api/sync/live?replicaId=replica-a&subscription=operational&afterHorizon=4&waitMs=55000";
+    expect(validatedInventoryUrl(apiBaseUrl, { method: "GET", url: live })).toBe(live);
+  });
+
+  it("rejects live sync without a replica, with a malformed nonce, and unknown sync paths", () => {
     expect(() =>
       validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
         url: "https://api.tabaaq.app/api/sync/live",
+      }),
+    ).toThrow("The inventory request is outside the configured inventory API.");
+    expect(() =>
+      validatedInventoryUrl(apiBaseUrl, {
+        method: "GET",
+        url: "https://api.tabaaq.app/api/sync/live?nonce=zz&replicaId=replica-a&subscription=operational",
       }),
     ).toThrow("The inventory request is outside the configured inventory API.");
     expect(() =>
@@ -181,13 +193,47 @@ describe("desktop inventory HTTP allowlist", () => {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: "{}",
+          signal: expect.any(AbortSignal),
         },
       },
     ]);
+    expect(requests[0]?.init.signal?.aborted).toBe(false);
     await expect(syncApiRequest("/api/inventory/products")).rejects.toThrow(
       "The inventory request is outside the configured inventory API.",
     );
     expect(requests).toHaveLength(1);
+  });
+
+  it("returns the server's Retry-After header to the worker", async () => {
+    const syncApiRequest = makeReplicaSyncApiRequest(
+      apiBaseUrl,
+      async () =>
+        new Response('{"error":{"code":"SNAPSHOT_UNAVAILABLE","message":"building"}}', {
+          status: 503,
+          headers: { "retry-after": "12" },
+        }),
+    );
+    await expect(
+      syncApiRequest("/api/sync/snapshots", { method: "POST", body: "{}", timeoutMillis: 30_000 }),
+    ).resolves.toEqual({
+      ok: false,
+      status: 503,
+      bodyText: '{"error":{"code":"SNAPSHOT_UNAVAILABLE","message":"building"}}',
+      retryAfter: "12",
+    });
+  });
+
+  it("aborts the upstream request when the worker's deadline passes", async () => {
+    const syncApiRequest = makeReplicaSyncApiRequest(
+      apiBaseUrl,
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    await expect(
+      syncApiRequest("/api/sync/pull", { method: "POST", body: "{}", timeoutMillis: 1 }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
   });
 
   it("allows the live ticket mint and its SSE upgrade", () => {

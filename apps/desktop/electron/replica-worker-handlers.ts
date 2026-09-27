@@ -1,8 +1,10 @@
 import type { ReplicaSyncHealth, SqliteResultRow } from "@store/client-db";
 import {
+  LIVE_LONG_POLL_TIMEOUT_MILLIS,
   makeProxySyncTransport,
   openNodeReplicaSyncSession,
   type NodeReplicaSyncSession,
+  type SyncProxyRequest,
 } from "@store/client-db/node-sqlite";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -31,6 +33,17 @@ const toIpcRows = (
     ),
   );
 
+const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
+
+export const liveShimResponse = (result: ProxyFetchResult): Response => {
+  const headers = new Headers({ "content-type": "application/json" });
+  if (result.retryAfter !== undefined) headers.set("retry-after", result.retryAfter);
+  return new Response(NULL_BODY_STATUSES.has(result.status) ? null : result.bodyText, {
+    status: result.status,
+    headers,
+  });
+};
+
 const workerFailure = (cause: unknown) =>
   new ReplicaWorkerFailure({
     message: cause instanceof Error ? cause.message : "Replica worker failed.",
@@ -55,15 +68,11 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
       };
       yield* Effect.addFinalizer(() => Effect.sync(closeSession));
 
-      const proxyFetch = (
-        method: "GET" | "POST",
-        pathname: string,
-        bodyText: string | null,
-      ): Effect.Effect<ProxyFetchResult> => {
+      const proxyFetch = (request: SyncProxyRequest): Effect.Effect<ProxyFetchResult> => {
         const requestId = crypto.randomUUID();
         return Deferred.make<ProxyFetchResult>().pipe(
           Effect.tap((reply) => Effect.sync(() => proxyReplies.set(requestId, reply))),
-          Effect.tap(() => Queue.offer(proxyRequests, { requestId, method, pathname, bodyText })),
+          Effect.tap(() => Queue.offer(proxyRequests, { requestId, ...request })),
           Effect.flatMap(Deferred.await),
           Effect.ensuring(Effect.sync(() => proxyReplies.delete(requestId))),
         );
@@ -92,8 +101,8 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
                 replicaId: boot.replicaId,
               },
               databaseIdentity: boot.databasePath,
-              transport: makeProxySyncTransport((method, pathname, bodyText) =>
-                Effect.runPromise(proxyFetch(method, pathname, bodyText)),
+              transport: makeProxySyncTransport((request) =>
+                Effect.runPromise(proxyFetch(request)),
               ),
               live: {
                 apiBaseUrl: boot.apiBaseUrl,
@@ -104,13 +113,15 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
                   const method = request.method === "GET" ? "GET" : "POST";
                   const bodyText = method === "POST" ? await request.text() : null;
                   const result = await Effect.runPromise(
-                    proxyFetch(method, url.pathname + url.search, bodyText),
+                    proxyFetch({
+                      method,
+                      pathname: url.pathname + url.search,
+                      bodyText,
+                      timeoutMillis: LIVE_LONG_POLL_TIMEOUT_MILLIS,
+                    }),
                     { signal: request.signal },
                   );
-                  return new Response(result.bodyText, {
-                    status: result.status,
-                    headers: { "content-type": "application/json" },
-                  });
+                  return liveShimResponse(result);
                 },
               },
             });
@@ -155,6 +166,13 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
         ReadCommandAllocation: () => withSession((current) => current.readCommandAllocation()),
         EnqueueLocal: ({ envelope, createdAt }) =>
           withSession((current) => current.enqueueLocal(envelope, createdAt)),
+        SetForeground: ({ visible }) =>
+          session === undefined
+            ? Effect.void
+            : withSession(async (current) => {
+                await current.setVisible(visible);
+                if (visible) await current.wake("focus");
+              }),
         WakeSyncUpload: () =>
           session === undefined
             ? Effect.succeed({ drained: false, drainCount: 0 })

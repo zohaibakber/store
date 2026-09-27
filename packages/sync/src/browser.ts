@@ -33,13 +33,20 @@ export type {
   IndexedDbReplicaStoreContract,
 } from "./replica/indexeddb/store";
 export { ReplicaStore } from "./replica/store";
-export type { ReplicaStoreContract, ReplicaStoreError, ReplicaSyncCursor } from "./replica/store";
+export type {
+  ReplicaStoreContract,
+  ReplicaStoreError,
+  ReplicaSyncCursor,
+  SnapshotImportProgress,
+} from "./replica/store";
 export { defaultHttpPollPolicy, makeSyncScheduler, SyncScheduler } from "./scheduler";
 export type {
+  SyncCatchUpOutcome,
   SyncSchedulerContract,
   SyncSchedulerHandlers,
   SyncSchedulerPolicy,
   SyncSchedulerStatus,
+  SyncWake,
   SyncWakeReason,
 } from "./scheduler";
 export { layerOwnedHttpSync, startOwnedHttpSync } from "./session";
@@ -48,14 +55,17 @@ export {
   classifySyncFailure,
   dispositionFor,
   failureFromStatus,
+  LIVE_LONG_POLL_TIMEOUT_MILLIS,
   makeSyncTransport,
   mapSyncFailure,
   retryAfterMillis,
+  SYNC_REQUEST_TIMEOUT_MILLIS,
   SyncTransportAuthRequired,
   SyncTransportInvalid,
   SyncTransportOffline,
   SyncTransportService,
   SyncTransportUnavailable,
+  withRequestDeadlines,
 } from "./transport";
 export type {
   SyncCycleFailure,

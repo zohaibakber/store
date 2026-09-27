@@ -1,22 +1,20 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
-  OrgCommitSequence,
-  SyncEpoch,
   syncProtocolError,
   type SyncProtocolCode,
   type SyncProtocolError,
-  type SyncPullRequest,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { withDetachedScope } from "./detached-scope";
-import { SyncEngine, type SyncEngineContract } from "./engine";
+import { cursorFromStore, SyncEngine, type SyncEngineContract } from "./engine";
 import { runLiveWakeLoop, type LiveWakeHost } from "./live-wake";
 import { recoverRequiredSnapshot, type SnapshotRecoveryError } from "./recovery";
-import { ReplicaStorageError, SyncRecoveryRequired } from "./replica/errors";
+import { SyncRecoveryRequired } from "./replica/errors";
 import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
 import {
   defaultHttpPollPolicy,
@@ -25,7 +23,12 @@ import {
   type SyncSchedulerPolicy,
   type SyncWakeReason,
 } from "./scheduler";
-import { SyncTransportService, type SyncTransport } from "./transport";
+import {
+  LIVE_LONG_POLL_TIMEOUT_MILLIS,
+  SyncTransportOffline,
+  SyncTransportService,
+  type SyncTransport,
+} from "./transport";
 import { makeWebNetworkOwnership, type WebNetworkOwnership } from "./web-ownership";
 
 export type OwnedHttpSync = {
@@ -41,29 +44,6 @@ export type OwnedHttpSyncOptions = {
   readonly live?: LiveWakeHost;
   readonly policy?: SyncSchedulerPolicy;
 };
-
-const decodeEpoch = Schema.decodeUnknownEffect(SyncEpoch);
-
-const cursorFromStore = (store: ReplicaStoreContract) =>
-  store.readSyncCursor().pipe(
-    Effect.flatMap((cursor) =>
-      decodeEpoch(cursor.epoch).pipe(
-        Effect.mapError((error) => ReplicaStorageError.make({ message: error.message })),
-        Effect.map((epoch) => ({ ...cursor, epoch })),
-      ),
-    ),
-  );
-
-const pullRequestFromStore = (
-  store: ReplicaStoreContract,
-): Effect.Effect<SyncPullRequest, ReplicaStoreError> =>
-  cursorFromStore(store).pipe(
-    Effect.map((cursor) => ({
-      epoch: cursor.epoch,
-      subscription: OPERATIONAL_SUBSCRIPTION,
-      afterCommitSequence: OrgCommitSequence.make(cursor.appliedCommitSequence),
-    })),
-  );
 
 export const recoverFrom = (
   store: ReplicaStoreContract,
@@ -94,6 +74,40 @@ export const recoverFrom = (
   }
 };
 
+type LiveEligibility = {
+  readonly visible: boolean;
+  readonly owner: boolean;
+};
+
+const withResponseDeadline =
+  (fetch: typeof globalThis.fetch, millis: number): typeof globalThis.fetch =>
+  (input, init) =>
+    Effect.runPromise(
+      Effect.tryPromise({
+        try: (signal) => fetch(input, { ...init, signal }),
+        catch: (cause) =>
+          SyncTransportOffline.make({
+            message: cause instanceof Error ? cause.message : "The live wake request failed.",
+          }),
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: millis,
+          orElse: () =>
+            Effect.fail(
+              SyncTransportOffline.make({
+                message: `The live wake request did not answer within ${millis} ms.`,
+              }),
+            ),
+        }),
+      ),
+      init?.signal ? { signal: init.signal } : undefined,
+    );
+
+const liveHostWithDeadline = (host: LiveWakeHost): LiveWakeHost =>
+  host.preferSse
+    ? host
+    : { ...host, fetch: withResponseDeadline(host.fetch, LIVE_LONG_POLL_TIMEOUT_MILLIS) };
+
 const ownHttpSync = (
   options: OwnedHttpSyncOptions,
 ): Effect.Effect<
@@ -109,19 +123,39 @@ const ownHttpSync = (
       makeWebNetworkOwnership(options.databaseIdentity),
       (owned) => owned.dispose,
     );
-    const scheduler = yield* SyncScheduler.make(
+    const inner = yield* SyncScheduler.make(
       {
         register: () => engine.ensureRegistered(),
-        drainUpload: () => engine.uploadOnce().pipe(Effect.asVoid),
-        catchUp: () =>
-          pullRequestFromStore(store).pipe(
-            Effect.flatMap((request) => engine.downloadOnce(request)),
-            Effect.asVoid,
-          ),
+        drainUpload: () => engine.drainUploads().pipe(Effect.asVoid),
+        catchUp: () => engine.catchUp(),
         recover: (code) => recoverFrom(store, transport, code),
+        hintApplied: (hint) => engine.hintApplied(hint).pipe(Effect.orElseSucceed(() => false)),
       },
       options.policy ?? defaultHttpPollPolicy,
     );
+    const eligibility = yield* SubscriptionRef.make<LiveEligibility>({
+      visible: true,
+      owner: false,
+    });
+    const scheduler: SyncSchedulerContract = {
+      ...inner,
+      setVisible: (visible) =>
+        inner
+          .setVisible(visible)
+          .pipe(
+            Effect.andThen(
+              SubscriptionRef.update(eligibility, (current) => ({ ...current, visible })),
+            ),
+          ),
+      setNetworkOwner: (owner) =>
+        inner
+          .setNetworkOwner(owner)
+          .pipe(
+            Effect.andThen(
+              SubscriptionRef.update(eligibility, (current) => ({ ...current, owner })),
+            ),
+          ),
+    };
     const acquired = yield* ownership.tryAcquire(() => scheduler.setNetworkOwner(true));
     yield* Effect.addFinalizer(() =>
       scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
@@ -129,8 +163,16 @@ const ownHttpSync = (
     yield* scheduler.wake("startup");
     if (options.live !== undefined) {
       const cursor = yield* store.readSyncCursor();
-      yield* Effect.forkScoped(
-        runLiveWakeLoop(transport, { ...options.live, replicaId: cursor.replicaId }, scheduler),
+      const host = liveHostWithDeadline({ ...options.live, replicaId: cursor.replicaId });
+      const liveLoop = runLiveWakeLoop(transport, host, inner).pipe(
+        Effect.ensuring(inner.setLiveConnected(false)),
+      );
+      yield* SubscriptionRef.changes(eligibility).pipe(
+        Stream.map((current) => current.visible && current.owner),
+        Stream.changes,
+        Stream.switchMap((eligible) => (eligible ? Stream.fromEffect(liveLoop) : Stream.empty)),
+        Stream.runDrain,
+        Effect.forkScoped,
       );
     }
     return { engine, scheduler, ownership };

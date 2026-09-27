@@ -29,7 +29,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
+import { makeInventoryCommands, pullGroupByteLength } from "../../src/inventory/commands";
 import { makeInventoryMaintenance } from "../../src/inventory/maintenance";
 import type { InventoryActor } from "../../src/inventory/model";
 import { runTransaction, type InventoryDrizzle } from "../../src/inventory/postgres";
@@ -175,23 +175,25 @@ const seedOrganization = (organizationId: string, head: number) =>
     });
     yield* seedCatalog(db, organizationId);
     for (let sequence = 1; sequence <= head; sequence += 1) {
+      const change = {
+        organizationId,
+        commitSequence: String(sequence),
+        ordinal: 0,
+        entity: "product",
+        action: "upsert" as const,
+        entityId: LAST_UNIT_PRODUCT_ID,
+        rowVersion: sequence,
+        rowJson: JSON.stringify({ id: LAST_UNIT_PRODUCT_ID, rowVersion: sequence }),
+      };
       yield* db.insert(inventoryTransactions).values({
         organizationId,
         commitSequence: String(sequence),
         operationId: `op-${sequence}`,
         decision: "accepted",
         epoch: LAST_UNIT_EPOCH,
+        byteLength: pullGroupByteLength(`op-${sequence}`, [change]),
       });
-      yield* db.insert(inventoryChanges).values({
-        organizationId,
-        commitSequence: String(sequence),
-        ordinal: 0,
-        entity: "product",
-        action: "upsert",
-        entityId: LAST_UNIT_PRODUCT_ID,
-        rowVersion: sequence,
-        rowJson: JSON.stringify({ id: LAST_UNIT_PRODUCT_ID, rowVersion: sequence }),
-      });
+      yield* db.insert(inventoryChanges).values(change);
       yield* db.insert(commandReceipts).values({
         organizationId,
         operationId: `op-${sequence}`,
@@ -517,6 +519,7 @@ describe("postgres inventory retention", () => {
           operationId: "op-4",
           decision: "accepted",
           epoch: LAST_UNIT_EPOCH,
+          byteLength: 1,
         });
         yield* db.insert(inventoryChanges).values([
           {

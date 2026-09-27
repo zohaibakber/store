@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
@@ -286,6 +287,25 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
     expiresAt: payload.exp * 1_000,
   });
 });
+
+export type AccessTokenVerifier = (
+  token: string,
+  now?: number,
+) => Effect.Effect<AccessClaimsType, JwtError>;
+
+/**
+ * Imports the verification key once and returns a verifier that reuses the
+ * `CryptoKey` for every token. When the import fails the verifier imports per
+ * call instead, so each call reports the same failure as uncached
+ * verification rather than failing construction.
+ */
+export const makeAccessTokenVerifier = (
+  configuration: JwtConfiguration,
+): Effect.Effect<AccessTokenVerifier> =>
+  Effect.map(Effect.exit(importVerificationKey(configuration.publicJwk)), (imported) => {
+    const key = Exit.isSuccess(imported) ? imported.value : undefined;
+    return (token, now) => verifyAccessToken(token, configuration, now, key);
+  });
 
 export interface AccessTokenServiceApi {
   readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;

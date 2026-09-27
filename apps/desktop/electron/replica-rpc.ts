@@ -56,17 +56,25 @@ const ReplicaSubsetRows = Schema.Struct({
   ),
 });
 
+export const MAX_PROXY_TIMEOUT_MILLIS = 120_000;
+
 export const ProxyFetchRequest = Schema.Struct({
   requestId: NonEmptyString,
   method: Schema.Literals(["GET", "POST"]),
   pathname: Schema.String,
   bodyText: Schema.NullOr(Schema.String),
+  timeoutMillis: Schema.Number.check(
+    Schema.isInt(),
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(MAX_PROXY_TIMEOUT_MILLIS),
+  ),
 });
 
 export const ProxyFetchResult = Schema.Struct({
   ok: Schema.Boolean,
   status: NonNegativeInteger,
   bodyText: Schema.String,
+  retryAfter: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
 });
 export type ProxyFetchResult = typeof ProxyFetchResult.Type;
 
@@ -97,6 +105,10 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("EnqueueLocal", {
     payload: { envelope: SyncCommandEnvelope, createdAt: NonNegativeInteger },
     success: Schema.Struct({ changed: Schema.Boolean, status: NonEmptyString }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("SetForeground", {
+    payload: { visible: Schema.Boolean },
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("WakeSyncUpload", {

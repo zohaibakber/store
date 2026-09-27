@@ -40,11 +40,12 @@ export const SyncLiveWakeHint = Schema.Struct({
 export type SyncLiveWakeHint = typeof SyncLiveWakeHint.Type;
 
 export const LIVE_SSE_POLL_MILLIS = 1_500;
-export const LIVE_LONG_POLL_DEFAULT_MILLIS = 20_000;
-export const LIVE_LONG_POLL_MAX_MILLIS = 25_000;
+export const LIVE_SSE_KEEPALIVE_MILLIS = 25_000;
+export const LIVE_LONG_POLL_DEFAULT_MILLIS = 55_000;
+export const LIVE_LONG_POLL_MAX_MILLIS = 85_000;
 
 export const LiveUpgradeQuery = Schema.Struct({
-  nonce: LiveTicketNonce,
+  nonce: Schema.optionalKey(LiveTicketNonce),
   replicaId: SyncIdentifier,
   subscription: SyncSubscription,
   afterHorizon: Schema.optionalKey(OrgCommitSequence),

@@ -56,6 +56,7 @@ describe("product scan authorization and validation", () => {
     }).request("/api/product-scans", scan());
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
     expect(await response.json()).toMatchObject({ error: { code: "PRODUCT_SCAN_RATE_LIMITED" } });
   });
 });

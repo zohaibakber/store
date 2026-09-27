@@ -3,6 +3,7 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   SnapshotId,
+  SnapshotPartPayload,
   SyncEpoch,
   SyncProtocolError,
 } from "@store/contracts";
@@ -21,17 +22,24 @@ import {
   inventoryState,
   products,
   replicas,
+  snapshotJobs,
 } from "@store/db/postgres/schema";
 import { eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import { TestClock } from "effect/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeInventoryLive } from "../../src/inventory/live-tickets";
+import { LIVE_HORIZON_SHARING, makeInventoryLive } from "../../src/inventory/live-tickets";
 import type { InventoryActor } from "../../src/inventory/model";
-import { makeInventorySnapshots } from "../../src/inventory/snapshots";
+import type { InventoryDrizzle } from "../../src/inventory/postgres";
+import {
+  makeInventorySnapshots,
+  stepSnapshotJobs,
+  type InventorySnapshotsContract,
+} from "../../src/inventory/snapshots";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 
 const isProtocol = Schema.is(SyncProtocolError);
@@ -140,6 +148,38 @@ const openAuthority = (organizationId: string) =>
     };
   });
 
+const operationalRequest = {
+  epoch: LAST_UNIT_EPOCH,
+  subscription: OPERATIONAL_SUBSCRIPTION,
+};
+
+const publishPendingSnapshot = (db: InventoryDrizzle, organizationId: string) =>
+  Effect.gen(function* () {
+    for (let step = 0; step < 64; step += 1) {
+      const progress = yield* stepSnapshotJobs(db)(organizationId);
+      if (progress.stage === "published") return;
+    }
+    return yield* Effect.fail(new Error("the snapshot job did not publish"));
+  });
+
+const acquireReady = (
+  snapshots: InventorySnapshotsContract,
+  db: InventoryDrizzle,
+  actor: InventoryActor,
+) =>
+  Effect.gen(function* () {
+    const building = yield* snapshots.acquireSnapshot(actor, operationalRequest);
+    if (building._tag !== "building") {
+      return yield* Effect.fail(new Error("expected the first acquire to enqueue a build"));
+    }
+    yield* publishPendingSnapshot(db, actor.organizationId);
+    const acquired = yield* snapshots.acquireSnapshot(actor, operationalRequest);
+    if (acquired._tag !== "ready") {
+      return yield* Effect.fail(new Error("expected ready snapshot"));
+    }
+    return { building, acquired };
+  });
+
 describe("postgres snapshot publication and live tickets", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
@@ -149,40 +189,98 @@ describe("postgres snapshot publication and live tickets", () => {
     await database.close();
   });
 
-  it("publishes a ready snapshot and returns its parts", async () => {
+  it("builds a snapshot off the request path, then serves its manifest and parts", async () => {
     const organizationId = decodeOrganizationId("org-snap-ready");
     const actor = actorFor(organizationId);
     const result = await run(
       Effect.gen(function* () {
-        const { snapshots } = yield* openAuthority(organizationId);
-        const acquired = yield* snapshots.acquireSnapshot(actor, {
-          epoch: LAST_UNIT_EPOCH,
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        });
-        if (acquired._tag !== "ready") {
-          return yield* Effect.fail(new Error("expected ready snapshot"));
-        }
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        const { building, acquired } = yield* acquireReady(snapshots, db, actor);
+        const partNumber = acquired.manifest.parts[0]?.partNumber ?? 1;
         const part = yield* snapshots.readSnapshotPart(
           actor,
           acquired.manifest.snapshotId,
-          acquired.manifest.parts[0]?.partNumber ?? 1,
+          partNumber,
         );
-        const again = yield* snapshots.acquireSnapshot(actor, {
-          epoch: LAST_UNIT_EPOCH,
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        });
-        return { acquired, part, again };
+        const encoded = yield* snapshots.readSnapshotPartEncoded(
+          actor,
+          acquired.manifest.snapshotId,
+          partNumber,
+        );
+        const again = yield* snapshots.acquireSnapshot(actor, operationalRequest);
+        return { building, acquired, part, encoded, again };
       }),
     );
-    expect(result.acquired._tag).toBe("ready");
-    if (result.acquired._tag !== "ready") return;
+    expect(result.building.retryAfterMillis).toBeGreaterThan(0);
+    expect(result.acquired.manifest.snapshotId).toBe(result.building.snapshotId);
     expect(result.acquired.manifest.horizon).toBe(OrgCommitSequence.make("2"));
     expect(result.acquired.manifest.parts.length).toBeGreaterThan(0);
+    expect(result.acquired.manifest.entityCounts).toEqual([
+      { entity: "category", rowCount: 1 },
+      { entity: "product", rowCount: 1 },
+      { entity: "batch", rowCount: 1 },
+    ]);
     expect(result.part.rows.some((row) => row.entity === "batch")).toBe(true);
+    expect(result.encoded.sha256).toBe(result.acquired.manifest.parts[0]?.sha256);
+    expect(result.encoded.json).toBe(
+      Schema.encodeSync(Schema.fromJsonString(SnapshotPartPayload))(result.part),
+    );
     expect(result.again._tag).toBe("ready");
     if (result.again._tag === "ready") {
       expect(result.again.manifest.snapshotId).toBe(result.acquired.manifest.snapshotId);
     }
+  });
+
+  it("reports the entity counts frozen into the snapshot, not the live tables", async () => {
+    const organizationId = decodeOrganizationId("org-snap-counts");
+    const actor = actorFor(organizationId);
+    const result = await run(
+      Effect.gen(function* () {
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        const { acquired } = yield* acquireReady(snapshots, db, actor);
+        yield* db.insert(categories).values({
+          id: "late-category",
+          name: "Late",
+          tracksPacks: true,
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000,
+          organizationId,
+          createdByUserId: "user-1",
+          updatedByUserId: "user-1",
+          deviceId: LAST_UNIT_REPLICA_A,
+          operationId: "late-category",
+          rowVersion: 1,
+        });
+        const again = yield* snapshots.acquireSnapshot(actor, operationalRequest);
+        return { acquired, again };
+      }),
+    );
+    if (result.again._tag !== "ready") throw new Error("expected ready snapshot");
+    expect(result.again.manifest.entityCounts).toEqual(result.acquired.manifest.entityCounts);
+  });
+
+  it("recounts a published snapshot whose counts were never stored", async () => {
+    const organizationId = decodeOrganizationId("org-snap-recount");
+    const actor = actorFor(organizationId);
+    const result = await run(
+      Effect.gen(function* () {
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        const { acquired } = yield* acquireReady(snapshots, db, actor);
+        yield* db
+          .update(snapshotJobs)
+          .set({ entityCountsJson: null })
+          .where(eq(snapshotJobs.organizationId, organizationId));
+        const recounted = yield* snapshots.acquireSnapshot(actor, operationalRequest);
+        const [stored] = yield* db
+          .select({ entityCountsJson: snapshotJobs.entityCountsJson })
+          .from(snapshotJobs)
+          .where(eq(snapshotJobs.organizationId, organizationId));
+        return { acquired, recounted, stored };
+      }),
+    );
+    if (result.recounted._tag !== "ready") throw new Error("expected ready snapshot");
+    expect(result.recounted.manifest.entityCounts).toEqual(result.acquired.manifest.entityCounts);
+    expect(result.stored?.entityCountsJson).not.toBeNull();
   });
 
   it("rejects missing snapshot parts and wrong epoch", async () => {
@@ -190,14 +288,8 @@ describe("postgres snapshot publication and live tickets", () => {
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
-        const { snapshots } = yield* openAuthority(organizationId);
-        const acquired = yield* snapshots.acquireSnapshot(actor, {
-          epoch: LAST_UNIT_EPOCH,
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        });
-        if (acquired._tag !== "ready") {
-          return yield* Effect.fail(new Error("expected ready snapshot"));
-        }
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        const { acquired } = yield* acquireReady(snapshots, db, actor);
         const missingPart = yield* snapshots
           .readSnapshotPart(actor, acquired.manifest.snapshotId, 99)
           .pipe(Effect.flip);
@@ -291,10 +383,8 @@ describe("postgres snapshot publication and live tickets", () => {
     const outcome = await run(
       Effect.gen(function* () {
         const { snapshots, db } = yield* openAuthority(organizationId);
-        const withoutReplica = yield* snapshots.acquireSnapshot(actor, {
-          epoch: LAST_UNIT_EPOCH,
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        });
+        yield* acquireReady(snapshots, db, actor);
+        const withoutReplica = yield* snapshots.acquireSnapshot(actor, operationalRequest);
         const leasesBefore = yield* db
           .select()
           .from(downloadLeases)
@@ -336,5 +426,27 @@ describe("postgres snapshot publication and live tickets", () => {
     });
     expect(isProtocol(outcome.foreign) && outcome.foreign.code).toBe("REPLICA_OWNED_BY_OTHER");
     expect(isProtocol(outcome.unknown) && outcome.unknown.code).toBe("REPLICA_UNKNOWN");
+  });
+
+  it("shares one organization's horizon across live readers for a bounded window", async () => {
+    const organizationId = decodeOrganizationId("org-live-shared-horizon");
+    const actor = actorFor(organizationId);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { live, db } = yield* openAuthority(organizationId);
+        const first = yield* live.readLiveHorizon(actor);
+        yield* db
+          .update(inventoryState)
+          .set({ commitSequence: "3" })
+          .where(eq(inventoryState.organizationId, organizationId));
+        const shared = yield* live.readLiveHorizon(actor);
+        yield* TestClock.adjust(LIVE_HORIZON_SHARING.maxAgeMillis);
+        const refreshed = yield* live.readLiveHorizon(actor);
+        return { first, shared, refreshed };
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+    expect(outcome.first.horizon).toBe("2");
+    expect(outcome.shared.horizon).toBe("2");
+    expect(outcome.refreshed.horizon).toBe("3");
   });
 });

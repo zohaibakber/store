@@ -13,13 +13,13 @@ import {
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncLogChange,
+  SyncPullResult,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
   type SyncCommand,
   type SyncCommandEnvelope,
   type SyncProtocolCode,
   type SyncPullRequest,
-  type SyncPullResult,
 } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
@@ -29,8 +29,7 @@ import {
   inventoryTransactions,
   replicas,
 } from "@store/db/postgres/schema";
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
-import * as Arr from "effect/Array";
+import { and, eq, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -41,7 +40,7 @@ import { applyCatalogWrite } from "./catalog-write";
 import { partitionDigestFromPostgres } from "./digest";
 import type { InventoryError } from "./errors";
 import { issueInvoice } from "./issue-invoice";
-import type { InventoryActor } from "./model";
+import type { EncodedJsonBody, InventoryActor } from "./model";
 import {
   databaseError,
   integerTextFromNumeric,
@@ -50,10 +49,12 @@ import {
   lockOrganization,
   protocol,
   randomHex,
-  readReadyState,
   readReplica,
+  requireReady,
+  runStatement,
   runTransaction,
   type InventoryDrizzle,
+  type InventoryExecutor,
   type InventoryTransaction,
 } from "./postgres";
 
@@ -89,6 +90,42 @@ const utf8 = new TextEncoder();
 const encodedByteLength = (value: string): number => utf8.encode(value).length;
 const EMPTY_SYNC_LOG_CHANGES: ReadonlyArray<SyncLogChange> = [];
 
+type StoredChangeFrame = {
+  readonly entity: string;
+  readonly entityId: string;
+  readonly rowJson: string;
+};
+
+/**
+ * Pull-frame size of one transaction group, persisted as
+ * `inventory_transactions.byte_length` when the group commits. Pull pages are
+ * selected by the running sum of this value, so the formula must stay equal to
+ * the backfill in the migration that introduced the column.
+ */
+export const pullGroupByteLength = (
+  operationId: string,
+  changes: ReadonlyArray<StoredChangeFrame>,
+): number =>
+  changes.reduce(
+    (total, change) =>
+      total +
+      CHANGE_FRAME_OVERHEAD_BYTES +
+      encodedByteLength(change.rowJson) +
+      encodedByteLength(change.entityId) +
+      encodedByteLength(change.entity),
+    GROUP_FRAME_OVERHEAD_BYTES + encodedByteLength(operationId),
+  );
+
+const CHANGE_INSERT_BATCH_ROWS = 1_000;
+
+const chunked = <A>(values: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
+  const chunks: Array<ReadonlyArray<A>> = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+};
+
 const rejectedDecision = (code: SyncProtocolCode, message: string) => {
   const result: RejectedCommandResult = { _tag: "rejected", code, message };
   return { decision: "rejected" as const, result, changes: EMPTY_SYNC_LOG_CHANGES };
@@ -116,22 +153,32 @@ const decodeReceipt = (row: typeof commandReceipts.$inferSelect) =>
     }).pipe(Effect.mapError(databaseError));
   });
 
-const readReceiptRow = Effect.fn("InventoryCommands.readReceiptRow")(function* (
+const readReceiptAndReplica = Effect.fn("InventoryCommands.readReceiptAndReplica")(function* (
   tx: InventoryTransaction,
   organizationId: string,
   operationId: string,
+  replicaId: string,
 ) {
   const [row] = yield* tx
-    .select()
-    .from(commandReceipts)
-    .where(
+    .select({ receipt: commandReceipts, replica: replicas })
+    .from(inventoryState)
+    .leftJoin(
+      commandReceipts,
       and(
-        eq(commandReceipts.organizationId, organizationId),
+        eq(commandReceipts.organizationId, inventoryState.organizationId),
         eq(commandReceipts.operationId, operationId),
       ),
     )
+    .leftJoin(
+      replicas,
+      and(
+        eq(replicas.organizationId, inventoryState.organizationId),
+        eq(replicas.replicaId, replicaId),
+      ),
+    )
+    .where(eq(inventoryState.organizationId, organizationId))
     .limit(1);
-  return row;
+  return { receipt: row?.receipt ?? undefined, replica: row?.replica ?? undefined };
 });
 
 const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
@@ -148,6 +195,16 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
   },
 ) {
   const commitSequence = incrementDecimalSequence(input.stateCommitSequence);
+  const changeRows = input.changes.map((change, ordinal) => ({
+    organizationId: input.actor.organizationId,
+    commitSequence,
+    ordinal,
+    entity: change.entity,
+    action: change.action,
+    entityId: change.entityId,
+    rowVersion: change.rowVersion,
+    rowJson: encodeChangeRowJson(change.row),
+  }));
   yield* tx
     .update(inventoryState)
     .set({ commitSequence })
@@ -158,18 +215,10 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
     operationId: input.envelope.operationId,
     decision: input.decision,
     epoch: input.epoch,
+    byteLength: pullGroupByteLength(input.envelope.operationId, changeRows),
   });
-  for (const [ordinal, change] of input.changes.entries()) {
-    yield* tx.insert(inventoryChanges).values({
-      organizationId: input.actor.organizationId,
-      commitSequence,
-      ordinal,
-      entity: change.entity,
-      action: change.action,
-      entityId: change.entityId,
-      rowVersion: change.rowVersion,
-      rowJson: encodeChangeRowJson(change.row),
-    });
+  for (const rows of chunked(changeRows, CHANGE_INSERT_BATCH_ROWS)) {
+    yield* tx.insert(inventoryChanges).values([...rows]);
   }
   yield* tx.insert(commandReceipts).values({
     organizationId: input.actor.organizationId,
@@ -228,7 +277,12 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
   }
 
-  const existing = yield* readReceiptRow(tx, actor.organizationId, envelope.operationId);
+  const { receipt: existing, replica } = yield* readReceiptAndReplica(
+    tx,
+    actor.organizationId,
+    envelope.operationId,
+    envelope.replicaId,
+  );
   if (existing) {
     if (existing.payloadHash !== envelope.payloadHash) {
       return yield* protocol("OPERATION_ID_REUSED", "The command id was reused.");
@@ -236,7 +290,6 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     return yield* decodeReceipt(existing);
   }
 
-  const replica = yield* readReplica(tx, actor.organizationId, envelope.replicaId);
   if (!replica) {
     return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
   }
@@ -282,17 +335,125 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
   });
 });
 
-const pullInTransaction = Effect.fn("InventoryCommands.pullInTransaction")(function* (
-  tx: InventoryTransaction,
+const PulledRow = Schema.Struct({
+  status: Schema.String,
+  release_id: Schema.NullOr(Schema.String),
+  epoch: Schema.String,
+  incarnation: Schema.String,
+  horizon: Schema.String,
+  retention_floor: Schema.String,
+  group_sequence: Schema.NullOr(Schema.String),
+  operation_id: Schema.NullOr(Schema.String),
+  decision: Schema.NullOr(Schema.Literals(["accepted", "rejected"])),
+  entity: Schema.NullOr(Schema.String),
+  action: Schema.NullOr(Schema.String),
+  entity_id: Schema.NullOr(Schema.String),
+  row_version: Schema.NullOr(Schema.Number),
+  row_json: Schema.NullOr(Schema.String),
+});
+
+const decodePulledRows = Schema.decodeUnknownEffect(Schema.Array(PulledRow));
+
+const pullPageStatement = (organizationId: string, request: SyncPullRequest, limit: number) => sql`
+  with "state" as (
+    select "status", "release_id", "epoch", "incarnation",
+      "commit_sequence" as "horizon_value", "retention_floor" as "floor_value"
+    from "inventory_state"
+    where "organization_id" = ${organizationId}
+  ),
+  "candidates" as (
+    select "t"."commit_sequence", "t"."operation_id", "t"."decision", "t"."byte_length"
+    from "inventory_transactions" as "t"
+    where "t"."organization_id" = ${organizationId}
+      and "t"."epoch" = ${request.epoch}
+      and "t"."commit_sequence" > ${request.afterCommitSequence}::numeric
+      and exists (
+        select 1 from "state" as "s"
+        where "s"."status" = 'ready'
+          and "s"."release_id" is not null
+          and "s"."epoch" = ${request.epoch}
+          and ${request.afterCommitSequence}::numeric between "s"."floor_value" and "s"."horizon_value"
+      )
+    order by "t"."commit_sequence"
+    limit ${limit}
+  ),
+  "selected" as (
+    select "commit_sequence", "operation_id", "decision"
+    from (
+      select "commit_sequence", "operation_id", "decision",
+        sum("byte_length") over (order by "commit_sequence") as "used",
+        row_number() over (order by "commit_sequence") as "position"
+      from "candidates"
+    ) as "sized"
+    where "position" = 1 or "used" <= ${PULL_PAYLOAD_BUDGET_BYTES}
+  )
+  select "s"."status", "s"."release_id", "s"."epoch", "s"."incarnation",
+    "s"."horizon_value"::text as "horizon", "s"."floor_value"::text as "retention_floor",
+    "g"."commit_sequence"::text as "group_sequence", "g"."operation_id", "g"."decision",
+    "c"."entity", "c"."action", "c"."entity_id", "c"."row_version", "c"."row_json"
+  from "state" as "s"
+  left join "selected" as "g" on true
+  left join "inventory_changes" as "c"
+    on "c"."organization_id" = ${organizationId}
+    and "c"."commit_sequence" = "g"."commit_sequence"
+    and "c"."commit_sequence" > ${request.afterCommitSequence}::numeric
+  order by "g"."commit_sequence", "c"."ordinal"
+`;
+
+type PulledGroup = {
+  readonly commitSequence: OrgCommitSequence;
+  readonly operationId: string;
+  readonly decision: "accepted" | "rejected";
+  readonly changes: Array<string>;
+};
+
+type PulledPage = {
+  readonly envelope: Omit<SyncPullResult, "transactions" | "digest">;
+  readonly groups: ReadonlyArray<PulledGroup>;
+};
+
+const jsonString = (value: string | number) => JSON.stringify(value);
+
+const encodeChangeFrame = (row: {
+  readonly entity: string;
+  readonly action: string;
+  readonly entity_id: string;
+  readonly row_version: number;
+  readonly row_json: string;
+}) =>
+  `{"entity":${jsonString(row.entity)},"action":${jsonString(row.action)},"entityId":${jsonString(row.entity_id)},"rowVersion":${jsonString(row.row_version)},"row":${row.row_json}}`;
+
+const encodePulledPage = (page: PulledPage, digest: string | undefined): string => {
+  const envelope = page.envelope;
+  const transactions = page.groups
+    .map(
+      (group) =>
+        `{"commitSequence":${jsonString(group.commitSequence)},"operationId":${jsonString(group.operationId)},"decision":${jsonString(group.decision)},"changes":[${group.changes.join(",")}]}`,
+    )
+    .join(",");
+  const digestField = digest === undefined ? "" : `,"digest":${jsonString(digest)}`;
+  return `{"epoch":${jsonString(envelope.epoch)},"incarnation":${jsonString(envelope.incarnation)},"subscription":${jsonString(envelope.subscription)},"schemaVersion":${jsonString(envelope.schemaVersion)},"transactions":[${transactions}],"nextCommitSequence":${jsonString(envelope.nextCommitSequence)},"horizon":${jsonString(envelope.horizon)},"retentionFloor":${jsonString(envelope.retentionFloor)}${digestField}}`;
+};
+
+const readPullPage = Effect.fn("InventoryCommands.readPullPage")(function* (
+  executor: InventoryExecutor,
   actor: InventoryActor,
   request: SyncPullRequest,
 ) {
-  const state = yield* readReadyState(tx, actor.organizationId);
+  const limit = request.limit ?? MAX_SYNC_PULL_TRANSACTIONS;
+  const raw = yield* runStatement(
+    executor.execute(pullPageStatement(actor.organizationId, request, limit), "objects"),
+  );
+  const rows = yield* decodePulledRows(raw).pipe(Effect.mapError(databaseError));
+  const first = rows[0];
+  const state = yield* requireReady(
+    first === undefined ? undefined : { ...first, releaseId: first.release_id },
+  );
   if (state.epoch !== request.epoch) {
     return yield* protocol("EPOCH_MISMATCH", "The replica epoch does not match.");
   }
-  const horizon = integerTextFromNumeric(state.commitSequence);
-  const retentionFloor = integerTextFromNumeric(state.retentionFloor);
+  const horizon = integerTextFromNumeric(state.horizon);
+  const retentionFloor = integerTextFromNumeric(state.retention_floor);
   if (compareDecimalSequence(request.afterCommitSequence, horizon) > 0) {
     return yield* protocol(
       "SNAPSHOT_REQUIRED",
@@ -305,97 +466,98 @@ const pullInTransaction = Effect.fn("InventoryCommands.pullInTransaction")(funct
       "This replica is behind the retained history and needs a snapshot.",
     );
   }
-  const limit = request.limit ?? MAX_SYNC_PULL_TRANSACTIONS;
-  const headers = yield* tx
-    .select()
-    .from(inventoryTransactions)
-    .where(
-      and(
-        eq(inventoryTransactions.organizationId, actor.organizationId),
-        eq(inventoryTransactions.epoch, request.epoch),
-        gt(inventoryTransactions.commitSequence, request.afterCommitSequence),
-      ),
-    )
-    .orderBy(asc(inventoryTransactions.commitSequence))
-    .limit(limit);
-  const transactions = [];
-  let usedBytes = 0;
-  const changeRows =
-    headers.length === 0
-      ? []
-      : yield* tx
-          .select()
-          .from(inventoryChanges)
-          .where(
-            and(
-              eq(inventoryChanges.organizationId, actor.organizationId),
-              inArray(
-                inventoryChanges.commitSequence,
-                headers.map((header) => header.commitSequence),
-              ),
-            ),
-          )
-          .orderBy(asc(inventoryChanges.commitSequence), asc(inventoryChanges.ordinal));
-  const rowsByCommit = Arr.groupBy(changeRows, (row) => row.commitSequence);
-  for (const header of headers) {
-    const rows = rowsByCommit[header.commitSequence] ?? [];
-    const groupBytes = rows.reduce(
-      (total, row) =>
-        total +
-        CHANGE_FRAME_OVERHEAD_BYTES +
-        encodedByteLength(row.rowJson) +
-        encodedByteLength(row.entityId) +
-        encodedByteLength(row.entity),
-      GROUP_FRAME_OVERHEAD_BYTES + encodedByteLength(header.operationId),
-    );
-    if (transactions.length > 0 && usedBytes + groupBytes > PULL_PAYLOAD_BUDGET_BYTES) break;
-    usedBytes += groupBytes;
-    const changes: SyncLogChange[] = [];
-    for (const row of rows) {
-      const parsed = yield* decodeStoredJson(Schema.Unknown, row.rowJson);
-      changes.push(
-        yield* Schema.decodeUnknownEffect(SyncLogChange)({
-          entity: row.entity,
-          action: row.action,
-          entityId: row.entityId,
-          rowVersion: row.rowVersion,
-          row: parsed,
-        }).pipe(Effect.mapError(databaseError)),
-      );
+  const groups: Array<PulledGroup> = [];
+  for (const row of rows) {
+    if (row.group_sequence === null || row.operation_id === null || row.decision === null) {
+      continue;
     }
-    transactions.push({
-      commitSequence: OrgCommitSequence.make(integerTextFromNumeric(header.commitSequence)),
-      operationId: header.operationId,
-      decision: header.decision,
-      changes,
-    });
+    const commitSequence = OrgCommitSequence.make(integerTextFromNumeric(row.group_sequence));
+    let group = groups.at(-1);
+    if (group === undefined || group.commitSequence !== commitSequence) {
+      group = {
+        commitSequence,
+        operationId: row.operation_id,
+        decision: row.decision,
+        changes: [],
+      };
+      groups.push(group);
+    }
+    if (
+      row.entity === null ||
+      row.action === null ||
+      row.entity_id === null ||
+      row.row_version === null ||
+      row.row_json === null
+    ) {
+      continue;
+    }
+    group.changes.push(
+      encodeChangeFrame({
+        entity: row.entity,
+        action: row.action,
+        entity_id: row.entity_id,
+        row_version: row.row_version,
+        row_json: row.row_json,
+      }),
+    );
   }
-  const last = transactions.at(-1);
-  const nextCommitSequence = last?.commitSequence ?? request.afterCommitSequence;
-  const page = {
-    epoch: SyncEpoch.make(state.epoch),
-    incarnation: AuthorityIncarnation.make(state.incarnation),
-    subscription: request.subscription,
-    schemaVersion: SYNC_SCHEMA_VERSION,
-    transactions,
-    nextCommitSequence,
-    horizon: OrgCommitSequence.make(horizon),
-    retentionFloor: OrgCommitSequence.make(retentionFloor),
-  } satisfies SyncPullResult;
-  if (request.includeDigest !== true) return page;
-  if (compareDecimalSequence(nextCommitSequence, horizon) < 0) return page;
-  const digest = yield* partitionDigestFromPostgres(tx, actor.organizationId, request.subscription);
-  return { ...page, digest } satisfies SyncPullResult;
+  return {
+    envelope: {
+      epoch: SyncEpoch.make(state.epoch),
+      incarnation: AuthorityIncarnation.make(state.incarnation),
+      subscription: request.subscription,
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      nextCommitSequence: groups.at(-1)?.commitSequence ?? request.afterCommitSequence,
+      horizon: OrgCommitSequence.make(horizon),
+      retentionFloor: OrgCommitSequence.make(retentionFloor),
+    },
+    groups,
+  } satisfies PulledPage;
 });
 
+const pullReachesHorizon = (page: PulledPage) =>
+  compareDecimalSequence(page.envelope.nextCommitSequence, page.envelope.horizon) >= 0;
+
+const pullWithDigestInTransaction = Effect.fn("InventoryCommands.pullWithDigestInTransaction")(
+  function* (tx: InventoryTransaction, actor: InventoryActor, request: SyncPullRequest) {
+    const page = yield* readPullPage(tx, actor, request);
+    if (!pullReachesHorizon(page)) return encodePulledPage(page, undefined);
+    const digest = yield* partitionDigestFromPostgres(
+      tx,
+      actor.organizationId,
+      request.subscription,
+    );
+    return encodePulledPage(page, digest);
+  },
+);
+
+const decodePullResult = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncPullResult));
+
 const readReceipt = Effect.fn("InventoryCommands.readReceipt")(function* (
-  tx: InventoryTransaction,
+  db: InventoryDrizzle,
   actor: InventoryActor,
   operationId: string,
 ) {
-  yield* readReadyState(tx, actor.organizationId);
-  const row = yield* readReceiptRow(tx, actor.organizationId, operationId);
-  return row ? yield* decodeReceipt(row) : undefined;
+  const [row] = yield* runStatement(
+    db
+      .select({
+        status: inventoryState.status,
+        releaseId: inventoryState.releaseId,
+        receipt: commandReceipts,
+      })
+      .from(inventoryState)
+      .leftJoin(
+        commandReceipts,
+        and(
+          eq(commandReceipts.organizationId, inventoryState.organizationId),
+          eq(commandReceipts.operationId, operationId),
+        ),
+      )
+      .where(eq(inventoryState.organizationId, actor.organizationId))
+      .limit(1),
+  );
+  yield* requireReady(row);
+  return row?.receipt ? yield* decodeReceipt(row.receipt) : undefined;
 });
 
 const PROVISIONED_DATASET = "provisioned";
@@ -490,6 +652,10 @@ export interface InventoryCommandsContract {
     actor: InventoryActor,
     request: SyncPullRequest,
   ) => Effect.Effect<SyncPullResult, InventoryError>;
+  readonly pullEncoded: (
+    actor: InventoryActor,
+    request: SyncPullRequest,
+  ) => Effect.Effect<EncodedJsonBody, InventoryError>;
 }
 
 /**
@@ -506,6 +672,18 @@ export class InventoryCommands extends Context.Service<
 
 export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsContract => {
   const transact = runTransaction(db);
+  const pullEncoded = Effect.fn("InventoryCommands.pullEncoded")(function* (
+    actor: InventoryActor,
+    request: SyncPullRequest,
+  ) {
+    const json =
+      request.includeDigest === true
+        ? yield* transact("repeatable read", "read only", (tx) =>
+            pullWithDigestInTransaction(tx, actor, request),
+          )
+        : encodePulledPage(yield* readPullPage(db, actor, request), undefined);
+    return { json } satisfies EncodedJsonBody;
+  });
   return InventoryCommands.of({
     register: Effect.fn("InventoryCommands.register")(function* (actor, request) {
       const receivedAt = yield* Clock.currentTimeMillis;
@@ -529,15 +707,13 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       );
     }),
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
-      return yield* transact("repeatable read", "read only", (tx) =>
-        readReceipt(tx, actor, operationId),
-      );
+      return yield* readReceipt(db, actor, operationId);
     }),
     pull: Effect.fn("InventoryCommands.pull")(function* (actor, request) {
-      return yield* transact("repeatable read", "read only", (tx) =>
-        pullInTransaction(tx, actor, request),
-      );
+      const encoded = yield* pullEncoded(actor, request);
+      return yield* decodePullResult(encoded.json).pipe(Effect.mapError(databaseError));
     }),
+    pullEncoded,
   });
 };
 
@@ -548,5 +724,6 @@ export const InventoryCommandsUnavailable = Layer.succeed(
     commit: () => Effect.fail(inventoryPostgresUnavailable),
     receipt: () => Effect.fail(inventoryPostgresUnavailable),
     pull: () => Effect.fail(inventoryPostgresUnavailable),
+    pullEncoded: () => Effect.fail(inventoryPostgresUnavailable),
   }),
 );

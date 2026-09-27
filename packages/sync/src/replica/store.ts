@@ -107,10 +107,14 @@ interface ReplicaRemoteApplyStore {
   readonly verifyAuthority: (input: VerifyAuthorityInput) => Effect.Effect<void, ReplicaStoreError>;
 }
 
+export type SnapshotImportProgress = {
+  readonly partsImported: number;
+};
+
 export interface ReplicaSnapshotImportStore {
   readonly beginSnapshotImport: (
     manifest: SnapshotManifest,
-  ) => Effect.Effect<void, ReplicaStoreError>;
+  ) => Effect.Effect<SnapshotImportProgress, ReplicaStoreError>;
 
   readonly importSnapshotPart: (
     manifest: SnapshotManifest,

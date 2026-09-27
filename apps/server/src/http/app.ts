@@ -1,7 +1,11 @@
 import { isTrustedOrigin } from "@store/auth";
+import { RuntimeContext } from "alchemy";
 import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -64,3 +68,46 @@ export const recoverUnexpected = <E, R>(
       );
     }),
   );
+
+/**
+ * Builds a router once for the isolate's lifetime.
+ *
+ * `HttpApiBuilder.group` captures the context it is built in and provides it
+ * to every request it later serves, so the build runs on an empty context:
+ * handlers capture only the route layers' own services and each request keeps
+ * its per-invocation services (request scope, execution context, telemetry).
+ * Request-scoped resources such as the Hyperdrive pool memo therefore stay
+ * keyed on the request scope. `isolateServices` supplies the few
+ * isolate-stable services the build names (the Worker's `RuntimeContext`);
+ * the `Scope` is a private isolate scope that is never closed because nothing
+ * in the route layers acquires a resource.
+ */
+export const buildOncePerIsolate = <A, E, R>(
+  build: Effect.Effect<A, E, R | Scope.Scope>,
+  isolateServices: Context.Context<R>,
+) =>
+  Effect.gen(function* () {
+    const isolateScope = yield* Scope.make();
+    return yield* build.pipe(
+      Scope.provide(isolateScope),
+      Effect.updateContext<never, R>(() => isolateServices),
+    );
+  });
+
+/**
+ * The Worker's isolate-level `RuntimeContext`, read during init.
+ *
+ * Alchemy runs a Worker's init with its `RuntimeContext` present but keeps it
+ * out of the init type (its own cron registration reads it the same way), so
+ * requiring it by tag would leak it into the stack's requirements. The router
+ * build needs it only to satisfy handler groups that name it; every request
+ * still receives the bridge's own copy.
+ */
+export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
+  Effect.flatMap(
+    Option.match({
+      onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
+      onSome: (runtime) => Effect.succeed(Context.make(RuntimeContext, runtime)),
+    }),
+  ),
+);

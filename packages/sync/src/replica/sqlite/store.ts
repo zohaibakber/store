@@ -234,7 +234,12 @@ export const makeSqliteReplicaStore = (
       applyTransactionGroup: applyGroup,
       beginSnapshotImport: (manifest: SnapshotManifest) =>
         withTx("SqliteReplicaStore.beginSnapshotImport", (tx) =>
-          Effect.asVoid(beginSnapshotImport(tx, manifest)),
+          beginSnapshotImport(tx, manifest).pipe(
+            Effect.map((stage) => ({
+              partsImported:
+                stage._tag === "importing" ? stage.partsImported : manifest.parts.length,
+            })),
+          ),
         ),
       importSnapshotPart: (manifest: SnapshotManifest, part: SnapshotPartPayload) =>
         withTx("SqliteReplicaStore.importSnapshotPart", (tx) =>

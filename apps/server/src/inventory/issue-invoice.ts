@@ -12,7 +12,7 @@ import {
   products,
   stockMovements,
 } from "@store/db/postgres/schema";
-import { and, eq, max } from "drizzle-orm";
+import { and, eq, inArray, max, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { InventoryActor } from "./model";
@@ -55,32 +55,34 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
     readonly nextUnitQuantity: number;
     readonly packsOpened: number;
   };
-  const plans: TakePlan[] = [];
-  const working = new Map<string, BatchRow>();
-  for (const take of command.allocations) {
-    const [product] = yield* tx
+  const productIds = [...new Set(command.allocations.map((take) => take.productId))];
+  const batchIds = [...new Set(command.allocations.map((take) => take.batchId))];
+  const storedProducts = new Map(
+    (yield* tx
       .select()
       .from(products)
       .where(
-        and(eq(products.organizationId, actor.organizationId), eq(products.id, take.productId)),
-      )
-      .limit(1);
+        and(eq(products.organizationId, actor.organizationId), inArray(products.id, productIds)),
+      )).map((row) => [row.id, row]),
+  );
+  const storedBatches = new Map(
+    (yield* tx
+      .select()
+      .from(batches)
+      .where(
+        and(eq(batches.organizationId, actor.organizationId), inArray(batches.id, batchIds)),
+      )).map((row) => [row.id, row]),
+  );
+  const plans: TakePlan[] = [];
+  const working = new Map<string, BatchRow>();
+  for (const take of command.allocations) {
+    const product = storedProducts.get(take.productId);
     if (!product || product.deletedAt !== null) {
       return yield* protocol("INSUFFICIENT_STOCK", "One of the products no longer exists.");
     }
+    const stored = storedBatches.get(take.batchId);
     const current =
-      working.get(take.batchId) ??
-      (yield* tx
-        .select()
-        .from(batches)
-        .where(
-          and(
-            eq(batches.organizationId, actor.organizationId),
-            eq(batches.id, take.batchId),
-            eq(batches.productId, product.id),
-          ),
-        )
-        .limit(1))[0];
+      working.get(take.batchId) ?? (stored?.productId === product.id ? stored : undefined);
     if (!current || current.deletedAt !== null) {
       return yield* protocol(
         "INSUFFICIENT_STOCK",
@@ -174,50 +176,127 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
     },
   ];
 
-  for (const plan of plans) {
-    const [updatedBatch] = yield* tx
-      .update(batches)
-      .set({
-        packQuantity: plan.nextPackQuantity,
-        unitQuantity: plan.nextUnitQuantity,
-        updatedByUserId: actor.userId,
-        deviceId: command.deviceId,
-        operationId: command.commandId,
-        rowVersion: plan.batch.rowVersion + 1,
-        updatedAt: command.occurredAt,
-      })
-      .where(and(eq(batches.organizationId, actor.organizationId), eq(batches.id, plan.batch.id)))
-      .returning();
-    if (!updatedBatch) {
-      return yield* protocol("ENTITY_WRITE_FAILED", "The batch could not be updated.");
-    }
-    const [itemRow] = yield* tx
+  const batchWrite = {
+    updatedByUserId: actor.userId,
+    deviceId: command.deviceId,
+    operationId: command.commandId,
+    updatedAt: command.occurredAt,
+  };
+  const finalBatches = new Map(plans.map((plan) => [plan.batch.id, plan]));
+  const updatedIds = yield* tx.execute(
+    sql`
+      update ${batches} as "b"
+      set "pack_quantity" = "v"."pack_quantity",
+        "unit_quantity" = "v"."unit_quantity",
+        "row_version" = "v"."row_version",
+        "updated_by_user_id" = ${batchWrite.updatedByUserId},
+        "device_id" = ${batchWrite.deviceId},
+        "operation_id" = ${batchWrite.operationId},
+        "updated_at" = ${batchWrite.updatedAt}
+      from (values ${sql.join(
+        [...finalBatches.values()].map(
+          (plan) =>
+            sql`(${plan.batch.id}::text, ${plan.nextPackQuantity}::integer, ${plan.nextUnitQuantity}::integer, ${plan.batch.rowVersion + 1}::bigint)`,
+        ),
+        sql`, `,
+      )}) as "v"("id", "pack_quantity", "unit_quantity", "row_version")
+      where "b"."organization_id" = ${actor.organizationId} and "b"."id" = "v"."id"
+      returning "b"."id"
+    `,
+    "objects",
+  );
+  if (updatedIds.length !== finalBatches.size) {
+    return yield* protocol("ENTITY_WRITE_FAILED", "The batch could not be updated.");
+  }
+
+  const items = new Map(
+    (yield* tx
       .insert(invoiceItems)
-      .values({
-        id: plan.take.invoiceItemId,
-        invoiceId: invoice.id,
-        productId: plan.product.id,
-        batchId: plan.batch.id,
-        productName: plan.product.name,
-        batchNumber: plan.batch.batchNumber,
-        quantity: plan.take.quantity,
-        quantityType: plan.take.quantityType,
-        baseUnitQuantity:
-          plan.take.quantity * (plan.take.quantityType === "pack" ? plan.product.unitsPerPack : 1),
-        salePrice: plan.take.salePrice,
-        organizationId: actor.organizationId,
-        createdByUserId: actor.userId,
-        updatedByUserId: actor.userId,
-        deviceId: command.deviceId,
-        operationId: command.commandId,
-        rowVersion: 1,
-        createdAt: command.occurredAt,
-        updatedAt: command.occurredAt,
-      })
-      .returning();
+      .values(
+        plans.map((plan) => ({
+          id: plan.take.invoiceItemId,
+          invoiceId: invoice.id,
+          productId: plan.product.id,
+          batchId: plan.batch.id,
+          productName: plan.product.name,
+          batchNumber: plan.batch.batchNumber,
+          quantity: plan.take.quantity,
+          quantityType: plan.take.quantityType,
+          baseUnitQuantity:
+            plan.take.quantity *
+            (plan.take.quantityType === "pack" ? plan.product.unitsPerPack : 1),
+          salePrice: plan.take.salePrice,
+          organizationId: actor.organizationId,
+          createdByUserId: actor.userId,
+          updatedByUserId: actor.userId,
+          deviceId: command.deviceId,
+          operationId: command.commandId,
+          rowVersion: 1,
+          createdAt: command.occurredAt,
+          updatedAt: command.occurredAt,
+        })),
+      )
+      .returning()).map((row) => [row.id, row]),
+  );
+
+  const openPackId = (plan: TakePlan) =>
+    plan.take.openPackMovementId ?? `${plan.take.saleMovementId}:open-pack`;
+  const movements = new Map(
+    (yield* tx
+      .insert(stockMovements)
+      .values(
+        plans.flatMap((plan) => [
+          ...(plan.packsOpened > 0
+            ? [
+                {
+                  id: openPackId(plan),
+                  productId: plan.product.id,
+                  batchId: plan.batch.id,
+                  invoiceId: invoice.id,
+                  type: "open_pack" as const,
+                  packDelta: -plan.packsOpened,
+                  unitDelta: plan.packsOpened * plan.product.unitsPerPack,
+                  note: `Opened for invoice #${invoice.invoiceNumber}`,
+                  organizationId: actor.organizationId,
+                  actorUserId: actor.userId,
+                  deviceId: command.deviceId,
+                  operationId: command.commandId,
+                  createdAt: command.occurredAt,
+                },
+              ]
+            : []),
+          {
+            id: plan.take.saleMovementId,
+            productId: plan.product.id,
+            batchId: plan.batch.id,
+            invoiceId: invoice.id,
+            type: "sale" as const,
+            packDelta: plan.take.quantityType === "pack" ? -plan.take.quantity : 0,
+            unitDelta: plan.take.quantityType === "unit" ? -plan.take.quantity : 0,
+            note: `Invoice #${invoice.invoiceNumber}`,
+            organizationId: actor.organizationId,
+            actorUserId: actor.userId,
+            deviceId: command.deviceId,
+            operationId: command.commandId,
+            createdAt: command.occurredAt,
+          },
+        ]),
+      )
+      .returning()).map((row) => [row.id, row]),
+  );
+
+  for (const plan of plans) {
+    const itemRow = items.get(plan.take.invoiceItemId);
     if (!itemRow) {
       return yield* protocol("ENTITY_WRITE_FAILED", "The invoice item could not be created.");
     }
+    const updatedBatch: BatchRow = {
+      ...plan.batch,
+      packQuantity: plan.nextPackQuantity,
+      unitQuantity: plan.nextUnitQuantity,
+      ...batchWrite,
+      rowVersion: plan.batch.rowVersion + 1,
+    };
     changes.push(
       {
         entity: "batch",
@@ -235,24 +314,7 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
       },
     );
     if (plan.packsOpened > 0) {
-      const [openPack] = yield* tx
-        .insert(stockMovements)
-        .values({
-          id: plan.take.openPackMovementId ?? `${plan.take.saleMovementId}:open-pack`,
-          productId: plan.product.id,
-          batchId: plan.batch.id,
-          invoiceId: invoice.id,
-          type: "open_pack",
-          packDelta: -plan.packsOpened,
-          unitDelta: plan.packsOpened * plan.product.unitsPerPack,
-          note: `Opened for invoice #${invoice.invoiceNumber}`,
-          organizationId: actor.organizationId,
-          actorUserId: actor.userId,
-          deviceId: command.deviceId,
-          operationId: command.commandId,
-          createdAt: command.occurredAt,
-        })
-        .returning();
+      const openPack = movements.get(openPackId(plan));
       if (!openPack) {
         return yield* protocol("ENTITY_WRITE_FAILED", "The pack opening could not be recorded.");
       }
@@ -264,24 +326,7 @@ export const issueInvoice = Effect.fn("InventoryCommands.issueInvoice")(function
         row: openPack,
       });
     }
-    const [saleMovement] = yield* tx
-      .insert(stockMovements)
-      .values({
-        id: plan.take.saleMovementId,
-        productId: plan.product.id,
-        batchId: plan.batch.id,
-        invoiceId: invoice.id,
-        type: "sale",
-        packDelta: plan.take.quantityType === "pack" ? -plan.take.quantity : 0,
-        unitDelta: plan.take.quantityType === "unit" ? -plan.take.quantity : 0,
-        note: `Invoice #${invoice.invoiceNumber}`,
-        organizationId: actor.organizationId,
-        actorUserId: actor.userId,
-        deviceId: command.deviceId,
-        operationId: command.commandId,
-        createdAt: command.occurredAt,
-      })
-      .returning();
+    const saleMovement = movements.get(plan.take.saleMovementId);
     if (!saleMovement) {
       return yield* protocol("ENTITY_WRITE_FAILED", "The sale could not be recorded.");
     }

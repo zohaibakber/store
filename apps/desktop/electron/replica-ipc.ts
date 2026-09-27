@@ -48,6 +48,7 @@ export type ReplicaSyncApiRequest = (
   init?: {
     readonly method?: "GET" | "POST";
     readonly body?: string | null;
+    readonly timeoutMillis?: number;
   },
 ) => Promise<ProxyFetchResult>;
 
@@ -133,6 +134,10 @@ export const registerReplicaWorkerIpc = (options: {
 }) => {
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const sessions = new Map<string, Session>();
+  let foreground = true;
+
+  const applyForeground = (client: ReplicaWorkerClient, visible: boolean) =>
+    client.SetForeground({ visible }).pipe(Effect.ignore);
 
   const disposeSession = (workspaceToken: string, session: Session) => {
     sessions.delete(workspaceToken);
@@ -168,6 +173,7 @@ export const registerReplicaWorkerIpc = (options: {
         options.syncApiRequest(request.pathname, {
           method: request.method,
           body: request.bodyText,
+          timeoutMillis: request.timeoutMillis,
         }),
       catch: (cause) => (cause instanceof Error ? cause.message : "Sync proxy failed."),
     }).pipe(
@@ -219,6 +225,7 @@ export const registerReplicaWorkerIpc = (options: {
         ),
         apiBaseUrl: options.apiBaseUrl,
       });
+      if (!foreground) yield* applyForeground(client, false);
       return { client, engine };
     }).pipe(
       Scope.provide(scope),
@@ -270,6 +277,19 @@ export const registerReplicaWorkerIpc = (options: {
   }
 
   return {
+    setForeground: async (visible: boolean) => {
+      if (visible === foreground) return;
+      foreground = visible;
+      await Effect.runPromise(
+        Effect.forEach(
+          [...sessions.values()],
+          (session) => applyForeground(session.client, visible),
+          {
+            discard: true,
+          },
+        ),
+      );
+    },
     dispose: async () => {
       for (const channel of Object.keys(handlers)) options.ipcMain.removeHandler(channel);
       await Promise.all(

@@ -74,6 +74,10 @@ describe("sync scheduler failure policy", () => {
       });
       yield* TestClock.adjust("10 minutes");
       expect(yield* Ref.get(attempts)).toBe(1);
+      yield* scheduler.setVisible(false);
+      yield* scheduler.setLiveConnected(true);
+      yield* TestClock.adjust("10 minutes");
+      expect(yield* Ref.get(attempts)).toBe(1);
       yield* scheduler.wake("reconnect");
       yield* TestClock.adjust("0 millis");
       expect(yield* Ref.get(attempts)).toBe(2);
@@ -178,7 +182,7 @@ describe("sync scheduler failure policy", () => {
                 Effect.fail(syncProtocolError("REPLICA_SEQUENCE_GAP", "Expected 3, received 4.")),
               ),
             ),
-          catchUp: () => Ref.update(downloads, (n) => n + 1),
+          catchUp: () => Ref.update(downloads, (n) => n + 1).pipe(Effect.as("unchanged")),
         },
         policy,
       );

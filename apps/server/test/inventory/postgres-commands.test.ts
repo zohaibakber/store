@@ -7,7 +7,7 @@ import {
   type SyncCommandEnvelope,
   type SyncPullRequest,
 } from "@store/contracts";
-import { decodeInvoiceId, decodeOrganizationId } from "@store/contracts/ids";
+import { decodeInvoiceId, decodeInvoiceItemId, decodeOrganizationId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
   LAST_UNIT_BATCH_ID,
@@ -212,6 +212,90 @@ describe("postgres inventory commands", () => {
         transaction.changes.some((change) => change.entity === "invoice"),
       ),
     ).toHaveLength(1);
+  });
+
+  it("logs each draw on a batch shared by several allocations with the row it left behind", async () => {
+    const organizationId = decodeOrganizationId("org-shared-batch");
+    const actor = actorFor(organizationId);
+    const take = (item: string, sale: string) => ({
+      invoiceItemId: decodeInvoiceItemId(item),
+      saleMovementId: sale,
+      openPackMovementId: null,
+      productId: LAST_UNIT_PRODUCT_ID,
+      batchId: LAST_UNIT_BATCH_ID,
+      quantity: 6,
+      quantityType: "unit" as const,
+      salePrice: 100,
+      packsOpened: 1,
+    });
+    const envelope = envelopeFor(
+      organizationId,
+      lastUnitEnvelope({
+        replicaId: LAST_UNIT_REPLICA_A,
+        clientSequence: "1",
+        command: {
+          ...lastUnitBuyerACommand,
+          commandId: "sale-shared",
+          invoiceId: decodeInvoiceId("sale-shared"),
+          input: {
+            customerName: null,
+            items: [
+              {
+                productId: LAST_UNIT_PRODUCT_ID,
+                batchId: LAST_UNIT_BATCH_ID,
+                quantity: 12,
+                quantityType: "unit",
+                salePrice: 100,
+              },
+            ],
+          },
+          allocations: [
+            take("item-shared-1", "move-shared-1"),
+            take("item-shared-2", "move-shared-2"),
+          ],
+        },
+      }),
+    );
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCommands(organizationId, 0);
+        yield* db
+          .update(products)
+          .set({ unitsPerPack: 10 })
+          .where(eq(products.organizationId, organizationId));
+        yield* db
+          .update(batches)
+          .set({ packQuantity: 2, unitQuantity: 0 })
+          .where(eq(batches.organizationId, organizationId));
+        const receipt = yield* commands.commit(actor, envelope);
+        const pulled = yield* commands.pull(actor, pullFromStart);
+        const [stored] = yield* db
+          .select()
+          .from(batches)
+          .where(
+            and(eq(batches.organizationId, organizationId), eq(batches.id, LAST_UNIT_BATCH_ID)),
+          );
+        return { receipt, pulled, stored };
+      }),
+    );
+    expect(outcome.receipt.decision).toBe("accepted");
+    const changes = outcome.pulled.transactions[0]?.changes ?? [];
+    expect(changes.map((change) => [change.entity, change.entityId])).toEqual([
+      ["invoice", "sale-shared"],
+      ["batch", LAST_UNIT_BATCH_ID],
+      ["invoiceItem", "item-shared-1"],
+      ["stockMovement", "move-shared-1:open-pack"],
+      ["stockMovement", "move-shared-1"],
+      ["batch", LAST_UNIT_BATCH_ID],
+      ["invoiceItem", "item-shared-2"],
+      ["stockMovement", "move-shared-2:open-pack"],
+      ["stockMovement", "move-shared-2"],
+    ]);
+    expect(outcome.stored).toMatchObject({ packQuantity: 0, unitQuantity: 8, rowVersion: 2 });
+    expect(JSON.stringify(changes[5]?.row)).toBe(JSON.stringify(outcome.stored));
+    expect(JSON.stringify(changes[1]?.row)).toBe(
+      JSON.stringify({ ...outcome.stored, packQuantity: 1, unitQuantity: 4 }),
+    );
   });
 
   it("returns the stored receipt on an identical retry", async () => {

@@ -13,10 +13,11 @@ import {
   badGateway,
   badRequest,
   payloadTooLarge,
+  retryAfter,
   tooManyRequests,
   unsupportedMediaType,
 } from "../http/errors";
-import { ServerRuntime } from "../http/runtime";
+import { RATE_LIMITS, ServerRuntime } from "../http/runtime";
 
 const isInvoice = (name: string) => /\.(csv|pdf)$/i.test(name);
 
@@ -77,13 +78,15 @@ export const UploadHandlers = HttpApiBuilder.group(
         const rateLimit = yield* runtime
           .limitInvoiceExtraction(`${identity.organizationId}:${identity.user.id}`)
           .pipe(Effect.orDie);
-        if (!rateLimit.success)
+        if (!rateLimit.success) {
+          yield* retryAfter(RATE_LIMITS.invoiceExtraction.period * 1_000);
           return yield* Effect.fail(
             tooManyRequests(
               "INVOICE_EXTRACTION_RATE_LIMITED",
               "Too many invoice uploads. Try again in a minute.",
             ),
           );
+        }
 
         const files = yield* collectFiles(payload);
         if (files.length === 0)

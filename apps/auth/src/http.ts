@@ -15,9 +15,13 @@ import {
   type JwtConfiguration,
   type TokenSet,
 } from "@store/auth";
+import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -25,6 +29,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import type { AuthError } from "./errors";
+import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./limits";
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
 import { resolveRefreshCredential } from "./refresh-credential";
 import { AuthService } from "./service";
@@ -43,8 +48,17 @@ class AuthHttpConfig extends Context.Service<AuthHttpConfig, AuthHttpConfigurati
 const mapAuthError = (error: AuthError): AuthHttpError =>
   authHttpErrorFromStatus(error.status, error.code, error.message);
 
+const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, response) =>
+  Effect.succeed(
+    HttpServerResponse.setHeader(response, "retry-after", String(AUTH_RATE_LIMIT_PERIOD_SECONDS)),
+  ),
+);
+
 const fromAuth = <A, R>(effect: Effect.Effect<A, AuthError, R>) =>
-  effect.pipe(Effect.mapError(mapAuthError));
+  effect.pipe(
+    Effect.tapError((error) => (error.status === 429 ? retryAfterRateLimit : Effect.void)),
+    Effect.mapError(mapAuthError),
+  );
 
 const browserTokenPayload = (tokens: TokenSet, client: AuthClientKind) =>
   client._tag === "Browser"
@@ -316,3 +330,44 @@ export const authRoutes = (configuration: AuthHttpConfiguration) => {
     CorsAndOrigin.pipe(Layer.provide(ConfigLive)),
   );
 };
+
+/**
+ * Builds isolate-lifetime services (the dependency Layers and the router)
+ * once instead of per request.
+ *
+ * `HttpApiBuilder.group` captures the context it is built in and provides it
+ * to every request it serves, so the build runs on an empty context plus the
+ * isolate-stable `isolateServices` (the Worker's `RuntimeContext`). Each
+ * request therefore keeps its own per-invocation services. The `Scope` is a
+ * private isolate scope that is never closed: the D1 binding and CryptoKeys
+ * these Layers hold are isolate-global, not bound to one invocation.
+ */
+export const buildOncePerIsolate = <A, E, R>(
+  build: Effect.Effect<A, E, R | Scope.Scope>,
+  isolateServices: Context.Context<R>,
+) =>
+  Effect.gen(function* () {
+    const isolateScope = yield* Scope.make();
+    return yield* build.pipe(
+      Scope.provide(isolateScope),
+      Effect.updateContext<never, R>(() => isolateServices),
+    );
+  });
+
+/**
+ * The Worker's isolate-level `RuntimeContext`, read during init.
+ *
+ * Alchemy runs a Worker's init with its `RuntimeContext` present but keeps it
+ * out of the init type (its own cron registration reads it the same way), so
+ * requiring it by tag would leak it into the stack's requirements. The router
+ * build needs it only to satisfy handler groups that name it; every request
+ * still receives the bridge's own copy.
+ */
+export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
+  Effect.flatMap(
+    Option.match({
+      onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
+      onSome: (runtime) => Effect.succeed(Context.make(RuntimeContext, runtime)),
+    }),
+  ),
+);

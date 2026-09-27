@@ -430,6 +430,26 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
     }),
   findSession: (sessionId) =>
     Effect.sync(() => store.sessions.find((session) => session.id === sessionId) ?? null),
+  findRefreshContext: (sessionId) =>
+    Effect.sync(() => {
+      const session = store.sessions.find((entry) => entry.id === sessionId);
+      if (!session) return null;
+      return {
+        session,
+        user: store.users.find((entry) => entry.id === session.userId) ?? null,
+        activeMembership: membershipOf(store, session.userId, session.activeOrganizationId),
+      };
+    }),
+  pruneExpiredSessions: (input) =>
+    Effect.sync(() => {
+      const expired = store.sessions
+        .filter((session) => session.expiresAt <= input.expiredBefore)
+        .slice(0, input.limit);
+      for (const session of expired) {
+        store.sessions.splice(store.sessions.indexOf(session), 1);
+      }
+      return expired.length;
+    }),
   moveSession: (input) =>
     Effect.sync(() => {
       const index = store.sessions.findIndex((session) => session.id === input.sessionId);

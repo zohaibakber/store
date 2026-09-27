@@ -404,6 +404,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           { ...fastPolicy, activePollMillis: 60_000, backoffMillis: [60_000] },
         );
         yield* awaitCall(calls, "register");
+        yield* owned.wake("reconnect");
         yield* awaitCall(calls, "register");
         expect(authority.counts).toMatchObject({ registers: 2, pulls: 0 });
         expect(yield* statusOf(owned)).toEqual({ _tag: "running" });

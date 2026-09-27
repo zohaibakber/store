@@ -48,3 +48,4 @@ release
 
 # Architect research notes
 .architect/
+*.tsbuildinfo

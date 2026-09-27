@@ -8,13 +8,11 @@ import {
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
-  SnapshotPartPayload,
   SyncCommandEnvelope,
   SyncLiveSseEvent,
   SyncLiveWakeHint,
   SyncProtocolError,
   SyncPullRequest,
-  SyncPullResult,
   syncProtocolError,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
@@ -26,7 +24,7 @@ import type * as Stream from "effect/Stream";
 import type { InventoryCommandsContract } from "./commands";
 import type { InventoryDatabaseError, InventoryError } from "./errors";
 import type { InventoryLiveContract } from "./live-tickets";
-import type { InventorySyncActor } from "./model";
+import type { EncodedJsonBody, EncodedSnapshotPart, InventorySyncActor } from "./model";
 import { inventoryPostgresUnavailable } from "./postgres";
 import type { InventorySnapshotsContract } from "./snapshots";
 
@@ -72,7 +70,7 @@ export interface SyncAuthorityContract {
   readonly pull: (
     actor: InventorySyncActor,
     request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, SyncAuthorityError, RuntimeContext>;
+  ) => Effect.Effect<EncodedJsonBody, SyncAuthorityError, RuntimeContext>;
   readonly acquireSnapshot: (
     actor: InventorySyncActor,
     request: AcquireSnapshotRequest,
@@ -81,7 +79,7 @@ export interface SyncAuthorityContract {
     actor: InventorySyncActor,
     snapshotId: SnapshotId,
     partNumber: number,
-  ) => Effect.Effect<SnapshotPartPayload, SyncAuthorityError, RuntimeContext>;
+  ) => Effect.Effect<EncodedSnapshotPart, SyncAuthorityError, RuntimeContext>;
   readonly mintLiveTicket: (
     actor: InventorySyncActor,
     request: LiveTicketRequest,
@@ -125,11 +123,11 @@ export const makeInventorySyncAuthority = (stores: {
   submitCommand: (actor, envelope) => toSyncAuthorityError(stores.commands.commit(actor, envelope)),
   getReceipt: (actor, operationId) =>
     toSyncAuthorityError(stores.commands.receipt(actor, operationId)),
-  pull: (actor, request) => toSyncAuthorityError(stores.commands.pull(actor, request)),
+  pull: (actor, request) => toSyncAuthorityError(stores.commands.pullEncoded(actor, request)),
   acquireSnapshot: (actor, request) =>
     toSyncAuthorityError(stores.snapshots.acquireSnapshot(actor, request)),
   readSnapshotPart: (actor, snapshotId, partNumber) =>
-    toSyncAuthorityError(stores.snapshots.readSnapshotPart(actor, snapshotId, partNumber)),
+    toSyncAuthorityError(stores.snapshots.readSnapshotPartEncoded(actor, snapshotId, partNumber)),
   mintLiveTicket: (actor, request) =>
     toSyncAuthorityError(stores.live.mintLiveTicket(actor, request)),
 });

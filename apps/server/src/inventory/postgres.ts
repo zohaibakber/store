@@ -18,6 +18,7 @@ import { InventoryDatabaseError } from "./errors";
 
 export type InventoryDrizzle = EffectPgDatabase;
 export type InventoryTransaction = Parameters<Parameters<InventoryDrizzle["transaction"]>[0]>[0];
+export type InventoryExecutor = InventoryDrizzle | InventoryTransaction;
 
 export const isProtocolError = Schema.is(SyncProtocolError);
 
@@ -36,18 +37,22 @@ export const integerTextFromNumeric = (value: string) =>
 export const randomHex = (byteCount: number): string =>
   Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(byteCount)));
 
-const selectState = (tx: InventoryTransaction, organizationId: string) =>
+const selectState = (tx: InventoryExecutor, organizationId: string) =>
   tx.select().from(inventoryState).where(eq(inventoryState.organizationId, organizationId));
 
 type InventoryStateRow = typeof inventoryState.$inferSelect;
 
-const requireReady = (state: InventoryStateRow | undefined) =>
+export const requireReady = <
+  S extends { readonly status: string; readonly releaseId: InventoryStateRow["releaseId"] },
+>(
+  state: S | undefined,
+) =>
   state && state.status === "ready" && state.releaseId !== null
     ? Effect.succeed(state)
     : protocol("EPOCH_MISMATCH", "This organization inventory is not ready.");
 
 export const readReadyState = Effect.fn("InventoryPostgres.readReadyState")(function* (
-  tx: InventoryTransaction,
+  tx: InventoryExecutor,
   organizationId: string,
 ) {
   const [state] = yield* selectState(tx, organizationId).limit(1);
@@ -63,7 +68,7 @@ export const lockOrganization = Effect.fn("InventoryPostgres.lockOrganization")(
 });
 
 export const readReplica = Effect.fn("InventoryPostgres.readReplica")(function* (
-  tx: InventoryTransaction,
+  tx: InventoryExecutor,
   organizationId: string,
   replicaId: string,
 ) {
@@ -102,6 +107,16 @@ export const withSerializationRetry = <A, E, R>(effect: Effect.Effect<A, E, R>) 
     while: isSerializationFailure,
   });
 
+const toInventoryError = <E>(cause: E) =>
+  isProtocolError(cause) || cause instanceof InventoryDatabaseError ? cause : databaseError(cause);
+
+/**
+ * Runs one autocommit statement (or a short read with no snapshot requirement)
+ * outside `BEGIN`/`COMMIT`, so a single-row read is one Postgres round trip.
+ */
+export const runStatement = <A, E>(effect: Effect.Effect<A, E>) =>
+  effect.pipe(Effect.mapError(toInventoryError));
+
 export const runTransaction =
   (db: InventoryDrizzle) =>
   <A, E>(
@@ -110,11 +125,7 @@ export const runTransaction =
     body: (tx: InventoryTransaction) => Effect.Effect<A, E>,
   ) =>
     withSerializationRetry(db.transaction(body, { isolationLevel, accessMode })).pipe(
-      Effect.mapError((cause) =>
-        isProtocolError(cause) || cause instanceof InventoryDatabaseError
-          ? cause
-          : databaseError(cause),
-      ),
+      Effect.mapError(toInventoryError),
     );
 
 export const openInventoryDrizzle = Effect.gen(function* () {

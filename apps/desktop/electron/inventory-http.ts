@@ -54,7 +54,7 @@ const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
   return SNAPSHOT_ID.test(snapshotId) && SNAPSHOT_PART.test(partNumber);
 };
 
-const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): boolean => {
+const isLiveWakeRequest = (apiPath: string, requested: URL, method: string): boolean => {
   if (method !== "GET") return false;
   if (requested.pathname !== `${apiPath}/sync/live`) return false;
   const nonce = requested.searchParams.get("nonce");
@@ -64,8 +64,7 @@ const isLiveTicketUpgrade = (apiPath: string, requested: URL, method: string): b
   const allowed = new Set(["nonce", "replicaId", "subscription", "afterHorizon", "waitMs"]);
   if (keys.some((key) => !allowed.has(key))) return false;
   if (
-    nonce === null ||
-    !LIVE_TICKET_NONCE.test(nonce) ||
+    (nonce !== null && !LIVE_TICKET_NONCE.test(nonce)) ||
     replicaId === null ||
     replicaId.length === 0 ||
     replicaId.length > 200 ||
@@ -89,7 +88,7 @@ export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttp
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
     (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
     (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname)) ||
-    isLiveTicketUpgrade(apiPath, requested, request.method);
+    isLiveWakeRequest(apiPath, requested, request.method);
   if (
     requested.username ||
     requested.password ||
@@ -100,6 +99,8 @@ export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttp
   }
   return requested.href;
 };
+
+const DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS = 30_000;
 
 export const makeReplicaSyncApiRequest =
   (
@@ -116,8 +117,13 @@ export const makeReplicaSyncApiRequest =
       method,
       headers: body ? { "content-type": "application/json" } : undefined,
       body: body ?? undefined,
+      signal: AbortSignal.timeout(init?.timeoutMillis ?? DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS),
     });
-    return { ok: response.ok, status: response.status, bodyText: await response.text() };
+    const retryAfter = response.headers.get("retry-after");
+    const bodyText = await response.text();
+    return retryAfter === null
+      ? { ok: response.ok, status: response.status, bodyText }
+      : { ok: response.ok, status: response.status, bodyText, retryAfter: retryAfter.slice(0, 64) };
   };
 
 export const registerInventoryHttpIpc = (options: {

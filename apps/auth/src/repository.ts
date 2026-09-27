@@ -35,8 +35,10 @@ import {
   eq,
   exists,
   gt,
+  inArray,
   isNotNull,
   isNull,
+  lte,
   ne,
   not,
   or,
@@ -99,6 +101,16 @@ const SessionRecord = Schema.Struct({
   replacedBySessionId: Schema.NullOr(SessionId),
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
+
+/**
+ * Everything a refresh decides on, read in one query: the presented session,
+ * its user, and the user's membership in the session's active organization.
+ */
+export interface RefreshContext {
+  readonly session: SessionRecord;
+  readonly user: UserRecord | null;
+  readonly activeMembership: MembershipRecord | null;
+}
 
 export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth.RepositoryError", {
   operation: Schema.String,
@@ -208,6 +220,17 @@ export interface AuthRepositoryApi {
   readonly findSession: (
     sessionId: SessionIdType,
   ) => Effect.Effect<SessionRecord | null, RepositoryError>;
+  readonly findRefreshContext: (
+    sessionId: SessionIdType,
+  ) => Effect.Effect<RefreshContext | null, RepositoryError>;
+  /**
+   * Deletes at most `limit` refresh sessions that expired before `expiredBefore`,
+   * revoked or not, and reports how many it deleted.
+   */
+  readonly pruneExpiredSessions: (input: {
+    readonly expiredBefore: number;
+    readonly limit: number;
+  }) => Effect.Effect<number, RepositoryError>;
   readonly moveSession: (input: {
     readonly sessionId: SessionIdType;
     readonly organizationId: OrganizationIdType;
@@ -852,6 +875,97 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         expiresAt: row.expiresAt.getTime(),
         revokedAt: millis(row.revokedAt),
       });
+    }),
+    findRefreshContext: Effect.fn("AuthRepository.findRefreshContext")(function* (sessionId) {
+      const [row] = yield* database
+        .select({
+          ...sessionColumns,
+          userEmail: user.email,
+          userName: user.name,
+          userImage: user.image,
+          userPasswordHash: user.passwordHash,
+          userEmailVerifiedAt: user.emailVerifiedAt,
+          userFound: sql<string | null>`${user.id}`.as("refresh_user_id"),
+          membershipOrganizationId: organizationMembership.organizationId,
+          membershipRole: organizationMembership.role,
+          organizationName: sql<string | null>`${organization.name}`.as(
+            "refresh_organization_name",
+          ),
+          organizationSlug: organization.slug,
+        })
+        .from(session)
+        .leftJoin(user, eq(user.id, session.userId))
+        .leftJoin(
+          organizationMembership,
+          and(
+            eq(organizationMembership.userId, session.userId),
+            eq(organizationMembership.organizationId, session.activeOrganizationId),
+          ),
+        )
+        .leftJoin(organization, eq(organization.id, organizationMembership.organizationId))
+        .where(eq(session.id, sessionId))
+        .pipe(fail("findRefreshContext"));
+      if (!row) return null;
+      const current = yield* decode(
+        SessionRecord,
+        "findRefreshContext.session",
+      )({
+        id: row.id,
+        familyId: row.familyId,
+        userId: row.userId,
+        activeOrganizationId: row.activeOrganizationId,
+        refreshTokenHash: row.refreshTokenHash,
+        clientKind: row.clientKind,
+        deviceName: row.deviceName,
+        expiresAt: row.expiresAt.getTime(),
+        revokedAt: millis(row.revokedAt),
+        replacedBySessionId: row.replacedBySessionId,
+      });
+      const owner = yield* asUser(
+        row.userFound === null || row.userEmail === null || row.userName === null
+          ? undefined
+          : {
+              id: row.userFound,
+              email: row.userEmail,
+              name: row.userName,
+              image: row.userImage,
+              passwordHash: row.userPasswordHash,
+              emailVerifiedAt: row.userEmailVerifiedAt,
+            },
+        "findRefreshContext.user",
+      );
+      const activeMembership =
+        row.membershipOrganizationId === null ||
+        row.membershipRole === null ||
+        row.organizationName === null
+          ? null
+          : yield* decode(
+              MembershipRecord,
+              "findRefreshContext.membership",
+            )({
+              organizationId: row.membershipOrganizationId,
+              organizationName: row.organizationName,
+              organizationSlug: row.organizationSlug,
+              role: row.membershipRole,
+            });
+      return { session: current, user: owner, activeMembership } satisfies RefreshContext;
+    }),
+    pruneExpiredSessions: Effect.fn("AuthRepository.pruneExpiredSessions")(function* (input) {
+      const pruned = yield* database
+        .delete(session)
+        .where(
+          inArray(
+            session.id,
+            database
+              .select({ id: session.id })
+              .from(session)
+              .where(lte(session.expiresAt, at(input.expiredBefore)))
+              .limit(input.limit),
+          ),
+        )
+        .returning({ id: session.id })
+        .pipe(fail("pruneExpiredSessions"));
+      return pruned.length;
     }),
     moveSession: Effect.fn("AuthRepository.moveSession")(function* (input) {
       yield* database

@@ -5,10 +5,11 @@ import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 
-import { ServerRoutes } from "../../src/http/app";
+import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import {
   SyncAuthority,
@@ -80,67 +81,82 @@ export interface AppOptions {
   readonly syncLiveUpgrade?: SyncLiveUpgradeContract;
 }
 
-export const appFor = (authenticated = true, options: AppOptions = {}) => ({
-  request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
-    const session = sessionFor(options.role ?? "owner");
-    const role = options.role ?? "owner";
-    const runtime = {
-      electronProtocol: "com.tabaaq.desktop",
-      trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
-      getSession: () => Effect.succeed(authenticated ? session : null),
-      loadWorkspace: () =>
-        Effect.succeed(
-          authenticated
-            ? decodeAuthenticatedWorkspace({
-                status: "authenticated",
-                user: session.user,
-                activeOrganization: {
+const runtimeFor = (
+  authenticated: boolean,
+  options: AppOptions,
+  invoiceAi: InvoiceAiClient,
+): ServerRuntimeContract => {
+  const session = sessionFor(options.role ?? "owner");
+  const role = options.role ?? "owner";
+  return {
+    electronProtocol: "com.tabaaq.desktop",
+    trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
+    getSession: () => Effect.succeed(authenticated ? session : null),
+    loadWorkspace: () =>
+      Effect.succeed(
+        authenticated
+          ? decodeAuthenticatedWorkspace({
+              status: "authenticated",
+              user: session.user,
+              activeOrganization: {
+                id: "org-1",
+                name: "Tabaaq",
+                slug: "tabaaq",
+                role,
+              },
+              organizations: [
+                {
                   id: "org-1",
                   name: "Tabaaq",
                   slug: "tabaaq",
                   role,
                 },
-                organizations: [
-                  {
-                    id: "org-1",
-                    name: "Tabaaq",
-                    slug: "tabaaq",
-                    role,
-                  },
-                ],
-                isOnline: true,
-              })
-            : unauthenticated,
-        ),
-      invoiceAi: Effect.succeed(invoiceAi),
-      limitInvoiceExtraction:
-        options.limitInvoiceExtraction ?? (() => Effect.succeed({ success: true })),
-      productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
-      limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-    } satisfies ServerRuntimeContract;
-    const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
-    const SyncLive = Layer.succeed(
-      SyncAuthority,
-      options.syncAuthority ?? unprovisionedSyncAuthority,
-    );
-    const liveUpgrade = options.syncLiveUpgrade ?? unprovisionedSyncLiveUpgrade;
-    const LiveUpgradeLive = Layer.succeed(SyncLiveUpgrade, liveUpgrade);
-    const app = ServerRoutes.pipe(
-      Layer.provide(RuntimeLive),
-      Layer.provide(SyncLive),
-      Layer.provide(LiveUpgradeLive),
-      Layer.provide(HttpServer.layerServices),
-      Layer.provide(Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext))),
-    );
-    const handlerContext = Context.merge(
-      testRuntimeContext,
-      Context.make(SyncLiveUpgrade, liveUpgrade),
-    );
-    const { dispose, handler } = HttpRouter.toWebHandler(app, { disableLogger: true });
-    try {
-      return await handler(new Request(new URL(path, "http://localhost"), init), handlerContext);
-    } finally {
-      await dispose();
-    }
+              ],
+              isOnline: true,
+            })
+          : unauthenticated,
+      ),
+    invoiceAi: Effect.succeed(invoiceAi),
+    limitInvoiceExtraction:
+      options.limitInvoiceExtraction ?? (() => Effect.succeed({ success: true })),
+    productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
+    limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
+  };
+};
+
+/**
+ * Serves requests through the production composition: the router is built
+ * once with `buildOncePerIsolate` and every request runs through `toHandled`
+ * with its own request scope, as the Worker bridge does.
+ */
+export const workerHandlerFor = async (
+  authenticated = true,
+  options: AppOptions = {},
+  invoiceAi = defaultInvoiceAi,
+) => {
+  const app = ServerRoutes.pipe(
+    Layer.provide(Layer.succeed(ServerRuntime, runtimeFor(authenticated, options, invoiceAi))),
+    Layer.provide(
+      Layer.succeed(SyncAuthority, options.syncAuthority ?? unprovisionedSyncAuthority),
+    ),
+    Layer.provide(
+      Layer.succeed(SyncLiveUpgrade, options.syncLiveUpgrade ?? unprovisionedSyncLiveUpgrade),
+    ),
+    Layer.provide(HttpServer.layerServices),
+  );
+  const serveRequest = await Effect.runPromise(
+    buildOncePerIsolate(HttpRouter.toHttpEffect(app), testRuntimeContext),
+  );
+  const handler = HttpEffect.toWebHandler(
+    recoverUnexpected(serveRequest).pipe(Effect.provideContext(testRuntimeContext)),
+  );
+  return (path: string, init?: RequestInit) =>
+    handler(new Request(new URL(path, "http://localhost"), init));
+};
+
+export const appFor = (authenticated = true, options: AppOptions = {}) => ({
+  request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
+    const serve = await workerHandlerFor(authenticated, options, invoiceAi);
+    return await serve(path, init);
   },
 });

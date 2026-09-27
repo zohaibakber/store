@@ -112,10 +112,11 @@ export const makeSessionOps = (
       return yield* authError(401, "REFRESH_REQUIRED", "The session has expired.");
     }
     const parsed = yield* parseRefreshToken(refreshToken);
-    const current = yield* repository.findSession(parsed.sessionId);
-    if (!current) {
+    const context = yield* repository.findRefreshContext(parsed.sessionId);
+    if (!context) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
+    const current = context.session;
     const actualHash = yield* hashSecret(parsed.secret);
     if (!safeEqual(actualHash, current.refreshTokenHash)) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
@@ -134,11 +135,10 @@ export const makeSessionOps = (
     if (current.expiresAt <= now) {
       return yield* authError(401, "REFRESH_EXPIRED", "The session has expired.");
     }
-    const user = yield* repository.findUserById(current.userId);
-    if (!user) {
+    if (!context.user) {
       return yield* authError(401, "ACCOUNT_NOT_FOUND", "The account no longer exists.");
     }
-    return { session: current, user };
+    return { session: current, user: context.user, activeMembership: context.activeMembership };
   });
 
   const rotateInto = Effect.fn("Auth.Session.rotateInto")(function* (input: {
@@ -181,8 +181,8 @@ export const makeSessionOps = (
 
   const refresh = Effect.fn("Auth.Session.refresh")(function* (input: RefreshInput) {
     const open = yield* openRefresh(input.refreshToken);
-    const membership = yield* resolveMembership(open.user.id, open.session.activeOrganizationId);
-    return yield* rotateInto({ ...open, membership });
+    const membership = open.activeMembership ?? (yield* repository.membershipForUser(open.user.id));
+    return yield* rotateInto({ session: open.session, user: open.user, membership });
   });
 
   const signOut = Effect.fn("Auth.Session.signOut")(function* (input: SignOutInput) {

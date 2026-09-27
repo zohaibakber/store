@@ -318,6 +318,11 @@ export const inventoryTransactions = pgTable(
     operationId: text("operation_id").notNull(),
     decision: text("decision").$type<"accepted" | "rejected">().notNull(),
     epoch: text("epoch").notNull(),
+    /**
+     * Pull-frame size of this group in bytes, fixed at commit time so a pull
+     * page is chosen from the headers alone without reading change rows.
+     */
+    byteLength: integer("byte_length").notNull(),
   },
   (table) => [
     primaryKey({
@@ -336,6 +341,7 @@ export const inventoryTransactions = pgTable(
     check("inventory_transactions_decision", sql`${table.decision} in ('accepted', 'rejected')`),
     check("inventory_transactions_epoch_digits", sql`${table.epoch} ~ '^[0-9]+$'`),
     check("inventory_transactions_commit_sequence_positive", sql`${table.commitSequence} > 0`),
+    check("inventory_transactions_byte_length_positive", sql`${table.byteLength} > 0`),
   ],
 );
 
@@ -433,6 +439,11 @@ export const snapshotJobs = pgTable(
     copyEntity: text("copy_entity"),
     copyCursor: text("copy_cursor"),
     stepDueAt: epochMilliseconds("step_due_at").notNull(),
+    /**
+     * Rows per partition entity in the published parts, as a JSON object.
+     * Written when the job publishes; null while it is still building.
+     */
+    entityCountsJson: text("entity_counts_json"),
   },
   (table) => [
     primaryKey({

@@ -6,8 +6,8 @@ import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
 import { CurrentOrganization } from "../auth/organization";
 import { ProductScanPayloadErrors, StoreApi } from "../http/api";
-import { badGateway, badRequest, tooManyRequests } from "../http/errors";
-import { ServerRuntime } from "../http/runtime";
+import { badGateway, badRequest, retryAfter, tooManyRequests } from "../http/errors";
+import { RATE_LIMITS, ServerRuntime } from "../http/runtime";
 
 const ProductScanPayloadErrorsLive = HttpApiMiddleware.layerSchemaErrorTransform(
   ProductScanPayloadErrors,
@@ -33,10 +33,12 @@ export const ProductScanHandlers = HttpApiBuilder.group(
         const rateLimit = yield* runtime
           .limitProductScan(`${identity.organizationId}:${identity.user.id}`)
           .pipe(Effect.orDie);
-        if (!rateLimit.success)
+        if (!rateLimit.success) {
+          yield* retryAfter(RATE_LIMITS.productScan.period * 1_000);
           return yield* Effect.fail(
             tooManyRequests("PRODUCT_SCAN_RATE_LIMITED", "Too many scans. Try again in a minute."),
           );
+        }
 
         const ai = yield* runtime.productScanAi;
         return yield* ProductScanService.pipe(

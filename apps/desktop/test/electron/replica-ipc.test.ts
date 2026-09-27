@@ -72,6 +72,8 @@ const setupIpc = () => {
   const boots: Array<typeof ReplicaWorkerBoot.Type> = [];
   const proxyReplies: Array<{ readonly requestId: string; readonly result: ProxyFetchResult }> = [];
   const syncRequests: Array<string> = [];
+  const syncTimeouts: Array<number | undefined> = [];
+  const foregrounds: Array<boolean> = [];
   let drainCount = 0;
   const handlers = ReplicaWorkerRpcs.toLayer({
     Open: (boot) =>
@@ -89,6 +91,10 @@ const setupIpc = () => {
     ReadCommandAllocation: () => Effect.succeed({ epoch: "1", nextClientSequence: "4" }),
     EnqueueLocal: ({ envelope: received }) =>
       Effect.succeed({ changed: received.operationId === "op-1", status: "pending" }),
+    SetForeground: ({ visible }) =>
+      Effect.sync(() => {
+        foregrounds.push(visible);
+      }),
     WakeSyncUpload: () => Effect.sync(() => ({ drained: true, drainCount: ++drainCount })),
     Commits: () =>
       Stream.make({
@@ -105,6 +111,7 @@ const setupIpc = () => {
         method: "POST" as const,
         pathname: "/api/sync/pull",
         bodyText: "{}",
+        timeoutMillis: 30_000,
       }),
     ProxyRespond: (reply) =>
       Effect.sync(() => {
@@ -126,8 +133,9 @@ const setupIpc = () => {
     userDataPath: "/tmp/store-replica-test",
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
-    syncApiRequest: async (pathname) => {
+    syncApiRequest: async (pathname, init) => {
       syncRequests.push(pathname);
+      syncTimeouts.push(init?.timeoutMillis);
       return { ok: true, status: 200, bodyText: "{}" };
     },
     allowedOrigins: () => allowed,
@@ -155,7 +163,18 @@ const setupIpc = () => {
   };
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, openInput));
-  return { boots, proxyReplies, syncRequests, registration, senderEvent, invoke, open, sent };
+  return {
+    boots,
+    proxyReplies,
+    syncRequests,
+    syncTimeouts,
+    foregrounds,
+    registration,
+    senderEvent,
+    invoke,
+    open,
+    sent,
+  };
 };
 
 describe("replica worker IPC contract", () => {
@@ -169,8 +188,17 @@ describe("replica worker IPC contract", () => {
   });
 
   it("opens a worker, forwards commits and proxy requests, and reads through typed RPCs", async () => {
-    const { boots, proxyReplies, syncRequests, registration, senderEvent, invoke, open, sent } =
-      setupIpc();
+    const {
+      boots,
+      proxyReplies,
+      syncRequests,
+      syncTimeouts,
+      registration,
+      senderEvent,
+      invoke,
+      open,
+      sent,
+    } = setupIpc();
     const event = senderEvent(7);
 
     const opened = await open(event);
@@ -204,6 +232,7 @@ describe("replica worker IPC contract", () => {
         },
       });
       expect(syncRequests).toEqual(["/api/sync/pull"]);
+      expect(syncTimeouts).toEqual([30_000]);
       expect(proxyReplies).toEqual([
         { requestId: "proxy-1", result: { ok: true, status: 200, bodyText: "{}" } },
       ]);
@@ -290,6 +319,21 @@ describe("replica worker IPC contract", () => {
     await expect(
       invoke(REPLICA_OUTBOX_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
     ).rejects.toThrow("Unknown replica workspace.");
+    await registration.dispose();
+  });
+
+  it("forwards window foreground changes to open workers and to workers opened while hidden", async () => {
+    const { foregrounds, registration, senderEvent, open } = setupIpc();
+    await open(senderEvent(7));
+    await registration.setForeground(true);
+    expect(foregrounds).toEqual([]);
+    await registration.setForeground(false);
+    await registration.setForeground(false);
+    expect(foregrounds).toEqual([false]);
+    await open(senderEvent(8));
+    expect(foregrounds).toEqual([false, false]);
+    await registration.setForeground(true);
+    expect(foregrounds).toEqual([false, false, true, true]);
     await registration.dispose();
   });
 });

@@ -6,6 +6,7 @@ import {
   AUTH_JWT_KEY_ID,
   EmailAddress,
   issueAccessToken,
+  makeAccessTokenVerifier,
   OrganizationId,
   publicJwks,
   SessionId,
@@ -89,5 +90,37 @@ describe("ES256 access tokens", () => {
     );
 
     expect(failure.reason).toBe("Expired");
+  });
+
+  it("verifies many tokens with one imported key and still rejects a foreign signature", async () => {
+    const config = await configuration();
+    const foreign = await configuration();
+    const verify = await Effect.runPromise(makeAccessTokenVerifier(config));
+    const first = await Effect.runPromise(issueAccessToken(input, config));
+    const second = await Effect.runPromise(
+      issueAccessToken({ ...input, sessionId: SessionId.make("session-2") }, config),
+    );
+    const forged = await Effect.runPromise(issueAccessToken(input, foreign));
+
+    const claims = await Effect.runPromise(
+      Effect.all([verify(first.token, input.now + 1_000), verify(second.token, input.now + 1_000)]),
+    );
+    const rejected = await Effect.runPromise(Effect.flip(verify(forged.token, input.now + 1_000)));
+
+    expect(claims.map((claim) => claim.sessionId)).toEqual(["session-1", "session-2"]);
+    expect(rejected.reason).toBe("InvalidSignature");
+  });
+
+  it("reports an unusable verification key on each call instead of failing construction", async () => {
+    const config = await configuration();
+    const issued = await Effect.runPromise(issueAccessToken(input, config));
+    const verify = await Effect.runPromise(
+      makeAccessTokenVerifier({
+        ...config,
+        publicJwk: { kty: "EC", crv: "P-256", x: "AA", y: "AA" },
+      }),
+    );
+    const failure = await Effect.runPromise(Effect.flip(verify(issued.token, input.now + 1_000)));
+    expect(failure.reason).toBe("NoKey");
   });
 });

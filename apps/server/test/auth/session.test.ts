@@ -1,6 +1,7 @@
 import {
   EmailAddress,
   issueAccessToken,
+  makeAccessTokenVerifier,
   OrganizationId,
   SessionId,
   UserId,
@@ -45,8 +46,9 @@ describe("authenticateHeaders", () => {
       ),
     );
 
+    const verify = await Effect.runPromise(makeAccessTokenVerifier(config));
     const session = await Effect.runPromise(
-      authenticateHeaders(new Headers({ authorization: `Bearer ${issued.token}` }), config),
+      authenticateHeaders(new Headers({ authorization: `Bearer ${issued.token}` }), verify),
     );
 
     expect(session).toMatchObject({
@@ -57,7 +59,7 @@ describe("authenticateHeaders", () => {
   });
 
   it("treats a missing access token as an anonymous request", async () => {
-    const config = await configuration();
-    await expect(Effect.runPromise(authenticateHeaders(new Headers(), config))).resolves.toBeNull();
+    const verify = await Effect.runPromise(makeAccessTokenVerifier(await configuration()));
+    await expect(Effect.runPromise(authenticateHeaders(new Headers(), verify))).resolves.toBeNull();
   });
 });

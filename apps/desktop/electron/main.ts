@@ -66,7 +66,7 @@ initDesktopSentry();
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
-let disposeReplicaWorker: (() => Promise<void>) | undefined;
+let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
 
 function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
@@ -254,6 +254,12 @@ function registerServerIpc() {
   });
 }
 
+const publishReplicaForeground = (visible: boolean) => {
+  replicaWorker
+    ?.setForeground(visible)
+    .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
+};
+
 function createWindow() {
   win = new BrowserWindow({
     icon: appIconPath(),
@@ -298,6 +304,12 @@ function createWindow() {
   win.on("closed", () => {
     win = null;
   });
+  win.on("blur", () => publishReplicaForeground(false));
+  win.on("minimize", () => publishReplicaForeground(false));
+  win.on("hide", () => publishReplicaForeground(false));
+  win.on("focus", () => publishReplicaForeground(true));
+  win.on("restore", () => publishReplicaForeground(true));
+  win.on("show", () => publishReplicaForeground(true));
 
   void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));
 }
@@ -345,7 +357,7 @@ const shutdown = makeShutdownCoordinator({
     const results = await Promise.allSettled([
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
-      Promise.resolve(disposeReplicaWorker?.()),
+      Promise.resolve(replicaWorker?.dispose()),
     ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -402,7 +414,7 @@ void app.whenReady().then(async () => {
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
   });
-  disposeReplicaWorker = registerReplicaWorkerIpc({
+  replicaWorker = registerReplicaWorkerIpc({
     ipcMain,
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
@@ -411,7 +423,7 @@ void app.whenReady().then(async () => {
       authBroker.apiFetch(url, init),
     ),
     allowedOrigins: allowedRendererOrigins,
-  }).dispose;
+  });
   await authBroker.initialize();
   publishSession(authBroker.snapshot);
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);

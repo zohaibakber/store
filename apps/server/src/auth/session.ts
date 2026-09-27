@@ -1,7 +1,7 @@
 import {
   AuthSession,
   bearerTokenFromHeaders,
-  verifyAccessToken,
+  type AccessTokenVerifier,
   type JwtConfiguration,
 } from "@store/auth";
 import {
@@ -21,12 +21,12 @@ export type AuthVerificationConfig = Pick<JwtConfiguration, "issuer" | "audience
 
 export const authenticateHeaders = (
   headers: Headers,
-  config: AuthVerificationConfig,
+  verify: AccessTokenVerifier,
 ): Effect.Effect<typeof AuthSession.Type | null, AuthError> =>
   Effect.gen(function* () {
     const token = bearerTokenFromHeaders(headers);
     if (!token) return null;
-    const claims = yield* verifyAccessToken(token, config).pipe(
+    const claims = yield* verify(token).pipe(
       Effect.tapError((error) =>
         Effect.logWarning("Access token verification failed").pipe(
           Effect.annotateLogs({ cause: error.message }),
@@ -63,10 +63,10 @@ export const authenticateHeaders = (
 
 export const loadWorkspaceSnapshot = (
   headers: Headers,
-  config: AuthVerificationConfig,
+  verify: AccessTokenVerifier,
 ): Effect.Effect<typeof WorkspaceSnapshot.Type, AuthError> =>
   Effect.gen(function* () {
-    const session = yield* authenticateHeaders(headers, config);
+    const session = yield* authenticateHeaders(headers, verify);
     if (!session) return unauthenticatedWorkspace({ isOnline: true });
     const organizations = session.organizations.map((organization) => ({
       id: decodeOrganizationId(organization.id),

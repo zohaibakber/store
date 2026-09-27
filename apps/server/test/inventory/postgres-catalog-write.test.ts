@@ -44,7 +44,11 @@ import * as Schema from "effect/Schema";
 import * as SqlError from "effect/unstable/sql/SqlError";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeInventoryCommands, PULL_PAYLOAD_BUDGET_BYTES } from "../../src/inventory/commands";
+import {
+  makeInventoryCommands,
+  PULL_PAYLOAD_BUDGET_BYTES,
+  pullGroupByteLength,
+} from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";
 import { runTransaction, withSerializationRetry } from "../../src/inventory/postgres";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
@@ -687,6 +691,115 @@ describe("postgres catalog writes", () => {
     expect(outcome.replicaB?.lastClientSequence).toBe("1");
   });
 
+  it("checks each row against the rows written before it in the same command", async () => {
+    const organizationId = decodeOrganizationId("org-catalog-in-command");
+    const actor = actorFor(organizationId);
+    const categoryWrite = (
+      id: string,
+      expectedRowVersion: number,
+      name: string,
+    ): CatalogRowWrite => ({
+      entity: "category",
+      action: "upsert",
+      id: decodeCategoryId(id),
+      expectedRowVersion,
+      row: { name, tracksPacks: true },
+    });
+    const remove = (
+      entity: "category" | "product" | "batch",
+      id: string,
+      expectedRowVersion: number,
+    ): CatalogRowWrite =>
+      entity === "category"
+        ? { entity, action: "delete", id: decodeCategoryId(id), expectedRowVersion }
+        : entity === "product"
+          ? { entity, action: "delete", id: decodeProductId(id), expectedRowVersion }
+          : { entity, action: "delete", id: decodeBatchId(id), expectedRowVersion };
+    const stockedBatch = (id: string, movementId: string): CatalogRowWrite => ({
+      entity: "batch",
+      action: "upsert",
+      id: decodeBatchId(id),
+      expectedRowVersion: null,
+      movementId,
+      note: null,
+      row: {
+        productId: decodeProductId("prod-2"),
+        batchNumber: id,
+        expiresAt: null,
+        packQuantity: 1,
+        unitQuantity: 0,
+      },
+    });
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCatalog(organizationId);
+        yield* commands.commit(actor, catalogEnvelope(organizationId, "1", seedCatalog()));
+        const retired = yield* commands.commit(
+          actor,
+          catalogEnvelope(
+            organizationId,
+            "2",
+            catalogCommand("cmd-retire", [
+              categoryWrite("cat-1", 1, "Analgesics"),
+              categoryInsert("cat-2", "Painkillers"),
+              batchWrite("batch-1", 1, "mv-clear", 0, 0),
+              remove("batch", "batch-1", 2),
+              remove("product", "prod-1", 1),
+              remove("category", "cat-1", 2),
+            ]),
+          ),
+        );
+        const duplicated = yield* commands.commit(
+          actor,
+          catalogEnvelope(
+            organizationId,
+            "3",
+            catalogCommand("cmd-duplicate-movement", [
+              productInsert("prod-2", "cat-2", "Brufen"),
+              stockedBatch("batch-2", "mv-dup"),
+              stockedBatch("batch-3", "mv-dup"),
+            ]),
+          ),
+        );
+        const categoryRows = yield* db
+          .select({ id: categories.id, name: categories.name })
+          .from(categories)
+          .where(eq(categories.organizationId, organizationId));
+        const productRows = yield* db
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.organizationId, organizationId))
+          .orderBy(asc(products.id));
+        const pulled = yield* commands.pull(actor, pullFrom("1"));
+        return { retired, duplicated, categoryRows, productRows, pulled };
+      }),
+    );
+    expect(outcome.retired.decision).toBe("accepted");
+    expect(outcome.duplicated.result).toEqual({
+      _tag: "rejected",
+      code: "ENTITY_CONFLICT",
+      message: "Movement mv-dup is already recorded.",
+    });
+    expect(outcome.categoryRows).toEqual([{ id: "cat-2", name: "Painkillers" }]);
+    expect(outcome.productRows).toEqual([{ id: "prod-1" }]);
+    expect(
+      outcome.pulled.transactions[0]?.changes.map((change) => [
+        change.entity,
+        change.action,
+        change.entityId,
+      ]),
+    ).toEqual([
+      ["category", "upsert", "cat-1"],
+      ["category", "upsert", "cat-2"],
+      ["batch", "upsert", "batch-1"],
+      ["stockMovement", "upsert", "mv-clear"],
+      ["batch", "delete", "batch-1"],
+      ["product", "delete", "prod-1"],
+      ["category", "delete", "cat-1"],
+    ]);
+    expect(outcome.pulled.transactions[1]?.changes).toEqual([]);
+  });
+
   it("returns the stored receipt on an identical catalog retry", async () => {
     const organizationId = decodeOrganizationId("org-catalog-retry");
     const actor = actorFor(organizationId);
@@ -729,25 +842,25 @@ describe("postgres catalog writes", () => {
       Effect.gen(function* () {
         const { commands, db } = yield* openCatalog(organizationId, "2");
         for (const commitSequence of ["1", "2"]) {
+          const changes = [0, 1].map((ordinal) => ({
+            organizationId,
+            commitSequence,
+            ordinal,
+            entity: "category",
+            action: "upsert" as const,
+            entityId: `big-${commitSequence}-${ordinal}`,
+            rowVersion: 1,
+            rowJson: `{"id":"big-${commitSequence}-${ordinal}","filler":"${filler}"}`,
+          }));
           yield* db.insert(inventoryTransactions).values({
             organizationId,
             commitSequence,
             operationId: `bulk-${commitSequence}`,
             decision: "accepted",
             epoch: LAST_UNIT_EPOCH,
+            byteLength: pullGroupByteLength(`bulk-${commitSequence}`, changes),
           });
-          for (const ordinal of [0, 1]) {
-            yield* db.insert(inventoryChanges).values({
-              organizationId,
-              commitSequence,
-              ordinal,
-              entity: "category",
-              action: "upsert",
-              entityId: `big-${commitSequence}-${ordinal}`,
-              rowVersion: 1,
-              rowJson: `{"id":"big-${commitSequence}-${ordinal}","filler":"${filler}"}`,
-            });
-          }
+          yield* db.insert(inventoryChanges).values(changes);
         }
         const first = yield* commands.pull(actor, pullFrom("0"));
         const second = yield* commands.pull(actor, pullFrom(first.nextCommitSequence));

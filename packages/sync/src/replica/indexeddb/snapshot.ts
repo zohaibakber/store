@@ -109,7 +109,8 @@ export const beginIndexedDbSnapshotImport = (
 ) =>
   Effect.gen(function* () {
     const existingRows = yield* api.from("snapshot_imports").select().equals(manifest.snapshotId);
-    if (existingRows[0]) return;
+    const existing = existingRows[0];
+    if (existing) return { partsImported: existing.partsImported };
     yield* api.from("snapshot_imports").upsert({
       snapshotId: manifest.snapshotId,
       generation: activeGeneration + 1,
@@ -119,6 +120,7 @@ export const beginIndexedDbSnapshotImport = (
       partsImported: 0,
       partsTotal: manifest.parts.length,
     });
+    return { partsImported: 0 };
   });
 
 export const importIndexedDbSnapshotPart = (

@@ -1,6 +1,6 @@
 import type { PartitionEntity, SnapshotRow } from "@store/contracts";
 import { batches, categories, products } from "@store/db/postgres/schema";
-import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { InventoryTransaction } from "./postgres";
@@ -61,14 +61,4 @@ export const readPartitionRows = Effect.fn("InventoryPartition.readRows")(functi
     if (last === undefined || page.length < PARTITION_PAGE_ROWS) return collected;
     after = last.entityId;
   }
-});
-
-export const countPartitionRows = Effect.fn("InventoryPartition.countRows")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  entity: PartitionEntity,
-) {
-  const { table, where } = partitionScope(organizationId, entity);
-  const [row] = yield* tx.select({ rowCount: count() }).from(table).where(where);
-  return row?.rowCount ?? 0;
 });

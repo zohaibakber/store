@@ -1,15 +1,21 @@
-import type {
-  CommandReceipt,
-  SyncCommandEnvelope,
-  SyncLiveServerFrame,
-  SyncPullRequest,
+import {
+  compareDecimalSequence,
+  OPERATIONAL_SUBSCRIPTION,
+  OrgCommitSequence,
+  SyncEpoch,
+  SyncProtocolError,
+  type CommandReceipt,
+  type SyncCommandEnvelope,
+  type SyncLiveServerFrame,
+  type SyncLiveWakeHint,
+  type SyncPullRequest,
 } from "@store/contracts";
-import { SyncProtocolError } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -17,8 +23,13 @@ import { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
 import { CAUGHT_UP_RECORD_INTERVAL_MILLIS } from "./replica/activity";
 import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS, dueSince } from "./replica/cadence";
-import { ReplicaCoverageRepairRequired, SyncRecoveryRequired } from "./replica/errors";
+import {
+  ReplicaCoverageRepairRequired,
+  ReplicaStorageError,
+  SyncRecoveryRequired,
+} from "./replica/errors";
 import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
+import type { SyncCatchUpOutcome } from "./scheduler";
 import { SyncTransportService, type SyncTransport, type SyncTransportError } from "./transport";
 
 export type SyncEngineProgress = {
@@ -41,7 +52,10 @@ export interface SyncEngineContract {
     createdAt: number,
   ) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
   readonly uploadOnce: () => Effect.Effect<CommandReceipt | undefined, SyncEngineError>;
+  readonly drainUploads: () => Effect.Effect<number, SyncEngineError>;
   readonly downloadOnce: (request: SyncPullRequest) => Effect.Effect<string, SyncEngineError>;
+  readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncEngineError>;
+  readonly hintApplied: (hint: SyncLiveWakeHint) => Effect.Effect<boolean, ReplicaStoreError>;
   readonly applyLiveFrame: (
     frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
   ) => Effect.Effect<boolean, SyncProtocolError | ReplicaStoreError>;
@@ -52,6 +66,29 @@ export interface SyncEngineContract {
 }
 
 const makeClaimId = Effect.sync(() => crypto.randomUUID());
+
+const decodeEpoch = Schema.decodeUnknownEffect(SyncEpoch);
+
+export const cursorFromStore = (store: ReplicaStoreContract) =>
+  store.readSyncCursor().pipe(
+    Effect.flatMap((cursor) =>
+      decodeEpoch(cursor.epoch).pipe(
+        Effect.mapError((error) => ReplicaStorageError.make({ message: error.message })),
+        Effect.map((epoch) => ({ ...cursor, epoch })),
+      ),
+    ),
+  );
+
+const pullRequestFromStore = (
+  store: ReplicaStoreContract,
+): Effect.Effect<SyncPullRequest, ReplicaStoreError> =>
+  cursorFromStore(store).pipe(
+    Effect.map((cursor) => ({
+      epoch: cursor.epoch,
+      subscription: OPERATIONAL_SUBSCRIPTION,
+      afterCommitSequence: OrgCommitSequence.make(cursor.appliedCommitSequence),
+    })),
+  );
 
 const STALE_UPLOAD_CLAIM_MILLIS = 60_000;
 
@@ -215,6 +252,35 @@ export const makeSyncEngineFromReplicaStore = (
       );
     });
 
+    const drainUploads = Effect.fn("SyncEngine.drainUploads")(function* () {
+      const settled = new Set<string>();
+      while (true) {
+        const receipt = yield* uploadOnce();
+        if (receipt === undefined || settled.has(receipt.operationId)) return settled.size;
+        settled.add(receipt.operationId);
+      }
+    });
+
+    const catchUp = Effect.fn("SyncEngine.catchUp")(function* () {
+      let outcome: SyncCatchUpOutcome = "unchanged";
+      while (true) {
+        const request = yield* withPermit(pullRequestFromStore(store));
+        const appliedThrough = yield* downloadOnce(request);
+        const moved = compareDecimalSequence(appliedThrough, request.afterCommitSequence) > 0;
+        if (moved) outcome = "advanced";
+        const { feed } = yield* SubscriptionRef.get(progress);
+        if (!moved || feed._tag === "following") return outcome;
+      }
+    });
+
+    const hintApplied = Effect.fn("SyncEngine.hintApplied")(function* (hint: SyncLiveWakeHint) {
+      const cursor = yield* withPermit(store.readSyncCursor());
+      return (
+        cursor.epoch === hint.epoch &&
+        compareDecimalSequence(hint.horizon, cursor.appliedCommitSequence) <= 0
+      );
+    });
+
     const applyLiveFrameEffect = Effect.fn("SyncEngine.applyLiveFrame")(function* (
       frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
     ) {
@@ -233,7 +299,10 @@ export const makeSyncEngineFromReplicaStore = (
       ensureRegistered,
       saveCommand,
       uploadOnce,
+      drainUploads,
       downloadOnce,
+      catchUp,
+      hintApplied,
       applyLiveFrame: applyLiveFrameEffect,
       verifyAuthority,
     };

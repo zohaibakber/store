@@ -8,7 +8,7 @@ import {
 } from "@store/contracts";
 import { decodeOrganizationId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import { consumedTickets } from "@store/db/postgres/schema";
+import { consumedTickets, inventoryState } from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -25,6 +25,8 @@ import {
   randomHex,
   readReadyState,
   readReplica,
+  requireReady,
+  runStatement,
   runTransaction,
   type InventoryDrizzle,
   type InventoryTransaction,
@@ -100,16 +102,73 @@ const consumeLiveTicketInTransaction = Effect.fn("InventoryLive.consumeInTransac
   yield* tx.delete(consumedTickets).where(ticket);
 });
 
-const readLiveHorizonInTransaction = Effect.fn("InventoryLive.readHorizonInTransaction")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
+const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")(function* (
+  db: InventoryDrizzle,
+  organizationId: string,
 ) {
-  const state = yield* readReadyState(tx, actor.organizationId);
+  const [row] = yield* runStatement(
+    db
+      .select({
+        status: inventoryState.status,
+        releaseId: inventoryState.releaseId,
+        epoch: inventoryState.epoch,
+        commitSequence: inventoryState.commitSequence,
+      })
+      .from(inventoryState)
+      .where(eq(inventoryState.organizationId, organizationId))
+      .limit(1),
+  );
+  const state = yield* requireReady(row);
   return {
     epoch: SyncEpoch.make(state.epoch),
     horizon: OrgCommitSequence.make(integerTextFromNumeric(state.commitSequence)),
   } satisfies LiveHorizon;
 });
+
+/**
+ * How long one isolate reuses an organization's horizon for every live stream
+ * and long poll it serves. It bounds the extra wake latency; the Postgres read
+ * rate per organization per isolate is at most one per window, whatever the
+ * number of open live connections.
+ */
+export const LIVE_HORIZON_SHARING = {
+  maxAgeMillis: 1_000,
+  capacity: 1_024,
+} as const;
+
+type SharedHorizon = { readonly horizon: LiveHorizon; readonly readAt: number };
+
+/**
+ * Isolate-wide latest horizon per organization.
+ *
+ * `effect/Cache` does not fit here: it shares one in-flight lookup across
+ * callers, which on workerd would run the Postgres read on one request's I/O
+ * context (its Hyperdrive pool is pinned to that invocation's scope) and
+ * resume every other request's fiber from it. Workers forbid cross-request
+ * I/O, so each caller reads with its own invocation's pool when the shared
+ * value is stale and only the settled value is shared. Insertion order gives
+ * least-recently-read eviction at `capacity`.
+ */
+const makeSharedHorizonReader = (
+  read: (organizationId: string) => Effect.Effect<LiveHorizon, InventoryError>,
+) => {
+  const latest = new Map<string, SharedHorizon>();
+  return Effect.fn("InventoryLive.sharedHorizon")(function* (organizationId: string) {
+    const now = yield* Clock.currentTimeMillis;
+    const shared = latest.get(organizationId);
+    if (shared !== undefined && now - shared.readAt < LIVE_HORIZON_SHARING.maxAgeMillis) {
+      return shared.horizon;
+    }
+    const horizon = yield* read(organizationId);
+    latest.delete(organizationId);
+    latest.set(organizationId, { horizon, readAt: now });
+    if (latest.size > LIVE_HORIZON_SHARING.capacity) {
+      const oldest = latest.keys().next();
+      if (oldest.done !== true) latest.delete(oldest.value);
+    }
+    return horizon;
+  });
+};
 
 export interface InventoryLiveContract {
   readonly mintLiveTicket: (
@@ -129,6 +188,9 @@ export class InventoryLive extends Context.Service<InventoryLive, InventoryLiveC
 
 export const makeInventoryLive = (db: InventoryDrizzle): InventoryLiveContract => {
   const transact = runTransaction(db);
+  const sharedHorizon = makeSharedHorizonReader((organizationId) =>
+    readLiveHorizonStatement(db, organizationId),
+  );
   return InventoryLive.of({
     mintLiveTicket: Effect.fn("InventoryLive.mintLiveTicket")(function* (actor, request) {
       const now = yield* Clock.currentTimeMillis;
@@ -143,9 +205,7 @@ export const makeInventoryLive = (db: InventoryDrizzle): InventoryLiveContract =
       );
     }),
     readLiveHorizon: Effect.fn("InventoryLive.readLiveHorizon")(function* (actor) {
-      return yield* transact("repeatable read", "read only", (tx) =>
-        readLiveHorizonInTransaction(tx, actor),
-      );
+      return yield* sharedHorizon(actor.organizationId);
     }),
   });
 };

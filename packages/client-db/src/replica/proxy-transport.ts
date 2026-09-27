@@ -15,20 +15,35 @@ import {
 import {
   failureFromStatus,
   mapSyncFailure,
+  retryAfterMillis,
+  SYNC_REQUEST_TIMEOUT_MILLIS,
   SyncTransportOffline,
-  type SyncTransport,
+  withRequestDeadlines,
   type SyncFailure,
+  type SyncTransport,
 } from "@store/sync";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export type SyncProxyFetch = (
-  method: "GET" | "POST",
-  pathname: string,
-  bodyText: string | null,
-) => Promise<{ readonly ok: boolean; readonly status: number; readonly bodyText: string }>;
+export type SyncProxyRequest = {
+  readonly method: "GET" | "POST";
+  readonly pathname: string;
+  readonly bodyText: string | null;
+  readonly timeoutMillis: number;
+};
+
+export type SyncProxyResponse = {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly bodyText: string;
+  readonly retryAfter?: string;
+};
+
+export type SyncProxyFetch = (request: SyncProxyRequest) => Promise<SyncProxyResponse>;
+
+type SyncOperation = keyof typeof SYNC_REQUEST_TIMEOUT_MILLIS;
 
 type SyncProxyPostBody =
   | RegisterReplicaRequest
@@ -46,7 +61,13 @@ const SyncHttpErrorBody = Schema.Struct({
 
 const decodeHttpErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(SyncHttpErrorBody));
 
-const mapHttpFailure = (status: number, bodyText: string) => {
+const mapHttpFailure = (response: SyncProxyResponse, now: number) => {
+  const { status, bodyText } = response;
+  const delay =
+    response.retryAfter === undefined ? undefined : retryAfterMillis(response.retryAfter, now);
+  if (delay !== undefined) {
+    return failureFromStatus(status, `Sync request failed with status ${status}.`, delay);
+  }
   const parsed = decodeHttpErrorBody(bodyText);
   if (Option.isSome(parsed)) {
     const decoded = Schema.decodeUnknownOption(SyncProtocolError)({
@@ -63,14 +84,14 @@ const encodeJsonBody = Schema.encodeEffect(Schema.fromJsonString(Schema.Json));
 
 const asJsonPayload = Schema.decodeUnknownEffect(Schema.Json);
 
-type SyncProxyResponse = Awaited<ReturnType<SyncProxyFetch>>;
-
 const readJson =
   <A, I>(schema: Schema.Codec<A, I>) =>
   (response: SyncProxyResponse): Effect.Effect<A, Schema.SchemaError | SyncFailure> =>
     response.ok
       ? Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(response.bodyText)
-      : Effect.fail(mapHttpFailure(response.status, response.bodyText));
+      : Effect.flatMap(Clock.currentTimeMillis, (now) =>
+          Effect.fail(mapHttpFailure(response, now)),
+        );
 
 const toTransportFailure = <A, E extends Error>(
   effect: Effect.Effect<A, E>,
@@ -80,9 +101,20 @@ const toTransportFailure = <A, E extends Error>(
   );
 
 export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTransport => {
-  const exchange = (method: "GET" | "POST", pathname: string, bodyText: string | null) =>
+  const exchange = (
+    operation: SyncOperation,
+    method: "GET" | "POST",
+    pathname: string,
+    bodyText: string | null,
+  ) =>
     Effect.tryPromise({
-      try: () => proxyFetch(method, pathname, bodyText),
+      try: () =>
+        proxyFetch({
+          method,
+          pathname,
+          bodyText,
+          timeoutMillis: SYNC_REQUEST_TIMEOUT_MILLIS[operation],
+        }),
       catch: (cause) =>
         cause instanceof Error
           ? cause
@@ -90,40 +122,57 @@ export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTranspor
     });
 
   const postJson = <A, I>(
+    operation: SyncOperation,
     pathname: string,
     schema: Schema.Codec<A, I>,
     payload: SyncProxyPostBody,
   ) =>
     asJsonPayload(payload).pipe(
       Effect.flatMap(encodeJsonBody),
-      Effect.flatMap((bodyText) => exchange("POST", pathname, bodyText)),
+      Effect.flatMap((bodyText) => exchange(operation, "POST", pathname, bodyText)),
       Effect.flatMap(readJson(schema)),
       toTransportFailure,
     );
 
-  const getJson = <A, I>(pathname: string, schema: Schema.Codec<A, I>) =>
-    exchange("GET", pathname, null).pipe(Effect.flatMap(readJson(schema)), toTransportFailure);
+  const getJson = <A, I>(operation: SyncOperation, pathname: string, schema: Schema.Codec<A, I>) =>
+    exchange(operation, "GET", pathname, null).pipe(
+      Effect.flatMap(readJson(schema)),
+      toTransportFailure,
+    );
 
-  const getOptionalJson = <A, I>(pathname: string, schema: Schema.Codec<A, I>) =>
-    exchange("GET", pathname, null).pipe(
+  const getOptionalJson = <A, I>(
+    operation: SyncOperation,
+    pathname: string,
+    schema: Schema.Codec<A, I>,
+  ) =>
+    exchange(operation, "GET", pathname, null).pipe(
       Effect.flatMap((response) =>
         response.status === 404 ? Effect.succeed(undefined) : readJson(schema)(response),
       ),
       toTransportFailure,
     );
 
-  return {
-    registerReplica: (request) => postJson("/api/sync/replicas", RegisterReplicaResult, request),
-    submitCommand: (envelope) => postJson("/api/sync/commands", CommandReceipt, envelope),
+  return withRequestDeadlines({
+    registerReplica: (request) =>
+      postJson("registerReplica", "/api/sync/replicas", RegisterReplicaResult, request),
+    submitCommand: (envelope) =>
+      postJson("submitCommand", "/api/sync/commands", CommandReceipt, envelope),
     getReceipt: (operationId) =>
-      getOptionalJson(`/api/sync/receipts/${encodeURIComponent(operationId)}`, CommandReceipt),
-    pull: (request) => postJson("/api/sync/pull", SyncPullResult, request),
-    acquireSnapshot: (request) => postJson("/api/sync/snapshots", AcquireSnapshotResult, request),
+      getOptionalJson(
+        "getReceipt",
+        `/api/sync/receipts/${encodeURIComponent(operationId)}`,
+        CommandReceipt,
+      ),
+    pull: (request) => postJson("pull", "/api/sync/pull", SyncPullResult, request),
+    acquireSnapshot: (request) =>
+      postJson("acquireSnapshot", "/api/sync/snapshots", AcquireSnapshotResult, request),
     readSnapshotPart: (snapshotId, partNumber) =>
       getJson(
+        "readSnapshotPart",
         `/api/sync/snapshots/${encodeURIComponent(snapshotId)}/parts/${partNumber}`,
         SnapshotPartPayload,
       ),
-    mintLiveTicket: (request) => postJson("/api/sync/live-tickets", LiveTicket, request),
-  };
+    mintLiveTicket: (request) =>
+      postJson("mintLiveTicket", "/api/sync/live-tickets", LiveTicket, request),
+  });
 };

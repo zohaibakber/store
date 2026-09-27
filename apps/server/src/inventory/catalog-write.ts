@@ -13,9 +13,10 @@ import {
   type ProductUpsertWrite,
   type SyncEntity,
   type SyncLogChange,
+  type SyncProtocolError,
 } from "@store/contracts";
 import { batches, categories, products, stockMovements } from "@store/db/postgres/schema";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, or, type Column, type SQL } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { InventoryActor } from "./model";
@@ -79,200 +80,226 @@ const updateMetadata = (
     commandIds(command),
   );
 
-const readCategory = Effect.fn("InventoryCatalog.readCategory")(function* (
+type CategoryRow = typeof categories.$inferSelect;
+type ProductRow = typeof products.$inferSelect;
+type BatchRow = typeof batches.$inferSelect;
+type MovementValues = typeof stockMovements.$inferInsert;
+
+/**
+ * The catalog rows one command can observe, read up front in at most four
+ * statements and kept current as the command's own writes return rows.
+ *
+ * Every per-row check reads this working set instead of Postgres. It is
+ * complete for those checks because the preload covers every id a write names
+ * or references, every category name an upsert claims, every batch of a
+ * written product, and every product of a deleted category; any other row a
+ * check could see must have been written by this command, which puts it here.
+ */
+type CatalogWorkingSet = {
+  readonly categories: Map<string, CategoryRow>;
+  readonly products: Map<string, ProductRow>;
+  readonly batches: Map<string, BatchRow>;
+  readonly movementIds: Set<string>;
+};
+
+type PendingMovement = {
+  readonly _tag: "PendingMovement";
+  readonly id: string;
+};
+
+type CatalogChange = SyncLogChange | PendingMovement;
+
+type CatalogWriteContext = {
+  readonly tx: InventoryTransaction;
+  readonly actor: InventoryActor;
+  readonly command: CatalogWriteCommand;
+  readonly rows: CatalogWorkingSet;
+  readonly movements: Array<MovementValues>;
+};
+
+const preloadWorkingSet = Effect.fn("InventoryCatalog.preloadWorkingSet")(function* (
   tx: InventoryTransaction,
   organizationId: string,
-  id: string,
+  writes: ReadonlyArray<CatalogRowWrite>,
 ) {
-  const [row] = yield* tx
-    .select()
-    .from(categories)
-    .where(and(eq(categories.organizationId, organizationId), eq(categories.id, id)))
-    .limit(1);
-  return row;
-});
-
-const requireUniqueCategoryName = Effect.fn("InventoryCatalog.requireUniqueCategoryName")(
-  function* (tx: InventoryTransaction, organizationId: string, id: string, name: string) {
-    const [row] = yield* tx
-      .select({ id: categories.id })
-      .from(categories)
-      .where(
-        and(
-          eq(categories.organizationId, organizationId),
-          eq(categories.name, name),
-          ne(categories.id, id),
-        ),
-      )
-      .limit(1);
-    if (row) {
-      return yield* protocol("ENTITY_CONFLICT", `Category name ${name} is already in use.`);
+  const categoryIds = new Set<string>();
+  const categoryNames = new Set<string>();
+  const productIds = new Set<string>();
+  const productCategoryIds = new Set<string>();
+  const batchIds = new Set<string>();
+  const batchProductIds = new Set<string>();
+  const movementIds = new Set<string>();
+  for (const write of writes) {
+    if (write.entity === "category") {
+      categoryIds.add(write.id);
+      if (write.action === "upsert") categoryNames.add(write.row.name);
+      else productCategoryIds.add(write.id);
+    } else if (write.entity === "product") {
+      productIds.add(write.id);
+      batchProductIds.add(write.id);
+      if (write.action === "upsert") categoryIds.add(write.row.categoryId);
+    } else {
+      batchIds.add(write.id);
+      if (write.action === "upsert") {
+        productIds.add(write.row.productId);
+        movementIds.add(write.movementId);
+      }
     }
-  },
-);
-
-const readProduct = Effect.fn("InventoryCatalog.readProduct")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  id: string,
-) {
-  const [row] = yield* tx
-    .select()
-    .from(products)
-    .where(and(eq(products.organizationId, organizationId), eq(products.id, id)))
-    .limit(1);
-  return row;
-});
-
-const readBatch = Effect.fn("InventoryCatalog.readBatch")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  id: string,
-) {
-  const [row] = yield* tx
-    .select()
-    .from(batches)
-    .where(and(eq(batches.organizationId, organizationId), eq(batches.id, id)))
-    .limit(1);
-  return row;
-});
-
-const requireActiveCategory = Effect.fn("InventoryCatalog.requireActiveCategory")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  categoryId: string,
-) {
-  const row = yield* readCategory(tx, organizationId, categoryId);
-  if (!row) {
-    return yield* protocol(
-      "ENTITY_RELATION_INVALID",
-      `Category ${categoryId} is not available in this organization.`,
-    );
   }
-  return row;
+  const matching = (...conditions: ReadonlyArray<SQL | undefined>) =>
+    or(...conditions.filter((condition) => condition !== undefined));
+  const anyOf = (column: Column, values: ReadonlySet<string>) =>
+    values.size === 0 ? undefined : inArray(column, [...values]);
+
+  const categoryRows =
+    categoryIds.size + categoryNames.size === 0
+      ? []
+      : yield* tx
+          .select()
+          .from(categories)
+          .where(
+            and(
+              eq(categories.organizationId, organizationId),
+              matching(anyOf(categories.id, categoryIds), anyOf(categories.name, categoryNames)),
+            ),
+          );
+  const productRows =
+    productIds.size + productCategoryIds.size === 0
+      ? []
+      : yield* tx
+          .select()
+          .from(products)
+          .where(
+            and(
+              eq(products.organizationId, organizationId),
+              matching(
+                anyOf(products.id, productIds),
+                anyOf(products.categoryId, productCategoryIds),
+              ),
+            ),
+          );
+  const batchRows =
+    batchIds.size + batchProductIds.size === 0
+      ? []
+      : yield* tx
+          .select()
+          .from(batches)
+          .where(
+            and(
+              eq(batches.organizationId, organizationId),
+              matching(anyOf(batches.id, batchIds), anyOf(batches.productId, batchProductIds)),
+            ),
+          );
+  const movementRows =
+    movementIds.size === 0
+      ? []
+      : yield* tx
+          .select({ id: stockMovements.id })
+          .from(stockMovements)
+          .where(
+            and(
+              eq(stockMovements.organizationId, organizationId),
+              inArray(stockMovements.id, [...movementIds]),
+            ),
+          );
+  return {
+    categories: new Map(categoryRows.map((row) => [row.id, row])),
+    products: new Map(productRows.map((row) => [row.id, row])),
+    batches: new Map(batchRows.map((row) => [row.id, row])),
+    movementIds: new Set(movementRows.map((row) => row.id)),
+  } satisfies CatalogWorkingSet;
 });
 
-const requireActiveProduct = Effect.fn("InventoryCatalog.requireActiveProduct")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  productId: string,
-) {
-  const [row] = yield* tx
-    .select({ id: products.id })
-    .from(products)
-    .where(
-      and(
-        eq(products.organizationId, organizationId),
-        eq(products.id, productId),
-        isNull(products.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    return yield* protocol(
-      "ENTITY_RELATION_INVALID",
-      `Product ${productId} is not available in this organization.`,
-    );
+const requireUniqueCategoryName = (rows: CatalogWorkingSet, id: string, name: string) => {
+  for (const category of rows.categories.values()) {
+    if (category.name === name && category.id !== id) {
+      return protocol("ENTITY_CONFLICT", `Category name ${name} is already in use.`);
+    }
   }
-  return row;
-});
+  return Effect.void;
+};
 
-const readProductBatches = Effect.fn("InventoryCatalog.readProductBatches")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  productId: string,
-) {
-  return yield* tx
-    .select({
-      productId: batches.productId,
-      deletedAt: batches.deletedAt,
-      packQuantity: batches.packQuantity,
-      unitQuantity: batches.unitQuantity,
-    })
-    .from(batches)
-    .where(and(eq(batches.organizationId, organizationId), eq(batches.productId, productId)));
-});
+const requireActiveCategory = (rows: CatalogWorkingSet, categoryId: string) =>
+  rows.categories.has(categoryId)
+    ? Effect.void
+    : protocol(
+        "ENTITY_RELATION_INVALID",
+        `Category ${categoryId} is not available in this organization.`,
+      );
 
-const readCategoryProducts = Effect.fn("InventoryCatalog.readCategoryProducts")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  categoryId: string,
-) {
-  return yield* tx
-    .select({ categoryId: products.categoryId, deletedAt: products.deletedAt })
-    .from(products)
-    .where(and(eq(products.organizationId, organizationId), eq(products.categoryId, categoryId)));
-});
+const requireActiveProduct = (rows: CatalogWorkingSet, productId: string) => {
+  const product = rows.products.get(productId);
+  return product !== undefined && product.deletedAt === null
+    ? Effect.void
+    : protocol(
+        "ENTITY_RELATION_INVALID",
+        `Product ${productId} is not available in this organization.`,
+      );
+};
 
-const requireUnusedMovementId = Effect.fn("InventoryCatalog.requireUnusedMovementId")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-  movementId: string,
-) {
-  const [row] = yield* tx
-    .select({ id: stockMovements.id })
-    .from(stockMovements)
-    .where(
-      and(eq(stockMovements.organizationId, organizationId), eq(stockMovements.id, movementId)),
-    )
-    .limit(1);
-  if (row) {
-    return yield* protocol("ENTITY_CONFLICT", `Movement ${movementId} is already recorded.`);
-  }
-});
-
-const writeMovement = Effect.fn("InventoryCatalog.writeMovement")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+const queueMovement = (
+  context: CatalogWriteContext,
   write: BatchUpsertWrite,
   type: "stock_in" | "adjustment",
   packDelta: number,
   unitDelta: number,
-) {
-  yield* requireUnusedMovementId(tx, actor.organizationId, write.movementId);
-  const [movement] = yield* tx
-    .insert(stockMovements)
-    .values({
-      id: write.movementId,
-      productId: write.row.productId,
-      batchId: write.id,
-      invoiceId: null,
-      type,
-      packDelta,
-      unitDelta,
-      note: write.note,
-      organizationId: actor.organizationId,
-      actorUserId: actor.userId,
-      deviceId: command.deviceId,
-      operationId: command.commandId,
-      createdAt: command.occurredAt,
-    })
-    .returning();
-  if (!movement) {
-    return yield* protocol("ENTITY_WRITE_FAILED", "The stock movement could not be recorded.");
+): Effect.Effect<PendingMovement, SyncProtocolError> => {
+  if (context.rows.movementIds.has(write.movementId)) {
+    return protocol("ENTITY_CONFLICT", `Movement ${write.movementId} is already recorded.`);
   }
-  return {
-    entity: "stockMovement",
-    action: "upsert",
-    entityId: movement.id,
-    rowVersion: 1,
-    row: movement,
-  } satisfies SyncLogChange;
+  context.rows.movementIds.add(write.movementId);
+  context.movements.push({
+    id: write.movementId,
+    productId: write.row.productId,
+    batchId: write.id,
+    invoiceId: null,
+    type,
+    packDelta,
+    unitDelta,
+    note: write.note,
+    organizationId: context.actor.organizationId,
+    actorUserId: context.actor.userId,
+    deviceId: context.command.deviceId,
+    operationId: context.command.commandId,
+    createdAt: context.command.occurredAt,
+  });
+  return Effect.succeed({ _tag: "PendingMovement", id: write.movementId });
+};
+
+const insertMovements = Effect.fn("InventoryCatalog.insertMovements")(function* (
+  tx: InventoryTransaction,
+  movements: ReadonlyArray<MovementValues>,
+) {
+  if (movements.length === 0) return new Map<string, SyncLogChange>();
+  const inserted = yield* tx
+    .insert(stockMovements)
+    .values([...movements])
+    .returning();
+  return new Map(
+    inserted.map((movement) => [
+      movement.id,
+      {
+        entity: "stockMovement",
+        action: "upsert",
+        entityId: movement.id,
+        rowVersion: 1,
+        row: movement,
+      } satisfies SyncLogChange,
+    ]),
+  );
 });
 
 const writeCategoryUpsert = Effect.fn("InventoryCatalog.writeCategoryUpsert")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+  context: CatalogWriteContext,
   write: CategoryUpsertWrite,
 ) {
-  const existing = yield* readCategory(tx, actor.organizationId, write.id);
+  const { tx, actor, command, rows } = context;
+  const existing = rows.categories.get(write.id);
   if (write.expectedRowVersion === null) {
     if (existing) {
       return yield* protocol("ENTITY_CONFLICT", `Category ${write.id} already exists.`);
     }
-    yield* requireUniqueCategoryName(tx, actor.organizationId, write.id, write.row.name);
+    yield* requireUniqueCategoryName(rows, write.id, write.row.name);
     const [created] = yield* tx
       .insert(categories)
       .values({ id: write.id, ...write.row, ...insertMetadata(actor, command) })
@@ -280,12 +307,13 @@ const writeCategoryUpsert = Effect.fn("InventoryCatalog.writeCategoryUpsert")(fu
     if (!created) {
       return yield* protocol("ENTITY_WRITE_FAILED", "The category could not be created.");
     }
+    rows.categories.set(created.id, created);
     return [upsertChange("category", created)];
   }
   if (!existing) {
     return yield* protocol("ENTITY_CONFLICT", `Category ${write.id} is no longer available.`);
   }
-  yield* requireUniqueCategoryName(tx, actor.organizationId, write.id, write.row.name);
+  yield* requireUniqueCategoryName(rows, write.id, write.row.name);
   const [updated] = yield* tx
     .update(categories)
     .set({ ...write.row, ...updateMetadata(actor, command, existing.rowVersion) })
@@ -294,21 +322,21 @@ const writeCategoryUpsert = Effect.fn("InventoryCatalog.writeCategoryUpsert")(fu
   if (!updated) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The category could not be updated.");
   }
+  rows.categories.set(updated.id, updated);
   return [upsertChange("category", updated)];
 });
 
 const writeProductUpsert = Effect.fn("InventoryCatalog.writeProductUpsert")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+  context: CatalogWriteContext,
   write: ProductUpsertWrite,
 ) {
-  const existing = yield* readProduct(tx, actor.organizationId, write.id);
+  const { tx, actor, command, rows } = context;
+  const existing = rows.products.get(write.id);
   if (write.expectedRowVersion === null) {
     if (existing) {
       return yield* protocol("ENTITY_CONFLICT", `Product ${write.id} already exists.`);
     }
-    yield* requireActiveCategory(tx, actor.organizationId, write.row.categoryId);
+    yield* requireActiveCategory(rows, write.row.categoryId);
     const [created] = yield* tx
       .insert(products)
       .values({ id: write.id, ...write.row, ...insertMetadata(actor, command) })
@@ -316,6 +344,7 @@ const writeProductUpsert = Effect.fn("InventoryCatalog.writeProductUpsert")(func
     if (!created) {
       return yield* protocol("ENTITY_WRITE_FAILED", "The product could not be created.");
     }
+    rows.products.set(created.id, created);
     return [upsertChange("product", created)];
   }
   if (!existing || existing.deletedAt !== null) {
@@ -328,13 +357,12 @@ const writeProductUpsert = Effect.fn("InventoryCatalog.writeProductUpsert")(func
         `Product ${write.id} changed since units per pack was read.`,
       );
     }
-    const stock = yield* readProductBatches(tx, actor.organizationId, write.id);
-    if (productHasRemainingStock(stock, write.id)) {
+    if (productHasRemainingStock(rows.batches.values(), write.id)) {
       return yield* protocol("ENTITY_CONFLICT", catalogWriteError.unitsPerPackWithStock);
     }
   }
   if (write.row.categoryId !== existing.categoryId) {
-    yield* requireActiveCategory(tx, actor.organizationId, write.row.categoryId);
+    yield* requireActiveCategory(rows, write.row.categoryId);
   }
   const [updated] = yield* tx
     .update(products)
@@ -344,17 +372,17 @@ const writeProductUpsert = Effect.fn("InventoryCatalog.writeProductUpsert")(func
   if (!updated) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The product could not be updated.");
   }
+  rows.products.set(updated.id, updated);
   return [upsertChange("product", updated)];
 });
 
 const writeBatchUpsert = Effect.fn("InventoryCatalog.writeBatchUpsert")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+  context: CatalogWriteContext,
   write: BatchUpsertWrite,
 ) {
-  const existing = yield* readBatch(tx, actor.organizationId, write.id);
-  yield* requireActiveProduct(tx, actor.organizationId, write.row.productId);
+  const { tx, actor, command, rows } = context;
+  const existing = rows.batches.get(write.id);
+  yield* requireActiveProduct(rows, write.row.productId);
   if (write.expectedRowVersion === null) {
     if (existing) {
       return yield* protocol("ENTITY_CONFLICT", `Batch ${write.id} already exists.`);
@@ -366,13 +394,12 @@ const writeBatchUpsert = Effect.fn("InventoryCatalog.writeBatchUpsert")(function
     if (!created) {
       return yield* protocol("ENTITY_WRITE_FAILED", "The batch could not be created.");
     }
-    const changes = [upsertChange("batch", created)];
+    rows.batches.set(created.id, created);
+    const changes: Array<CatalogChange> = [upsertChange("batch", created)];
     if (batchHasRemainingStock(write.row)) {
       changes.push(
-        yield* writeMovement(
-          tx,
-          actor,
-          command,
+        yield* queueMovement(
+          context,
           write,
           "stock_in",
           write.row.packQuantity,
@@ -396,13 +423,12 @@ const writeBatchUpsert = Effect.fn("InventoryCatalog.writeBatchUpsert")(function
   if (!updated) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The batch could not be updated.");
   }
-  const changes = [upsertChange("batch", updated)];
+  rows.batches.set(updated.id, updated);
+  const changes: Array<CatalogChange> = [upsertChange("batch", updated)];
   if (batchQuantitiesChanged(write, existing)) {
     changes.push(
-      yield* writeMovement(
-        tx,
-        actor,
-        command,
+      yield* queueMovement(
+        context,
         write,
         "adjustment",
         write.row.packQuantity - existing.packQuantity,
@@ -414,19 +440,18 @@ const writeBatchUpsert = Effect.fn("InventoryCatalog.writeBatchUpsert")(function
 });
 
 const writeCategoryDelete = Effect.fn("InventoryCatalog.writeCategoryDelete")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
+  context: CatalogWriteContext,
   write: CatalogRowWrite,
 ) {
-  const existing = yield* readCategory(tx, actor.organizationId, write.id);
+  const { tx, actor, rows } = context;
+  const existing = rows.categories.get(write.id);
   if (!existing) {
     return yield* protocol("ENTITY_CONFLICT", `Category ${write.id} is no longer available.`);
   }
   if (!rowVersionMatches(write, existing.rowVersion)) {
     return yield* protocol("ENTITY_CONFLICT", `Category ${write.id} changed since it was read.`);
   }
-  const members = yield* readCategoryProducts(tx, actor.organizationId, write.id);
-  if (categoryHasActiveProducts(members, write.id)) {
+  if (categoryHasActiveProducts(rows.products.values(), write.id)) {
     return yield* protocol("ENTITY_CONFLICT", catalogWriteError.categoryHasProducts);
   }
   const [deleted] = yield* tx
@@ -436,24 +461,23 @@ const writeCategoryDelete = Effect.fn("InventoryCatalog.writeCategoryDelete")(fu
   if (!deleted) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The category could not be deleted.");
   }
+  rows.categories.delete(deleted.id);
   return [deleteChange("category", deleted, deleted.rowVersion + 1)];
 });
 
 const writeProductDelete = Effect.fn("InventoryCatalog.writeProductDelete")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+  context: CatalogWriteContext,
   write: CatalogRowWrite,
 ) {
-  const existing = yield* readProduct(tx, actor.organizationId, write.id);
+  const { tx, actor, command, rows } = context;
+  const existing = rows.products.get(write.id);
   if (!existing || existing.deletedAt !== null) {
     return yield* protocol("ENTITY_CONFLICT", `Product ${write.id} is no longer available.`);
   }
   if (!rowVersionMatches(write, existing.rowVersion)) {
     return yield* protocol("ENTITY_CONFLICT", `Product ${write.id} changed since it was read.`);
   }
-  const stock = yield* readProductBatches(tx, actor.organizationId, write.id);
-  if (productHasRemainingStock(stock, write.id)) {
+  if (productHasRemainingStock(rows.batches.values(), write.id)) {
     return yield* protocol("ENTITY_CONFLICT", catalogWriteError.productHasStock);
   }
   const [deleted] = yield* tx
@@ -467,16 +491,16 @@ const writeProductDelete = Effect.fn("InventoryCatalog.writeProductDelete")(func
   if (!deleted) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The product could not be deleted.");
   }
+  rows.products.set(deleted.id, deleted);
   return [deleteChange("product", deleted)];
 });
 
 const writeBatchDelete = Effect.fn("InventoryCatalog.writeBatchDelete")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
+  context: CatalogWriteContext,
   write: CatalogRowWrite,
 ) {
-  const existing = yield* readBatch(tx, actor.organizationId, write.id);
+  const { tx, actor, command, rows } = context;
+  const existing = rows.batches.get(write.id);
   if (!existing || existing.deletedAt !== null) {
     return yield* protocol("ENTITY_CONFLICT", `Batch ${write.id} is no longer available.`);
   }
@@ -497,33 +521,60 @@ const writeBatchDelete = Effect.fn("InventoryCatalog.writeBatchDelete")(function
   if (!deleted) {
     return yield* protocol("ENTITY_WRITE_FAILED", "The batch could not be deleted.");
   }
+  rows.batches.set(deleted.id, deleted);
   return [deleteChange("batch", deleted)];
 });
 
-const writeRow = Effect.fn("InventoryCatalog.writeRow")(function* (
-  tx: InventoryTransaction,
-  actor: InventoryActor,
-  command: CatalogWriteCommand,
-  write: CatalogRowWrite,
-) {
+const writeRow = (context: CatalogWriteContext, write: CatalogRowWrite) => {
   if (write.action === "delete") {
-    if (write.entity === "category") return yield* writeCategoryDelete(tx, actor, write);
-    if (write.entity === "product") return yield* writeProductDelete(tx, actor, command, write);
-    return yield* writeBatchDelete(tx, actor, command, write);
+    if (write.entity === "category") return writeCategoryDelete(context, write);
+    if (write.entity === "product") return writeProductDelete(context, write);
+    return writeBatchDelete(context, write);
   }
-  if (write.entity === "category") return yield* writeCategoryUpsert(tx, actor, command, write);
-  if (write.entity === "product") return yield* writeProductUpsert(tx, actor, command, write);
-  return yield* writeBatchUpsert(tx, actor, command, write);
-});
+  if (write.entity === "category") return writeCategoryUpsert(context, write);
+  if (write.entity === "product") return writeProductUpsert(context, write);
+  return writeBatchUpsert(context, write);
+};
 
+const isPendingMovement = (change: CatalogChange): change is PendingMovement =>
+  "_tag" in change && change._tag === "PendingMovement";
+
+/**
+ * Applies a catalog write inside the organization-locked transaction.
+ *
+ * Reads: one preload per touched table instead of three to five statements
+ * per row. Writes: one statement per row, in command order, so a Postgres
+ * failure still surfaces at the row that caused it; stock movements, which no
+ * later check reads, go out as one multi-row insert after the last row.
+ */
 export const applyCatalogWrite = Effect.fn("InventoryCommands.applyCatalogWrite")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
   command: CatalogWriteCommand,
 ) {
-  const changes: SyncLogChange[] = [];
+  const context: CatalogWriteContext = {
+    tx,
+    actor,
+    command,
+    rows: yield* preloadWorkingSet(tx, actor.organizationId, command.writes),
+    movements: [],
+  };
+  const pending: Array<CatalogChange> = [];
   for (const write of command.writes) {
-    changes.push(...(yield* writeRow(tx, actor, command, write)));
+    pending.push(...(yield* writeRow(context, write)));
+  }
+  const movements = yield* insertMovements(tx, context.movements);
+  const changes: Array<SyncLogChange> = [];
+  for (const change of pending) {
+    if (!isPendingMovement(change)) {
+      changes.push(change);
+      continue;
+    }
+    const movement = movements.get(change.id);
+    if (!movement) {
+      return yield* protocol("ENTITY_WRITE_FAILED", "The stock movement could not be recorded.");
+    }
+    changes.push(movement);
   }
   return {
     result: { _tag: "catalogWrite", rowsWritten: command.writes.length },

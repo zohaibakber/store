@@ -19,7 +19,9 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -29,9 +31,11 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { ephemeralStoreLayer } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
-import { authRoutes } from "./src/http";
-import { authRepositoryLayer } from "./src/repository";
+import { authRoutes, buildOncePerIsolate, workerRuntimeServices } from "./src/http";
+import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./src/limits";
+import { AuthRepository, authRepositoryLayer } from "./src/repository";
 import { authServiceLayer } from "./src/service";
+import { pruneExpiredSessions, SESSION_PRUNE_POLICY } from "./src/session-maintenance";
 
 const LOCAL_AUTH_ORIGIN = "http://localhost:8788";
 const resolveProductionAuthHostname = (input: {
@@ -148,11 +152,11 @@ export const AuthLive = Auth.make(
     );
     const tenPerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_TEN_PER_MINUTE", {
       namespaceId: 1003,
-      simple: { limit: 10, period: 60 },
+      simple: { limit: 10, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
     });
     const fivePerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_FIVE_PER_MINUTE", {
       namespaceId: 1004,
-      simple: { limit: 5, period: 60 },
+      simple: { limit: 5, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
     });
     const developmentOtp = yield* Config.Boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
     if (!localDevelopment && developmentOtp) {
@@ -163,46 +167,68 @@ export const AuthLive = Auth.make(
       );
     }
 
-    const DependenciesLive = Layer.unwrap(
-      Effect.gen(function* () {
-        const database = yield* databaseBinding.raw;
-        return Layer.mergeAll(
-          authRepositoryLayer(database),
-          ephemeralStoreLayer(database, ephemeralPepper),
-          passwordHasherLayer,
-          accessTokenLayer({
-            issuer: security.baseURL,
-            audience: "tabaaq-api",
-            privateJwk,
-            publicJwk,
-          }),
-          developmentOtp ? developmentEmailLayer : disabledEmailLayer,
-          googleOAuthLayer({
-            clientId: googleClientId,
-            clientSecret: googleClientSecret,
-            callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
-            nativeClientIds: googleNativeClientIds,
-          }),
-        );
+    const isolateServices = yield* workerRuntimeServices;
+    const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
+    const DependenciesLive = Layer.mergeAll(
+      authRepositoryLayer(database),
+      ephemeralStoreLayer(database, ephemeralPepper),
+      passwordHasherLayer,
+      accessTokenLayer({
+        issuer: security.baseURL,
+        audience: "tabaaq-api",
+        privateJwk,
+        publicJwk,
+      }),
+      developmentOtp ? developmentEmailLayer : disabledEmailLayer,
+      googleOAuthLayer({
+        clientId: googleClientId,
+        clientSecret: googleClientSecret,
+        callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
+        nativeClientIds: googleNativeClientIds,
       }),
     );
-    const ServiceLive = authServiceLayer({
-      developmentOtp,
-      trustedRedirects: security.trustedRedirects,
-      refreshTokenPepper,
-      limits: {
-        tenPerMinute: (key) => tenPerMinute.limit({ key }),
-        fivePerMinute: (key) => fivePerMinute.limit({ key }),
-      },
-    }).pipe(Layer.provide(DependenciesLive));
-    const RoutesLive = authRoutes({
-      baseUrl: security.baseURL,
-      publicJwk,
-      secureCookies: security.secureCookies,
-      trustedOrigins: security.trustedOrigins,
-    }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
+    const runtime = yield* Effect.exit(
+      Effect.gen(function* () {
+        const dependencies = yield* buildOncePerIsolate(
+          Layer.build(DependenciesLive),
+          isolateServices,
+        );
+        const ServiceLive = authServiceLayer({
+          developmentOtp,
+          trustedRedirects: security.trustedRedirects,
+          refreshTokenPepper,
+          limits: {
+            tenPerMinute: (key) => tenPerMinute.limit({ key }),
+            fivePerMinute: (key) => fivePerMinute.limit({ key }),
+          },
+        }).pipe(Layer.provide(Layer.succeedContext(dependencies)));
+        const RoutesLive = authRoutes({
+          baseUrl: security.baseURL,
+          publicJwk,
+          secureCookies: security.secureCookies,
+          trustedOrigins: security.trustedOrigins,
+        }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
+        const serveRequest = yield* buildOncePerIsolate(
+          HttpRouter.toHttpEffect(RoutesLive),
+          isolateServices,
+        );
+        return { serveRequest, repository: Context.get(dependencies, AuthRepository) };
+      }),
+    );
+    yield* Cloudflare.Workers.cron(SESSION_PRUNE_POLICY.cronExpression, () =>
+      Exit.isSuccess(runtime)
+        ? pruneExpiredSessions(runtime.value.repository).pipe(
+            Effect.tap((progress) => Effect.log("auth session prune run", progress)),
+            Effect.tapError((error) => Effect.logError("auth session prune failed", error)),
+            Effect.ignore,
+          )
+        : Effect.logError("auth session prune skipped: the auth runtime failed to build"),
+    );
 
-    const handler = Effect.scoped(Effect.flatten(HttpRouter.toHttpEffect(RoutesLive))).pipe(
+    const serveRequest = Exit.isSuccess(runtime)
+      ? runtime.value.serveRequest
+      : Effect.failCause(runtime.cause);
+    const handler = serveRequest.pipe(
       Effect.catchIf(
         (error) =>
           HttpServerError.isHttpServerError(error) && error.reason._tag === "RouteNotFound",
@@ -235,6 +261,7 @@ export const AuthLive = Auth.make(
 
     return { fetch: handler };
   }).pipe(
+    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),

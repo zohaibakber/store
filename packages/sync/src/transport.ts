@@ -12,7 +12,7 @@ import type {
   SyncPullRequest,
   SyncPullResult,
 } from "@store/contracts";
-import { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
+import { LIVE_LONG_POLL_MAX_MILLIS, SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import { SyncHttpApi } from "@store/contracts/sync/api";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -21,7 +21,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Headers from "effect/unstable/http/Headers";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import {
@@ -139,15 +141,17 @@ export type SyncFailureCause =
   | SyncHttpErrorBody
   | Error;
 
+const isAuthStatus = (status: number): boolean => status === 401 || status === 403;
+
 export const failureFromStatus = (
   status: number,
   message: string,
   retryAfter?: number,
 ): SyncTransportError => {
-  if (status === 401 || status === 403) {
+  if (isAuthStatus(status)) {
     return SyncTransportAuthRequired.make({ message, status });
   }
-  if (status === 408 || status === 429 || status >= 500) {
+  if (retryAfter !== undefined || status === 408 || status === 429 || status >= 500) {
     return SyncTransportUnavailable.make(
       retryAfter === undefined
         ? { message, status }
@@ -268,9 +272,69 @@ export type SyncTransport = {
   ) => Effect.Effect<LiveTicket, SyncTransportError | SyncProtocolError>;
 };
 
+export const SYNC_REQUEST_TIMEOUT_MILLIS = {
+  registerReplica: 15_000,
+  submitCommand: 15_000,
+  getReceipt: 30_000,
+  pull: 30_000,
+  acquireSnapshot: 30_000,
+  readSnapshotPart: 30_000,
+  mintLiveTicket: 15_000,
+} as const satisfies Record<keyof SyncTransport, number>;
+
+const LIVE_RESPONSE_GRACE_MILLIS = 10_000;
+
+export const LIVE_LONG_POLL_TIMEOUT_MILLIS = LIVE_LONG_POLL_MAX_MILLIS + LIVE_RESPONSE_GRACE_MILLIS;
+
+const withDeadline =
+  (operation: keyof SyncTransport) =>
+  <A, R>(
+    effect: Effect.Effect<A, SyncTransportError | SyncProtocolError, R>,
+  ): Effect.Effect<A, SyncTransportError | SyncProtocolError, R> =>
+    Effect.timeoutOrElse(effect, {
+      duration: SYNC_REQUEST_TIMEOUT_MILLIS[operation],
+      orElse: () =>
+        Effect.fail(
+          SyncTransportOffline.make({
+            message: `The sync ${operation} request did not finish within ${SYNC_REQUEST_TIMEOUT_MILLIS[operation]} ms.`,
+          }),
+        ),
+    });
+
+export const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
+  registerReplica: (request) => withDeadline("registerReplica")(transport.registerReplica(request)),
+  submitCommand: (envelope) => withDeadline("submitCommand")(transport.submitCommand(envelope)),
+  getReceipt: (operationId) => withDeadline("getReceipt")(transport.getReceipt(operationId)),
+  pull: (request) => withDeadline("pull")(transport.pull(request)),
+  acquireSnapshot: (request) => withDeadline("acquireSnapshot")(transport.acquireSnapshot(request)),
+  readSnapshotPart: (snapshotId, partNumber) =>
+    withDeadline("readSnapshotPart")(transport.readSnapshotPart(snapshotId, partNumber)),
+  mintLiveTicket: (request) => withDeadline("mintLiveTicket")(transport.mintLiveTicket(request)),
+});
+
+const retryLaterFailure = (response: HttpClientResponse.HttpClientResponse) =>
+  response.status >= 300 &&
+  !isAuthStatus(response.status) &&
+  Option.isSome(Headers.get(response.headers, "retry-after"))
+    ? Effect.fail(
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.StatusCodeError({
+            request: response.request,
+            response,
+            description: "The sync authority asked the client to retry later.",
+          }),
+        }),
+      )
+    : Effect.succeed(response);
+
+const honourRetryAfter = HttpClient.transformResponse(Effect.flatMap(retryLaterFailure));
+
 export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (baseUrl: string) {
-  const client = yield* HttpApiClient.make(SyncHttpApi, { baseUrl });
-  return {
+  const client = yield* HttpApiClient.make(SyncHttpApi, {
+    baseUrl,
+    transformClient: honourRetryAfter,
+  });
+  return withRequestDeadlines({
     registerReplica: (request) =>
       mapTransportFailure(client.sync.registerReplica({ payload: request })),
     submitCommand: (envelope) =>
@@ -288,7 +352,7 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
       mapTransportFailure(client.sync.readSnapshotPart({ params: { snapshotId, partNumber } })),
     mintLiveTicket: (request) =>
       mapTransportFailure(client.sync.mintLiveTicket({ payload: request })),
-  } satisfies SyncTransport;
+  });
 });
 
 export class SyncTransportService extends Context.Service<SyncTransportService, SyncTransport>()(
