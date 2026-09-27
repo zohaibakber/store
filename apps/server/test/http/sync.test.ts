@@ -313,6 +313,25 @@ describe("sync HTTP", () => {
     expect(await response.json()).toMatchObject({ _tag: "building", retryAfterMillis: 15_000 });
   });
 
+  it("rounds Retry-After up to whole seconds", async () => {
+    const syncAuthority: SyncAuthorityContract = {
+      ...unusedAuthority,
+      acquireSnapshot: () =>
+        Effect.succeed({
+          _tag: "building" as const,
+          snapshotId: SnapshotId.make("snap-building"),
+          retryAfterMillis: 1_001,
+        }),
+    };
+    const response = await appFor(true, { syncAuthority }).request("/api/sync/snapshots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ epoch: "1", subscription: "operational" }),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("retry-after")).toBe("2");
+  });
+
   it("accepts a bearer-only live request without a ticket nonce", async () => {
     const seen: Array<string | undefined> = [];
     const syncLiveUpgrade: SyncLiveUpgradeContract = {

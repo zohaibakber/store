@@ -3,9 +3,6 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Live inventory uses IndexedDB on web and node:sqlite through
-// @effect/sql-sqlite-node in the Electron replica worker. No native SQLite
-// addon may ship, and OPFS/WASM SQLite worker assets stay out of the renderer.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
@@ -24,8 +21,6 @@ const forbiddenPackageRoots = new Set([
   "@effect/sql-sqlite-node",
 ]);
 
-// Shared catalog index names also live in replica SQL, which the renderer must
-// apply. Ban inventory-authority and Postgres/ORM markers instead.
 const forbiddenRendererMarkers = [
   "command_receipts",
   "consumed_tickets",
@@ -85,10 +80,6 @@ const verifyDesktopAsar = (archivePath) => {
     );
   }
 
-  // @electron/asar returns OS-native separators (backslash on Windows), but every
-  // check below compares against posix-style constants and splits on "/". Keep the
-  // raw form too: extractFile() internally splits on path.sep, so feeding it a
-  // posix-normalized path fails to resolve the file on Windows.
   const rawEntries = listPackage(archivePath);
   const toPosix = (entry) => entry.replaceAll("\\", "/");
   const entries = rawEntries.map(toPosix);

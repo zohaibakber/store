@@ -1,15 +1,6 @@
 import { publicHostnameFrom } from "@store/auth/security";
 import * as Config from "effect/Config";
 
-/**
- * Production hostnames for the Website (apex) and API (`api.` subdomain).
- *
- * Site hostname precedence: `PRODUCTION_DOMAIN`, then the first
- * `AUTH_TRUSTED_ORIGINS` host, then the parent of an `api.*` `VITE_API_URL`.
- *
- * API hostname precedence: `PRODUCTION_API_DOMAIN`, then `VITE_API_URL` when it
- * is not the site host, then `api.${site}`. There is no baked product domain.
- */
 export const PRODUCTION_DOMAIN_MISSING_MESSAGE =
   "Published hostname is not configured. Set PRODUCTION_DOMAIN (hostname only, e.g. example.com) on the stage's GitHub Environment.";
 
@@ -25,7 +16,6 @@ type ProductionDomainEnv = {
 
 const blankWhenUnset = (name: string) => Config.String(name).pipe(Config.withDefault(""));
 
-/** Reads every variable the production hostnames derive from; unset ones read as blank. */
 export const productionDomainConfig = Config.all({
   PRODUCTION_DOMAIN: blankWhenUnset("PRODUCTION_DOMAIN"),
   PRODUCTION_API_DOMAIN: blankWhenUnset("PRODUCTION_API_DOMAIN"),

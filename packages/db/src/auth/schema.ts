@@ -16,7 +16,7 @@ export const user = sqliteTable(
     createdAt: timestamp().default(nowDefault).notNull(),
     updatedAt: timestamp()
       .default(nowDefault)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .$onUpdate(() => new Date())
       .notNull(),
   },
   (table) => [uniqueIndex("auth_user_email_idx").on(table.email)],
@@ -48,7 +48,7 @@ export const organization = sqliteTable(
     createdAt: timestamp().default(nowDefault).notNull(),
     updatedAt: timestamp()
       .default(nowDefault)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .$onUpdate(() => new Date())
       .notNull(),
   },
   (table) => [uniqueIndex("auth_organization_slug_idx").on(table.slug)],
@@ -73,13 +73,6 @@ export const organizationMembership = sqliteTable(
   ],
 );
 
-/**
- * A pending invitation is the authority for joining an existing organization.
- * Only the hash of the token secret is stored, so a leaked row cannot be
- * redeemed. The partial unique index keeps one live invitation per email and
- * organization while allowing the same address to be invited again after a
- * revoke or an accept.
- */
 export const organizationInvitation = sqliteTable(
   "auth_organization_invitation",
   {

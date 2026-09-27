@@ -4,7 +4,6 @@ interface AccessLocation {
   readonly pathname: string;
 }
 
-/** Outcome of one admit() call. */
 type AccessVerdict =
   | { readonly _tag: "Allow" }
   | {
@@ -15,16 +14,11 @@ type AccessVerdict =
 
 type AppChrome = { readonly _tag: "Bare" } | { readonly _tag: "Shell" };
 
-/** Signed organization inventory. Neither host opens a guest catalog. */
 type HostInventoryScope = {
   readonly organizationId: string;
   readonly userId: string;
 };
 
-/**
- * Host access policy. Inject once at bootstrap. Routes stay host-blind.
- * Both hosts require an authenticated organization before inventory.
- */
 export interface HostAccessPolicy {
   readonly admit: (input: {
     readonly location: AccessLocation;
@@ -40,7 +34,6 @@ const PUBLIC_PATHS = new Set(["/sign-in"]);
 
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.has(pathname);
 
-/** Signed-in with an organization. Admit and sign-in must use the same check. */
 export const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
   snapshot?.status === "authenticated" && snapshot.activeOrganization != null;
 

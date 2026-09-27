@@ -52,29 +52,24 @@ import {
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
 
+const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
+
 export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod" || stage === "nightly";
-    // Domain attachment is deploy-time only. This generator is also the Worker
-    // entry (`main: import.meta.url`); workerd has no deploy variables, so a
-    // hostname check there would 1101 every request (including CORS preflight).
     const apiHostname =
       !globalThis.__ALCHEMY_RUNTIME__ && published
         ? requireProductionApiHostname(yield* productionDomainConfig)
         : undefined;
     const worker = {
       main: import.meta.url,
-      // Capped by the workerd that `alchemy dev` runs locally, not by Cloudflare:
-      // alchemy's dev runtime pins workerd exactly, and that build refuses any
-      // date past 2026-07-11. Raising this breaks `vp run dev` with a
-      // WorkerdUserScript ConfigError while deploys keep working, so keep the two
-      // in step. No compatibility flag gates between 07-11 and the 07-13 this
-      // used to be, so nothing behavioural changed. Bump it when alchemy's
-      // bundled workerd moves.
-      compatibility: { date: "2026-07-11", flags: ["nodejs_compat", "enable_request_signal"] },
+      compatibility: {
+        date: ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE,
+        flags: ["nodejs_compat", "enable_request_signal"],
+      },
       placement: { mode: "smart" as const },
       observability: { enabled: true },
       dev: { port: 8787 },
@@ -116,9 +111,6 @@ export const ApiLive = Api.make(
       namespaceId: 1001,
       simple: RATE_LIMITS.productScan,
     });
-    // Alchemy binds every Config read during Worker Init onto Cloudflare.
-    // GitHub Actions turns unset Environment vars into "", which would
-    // otherwise beat Config.withDefault and ship a blank protocol/origin.
     const authPublicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
     const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
@@ -138,9 +130,6 @@ export const ApiLive = Api.make(
     const published = stage === "prod" || stage === "nightly";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
     const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
-    // Hostname presence is a deploy-time check (CI already fails closed).
-    // Dying here in the Worker turns a missing env into Cloudflare 1101 on
-    // every request, which the browser reports as a CORS failure.
     if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && published) {
       if (!productionHostname) {
         return yield* Effect.die(new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE));

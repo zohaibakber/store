@@ -4,10 +4,6 @@ import * as Effect from "effect/Effect";
 
 import { authError } from "./errors";
 
-/**
- * Window of both auth rate limiters, in seconds. A limited caller is told to
- * retry after this long.
- */
 export const AUTH_RATE_LIMIT_PERIOD_SECONDS = 60;
 
 export type AuthRateLimit = (

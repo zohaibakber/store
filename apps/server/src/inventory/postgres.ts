@@ -110,10 +110,6 @@ export const withSerializationRetry = <A, E, R>(effect: Effect.Effect<A, E, R>) 
 const toInventoryError = <E>(cause: E) =>
   isProtocolError(cause) || cause instanceof InventoryDatabaseError ? cause : databaseError(cause);
 
-/**
- * Runs one autocommit statement (or a short read with no snapshot requirement)
- * outside `BEGIN`/`COMMIT`, so a single-row read is one Postgres round trip.
- */
 export const runStatement = <A, E>(effect: Effect.Effect<A, E>) =>
   effect.pipe(Effect.mapError(toInventoryError));
 

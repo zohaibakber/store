@@ -145,6 +145,21 @@ describe("analyzeInsights", () => {
     expect(report.inventory.missingCostCount).toBe(1);
   });
 
+  it("allocates forecast demand to earlier-expiring batches first", () => {
+    const fefo = analyzeInsights(
+      facts({
+        products: [product("fefo")],
+        batches: [batch("fefo", 100, 10), batch("fefo", 100, 20)],
+        sales: dailySales("fefo", 2, 90),
+      }),
+      DEFAULT_STOCK_POLICY,
+      now,
+    );
+    expect(fefo.products[0]?.demand.dailyRate).toBeCloseTo(2, 0);
+    expect(fefo.products[0]?.expiryRiskUnits).toBe(160);
+    expect(fefo.expiring.map((entry) => entry.atRiskUnits)).toEqual([80, 80]);
+  });
+
   it("classifies revenue with ABC and summarizes sales periods", () => {
     expect(byId.get("runner")?.abc).toBe("A");
     expect(byId.get("steady")?.abc).toBe("A");

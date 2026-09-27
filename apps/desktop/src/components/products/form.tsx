@@ -127,11 +127,6 @@ const productFormOpts = formOptions({
   validators: { onSubmit: productFormSchema },
 });
 
-/**
- * A category that isn't sold in packs hides pack size and pack retail, so
- * those values must not reach the store. Purchase price is always the pack
- * cost. Retail for a single-unit category lives on unit price.
- */
 const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {
   const strength = value.strength.trim();
   return {

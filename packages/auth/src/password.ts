@@ -7,12 +7,7 @@ import * as Schema from "effect/Schema";
 import type { Password } from "./model";
 
 const textEncoder = new TextEncoder();
-/**
- * workerd rejects PBKDF2 above 100,000 iterations. The verifier also refuses
- * counts below that, so this is the only value that both hashes and verifies
- * on Cloudflare Workers.
- */
-const ITERATIONS = 100_000;
+const WORKERD_PBKDF2_ITERATIONS = 100_000;
 const HASH_BYTES = 32;
 const SALT_BYTES = 16;
 
@@ -81,9 +76,9 @@ const decodeSaltOrHash = (value: string) =>
 
 export const hashPassword = Effect.fn("Password.hash")(function* (password: Password) {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
-  const hash = yield* derive(password, salt, ITERATIONS);
+  const hash = yield* derive(password, salt, WORKERD_PBKDF2_ITERATIONS);
   return PasswordHash.make(
-    `pbkdf2-sha256$${ITERATIONS}$${Encoding.encodeBase64Url(salt)}$${Encoding.encodeBase64Url(hash)}`,
+    `pbkdf2-sha256$${WORKERD_PBKDF2_ITERATIONS}$${Encoding.encodeBase64Url(salt)}$${Encoding.encodeBase64Url(hash)}`,
   );
 });
 
@@ -96,7 +91,7 @@ export const verifyPassword = Effect.fn("Password.verify")(function* (
   if (
     algorithm !== "pbkdf2-sha256" ||
     !Number.isSafeInteger(iterations) ||
-    iterations < 100_000 ||
+    iterations < WORKERD_PBKDF2_ITERATIONS ||
     !saltText ||
     !hashText
   ) {

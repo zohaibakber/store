@@ -1,22 +1,15 @@
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
 const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
-/** Host used with the privileged custom scheme so the renderer origin is `scheme://app`. */
 export const ELECTRON_RENDERER_HOST = "app";
 
-/**
- * GitHub Actions interpolates unset `vars.*` / `secrets.*` as `""`. Treat
- * blank values as missing so they cannot override a real default.
- */
 export const fallbackIfBlank = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? "";
   return trimmed || fallback;
 };
 
-/** The local Vite dev servers for the Website and the desktop renderer. */
 export const LOCAL_WEB_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
-/** No origin holds a quote, so strip them wherever a value editor left them. */
 const unquote = (value: string) =>
   value
     .trim()
@@ -24,11 +17,6 @@ const unquote = (value: string) =>
     .replace(/['"]+$/, "")
     .trim();
 
-/**
- * Reads the public hostname out of a configured domain, which may be a bare
- * host (`example.com`) or an origin (`https://example.com`). Wildcards,
- * localhost, and unparseable values have no public hostname.
- */
 export const publicHostnameFrom = (value: string | undefined): string | undefined => {
   const trimmed = unquote(value ?? "");
   if (!trimmed || /[*?]/.test(trimmed)) return undefined;
@@ -43,13 +31,6 @@ export const publicHostnameFrom = (value: string | undefined): string | undefine
   }
 };
 
-/**
- * Splits the `AUTH_TRUSTED_ORIGINS` variable. Commas are the documented
- * separator; whitespace separates too, because a space-separated list is a
- * common way to write one and would otherwise arrive as a single unusable
- * entry. Wrapping quotes are stripped. Shells and CI variable editors keep
- * them in the value.
- */
 export const parseTrustedOrigins = (value: string | undefined) =>
   (value ?? "")
     .split(/[\s,]+/)
@@ -80,11 +61,6 @@ interface AuthSecurityConfig {
   readonly mobileProtocol: string;
   readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
-  /**
-   * Where an OAuth authorization may be sent. It is the origin allowlist plus
-   * the bare app schemes: the deep link lands on a path of our own scheme
-   * (`com.tabaaq.desktop://auth/callback`) rather than on the renderer origin.
-   */
   readonly trustedRedirects: ReadonlyArray<string>;
   readonly rejectedSettings: ReadonlyArray<RejectedAuthSetting>;
 }
@@ -126,14 +102,6 @@ const unusableSchemes = new Set(["about", "blob", "data", "file", "javascript", 
 
 type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly reason: string };
 
-/**
- * CORS and native clients never parse a configured trusted origin as a URL.
- * They pattern match it. Documented values therefore include forms `new URL`
- * rejects outright: bare hosts (`app.example.com`), host wildcards
- * (`*.example.com`), and native scheme patterns (`com.tabaaq.mobile://`).
- * Classify an entry rather than parsing it, and drop what cannot be used, so
- * one unusable value can never throw out of Worker start-up.
- */
 const classifyTrustedOrigin = (
   raw: string,
   options: { readonly allowInsecure: boolean },
@@ -182,10 +150,6 @@ interface ResolvedTrustedOrigins {
   readonly rejected: ReadonlyArray<RejectedTrustedOrigin>;
 }
 
-/**
- * Classifies configured origins into the ones CORS can match and the ones it
- * cannot, so a caller can log the rejects instead of failing.
- */
 const resolveTrustedOrigins = (
   origins: ReadonlyArray<string>,
   options: { readonly allowInsecure: boolean },
@@ -271,15 +235,7 @@ const webOriginOf = (url: string) => {
   }
 };
 
-/**
- * Matches wildcard and native-scheme entries the same way as the CORS
- * allowlist. Web patterns match the origin; native schemes match by glob, or by
- * prefix when the pattern holds no wildcard.
- */
 export const matchesTrustedOrigin = (origin: string | undefined, pattern: string) => {
-  // Effect's CORS middleware types the origin as a string but hands over
-  // whatever the `Origin` header held, which is nothing on a same-origin
-  // request.
   if (!origin) return false;
   const webOrigin = webOriginOf(origin);
   if (wildcarded.test(pattern)) {
@@ -295,11 +251,6 @@ export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyAr
 
 const isHttpProtocol = (protocol: string) => protocol === "http:" || protocol === "https:";
 
-/**
- * Native OAuth callbacks (`com.tabaaq.desktop://auth/callback`) are not HTTP
- * documents. The leftover system-browser tab needs an HTML handoff page
- * instead of a 302 onto the custom scheme.
- */
 export const isNativeRedirect = (redirectUri: string) => {
   try {
     return !isHttpProtocol(new URL(redirectUri).protocol);
@@ -308,15 +259,6 @@ export const isNativeRedirect = (redirectUri: string) => {
   }
 };
 
-/**
- * An OAuth redirect is trusted when its origin is. A web redirect carries a
- * path (`https://app.example.com/callback`), so it is reduced to its origin
- * before matching. A native redirect has no host authority to compare.
- * `com.tabaaq.desktop://auth/callback` and the renderer's
- * `com.tabaaq.desktop://app` share only the scheme the OS handed our app, so
- * the whole target is matched against the scheme patterns, which
- * {@link matchesTrustedOrigin} compares by prefix.
- */
 export const isTrustedRedirect = (redirectUri: string, patterns: ReadonlyArray<string>) => {
   let target: string;
   try {

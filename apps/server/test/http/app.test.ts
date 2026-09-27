@@ -1,8 +1,16 @@
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
+import { workerRuntimeServices } from "../../src/http/app";
 import { appFor } from "../lib/app";
 
 describe("HTTP auth and CORS", () => {
+  it("dies during isolate init when Alchemy omitted RuntimeContext", async () => {
+    await expect(Effect.runPromise(workerRuntimeServices)).rejects.toThrow(
+      "Alchemy did not provide the Worker RuntimeContext.",
+    );
+  });
+
   it("serves health without constructing an absolute request URL", async () => {
     const response = await appFor(true).request("/api/health");
     expect(response.status).toBe(200);

@@ -16,14 +16,13 @@ export type SessionChangeBridge = {
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 };
 
-/**
- * Phase is a shell gate, not an admit flag.
- * beforeLoad reads `.snapshot` and ignores `_tag`.
- * Switching.snapshot is the destination already published.
- */
 export type WorkspaceSession =
   | { readonly _tag: "Steady"; readonly snapshot: WorkspaceSnapshot }
   | { readonly _tag: "Switching"; readonly snapshot: WorkspaceSnapshot };
+
+export const publishedWorkspaceSnapshot = (
+  session: WorkspaceSession | undefined,
+): WorkspaceSnapshot | null => session?.snapshot ?? null;
 
 export type WorkspaceScope =
   | { readonly _tag: "None" }
@@ -52,11 +51,6 @@ export type ApplyWorkspaceSnapshotPorts = {
   readonly flush: (fn: () => void) => void;
 };
 
-/**
- * The only writer of WorkspaceSession. Does not navigate, admit, or await
- * catalog dispose. A newer commit supersedes this one by interrupting its
- * fiber, so a superseded commit never settles `Switching`.
- */
 export const applyWorkspaceSnapshot = (
   ports: ApplyWorkspaceSnapshotPorts,
   next: WorkspaceSnapshot,
@@ -109,9 +103,9 @@ export const bindWorkspaceSession = (input: {
   readonly flush: (fn: () => void) => void;
 }): WorkspaceSessionBinding => {
   const scope = Scope.makeUnsafe();
-  const commits = Effect.runSync(FiberHandle.make<void>().pipe(Scope.provide(scope)));
+  const latestCommit = Effect.runSync(FiberHandle.make<void>().pipe(Scope.provide(scope)));
   const commit = (snapshot: WorkspaceSnapshot) =>
-    FiberHandle.run(commits, applyWorkspaceSnapshot(input, snapshot));
+    FiberHandle.run(latestCommit, applyWorkspaceSnapshot(input, snapshot));
   const unsubscribe = input.bridge.onSessionChange((snapshot) => {
     Effect.runSync(commit(snapshot));
   });

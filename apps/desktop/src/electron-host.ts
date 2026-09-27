@@ -8,7 +8,6 @@ type PreloadBridges = Pick<
   "auth" | "serverApi" | "desktopShell" | "updater" | "electronTheme"
 >;
 
-/** The preload bridge, adapted to the host contract without changing what it does. */
 export const electronAppHost = (bridges: PreloadBridges): AppHost => {
   const { auth, serverApi } = bridges;
   if (!auth || !serverApi) throw new Error("Desktop authentication bridge is unavailable.");

@@ -33,7 +33,6 @@ export type RecordedRequest = {
 
 type Route = (request: RecordedRequest) => Response | Promise<Response>;
 
-/** A fetch double that answers by `METHOD url` and records what the broker sent. */
 export const fakeSessionServer = (routes: Readonly<Record<string, Route>>) => {
   const requests: Array<RecordedRequest> = [];
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

@@ -1,6 +1,6 @@
+// @vitest-environment happy-dom
 import type { ReplicaSyncHealth } from "@store/client-db";
 import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
-// @vitest-environment happy-dom
 import {
   createCatalogLifetime,
   openInventoryWorkspace,

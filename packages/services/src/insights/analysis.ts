@@ -277,11 +277,7 @@ type StockPosition = {
   readonly expiring: ReadonlyArray<Omit<ExpiringBatch, "name" | "valueAtCost">>;
 };
 
-/**
- * Simulates first-expiry-first-out sales against the demand forecast to find
- * units that will likely expire unsold inside the planning horizon.
- */
-const stockPosition = (
+const fefoStockPosition = (
   product: InsightsProductFact,
   batches: ReadonlyArray<InsightsBatchFact>,
   dailyRate: number,
@@ -299,7 +295,7 @@ const stockPosition = (
   let availableUnits = 0;
   let expiredUnits = 0;
   let expiryRiskUnits = 0;
-  let allocated = 0;
+  let fefoAllocatedUnits = 0;
   let nearestExpiry: number | null = null;
   const expiring: Array<Omit<ExpiringBatch, "name" | "valueAtCost">> = [];
   for (const batch of ordered) {
@@ -317,13 +313,13 @@ const stockPosition = (
     let atRisk = 0;
     if (batch.expiresAt <= horizon) {
       const sellableBeforeExpiry =
-        (dailyRate * (batch.expiresAt - now)) / INSIGHTS_DAY_MILLIS - allocated;
+        (dailyRate * (batch.expiresAt - now)) / INSIGHTS_DAY_MILLIS - fefoAllocatedUnits;
       const sellable = Math.min(units, Math.max(0, sellableBeforeExpiry));
       atRisk = Math.floor(units - sellable);
-      allocated += sellable;
+      fefoAllocatedUnits += sellable;
       expiryRiskUnits += atRisk;
     } else {
-      allocated += units;
+      fefoAllocatedUnits += units;
     }
     if (batch.expiresAt <= warning) {
       expiring.push({
@@ -378,7 +374,7 @@ const analyzeProduct = (input: {
   );
   const demand = forecastDemand(series);
   const rate = demand.dailyRate;
-  const position = stockPosition(product, input.batches, rate, policy, now);
+  const position = fefoStockPosition(product, input.batches, rate, policy, now);
   const usableUnits = Math.max(0, position.availableUnits - position.expiryRiskUnits);
   const z = inverseNormal(serviceLevelFor(policy, input.abc));
   const lead = Math.max(1, policy.leadDays);
@@ -677,11 +673,6 @@ const productAlerts = (
   return alerts;
 };
 
-/**
- * Turns the replica's aggregated facts into a prioritized inventory and sales
- * report. Pure and linear in products plus sale facts, so it stays cheap on
- * low-end devices and is safe to recompute on every commit notice.
- */
 export const analyzeInsights = (
   facts: ReplicaInsightsFacts,
   policy: StockPolicy,

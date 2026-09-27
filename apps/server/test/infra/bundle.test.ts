@@ -30,14 +30,24 @@ const bundleWorker = async () => {
 
 describe("API Worker bundle", () => {
   it("gives Drizzle.Schema cwd-relative paths, not import.meta.url", () => {
-    // Alchemy's D1 + Drizzle guide passes `schema: "./src/schema.ts"` strings
-    // resolved from process.cwd(). `new URL(..., import.meta.url)` is a Worker
-    // crash on workerd even when tucked behind a runtime guard.
     const source = readFileSync(authDatabaseSource, "utf8");
     expect(source).not.toMatch(/new URL\s*\([^)]*import\.meta\.url/);
     expect(source).not.toContain("import.meta.url");
     expect(source).toContain('schema: "packages/db/src/auth/schema.ts"');
     expect(source).toContain('out: "packages/db/migrations/auth"');
+  });
+
+  it("pins Worker compatibility date to the workerd alchemy dev ships", () => {
+    const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
+    expect(source).toContain('ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11"');
+    expect(source).toContain("date: ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE");
+  });
+
+  it("treats blank protocol env as unset so GitHub Actions empty strings do not ship", () => {
+    const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
+    expect(source).toContain('Config.withDefault("")');
+    expect(source).toContain("fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)");
+    expect(source).toContain("fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)");
   });
 
   it("uses first-party JWT verification without an auth framework", () => {
@@ -77,9 +87,6 @@ describe("API Worker bundle", () => {
   }, 60_000);
 
   it("does not require process.env production hostnames at Worker runtime", async () => {
-    // `requireProductionApiHostname()` reads process.env and throws. The
-    // Worker bundle folds `__ALCHEMY_RUNTIME__` to true, so that deploy-time
-    // call must be eliminated or every request 1101s (seen as a CORS error).
     const chunks = await bundleWorker();
     const code = chunks.map((chunk) => chunk.code).join("\n");
     expect(code).not.toMatch(/requireProductionApiHostname\s*\(\s*\)/);
@@ -87,10 +94,6 @@ describe("API Worker bundle", () => {
   }, 60_000);
 
   it("never derives a URL from import.meta.url", async () => {
-    // workerd leaves `import.meta.url` undefined, so `new URL(relative,
-    // import.meta.url)` throws `TypeError: Invalid URL string.` there. The
-    // Worker yields AuthDatabase on every request; those paths must be plain
-    // cwd-relative strings, the way Alchemy's D1 + Drizzle guide writes them.
     const chunks = await bundleWorker();
     const derived = chunks.flatMap((chunk) =>
       chunk.code

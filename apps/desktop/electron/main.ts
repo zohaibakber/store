@@ -49,13 +49,11 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
-// Turbo runs tasks with a filtered environment, so local API configuration is
-// also read from .env files. Earlier files and pre-set shell variables win.
-const envFiles = [
+const turboFilteredEnvFallbackFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
 ];
-for (const file of envFiles) {
+for (const file of turboFilteredEnvFallbackFiles) {
   try {
     process.loadEnvFile(file);
   } catch {}
@@ -68,24 +66,18 @@ let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
 let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
 
-function appIconPath() {
-  // BrowserWindow's `icon` option goes through nativeImage, which reads the
-  // real filesystem and can't see into app.asar. Packaged builds load the
-  // icon from extraResources, not from renderer assets. Unpackaged/dev uses
-  // the orange mark. Packaged builds load the mark selected by their channel's
-  // electron-builder configuration.
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "logo.png")
-    : path.join(process.env.VITE_PUBLIC, "logo-dev.png");
-}
-// Packaged apps ship no .env, so the API URL is baked in at build time via
-// `import.meta.env` (dot access on purpose, Vite inlines it); the bracket
-// process.env reads stay as runtime overrides for local development.
+const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
+const unpackagedDevMarkPath = () => path.join(process.env.VITE_PUBLIC, "logo-dev.png");
+const appIconPath = () =>
+  app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
+
+const runtimeApiUrlOverride = process.env["STORE_API_URL"];
+const viteInlinedApiUrl = import.meta.env.VITE_API_URL;
 const API_BASE_URL = fallbackIfBlank(
-  process.env["STORE_API_URL"] ||
+  runtimeApiUrlOverride ||
     (VITE_DEV_SERVER_URL
       ? "http://localhost:8787"
-      : (process.env["VITE_API_URL"] ?? import.meta.env.VITE_API_URL)),
+      : (process.env["VITE_API_URL"] ?? viteInlinedApiUrl)),
   "http://localhost:8787",
 );
 const ELECTRON_PROTOCOL = fallbackIfBlank(
@@ -97,15 +89,13 @@ const AUTH_BASE_URL = fallbackIfBlank(
   "http://localhost:8788",
 );
 
-// Chromium's experimental Wayland color-management path logs errors on
-// compositors that advertise the protocol without supporting its sRGB image
-// description. Tabaaq is SDR-only, so use Chromium's established SDR path.
+const EXPERIMENTAL_WAYLAND_COLOR_MANAGER = "WaylandWpColorManagerV1";
 if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
   const disabled = app.commandLine.getSwitchValue("disable-features").split(",").filter(Boolean);
-  if (!disabled.includes("WaylandWpColorManagerV1")) {
+  if (!disabled.includes(EXPERIMENTAL_WAYLAND_COLOR_MANAGER)) {
     app.commandLine.appendSwitch(
       "disable-features",
-      [...disabled, "WaylandWpColorManagerV1"].join(","),
+      [...disabled, EXPERIMENTAL_WAYLAND_COLOR_MANAGER].join(","),
     );
   }
 }

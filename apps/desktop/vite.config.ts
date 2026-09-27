@@ -30,7 +30,6 @@ const desktopDevSplash = (): Plugin => ({
   },
 });
 
-/** Must match the renderer fallbacks in `src/web/api-base-url.ts` and `src/lib/first-party-auth.ts`. */
 const WEB_ORIGIN_FALLBACKS = {
   VITE_API_URL: "http://localhost:8787",
   VITE_AUTH_URL: "http://localhost:8788",
@@ -38,12 +37,6 @@ const WEB_ORIGIN_FALLBACKS = {
 
 const decodeDefinedString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String));
 
-/**
- * Electron applies its CSP from the main-process protocol handler. The web
- * build has no such hook, so the policy ships as a meta tag. `connect-src`
- * names the API and auth origins this bundle calls. They are read from the
- * resolved `define` first, because Alchemy's Website build injects them there.
- */
 const webContentSecurityPolicy = (): Plugin => {
   let connectOrigins: ReadonlyArray<string> = [];
   return {
@@ -90,15 +83,9 @@ const webContentSecurityPolicy = (): Plugin => {
   };
 };
 
-/**
- * `--mode web` builds the browser host: the renderer alone, into `dist-web`.
- * Alchemy's Website build cannot pass a mode, so its documented injection flag
- * selects the web build too.
- */
 const isWebBuild = (mode: string) =>
   mode === "web" || process.env["ALCHEMY_CLOUDFLARE_VITE_INJECTED"] === "1";
 
-/** Auth and the API trust `http://localhost:5174` as a browser origin, not `127.0.0.1`. */
 const webServer = { host: "localhost", port: 5174, strictPort: true };
 
 export default defineConfig(({ command, mode }) => ({

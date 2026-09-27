@@ -53,19 +53,15 @@ export const tooManyRequests = (code: string, message: string) =>
 export const badGateway = (code: string, message: string) =>
   BadGateway.make(publicError(code, message));
 
-/**
- * Adds `Retry-After` (whole seconds, rounded up) to whatever response this
- * request ends with, including a typed error encoded by `HttpApi`. Use it only
- * where the server knows the delay: a rate-limit window or a snapshot build
- * interval.
- */
+const retryAfterWholeSeconds = (delayMillis: number) => Math.max(1, Math.ceil(delayMillis / 1_000));
+
 export const retryAfter = (delayMillis: number) =>
   HttpEffect.appendPreResponseHandler((_request, response) =>
     Effect.succeed(
       HttpServerResponse.setHeader(
         response,
         "retry-after",
-        String(Math.max(1, Math.ceil(delayMillis / 1_000))),
+        String(retryAfterWholeSeconds(delayMillis)),
       ),
     ),
   );

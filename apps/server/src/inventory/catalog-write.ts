@@ -85,16 +85,6 @@ type ProductRow = typeof products.$inferSelect;
 type BatchRow = typeof batches.$inferSelect;
 type MovementValues = typeof stockMovements.$inferInsert;
 
-/**
- * The catalog rows one command can observe, read up front in at most four
- * statements and kept current as the command's own writes return rows.
- *
- * Every per-row check reads this working set instead of Postgres. It is
- * complete for those checks because the preload covers every id a write names
- * or references, every category name an upsert claims, every batch of a
- * written product, and every product of a deleted category; any other row a
- * check could see must have been written by this command, which puts it here.
- */
 type CatalogWorkingSet = {
   readonly categories: Map<string, CategoryRow>;
   readonly products: Map<string, ProductRow>;
@@ -539,14 +529,6 @@ const writeRow = (context: CatalogWriteContext, write: CatalogRowWrite) => {
 const isPendingMovement = (change: CatalogChange): change is PendingMovement =>
   "_tag" in change && change._tag === "PendingMovement";
 
-/**
- * Applies a catalog write inside the organization-locked transaction.
- *
- * Reads: one preload per touched table instead of three to five statements
- * per row. Writes: one statement per row, in command order, so a Postgres
- * failure still surfaces at the row that caused it; stock movements, which no
- * later check reads, go out as one multi-row insert after the last row.
- */
 export const applyCatalogWrite = Effect.fn("InventoryCommands.applyCatalogWrite")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,

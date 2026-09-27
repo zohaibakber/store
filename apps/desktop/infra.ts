@@ -9,18 +9,6 @@ import {
   requireProductionHostname,
 } from "../server/src/runtime/production-domain.ts";
 
-/**
- * The browser host: this workspace's renderer as a static SPA on the
- * `PRODUCTION_DOMAIN` apex. `Cloudflare.Website.Vite` runs the Vite build
- * during `alchemy deploy`; `vite.config.ts` selects the web build from
- * Alchemy's injection flag, since the resource cannot pass `--mode web`.
- * Deep links fall back to `index.html` for the client router.
- *
- * Only published stages declare it. They are the only stages whose site
- * origin auth and the API trust, and the refresh cookie needs the SPA and
- * `auth.<domain>` to be same-site. Locally, `vp run dev:web` serves the
- * renderer on `http://localhost:5174` against the dev Workers.
- */
 export const Website = Cloudflare.Website.Vite(
   "Website",
   Effect.gen(function* () {

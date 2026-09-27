@@ -34,10 +34,6 @@ export interface UpdaterProvider {
 const sameProgress = (left: UpdaterProviderEvent, right: UpdaterProviderEvent) =>
   left.type === "progress" && right.type === "progress" && left.percent === right.percent;
 
-/**
- * Drops repeated progress and samples intermediate progress to one event per
- * `interval`. Lifecycle events and 100% completion always pass, in order.
- */
 export const sampleDownloadProgress =
   (interval: Duration.Input) =>
   <E, R>(events: Stream.Stream<UpdaterProviderEvent, E, R>) =>

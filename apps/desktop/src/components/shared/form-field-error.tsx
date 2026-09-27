@@ -5,7 +5,6 @@ import { FieldError } from "@/components/ui/field";
 
 const FieldFailure = Schema.Struct({ message: Schema.String });
 
-// TanStack Form errors bypass Base UI validity, so match forces rendering.
 export function FormFieldError({ errors }: { errors: ReadonlyArray<unknown> }) {
   const message = errors
     .map((error) => {

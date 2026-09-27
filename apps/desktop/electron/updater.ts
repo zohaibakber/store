@@ -48,14 +48,12 @@ const clearStalePendingUpdate = async (currentVersion: string) => {
     );
     const pendingVersion = info.fileName ? versionFromPendingFileName(info.fileName) : undefined;
     if (!pendingVersion) return;
-    // Equal or older leftovers make the next launch report no update even after
-    // GitHub has published a newer build.
-    const newer =
+    const pendingIsNewerThanCurrent =
       pendingVersion.localeCompare(currentVersion, undefined, {
         numeric: true,
         sensitivity: "base",
       }) > 0;
-    if (!newer) await rm(pendingDirectory, { force: true, recursive: true });
+    if (!pendingIsNewerThanCurrent) await rm(pendingDirectory, { force: true, recursive: true });
   } catch {}
 };
 
@@ -75,8 +73,6 @@ const updaterEvents = Stream.callback<UpdaterProviderEvent>((queue) => {
     "update-downloaded": (info: { version: string }) =>
       emit({ type: "downloaded", version: info.version }),
     error: (cause: Error) => {
-      // Official Electron autoUpdater sample: log update errors, don't surface
-      // them as application failures. https://www.electronjs.org/docs/latest/tutorial/updates
       console.error("There was a problem updating the application");
       console.error(cause);
       emit({ type: "error", error: cause });
@@ -153,11 +149,10 @@ export async function setupUpdater(
     ),
   );
 
-  // Manual "Check for updates" skips the throttle. Background checks live in
-  // the workflow (electron-updater's checkForUpdatesAndNotify equivalent).
+  const skipCheckThrottle = true;
   ipcMain.handle("updater:check", (event) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    return Effect.runPromise(workflow.check(true));
+    return Effect.runPromise(workflow.check(skipCheckThrottle));
   });
   ipcMain.handle("updater:download", (event) => {
     assertTrustedIpcSender(event.senderFrame, allowedOrigins());

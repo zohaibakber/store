@@ -91,11 +91,6 @@ const clampPullByteBudget = Number.clamp({
   maximum: PULL_PAYLOAD_BUDGET_BYTES,
 });
 
-/**
- * Byte budget for one pull page. A client on a slow or metered network may
- * ask for less; the server holds every request inside
- * `[MIN_PULL_BYTE_BUDGET, PULL_PAYLOAD_BUDGET_BYTES]`.
- */
 export const pullByteBudget = (maxBytes: number | undefined): number =>
   maxBytes === undefined ? PULL_PAYLOAD_BUDGET_BYTES : clampPullByteBudget(maxBytes);
 
@@ -114,12 +109,6 @@ type StoredChangeFrame = {
   readonly rowJson: string;
 };
 
-/**
- * Pull-frame size of one transaction group, persisted as
- * `inventory_transactions.byte_length` when the group commits. Pull pages are
- * selected by the running sum of this value, so the formula must stay equal to
- * the backfill in the migration that introduced the column.
- */
 export const pullGroupByteLength = (
   operationId: string,
   changes: ReadonlyArray<StoredChangeFrame>,
@@ -296,11 +285,6 @@ const committedWithoutPage = (
   readPageAfterCommit: request.afterCommitSequence !== undefined,
 });
 
-/**
- * The page a caught-up client would pull next is exactly the group this
- * transaction just wrote, so it is built from memory under the lock with no
- * extra read. A client that is behind reads its page after the commit.
- */
 const committedWithPage = (
   request: SyncSubmitCommandRequest,
   state: LockedState,
@@ -778,15 +762,6 @@ export interface InventoryCommandsContract {
   ) => Effect.Effect<EncodedJsonBody, InventoryError>;
 }
 
-/**
- * PostgreSQL owner for inventory command submission and log pull.
- *
- * One `READ COMMITTED` transaction locks the organization's `inventory_state`
- * row, then writes the business change, receipt, and log together. Callers
- * retry the same operation id after an uncertain commit. A submit that names
- * the client's applied cursor also carries the next pull page; that page is
- * best effort and never fails a committed command.
- */
 export class InventoryCommands extends Context.Service<
   InventoryCommands,
   InventoryCommandsContract

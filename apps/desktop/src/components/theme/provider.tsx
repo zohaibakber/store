@@ -33,7 +33,6 @@ const readStoredPreference = (storageKey: string, fallback: ThemePreference): Th
 const systemTheme = (): ResolvedTheme =>
   window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 
-/** matchMedia subscription owned by Atom finalizers instead of a React effect. */
 const systemThemeAtom = Atom.make((get) => {
   const query = window.matchMedia("(prefers-color-scheme: light)");
   const onChange = () => get.refreshSelf();

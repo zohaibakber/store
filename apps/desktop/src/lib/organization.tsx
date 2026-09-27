@@ -15,15 +15,11 @@ import { toastManager } from "@/components/ui/toast";
 import { authSession } from "@/lib/auth";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
-/**
- * Invites are not emailed yet. Whoever creates one has to deliver it.
- * On the web we copy a link that opens organization settings. The desktop app
- * runs from a file URL outsiders can't open, so we copy the bare token and
- * the recipient pastes it.
- */
+const originOpensInviteLinks = (origin: string | undefined) => Boolean(origin?.startsWith("http"));
+
 export const invitationHandoff = (token: string) => {
   const origin = globalThis.location?.origin;
-  return origin?.startsWith("http")
+  return originOpensInviteLinks(origin)
     ? {
         kind: "link" as const,
         value: `${origin}/settings/organization?invitation=${encodeURIComponent(token)}`,
@@ -62,10 +58,6 @@ interface OrganizationState {
 
 interface OrganizationActions {
   readonly reload: () => Promise<void>;
-  /**
-   * Runs a command and reports what came back, or `null` when it failed and
-   * the caller has already been told through a toast.
-   */
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult | null>;
 }
 
@@ -74,8 +66,7 @@ const OrganizationContext = React.createContext<{
   readonly actions: OrganizationActions;
 } | null>(null);
 
-/** Rename and join rewrite the access token; the rest of the app reads org from that. */
-const movesTheSession = (result: OrganizationCommandResult) =>
+const rewritesAccessToken = (result: OrganizationCommandResult) =>
   result._tag === "Updated" || result._tag === "Joined";
 
 const organizationRosterAtom = Atom.make(
@@ -97,7 +88,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
     async (command: OrganizationCommand) => {
       try {
         const commandResult = await authSession().organize(command);
-        if (movesTheSession(commandResult)) await authSession().renewSession();
+        if (rewritesAccessToken(commandResult)) await authSession().renewSession();
         refresh();
         return commandResult;
       } catch (cause) {

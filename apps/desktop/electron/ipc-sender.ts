@@ -5,16 +5,20 @@ export type TrustedIpcSenderFrame = {
   readonly detached?: boolean;
 };
 
+const frameReportsDetached = (frame: TrustedIpcSenderFrame) => {
+  try {
+    return Boolean(frame.detached);
+  } catch {
+    return false;
+  }
+};
+
 export const isTrustedIpcSenderFrame = (
   frame: TrustedIpcSenderFrame | null | undefined,
   allowedOrigins: ReadonlyArray<string>,
 ) => {
   if (!frame) return false;
-  try {
-    if (frame.detached) return false;
-  } catch {
-    // `detached` is unavailable on some Electron builds used in tests.
-  }
+  if (frameReportsDetached(frame)) return false;
   return isAllowedRendererNavigation(frame.url, allowedOrigins);
 };
 

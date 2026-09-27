@@ -27,7 +27,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { app, net, safeStorage } from "electron";
 
-const persistableEncryption = () =>
+const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&
   (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
 
@@ -159,7 +159,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   async #readPersisted(): Promise<PersistedAuth | null> {
     try {
       const encrypted = await readFile(this.#storagePath());
-      if (!persistableEncryption()) return null;
+      if (!canPersistEncryptedSession()) return null;
       return Schema.decodeUnknownOption(Schema.fromJsonString(PersistedAuth))(
         safeStorage.decryptString(encrypted),
       ).pipe(Option.getOrNull);
@@ -169,10 +169,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   async #writePersisted(value: PersistedAuth) {
-    if (!persistableEncryption()) {
-      // A missing or locked Linux secret store must not turn a valid online
-      // session into a failed sign-in. Keep tokens in memory for this process
-      // and never fall back to writing the refresh token as plaintext.
+    if (!canPersistEncryptedSession()) {
       await rm(this.#storagePath(), { force: true });
       return;
     }
@@ -184,7 +181,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     );
   }
 
-  /** Returns null only on explicit auth rejection; transient failures preserve credentials. */
   async #rotateTokens(): Promise<RefreshedTokenSet | null> {
     const tokens = this.#tokens.get();
     if (!tokens?.refreshToken) return null;

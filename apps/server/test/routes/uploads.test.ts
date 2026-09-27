@@ -2,6 +2,7 @@ import type { InvoiceAiClient } from "@store/services";
 import * as Effect from "effect/Effect";
 import { describe, expect, it, vi } from "vitest";
 
+import { RATE_LIMITS } from "../../src/http/runtime";
 import { appFor } from "../lib/app";
 
 const invoiceForm = (files: ReadonlyArray<File>) => {
@@ -79,6 +80,7 @@ describe("invoice upload authorization", () => {
     );
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe(String(RATE_LIMITS.invoiceExtraction.period));
     expect(await response.json()).toMatchObject({
       error: { code: "INVOICE_EXTRACTION_RATE_LIMITED" },
     });

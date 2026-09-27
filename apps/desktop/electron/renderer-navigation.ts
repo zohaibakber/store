@@ -1,3 +1,6 @@
+const sameProtocolAndHost = (left: URL, right: URL) =>
+  left.protocol === right.protocol && left.host === right.host;
+
 export const isAllowedRendererNavigation = (url: string, allowedOrigins: ReadonlyArray<string>) => {
   let requested: URL;
   try {
@@ -10,8 +13,7 @@ export const isAllowedRendererNavigation = (url: string, allowedOrigins: Readonl
     if (!origin) return false;
     try {
       const allowed = new URL(origin);
-      // Custom schemes report origin "null", so compare protocol and host.
-      return requested.protocol === allowed.protocol && requested.host === allowed.host;
+      return sameProtocolAndHost(requested, allowed);
     } catch {
       return false;
     }

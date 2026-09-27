@@ -11,12 +11,11 @@ const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
 const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
 const UPDATE_CHECK_TOAST_ID = "app-update-check";
 
-/** Whether the user asked for the check in flight, so its outcome gets a toast. */
-const manualUpdateCheckAtom = Atom.make(false).pipe(Atom.keepAlive);
+const toastManualUpdateCheckAtom = Atom.make(false).pipe(Atom.keepAlive);
 
 const claimManualUpdateCheck = (registry: AtomRegistry.AtomRegistry) => {
-  if (!registry.get(manualUpdateCheckAtom)) return false;
-  registry.set(manualUpdateCheckAtom, false);
+  if (!registry.get(toastManualUpdateCheckAtom)) return false;
+  registry.set(toastManualUpdateCheckAtom, false);
   return true;
 };
 
@@ -78,7 +77,7 @@ export const canCheckForAppUpdate = () => Boolean(appHost().updater);
 const checkForAppUpdate = (registry: AtomRegistry.AtomRegistry) => {
   const updater = appHost().updater;
   if (!updater) return;
-  registry.set(manualUpdateCheckAtom, true);
+  registry.set(toastManualUpdateCheckAtom, true);
   toastManager.add({
     id: UPDATE_CHECK_TOAST_ID,
     timeout: 0,
@@ -101,7 +100,6 @@ const checkForAppUpdate = (registry: AtomRegistry.AtomRegistry) => {
   });
 };
 
-/** Returns a handler for the user's "Check for updates" action. */
 export const useCheckForAppUpdate = () => {
   const registry = useContext(RegistryContext);
   return () => checkForAppUpdate(registry);
@@ -116,7 +114,7 @@ export function useAppUpdater() {
     const unsubscribe = updater.onEvent((event) => {
       switch (event.type) {
         case "available":
-          registry.set(manualUpdateCheckAtom, false);
+          registry.set(toastManualUpdateCheckAtom, false);
           toastManager.close(UPDATE_CHECK_TOAST_ID);
           toastManager.add({
             id: UPDATE_AVAILABLE_TOAST_ID,

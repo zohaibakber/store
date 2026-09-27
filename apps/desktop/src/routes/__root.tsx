@@ -19,7 +19,7 @@ import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory";
 import type { ReplayChannel } from "@/replay-channel";
-import type { WorkspaceSession } from "@/session/workspace-session";
+import { publishedWorkspaceSnapshot, type WorkspaceSession } from "@/session/workspace-session";
 
 interface RouterContext {
   readonly session: ReplayChannel<WorkspaceSession>;
@@ -30,7 +30,7 @@ interface RouterContext {
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: ({ context, location }) => {
-    const snapshot = context.session.current()?.snapshot ?? null;
+    const snapshot = publishedWorkspaceSnapshot(context.session.current());
     const verdict = context.access.admit({
       location: { pathname: location.pathname },
       snapshot,

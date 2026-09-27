@@ -1,6 +1,7 @@
 import type { ProductScanAiClient } from "@store/services";
 import { describe, expect, it, vi } from "vitest";
 
+import { RATE_LIMITS } from "../../src/http/runtime";
 import { appFor } from "../lib/app";
 
 const scan = (recognizedText = "Panadol Paracetamol 500mg Batch B-42 EXP 12/2027") =>
@@ -56,7 +57,7 @@ describe("product scan authorization and validation", () => {
     }).request("/api/product-scans", scan());
 
     expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBe("60");
+    expect(response.headers.get("retry-after")).toBe(String(RATE_LIMITS.productScan.period));
     expect(await response.json()).toMatchObject({ error: { code: "PRODUCT_SCAN_RATE_LIMITED" } });
   });
 });

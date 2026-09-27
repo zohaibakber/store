@@ -39,15 +39,13 @@ export function CategoryField({
   value: string;
 }) {
   const { createCategory } = useInventoryActions();
-  // Categories created here are merged over the loader-provided seed rather
-  // than copied into state, so route invalidation stays reflected.
-  const [created, setCreated] = useState<ReadonlyArray<CategoryOption>>([]);
+  const [createdOverSeed, setCreatedOverSeed] = useState<ReadonlyArray<CategoryOption>>([]);
   const categories = useMemo(() => {
     const byId = new Map<string, CategoryOption>();
     for (const category of seed) byId.set(category.id, { id: category.id, name: category.name });
-    for (const category of created) byId.set(category.id, category);
+    for (const category of createdOverSeed) byId.set(category.id, category);
     return [...byId.values()].sort(byName);
-  }, [seed, created]);
+  }, [seed, createdOverSeed]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -72,7 +70,7 @@ export function CategoryField({
     setPending(true);
     try {
       const category = await createCategory({ name: option.name });
-      setCreated((current) =>
+      setCreatedOverSeed((current) =>
         current.some((existing) => existing.id === category.id)
           ? current
           : [...current, { id: category.id, name: category.name }],

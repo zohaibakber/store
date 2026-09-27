@@ -124,11 +124,6 @@ const runtimeFor = (
   };
 };
 
-/**
- * Serves requests through the production composition: the router is built
- * once with `buildOncePerIsolate` and every request runs through `toHandled`
- * with its own request scope, as the Worker bridge does.
- */
 export const workerHandlerFor = async (
   authenticated = true,
   options: AppOptions = {},

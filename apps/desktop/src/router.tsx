@@ -8,6 +8,8 @@ import type { ReplayChannel } from "@/replay-channel";
 import { routeTree } from "@/routeTree.gen";
 import type { WorkspaceSession } from "@/session/workspace-session";
 
+const replicaCatalogPreload = false;
+
 export const getRouter = (input: {
   readonly history: RouterHistory;
   readonly session: ReplayChannel<WorkspaceSession>;
@@ -24,9 +26,7 @@ export const getRouter = (input: {
       inventory: input.inventory ?? null,
     },
     history: input.history,
-    // Route data comes from the local replica. Speculative hover preloads can
-    // materialize an entire catalog the user never opens.
-    defaultPreload: false,
+    defaultPreload: replicaCatalogPreload,
     defaultGcTime: 60_000,
     defaultPreloadGcTime: 15_000,
     scrollRestoration: true,

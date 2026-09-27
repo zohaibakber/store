@@ -326,38 +326,18 @@ export const authRoutes = (configuration: AuthHttpConfiguration) => {
   );
 };
 
-/**
- * Builds isolate-lifetime services (the dependency Layers and the router)
- * once instead of per request.
- *
- * `HttpApiBuilder.group` captures the context it is built in and provides it
- * to every request it serves, so the build runs on an empty context plus the
- * isolate-stable `isolateServices` (the Worker's `RuntimeContext`). Each
- * request therefore keeps its own per-invocation services. The `Scope` is a
- * private isolate scope that is never closed: the D1 binding and CryptoKeys
- * these Layers hold are isolate-global, not bound to one invocation.
- */
 export const buildOncePerIsolate = <A, E, R>(
   build: Effect.Effect<A, E, R | Scope.Scope>,
   isolateServices: Context.Context<R>,
 ) =>
   Effect.gen(function* () {
-    const isolateScope = yield* Scope.make();
+    const neverClosedIsolateScope = yield* Scope.make();
     return yield* build.pipe(
-      Scope.provide(isolateScope),
+      Scope.provide(neverClosedIsolateScope),
       Effect.updateContext<never, R>(() => isolateServices),
     );
   });
 
-/**
- * The Worker's isolate-level `RuntimeContext`, read during init.
- *
- * Alchemy runs a Worker's init with its `RuntimeContext` present but keeps it
- * out of the init type (its own cron registration reads it the same way), so
- * requiring it by tag would leak it into the stack's requirements. The router
- * build needs it only to satisfy handler groups that name it; every request
- * still receives the bridge's own copy.
- */
 export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
   Effect.flatMap(
     Option.match({

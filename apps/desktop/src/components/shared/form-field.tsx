@@ -3,8 +3,6 @@ import type * as React from "react";
 import { FormFieldError } from "@/components/shared/form-field-error";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 
-// Structural shape of a TanStack Form field, kept minimal so this stays
-// decoupled from the form's generics.
 interface FormFieldApi {
   readonly name: string;
   readonly state: {
@@ -22,10 +20,6 @@ export interface FormControlProps {
   readonly "aria-invalid": true | undefined;
 }
 
-/**
- * `invalid` comes through as a second argument rather than on `control` so
- * `{...control}` stays safe to spread onto a DOM element.
- */
 export function FormField({
   children,
   description,

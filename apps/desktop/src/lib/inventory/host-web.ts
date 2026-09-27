@@ -18,7 +18,6 @@ const deviceIdFromStorage = (): string => {
 
 let persistenceRequested = false;
 
-/** The browser may evict IndexedDB under storage pressure unless the origin asks to persist. */
 const requestPersistentStorage = () => {
   const storage = globalThis.navigator?.storage;
   if (persistenceRequested || !storage?.persist) return;

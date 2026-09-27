@@ -1,9 +1,5 @@
 import { mean, sum } from "./statistics";
 
-/**
- * Syntetos–Boylan demand patterns. ADI is the average interval between
- * selling days; CV² is the squared coefficient of variation of non-zero sizes.
- */
 export type DemandPattern = "smooth" | "erratic" | "intermittent" | "lumpy" | "sparse" | "none";
 export type DemandMethod = "ses" | "sba" | "average" | "none";
 export type DemandTrend = "rising" | "falling" | "steady" | "unknown";
@@ -30,6 +26,10 @@ const WARM_UP_DAYS = 7;
 const TREND_RECENT_DAYS = 14;
 const TREND_MIN_BASELINE_DAYS = 14;
 const TREND_MAX_BASELINE_DAYS = 42;
+const TREND_Z_CUTOFF = 2;
+const TREND_RISE_RATIO = 1.25;
+const TREND_FALL_RATIO = 0.8;
+const TREND_MIN_UNITS = 10;
 
 type Fit = { readonly forecast: number; readonly mae: number; readonly rmse: number };
 
@@ -54,9 +54,8 @@ const fitSes = (series: ArrayLike<number>, alpha: number): Fit => {
   return { forecast: level, ...scoreErrors(errors) };
 };
 
-/** Croston's method with the Syntetos–Boylan bias correction. */
 const fitSba = (series: ArrayLike<number>, alpha: number): Fit => {
-  const correction = 1 - alpha / 2;
+  const sbaBiasCorrection = 1 - alpha / 2;
   let size = 0;
   let interval = 0;
   let sinceLast = 1;
@@ -65,7 +64,7 @@ const fitSba = (series: ArrayLike<number>, alpha: number): Fit => {
   for (let index = 0; index < series.length; index += 1) {
     const actual = series[index] ?? 0;
     if (started && index >= WARM_UP_DAYS) {
-      const error = actual - (correction * size) / interval;
+      const error = actual - (sbaBiasCorrection * size) / interval;
       errors.absolute += Math.abs(error);
       errors.squared += error * error;
       errors.count += 1;
@@ -84,7 +83,7 @@ const fitSba = (series: ArrayLike<number>, alpha: number): Fit => {
       sinceLast += 1;
     }
   }
-  const forecast = started ? (correction * size) / Math.max(interval, 1) : 0;
+  const forecast = started ? (sbaBiasCorrection * size) / Math.max(interval, 1) : 0;
   return { forecast, ...scoreErrors(errors) };
 };
 
@@ -129,11 +128,6 @@ const classify = (series: ArrayLike<number>) => {
   return { pattern, sellingDays };
 };
 
-/**
- * Compares the recent selling rate with the baseline as two Poisson rates
- * and only reports a trend when the difference is both material and unlikely
- * to be noise (|z| ≥ 2).
- */
 const detectTrend = (series: ArrayLike<number>) => {
   const recentDays = Math.min(TREND_RECENT_DAYS, series.length);
   const baselineDays = Math.min(TREND_MAX_BASELINE_DAYS, series.length - recentDays);
@@ -141,16 +135,18 @@ const detectTrend = (series: ArrayLike<number>) => {
   const end = series.length;
   const recent = sum(series, end - recentDays, end);
   const baseline = sum(series, end - recentDays - baselineDays, end - recentDays);
-  if (recent + baseline < 10) return { trend: "unknown" as const, ratio: null };
+  if (recent + baseline < TREND_MIN_UNITS) return { trend: "unknown" as const, ratio: null };
   const recentRate = recent / recentDays;
   const baselineRate = baseline / baselineDays;
-  const pooled = (recent + baseline) / (recentDays + baselineDays);
-  const z = (recentRate - baselineRate) / Math.sqrt(pooled * (1 / recentDays + 1 / baselineDays));
+  const pooledPoissonRate = (recent + baseline) / (recentDays + baselineDays);
+  const z =
+    (recentRate - baselineRate) /
+    Math.sqrt(pooledPoissonRate * (1 / recentDays + 1 / baselineDays));
   const ratio = baselineRate === 0 ? null : recentRate / baselineRate;
   const trend: DemandTrend =
-    z >= 2 && (ratio === null || ratio >= 1.25)
+    z >= TREND_Z_CUTOFF && (ratio === null || ratio >= TREND_RISE_RATIO)
       ? "rising"
-      : z <= -2 && ratio !== null && ratio <= 0.8
+      : z <= -TREND_Z_CUTOFF && ratio !== null && ratio <= TREND_FALL_RATIO
         ? "falling"
         : "steady";
   return { trend, ratio };
@@ -163,12 +159,6 @@ const confidenceOf = (observedDays: number, sellingDays: number): DemandConfiden
       ? "medium"
       : "low";
 
-/**
- * Forecasts daily unit demand from complete days of history, oldest first.
- * The pattern decides the model: exponential smoothing for regular sellers and
- * SBA for intermittent ones. Smoothing weights are chosen by one-step-ahead
- * error, and that error's RMSE is the demand deviation used for safety stock.
- */
 export const forecastDemand = (series: ArrayLike<number>): DemandForecast => {
   const observedDays = series.length;
   const { pattern, sellingDays } = classify(series);

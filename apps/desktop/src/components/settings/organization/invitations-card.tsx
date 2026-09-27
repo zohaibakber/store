@@ -64,14 +64,9 @@ interface InviteDraft {
 
 const blankInvite: InviteDraft = { email: "", role: "member" };
 
-/**
- * Nothing is mailed yet, so the person who created the invitation is the one
- * who has to deliver it. The secret is readable exactly once, in the response
- * that created it, and it is held here until the card unmounts.
- */
 function InviteForm({ organizationId }: { organizationId: AuthOrganizationMembership["id"] }) {
   const { actions } = useOrganization();
-  const [issued, setIssued] = React.useState<{ email: string; token: string } | null>(null);
+  const [handoff, setHandoff] = React.useState<{ email: string; token: string } | null>(null);
 
   const form = useForm({
     defaultValues: blankInvite,
@@ -84,7 +79,7 @@ function InviteForm({ organizationId }: { organizationId: AuthOrganizationMember
         role: value.role,
       });
       if (result?._tag !== "Invited") return;
-      setIssued({ email: result.invitation.email, token: result.token });
+      setHandoff({ email: result.invitation.email, token: result.token });
       form.reset();
     },
   });
@@ -162,20 +157,20 @@ function InviteForm({ organizationId }: { organizationId: AuthOrganizationMember
         </Fieldset>
       </form>
 
-      {issued ? (
+      {handoff ? (
         <Frame className="w-full">
           <FrameHeader className="flex-row items-center">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">Invitation for {issued.email}</p>
+              <p className="truncate font-medium">Invitation for {handoff.email}</p>
               <p className="text-sm text-muted-foreground">
-                {invitationHandoff(issued.token).kind === "link"
+                {invitationHandoff(handoff.token).kind === "link"
                   ? "Send them this link yourself. You'll only see it once."
                   : "Send them this token yourself. You'll only see it once."}
               </p>
             </div>
             <Button
               className="shrink-0"
-              onClick={() => void copyInvitation(issued.token)}
+              onClick={() => void copyInvitation(handoff.token)}
               size="sm"
               variant="outline"
             >

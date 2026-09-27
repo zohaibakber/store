@@ -102,10 +102,6 @@ const SessionRecord = Schema.Struct({
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
 
-/**
- * Everything a refresh decides on, read in one query: the presented session,
- * its user, and the user's membership in the session's active organization.
- */
 export interface RefreshContext {
   readonly session: SessionRecord;
   readonly user: UserRecord | null;
@@ -223,10 +219,6 @@ export interface AuthRepositoryApi {
   readonly findRefreshContext: (
     sessionId: SessionIdType,
   ) => Effect.Effect<RefreshContext | null, RepositoryError>;
-  /**
-   * Deletes at most `limit` refresh sessions that expired before `expiredBefore`,
-   * revoked or not, and reports how many it deleted.
-   */
   readonly pruneExpiredSessions: (input: {
     readonly expiredBefore: number;
     readonly limit: number;
@@ -258,7 +250,7 @@ const repositoryError = (operation: string, cause: unknown) =>
 const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
   Schema.decodeUnknownSync(schema)(crypto.randomUUID());
 
-const at = (milliseconds: number) => /* @__PURE__ */ new Date(milliseconds);
+const at = (milliseconds: number) => new Date(milliseconds);
 const millis = (value: Date | null) => (value === null ? null : value.getTime());
 
 interface ReturnedId {
@@ -404,13 +396,11 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
   const fail = (operation: string) =>
     Effect.mapError((cause: unknown) => repositoryError(operation, cause));
 
-  /**
-   * Every statement a guard depends on goes out in one atomic D1 batch.
-   * `RETURNING` is what reports whether a guarded statement matched, because a
-   * batch answers with rows rather than with an affected-row count.
-   */
-  const batch = (operation: string, queries: ReadonlyArray<CompilableQuery>) =>
+  const atomicBatch = (operation: string, queries: ReadonlyArray<CompilableQuery>) =>
     runD1Batch<ReturnedId>(database, queries).pipe(fail(operation));
+
+  const returningMatchedOne = (rows: ReadonlyArray<ReturnedId> | undefined) =>
+    (rows?.length ?? 0) === 1;
 
   const invitationById = (invitationId: string) =>
     database
@@ -485,7 +475,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       const userId = makeId(UserId);
       const name = input.name.trim();
       const store = startingOrganization(name);
-      yield* batch("createPasswordUser", [
+      yield* atomicBatch("createPasswordUser", [
         database.insert(user).values({
           id: userId,
           email: input.email,
@@ -511,7 +501,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       const userId = makeId(UserId);
       const name = input.name.trim();
       const store = startingOrganization(name);
-      yield* batch("createGoogleUser", [
+      yield* atomicBatch("createGoogleUser", [
         database.insert(user).values({
           id: userId,
           email: input.email,
@@ -552,7 +542,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         })
         .returning({ id: oauthAccount.id })
         .pipe(fail("attachGoogleAccount"));
-      return linked.length === 1;
+      return returningMatchedOne(linked);
     }),
     claimUnverifiedPasswordUser: Effect.fn("AuthRepository.claimUnverifiedPasswordUser")(
       function* (input) {
@@ -568,7 +558,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
               ),
             ),
         );
-        const results = yield* batch("claimUnverifiedPasswordUser", [
+        const results = yield* atomicBatch("claimUnverifiedPasswordUser", [
           database
             .insert(oauthAccount)
             .values({
@@ -601,7 +591,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
             .set({ revokedAt: at(input.now) })
             .where(and(eq(session.userId, input.userId), isNull(session.revokedAt), ownsIdentity)),
         ]);
-        return (results[1]?.length ?? 0) === 1;
+        return returningMatchedOne(results[1]);
       },
     ),
     membershipForUser: Effect.fn("AuthRepository.membershipForUser")(function* (userId) {
@@ -699,11 +689,11 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         )
         .returning({ id: organizationMembership.id })
         .pipe(fail("changeMemberRole"));
-      return changed.length === 1;
+      return returningMatchedOne(changed);
     }),
     removeMember: Effect.fn("AuthRepository.removeMember")(function* (input) {
       const now = yield* Clock.currentTimeMillis;
-      const results = yield* batch("removeMember", [
+      const results = yield* atomicBatch("removeMember", [
         database
           .delete(organizationMembership)
           .where(
@@ -738,11 +728,11 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
             ),
           ),
       ]);
-      return (results[0]?.length ?? 0) === 1;
+      return returningMatchedOne(results[0]);
     }),
     createInvitation: Effect.fn("AuthRepository.createInvitation")(function* (input) {
       const invitationId = makeId(InvitationId);
-      yield* batch("createInvitation", [
+      yield* atomicBatch("createInvitation", [
         database
           .update(organizationInvitation)
           .set({ revokedAt: at(input.now) })
@@ -787,7 +777,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         )
         .returning({ id: organizationInvitation.id })
         .pipe(fail("revokeInvitation"));
-      return revoked.length === 1;
+      return returningMatchedOne(revoked);
     }),
     findInvitationByTokenHash: Effect.fn("AuthRepository.findInvitationByTokenHash")(
       function* (tokenHash) {
@@ -821,7 +811,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       );
     }),
     acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
-      const results = yield* batch("acceptInvitation", [
+      const results = yield* atomicBatch("acceptInvitation", [
         database
           .update(organizationInvitation)
           .set({ acceptedAt: at(input.now) })
@@ -841,10 +831,10 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
           })
           .returning({ id: organizationMembership.id }),
       ]);
-      if ((results[0]?.length ?? 0) === 1) return true;
-      // A batch rolls back on a failed statement, not on one that matched no
-      // row, so a token spent concurrently has to undo its own insert.
-      if ((results[1]?.length ?? 0) === 1) {
+      const invitationClaimed = returningMatchedOne(results[0]);
+      if (invitationClaimed) return true;
+      const membershipInsertedAfterUnclaimedInvitation = returningMatchedOne(results[1]);
+      if (membershipInsertedAfterUnclaimedInvitation) {
         yield* database
           .delete(organizationMembership)
           .where(
@@ -975,7 +965,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         .pipe(fail("moveSession"));
     }),
     rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
-      const results = yield* batch("rotateSession", [
+      const results = yield* atomicBatch("rotateSession", [
         database
           .update(session)
           .set({
@@ -993,7 +983,8 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
           .returning({ id: session.id }),
         database.insert(session).values(sessionValues(input.replacement)),
       ]);
-      if ((results[0]?.length ?? 0) === 1) return true;
+      const currentSessionRotated = returningMatchedOne(results[0]);
+      if (currentSessionRotated) return true;
       yield* database
         .delete(session)
         .where(eq(session.id, input.replacement.id))

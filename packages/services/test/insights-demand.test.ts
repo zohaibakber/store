@@ -36,6 +36,12 @@ describe("forecastDemand", () => {
     expect(forecast.dailyRate).toBeGreaterThan(6);
   });
 
+  it("keeps a clear but small lift as steady", () => {
+    const forecast = forecastDemand(repeat(60, (index) => (index >= 46 ? 60 : 50)));
+    expect(forecast.trend).toBe("steady");
+    expect(forecast.trendRatio).toBeCloseTo(1.2, 5);
+  });
+
   it("does not call noise on tiny volumes a trend", () => {
     const forecast = forecastDemand(repeat(60, (index) => (index === 50 || index === 10 ? 1 : 0)));
     expect(forecast.trend).toBe("unknown");

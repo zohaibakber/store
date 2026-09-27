@@ -48,7 +48,6 @@ export type OtpCode = typeof OtpCode.Type;
 export const OrganizationRole = Schema.Literals(["owner", "admin", "member"]);
 export type OrganizationRole = typeof OrganizationRole.Type;
 
-/** Ownership transfers through a role change, so an invitation cannot grant it. */
 export const InvitableRole = Schema.Literals(["admin", "member"]);
 export type InvitableRole = typeof InvitableRole.Type;
 
@@ -71,10 +70,6 @@ export type OrganizationSlug = typeof OrganizationSlug.Type;
 export const InvitationId = Identifier.pipe(Schema.brand("AuthInvitationId"));
 export type InvitationId = typeof InvitationId.Type;
 
-/**
- * An opaque secret. D1 stores only its hash, so the token is readable exactly
- * once: in the response that created it.
- */
 export const InvitationToken = NonEmptyString.check(Schema.isMaxLength(256)).pipe(
   Schema.brand("InvitationToken"),
 );
@@ -188,10 +183,6 @@ export const GoogleIdToken = NonEmptyString.check(Schema.isMaxLength(8192)).pipe
 );
 export type GoogleIdToken = typeof GoogleIdToken.Type;
 
-/**
- * Native clients sign in through Google's own account picker, so they arrive
- * with an ID token instead of an authorization code.
- */
 export const ExchangeGoogleIdTokenInput = Schema.Struct({
   idToken: GoogleIdToken,
   client: AuthClientKind,
@@ -244,12 +235,6 @@ export const AuthSession = Schema.Struct({
 });
 export interface AuthSession extends Schema.Schema.Type<typeof AuthSession> {}
 
-/**
- * The authenticated workspace a refreshed access token opens, in the wire
- * shape of `WorkspaceSnapshot` from `@store/contracts/workspace`. It is built
- * from the same values as the token's claims, so a client adopts it instead
- * of reading the session back from the API.
- */
 export const SessionWorkspace = Schema.Struct({
   status: Schema.Literal("authenticated"),
   user: AuthUser,
@@ -259,7 +244,6 @@ export const SessionWorkspace = Schema.Struct({
 });
 export interface SessionWorkspace extends Schema.Schema.Type<typeof SessionWorkspace> {}
 
-/** Builds the workspace a token with these claims opens. */
 export const sessionWorkspaceFromClaims = (
   claims: Omit<AccessClaims, "sessionId" | "expiresAt">,
 ): SessionWorkspace => {
@@ -278,10 +262,6 @@ export const sessionWorkspaceFromClaims = (
   };
 };
 
-/**
- * A rotated token set. `workspace` is absent from authorities that predate
- * it, and clients then read the session from the API as before.
- */
 export const RefreshedSession = TokenSet.pipe(
   Schema.fieldsAssign({ workspace: Schema.optionalKey(SessionWorkspace) }),
 );
@@ -308,12 +288,6 @@ export const OrganizationInvitation = Schema.Struct({
 });
 export interface OrganizationInvitation extends Schema.Schema.Type<typeof OrganizationInvitation> {}
 
-/**
- * The signed-in session's own organization with everything its settings
- * surface shows. There is no directory of other organizations: a session
- * belongs to one store, and redeeming an invitation is the only thing that
- * moves it to another.
- */
 export const OrganizationRoster = Schema.Struct({
   organization: AuthOrganizationMembership,
   members: Schema.Array(OrganizationMember),
@@ -321,10 +295,6 @@ export const OrganizationRoster = Schema.Struct({
 });
 export interface OrganizationRoster extends Schema.Schema.Type<typeof OrganizationRoster> {}
 
-/**
- * Every command names the organization it acts on except the one that joins a
- * new one, where the token is the only thing the caller has.
- */
 export const OrganizationCommand = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("UpdateOrganization"),

@@ -37,12 +37,7 @@ const browserStorage: SessionHintStore = {
   removeItem: (key) => globalThis.localStorage.removeItem(key),
 };
 
-/**
- * The refresh cookie is HttpOnly, so script cannot tell whether one exists.
- * This hint records that this origin signed in, so a cold start without it
- * skips a refresh that could only fail. Blocked storage reads as "no hint".
- */
-const sessionHint = (store: SessionHintStore) => ({
+const signedInOriginHint = (store: SessionHintStore) => ({
   expected: () => {
     try {
       return store.getItem(SESSION_EXPECTED_KEY) === "1";
@@ -74,23 +69,20 @@ const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json)
 const failureMessage = (cause: unknown) =>
   cause instanceof Error ? cause.message : "Could not refresh the session.";
 
-/**
- * Browser session broker. The access token lives in memory only; the refresh
- * token is an HttpOnly cookie on the auth origin that only
- * `/v1/session/refresh` and `/v1/session/logout` read.
- */
+const isExplicitAuthRejection = (status: number) => status === 401 || status === 403;
+
 export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #http: SessionHttpClient;
   readonly #tokens = new MemoryTokenStore();
   readonly #fetch: SessionFetch;
-  readonly #hint: ReturnType<typeof sessionHint>;
+  readonly #hint: ReturnType<typeof signedInOriginHint>;
   readonly #isOnline: () => boolean;
   readonly #hooks: SessionSnapshotHooks;
   #snapshot: WorkspaceSnapshot = unauthenticatedWorkspace({ isOnline: false });
 
   constructor(options: WebAuthBrokerOptions) {
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-    this.#hint = sessionHint(options.storage ?? browserStorage);
+    this.#hint = signedInOriginHint(options.storage ?? browserStorage);
     this.#isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine ?? true);
     this.#http = new SessionHttpClient({
       apiBaseUrl: options.apiBaseUrl,
@@ -177,7 +169,6 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     this.#snapshot = this.#signedOut();
   }
 
-  /** Returns null only on explicit auth rejection; transient failures keep the hint. */
   async #refreshWithCookie(): Promise<RefreshedTokenSet | null> {
     const response = await this.#fetch(`${this.#http.authBaseUrl}/v1/session/refresh`, {
       method: "POST",
@@ -187,7 +178,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     });
     const bodyText = await response.text();
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
+      if (isExplicitAuthRejection(response.status)) {
         this.#clear();
         return null;
       }

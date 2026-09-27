@@ -20,10 +20,6 @@ export type WebAppHostOptions = WebAuthBrokerOptions & {
   readonly history: BrowserHistory;
 };
 
-/**
- * Google redirects back to `/sign-in?code=…`. Take the code out of the
- * address bar before the router reads it, and hold it for the sign-in form.
- */
 const claimOAuthCallback = (location: BrowserLocation, history: BrowserHistory) => {
   if (location.pathname !== SIGN_IN_PATH) return null;
   const url = new URL(location.href);

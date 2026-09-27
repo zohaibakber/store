@@ -21,13 +21,12 @@ export const formatRelativeTime = (value: number) => {
   return relative.format(Math.round(elapsed / 1000), "second");
 };
 
-// Keep day-first patterns ahead of ISO; Date.parse is ambiguous here.
-const expiryPatterns = ["dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd"];
+const dayFirstThenIsoExpiryPatterns = ["dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd"] as const;
 
 export const parseExpiryDate = (value: string | null): number | null => {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  for (const pattern of expiryPatterns) {
+  for (const pattern of dayFirstThenIsoExpiryPatterns) {
     const parsed = parse(trimmed, pattern, new Date());
     if (isValid(parsed)) return parsed.getTime();
   }
@@ -40,8 +39,4 @@ const utcDay = new Intl.DateTimeFormat(undefined, {
   timeZone: "UTC",
 });
 
-/**
- * Labels a `yyyy-MM-dd` chart bucket. Charts bucket by UTC day, so the label
- * reads the key in UTC to show the same calendar day the data was counted in.
- */
 export const formatUtcDay = (day: string) => utcDay.format(new Date(`${day}T00:00:00Z`));

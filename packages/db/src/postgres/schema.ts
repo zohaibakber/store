@@ -240,21 +240,9 @@ export const stockMovements = pgTable(
   ],
 );
 
-/**
- * Exact non-negative integer stored as PostgreSQL `numeric`.
- *
- * Commit sequences and replica sequences must survive beyond
- * `Number.MAX_SAFE_INTEGER`. Callers pass and read canonical decimal strings;
- * comparison and ordering stay in PostgreSQL.
- */
-const decimalCounter = (name: string) =>
+const numericDecimalString = (name: string) =>
   numeric(name, { precision: 20, scale: 0, mode: "string" }).notNull();
 
-/**
- * One row per organization. Inventory writers lock this row with
- * `SELECT ... FOR UPDATE` before reading stock, so concurrent commands in one
- * organization observe each other's committed outcome.
- */
 export const inventoryState = pgTable(
   "inventory_state",
   {
@@ -264,8 +252,8 @@ export const inventoryState = pgTable(
     releaseId: text("release_id"),
     incarnation: text("incarnation").notNull(),
     epoch: text("epoch").notNull(),
-    commitSequence: decimalCounter("commit_sequence"),
-    retentionFloor: decimalCounter("retention_floor"),
+    commitSequence: numericDecimalString("commit_sequence"),
+    retentionFloor: numericDecimalString("retention_floor"),
     maintainedAt: epochMilliseconds("maintained_at"),
   },
   (table) => [
@@ -293,8 +281,8 @@ export const replicas = pgTable(
     replicaId: text("replica_id").notNull(),
     ownerUserId: text("owner_user_id").notNull(),
     deviceLabel: text("device_label"),
-    lastClientSequence: decimalCounter("last_client_sequence"),
-    processedThroughClientSequence: decimalCounter("processed_through_client_sequence"),
+    lastClientSequence: numericDecimalString("last_client_sequence"),
+    processedThroughClientSequence: numericDecimalString("processed_through_client_sequence"),
     registeredAt: epochMilliseconds("registered_at").notNull(),
     lastSeenAt: epochMilliseconds("last_seen_at").notNull(),
   },
@@ -314,14 +302,10 @@ export const inventoryTransactions = pgTable(
   "inventory_transactions",
   {
     organizationId: tenantId(),
-    commitSequence: decimalCounter("commit_sequence"),
+    commitSequence: numericDecimalString("commit_sequence"),
     operationId: text("operation_id").notNull(),
     decision: text("decision").$type<"accepted" | "rejected">().notNull(),
     epoch: text("epoch").notNull(),
-    /**
-     * Pull-frame size of this group in bytes, fixed at commit time so a pull
-     * page is chosen from the headers alone without reading change rows.
-     */
     byteLength: integer("byte_length").notNull(),
   },
   (table) => [
@@ -345,27 +329,16 @@ export const inventoryTransactions = pgTable(
   ],
 );
 
-/**
- * Durable decision for one command identity.
- *
- * An identical retry returns this row. A different payload under the same
- * operation id is rejected. The commit sequence is the log position the
- * replica must apply before the command is locally integrated.
- *
- * No foreign key points at `inventory_transactions`: retention deletes log
- * history below the retained floor while receipts keep the per-replica
- * processed watermark, so a receipt outlives the transaction group it names.
- */
 export const commandReceipts = pgTable(
   "command_receipts",
   {
     organizationId: tenantId(),
     operationId: text("operation_id").notNull(),
     replicaId: text("replica_id").notNull(),
-    clientSequence: decimalCounter("client_sequence"),
+    clientSequence: numericDecimalString("client_sequence"),
     payloadHash: text("payload_hash").notNull(),
     decision: text("decision").$type<"accepted" | "rejected">().notNull(),
-    commitSequence: decimalCounter("commit_sequence"),
+    commitSequence: numericDecimalString("commit_sequence"),
     resultJson: text("result_json").notNull(),
     receivedAt: epochMilliseconds("received_at").notNull(),
     attempts: integer("attempts").notNull().default(1),
@@ -395,7 +368,7 @@ export const inventoryChanges = pgTable(
   "inventory_changes",
   {
     organizationId: tenantId(),
-    commitSequence: decimalCounter("commit_sequence"),
+    commitSequence: numericDecimalString("commit_sequence"),
     ordinal: integer("ordinal").notNull(),
     entity: text("entity").notNull(),
     action: text("action").$type<"upsert" | "delete">().notNull(),
@@ -419,10 +392,6 @@ export const inventoryChanges = pgTable(
   ],
 );
 
-/**
- * Leased snapshot build. A fencing token stops a timed-out worker from
- * publishing after another worker takes the job.
- */
 export const snapshotJobs = pgTable(
   "snapshot_jobs",
   {
@@ -434,15 +403,11 @@ export const snapshotJobs = pgTable(
       .notNull(),
     fence: integer("fence").notNull(),
     ownerToken: text("owner_token"),
-    startedAtCommitSequence: decimalCounter("started_at_commit_sequence"),
+    startedAtCommitSequence: numericDecimalString("started_at_commit_sequence"),
     horizon: numeric("horizon", { precision: 20, scale: 0, mode: "string" }),
     copyEntity: text("copy_entity"),
     copyCursor: text("copy_cursor"),
     stepDueAt: epochMilliseconds("step_due_at").notNull(),
-    /**
-     * Rows per partition entity in the published parts, as a JSON object.
-     * Written when the job publishes; null while it is still building.
-     */
     entityCountsJson: text("entity_counts_json"),
   },
   (table) => [
@@ -469,7 +434,7 @@ export const downloadLeases = pgTable(
     organizationId: tenantId(),
     replicaId: text("replica_id").notNull(),
     snapshotId: text("snapshot_id").notNull(),
-    pinnedHorizon: decimalCounter("pinned_horizon"),
+    pinnedHorizon: numericDecimalString("pinned_horizon"),
     expiresAt: epochMilliseconds("expires_at").notNull(),
   },
   (table) => [
@@ -489,10 +454,6 @@ export const downloadLeases = pgTable(
   ],
 );
 
-/**
- * Staged entity rows while a snapshot job is copying/repairing.
- * Readers never see these until the job publishes and clients activate.
- */
 export const snapshotStagedRows = pgTable(
   "snapshot_staged_rows",
   {
@@ -517,10 +478,6 @@ export const snapshotStagedRows = pgTable(
   ],
 );
 
-/**
- * Immutable snapshot parts. Payload lives in Postgres (`payload_json`) because
- * this stage has no R2 binding; objectKey remains the stable part identity.
- */
 export const snapshotParts = pgTable(
   "snapshot_parts",
   {

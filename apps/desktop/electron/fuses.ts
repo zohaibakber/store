@@ -1,13 +1,5 @@
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
-/**
- * Package-time Electron fuses. Matches the official Electron
- * recommendations for apps that serve the renderer over a custom protocol
- * instead of `file://`.
- *
- * `LoadBrowserProcessSpecificV8Snapshot` stays off: a custom main-process
- * snapshot disables Electron's embedded Node startup snapshot and slows boot.
- */
 export const desktopFuses = {
   version: FuseVersion.V1,
   [FuseV1Options.RunAsNode]: false,

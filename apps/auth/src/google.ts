@@ -22,17 +22,16 @@ const GoogleUserInfo = Schema.Struct({
   picture: Schema.optionalKey(Schema.String),
 });
 
-/**
- * `tokeninfo` answers with JSON strings for the numeric and boolean claims,
- * and has answered with real numbers and booleans in the past. Accept both.
- */
+const TokenInfoNumericClaim = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
+const TokenInfoBooleanClaim = Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])]);
+
 const GoogleTokenInfo = Schema.Struct({
   iss: Schema.String,
   aud: Schema.String,
   sub: Schema.String,
-  exp: Schema.Union([Schema.Finite, Schema.FiniteFromString]),
+  exp: TokenInfoNumericClaim,
   email: EmailAddress,
-  email_verified: Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])]),
+  email_verified: TokenInfoBooleanClaim,
   name: Schema.optionalKey(Schema.String),
   picture: Schema.optionalKey(Schema.String),
 });

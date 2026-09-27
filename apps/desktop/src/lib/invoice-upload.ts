@@ -12,11 +12,6 @@ export type InvoiceUploadFile = {
 
 type ApiRequest = (pathname: string, init?: JsonRequestInit) => Promise<JsonApiResponse>;
 
-/**
- * Posts invoice files to `/api/uploads` as multipart and decodes the
- * extraction. Electron main and the browser host share it, so both enforce
- * the same size limits before any bytes leave the device.
- */
 export const analyseInvoiceUpload = async (
   apiRequest: ApiRequest,
   files: ReadonlyArray<InvoiceUploadFile>,

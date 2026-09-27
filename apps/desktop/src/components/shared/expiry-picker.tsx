@@ -66,32 +66,23 @@ function CalendarDropdown({ options, value, onChange, "aria-label": ariaLabel }:
 
 const digitsOf = (text: string) => text.replace(/\D/g, "").slice(0, 6);
 
-/** Types as `0826`, reads back as `08/26`. */
-const withSeparator = (digits: string) =>
+const slashedMonthYear = (digits: string) =>
   digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`;
 
-/**
- * A month and a year is all a package tells you, so `08/26` resolves to the
- * last day of that month, the last day the stock is good. A four-digit year
- * is accepted too; anything shorter is still being typed.
- */
-const parseMonthYear = (text: string): Date | undefined => {
+const lastDayOfMonth = (year: number, month: number) => new Date(year, month, 0);
+
+const lastDayOfTypedMonthYear = (text: string): Date | undefined => {
   const digits = digitsOf(text);
   if (digits.length !== 4 && digits.length !== 6) return undefined;
   const month = Number(digits.slice(0, 2));
   if (month < 1 || month > 12) return undefined;
   const yearDigits = digits.slice(2);
   const year = yearDigits.length === 2 ? 2000 + Number(yearDigits) : Number(yearDigits);
-  // Day 0 of the next month is the last day of this one.
-  return new Date(year, month, 0);
+  return lastDayOfMonth(year, month);
 };
 
 const monthYearText = (date: Date | undefined) => (date ? format(date, "MM/yy") : "");
 
-/**
- * Expiry as it is printed on stock: a month and a year, typed as `MM/YY`. The
- * calendar button beside it stays available for a precise day.
- */
 export function ExpiryPicker({
   id,
   name,
@@ -116,18 +107,15 @@ export function ExpiryPicker({
   endMonth?: Date;
 }) {
   const [open, setOpen] = React.useState(false);
-  // Only held while the field is being typed into. Everywhere else the text is
-  // the saved date, so a calendar pick or a form reset needs no syncing.
-  const [draft, setDraft] = React.useState<string | null>(null);
-  const text = draft ?? monthYearText(value);
+  const [typedText, setTypedText] = React.useState<string | null>(null);
+  const text = typedText ?? monthYearText(value);
 
   const handleChange = (next: string) => {
     const digits = digitsOf(next);
-    setDraft(withSeparator(digits));
-    // Half-typed input leaves the saved date alone; clearing the field clears it.
+    setTypedText(slashedMonthYear(digits));
     if (digits.length === 0) return onChange(undefined);
-    const parsed = parseMonthYear(digits);
-    if (parsed) onChange(parsed);
+    const completeExpiry = lastDayOfTypedMonthYear(digits);
+    if (completeExpiry) onChange(completeExpiry);
   };
 
   return (
@@ -147,7 +135,7 @@ export function ExpiryPicker({
           inputMode="numeric"
           name={name}
           onBlur={() => {
-            setDraft(null);
+            setTypedText(null);
             onBlur?.();
           }}
           onChange={(event) => handleChange(event.target.value)}
@@ -181,7 +169,7 @@ export function ExpiryPicker({
           endMonth={endMonth}
           onSelect={(date) => {
             onChange(date);
-            setDraft(null);
+            setTypedText(null);
             setOpen(false);
           }}
         />

@@ -3,16 +3,6 @@ import * as Effect from "effect/Effect";
 
 import type { AuthRepositoryApi } from "./repository";
 
-/**
- * Scheduled pruning of refresh sessions.
- *
- * A session row is kept until `retainAfterExpiryMillis` after its refresh
- * expiry, whether or not it was revoked: a revoked row must outlive the token
- * it names so a replayed token still trips family revocation, and a recently
- * expired row keeps answering `REFRESH_EXPIRED` instead of
- * `INVALID_REFRESH_TOKEN`. Each run deletes at most `batchRows * maxBatches`
- * rows; a backlog drains over later runs.
- */
 export const SESSION_PRUNE_POLICY = {
   cronExpression: "23 * * * *",
   retainAfterExpiryMillis: 7 * 24 * 60 * 60 * 1_000,

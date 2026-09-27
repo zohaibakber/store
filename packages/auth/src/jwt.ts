@@ -293,12 +293,6 @@ export type AccessTokenVerifier = (
   now?: number,
 ) => Effect.Effect<AccessClaimsType, JwtError>;
 
-/**
- * Imports the verification key once and returns a verifier that reuses the
- * `CryptoKey` for every token. When the import fails the verifier imports per
- * call instead, so each call reports the same failure as uncached
- * verification rather than failing construction.
- */
 export const makeAccessTokenVerifier = (
   configuration: JwtConfiguration,
 ): Effect.Effect<AccessTokenVerifier> =>

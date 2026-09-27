@@ -49,7 +49,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
-import { formatDate, formatUtcDay } from "@/lib/format";
+import { formatDate, formatUtcDay, parseExpiryDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory";
 
 const ISO_DATE = "yyyy-MM-dd";
@@ -60,11 +60,6 @@ const parseISODate = (value: string): Date | undefined => {
 };
 
 const formatISODate = (date: Date): string => format(date, ISO_DATE);
-
-// Expiries are stored as local midnight, matching `parseExpiryDate` on the
-// import path, so a date written here reads back as the same calendar day.
-const expiryTimestamp = (value: string): number | null =>
-  value ? (parseISODate(value)?.getTime() ?? null) : null;
 
 const expiryInputValue = (timestamp: number | null): string =>
   timestamp == null ? "" : formatISODate(new Date(timestamp));
@@ -109,8 +104,6 @@ const unitStockCreateSchema = formValidator(
   ),
 );
 
-// Editing may empty a batch. A miscount corrected to zero is a real state,
-// unlike creating one with nothing in it.
 const packBatchEditSchema = formValidator(
   Schema.Struct({
     ...BatchDetails,
@@ -126,8 +119,6 @@ const unitStockEditSchema = formValidator(
   }),
 );
 
-// Structural shape of a TanStack Form string field, so the fields both
-// batch forms share stay decoupled from each form's generics.
 interface BatchTextField {
   readonly name: string;
   readonly state: {
@@ -257,7 +248,7 @@ function AddPackBatchDialog({ productId }: { productId: string }) {
         await createBatch({
           productId,
           batchNumber: value.batchNumber.trim() || null,
-          expiresAt: expiryTimestamp(value.expiresAt),
+          expiresAt: parseExpiryDate(value.expiresAt),
           packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
@@ -338,7 +329,7 @@ function AddUnitStockDialog({ productId }: { productId: string }) {
         await createBatch({
           productId,
           batchNumber: null,
-          expiresAt: expiryTimestamp(value.expiresAt),
+          expiresAt: parseExpiryDate(value.expiresAt),
           packQuantity: 0,
           unitQuantity: Number(value.unitQuantity || 0),
         });
@@ -421,7 +412,7 @@ function EditPackBatchDialog({ batch }: { batch: Batch }) {
         await updateBatch({
           id: batch.id,
           batchNumber: value.batchNumber.trim() || null,
-          expiresAt: expiryTimestamp(value.expiresAt),
+          expiresAt: parseExpiryDate(value.expiresAt),
           packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
@@ -503,7 +494,7 @@ function EditUnitStockDialog({ batch }: { batch: Batch }) {
         await updateBatch({
           id: batch.id,
           batchNumber: batch.batchNumber,
-          expiresAt: expiryTimestamp(value.expiresAt),
+          expiresAt: parseExpiryDate(value.expiresAt),
           packQuantity: batch.packQuantity,
           unitQuantity: Number(value.unitQuantity || 0),
         });
@@ -674,8 +665,6 @@ function UnitStockCard({ product }: { product: Product }) {
 }
 
 export function ProductBatchesCard({ product }: { product: Product }) {
-  // Stock still lives in batches for a single-unit product. That is what
-  // expiry-first allocation draws from. Nothing about batches is shown.
   return product.category.tracksPacks ? (
     <PackBatchesCard product={product} />
   ) : (

@@ -94,12 +94,11 @@ export const StockMovementRow = Schema.Struct({
 });
 export type StockMovementRow = typeof StockMovementRow.Type;
 
-const VIRTUAL_ROW_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
+const TANSTACK_DB_VIRTUAL_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
 
-/** TanStack DB attaches these to `collection.state` rows. Replica writes must not persist them. */
 export const persistableRow = <T extends object>(row: T): T => {
   const copy = { ...row };
-  for (const key of VIRTUAL_ROW_KEYS) {
+  for (const key of TANSTACK_DB_VIRTUAL_KEYS) {
     Reflect.deleteProperty(copy, key);
   }
   return copy;

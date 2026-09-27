@@ -125,12 +125,6 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
   } satisfies LiveHorizon;
 });
 
-/**
- * How long one isolate reuses an organization's horizon for every live stream
- * and long poll it serves. It bounds the extra wake latency; the Postgres read
- * rate per organization per isolate is at most one per window, whatever the
- * number of open live connections.
- */
 export const LIVE_HORIZON_SHARING = {
   maxAgeMillis: 1_000,
   capacity: 1_024,
@@ -138,17 +132,6 @@ export const LIVE_HORIZON_SHARING = {
 
 type SharedHorizon = { readonly horizon: LiveHorizon; readonly readAt: number };
 
-/**
- * Isolate-wide latest horizon per organization.
- *
- * `effect/Cache` does not fit here: it shares one in-flight lookup across
- * callers, which on workerd would run the Postgres read on one request's I/O
- * context (its Hyperdrive pool is pinned to that invocation's scope) and
- * resume every other request's fiber from it. Workers forbid cross-request
- * I/O, so each caller reads with its own invocation's pool when the shared
- * value is stale and only the settled value is shared. Insertion order gives
- * least-recently-read eviction at `capacity`.
- */
 const makeSharedHorizonReader = (
   read: (organizationId: string) => Effect.Effect<LiveHorizon, InventoryError>,
 ) => {

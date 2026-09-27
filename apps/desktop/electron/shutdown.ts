@@ -8,7 +8,6 @@ interface ShutdownCoordinatorOptions {
   readonly reportError?: (cause: unknown) => void;
 }
 
-/** Prevents Electron's first quit, drains app-owned resources, then resumes once. */
 export const makeShutdownCoordinator = (options: ShutdownCoordinatorOptions) => {
   let completed = false;
   let pending: Promise<void> | undefined;

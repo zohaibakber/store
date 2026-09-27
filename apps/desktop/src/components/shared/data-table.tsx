@@ -51,8 +51,6 @@ import { cn } from "@/lib/utils";
 
 type DataTableFilterValue = string | undefined;
 
-// Method (not arrow) syntax keeps parameters bivariant so concrete instances
-// stay assignable.
 interface DataTableSortableColumn {
   readonly id: string;
   readonly columnDef: { meta?: { label?: string } };

@@ -1,7 +1,3 @@
-/**
- * Inverse of the standard normal CDF (Acklam's rational approximation,
- * relative error below 1.15e-9), used to turn a service level into a z-score.
- */
 export const inverseNormal = (probability: number): number => {
   const p = Math.min(1 - 1e-12, Math.max(1e-12, probability));
   const a = [
