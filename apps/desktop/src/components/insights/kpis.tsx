@@ -15,7 +15,7 @@ function Sparkline({
   readonly values: ReadonlyArray<number>;
   readonly label: string;
 }) {
-  if (values.length < 2) return null;
+  if (values.length < 2 || values.every((value) => value === 0)) return null;
   const max = Math.max(...values, 1);
   const step = SPARK_WIDTH / (values.length - 1);
   const points = values

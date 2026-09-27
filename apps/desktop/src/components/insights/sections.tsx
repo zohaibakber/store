@@ -2,6 +2,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ArrowUp01Icon,
+  ChartLineData02Icon,
   CheckmarkCircle02Icon,
   PackageIcon,
 } from "@hugeicons/core-free-icons";
@@ -147,14 +148,22 @@ export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
       description={`Daily revenue, dashed line is the previous ${period.days} days.`}
       title="Revenue"
     >
-      <ChartContainer className="aspect-auto h-56 w-full">
-        <Chart
-          ariaLabel={`Daily revenue over the last ${period.days} days compared with the period before`}
-          className="w-full"
-          definition={definition}
-          height={CHART_HEIGHT}
+      {period.series.every((day) => day.revenue === 0 && day.previousRevenue === 0) ? (
+        <EmptyState
+          description="Revenue shows up here once you record sales."
+          icon={ChartLineData02Icon}
+          title={`No sales in the last ${period.days} days`}
         />
-      </ChartContainer>
+      ) : (
+        <ChartContainer className="aspect-auto h-56 w-full">
+          <Chart
+            ariaLabel={`Daily revenue over the last ${period.days} days compared with the period before`}
+            className="w-full"
+            definition={definition}
+            height={CHART_HEIGHT}
+          />
+        </ChartContainer>
+      )}
     </FrameCard>
   );
 }
@@ -257,36 +266,44 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
       }
       title="Sales rhythm"
     >
-      <div className="flex flex-col gap-4">
-        <ChartContainer className="aspect-auto h-56 w-full">
-          <Chart
-            ariaLabel="Average revenue by weekday over the last eight weeks"
-            className="w-full"
-            definition={definition}
-            height={CHART_HEIGHT}
-          />
-        </ChartContainer>
-        {busiestHours.length === 0 ? null : (
-          <div className="flex flex-col gap-3">
-            <span className="text-xs text-muted-foreground">Busiest hours</span>
-            {busiestHours.map((entry) => (
-              <Meter
-                key={entry.hour}
-                max={Math.max(busiestHours[0]?.invoices ?? 1, 1)}
-                value={entry.invoices}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <MeterLabel>{formatHour(entry.hour)}</MeterLabel>
-                  <MeterValue>{(_formatted, value) => `${formatCount(value)} sales`}</MeterValue>
-                </div>
-                <MeterTrack>
-                  <MeterIndicator />
-                </MeterTrack>
-              </Meter>
-            ))}
-          </div>
-        )}
-      </div>
+      {peakWeekday.weekday < 0 ? (
+        <EmptyState
+          description="Weekday and hourly patterns appear after a few weeks of sales."
+          icon={ChartLineData02Icon}
+          title="Not enough sales yet"
+        />
+      ) : (
+        <div className="flex flex-col gap-4">
+          <ChartContainer className="aspect-auto h-56 w-full">
+            <Chart
+              ariaLabel="Average revenue by weekday over the last eight weeks"
+              className="w-full"
+              definition={definition}
+              height={CHART_HEIGHT}
+            />
+          </ChartContainer>
+          {busiestHours.length === 0 ? null : (
+            <div className="flex flex-col gap-3">
+              <span className="text-xs text-muted-foreground">Busiest hours</span>
+              {busiestHours.map((entry) => (
+                <Meter
+                  key={entry.hour}
+                  max={Math.max(busiestHours[0]?.invoices ?? 1, 1)}
+                  value={entry.invoices}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <MeterLabel>{formatHour(entry.hour)}</MeterLabel>
+                    <MeterValue>{(_formatted, value) => `${formatCount(value)} sales`}</MeterValue>
+                  </div>
+                  <MeterTrack>
+                    <MeterIndicator />
+                  </MeterTrack>
+                </Meter>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </FrameCard>
   );
 }
