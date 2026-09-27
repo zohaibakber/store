@@ -9,7 +9,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vp dev",
+    "dev:web": "vp dev --mode web",
     "build": "tsc && vp build && electron-builder --config electron-builder.json5",
+    "build:web": "tsc && vp build --mode web",
     "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always",
     "release:nightly": "tsc && vp build && electron-builder --config electron-builder.nightly.json5 --publish always",
     "check": "vp check",
