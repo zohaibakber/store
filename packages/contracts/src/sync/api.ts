@@ -23,9 +23,10 @@ import {
   CommandReceipt,
   RegisterReplicaRequest,
   RegisterReplicaResult,
-  SyncCommandEnvelope,
   SyncPullRequest,
   SyncPullResult,
+  SyncSubmitCommandRequest,
+  SyncSubmitCommandResult,
 } from "./protocol";
 import {
   AcquireSnapshotRequest,
@@ -52,8 +53,8 @@ export const syncGroup = HttpApiGroup.make("sync")
   )
   .add(
     HttpApiEndpoint.post("submitCommand", "/api/sync/commands", {
-      payload: SyncCommandEnvelope,
-      success: CommandReceipt,
+      payload: SyncSubmitCommandRequest,
+      success: SyncSubmitCommandResult,
       error: SyncHttpErrors,
     }),
   )

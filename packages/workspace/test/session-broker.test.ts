@@ -2,8 +2,12 @@ import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
 import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-import { loadSessionSnapshot } from "../src/session-broker";
-import { SessionHttpClient } from "../src/session-http";
+import {
+  adoptAuthenticatedSnapshot,
+  loadSessionSnapshot,
+  renewSessionSnapshot,
+} from "../src/session-broker";
+import { MemoryTokenStore, SessionHttpClient } from "../src/session-http";
 
 const authenticated = decodeAuthenticatedWorkspace({
   status: "authenticated",
@@ -85,5 +89,65 @@ describe("session snapshot persistence", () => {
     expect(result).toMatchObject({ status: "unauthenticated", isOnline: true });
     expect(clearAuthenticated).toHaveBeenCalledOnce();
     expect(http.tokens.get()).toBeNull();
+  });
+
+  it("renews from the workspace a refresh carries and reads the session only without it", async () => {
+    const issue = (suffix: string) =>
+      TokenSet.make({
+        accessToken: AccessToken.make(`access-${suffix}`),
+        accessExpiresAt: Date.now() + 60_000,
+        refreshToken: RefreshToken.make(`session-${suffix}.secret`),
+        refreshExpiresAt: Date.now() + 120_000,
+      });
+    const renewWith = async (carriesWorkspace: boolean) => {
+      let local: WorkspaceSnapshot = { ...authenticated, isOnline: false };
+      const persisted: Array<WorkspaceSnapshot> = [];
+      const reads: Array<string> = [];
+      const store = new MemoryTokenStore();
+      store.set(issue("old"));
+      const hooks = {
+        http: new SessionHttpClient({
+          apiBaseUrl: "https://api.example.com",
+          authBaseUrl: "https://auth.example.com",
+          tokens: store,
+          fetch: async (input) => {
+            reads.push(new Request(input).url);
+            return Response.json(authenticated);
+          },
+          refreshSession: async () => {
+            const next = issue("new");
+            store.set(next);
+            if (!carriesWorkspace) return next;
+            const workspace = {
+              ...authenticated,
+              user: { ...authenticated.user, name: "Renewed" },
+            };
+            await adoptAuthenticatedSnapshot(hooks, workspace);
+            return { ...next, workspace };
+          },
+          needsRefresh: (_tokens, force) => force,
+        }),
+        getLocalSnapshot: () => local,
+        publish: (snapshot: WorkspaceSnapshot) => {
+          local = snapshot;
+          return snapshot;
+        },
+        persistAuthenticated: async (snapshot: WorkspaceSnapshot) => {
+          persisted.push(snapshot);
+        },
+      };
+      const renewed = await renewSessionSnapshot(hooks);
+      return { renewed, reads, persisted };
+    };
+
+    const adopted = await renewWith(true);
+    expect(adopted.reads).toEqual([]);
+    expect(adopted.renewed).toMatchObject({ status: "authenticated", isOnline: true });
+    expect(adopted.renewed.user?.name).toBe("Renewed");
+    expect(adopted.persisted).toHaveLength(1);
+
+    const legacy = await renewWith(false);
+    expect(legacy.reads).toEqual(["https://api.example.com/api/auth/session"]);
+    expect(legacy.renewed.user?.name).toBe("Owner");
   });
 });

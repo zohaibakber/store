@@ -9,10 +9,13 @@ import {
 } from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
+  RefreshedTokenSet,
   RequestError,
   SessionHttpClient,
+  adoptAuthenticatedSnapshot,
   adoptSessionTokens,
   loadSessionSnapshot,
+  refreshedTokens,
   refreshTokenNeedsRefresh,
   renewSessionSnapshot,
   requestErrorFromPayload,
@@ -53,8 +56,8 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
       needsRefresh: refreshTokenNeedsRefresh,
       refreshSession: () => this.#rotateTokens(),
-      afterRefresh: async () => {
-        await loadSessionSnapshot(this.#hooks);
+      afterRefresh: async (refreshed) => {
+        if (refreshed.workspace === undefined) await loadSessionSnapshot(this.#hooks);
       },
       requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
     });
@@ -90,7 +93,8 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     if (persisted) {
       this.#tokens.set(persisted.tokens);
       this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
-      await this.#http.ensureFreshAccess().catch(() => undefined);
+      const refreshed = await this.#http.ensureFreshAccess().catch(() => null);
+      if (refreshed?.workspace !== undefined) return this.#snapshot;
       if (this.#tokens.get()) return loadSessionSnapshot(this.#hooks);
     }
     return this.#snapshot;
@@ -181,7 +185,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   }
 
   /** Returns null only on explicit auth rejection; transient failures preserve credentials. */
-  async #rotateTokens(): Promise<TokenSetType | null> {
+  async #rotateTokens(): Promise<RefreshedTokenSet | null> {
     const tokens = this.#tokens.get();
     if (!tokens?.refreshToken) return null;
     const response = await net.fetch(`${this.#http.authBaseUrl}/v1/session/refresh`, {
@@ -202,9 +206,14 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       );
       throw requestErrorFromPayload(payload, response.status);
     }
-    const next = Schema.decodeUnknownSync(Schema.fromJsonString(TokenSet))(bodyText);
+    const refreshed = Schema.decodeUnknownSync(Schema.fromJsonString(RefreshedTokenSet))(bodyText);
+    const next = refreshedTokens(refreshed);
     this.#tokens.set(next);
-    await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
-    return next;
+    if (refreshed.workspace === undefined) {
+      await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
+    } else {
+      await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
+    }
+    return refreshed;
   }
 }

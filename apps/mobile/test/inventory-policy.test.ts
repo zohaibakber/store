@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   decodeMobileExtra,
   isReachable,
+  METERED_PULL_MAX_BYTES,
+  pullMaxBytesFor,
   reconnected,
   replicaDatabaseName,
   visibilityForAppState,
@@ -36,6 +38,14 @@ describe("mobile replica policy", () => {
     expect(reconnected(undefined, true)).toBe(false);
     expect(reconnected(true, true)).toBe(false);
     expect(reconnected(false, false)).toBe(false);
+  });
+
+  it("asks for smaller pull pages on metered networks only", () => {
+    expect(pullMaxBytesFor({ type: "CELLULAR", isConnected: true })).toBe(METERED_PULL_MAX_BYTES);
+    expect(pullMaxBytesFor({ type: "BLUETOOTH" })).toBe(METERED_PULL_MAX_BYTES);
+    expect(pullMaxBytesFor({ type: "WIFI", isConnected: true })).toBeUndefined();
+    expect(pullMaxBytesFor({ type: "ETHERNET" })).toBeUndefined();
+    expect(pullMaxBytesFor({})).toBeUndefined();
   });
 
   it("maps app states to scheduler visibility", () => {

@@ -1,4 +1,5 @@
 import { OPERATIONAL_SUBSCRIPTION, OrgCommitSequence, SyncEpoch } from "@store/contracts";
+import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import {
   dispositionFor,
   SYNC_REQUEST_TIMEOUT_MILLIS,
@@ -59,6 +60,58 @@ describe("proxied sync transport", () => {
         expect(dispositionFor(delayed)).toEqual({ _tag: "retry", delayMillis: 20_000 });
         const typed = yield* Effect.flip(transport.pull(pullRequest));
         expect(typed).toMatchObject({ _tag: "SyncProtocolError", code: "SNAPSHOT_REQUIRED" });
+      }),
+    ));
+
+  it("sends the pull cursor with a command and decodes the page on its receipt", () =>
+    run(
+      Effect.gen(function* () {
+        const receipt = {
+          operationId: lastUnitBuyerAEnvelope.operationId,
+          replicaId: lastUnitBuyerAEnvelope.replicaId,
+          clientSequence: lastUnitBuyerAEnvelope.clientSequence,
+          payloadHash: lastUnitBuyerAEnvelope.payloadHash,
+          decision: "rejected",
+          commitSequence: "4",
+          result: { _tag: "rejected", code: "INSUFFICIENT_STOCK", message: "Sold out." },
+        };
+        const page = {
+          epoch: "1",
+          incarnation: "incarnation-test",
+          subscription: "operational",
+          schemaVersion: 1,
+          transactions: [
+            {
+              commitSequence: "4",
+              operationId: lastUnitBuyerAEnvelope.operationId,
+              decision: "rejected",
+              changes: [],
+            },
+          ],
+          nextCommitSequence: "4",
+          horizon: "4",
+          retentionFloor: "0",
+        };
+        const bodies: Array<string | null> = [];
+        const answers = [{ ...receipt, page }, receipt];
+        const transport = makeProxySyncTransport(async (request) => {
+          bodies.push(request.bodyText);
+          return { ok: true, status: 200, bodyText: JSON.stringify(answers[bodies.length - 1]) };
+        });
+        const request = {
+          ...lastUnitBuyerAEnvelope,
+          afterCommitSequence: OrgCommitSequence.make("3"),
+          maxBytes: 262_144,
+        };
+        const withPage = yield* transport.submitCommand(request);
+        const legacy = yield* transport.submitCommand(lastUnitBuyerAEnvelope);
+        expect(JSON.parse(bodies[0] ?? "{}")).toMatchObject({
+          afterCommitSequence: "3",
+          maxBytes: 262_144,
+        });
+        expect(withPage.page?.horizon).toBe("4");
+        expect(withPage.page?.transactions).toHaveLength(1);
+        expect(legacy).toEqual(receipt);
       }),
     ));
 

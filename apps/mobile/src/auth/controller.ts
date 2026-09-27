@@ -14,14 +14,16 @@ import {
   type LoginRoute,
   type TokenSet,
 } from "@store/auth";
-import { WorkspaceSnapshot } from "@store/contracts/workspace";
+import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
   RequestError,
   SessionHttpClient,
   organizeOrganization,
+  refreshedTokens,
   refreshTokenNeedsRefresh,
   type JsonRequestInit,
+  type RefreshedTokenSet,
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -31,6 +33,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Struct from "effect/Struct";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
@@ -142,6 +145,8 @@ const canRename = (role: string) => role === "owner" || role === "admin";
 
 const decodeSnapshot = Schema.decodeUnknownOption(WorkspaceSnapshot);
 
+const decodeRefreshedWorkspace = Schema.decodeUnknownOption(AuthenticatedWorkspaceSnapshot);
+
 const sessionEnded = failed(problem("sessionEnded", SESSION_ENDED_NOTICE));
 
 export const createAuthController = (options: AuthControllerOptions): AuthController => {
@@ -151,7 +156,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
   const flowAtom = Atom.make<SignInFlow | null>(null).pipe(Atom.keepAlive);
   const tokens = new MemoryTokenStore();
   const sessionWork = Effect.runSync(
-    FiberSet.make<ActionResult | TokenSet | null, AuthClientError>().pipe(
+    FiberSet.make<ActionResult | RefreshedTokenSet | null, AuthClientError>().pipe(
       Scope.provide(Scope.makeUnsafe()),
     ),
   );
@@ -192,7 +197,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       await options.vault.save({ version: 1, tokens: current, account }).catch(() => undefined);
     }).pipe(Effect.uninterruptible);
 
-  const inSession = <A extends ActionResult | TokenSet | null, E extends AuthClientError>(
+  const inSession = <A extends ActionResult | RefreshedTokenSet | null, E extends AuthClientError>(
     work: Effect.Effect<A, E>,
     whenInterrupted: A,
   ) =>
@@ -218,6 +223,12 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     startImmediately: true,
   });
 
+  const adoptAccount = Effect.fn("MobileAuth.adoptAccount")(function* (account: Account) {
+    yield* persist(account);
+    const remembered = yield* Effect.promise(lastOrganization);
+    dispatch({ _tag: "AccountRefreshed", account, lastOrganization: remembered });
+  });
+
   const refreshTokens = Effect.fn("MobileAuth.refreshTokens")(function* () {
     const refreshToken = tokens.get()?.refreshToken;
     if (!refreshToken) return null;
@@ -227,13 +238,21 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       yield* endSession;
       return null;
     }
-    tokens.set(result.success);
-    const account = activeAccount();
-    if (account !== null) yield* persist(account);
-    return result.success;
+    const next = refreshedTokens(result.success);
+    tokens.set(next);
+    const workspace = decodeRefreshedWorkspace(result.success.workspace);
+    const current = activeAccount();
+    if (Option.isSome(workspace) && current !== null) {
+      yield* adoptAccount(accountFromWorkspace(workspace.value));
+      return Struct.assign(next, { workspace: workspace.value }) satisfies RefreshedTokenSet;
+    }
+    if (current !== null) yield* persist(current);
+    return next;
   });
 
   const loadAccount = async (): Promise<Account> => {
+    const refreshed = await http.ensureFreshAccess();
+    if (refreshed?.workspace !== undefined) return accountFromWorkspace(refreshed.workspace);
     const snapshot = decodeSnapshot(await http.apiRequest("/api/auth/session"));
     if (Option.isNone(snapshot)) {
       throw new RequestError({
@@ -261,9 +280,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       return yield* failedWith(loaded.failure);
     }
     if (getState()._tag !== "Active") return done;
-    yield* persist(loaded.success);
-    const remembered = yield* Effect.promise(lastOrganization);
-    dispatch({ _tag: "AccountRefreshed", account: loaded.success, lastOrganization: remembered });
+    yield* adoptAccount(loaded.success);
     return done;
   });
 
@@ -276,8 +293,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     fetch: options.fetch,
     needsRefresh: refreshTokenNeedsRefresh,
     refreshSession: () => inSession(refreshTokens(), null),
-    afterRefresh: async () => {
-      void reloadAccount();
+    afterRefresh: async (refreshed) => {
+      if (refreshed.workspace === undefined) void reloadAccount();
     },
   });
 
@@ -440,7 +457,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
         name: name.value,
         slug: Option.getOrNull(slug),
       });
-      await http.ensureFreshAccess(true);
+      const refreshed = await http.ensureFreshAccess(true);
+      if (refreshed?.workspace !== undefined) return done;
     } catch (cause) {
       return failure(cause);
     }
@@ -475,9 +493,11 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       if (result._tag !== "Joined") {
         return failed(problem("rejected", "The invitation could not be used."));
       }
-      await http.ensureFreshAccess(true);
-      const reloaded = await reloadAccount();
-      if (reloaded._tag === "Failed") return reloaded;
+      const refreshed = await http.ensureFreshAccess(true);
+      if (refreshed?.workspace === undefined) {
+        const reloaded = await reloadAccount();
+        if (reloaded._tag === "Failed") return reloaded;
+      }
       const account = activeAccount();
       if (account?.organization?.id !== result.organization.id) {
         return failed(problem("unavailable", "You joined the store. Try again in a moment."));

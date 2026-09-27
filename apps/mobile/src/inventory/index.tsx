@@ -9,7 +9,7 @@ import { useSession, type SignedInSession } from "@/auth";
 
 import { createMobileInventoryHost, unavailableInventoryHost } from "./host";
 import { decodeMobileExtra } from "./policy";
-import { applyAppState, useReplicaScheduling } from "./scheduling";
+import { applyAppState, applyPullMaxBytes, useReplicaScheduling } from "./scheduling";
 
 const apiBaseUrl = decodeMobileExtra(Constants.expoConfig?.extra).pipe(
   Option.map((extra) => extra.apiBaseUrl),
@@ -40,7 +40,7 @@ function InventoryRoot({
 }) {
   const latestFetch = useLatest(session?.authenticatedFetch ?? unauthenticatedFetch);
   const active = React.useRef<SqlClientReplicaHandle | undefined>(undefined);
-  useReplicaScheduling(active);
+  const pullMaxBytes = useReplicaScheduling(active);
 
   const host = React.useMemo((): InventoryHost => {
     if (Option.isNone(apiBaseUrl)) {
@@ -56,13 +56,14 @@ function InventoryRoot({
         opened: (handle) => {
           active.current = handle;
           applyAppState(handle, AppState.currentState ?? "");
+          applyPullMaxBytes(handle, pullMaxBytes.current);
         },
         closed: (handle) => {
           if (active.current === handle) active.current = undefined;
         },
       },
     });
-  }, [latestFetch]);
+  }, [latestFetch, pullMaxBytes]);
 
   const syncNow = React.useCallback((): Promise<void> => {
     const handle = active.current;

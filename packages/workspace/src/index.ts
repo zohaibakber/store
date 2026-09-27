@@ -1,11 +1,13 @@
 export {
   MemoryTokenStore,
+  RefreshedTokenSet,
   RequestError,
   SessionHttpClient,
   cookieSessionNeedsRefresh,
   isAccessTokenFresh,
   normalizeApiBaseUrl,
   normalizeAuthBaseUrl,
+  refreshedTokens,
   refreshTokenNeedsRefresh,
   requestErrorFromPayload,
   serializeRequestBody,
@@ -16,6 +18,7 @@ export {
 } from "./session-http";
 export { fetchOrganizationRoster, organizeOrganization } from "./organization-client";
 export {
+  adoptAuthenticatedSnapshot,
   adoptSessionTokens,
   loadSessionSnapshot,
   renewSessionSnapshot,

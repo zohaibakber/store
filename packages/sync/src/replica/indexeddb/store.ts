@@ -653,6 +653,19 @@ const makeScopedIndexedDbReplicaStore = (
       } satisfies Committed<AppliedCursor>;
     });
 
+    const settleUploadWithPage = Effect.fn("IndexedDbReplicaStore.settleUploadWithPage")(function* (
+      claimId: string,
+      receipt: CommandReceipt,
+      page: SyncPullResult,
+    ) {
+      const settled = yield* settleUploadClaim(claimId, receipt);
+      const applied = yield* applyRemotePage(page);
+      return {
+        value: applied.value,
+        notice: applied.notice ?? settled.notice,
+      } satisfies Committed<AppliedCursor>;
+    });
+
     const readStateWith = <A>(project: (state: ReplicaStateRow) => A) =>
       withQuery((api) => requireState(api).pipe(Effect.map(project)));
 
@@ -785,6 +798,7 @@ const makeScopedIndexedDbReplicaStore = (
       enqueueCommand,
       claimNextUpload,
       settleUploadClaim,
+      settleUploadWithPage,
       releaseUploadClaim,
       recoverStaleUploadClaims,
       applyRemotePage,

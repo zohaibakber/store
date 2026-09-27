@@ -145,6 +145,38 @@ export const makeSqliteReplicaStore = (
         Effect.map((committed) => ({ value: committed.value?.status, notice: committed.notice })),
       );
 
+    const settleClaimWithPage = (claimId: string, receipt: CommandReceipt, page: SyncPullResult) =>
+      commit(
+        "SqliteReplicaStore.settleUploadWithPage",
+        (tx) =>
+          Effect.gen(function* () {
+            yield* verifyReplicaIncarnation(tx, page.incarnation);
+            const settled = yield* settleUploadClaim(tx, claimId, receipt);
+            const applied = yield* applyPullResult(tx, page);
+            const status = yield* commandStatus(tx, receipt.operationId);
+            return { settled, applied, status };
+          }),
+        (value, after) =>
+          noticeFromState(
+            databaseIdentity,
+            after,
+            SYNC_ENTITIES,
+            [...(value.settled?.restored?.touchedKeys ?? []), ...value.applied.touchedKeys],
+            value.status === undefined
+              ? undefined
+              : [{ operationId: receipt.operationId, status: value.status }],
+          ),
+      ).pipe(
+        Effect.map((committed) => ({
+          value: {
+            appliedThrough: committed.value.applied.appliedThrough,
+            repairRequired: committed.value.applied.repairRequired,
+            digestVerified: committed.value.applied.digestVerified,
+          },
+          notice: committed.notice,
+        })),
+      );
+
     const releaseClaim = (operationId: string, claimId: string) =>
       commit(
         "SqliteReplicaStore.releaseUploadClaim",
@@ -228,6 +260,7 @@ export const makeSqliteReplicaStore = (
       enqueueCommand,
       claimNextUpload: claimUpload,
       settleUploadClaim: settleClaim,
+      settleUploadWithPage: settleClaimWithPage,
       releaseUploadClaim: releaseClaim,
       recoverStaleUploadClaims: recoverStale,
       applyRemotePage,

@@ -21,7 +21,14 @@ import {
   lastUnitBuyerBEnvelope,
   lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { batches, categories, inventoryState, products, replicas } from "@store/db/postgres/schema";
+import {
+  batches,
+  categories,
+  inventoryState,
+  inventoryTransactions,
+  products,
+  replicas,
+} from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
@@ -569,5 +576,125 @@ describe("postgres inventory commands", () => {
     );
     expect(recovered.decision).toBe("accepted");
     expect(recovered.result).toMatchObject({ _tag: "issueInvoice", invoiceNumber: 1 });
+  });
+
+  it("answers a caught-up submit with its own group as the next pull page", async () => {
+    const organizationId = decodeOrganizationId("org-submit-caught-up");
+    const actor = actorFor(organizationId);
+    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands } = yield* openCommands(organizationId);
+        const submitted = yield* commands.submit(actor, {
+          ...envelope,
+          afterCommitSequence: OrgCommitSequence.make("0"),
+        });
+        const pulled = yield* commands.pull(actor, pullFromStart);
+        return { submitted, pulled };
+      }),
+    );
+    const { page, ...receipt } = outcome.submitted;
+    expect(receipt).toMatchObject({ decision: "accepted", commitSequence: "1" });
+    expect(page).toEqual(outcome.pulled);
+    expect(page).toMatchObject({ nextCommitSequence: "1", horizon: "1", retentionFloor: "0" });
+    expect(page?.transactions[0]?.changes.length).toBeGreaterThan(0);
+  });
+
+  it("reads the page after the commit for a client that is behind or retrying", async () => {
+    const organizationId = decodeOrganizationId("org-submit-behind");
+    const actor = actorFor(organizationId);
+    const first = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+    const second = envelopeFor(organizationId, lastUnitBuyerBEnvelope);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands } = yield* openCommands(organizationId);
+        yield* commands.commit(actor, first);
+        const behind = yield* commands.submit(actor, {
+          ...second,
+          afterCommitSequence: OrgCommitSequence.make("0"),
+        });
+        const retried = yield* commands.submit(actor, {
+          ...second,
+          afterCommitSequence: OrgCommitSequence.make("1"),
+        });
+        const pulled = yield* commands.pull(actor, pullFromStart);
+        return { behind, retried, pulled };
+      }),
+    );
+    expect(outcome.behind.decision).toBe("rejected");
+    expect(outcome.behind.page).toEqual(outcome.pulled);
+    expect(outcome.behind.page?.transactions.map((group) => group.commitSequence)).toEqual([
+      "1",
+      "2",
+    ]);
+    expect(outcome.retried.commitSequence).toBe(outcome.behind.commitSequence);
+    expect(outcome.retried.page?.transactions.map((group) => group.commitSequence)).toEqual(["2"]);
+  });
+
+  it("omits the page for old clients and for cursors the log cannot serve", async () => {
+    const organizationId = decodeOrganizationId("org-submit-no-page");
+    const actor = actorFor(organizationId);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands } = yield* openCommands(organizationId);
+        const legacy = yield* commands.submit(
+          actor,
+          envelopeFor(organizationId, lastUnitBuyerAEnvelope),
+        );
+        const ahead = yield* commands.submit(actor, {
+          ...envelopeFor(organizationId, lastUnitBuyerBEnvelope),
+          afterCommitSequence: OrgCommitSequence.make("9"),
+        });
+        return { legacy, ahead };
+      }),
+    );
+    expect(outcome.legacy.decision).toBe("accepted");
+    expect("page" in outcome.legacy).toBe(false);
+    expect(outcome.ahead.decision).toBe("rejected");
+    expect("page" in outcome.ahead).toBe(false);
+  });
+
+  it("clamps a client pull byte budget to the server bounds", async () => {
+    const organizationId = decodeOrganizationId("org-pull-max-bytes");
+    const actor = actorFor(organizationId);
+    const [allocation] = lastUnitBuyerACommand.allocations;
+    if (allocation === undefined) throw new Error("The fixture has no allocation.");
+    const rejectedAt = (clientSequence: string) =>
+      envelopeFor(
+        organizationId,
+        lastUnitEnvelope({
+          replicaId: LAST_UNIT_REPLICA_A,
+          clientSequence,
+          command: {
+            ...lastUnitBuyerACommand,
+            commandId: `sale-invalid-${clientSequence}`,
+            invoiceId: decodeInvoiceId(`sale-invalid-${clientSequence}`),
+            allocations: [{ ...allocation, quantity: 2 }],
+          },
+        }),
+      );
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCommands(organizationId);
+        for (const clientSequence of ["1", "2", "3"]) {
+          yield* commands.commit(actor, rejectedAt(clientSequence));
+        }
+        yield* db
+          .update(inventoryTransactions)
+          .set({ byteLength: 40_000 })
+          .where(eq(inventoryTransactions.organizationId, organizationId));
+        const groupsFor = (maxBytes: number | undefined) =>
+          commands
+            .pull(actor, maxBytes === undefined ? pullFromStart : { ...pullFromStart, maxBytes })
+            .pipe(Effect.map((page) => page.transactions.length));
+        return {
+          floor: yield* groupsFor(1),
+          custom: yield* groupsFor(100_000),
+          ceiling: yield* groupsFor(50_000_000),
+          omitted: yield* groupsFor(undefined),
+        };
+      }),
+    );
+    expect(outcome).toEqual({ floor: 1, custom: 2, ceiling: 3, omitted: 3 });
   });
 });

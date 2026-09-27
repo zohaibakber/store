@@ -41,6 +41,7 @@ export type SyncSchedulerPolicy = {
   readonly liveIdlePollMillis: number;
   readonly maxRetryAfterMillis?: number;
   readonly digestVerificationIntervalMillis?: number;
+  readonly pullMaxBytes?: number;
 };
 
 const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;

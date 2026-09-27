@@ -11,6 +11,7 @@ import {
   type OrganizationCommand,
   type OrganizationCommandResult,
   type OrganizationRoster as OrganizationRosterType,
+  type RefreshedSession,
   type RefreshInput,
   type SignOutInput,
   type TokenSet as TokenSetType,
@@ -48,7 +49,9 @@ interface AuthServiceApi {
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInput,
   ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
-  readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  readonly refresh: (
+    input: RefreshInput,
+  ) => Effect.Effect<RefreshedSession, AuthError, RuntimeContext>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError, RuntimeContext>;
   readonly roster: (
     accessToken: string,

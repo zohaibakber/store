@@ -244,6 +244,49 @@ export const AuthSession = Schema.Struct({
 });
 export interface AuthSession extends Schema.Schema.Type<typeof AuthSession> {}
 
+/**
+ * The authenticated workspace a refreshed access token opens, in the wire
+ * shape of `WorkspaceSnapshot` from `@store/contracts/workspace`. It is built
+ * from the same values as the token's claims, so a client adopts it instead
+ * of reading the session back from the API.
+ */
+export const SessionWorkspace = Schema.Struct({
+  status: Schema.Literal("authenticated"),
+  user: AuthUser,
+  activeOrganization: AuthOrganizationMembership,
+  organizations: Schema.Array(AuthOrganizationMembership),
+  isOnline: Schema.Boolean,
+});
+export interface SessionWorkspace extends Schema.Schema.Type<typeof SessionWorkspace> {}
+
+/** Builds the workspace a token with these claims opens. */
+export const sessionWorkspaceFromClaims = (
+  claims: Omit<AccessClaims, "sessionId" | "expiresAt">,
+): SessionWorkspace => {
+  const organization: AuthOrganizationMembership = {
+    id: claims.activeOrganizationId,
+    name: claims.organizationName,
+    slug: claims.organizationSlug,
+    role: claims.role,
+  };
+  return {
+    status: "authenticated",
+    user: { id: claims.subject, name: claims.name, email: claims.email, image: claims.image },
+    activeOrganization: organization,
+    organizations: [organization],
+    isOnline: true,
+  };
+};
+
+/**
+ * A rotated token set. `workspace` is absent from authorities that predate
+ * it, and clients then read the session from the API as before.
+ */
+export const RefreshedSession = TokenSet.pipe(
+  Schema.fieldsAssign({ workspace: Schema.optionalKey(SessionWorkspace) }),
+);
+export interface RefreshedSession extends Schema.Schema.Type<typeof RefreshedSession> {}
+
 export const OrganizationMember = Schema.Struct({
   userId: UserId,
   name: Schema.String,

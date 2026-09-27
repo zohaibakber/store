@@ -85,6 +85,12 @@ interface ReplicaUploadClaimStore {
     receipt: CommandReceipt,
   ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
 
+  readonly settleUploadWithPage: (
+    claimId: string,
+    receipt: CommandReceipt,
+    page: SyncPullResult,
+  ) => Effect.Effect<Committed<AppliedCursor>, ReplicaStoreError>;
+
   readonly releaseUploadClaim: (
     operationId: string,
     claimId: string,

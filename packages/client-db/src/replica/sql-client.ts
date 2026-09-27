@@ -28,6 +28,7 @@ export type SqlClientReplicaHandle = ReplicaHandle & {
   readonly replicaId: string;
   readonly wakeSync: (reason: SyncWakeReason) => Promise<void>;
   readonly setVisible: (visible: boolean) => Promise<void>;
+  readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
   readonly dispose: () => Promise<void>;
 };
 
@@ -68,6 +69,7 @@ export const openSqlClientReplicaHandle = async <E>(
     },
     wakeSync: session.wake,
     setVisible: session.setVisible,
+    setPullMaxBytes: session.setPullMaxBytes,
     subscribe: session.subscribe,
     subscribeSyncHealth: session.subscribeSyncHealth,
     publish: session.publish,

@@ -2,6 +2,7 @@ import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
 import {
   layerOwnedHttpSync,
   ReplicaStore,
+  SyncEngine,
   SyncScheduler,
   SyncTransportService,
   type ReplicaOutboxActivity,
@@ -126,6 +127,7 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader & {
   }>;
   readonly wake: (reason: SyncWakeReason) => Promise<void>;
   readonly setVisible: (visible: boolean) => Promise<void>;
+  readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
   readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => () => void;
   readonly subscribeSyncHealth: (listener: (health: ReplicaSyncHealth) => void) => () => void;
   readonly publish: (notice: ReplicaCommitNotice) => void;
@@ -172,13 +174,14 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
       Layer.provide(input.transport),
     ),
   );
-  const { store, scheduler, replicaId } = await bootWorkspaceRuntime(
+  const { store, scheduler, engine, replicaId } = await bootWorkspaceRuntime(
     runtime,
     Effect.gen(function* () {
       const store = yield* ReplicaStore;
       return {
         store,
         scheduler: yield* SyncScheduler,
+        engine: yield* SyncEngine,
         replicaId: (yield* store.readSyncCursor()).replicaId,
       };
     }),
@@ -215,6 +218,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     },
     wake: (reason) => runtime.runPromise(scheduler.wake(reason)),
     setVisible: (visible) => runtime.runPromise(scheduler.setVisible(visible)),
+    setPullMaxBytes: (maxBytes) => runtime.runPromise(engine.setPullMaxBytes(maxBytes)),
     subscribe: publisher.subscribe,
     subscribeSyncHealth: subscribeSchedulerHealth(scheduler),
     publish: publisher.publish,

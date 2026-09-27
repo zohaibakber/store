@@ -180,6 +180,7 @@ const ownHttpSync = (
 
 const engineOptions = (policy: SyncSchedulerPolicy | undefined) => ({
   digestVerificationIntervalMillis: policy?.digestVerificationIntervalMillis,
+  pullMaxBytes: policy?.pullMaxBytes,
 });
 
 export const layerOwnedHttpSync = (

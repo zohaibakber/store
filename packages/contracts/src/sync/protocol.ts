@@ -60,6 +60,11 @@ export type AuthorityIncarnation = typeof AuthorityIncarnation.Type;
 
 export const MAX_TRANSPORT_PAYLOAD_BYTES = 900_000;
 
+export const MIN_PULL_BYTE_BUDGET = 65_536;
+
+export const PullByteBudget = PositiveInt;
+export type PullByteBudget = typeof PullByteBudget.Type;
+
 export const SyncProtocolCode = Schema.Literals([
   "ORGANIZATION_MISMATCH",
   "ACTOR_MISMATCH",
@@ -123,6 +128,14 @@ export const SyncCommandEnvelope = Schema.Struct({
 });
 export type SyncCommandEnvelope = typeof SyncCommandEnvelope.Type;
 
+export const SyncSubmitCommandRequest = SyncCommandEnvelope.pipe(
+  Schema.fieldsAssign({
+    afterCommitSequence: Schema.optionalKey(OrgCommitSequence),
+    maxBytes: Schema.optionalKey(PullByteBudget),
+  }),
+);
+export type SyncSubmitCommandRequest = typeof SyncSubmitCommandRequest.Type;
+
 const CommandDecision = Schema.Literals(["accepted", "rejected"]);
 
 export const AcceptedInvoiceResult = Schema.Struct({
@@ -181,6 +194,7 @@ export const SyncPullRequest = Schema.Struct({
     PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SYNC_PULL_TRANSACTIONS)),
   ),
   includeDigest: Schema.optionalKey(Schema.Boolean),
+  maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;
 
@@ -207,6 +221,13 @@ export const SyncPullResult = Schema.Struct({
   digest: Schema.optionalKey(PartitionDigest),
 });
 export type SyncPullResult = typeof SyncPullResult.Type;
+
+export const SyncSubmitCommandResult = CommandReceipt.pipe(
+  Schema.fieldsAssign({
+    page: Schema.optionalKey(SyncPullResult),
+  }),
+);
+export type SyncSubmitCommandResult = typeof SyncSubmitCommandResult.Type;
 
 export const SyncCoverage = Schema.TaggedUnion({
   awaitingSnapshot: {

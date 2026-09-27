@@ -1,10 +1,12 @@
 import {
   RefreshToken,
   SessionId,
+  sessionWorkspaceFromClaims,
   TokenSet,
   type AccessTokenServiceApi,
   type AuthClientKind,
   type OrganizationId,
+  type RefreshedSession,
   type RefreshInput,
   type SignOutInput,
   type UserId,
@@ -53,24 +55,30 @@ export const makeSessionOps = (
     return yield* repository.membershipForUser(userId);
   });
 
+  const accessClaims = (
+    user: UserRecord,
+    sessionId: SessionId,
+    membership: MembershipRecord,
+    now: number,
+  ) => ({
+    subject: user.id,
+    sessionId,
+    activeOrganizationId: membership.organizationId,
+    organizationName: membership.organizationName,
+    organizationSlug: membership.organizationSlug,
+    role: membership.role,
+    email: user.email,
+    name: user.name,
+    image: user.image,
+    now,
+  });
+
   const issueAccess = (
     user: UserRecord,
     sessionId: SessionId,
     membership: MembershipRecord,
     now: number,
-  ) =>
-    accessTokens.issue({
-      subject: user.id,
-      sessionId,
-      activeOrganizationId: membership.organizationId,
-      organizationName: membership.organizationName,
-      organizationSlug: membership.organizationSlug,
-      role: membership.role,
-      email: user.email,
-      name: user.name,
-      image: user.image,
-      now,
-    });
+  ) => accessTokens.issue(accessClaims(user, sessionId, membership, now));
 
   const issueSession = Effect.fn("Auth.Session.issueSession")(function* (
     user: UserRecord,
@@ -170,13 +178,15 @@ export const makeSessionOps = (
     if (!rotated) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
-    const access = yield* issueAccess(input.user, nextId, input.membership, now);
-    return TokenSet.make({
+    const claims = accessClaims(input.user, nextId, input.membership, now);
+    const access = yield* accessTokens.issue(claims);
+    return {
       accessToken: access.token,
       accessExpiresAt: access.expiresAt,
       refreshToken: RefreshToken.make(`${nextId}.${nextSecret}`),
       refreshExpiresAt,
-    });
+      workspace: sessionWorkspaceFromClaims(claims),
+    } satisfies RefreshedSession;
   });
 
   const refresh = Effect.fn("Auth.Session.refresh")(function* (input: RefreshInput) {

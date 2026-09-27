@@ -9,6 +9,10 @@ import {
   type SyncLiveServerFrame,
   type SyncLiveWakeHint,
   type SyncPullRequest,
+  type SyncPullResult,
+  type SyncSubmitCommandRequest,
+  type SyncSubmitCommandResult,
+  type SyncSubscription,
 } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -28,7 +32,12 @@ import {
   ReplicaStorageError,
   SyncRecoveryRequired,
 } from "./replica/errors";
-import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
+import {
+  ReplicaStore,
+  type AppliedCursor,
+  type ReplicaStoreContract,
+  type ReplicaStoreError,
+} from "./replica/store";
 import type { SyncCatchUpOutcome } from "./scheduler";
 import { SyncTransportService, type SyncTransport, type SyncTransportError } from "./transport";
 
@@ -63,6 +72,7 @@ export interface SyncEngineContract {
     readonly incarnation: string;
     readonly horizon: string;
   }) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
+  readonly setPullMaxBytes: (maxBytes: number | undefined) => Effect.Effect<void>;
 }
 
 const makeClaimId = Effect.sync(() => crypto.randomUUID());
@@ -100,7 +110,11 @@ export type SyncEngineMutex = {
 
 export type SyncEngineOptions = {
   readonly digestVerificationIntervalMillis?: number;
+  readonly pullMaxBytes?: number;
 };
+
+const withMaxBytes = <R extends object>(request: R, maxBytes: number | undefined) =>
+  maxBytes === undefined ? request : { ...request, maxBytes };
 
 export const makeSyncEngineFromReplicaStore = (
   store: ReplicaStoreContract,
@@ -112,6 +126,8 @@ export const makeSyncEngineFromReplicaStore = (
     const digestIntervalMillis =
       options.digestVerificationIntervalMillis ?? DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS;
     const believesCaughtUp = yield* Ref.make(true);
+    const pullMaxBytes = yield* Ref.make(options.pullMaxBytes);
+    const uploadReachedHorizon = yield* Ref.make<string | undefined>(undefined);
     const caughtUpRecordedAt = yield* Ref.make<number | undefined>(undefined);
     const progress = yield* SubscriptionRef.make<SyncEngineProgress>({
       uploading: false,
@@ -169,6 +185,7 @@ export const makeSyncEngineFromReplicaStore = (
         (activeClaim) =>
           Effect.gen(function* () {
             if (!activeClaim) return undefined;
+            yield* Ref.set(uploadReachedHorizon, undefined);
             if (activeClaim.outcomeUncertain) {
               const existing = yield* transport.getReceipt(activeClaim.envelope.operationId);
               if (existing) {
@@ -176,9 +193,10 @@ export const makeSyncEngineFromReplicaStore = (
                 return existing;
               }
             }
-            const receipt = yield* transport.submitCommand(activeClaim.envelope);
-            yield* withPermit(store.settleUploadClaim(activeClaim.claimId, receipt));
-            return receipt;
+            const submitted = yield* transport.submitCommand(
+              yield* submitRequestFor(activeClaim.envelope),
+            );
+            return yield* settleSubmitted(activeClaim.claimId, submitted);
           }),
         (activeClaim) =>
           activeClaim
@@ -196,17 +214,90 @@ export const makeSyncEngineFromReplicaStore = (
       );
     });
 
+    const digestDue = Effect.fn("SyncEngine.digestDue")(function* (
+      subscription: SyncSubscription,
+      now: number,
+    ) {
+      const lastVerifiedAt = yield* withPermit(store.readDigestVerification(subscription));
+      return (
+        (yield* Ref.get(believesCaughtUp)) && dueSince(lastVerifiedAt, now, digestIntervalMillis)
+      );
+    });
+
+    const recordAppliedPage = Effect.fn("SyncEngine.recordAppliedPage")(function* (
+      pulled: SyncPullResult,
+      applied: AppliedCursor,
+      pulledAt: number,
+    ) {
+      if (applied.repairRequired) {
+        yield* withPermit(store.markCoverageRepair(pulled.subscription));
+        return yield* Effect.fail(
+          ReplicaCoverageRepairRequired.make({ subscription: pulled.subscription }),
+        );
+      }
+      const nextFeed = feedAfterPull(pulled, applied.appliedThrough);
+      yield* SubscriptionRef.update(progress, (current) => ({
+        ...current,
+        feed: nextFeed,
+      }));
+      yield* Ref.set(believesCaughtUp, nextFeed._tag === "following");
+      if (pulled.digest !== undefined && applied.digestVerified !== false) {
+        yield* withPermit(store.recordDigestVerification(pulled.subscription, pulledAt));
+      }
+      if (nextFeed._tag === "following") {
+        const caughtUpAt = yield* Clock.currentTimeMillis;
+        const lastCaughtUpAt = yield* Ref.get(caughtUpRecordedAt);
+        if (dueSince(lastCaughtUpAt, caughtUpAt, CAUGHT_UP_RECORD_INTERVAL_MILLIS)) {
+          yield* withPermit(store.recordCaughtUp(caughtUpAt));
+          yield* Ref.set(caughtUpRecordedAt, caughtUpAt);
+        }
+      }
+      return nextFeed;
+    });
+
+    const submitRequestFor = Effect.fn("SyncEngine.submitRequestFor")(function* (
+      envelope: SyncCommandEnvelope,
+    ) {
+      const cursor = yield* withPermit(cursorFromStore(store));
+      if (cursor.epoch !== envelope.epoch) return envelope;
+      const request: SyncSubmitCommandRequest = {
+        ...envelope,
+        afterCommitSequence: OrgCommitSequence.make(cursor.appliedCommitSequence),
+      };
+      return withMaxBytes(request, yield* Ref.get(pullMaxBytes));
+    });
+
+    const settleSubmitted = Effect.fn("SyncEngine.settleSubmitted")(function* (
+      claimId: string,
+      submitted: SyncSubmitCommandResult,
+    ) {
+      const { page, ...receipt } = submitted;
+      if (page === undefined) {
+        yield* withPermit(store.settleUploadClaim(claimId, receipt));
+        return receipt;
+      }
+      const pulledAt = yield* Clock.currentTimeMillis;
+      const applied = yield* withPermit(store.settleUploadWithPage(claimId, receipt, page)).pipe(
+        Effect.map((committed) => committed.value),
+        Effect.catch(() =>
+          withPermit(store.settleUploadClaim(claimId, receipt)).pipe(Effect.as(undefined)),
+        ),
+      );
+      if (applied === undefined) return receipt;
+      const feed = yield* recordAppliedPage(page, applied, pulledAt);
+      if (feed._tag === "following") yield* Ref.set(uploadReachedHorizon, page.horizon);
+      return receipt;
+    });
+
     const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
       yield* SubscriptionRef.update(progress, (current) => ({ ...current, downloading: true }));
       return yield* Effect.gen(function* () {
         const pulledAt = yield* Clock.currentTimeMillis;
-        const lastVerifiedAt = yield* withPermit(
-          store.readDigestVerification(request.subscription),
+        const includeDigest = yield* digestDue(request.subscription, pulledAt);
+        const pullRequest = withMaxBytes(
+          includeDigest ? { ...request, includeDigest: true } : request,
+          yield* Ref.get(pullMaxBytes),
         );
-        const includeDigest =
-          (yield* Ref.get(believesCaughtUp)) &&
-          dueSince(lastVerifiedAt, pulledAt, digestIntervalMillis);
-        const pullRequest = includeDigest ? { ...request, includeDigest: true } : request;
         const pulled = yield* transport.pull(pullRequest).pipe(
           Effect.catchIf(isSnapshotRequired, () =>
             Effect.gen(function* () {
@@ -221,29 +312,7 @@ export const makeSyncEngineFromReplicaStore = (
           ),
         );
         const applied = yield* withPermit(store.applyRemotePage(pulled));
-        if (applied.value.repairRequired) {
-          yield* withPermit(store.markCoverageRepair(pulled.subscription));
-          return yield* Effect.fail(
-            ReplicaCoverageRepairRequired.make({ subscription: pulled.subscription }),
-          );
-        }
-        const nextFeed = feedAfterPull(pulled, applied.value.appliedThrough);
-        yield* SubscriptionRef.update(progress, (current) => ({
-          ...current,
-          feed: nextFeed,
-        }));
-        yield* Ref.set(believesCaughtUp, nextFeed._tag === "following");
-        if (pulled.digest !== undefined && applied.value.digestVerified !== false) {
-          yield* withPermit(store.recordDigestVerification(pulled.subscription, pulledAt));
-        }
-        if (nextFeed._tag === "following") {
-          const caughtUpAt = yield* Clock.currentTimeMillis;
-          const lastCaughtUpAt = yield* Ref.get(caughtUpRecordedAt);
-          if (dueSince(lastCaughtUpAt, caughtUpAt, CAUGHT_UP_RECORD_INTERVAL_MILLIS)) {
-            yield* withPermit(store.recordCaughtUp(caughtUpAt));
-            yield* Ref.set(caughtUpRecordedAt, caughtUpAt);
-          }
-        }
+        yield* recordAppliedPage(pulled, applied.value, pulledAt);
         return applied.value.appliedThrough;
       }).pipe(
         Effect.ensuring(
@@ -253,6 +322,7 @@ export const makeSyncEngineFromReplicaStore = (
     });
 
     const drainUploads = Effect.fn("SyncEngine.drainUploads")(function* () {
+      yield* Ref.set(uploadReachedHorizon, undefined);
       const settled = new Set<string>();
       while (true) {
         const receipt = yield* uploadOnce();
@@ -261,7 +331,19 @@ export const makeSyncEngineFromReplicaStore = (
       }
     });
 
+    const uploadLeftReplicaCaughtUp = Effect.fn("SyncEngine.uploadLeftReplicaCaughtUp")(
+      function* () {
+        const horizon = yield* Ref.getAndSet(uploadReachedHorizon, undefined);
+        if (horizon === undefined) return false;
+        const cursor = yield* withPermit(store.readSyncCursor());
+        if (compareDecimalSequence(cursor.appliedCommitSequence, horizon) < 0) return false;
+        const now = yield* Clock.currentTimeMillis;
+        return !(yield* digestDue(OPERATIONAL_SUBSCRIPTION, now));
+      },
+    );
+
     const catchUp = Effect.fn("SyncEngine.catchUp")(function* () {
+      if (yield* uploadLeftReplicaCaughtUp()) return "advanced";
       let outcome: SyncCatchUpOutcome = "unchanged";
       while (true) {
         const request = yield* withPermit(pullRequestFromStore(store));
@@ -305,6 +387,7 @@ export const makeSyncEngineFromReplicaStore = (
       hintApplied,
       applyLiveFrame: applyLiveFrameEffect,
       verifyAuthority,
+      setPullMaxBytes: (maxBytes) => Ref.set(pullMaxBytes, maxBytes),
     };
   });
 

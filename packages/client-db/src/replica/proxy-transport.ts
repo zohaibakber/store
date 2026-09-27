@@ -7,10 +7,11 @@ import {
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotPartPayload,
-  SyncCommandEnvelope,
   SyncProtocolError,
   SyncPullRequest,
   SyncPullResult,
+  SyncSubmitCommandRequest,
+  SyncSubmitCommandResult,
 } from "@store/contracts";
 import {
   failureFromStatus,
@@ -47,7 +48,7 @@ type SyncOperation = keyof typeof SYNC_REQUEST_TIMEOUT_MILLIS;
 
 type SyncProxyPostBody =
   | RegisterReplicaRequest
-  | SyncCommandEnvelope
+  | SyncSubmitCommandRequest
   | SyncPullRequest
   | AcquireSnapshotRequest
   | LiveTicketRequest;
@@ -155,8 +156,8 @@ export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTranspor
   return withRequestDeadlines({
     registerReplica: (request) =>
       postJson("registerReplica", "/api/sync/replicas", RegisterReplicaResult, request),
-    submitCommand: (envelope) =>
-      postJson("submitCommand", "/api/sync/commands", CommandReceipt, envelope),
+    submitCommand: (request) =>
+      postJson("submitCommand", "/api/sync/commands", SyncSubmitCommandResult, request),
     getReceipt: (operationId) =>
       getOptionalJson(
         "getReceipt",

@@ -8,11 +8,11 @@ import {
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
-  SyncCommandEnvelope,
   SyncLiveSseEvent,
   SyncLiveWakeHint,
   SyncProtocolError,
   SyncPullRequest,
+  SyncSubmitCommandRequest,
   syncProtocolError,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
@@ -61,8 +61,8 @@ export interface SyncAuthorityContract {
   ) => Effect.Effect<RegisterReplicaResult, SyncAuthorityError, RuntimeContext>;
   readonly submitCommand: (
     actor: InventorySyncActor,
-    envelope: SyncCommandEnvelope,
-  ) => Effect.Effect<CommandReceipt, SyncAuthorityError, RuntimeContext>;
+    request: SyncSubmitCommandRequest,
+  ) => Effect.Effect<EncodedJsonBody, SyncAuthorityError, RuntimeContext>;
   readonly getReceipt: (
     actor: InventorySyncActor,
     operationId: string,
@@ -120,7 +120,8 @@ export const makeInventorySyncAuthority = (stores: {
 }): SyncAuthorityContract => ({
   registerReplica: (actor, request) =>
     toSyncAuthorityError(stores.commands.register(actor, request)),
-  submitCommand: (actor, envelope) => toSyncAuthorityError(stores.commands.commit(actor, envelope)),
+  submitCommand: (actor, request) =>
+    toSyncAuthorityError(stores.commands.submitEncoded(actor, request)),
   getReceipt: (actor, operationId) =>
     toSyncAuthorityError(stores.commands.receipt(actor, operationId)),
   pull: (actor, request) => toSyncAuthorityError(stores.commands.pullEncoded(actor, request)),

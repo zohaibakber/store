@@ -1,4 +1,5 @@
 import {
+  AccessClaims,
   EmailAddress,
   GoogleIdToken,
   IdentifyInput,
@@ -9,6 +10,7 @@ import {
 } from "@store/auth";
 import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/service";
@@ -167,6 +169,42 @@ describe("AuthService", () => {
 });
 
 describe("refresh rotation", () => {
+  it("returns the workspace the rotated access token opens", async () => {
+    const { instance, passwordUser } = withAccounts();
+    const first = await run(instance, (auth) =>
+      auth.authenticate({
+        _tag: "Password",
+        email: passwordUser.email,
+        password: Password.make("valid-password"),
+        client: { _tag: "Native", deviceName: "Test device" },
+      }),
+    );
+    const refreshed = await run(instance, (auth) =>
+      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
+    );
+    const claims = Schema.decodeUnknownSync(AccessClaims)(JSON.parse(atob(refreshed.accessToken)));
+    const organization = {
+      id: claims.activeOrganizationId,
+      name: "My Store",
+      slug: claims.organizationSlug,
+      role: "owner",
+    };
+    expect(claims.subject).toBe(passwordUser.id);
+    expect(claims.activeOrganizationId).toBe("organization-1");
+    expect(refreshed.workspace).toEqual({
+      status: "authenticated",
+      user: {
+        id: passwordUser.id,
+        name: "Password User",
+        email: "password@example.com",
+        image: claims.image,
+      },
+      activeOrganization: organization,
+      organizations: [organization],
+      isOnline: true,
+    });
+  });
+
   it("does not kill the rotated session when the previous token is presented immediately", async () => {
     const { instance, passwordUser } = withAccounts();
     const first = await run(instance, (auth) =>

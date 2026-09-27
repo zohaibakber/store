@@ -68,7 +68,9 @@ export const SyncHandlers = HttpApiBuilder.group(
         asActor("registerReplica", (actor) => authority.registerReplica(actor, payload)),
       )
       .handle("submitCommand", ({ payload }) =>
-        asActor("submitCommand", (actor) => authority.submitCommand(actor, payload)),
+        asActor("submitCommand", (actor) => authority.submitCommand(actor, payload)).pipe(
+          Effect.map((body) => encodedJsonResponse(body)),
+        ),
       )
       .handle("getReceipt", ({ params }) =>
         asActor("getReceipt", (actor) => authority.getReceipt(actor, params.operationId)).pipe(

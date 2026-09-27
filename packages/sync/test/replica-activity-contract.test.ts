@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import {
+  AuthorityIncarnation,
+  OPERATIONAL_SUBSCRIPTION,
+  OrgCommitSequence,
+} from "@store/contracts";
+import {
+  LAST_UNIT_EPOCH,
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
@@ -18,6 +24,7 @@ import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "../src/replic
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import {
+  acceptedCatalogReceipt,
   catalogEnvelope,
   insertCategoryWrite,
   NEW_CATEGORY_ID,
@@ -30,6 +37,7 @@ import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
 type ActivityHarness = {
   readonly store: ReplicaStoreContract;
+  readonly incarnation: string;
   readonly readActivity: () => Effect.Effect<ReplicaOutboxActivity, unknown>;
   readonly readPendingRowIds: (
     entity: "product" | "category",
@@ -50,6 +58,7 @@ const sqliteHarness = Effect.fn("activity.sqlite")(function* () {
   yield* store.applyTransactionGroup(seedSpareBatchGroup);
   return {
     store,
+    incarnation: "incarnation-test",
     readActivity: () => readOutboxActivitySqlite(handle.sql),
     readPendingRowIds: (entity) => readPendingRowIdsSqlite(handle.sql, entity),
     close: () => Scope.close(scope, Exit.void),
@@ -72,6 +81,7 @@ const indexedHarness = Effect.fn("activity.indexeddb")(function* () {
   yield* store.applyTransactionGroup(seedSpareBatchGroup);
   return {
     store,
+    incarnation: "local",
     readActivity: () => store.readOutboxActivity(),
     readPendingRowIds: (entity) => store.readPendingRowIds(entity),
     close: () => store.dispose(),
@@ -86,6 +96,48 @@ const adapters = [
 describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
   const withHarness = <A, E>(use: (harness: ActivityHarness) => Effect.Effect<A, E>) =>
     Effect.acquireUseRelease(makeHarness(), use, (harness) => Effect.orDie(harness.close()));
+
+  it.effect("integrates a submitted command from the page carried by its receipt", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const submitted = catalogEnvelope({
+          operationId: "catalog-submitted",
+          clientSequence: "1",
+          writes: [renameProductWrite("Renamed")],
+        });
+        yield* harness.store.enqueueCommand(submitted, 1);
+        expect(yield* harness.readPendingRowIds("product")).toEqual([LAST_UNIT_PRODUCT_ID]);
+        yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10 });
+
+        const applied = yield* harness.store.settleUploadWithPage(
+          "claim-1",
+          acceptedCatalogReceipt(submitted, "3", 1),
+          {
+            epoch: LAST_UNIT_EPOCH,
+            incarnation: AuthorityIncarnation.make(harness.incarnation),
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            schemaVersion: 1,
+            transactions: [
+              {
+                commitSequence: OrgCommitSequence.make("3"),
+                operationId: "catalog-submitted",
+                decision: "accepted",
+                changes: [],
+              },
+            ],
+            nextCommitSequence: OrgCommitSequence.make("3"),
+            horizon: OrgCommitSequence.make("3"),
+            retentionFloor: OrgCommitSequence.make("0"),
+          },
+        );
+
+        expect(applied.value).toMatchObject({ appliedThrough: "3", repairRequired: false });
+        expect(yield* harness.store.readCommandStatus("catalog-submitted")).toBe("integrated");
+        expect((yield* harness.store.readSyncCursor()).appliedCommitSequence).toBe("3");
+        expect(yield* harness.readPendingRowIds("product")).toEqual([]);
+      }),
+    ),
+  );
 
   it.effect("reports pending and rejected commands with their receipts and pending rows", () =>
     withHarness((harness) =>

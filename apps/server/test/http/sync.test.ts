@@ -69,7 +69,9 @@ describe("sync HTTP", () => {
         receipt: unused,
         pull: unused,
         pullEncoded: unused,
-        commit: () =>
+        commit: unused,
+        submit: unused,
+        submitEncoded: () =>
           Effect.fail(
             databaseError(
               new EffectDrizzleQueryError({
@@ -144,7 +146,7 @@ describe("sync HTTP", () => {
       acquireSnapshot: () => Effect.die("unused"),
       readSnapshotPart: () => Effect.die("unused"),
       mintLiveTicket: () => Effect.die("unused"),
-      submitCommand: () => Effect.succeed(receipt),
+      submitCommand: () => Effect.succeed({ json: JSON.stringify(receipt) }),
     };
     const response = await appFor(true, { syncAuthority }).request(
       "/api/sync/commands",

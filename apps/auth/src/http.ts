@@ -21,6 +21,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
+import * as Struct from "effect/Struct";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -60,14 +61,8 @@ const fromAuth = <A, R>(effect: Effect.Effect<A, AuthError, R>) =>
     Effect.mapError(mapAuthError),
   );
 
-const browserTokenPayload = (tokens: TokenSet, client: AuthClientKind) =>
-  client._tag === "Browser"
-    ? {
-        accessToken: tokens.accessToken,
-        accessExpiresAt: tokens.accessExpiresAt,
-        refreshExpiresAt: tokens.refreshExpiresAt,
-      }
-    : tokens;
+const browserTokenPayload = <T extends TokenSet>(tokens: T, client: AuthClientKind) =>
+  client._tag === "Browser" ? Struct.omit(tokens, ["refreshToken"]) : tokens;
 
 const issueBrowserTokens = <R>(
   effect: Effect.Effect<TokenSet, AuthError, R>,

@@ -32,6 +32,7 @@ import {
   type IdentifyInput as IdentifyInputType,
   type LoginCommand as LoginCommandType,
   type LoginRoute as LoginRouteType,
+  type RefreshedSession as RefreshedSessionType,
   type RefreshInput as RefreshInputType,
   type SignOutInput as SignOutInputType,
   type TokenSet as TokenSetType,
@@ -63,7 +64,9 @@ export interface AuthClientApi {
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInputType,
   ) => Effect.Effect<TokenSetType, AuthClientError>;
-  readonly refresh: (input?: RefreshInputType) => Effect.Effect<TokenSetType, AuthClientError>;
+  readonly refresh: (
+    input?: RefreshInputType,
+  ) => Effect.Effect<RefreshedSessionType, AuthClientError>;
   readonly signOut: (input?: SignOutInputType) => Effect.Effect<void, AuthClientError>;
 }
 

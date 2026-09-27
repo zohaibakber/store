@@ -7,6 +7,8 @@ import {
   incrementDecimalSequence,
   MAX_SYNC_PULL_TRANSACTIONS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
+  MIN_PULL_BYTE_BUDGET,
+  OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   RejectedCommandResult,
   ReplicaClientSequence,
@@ -14,12 +16,14 @@ import {
   SyncEpoch,
   SyncLogChange,
   SyncPullResult,
+  SyncSubmitCommandResult,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
   type SyncCommand,
   type SyncCommandEnvelope,
   type SyncProtocolCode,
   type SyncPullRequest,
+  type SyncSubmitCommandRequest,
 } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
@@ -34,6 +38,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Number from "effect/Number";
 import * as Schema from "effect/Schema";
 
 import { applyCatalogWrite } from "./catalog-write";
@@ -80,6 +85,19 @@ const isDomainRejection = (code: SyncProtocolCode): boolean =>
 const PULL_ENVELOPE_HEADROOM_BYTES = 16_384;
 
 export const PULL_PAYLOAD_BUDGET_BYTES = MAX_TRANSPORT_PAYLOAD_BYTES - PULL_ENVELOPE_HEADROOM_BYTES;
+
+const clampPullByteBudget = Number.clamp({
+  minimum: MIN_PULL_BYTE_BUDGET,
+  maximum: PULL_PAYLOAD_BUDGET_BYTES,
+});
+
+/**
+ * Byte budget for one pull page. A client on a slow or metered network may
+ * ask for less; the server holds every request inside
+ * `[MIN_PULL_BYTE_BUDGET, PULL_PAYLOAD_BUDGET_BYTES]`.
+ */
+export const pullByteBudget = (maxBytes: number | undefined): number =>
+  maxBytes === undefined ? PULL_PAYLOAD_BUDGET_BYTES : clampPullByteBudget(maxBytes);
 
 const CHANGE_FRAME_OVERHEAD_BYTES = 96;
 
@@ -194,7 +212,9 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
     readonly receivedAt: number;
   },
 ) {
-  const commitSequence = incrementDecimalSequence(input.stateCommitSequence);
+  const commitSequence = OrgCommitSequence.make(
+    incrementDecimalSequence(input.stateCommitSequence),
+  );
   const changeRows = input.changes.map((change, ordinal) => ({
     organizationId: input.actor.organizationId,
     commitSequence,
@@ -209,13 +229,14 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
     .update(inventoryState)
     .set({ commitSequence })
     .where(eq(inventoryState.organizationId, input.actor.organizationId));
+  const byteLength = pullGroupByteLength(input.envelope.operationId, changeRows);
   yield* tx.insert(inventoryTransactions).values({
     organizationId: input.actor.organizationId,
     commitSequence,
     operationId: input.envelope.operationId,
     decision: input.decision,
     epoch: input.epoch,
-    byteLength: pullGroupByteLength(input.envelope.operationId, changeRows),
+    byteLength,
   });
   for (const rows of chunked(changeRows, CHANGE_INSERT_BATCH_ROWS)) {
     yield* tx.insert(inventoryChanges).values([...rows]);
@@ -244,7 +265,7 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
         eq(replicas.replicaId, input.envelope.replicaId),
       ),
     );
-  return yield* Schema.decodeUnknownEffect(CommandReceipt)({
+  const receipt = yield* Schema.decodeUnknownEffect(CommandReceipt)({
     operationId: input.envelope.operationId,
     replicaId: input.envelope.replicaId,
     clientSequence: input.envelope.clientSequence,
@@ -253,7 +274,77 @@ const recordDecision = Effect.fn("InventoryCommands.recordDecision")(function* (
     commitSequence,
     result: input.result,
   }).pipe(Effect.mapError(databaseError));
+  return { receipt, commitSequence, changeRows, byteLength };
 });
+
+type RecordedDecision = Effect.Success<ReturnType<typeof recordDecision>>;
+
+type LockedState = Effect.Success<ReturnType<typeof lockOrganization>>;
+
+type CommittedCommand = {
+  readonly receipt: CommandReceipt;
+  readonly page: PulledPage | undefined;
+  readonly readPageAfterCommit: boolean;
+};
+
+const committedWithoutPage = (
+  receipt: CommandReceipt,
+  request: SyncSubmitCommandRequest,
+): CommittedCommand => ({
+  receipt,
+  page: undefined,
+  readPageAfterCommit: request.afterCommitSequence !== undefined,
+});
+
+/**
+ * The page a caught-up client would pull next is exactly the group this
+ * transaction just wrote, so it is built from memory under the lock with no
+ * extra read. A client that is behind reads its page after the commit.
+ */
+const committedWithPage = (
+  request: SyncSubmitCommandRequest,
+  state: LockedState,
+  recorded: RecordedDecision,
+): CommittedCommand => {
+  const after = request.afterCommitSequence;
+  const horizonBefore = integerTextFromNumeric(state.commitSequence);
+  if (after === undefined || compareDecimalSequence(after, horizonBefore) !== 0) {
+    return committedWithoutPage(recorded.receipt, request);
+  }
+  if (recorded.byteLength > pullByteBudget(request.maxBytes)) {
+    return { receipt: recorded.receipt, page: undefined, readPageAfterCommit: false };
+  }
+  const group: PulledGroup = {
+    commitSequence: recorded.commitSequence,
+    operationId: recorded.receipt.operationId,
+    decision: recorded.receipt.decision,
+    changes: recorded.changeRows.map((row) =>
+      encodeChangeFrame({
+        entity: row.entity,
+        action: row.action,
+        entity_id: row.entityId,
+        row_version: row.rowVersion,
+        row_json: row.rowJson,
+      }),
+    ),
+  };
+  return {
+    receipt: recorded.receipt,
+    page: {
+      envelope: {
+        epoch: SyncEpoch.make(state.epoch),
+        incarnation: AuthorityIncarnation.make(state.incarnation),
+        subscription: OPERATIONAL_SUBSCRIPTION,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        nextCommitSequence: recorded.commitSequence,
+        horizon: recorded.commitSequence,
+        retentionFloor: OrgCommitSequence.make(integerTextFromNumeric(state.retentionFloor)),
+      },
+      groups: [group],
+    },
+    readPageAfterCommit: false,
+  };
+};
 
 const executeCommand = Effect.fn("InventoryCommands.executeCommand")(function* (
   tx: InventoryTransaction,
@@ -269,7 +360,7 @@ const executeCommand = Effect.fn("InventoryCommands.executeCommand")(function* (
 const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(function* (
   tx: InventoryTransaction,
   actor: InventoryActor,
-  envelope: SyncCommandEnvelope,
+  envelope: SyncSubmitCommandRequest,
   receivedAt: number,
 ) {
   const state = yield* lockOrganization(tx, actor.organizationId);
@@ -287,7 +378,7 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     if (existing.payloadHash !== envelope.payloadHash) {
       return yield* protocol("OPERATION_ID_REUSED", "The command id was reused.");
     }
-    return yield* decodeReceipt(existing);
+    return committedWithoutPage(yield* decodeReceipt(existing), envelope);
   }
 
   if (!replica) {
@@ -323,7 +414,7 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
           "The command id must match the envelope operation id.",
         );
 
-  return yield* recordDecision(tx, {
+  const recorded = yield* recordDecision(tx, {
     actor,
     envelope,
     stateCommitSequence: integerTextFromNumeric(state.commitSequence),
@@ -333,6 +424,7 @@ const commitInTransaction = Effect.fn("InventoryCommands.commitInTransaction")(f
     changes: issued.changes,
     receivedAt,
   });
+  return committedWithPage(envelope, state, recorded);
 });
 
 const PulledRow = Schema.Struct({
@@ -354,7 +446,12 @@ const PulledRow = Schema.Struct({
 
 const decodePulledRows = Schema.decodeUnknownEffect(Schema.Array(PulledRow));
 
-const pullPageStatement = (organizationId: string, request: SyncPullRequest, limit: number) => sql`
+const pullPageStatement = (
+  organizationId: string,
+  request: SyncPullRequest,
+  limit: number,
+  byteBudget: number,
+) => sql`
   with "state" as (
     select "status", "release_id", "epoch", "incarnation",
       "commit_sequence" as "horizon_value", "retention_floor" as "floor_value"
@@ -385,7 +482,7 @@ const pullPageStatement = (organizationId: string, request: SyncPullRequest, lim
         row_number() over (order by "commit_sequence") as "position"
       from "candidates"
     ) as "sized"
-    where "position" = 1 or "used" <= ${PULL_PAYLOAD_BUDGET_BYTES}
+    where "position" = 1 or "used" <= ${byteBudget}
   )
   select "s"."status", "s"."release_id", "s"."epoch", "s"."incarnation",
     "s"."horizon_value"::text as "horizon", "s"."floor_value"::text as "retention_floor",
@@ -442,7 +539,10 @@ const readPullPage = Effect.fn("InventoryCommands.readPullPage")(function* (
 ) {
   const limit = request.limit ?? MAX_SYNC_PULL_TRANSACTIONS;
   const raw = yield* runStatement(
-    executor.execute(pullPageStatement(actor.organizationId, request, limit), "objects"),
+    executor.execute(
+      pullPageStatement(actor.organizationId, request, limit, pullByteBudget(request.maxBytes)),
+      "objects",
+    ),
   );
   const rows = yield* decodePulledRows(raw).pipe(Effect.mapError(databaseError));
   const first = rows[0];
@@ -532,6 +632,18 @@ const pullWithDigestInTransaction = Effect.fn("InventoryCommands.pullWithDigestI
 );
 
 const decodePullResult = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncPullResult));
+
+const encodeReceiptJson = Schema.encodeSync(Schema.fromJsonString(CommandReceipt));
+
+const encodeSubmitResult = (receipt: CommandReceipt, page: PulledPage | undefined): string => {
+  const receiptJson = encodeReceiptJson(receipt);
+  if (page === undefined) return receiptJson;
+  return `${receiptJson.slice(0, -1)},"page":${encodePulledPage(page, undefined)}}`;
+};
+
+const decodeSubmitResult = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(SyncSubmitCommandResult),
+);
 
 const readReceipt = Effect.fn("InventoryCommands.readReceipt")(function* (
   db: InventoryDrizzle,
@@ -644,6 +756,14 @@ export interface InventoryCommandsContract {
     actor: InventoryActor,
     envelope: SyncCommandEnvelope,
   ) => Effect.Effect<CommandReceipt, InventoryError>;
+  readonly submit: (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) => Effect.Effect<SyncSubmitCommandResult, InventoryError>;
+  readonly submitEncoded: (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) => Effect.Effect<EncodedJsonBody, InventoryError>;
   readonly receipt: (
     actor: InventoryActor,
     operationId: string,
@@ -663,7 +783,9 @@ export interface InventoryCommandsContract {
  *
  * One `READ COMMITTED` transaction locks the organization's `inventory_state`
  * row, then writes the business change, receipt, and log together. Callers
- * retry the same operation id after an uncertain commit.
+ * retry the same operation id after an uncertain commit. A submit that names
+ * the client's applied cursor also carries the next pull page; that page is
+ * best effort and never fails a committed command.
  */
 export class InventoryCommands extends Context.Service<
   InventoryCommands,
@@ -684,6 +806,50 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
         : encodePulledPage(yield* readPullPage(db, actor, request), undefined);
     return { json } satisfies EncodedJsonBody;
   });
+  const commitCommand = Effect.fn("InventoryCommands.commitCommand")(function* (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) {
+    if (request.organizationId !== actor.organizationId) {
+      return yield* protocol(
+        "ORGANIZATION_MISMATCH",
+        "The command does not belong to the active organization.",
+      );
+    }
+    if (request.payloadHash !== canonicalPayloadHash(request.command)) {
+      return yield* protocol("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
+    }
+    const receivedAt = yield* Clock.currentTimeMillis;
+    return yield* transact("read committed", "read write", (tx) =>
+      commitInTransaction(tx, actor, request, receivedAt),
+    );
+  });
+  const pageAfterCommit = Effect.fn("InventoryCommands.pageAfterCommit")(function* (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) {
+    if (request.afterCommitSequence === undefined) return undefined;
+    const pull: SyncPullRequest = {
+      epoch: request.epoch,
+      subscription: OPERATIONAL_SUBSCRIPTION,
+      afterCommitSequence: request.afterCommitSequence,
+    };
+    return yield* readPullPage(
+      db,
+      actor,
+      request.maxBytes === undefined ? pull : { ...pull, maxBytes: request.maxBytes },
+    ).pipe(Effect.orElseSucceed(() => undefined));
+  });
+  const submitEncoded = Effect.fn("InventoryCommands.submitEncoded")(function* (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) {
+    const committed = yield* commitCommand(actor, request);
+    const page = committed.readPageAfterCommit
+      ? yield* pageAfterCommit(actor, request)
+      : committed.page;
+    return { json: encodeSubmitResult(committed.receipt, page) } satisfies EncodedJsonBody;
+  });
   return InventoryCommands.of({
     register: Effect.fn("InventoryCommands.register")(function* (actor, request) {
       const receivedAt = yield* Clock.currentTimeMillis;
@@ -692,20 +858,14 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       );
     }),
     commit: Effect.fn("InventoryCommands.commit")(function* (actor, envelope) {
-      if (envelope.organizationId !== actor.organizationId) {
-        return yield* protocol(
-          "ORGANIZATION_MISMATCH",
-          "The command does not belong to the active organization.",
-        );
-      }
-      if (envelope.payloadHash !== canonicalPayloadHash(envelope.command)) {
-        return yield* protocol("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
-      }
-      const receivedAt = yield* Clock.currentTimeMillis;
-      return yield* transact("read committed", "read write", (tx) =>
-        commitInTransaction(tx, actor, envelope, receivedAt),
-      );
+      const committed = yield* commitCommand(actor, envelope);
+      return committed.receipt;
     }),
+    submit: Effect.fn("InventoryCommands.submit")(function* (actor, request) {
+      const encoded = yield* submitEncoded(actor, request);
+      return yield* decodeSubmitResult(encoded.json).pipe(Effect.mapError(databaseError));
+    }),
+    submitEncoded,
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
       return yield* readReceipt(db, actor, operationId);
     }),
@@ -722,6 +882,8 @@ export const InventoryCommandsUnavailable = Layer.succeed(
   InventoryCommands.of({
     register: () => Effect.fail(inventoryPostgresUnavailable),
     commit: () => Effect.fail(inventoryPostgresUnavailable),
+    submit: () => Effect.fail(inventoryPostgresUnavailable),
+    submitEncoded: () => Effect.fail(inventoryPostgresUnavailable),
     receipt: () => Effect.fail(inventoryPostgresUnavailable),
     pull: () => Effect.fail(inventoryPostgresUnavailable),
     pullEncoded: () => Effect.fail(inventoryPostgresUnavailable),

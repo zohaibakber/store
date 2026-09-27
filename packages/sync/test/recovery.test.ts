@@ -54,6 +54,7 @@ const unusedStore = {
   enqueueCommand: () => Effect.die("unused"),
   claimNextUpload: () => Effect.die("unused"),
   settleUploadClaim: () => Effect.die("unused"),
+  settleUploadWithPage: () => Effect.die("unused"),
   releaseUploadClaim: () => Effect.die("unused"),
   recoverStaleUploadClaims: () => Effect.die("unused"),
   verifyAuthority: () => Effect.die("unused"),

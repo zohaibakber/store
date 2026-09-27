@@ -1,6 +1,8 @@
-import type { TokenSet } from "@store/auth";
+import { TokenSet } from "@store/auth";
+import { AuthenticatedWorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 
 import type { JsonApiResponse, JsonRequestInit, JsonRequestPayload } from "./workspace";
 
@@ -25,6 +27,14 @@ export class RequestError extends Schema.TaggedError<RequestError>()("Workspace.
   code: Schema.optionalKey(Schema.String),
 }) {}
 
+export const RefreshedTokenSet = TokenSet.pipe(
+  Schema.fieldsAssign({ workspace: Schema.optionalKey(AuthenticatedWorkspaceSnapshot) }),
+);
+export interface RefreshedTokenSet extends Schema.Schema.Type<typeof RefreshedTokenSet> {}
+
+export const refreshedTokens = (refreshed: TokenSet): TokenSet =>
+  Struct.pick(refreshed, ["accessToken", "accessExpiresAt", "refreshToken", "refreshExpiresAt"]);
+
 export interface TokenStore {
   get(): TokenSet | null;
   set(tokens: TokenSet | null): void;
@@ -37,9 +47,9 @@ export interface SessionHttpClientOptions {
   readonly authBaseUrl: string;
   readonly tokens: TokenStore;
   readonly fetch: SessionFetch;
-  readonly refreshSession: () => Promise<TokenSet | null>;
+  readonly refreshSession: () => Promise<RefreshedTokenSet | null>;
   readonly needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
-  readonly afterRefresh?: (tokens: TokenSet) => Promise<void>;
+  readonly afterRefresh?: (refreshed: RefreshedTokenSet) => Promise<void>;
   readonly requestHeaders?: () => HeadersInit;
 }
 
@@ -111,11 +121,11 @@ export class SessionHttpClient {
   readonly #authBaseUrl: string;
   readonly #tokens: TokenStore;
   readonly #fetch: SessionFetch;
-  readonly #refreshSession: () => Promise<TokenSet | null>;
+  readonly #refreshSession: () => Promise<RefreshedTokenSet | null>;
   readonly #needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
-  readonly #afterRefresh: ((tokens: TokenSet) => Promise<void>) | undefined;
+  readonly #afterRefresh: ((refreshed: RefreshedTokenSet) => Promise<void>) | undefined;
   readonly #requestHeaders: (() => HeadersInit) | undefined;
-  #refreshInFlight: Promise<TokenSet | null> | null = null;
+  #refreshInFlight: Promise<RefreshedTokenSet | null> | null = null;
 
   constructor(options: SessionHttpClientOptions) {
     this.#apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl);
@@ -140,14 +150,14 @@ export class SessionHttpClient {
     return this.#tokens;
   }
 
-  ensureFreshAccess(force = false): Promise<TokenSet | null> {
+  ensureFreshAccess(force = false): Promise<RefreshedTokenSet | null> {
     const tokens = this.#tokens.get();
     if (!this.#needsRefresh(tokens, force)) return Promise.resolve(tokens);
     if (this.#refreshInFlight) return this.#refreshInFlight;
     const release = () => {
       if (this.#refreshInFlight === refresh) this.#refreshInFlight = null;
     };
-    const refresh: Promise<TokenSet | null> = this.#refreshSession()
+    const refresh: Promise<RefreshedTokenSet | null> = this.#refreshSession()
       .then(async (next) => {
         release();
         if (next && this.#afterRefresh) await this.#afterRefresh(next);
@@ -158,7 +168,7 @@ export class SessionHttpClient {
     return refresh;
   }
 
-  awaitRefreshInFlight(): Promise<TokenSet | null> | null {
+  awaitRefreshInFlight(): Promise<RefreshedTokenSet | null> | null {
     return this.#refreshInFlight;
   }
 

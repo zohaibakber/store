@@ -17,12 +17,22 @@ export const replicaDatabaseName = (
   `${REPLICA_FILE_PREFIX}-${encodeURIComponent(`${inventoryReplicaScope(apiBaseUrl, organizationId)}:${userId}`)}.sqlite`;
 
 export type NetworkReachability = {
+  readonly type?: string;
   readonly isConnected?: boolean;
   readonly isInternetReachable?: boolean;
 };
 
 export const isReachable = (state: NetworkReachability): boolean =>
   state.isInternetReachable ?? state.isConnected ?? false;
+
+export const METERED_PULL_MAX_BYTES = 262_144;
+
+const METERED_NETWORK_TYPES: ReadonlySet<string> = new Set(["CELLULAR", "BLUETOOTH"]);
+
+export const pullMaxBytesFor = (state: NetworkReachability): number | undefined =>
+  state.type !== undefined && METERED_NETWORK_TYPES.has(state.type)
+    ? METERED_PULL_MAX_BYTES
+    : undefined;
 
 export const reconnected = (previous: boolean | undefined, next: boolean): boolean =>
   previous === false && next;

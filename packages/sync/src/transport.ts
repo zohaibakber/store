@@ -8,9 +8,10 @@ import type {
   RegisterReplicaResult,
   SnapshotId,
   SnapshotPartPayload,
-  SyncCommandEnvelope,
   SyncPullRequest,
   SyncPullResult,
+  SyncSubmitCommandRequest,
+  SyncSubmitCommandResult,
 } from "@store/contracts";
 import { LIVE_LONG_POLL_MAX_MILLIS, SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import { SyncHttpApi } from "@store/contracts/sync/api";
@@ -252,8 +253,8 @@ export type SyncTransport = {
     request: RegisterReplicaRequest,
   ) => Effect.Effect<RegisterReplicaResult, SyncTransportError | SyncProtocolError>;
   readonly submitCommand: (
-    envelope: SyncCommandEnvelope,
-  ) => Effect.Effect<CommandReceipt, SyncTransportError | SyncProtocolError>;
+    request: SyncSubmitCommandRequest,
+  ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
   readonly getReceipt: (
     operationId: string,
   ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
@@ -303,7 +304,7 @@ const withDeadline =
 
 export const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
   registerReplica: (request) => withDeadline("registerReplica")(transport.registerReplica(request)),
-  submitCommand: (envelope) => withDeadline("submitCommand")(transport.submitCommand(envelope)),
+  submitCommand: (request) => withDeadline("submitCommand")(transport.submitCommand(request)),
   getReceipt: (operationId) => withDeadline("getReceipt")(transport.getReceipt(operationId)),
   pull: (request) => withDeadline("pull")(transport.pull(request)),
   acquireSnapshot: (request) => withDeadline("acquireSnapshot")(transport.acquireSnapshot(request)),
@@ -337,8 +338,8 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
   return withRequestDeadlines({
     registerReplica: (request) =>
       mapTransportFailure(client.sync.registerReplica({ payload: request })),
-    submitCommand: (envelope) =>
-      mapTransportFailure(client.sync.submitCommand({ payload: envelope })),
+    submitCommand: (request) =>
+      mapTransportFailure(client.sync.submitCommand({ payload: request })),
     getReceipt: (operationId) =>
       mapTransportFailure(
         client.sync

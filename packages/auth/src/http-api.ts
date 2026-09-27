@@ -21,6 +21,7 @@ import {
   OtpChallengeId,
   OtpCode,
   Password,
+  RefreshedSession,
   RefreshInput,
   SignOutInput,
   TokenSet,
@@ -108,7 +109,7 @@ const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("refresh", "/v1/session/refresh", {
       payload: RefreshInput,
-      success: TokenSet,
+      success: RefreshedSession,
       error: AuthHttpErrors,
     }),
   )

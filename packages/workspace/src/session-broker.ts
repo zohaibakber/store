@@ -21,6 +21,25 @@ export interface SessionSnapshotHooks {
   readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Promise<void>;
 }
 
+export const adoptAuthenticatedSnapshot = async (
+  hooks: SessionSnapshotHooks,
+  snapshot: WorkspaceSnapshotType,
+): Promise<WorkspaceSnapshotType> => {
+  const online = withWorkspaceOnline(snapshot, true);
+  hooks.publish(online);
+  try {
+    await hooks.persistAuthenticated?.(online);
+    return online;
+  } catch (error) {
+    return hooks.publish(
+      withWorkspaceError(
+        online,
+        error instanceof Error ? error.message : "Could not persist the authenticated session.",
+      ),
+    );
+  }
+};
+
 export const loadSessionSnapshot = async (
   hooks: SessionSnapshotHooks,
 ): Promise<WorkspaceSnapshotType> => {
@@ -38,19 +57,7 @@ export const loadSessionSnapshot = async (
         unauthenticated(true, "You signed in, but the server rejected the session."),
       );
     }
-    const online = withWorkspaceOnline(snapshot, true);
-    hooks.publish(online);
-    try {
-      await hooks.persistAuthenticated?.(online);
-      return online;
-    } catch (error) {
-      return hooks.publish(
-        withWorkspaceError(
-          online,
-          error instanceof Error ? error.message : "Could not persist the authenticated session.",
-        ),
-      );
-    }
+    return await adoptAuthenticatedSnapshot(hooks, snapshot);
   } catch (error) {
     if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
       await hooks.clearAuthenticated?.();
@@ -81,6 +88,6 @@ export const adoptSessionTokens = async (
 export const renewSessionSnapshot = async (
   hooks: SessionSnapshotHooks,
 ): Promise<WorkspaceSnapshotType> => {
-  await hooks.http.ensureFreshAccess(true);
-  return loadSessionSnapshot(hooks);
+  const refreshed = await hooks.http.ensureFreshAccess(true);
+  return refreshed?.workspace === undefined ? loadSessionSnapshot(hooks) : hooks.getLocalSnapshot();
 };

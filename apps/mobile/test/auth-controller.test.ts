@@ -56,6 +56,7 @@ const makeServer = () => {
   const calls: Array<string> = [];
   let counter = 0;
   let mode: "online" | "offline" | "down" = "online";
+  let refreshCarriesWorkspace = false;
 
   const issue = (email: string) => {
     counter += 1;
@@ -138,7 +139,13 @@ const makeServer = () => {
           return failure(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
         }
         refreshTokens.delete(body.refreshToken);
-        return json(issue(email));
+        const issued = issue(email);
+        const user = users.get(email);
+        return json(
+          refreshCarriesWorkspace && user !== undefined
+            ? { ...issued, workspace: snapshot(user) }
+            : issued,
+        );
       }
       case "POST auth/v1/session/logout":
         refreshTokens.delete(body.refreshToken);
@@ -212,6 +219,16 @@ const makeServer = () => {
     revokeEverything: () => {
       refreshTokens.clear();
       accessTokens.clear();
+    },
+    expireAccessTokens: () => {
+      accessTokens.clear();
+    },
+    sendWorkspaceOnRefresh: () => {
+      refreshCarriesWorkspace = true;
+    },
+    renameOrganization: (id: string, name: string) => {
+      const organization = organizations.get(id);
+      if (organization !== undefined) organization.name = name;
     },
     liveRefreshTokens: () => [...refreshTokens.keys()],
   };
@@ -416,6 +433,65 @@ describe("auth controller", () => {
     expect(server.calls.filter((call) => call === "POST auth/v1/session/refresh")).toHaveLength(1);
     expect(storage.session()?.tokens.refreshToken).not.toBe(stored.tokens.refreshToken);
     expect(status(restarted)).toBe("signedIn");
+  });
+
+  it("adopts the workspace a refresh carries without reading the session back", async () => {
+    const server = makeServer();
+    server.sendWorkspaceOnRefresh();
+    const storage = makeVault();
+    const controller = makeController(server, storage.vault);
+    await controller.start();
+    await signInWithCode(controller);
+    await controller.confirmOrganization({});
+
+    server.renameOrganization("org-1", "Renamed Store");
+    server.expireAccessTokens();
+    const before = server.calls.length;
+    const response = await controller.authenticatedFetch(`${API}/api/sync/pull`);
+    await settle();
+
+    expect(response.status).toBe(200);
+    expect(server.calls.slice(before)).toEqual([
+      "GET api/api/sync/pull",
+      "POST auth/v1/session/refresh",
+      "GET api/api/sync/pull",
+    ]);
+    const state = controller.getState();
+    expect(state._tag === "Active" && state.account.organization?.name).toBe("Renamed Store");
+    expect(storage.session()?.account.organization?.name).toBe("Renamed Store");
+    expect(status(controller)).toBe("signedIn");
+  });
+
+  it("restores a session with an expired access token from one refresh and no session read", async () => {
+    const server = makeServer();
+    server.sendWorkspaceOnRefresh();
+    const storage = makeVault();
+    const first = makeController(server, storage.vault);
+    await first.start();
+    await signInWithCode(first);
+    await first.confirmOrganization({});
+    const stored = storage.session();
+    const refreshToken = stored?.tokens.refreshToken;
+    if (stored === null || refreshToken === undefined) throw new Error("No stored session.");
+    await storage.vault.save({
+      version: 1,
+      account: stored.account,
+      tokens: TokenSet.make({
+        accessToken: stored.tokens.accessToken,
+        accessExpiresAt: Date.now() - MINUTE,
+        refreshToken,
+        refreshExpiresAt: stored.tokens.refreshExpiresAt,
+      }),
+    });
+
+    const before = server.calls.length;
+    const restarted = makeController(server, storage.vault);
+    await restarted.start();
+    await settle();
+
+    expect(server.calls.slice(before)).toEqual(["POST auth/v1/session/refresh"]);
+    expect(status(restarted)).toBe("signedIn");
+    expect(storage.session()?.tokens.refreshToken).not.toBe(refreshToken);
   });
 
   it("signs out locally and revokes the refresh token", async () => {
