@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useAuth } from "@/lib/auth";
-import { useCatalogIsReady, useCatalogProducts } from "@/lib/inventory";
+import { useCatalogIsReady, useSuspenseCatalogProducts } from "@/lib/inventory";
 import { Route as RootRoute } from "@/routes/__root";
 
 const RESULT_LIMIT = 20;
@@ -142,18 +142,18 @@ function LiveCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boole
 function ProductCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: boolean) => void }) {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
-  const products = useCatalogProducts();
+  const products = useSuspenseCatalogProducts();
   const normalizedQuery = query.trim();
 
   const prepared = useMemo(
-    () => (normalizedQuery.length >= 2 ? products.data.map(prepareProduct) : []),
-    [normalizedQuery.length, products.data],
+    () => (normalizedQuery.length >= 2 ? products.map(prepareProduct) : []),
+    [normalizedQuery.length, products],
   );
   const results = useMemo(() => {
-    if (normalizedQuery.length === 0) return products.data.slice(0, RESULT_LIMIT);
+    if (normalizedQuery.length === 0) return products.slice(0, RESULT_LIMIT);
     if (normalizedQuery.length < 2) {
       const term = normalize(normalizedQuery);
-      return products.data
+      return products
         .filter(
           (product) =>
             normalize(product.name).includes(term) ||
@@ -162,19 +162,14 @@ function ProductCommandMenu({ onOpenChange }: { readonly onOpenChange: (open: bo
         .slice(0, RESULT_LIMIT);
     }
     return rankProducts(prepared, normalizedQuery);
-  }, [normalizedQuery, prepared, products.data]);
+  }, [normalizedQuery, prepared, products]);
 
   const handleOpenProduct = (product: Product) => {
     onOpenChange(false);
     void navigate({ to: "/products/$productId", params: { productId: product.id } });
   };
 
-  const emptyMessage =
-    products.isError && products.data.length === 0
-      ? "Product search could not be loaded."
-      : products.data.length === 0
-        ? "No products yet."
-        : "No products found.";
+  const emptyMessage = products.length === 0 ? "No products yet." : "No products found.";
 
   return (
     <Command

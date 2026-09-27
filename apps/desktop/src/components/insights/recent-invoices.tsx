@@ -15,10 +15,10 @@ import {
 } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
-import { useInventoryInvoices } from "@/lib/inventory";
+import { useSuspenseInventoryInvoices } from "@/lib/inventory";
 
 export function RecentInvoices() {
-  const invoices = useInventoryInvoices(5).data;
+  const invoices = useSuspenseInventoryInvoices(5);
   return (
     <FrameCard
       action={

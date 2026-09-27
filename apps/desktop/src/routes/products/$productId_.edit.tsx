@@ -4,7 +4,11 @@ import * as Schema from "effect/Schema";
 
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useCatalogCategories, useCatalogProducts, useCatalogSuggestions } from "@/lib/inventory";
+import {
+  useCatalogSuggestions,
+  useSuspenseCatalogCategories,
+  useSuspenseCatalogProduct,
+} from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
   component: EditProductPage,
@@ -13,26 +17,12 @@ export const Route = createFileRoute("/products/$productId_/edit")({
 
 function EditProductPage() {
   const { productId } = Route.useParams();
-  const categories = useCatalogCategories();
-  const products = useCatalogProducts();
-  const suggestions = useCatalogSuggestions();
   const id = Schema.decodeUnknownSync(ProductId)(productId);
-  const product = products.data.find((candidate) => candidate.id === id);
-  if (product && categories.data.length > 0) {
-    return (
-      <EditProductForm categories={categories.data} product={product} suggestions={suggestions} />
-    );
-  }
-  if ((categories.isError && categories.data.length === 0) || (products.isError && !product)) {
-    throw new Error("The product form data could not be loaded.");
-  }
-  if (!product) {
-    if (!categories.isReady || !products.isReady) return null;
-    throw new Error(`Product ${productId} was not found in this catalog.`);
-  }
-  return (
-    <EditProductForm categories={categories.data} product={product} suggestions={suggestions} />
-  );
+  const categories = useSuspenseCatalogCategories();
+  const product = useSuspenseCatalogProduct(id);
+  const suggestions = useCatalogSuggestions();
+  if (!product) throw new Error(`Product ${productId} was not found in this catalog.`);
+  return <EditProductForm categories={categories} product={product} suggestions={suggestions} />;
 }
 
 function EditProductForm({

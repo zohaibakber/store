@@ -2,6 +2,7 @@ import { SALES_RANGES, type SalesRange } from "@store/services/insights";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
+import { InsightsError } from "@/components/insights/insights-error";
 import { OverviewPage } from "@/components/insights/overview-page";
 import { formValidator } from "@/lib/form-schema";
 import { lenientSearchParam } from "@/lib/search-param";
@@ -15,6 +16,7 @@ const overviewSearch = formValidator(
 export const Route = createFileRoute("/")({
   validateSearch: overviewSearch,
   component: OverviewRoute,
+  errorComponent: InsightsError,
 });
 
 function OverviewRoute() {

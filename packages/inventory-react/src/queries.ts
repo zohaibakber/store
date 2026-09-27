@@ -20,6 +20,7 @@ import {
   or,
   toArray,
   useLiveQuery,
+  useLiveSuspenseQuery,
   type InitialQueryBuilder,
   type Ref,
 } from "@tanstack/react-db";
@@ -160,121 +161,126 @@ const productsWithCategory = (
       eq(product.categoryId, category.id),
     );
 
+const categoriesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
+  query
+    .from({ category: inventory.categories })
+    .orderBy(({ category }) => category.name, "asc")
+    .select(({ category }) => categoryFields(category));
+
+const productsQuery = (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
+  productsWithCategory(query, inventory)
+    .orderBy(({ product }) => product.name, "asc")
+    .limit(limit)
+    .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
+
+const productQuery = (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
+  productsWithCategory(query, inventory)
+    .where(({ product }) => eq(product.id, productId))
+    .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
+
+const stockMovementsQuery =
+  (inventory: Inventory, productId: string, limit: number) => (query: InitialQueryBuilder) =>
+    query
+      .from({ movement: inventory.stockMovements })
+      .where(({ movement }) => eq(movement.productId, productId))
+      .orderBy(({ movement }) => movement.createdAt, "desc")
+      .limit(limit)
+      .select(({ movement }) => ({
+        id: movement.id,
+        productId: movement.productId,
+        batchId: movement.batchId,
+        invoiceId: movement.invoiceId,
+        type: movement.type,
+        packDelta: movement.packDelta,
+        unitDelta: movement.unitDelta,
+        note: movement.note,
+        organizationId: movement.organizationId,
+        actorUserId: movement.actorUserId,
+        deviceId: movement.deviceId,
+        operationId: movement.operationId,
+        createdAt: movement.createdAt,
+      }));
+
+const invoicesQuery = (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
+  query
+    .from({ invoice: inventory.invoices })
+    .orderBy(({ invoice }) => invoice.createdAt, "desc")
+    .limit(limit)
+    .select(({ invoice }) => invoiceFields(query, inventory, invoice));
+
+const invoiceQuery = (inventory: Inventory, invoiceId: string) => (query: InitialQueryBuilder) =>
+  query
+    .from({ invoice: inventory.invoices })
+    .where(({ invoice }) => eq(invoice.id, invoiceId))
+    .select(({ invoice }) => invoiceFields(query, inventory, invoice));
+
 export const useCatalogCategories = () => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      query
-        .from({ category: inventory.categories })
-        .orderBy(({ category }) => category.name, "asc")
-        .select(({ category }) => categoryFields(category)),
-    [inventory],
-  );
+  const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
   const data: ReadonlyArray<Category> = live.data;
   return { ...live, data };
 };
 
 export const useCatalogProducts = (limit = 100) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      productsWithCategory(query, inventory)
-        .orderBy(({ product }) => product.name, "asc")
-        .limit(limit)
-        .select(({ product, category }) =>
-          catalogProductFields(query, inventory, product, category),
-        ),
-    [inventory, limit],
-  );
+  const live = useLiveQuery({ query: productsQuery(useCatalogReplica(), limit) });
   const data: ReadonlyArray<Product> = live.data;
   return { ...live, data };
 };
 
 export const useCatalogProduct = (productId: string) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      productsWithCategory(query, inventory)
-        .where(({ product }) => eq(product.id, productId))
-        .select(({ product, category }) =>
-          catalogProductFields(query, inventory, product, category),
-        ),
-    [inventory, productId],
-  );
+  const live = useLiveQuery({ query: productQuery(useCatalogReplica(), productId) });
   const data: Product | undefined = live.data[0];
   return { ...live, data };
 };
 
 export const useCatalogStockMovements = (productId: string, limit = 50) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      query
-        .from({ movement: inventory.stockMovements })
-        .where(({ movement }) => eq(movement.productId, productId))
-        .orderBy(({ movement }) => movement.createdAt, "desc")
-        .limit(limit)
-        .select(({ movement }) => ({
-          id: movement.id,
-          productId: movement.productId,
-          batchId: movement.batchId,
-          invoiceId: movement.invoiceId,
-          type: movement.type,
-          packDelta: movement.packDelta,
-          unitDelta: movement.unitDelta,
-          note: movement.note,
-          organizationId: movement.organizationId,
-          actorUserId: movement.actorUserId,
-          deviceId: movement.deviceId,
-          operationId: movement.operationId,
-          createdAt: movement.createdAt,
-        })),
-    [inventory, productId, limit],
-  );
+  const live = useLiveQuery({ query: stockMovementsQuery(useCatalogReplica(), productId, limit) });
   const data: ReadonlyArray<StockMovement> = live.data;
   return { ...live, data };
 };
 
 export const useInventoryInvoices = (limit = 50) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      query
-        .from({ invoice: inventory.invoices })
-        .orderBy(({ invoice }) => invoice.createdAt, "desc")
-        .limit(limit)
-        .select(({ invoice }) => invoiceFields(query, inventory, invoice)),
-    [inventory, limit],
-  );
+  const live = useLiveQuery({ query: invoicesQuery(useCatalogReplica(), limit) });
   const data: ReadonlyArray<Invoice> = live.data;
   return { ...live, data };
 };
 
 export const useInventoryInvoice = (invoiceId: string) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
-      query
-        .from({ invoice: inventory.invoices })
-        .where(({ invoice }) => eq(invoice.id, invoiceId))
-        .select(({ invoice }) => invoiceFields(query, inventory, invoice)),
-    [inventory, invoiceId],
-  );
+  const live = useLiveQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) });
   const data: Invoice | undefined = live.data[0];
   return { ...live, data };
 };
 
+export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
+  useLiveSuspenseQuery({ query: categoriesQuery(useCatalogReplica()) }).data;
+
+export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> =>
+  useLiveSuspenseQuery({ query: productsQuery(useCatalogReplica(), limit) }).data;
+
+export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
+  useLiveSuspenseQuery({ query: productQuery(useCatalogReplica(), productId) }).data[0];
+
+export const useSuspenseCatalogStockMovements = (
+  productId: string,
+  limit = 50,
+): ReadonlyArray<StockMovement> =>
+  useLiveSuspenseQuery({ query: stockMovementsQuery(useCatalogReplica(), productId, limit) }).data;
+
+export const useSuspenseInventoryInvoices = (limit = 50): ReadonlyArray<Invoice> =>
+  useLiveSuspenseQuery({ query: invoicesQuery(useCatalogReplica(), limit) }).data;
+
+export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
+  useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data[0];
+
 export const useCatalogSuggestions = (): ProductSuggestions => {
   const inventory = useCatalogReplica();
-  const live = useLiveQuery(
-    (query) =>
+  const live = useLiveQuery({
+    query: (query) =>
       query.from({ product: inventory.products }).select(({ product }) => ({
         name: product.name,
         aisle: product.aisle,
         composition: product.composition,
       })),
-    [inventory],
-  );
+  });
   const distinct = (values: ReadonlyArray<string | null>) =>
     [...new Set(values.flatMap((value) => (value?.trim() ? [value.trim()] : [])))].sort((a, b) =>
       a.localeCompare(b),
@@ -323,7 +329,7 @@ const NO_ROW_IDS: ReadonlySet<string> = new Set();
 export const usePendingRowIds = (entity: SyncEntity): ReadonlySet<string> => {
   const inventory = useCatalogReplica();
   const result = useAtomValue(inventory.atoms.pendingRowIds(entity));
-  return Option.getOrElse(useLatestSuccess(result), () => NO_ROW_IDS);
+  return AsyncResult.getOrElse(result, () => NO_ROW_IDS);
 };
 
 export const useCatalogProductSearch = (query: string, limit = 50) => {
@@ -334,10 +340,9 @@ export const useCatalogProductSearch = (query: string, limit = 50) => {
   const latest = useLatestSuccess(searched);
   const matches = Option.getOrElse(latest, () => NO_PRODUCTS);
   const matchKey = matches.map((product) => product.id).join(" ");
-  const batches = useLiveQuery(
-    (builder) => batchesForProducts(builder, inventory, matchKey ? matchKey.split(" ") : []),
-    [inventory, matchKey],
-  );
+  const batches = useLiveQuery({
+    query: (builder) => batchesForProducts(builder, inventory, matchKey ? matchKey.split(" ") : []),
+  });
   const data = React.useMemo<ReadonlyArray<CatalogProductSearchResult>>(
     () => catalogProductSearchResults(matches, batches.data ?? [], policy, now),
     [matches, batches.data, policy, now],

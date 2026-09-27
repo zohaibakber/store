@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/detail-page";
-import { useInventoryInvoice } from "@/lib/inventory";
+import { useSuspenseInventoryInvoice } from "@/lib/inventory";
 
 export const Route = createFileRoute("/invoices/$invoiceId")({
   component: InvoiceDetailRoute,
@@ -11,12 +11,7 @@ export const Route = createFileRoute("/invoices/$invoiceId")({
 
 function InvoiceDetailRoute() {
   const { invoiceId } = Route.useParams();
-  const invoice = useInventoryInvoice(invoiceId);
-
-  if (invoice.data) return <InvoiceDetailPage invoice={invoice.data} />;
-  if (invoice.isError) {
-    return <InvoiceDetailError error={new Error("The invoice could not be loaded.")} />;
-  }
-  if (!invoice.isReady && !invoice.data) return null;
-  return <InvoiceDetailError error={new Error(`Invoice ${invoiceId} was not found.`)} />;
+  const invoice = useSuspenseInventoryInvoice(invoiceId);
+  if (!invoice) throw new Error(`Invoice ${invoiceId} was not found.`);
+  return <InvoiceDetailPage invoice={invoice} />;
 }

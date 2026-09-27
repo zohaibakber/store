@@ -1,14 +1,12 @@
-import { Alert02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import type { InsightsReport, SalesRange } from "@store/services/insights";
+import type { SalesRange } from "@store/services/insights";
+import * as React from "react";
 
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInventoryInsights } from "@/lib/inventory";
 
-import { InsightsHeader } from "./header";
+import { InsightsHeader, InsightsRefreshing } from "./header";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
@@ -35,7 +33,7 @@ const VALUE_FROM_RANGE = { 7: "7", 30: "30", 90: "90" } satisfies Record<SalesRa
 const greeting = (hour: number) =>
   hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
-function OverviewLoading() {
+function OverviewSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading insights" className="flex flex-col gap-4">
       <Skeleton className="h-32 w-full" />
@@ -48,13 +46,8 @@ function OverviewLoading() {
   );
 }
 
-function OverviewBody({
-  report,
-  range,
-}: {
-  readonly report: InsightsReport;
-  readonly range: SalesRange;
-}) {
+function OverviewBody({ range }: { readonly range: SalesRange }) {
+  const { report } = useInventoryInsights();
   const period = report.sales.periods[range];
   return (
     <>
@@ -72,7 +65,9 @@ function OverviewBody({
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ExpiringSoon report={report} />
-        <RecentInvoices />
+        <React.Suspense fallback={<Skeleton className="h-72 w-full" />}>
+          <RecentInvoices />
+        </React.Suspense>
       </div>
     </>
   );
@@ -85,7 +80,6 @@ export function OverviewPage({
   readonly range: SalesRange;
   readonly onRangeChange: (range: SalesRange) => void;
 }) {
-  const insights = useInventoryInsights();
   return (
     <PageLayout contentClassName="max-w-6xl gap-4">
       <InsightsHeader
@@ -101,22 +95,19 @@ export function OverviewPage({
           </>
         }
         description={
-          insights._tag === "Ready" && insights.refreshing
-            ? "Refreshing from this device…"
-            : "Sales, stock, and what to do next, from data on this device."
+          <>
+            Sales, stock, and what to do next, from data on this device.
+            <React.Suspense fallback={null}>
+              <InsightsRefreshing />
+            </React.Suspense>
+          </>
         }
         title={greeting(new Date().getHours())}
       />
       <PageContent>
-        {insights._tag === "Loading" ? <OverviewLoading /> : null}
-        {insights._tag === "Error" ? (
-          <Alert variant="error">
-            <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>Could not analyze inventory</AlertTitle>
-            <AlertDescription>{insights.message}</AlertDescription>
-          </Alert>
-        ) : null}
-        {insights._tag === "Ready" ? <OverviewBody range={range} report={insights.report} /> : null}
+        <React.Suspense fallback={<OverviewSkeleton />}>
+          <OverviewBody range={range} />
+        </React.Suspense>
       </PageContent>
     </PageLayout>
   );

@@ -10,7 +10,7 @@ export {
   stockPolicyAtom,
   type CommandExecutionState,
 } from "./atoms";
-export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+export { CatalogOpenFailure, StaleCatalogLease, WorkspaceReadFailure } from "./errors";
 export type { InventoryHost, InventoryScope, ReplicaOpenIdentity } from "./host";
 export {
   createAppCatalogLifetime,
@@ -40,6 +40,12 @@ export {
   useInventoryInvoice,
   useInventoryInvoices,
   usePendingRowIds,
+  useSuspenseCatalogCategories,
+  useSuspenseCatalogProduct,
+  useSuspenseCatalogProducts,
+  useSuspenseCatalogStockMovements,
+  useSuspenseInventoryInvoice,
+  useSuspenseInventoryInvoices,
 } from "./queries";
 export {
   matchCatalogProducts,
@@ -51,9 +57,9 @@ export {
 export {
   useInventoryInsights,
   useProductInsight,
-  useProductInsightIndex,
+  useRefreshInventoryInsights,
   useStockPolicy,
-  type InsightsState,
+  type InventoryInsights,
 } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
 export type { Inventory, InventoryActions, InventoryState } from "./types";

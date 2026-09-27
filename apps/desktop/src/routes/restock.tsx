@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
+import { InsightsError } from "@/components/insights/insights-error";
 import { RESTOCK_VIEWS, RestockPage, type RestockView } from "@/components/insights/restock-page";
 import { formValidator } from "@/lib/form-schema";
 import { lenientSearchParam } from "@/lib/search-param";
@@ -14,6 +15,7 @@ const restockSearch = formValidator(
 export const Route = createFileRoute("/restock")({
   validateSearch: restockSearch,
   component: RestockRoute,
+  errorComponent: InsightsError,
   staticData: { breadcrumb: "Restock" },
 });
 

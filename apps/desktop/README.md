@@ -33,6 +33,13 @@ The Overview (`/`) and Restock (`/restock`) pages read one `InsightsReport`
 from `@store/inventory-react`. It re-reads aggregated replica facts after
 commits that touch stock or sales, settled so a sync burst costs one read.
 Planning settings persist per device through `Atom.kvs` over `localStorage`.
+
+Loading is Suspense-based. Routes read replica data with `useSuspense*`
+hooks (TanStack DB `useLiveSuspenseQuery`) and insights with
+`useAtomSuspense`, so first loads show the router's `PageSkeleton` or a
+section skeleton, and failures reach the route `errorComponent`. After the
+first load, background refreshes keep the current report and show a small
+spinner instead of re-suspending.
 The method is documented in `packages/services/src/insights/README.md`.
 
 Low-end devices get a lite rendering path: `public/theme-init.js` marks

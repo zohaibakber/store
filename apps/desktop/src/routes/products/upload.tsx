@@ -15,7 +15,7 @@ import { UploadAttachmentList } from "@/components/uploads/attachment-list";
 import { UploadProvider, useUpload } from "@/components/uploads/context";
 import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
-import { useCatalogCategories, useCatalogProducts } from "@/lib/inventory";
+import { useSuspenseCatalogCategories, useSuspenseCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/upload")({
   component: UploadInvoicesRoute,
@@ -23,13 +23,10 @@ export const Route = createFileRoute("/products/upload")({
 });
 
 function UploadInvoicesRoute() {
-  const products = useCatalogProducts();
-  const categories = useCatalogCategories();
-  if (categories.isError && categories.data.length === 0) {
-    return <p className="p-6 text-sm text-destructive">Could not load inventory.</p>;
-  }
+  const products = useSuspenseCatalogProducts();
+  const categories = useSuspenseCatalogCategories();
   return (
-    <UploadProvider products={products.data} categories={categories.data}>
+    <UploadProvider products={products} categories={categories}>
       <UploadPage />
     </UploadProvider>
   );

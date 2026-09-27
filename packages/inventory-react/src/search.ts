@@ -10,6 +10,8 @@ import {
 import type { StockPolicy, StockStatus } from "@store/services/insights";
 import * as Effect from "effect/Effect";
 
+import { WorkspaceReadFailure } from "./errors";
+
 export const MAX_PRODUCT_SEARCH_RESULTS = 200;
 
 const MAX_SEARCH_QUERY_LENGTH = 120;
@@ -124,11 +126,8 @@ export const matchCatalogProducts = <Product extends SearchableProduct>(
     .map((entry) => entry.product);
 };
 
-type ProductSearchFailure = { readonly message: string };
-
-const searchFailure = (): ProductSearchFailure => ({
-  message: "Could not search products on this device.",
-});
+const searchFailure = () =>
+  new WorkspaceReadFailure({ message: "Could not search products on this device." });
 
 const uniqueProducts = (products: ReadonlyArray<ProductRow>): ReadonlyArray<ProductRow> => [
   ...new Map(products.map((product) => [product.id, product])).values(),
@@ -138,7 +137,7 @@ export const searchCatalogProducts = (
   reader: ReplicaSubsetReader,
   query: string,
   limit: number,
-): Effect.Effect<ReadonlyArray<ProductRow>, ProductSearchFailure> =>
+): Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadFailure> =>
   Effect.forEach(productSearchSpecs(query, limit), (spec) =>
     Effect.tryPromise({ try: () => reader.readSubset(spec), catch: searchFailure }).pipe(
       Effect.flatMap((read) => decodeProductSqliteRows(read.rows)),

@@ -33,7 +33,7 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 
 import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
-import { catalogOpenFailure } from "./errors";
+import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
@@ -98,7 +98,7 @@ const readSyncSnapshot = (replica: ReplicaHandle): Effect.Effect<OutboxSnapshot>
     })),
   );
 
-const workspaceReadFailure = () => ({ message: STORAGE_FAILED });
+const workspaceReadFailure = () => new WorkspaceReadFailure({ message: STORAGE_FAILED });
 
 const workspaceSources = (
   replica: ReplicaHandle,

@@ -1,4 +1,4 @@
-import { Add01Icon, Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product } from "@store/contracts";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -19,41 +19,15 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/shared/page-layout";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useCatalogProducts } from "@/lib/inventory";
+import { useSuspenseCatalogProducts } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/")({
   component: ProductsPage,
 });
 
 function ProductsPage() {
-  const live = useCatalogProducts();
-  if (live.isError && live.data.length === 0) {
-    return <ProductsStatus error message="The catalog could not be loaded." />;
-  }
-  return <ProductsContent products={live.data} />;
-}
-
-function ProductsStatus({ error = false, message }: { error?: boolean; message: string }) {
-  return (
-    <PageLayout contentClassName="gap-4">
-      <PageHeader>
-        <PageHeading>Products</PageHeading>
-      </PageHeader>
-      <PageContent>
-        {error ? (
-          <Alert variant="error">
-            <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>Could not load products</AlertTitle>
-            <AlertDescription>{message}</AlertDescription>
-          </Alert>
-        ) : (
-          <p className="text-sm text-muted-foreground">{message}</p>
-        )}
-      </PageContent>
-    </PageLayout>
-  );
+  return <ProductsContent products={useSuspenseCatalogProducts()} />;
 }
 
 function ProductsContent({ products }: { readonly products: ReadonlyArray<Product> }) {

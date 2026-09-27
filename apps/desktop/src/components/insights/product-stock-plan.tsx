@@ -1,8 +1,10 @@
 import { formatPrice } from "@store/services/format";
 import { serviceLevelFor } from "@store/services/insights";
-import type * as React from "react";
+import * as React from "react";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { FrameCard } from "@/components/shared/frame-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/format";
 import { useProductInsight, useStockPolicy } from "@/lib/inventory";
 
@@ -17,7 +19,7 @@ import {
 } from "./presentation";
 import { StatusBadge } from "./status-badge";
 
-export function ProductStockPlan({ productId }: { readonly productId: string }) {
+function StockPlanCard({ productId }: { readonly productId: string }) {
   const insight = useProductInsight(productId);
   const [policy] = useStockPolicy();
   if (insight === null) return null;
@@ -72,5 +74,15 @@ export function ProductStockPlan({ productId }: { readonly productId: string }) 
         </p>
       ) : null}
     </FrameCard>
+  );
+}
+
+export function ProductStockPlan({ productId }: { readonly productId: string }) {
+  return (
+    <AppErrorBoundary fallback={null}>
+      <React.Suspense fallback={<Skeleton className="h-48 w-full" />}>
+        <StockPlanCard productId={productId} />
+      </React.Suspense>
+    </AppErrorBoundary>
   );
 }

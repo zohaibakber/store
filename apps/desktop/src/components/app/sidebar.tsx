@@ -7,8 +7,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
+import { Suspense } from "react";
 import type * as React from "react";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { WorkspaceLogo } from "@/components/app/workspace-logo";
@@ -26,9 +28,7 @@ import {
 import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
 
 function RestockCountReady() {
-  const insights = useInventoryInsights();
-  if (insights._tag !== "Ready") return null;
-  const { out, critical, low } = insights.report.counts;
+  const { out, critical, low } = useInventoryInsights().report.counts;
   const count = out + critical + low;
   if (count === 0) return null;
   return (
@@ -39,7 +39,14 @@ function RestockCountReady() {
 }
 
 function RestockCount() {
-  return useCatalogIsReady() ? <RestockCountReady /> : null;
+  if (!useCatalogIsReady()) return null;
+  return (
+    <AppErrorBoundary fallback={null}>
+      <Suspense fallback={null}>
+        <RestockCountReady />
+      </Suspense>
+    </AppErrorBoundary>
+  );
 }
 
 const navMain = [

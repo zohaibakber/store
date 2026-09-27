@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useCatalogCategories, useCatalogSuggestions } from "@/lib/inventory";
+import { useCatalogSuggestions, useSuspenseCatalogCategories } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/new")({
   component: NewProductPage,
@@ -10,12 +10,9 @@ export const Route = createFileRoute("/products/new")({
 });
 
 function NewProductPage() {
-  const categories = useCatalogCategories();
+  const categories = useSuspenseCatalogCategories();
   const suggestions = useCatalogSuggestions();
-  if (categories.isError && categories.data.length === 0) {
-    throw new Error("The catalog categories could not be loaded.");
-  }
-  return <NewProductForm categories={categories.data} suggestions={suggestions} />;
+  return <NewProductForm categories={categories} suggestions={suggestions} />;
 }
 
 function NewProductForm({

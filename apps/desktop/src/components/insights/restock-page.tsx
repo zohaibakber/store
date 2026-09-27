@@ -1,4 +1,4 @@
-import { Alert02Icon, Download01Icon, PackageIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Download01Icon, PackageIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatPrice } from "@store/services/format";
 import type { InsightsReport, ProductInsight, StockStatus } from "@store/services/insights";
@@ -7,7 +7,6 @@ import * as React from "react";
 
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardFrame } from "@/components/ui/card";
@@ -29,9 +28,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useInventoryInsights } from "@/lib/inventory";
+import { cn } from "@/lib/utils";
 
 import { buyListCsv, downloadText } from "./buy-list";
-import { InsightsHeader } from "./header";
+import { InsightsHeader, InsightsRefreshing } from "./header";
 import { PlanningSheet } from "./planning-sheet";
 import {
   describeDemand,
@@ -214,6 +214,93 @@ function RestockTable({
 const countIn = (report: InsightsReport, view: RestockView) =>
   report.products.filter(inView(view)).length;
 
+const EXPORT_LABEL = (
+  <>
+    <HugeiconsIcon aria-hidden="true" icon={Download01Icon} />
+    Export
+  </>
+);
+
+function ExportButton() {
+  const { report } = useInventoryInsights();
+  return (
+    <Button
+      disabled={report.inventory.reorderCount === 0}
+      onClick={() =>
+        downloadText("buy-list.csv", buyListCsv(report.products), "text/csv;charset=utf-8")
+      }
+      variant="outline"
+    >
+      {EXPORT_LABEL}
+    </Button>
+  );
+}
+
+function RestockSummary() {
+  const { report } = useInventoryInsights();
+  const orders = report.inventory.reorderCount;
+  if (orders === 0) return "Nothing needs ordering right now.";
+  const cost =
+    report.inventory.reorderCost > 0 ? ` · about ${formatPrice(report.inventory.reorderCost)}` : "";
+  return `${formatCount(orders)} ${orders === 1 ? "product" : "products"} to order${cost}.`;
+}
+
+function RestockBody({
+  view,
+  onViewChange,
+}: {
+  readonly view: RestockView;
+  readonly onViewChange: (view: RestockView) => void;
+}) {
+  const { report } = useInventoryInsights();
+  const [query, setQuery] = React.useState("");
+  const deferredQuery = React.useDeferredValue(query);
+  const filtering = query !== deferredQuery;
+  return (
+    <>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="overflow-x-auto">
+          <SegmentedRadio
+            label="Stock view"
+            onValueChange={onViewChange}
+            options={RESTOCK_VIEWS.map((value) => ({
+              value,
+              label: (
+                <>
+                  {VIEW_LABEL[value]}
+                  <Badge variant="outline">{formatCount(countIn(report, value))}</Badge>
+                </>
+              ),
+            }))}
+            value={view}
+          />
+        </div>
+        <InputGroup className="md:max-w-64">
+          <InputGroupInput
+            aria-label="Search products"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search products…"
+            type="search"
+            value={query}
+          />
+          <InputGroupAddon>
+            <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
+          </InputGroupAddon>
+        </InputGroup>
+      </div>
+      <div aria-busy={filtering} className={cn("transition-opacity", filtering && "opacity-60")}>
+        <RestockTable key={view} query={deferredQuery} report={report} view={view} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Forecasts use each product's last 90 days on this device. Reorder points add safety stock
+        for a {Math.round(report.policy.serviceLevel * 1000) / 10}% service level over a{" "}
+        {report.policy.leadDays}-day lead time; orders cover {report.policy.coverDays} more days.
+        Check open supplier orders before buying.
+      </p>
+    </>
+  );
+}
+
 export function RestockPage({
   view,
   onViewChange,
@@ -221,93 +308,41 @@ export function RestockPage({
   readonly view: RestockView;
   readonly onViewChange: (view: RestockView) => void;
 }) {
-  const insights = useInventoryInsights();
-  const [query, setQuery] = React.useState("");
-  const deferredQuery = React.useDeferredValue(query);
-  const report = insights._tag === "Ready" ? insights.report : null;
-  const orders = report?.inventory.reorderCount ?? 0;
   return (
     <PageLayout contentClassName="max-w-6xl gap-4">
       <InsightsHeader
         actions={
           <>
-            <Button
-              disabled={orders === 0}
-              onClick={() =>
-                report &&
-                downloadText("buy-list.csv", buyListCsv(report.products), "text/csv;charset=utf-8")
+            <React.Suspense
+              fallback={
+                <Button disabled variant="outline">
+                  {EXPORT_LABEL}
+                </Button>
               }
-              variant="outline"
             >
-              <HugeiconsIcon aria-hidden="true" icon={Download01Icon} />
-              Export
-            </Button>
+              <ExportButton />
+            </React.Suspense>
             <PlanningSheet />
           </>
         }
         description={
-          report === null
-            ? "Reorder points and order sizes from your sales and stock."
-            : orders === 0
-              ? "Nothing needs ordering right now."
-              : `${formatCount(orders)} ${orders === 1 ? "product" : "products"} to order${
-                  report.inventory.reorderCost > 0
-                    ? ` · about ${formatPrice(report.inventory.reorderCost)}`
-                    : ""
-                }.`
+          <React.Suspense fallback="Reorder points and order sizes from your sales and stock.">
+            <RestockSummary />
+            <InsightsRefreshing />
+          </React.Suspense>
         }
         title="Restock"
       />
       <PageContent>
-        {insights._tag === "Error" ? (
-          <Alert variant="error">
-            <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>Could not analyze inventory</AlertTitle>
-            <AlertDescription>{insights.message}</AlertDescription>
-          </Alert>
-        ) : null}
-        {insights._tag === "Loading" ? <Skeleton className="h-96 w-full" /> : null}
-        {report === null ? null : (
-          <>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="overflow-x-auto">
-                <SegmentedRadio
-                  label="Stock view"
-                  onValueChange={onViewChange}
-                  options={RESTOCK_VIEWS.map((value) => ({
-                    value,
-                    label: (
-                      <>
-                        {VIEW_LABEL[value]}
-                        <Badge variant="outline">{formatCount(countIn(report, value))}</Badge>
-                      </>
-                    ),
-                  }))}
-                  value={view}
-                />
-              </div>
-              <InputGroup className="md:max-w-64">
-                <InputGroupInput
-                  aria-label="Search products"
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search products…"
-                  type="search"
-                  value={query}
-                />
-                <InputGroupAddon>
-                  <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
-                </InputGroupAddon>
-              </InputGroup>
+        <React.Suspense
+          fallback={
+            <div aria-busy="true" aria-label="Loading restock plan">
+              <Skeleton className="h-96 w-full" />
             </div>
-            <RestockTable key={view} query={deferredQuery} report={report} view={view} />
-            <p className="text-xs text-muted-foreground">
-              Forecasts use each product's last 90 days on this device. Reorder points add safety
-              stock for a {Math.round(report.policy.serviceLevel * 1000) / 10}% service level over a{" "}
-              {report.policy.leadDays}-day lead time; orders cover {report.policy.coverDays} more
-              days. Check open supplier orders before buying.
-            </p>
-          </>
-        )}
+          }
+        >
+          <RestockBody onViewChange={onViewChange} view={view} />
+        </React.Suspense>
       </PageContent>
     </PageLayout>
   );

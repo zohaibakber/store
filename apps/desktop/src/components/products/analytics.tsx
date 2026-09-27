@@ -2,8 +2,9 @@ import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import type { RestockView } from "@/components/insights/restock-page";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -77,27 +78,46 @@ function StockTile({
   );
 }
 
-export function ProductAnalytics() {
-  const insights = useInventoryInsights();
-  const report = insights._tag === "Ready" ? insights.report : null;
-  const counts = report?.counts;
+function StockTiles() {
+  const { report } = useInventoryInsights();
+  const { counts } = report;
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
-      <StockTile label="Out of stock" tone="error" value={counts?.out ?? null} view="out" />
+    <>
+      <StockTile label="Out of stock" tone="error" value={counts.out} view="out" />
       <StockTile
         label="Running low"
         tone="warning"
-        value={counts ? counts.critical + counts.low : null}
+        value={counts.critical + counts.low}
         view="action"
       />
-      <StockTile label="Not selling" tone="none" value={counts?.dead ?? null} view="dead" />
-      <StockTile
-        label="Overstocked"
-        tone="none"
-        value={counts?.overstock ?? null}
-        view="overstock"
-      />
-      <PrivateStockValue value={report ? formatPrice(report.inventory.valueAtCost) : "—"} />
+      <StockTile label="Not selling" tone="none" value={counts.dead} view="dead" />
+      <StockTile label="Overstocked" tone="none" value={counts.overstock} view="overstock" />
+      <PrivateStockValue value={formatPrice(report.inventory.valueAtCost)} />
+    </>
+  );
+}
+
+const PENDING_TILES = (
+  <>
+    <StockTile label="Out of stock" tone="none" value={null} view="out" />
+    <StockTile label="Running low" tone="none" value={null} view="action" />
+    <StockTile label="Not selling" tone="none" value={null} view="dead" />
+    <StockTile label="Overstocked" tone="none" value={null} view="overstock" />
+    <PrivateStockValue value="—" />
+  </>
+);
+
+export function ProductAnalytics() {
+  return (
+    <div
+      aria-live="polite"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5"
+    >
+      <AppErrorBoundary fallback={PENDING_TILES}>
+        <Suspense fallback={PENDING_TILES}>
+          <StockTiles />
+        </Suspense>
+      </AppErrorBoundary>
     </div>
   );
 }
