@@ -135,17 +135,6 @@ export const session = sqliteTable(
   ],
 );
 
-/**
- * Login, OTP, invitation, and Google identity throttles. One statement both
- * counts and decides, because D1 has no transactions and KV get-then-put
- * races. `expiresAt` is milliseconds, matching `Clock.currentTimeMillis`.
- */
-export const rateLimit = sqliteTable("auth_rate_limit", {
-  key: text().primaryKey(),
-  count: integer().notNull(),
-  expiresAt: integer().notNull(),
-});
-
 export const inventoryDatasetRelease = sqliteTable("inventory_dataset_release", {
   id: text().primaryKey(),
   status: text({ enum: ["staged", "active", "retired"] }).notNull(),
@@ -182,3 +171,15 @@ export const inventoryActiveRelease = sqliteTable("inventory_active_release", {
     .references(() => inventoryDatasetRelease.id),
   activatedAt: timestamp().default(nowDefault).notNull(),
 });
+
+export const ephemeralRecord = sqliteTable(
+  "auth_ephemeral_record",
+  {
+    key: text().primaryKey(),
+    kind: text({ enum: ["otp", "oauth-state", "authorization"] }).notNull(),
+    payload: text().notNull(),
+    expiresAt: integer().notNull(),
+    createdAt: integer().notNull(),
+  },
+  (table) => [index("auth_ephemeral_record_expiry_idx").on(table.expiresAt)],
+);

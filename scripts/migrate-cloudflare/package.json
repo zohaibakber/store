@@ -9,20 +9,21 @@
     "test": "vitest run --root ../.. scripts/migrate-cloudflare/test"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/sql-sqlite-node": "catalog:",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
-    "better-sqlite3": "^12.4.1",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
+    "nanoid": "^6.0.1",
     "pg": "^8.23.0",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.5.1",
-    "@types/pg": "^8.15.5",
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
     "typescript": "catalog:",
-    "vitest": "4.1.11"
+    "vitest": "5.0.1"
   }
 }

@@ -8,17 +8,17 @@
     "test": "vitest run --root ../.. apps/auth/test"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.0-rc.111",
+    "@effect/sql-d1": "catalog:",
     "@store/auth": "workspace:*",
     "@store/db": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260827.1",
-    "@types/node": "^26.2.0",
+    "@cloudflare/workers-types": "^5.20260923.1",
+    "@types/node": "^26.6.2",
     "alchemy": "catalog:",
     "typescript": "catalog:",
-    "vitest": "4.1.11"
+    "vitest": "5.0.1"
   }
 }

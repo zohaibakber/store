@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bundles = [
-  { name: "inventory", migrations: "migrations/inventory", out: "src/inventory/migrations.gen.ts" },
   { name: "replica", migrations: "migrations/replica", out: "src/replica/migrations.gen.ts" },
 ];
 

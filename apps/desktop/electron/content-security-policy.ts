@@ -11,9 +11,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
 }) => {
   const scriptSources = [
     "'self'",
-    "'wasm-unsafe-eval'",
     ...(input.development ? ["'unsafe-eval'", "'unsafe-inline'"] : []),
-    "https://challenges.cloudflare.com",
   ];
   const connectSources = [
     "'self'",
@@ -32,8 +30,8 @@ export const makeDesktopContentSecurityPolicy = (input: {
     `img-src 'self' ${input.scheme}: data: blob: https:`,
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
-    "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    "worker-src 'self'",
+    "frame-src 'self'",
     "form-action 'self'",
     "object-src 'none'",
     "base-uri 'self'",

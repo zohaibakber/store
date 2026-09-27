@@ -3,8 +3,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { InvitationToken } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import * as React from "react";
-import * as z from "zod";
 
 import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -12,17 +12,26 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
+import { formValidator } from "@/lib/form-schema";
 import { useLinkedInvitation, useOrganization } from "@/lib/organization";
 
-const acceptSchema = z.object({
-  token: z.string().trim().min(8, "Paste the invitation you were sent."),
-});
+const acceptSchema = formValidator(
+  Schema.Struct({
+    token: Schema.Trim.check(
+      Schema.isMinLength(8, { message: "Paste the invitation you were sent." }),
+    ),
+  }),
+);
 
 const redeemable = (pasted: string) => {
   const trimmed = pasted.trim();
-  const marker = trimmed.indexOf("invitation=");
-  if (marker < 0) return trimmed;
-  return decodeURIComponent(trimmed.slice(marker + "invitation=".length).split("&")[0] ?? "");
+  const query = trimmed.includes("?")
+    ? trimmed.slice(trimmed.indexOf("?") + 1)
+    : trimmed.includes("invitation=")
+      ? trimmed
+      : null;
+  if (query === null) return trimmed;
+  return new URLSearchParams(query).get("invitation") ?? trimmed;
 };
 
 export function AcceptInvitationCard() {

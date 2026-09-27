@@ -23,66 +23,56 @@ const sqliteBooleanFields = (row: SqliteResultRow, keys: ReadonlyArray<string>) 
   );
 };
 
-const decodeRow = <A>(
+const rowInvalid =
+  (source: InventoryCollectionSource) =>
+  (error: Schema.SchemaError): ReplicaRowInvalid =>
+    new ReplicaRowInvalid({
+      message: error.message,
+      source,
+    });
+
+const decodeSqliteRow = <A>(
   source: InventoryCollectionSource,
-  decode: () => A,
+  schema: Schema.Decoder<A>,
+  row: SqliteResultRow,
+  booleanFields: ReadonlyArray<string>,
 ): Effect.Effect<A, ReplicaRowInvalid> =>
-  Effect.try({
-    try: decode,
-    catch: (cause) =>
-      new ReplicaRowInvalid({
-        message: cause instanceof Error ? cause.message : "Replica row is invalid.",
-        source,
-      }),
-  });
+  Schema.decodeUnknownEffect(schema)(sqliteBooleanFields(row, booleanFields)).pipe(
+    Effect.mapError(rowInvalid(source)),
+  );
 
 export const decodeCategorySqliteRow = (
   row: SqliteResultRow,
 ): Effect.Effect<CategoryRow, ReplicaRowInvalid> =>
-  decodeRow("categories", () =>
-    Schema.decodeUnknownSync(CategoryRow)(sqliteBooleanFields(row, ["tracksPacks"])),
-  );
+  decodeSqliteRow("categories", CategoryRow, row, ["tracksPacks"]);
 
 export const decodeProductSqliteRow = (
   row: SqliteResultRow,
 ): Effect.Effect<ProductRow, ReplicaRowInvalid> =>
-  decodeRow("products", () =>
-    Schema.decodeUnknownSync(ProductRow)(sqliteBooleanFields(row, ["visible"])),
-  );
+  decodeSqliteRow("products", ProductRow, row, ["visible"]);
 
 export const decodeBatchSqliteRow = (
   row: SqliteResultRow,
-): Effect.Effect<BatchRow, ReplicaRowInvalid> =>
-  decodeRow("batches", () => Schema.decodeUnknownSync(BatchRow)(sqliteBooleanFields(row, [])));
+): Effect.Effect<BatchRow, ReplicaRowInvalid> => decodeSqliteRow("batches", BatchRow, row, []);
 
 export const decodeInvoiceSqliteRow = (
   row: SqliteResultRow,
-): Effect.Effect<InvoiceRow, ReplicaRowInvalid> =>
-  decodeRow("invoices", () => Schema.decodeUnknownSync(InvoiceRow)(sqliteBooleanFields(row, [])));
+): Effect.Effect<InvoiceRow, ReplicaRowInvalid> => decodeSqliteRow("invoices", InvoiceRow, row, []);
 
 export const decodeInvoiceItemSqliteRow = (
   row: SqliteResultRow,
 ): Effect.Effect<InvoiceItemRow, ReplicaRowInvalid> =>
-  decodeRow("invoiceItems", () =>
-    Schema.decodeUnknownSync(InvoiceItemRow)(sqliteBooleanFields(row, [])),
-  );
+  decodeSqliteRow("invoiceItems", InvoiceItemRow, row, []);
 
 export const decodeStockMovementSqliteRow = (
   row: SqliteResultRow,
 ): Effect.Effect<StockMovementRow, ReplicaRowInvalid> =>
-  decodeRow("stockMovements", () =>
-    Schema.decodeUnknownSync(StockMovementRow)(sqliteBooleanFields(row, [])),
-  );
+  decodeSqliteRow("stockMovements", StockMovementRow, row, []);
 
 const decodeAll = <Row>(
   rows: ReadonlyArray<SqliteResultRow>,
   decodeOne: (row: SqliteResultRow) => Effect.Effect<Row, ReplicaRowInvalid>,
-): Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid> =>
-  Effect.gen(function* () {
-    const decoded: Array<Row> = [];
-    for (const row of rows) decoded.push(yield* decodeOne(row));
-    return decoded;
-  });
+): Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid> => Effect.forEach(rows, decodeOne);
 
 export const decodeCategorySqliteRows = (
   rows: ReadonlyArray<SqliteResultRow>,

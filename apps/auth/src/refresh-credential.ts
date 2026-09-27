@@ -6,12 +6,6 @@ export type ResolvedRefresh = {
   readonly refreshToken: typeof RefreshToken.Type;
 };
 
-/**
- * Body refresh is Native even if a leftover cookie is present, so Electron
- * still receives the new refresh token in JSON. Cookie-only refresh stays
- * Browser and keeps the HttpOnly cookie. Packaging follows the secret that
- * was actually consumed.
- */
 export const resolveRefreshCredential = (input: {
   readonly cookie: string | undefined;
   readonly bodyToken: typeof RefreshToken.Type | undefined;

@@ -1,11 +1,15 @@
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type {
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
 } from "@store/auth";
 import { useSearch } from "@tanstack/react-router";
+import { Effect } from "effect";
+import * as Schema from "effect/Schema";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
-import * as z from "zod";
 
 import { toastManager } from "@/components/ui/toast";
 import { authSession } from "@/lib/auth";
@@ -27,10 +31,15 @@ export const invitationHandoff = (token: string) => {
     : { kind: "token" as const, value: token };
 };
 
-const linkedInvitation = z.object({ invitation: z.string().default("") }).catch({ invitation: "" });
+const LinkedInvitation = Schema.Struct({
+  invitation: Schema.optionalKey(Schema.String),
+});
 
-export const useLinkedInvitation = () =>
-  linkedInvitation.parse(useSearch({ strict: false })).invitation;
+export const useLinkedInvitation = () => {
+  const search = useSearch({ strict: false });
+  const decoded = Schema.decodeUnknownOption(LinkedInvitation)(search);
+  return decoded._tag === "Some" ? (decoded.value.invitation ?? "") : "";
+};
 
 export async function copyInvitation(token: string) {
   const handoff = invitationHandoff(token);
@@ -69,46 +78,49 @@ const OrganizationContext = React.createContext<{
 const movesTheSession = (result: OrganizationCommandResult) =>
   result._tag === "Updated" || result._tag === "Joined";
 
+const organizationRosterAtom = Atom.make(
+  Effect.tryPromise({
+    try: () => authSession().organizationRoster(),
+    catch: (cause) => storeErrorMessage(cause, "Couldn't load the organization."),
+  }),
+);
+
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
-  const [roster, setRoster] = React.useState<OrganizationRoster | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
+  const result = useAtomValue(organizationRosterAtom);
+  const refresh = useAtomRefresh(organizationRosterAtom);
 
-  const reload = React.useCallback(
-    () =>
-      authSession()
-        .organizationRoster()
-        .then(
-          (next) => {
-            setRoster(next);
-            setError(null);
-          },
-          (cause: unknown) => setError(storeErrorMessage(cause, "Couldn't load the organization.")),
-        ),
-    [],
-  );
-
-  React.useEffect(() => {
-    void reload();
-  }, [reload]);
+  const reload = React.useCallback(async () => {
+    refresh();
+  }, [refresh]);
 
   const organize = React.useCallback(
     async (command: OrganizationCommand) => {
       try {
-        const result = await authSession().organize(command);
-        if (movesTheSession(result)) await authSession().renewSession();
-        await reload();
-        return result;
+        const commandResult = await authSession().organize(command);
+        if (movesTheSession(commandResult)) await authSession().renewSession();
+        refresh();
+        return commandResult;
       } catch (cause) {
         toastStoreError(cause);
         return null;
       }
     },
-    [reload],
+    [refresh],
   );
 
+  const state: OrganizationState = AsyncResult.matchWithError(result, {
+    onInitial: () => ({ roster: null, error: null }),
+    onSuccess: (success) => ({ roster: success.value, error: null }),
+    onError: (error) => ({ roster: null, error }),
+    onDefect: (defect) => ({
+      roster: null,
+      error: storeErrorMessage(defect, "Couldn't load the organization."),
+    }),
+  });
+
   const value = React.useMemo(
-    () => ({ state: { roster, error }, actions: { reload, organize } }),
-    [roster, error, reload, organize],
+    () => ({ state, actions: { reload, organize } }),
+    [state, reload, organize],
   );
 
   return <OrganizationContext value={value}>{children}</OrganizationContext>;

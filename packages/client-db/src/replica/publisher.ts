@@ -1,3 +1,9 @@
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as PubSub from "effect/PubSub";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+
 import type { ReplicaChangeFeed, ReplicaChangeUnsubscribe, ReplicaCommitNotice } from "./types";
 
 export type ReplicaCommitPublisher = ReplicaChangeFeed & {
@@ -6,24 +12,32 @@ export type ReplicaCommitPublisher = ReplicaChangeFeed & {
 };
 
 export const createReplicaCommitPublisher = (): ReplicaCommitPublisher => {
-  const listeners = new Set<(notice: ReplicaCommitNotice) => void>();
-  let open = true;
+  const hub = Effect.runSync(PubSub.unbounded<ReplicaCommitNotice>());
 
   return {
     subscribe: (listener: (notice: ReplicaCommitNotice) => void): ReplicaChangeUnsubscribe => {
-      if (!open) return () => undefined;
-      listeners.add(listener);
+      if (PubSub.isShutdownUnsafe(hub)) return () => undefined;
+      const scope = Effect.runSync(Scope.make());
+      Effect.runSync(
+        PubSub.subscribe(hub).pipe(
+          Effect.flatMap((subscription) =>
+            Stream.fromSubscription(subscription).pipe(
+              Stream.runForEach((notice) => Effect.sync(() => listener(notice))),
+              Effect.forkScoped,
+            ),
+          ),
+          Scope.provide(scope),
+        ),
+      );
       return () => {
-        listeners.delete(listener);
+        void Effect.runPromise(Scope.close(scope, Exit.void));
       };
     },
     publish: (notice: ReplicaCommitNotice): void => {
-      if (!open) return;
-      for (const listener of listeners) listener(notice);
+      PubSub.publishUnsafe(hub, notice);
     },
     dispose: (): void => {
-      open = false;
-      listeners.clear();
+      Effect.runSync(PubSub.shutdown(hub));
     },
   };
 };

@@ -8,8 +8,7 @@ IDs and lifecycle rules through the API, Electron main process, React renderer,
 Android app, synchronization, deployment config, and CSP.
 
 First-party auth owns those concerns now. An authenticated organization ID
-still scopes the same Postgres rows, PowerSync streams, and local replica on
-every client.
+still scopes the same Postgres rows and local replica on every client.
 
 ## Usage (caller's view)
 
@@ -106,7 +105,7 @@ The host owns secure token storage. Electron uses `safeStorage`, Android uses
 Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
 browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
-scope for Postgres mutations and PowerSync streams. TanStack DB owns each
+scope for Postgres mutations and replica sync. TanStack DB owns each
 client's persisted inventory collections independently of the auth lifecycle.
 
 ## Shape
@@ -166,7 +165,7 @@ interface AccessClaims {
 }
 ```
 
-Schemas decode every HTTP, D1, KV, OAuth, and JWT boundary. Branded values stop
+Schemas decode every HTTP, D1, OAuth, and JWT boundary. Branded values stop
 session IDs, user IDs, and secrets from being mixed. Tagged unions make the
 identifier-first and credential flows exhaustive.
 
@@ -214,18 +213,25 @@ encode.
 - A refresh token is `sessionId.secret`. D1 stores only SHA-256 of the secret.
   Rotation consumes the current session and creates its replacement in one D1
   batch. Reuse revokes the token family.
-- KV owns OTP challenges, OAuth state, short-lived authorization codes, and
-  rate-limit buckets. Each value is single-purpose and expires. A stale KV read
-  cannot grant a long-lived session because challenge secrets and PKCE are still
-  checked, and D1 creates the authoritative refresh session.
+- D1 `auth_ephemeral_record` owns OTP challenges, OAuth state, and
+  short-lived authorization codes. The row key is a peppered SHA-256 of the
+  record kind and identifier (for an OTP, challenge ID plus code), so D1 never
+  holds a usable code. Consumption is one
+  `DELETE ... WHERE key = ? AND kind = ? AND expiresAt > ? RETURNING payload`
+  statement. D1 serializes writes, so concurrent consumers of the same record
+  get exactly one row. Every insert shares a batch with a bounded sweep of
+  expired rows. Payloads are JSON encoded and decoded through Effect Schema.
+- Login, OTP, registration, Google identity, and invitation attempts use the
+  same Cloudflare Workers rate-limit bindings as the API worker. Counters are
+  per location and the window is 10 or 60 seconds.
 - Access tokens are short-lived ES256 JWTs. The auth Worker signs with a private
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
 - A new user gets one organization in the same D1 batch. The organization ID
-  directly scopes inventory rows and PowerSync streams.
+  directly scopes inventory rows and replica sync.
 - Postgres is the authoritative inventory database. Authenticated
-  `/api/inventory/*` requests write to Postgres. PowerSync validates the same
-  JWT and filters every TanStack DB stream by its signed organization claim.
+  `/api/sync/*` requests write to Postgres. The API validates the same JWT and
+  filters every replica stream by its signed organization claim.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in
   platform secure storage.
@@ -241,19 +247,22 @@ encode.
 ```text
 packages/auth/src/
   model.ts             branded schemas and tagged login/token variants
-  jwt.ts               ES256 issue and verify
+  jwt.ts               ES256 issue/verify and public JWKS document
   password.ts          password policy and PBKDF2 adapter
-  client.ts            Effect AuthClient and fetch transport
+  http-api.ts          AuthHttpApi groups (system / session / organization)
+  http-errors.ts       public HTTP error schemas shared by Worker and client
+  client.ts            Effect AuthClient over HttpApiClient
   email.ts             EmailProvider contract and development layer
   security.ts          origins and native schemes
 
 apps/auth/
-  infra.ts             auth.<domain> Worker, D1, KV, secrets
-  src/service.ts       complete authentication transitions
+  infra.ts             auth.<domain> Worker, D1, secrets
+  src/service.ts       AuthService layer composing login/session/google/org ops
+  src/crypto.ts        peppered hashes, OTP, refresh token parsing
   src/repository.ts    D1 authority
-  src/ephemeral.ts     expiring KV records
+  src/ephemeral.ts     single-use expiring D1 records
   src/google.ts        Google OAuth adapter
-  src/http.ts          route decoding and response policy
+  src/http.ts          HttpApiBuilder handlers and cookie/CORS policy
 
 apps/server/
   src/auth/session.ts  local public-key JWT verification and workspace projection
@@ -281,7 +290,7 @@ would have timing-dependent behavior.
 ### Candidate C: short JWT access plus authoritative D1 refresh session
 
 The API verifies short access JWTs locally. D1 serializes refresh rotation and
-revocation. KV carries only short-lived, single-purpose challenges. This keeps
+revocation, and consumes short-lived, single-purpose challenges. This keeps
 the API independent, permits bounded offline use, and preserves server-side
 session control. Its implementation has more cryptographic and storage code,
 but callers see less of it.

@@ -8,6 +8,7 @@ export {
   useCatalogProducts,
   useCatalogStockMovements,
   useCatalogSuggestions,
+  useCommandExecution,
   useInventoryActions,
   useInventoryDashboardAnalytics,
   useInventoryInvoice,

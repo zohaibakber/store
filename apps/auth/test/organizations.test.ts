@@ -6,6 +6,7 @@ import {
   OrganizationSlug,
   type OrganizationCommand,
 } from "@store/auth";
+import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -21,7 +22,7 @@ import {
 
 type Api = ReturnType<typeof AuthService.of>;
 
-const run = <A, E>(instance: Harness, use: (auth: Api) => Effect.Effect<A, E>) =>
+const run = <A, E>(instance: Harness, use: (auth: Api) => Effect.Effect<A, E, RuntimeContext>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const auth = yield* AuthService;

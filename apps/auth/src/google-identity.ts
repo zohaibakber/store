@@ -12,6 +12,7 @@ import { AUTHORIZATION_TTL_MS, OAUTH_STATE_TTL_MS, safeEqual, sha256 } from "./c
 import type { EphemeralStoreApi } from "./ephemeral";
 import { authError } from "./errors";
 import type { GoogleOAuthApi, GoogleProfile } from "./google";
+import { enforceAuthLimit, type AuthLimits } from "./limits";
 import type { AuthRepositoryApi, UserRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
 
@@ -30,18 +31,8 @@ export const makeGoogleIdentityOps = (
   google: GoogleOAuthApi,
   sessions: Pick<SessionOps, "issueSession">,
   configuration: GoogleIdentityConfiguration,
+  limits: AuthLimits,
 ) => {
-  /**
-   * One Google identity, one Tabaaq user, however the identity arrived.
-   *
-   * The address arrives verified by Google, so it outranks a password
-   * account nobody has ever verified: signing up with someone else's
-   * address must not leave an attacker holding a credential on the real
-   * owner's account, so the claim strips the password and revokes every
-   * session opened with it. An account whose address *is* verified keeps
-   * its password, and linking Google to it needs a deliberate act from
-   * inside that session rather than an implicit merge here.
-   */
   const linkGoogleUser = Effect.fn("Auth.Google.linkGoogleUser")(function* (
     profile: GoogleProfile,
   ) {
@@ -150,14 +141,9 @@ export const makeGoogleIdentityOps = (
     return yield* sessions.issueSession(user, grant.client, `oauth-${input.code}`);
   });
 
-  /**
-   * Native clients present Google's own account picker, so there is no
-   * redirect to protect with PKCE: the ID token itself is the proof.
-   */
   const exchangeGoogleIdToken = Effect.fn("Auth.Google.exchangeGoogleIdToken")(function* (
     input: ExchangeGoogleIdTokenInput,
   ) {
-    const now = yield* Clock.currentTimeMillis;
     const profile = yield* google
       .verifyIdToken(input.idToken)
       .pipe(
@@ -165,15 +151,11 @@ export const makeGoogleIdentityOps = (
           authError(401, "INVALID_GOOGLE_IDENTITY", "Google sign-in could not be verified."),
         ),
       );
-    const allowed = yield* repository.allowRateLimit({
-      key: `google-identity:${profile.providerAccountId}`,
-      limit: 10,
-      windowSeconds: 60,
-      now,
-    });
-    if (!allowed) {
-      return yield* authError(429, "RATE_LIMITED", "Wait before trying again.");
-    }
+    yield* enforceAuthLimit(
+      limits.tenPerMinute,
+      `google-identity:${profile.providerAccountId}`,
+      "Wait before trying again.",
+    );
     const user = yield* linkGoogleUser(profile);
     return yield* sessions.issueSession(user, input.client);
   });

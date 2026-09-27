@@ -3,9 +3,9 @@ const { statSync } = require("node:fs");
 const path = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
-// Live inventory is the organization-object replica: wa-sqlite in a dedicated
-// worker (IndexedDB VFS) plus replica SQL migrations in the renderer. OPFS
-// worker assets stay banned because this build has not switched to the OPFS VFS.
+// Live inventory uses IndexedDB on web and node:sqlite through
+// @effect/sql-sqlite-node in the Electron replica worker. No native SQLite
+// addon may ship, and OPFS/WASM SQLite worker assets stay out of the renderer.
 const MAX_ASAR_BYTES = 80 * 1024 * 1024;
 
 const forbiddenPackageRoots = new Set([
@@ -20,6 +20,8 @@ const forbiddenPackageRoots = new Set([
   "kysely",
   "pg",
   "wrangler",
+  "better-sqlite3",
+  "@effect/sql-sqlite-node",
 ]);
 
 // Shared catalog index names also live in replica SQL, which the renderer must
@@ -32,7 +34,12 @@ const forbiddenRendererMarkers = [
   "snapshot_jobs",
   "invoice_counters",
   "drizzle-orm",
+  "wa-sqlite",
+  "sql-sqlite-wasm",
+  "OpfsWorker",
 ];
+
+const forbiddenRendererReplicaSqlMarkers = ['SELECT * FROM "'];
 
 const forbiddenServerMarkers = [
   "ORGANIZATION_STORE",
@@ -111,6 +118,28 @@ const verifyDesktopAsar = (archivePath) => {
     fail("browser OPFS persistence reached the desktop artifact", browserPersistenceAssets);
   }
 
+  const nativeSqliteAddons = entries.filter(
+    (entry) => entry.endsWith(".node") && /sqlite/iu.test(entry),
+  );
+  if (nativeSqliteAddons.length > 0) {
+    fail("a native SQLite addon reached the desktop artifact", nativeSqliteAddons);
+  }
+
+  const nativeAddons = entries.filter((entry) => entry.endsWith(".node"));
+  if (nativeAddons.length > 0) {
+    fail("a native node addon reached the desktop artifact", nativeAddons);
+  }
+
+  const wasmSqliteAssets = entries.filter(
+    (entry) =>
+      /wa-sqlite/u.test(entry) ||
+      /sql-sqlite-wasm/u.test(entry) ||
+      /replica-sqlite\.worker/u.test(entry),
+  );
+  if (wasmSqliteAssets.length > 0) {
+    fail("SQLite WASM / OPFS worker assets reached the desktop artifact", wasmSqliteAssets);
+  }
+
   const forbiddenPackages = [...packageRoots].filter(
     (root) =>
       root.startsWith("@store/") ||
@@ -129,6 +158,7 @@ const verifyDesktopAsar = (archivePath) => {
     "/dist/index.html",
     "/dist-electron/main.js",
     "/dist-electron/preload.cjs",
+    "/dist-electron/replica-worker.js",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));
@@ -140,14 +170,21 @@ const verifyDesktopAsar = (archivePath) => {
     (entry) => entry.startsWith("/dist/assets/") && entry.endsWith(".js"),
   );
   const rendererLeaks = [];
+  const rendererSqlLeaks = [];
   for (const entry of rendererEntries) {
     const source = extractFile(archivePath, rawByPosix.get(entry).slice(1)).toString("utf8");
     for (const marker of forbiddenRendererMarkers) {
       if (source.includes(marker)) rendererLeaks.push(`${entry}: ${marker}`);
     }
+    for (const marker of forbiddenRendererReplicaSqlMarkers) {
+      if (source.includes(marker)) rendererSqlLeaks.push(`${entry}: ${marker}`);
+    }
   }
   if (rendererLeaks.length > 0) {
     fail("inventory authority or ORM code reached the renderer bundle", rendererLeaks);
+  }
+  if (rendererSqlLeaks.length > 0) {
+    fail("replica subset SQL reached the renderer bundle", rendererSqlLeaks);
   }
 
   const desktopJavaScriptEntries = entries.filter(
@@ -200,6 +237,7 @@ const afterPack = async (context) => {
 module.exports = afterPack;
 module.exports.verifyDesktopAsar = verifyDesktopAsar;
 module.exports.forbiddenRendererMarkers = forbiddenRendererMarkers;
+module.exports.forbiddenRendererReplicaSqlMarkers = forbiddenRendererReplicaSqlMarkers;
 
 if (require.main === module) {
   const archivePath = process.argv[2];

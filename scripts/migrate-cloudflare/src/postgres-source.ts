@@ -22,7 +22,7 @@ const decodeDatabaseNameRows = Schema.decodeUnknownEffect(DatabaseNameRows);
 const Integerish = Schema.Union([Schema.Number, Schema.NumberFromString]);
 
 export const PostgresSourceConfig = Schema.Struct({
-  connectionString: Schema.String.check(Schema.isMinLength(1)),
+  connectionString: Schema.NonEmptyString,
 });
 export interface PostgresSourceConfig extends Schema.Schema.Type<typeof PostgresSourceConfig> {}
 

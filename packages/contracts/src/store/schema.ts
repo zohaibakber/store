@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
+import { PositiveInt, SyncIdentifier } from "../schema-primitives";
 
 const mutableEntityFields = {
   organizationId: Schema.String,
@@ -34,9 +35,6 @@ export const UpdateCategoryInput = Schema.Struct({
 });
 export type UpdateCategoryInput = typeof UpdateCategoryInput.Type;
 
-export const CategoryIdInput = Schema.Struct({ id: CategoryId });
-export type CategoryIdInput = typeof CategoryIdInput.Type;
-
 export const Batch = Schema.Struct({
   id: BatchId,
   productId: ProductId,
@@ -58,9 +56,6 @@ const createBatchFields = {
 export const CreateBatchInput = Schema.Struct(createBatchFields);
 export type CreateBatchInput = typeof CreateBatchInput.Type;
 
-// Quantities are optional: leaving them out edits the batch's details alone,
-// while sending them corrects the count, which records an adjustment movement,
-// so stock still only ever moves through the movement log.
 export const UpdateBatchInput = Schema.Struct({
   id: BatchId,
   batchNumber: Schema.NullOr(Schema.String),
@@ -133,21 +128,12 @@ export const ImportInventoryInput = Schema.Struct({
 export type ImportInventoryInput = typeof ImportInventoryInput.Type;
 
 export const ImportInventoryResult = Schema.Struct({
-  createdProducts: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-  createdBatches: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  createdProducts: Schema.Natural,
+  createdBatches: Schema.Natural,
 });
 export type ImportInventoryResult = typeof ImportInventoryResult.Type;
 
-export const ProductIdInput = Schema.Struct({ id: ProductId });
-export type ProductIdInput = typeof ProductIdInput.Type;
-
-export const SearchProductsInput = Schema.Struct({
-  query: Schema.String,
-  limit: Schema.optional(Schema.Number),
-});
-export type SearchProductsInput = typeof SearchProductsInput.Type;
-
-const InvoiceItemRow = Schema.Struct({
+export const InvoiceItem = Schema.Struct({
   id: InvoiceItemId,
   invoiceId: InvoiceId,
   productId: ProductId,
@@ -160,8 +146,6 @@ const InvoiceItemRow = Schema.Struct({
   salePrice: Schema.Number,
   ...mutableEntityFields,
 });
-
-export const InvoiceItem = InvoiceItemRow;
 export type InvoiceItem = typeof InvoiceItem.Type;
 
 export const Invoice = Schema.Struct({
@@ -189,42 +173,31 @@ export const CreateInvoiceInput = Schema.Struct({
 });
 export type CreateInvoiceInput = typeof CreateInvoiceInput.Type;
 
-const CommandIdentifier = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
-const PositiveTimestamp = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
-
-export const ImportInventoryCommand = Schema.Struct({
-  commandId: CommandIdentifier,
-  deviceId: CommandIdentifier,
-  occurredAt: PositiveTimestamp,
-  input: ImportInventoryInput,
-});
-export type ImportInventoryCommand = typeof ImportInventoryCommand.Type;
-
 export const ImportInventoryCommandResult = Schema.Struct({
   ...ImportInventoryResult.fields,
-  txid: PositiveTimestamp,
+  txid: PositiveInt,
 });
 export type ImportInventoryCommandResult = typeof ImportInventoryCommandResult.Type;
 
 export const InvoiceAllocation = Schema.Struct({
   invoiceItemId: InvoiceItemId,
-  saleMovementId: Schema.String.check(Schema.isMinLength(1)),
-  openPackMovementId: Schema.NullOr(Schema.String.check(Schema.isMinLength(1))),
+  saleMovementId: Schema.NonEmptyString,
+  openPackMovementId: Schema.NullOr(Schema.NonEmptyString),
   productId: ProductId,
   batchId: BatchId,
-  quantity: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  quantity: PositiveInt,
   quantityType: Schema.Literals(["unit", "pack"]),
-  salePrice: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-  packsOpened: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  salePrice: Schema.Natural,
+  packsOpened: Schema.Natural,
 });
 export type InvoiceAllocation = typeof InvoiceAllocation.Type;
 
 export const IssueInvoiceCommand = Schema.Struct({
-  commandId: CommandIdentifier,
-  deviceId: CommandIdentifier,
-  occurredAt: PositiveTimestamp,
+  commandId: SyncIdentifier,
+  deviceId: SyncIdentifier,
+  occurredAt: PositiveInt,
   invoiceId: InvoiceId,
-  invoiceNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  invoiceNumber: PositiveInt,
   input: CreateInvoiceInput,
   allocations: Schema.Array(InvoiceAllocation).check(Schema.isMinLength(1)),
 });
@@ -232,13 +205,9 @@ export type IssueInvoiceCommand = typeof IssueInvoiceCommand.Type;
 
 export const IssueInvoiceResult = Schema.Struct({
   invoiceId: InvoiceId,
-  invoiceNumber: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  txid: Schema.optionalKey(PositiveTimestamp),
+  invoiceNumber: PositiveInt,
 });
 export type IssueInvoiceResult = typeof IssueInvoiceResult.Type;
-
-export const InvoiceIdInput = Schema.Struct({ id: InvoiceId });
-export type InvoiceIdInput = typeof InvoiceIdInput.Type;
 
 export const StockMovement = Schema.Struct({
   id: Schema.String,

@@ -1,9 +1,8 @@
 import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/contracts";
+import { createCatalogLifetime, type InventoryHost } from "@store/inventory-react";
 import { describe, expect, it, vi } from "vitest";
 
 import { hostAccess } from "../src/host-access";
-import type { InventoryHost } from "../src/lib/inventory-host";
-import { createCatalogLifetime } from "../src/lib/inventory/lifetime";
 import { makeReplayChannel } from "../src/replay-channel";
 import { applyWorkspaceSnapshot, type WorkspaceSession } from "../src/session/workspace-session";
 
@@ -18,9 +17,8 @@ const authenticated = decodeAuthenticatedWorkspace({
 
 const host: InventoryHost = {
   apiBaseUrl: "http://localhost",
-  authenticatedFetch: globalThis.fetch,
   deviceId: "device",
-  openReplicaSqlite: async () => {
+  openReplica: async () => {
     throw new Error("unused");
   },
 };

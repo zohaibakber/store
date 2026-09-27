@@ -17,16 +17,10 @@ export interface SessionSnapshotHooks {
   readonly http: SessionHttpClient;
   readonly getLocalSnapshot: () => WorkspaceSnapshotType;
   readonly publish: (snapshot: WorkspaceSnapshotType) => WorkspaceSnapshotType;
-  /** Optional clear of persisted tokens/session when auth is rejected (desktop). */
   readonly clearAuthenticated?: () => Promise<void>;
-  /** Optional persist after a successful authenticated session (desktop). */
   readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Promise<void>;
 }
 
-/**
- * Shared ensure-fresh → GET /api/auth/session → online/offline/error mapping.
- * Hosts only supply refresh + optional persistence; this owns the snapshot machine.
- */
 export const loadSessionSnapshot = async (
   hooks: SessionSnapshotHooks,
 ): Promise<WorkspaceSnapshotType> => {

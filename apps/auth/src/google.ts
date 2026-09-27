@@ -4,6 +4,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as UrlParams from "effect/unstable/http/UrlParams";
 
 const GoogleTokenResponse = Schema.Struct({
   access_token: Schema.String,
@@ -66,13 +71,38 @@ export interface GoogleOAuthConfiguration {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly callbackUrl: string;
-  /** Client IDs of the native apps, whose ID tokens carry their own audience. */
   readonly nativeClientIds?: ReadonlyArray<string>;
   readonly fetch?: typeof globalThis.fetch;
 }
 
 const oauthError = (operation: string, cause: unknown) =>
   new GoogleOAuthError({ operation, message: String(cause), cause });
+
+const provideFetch = <A, E>(
+  effect: Effect.Effect<A, E, HttpClient.HttpClient>,
+  fetch: typeof globalThis.fetch,
+): Effect.Effect<A, E> =>
+  // SAFETY: FetchHttpClient.layer + Fetch binding satisfy HttpClient; the residual env is empty.
+  effect.pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(FetchHttpClient.Fetch, fetch),
+  ) as Effect.Effect<A, E>;
+
+const decodeOkJson = <A>(
+  operation: string,
+  schema: Schema.ConstraintDecoder<A>,
+  response: HttpClientResponse.HttpClientResponse,
+) =>
+  HttpClientResponse.filterStatusOk(response).pipe(
+    Effect.mapError((cause) =>
+      oauthError(
+        operation,
+        `Google request failed (${"response" in cause && cause.response ? cause.response.status : "transport"}).`,
+      ),
+    ),
+    Effect.flatMap(HttpClientResponse.schemaBodyJson(schema)),
+    Effect.mapError((cause) => oauthError(`${operation}.decode`, cause)),
+  );
 
 export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
   const fetch = configuration.fetch ?? globalThis.fetch;
@@ -86,64 +116,50 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
     GoogleOAuth.of({
       authorizationUrl: (state) => {
         const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-        url.searchParams.set("client_id", configuration.clientId);
-        url.searchParams.set("redirect_uri", configuration.callbackUrl);
-        url.searchParams.set("response_type", "code");
-        url.searchParams.set("scope", "openid email profile");
-        url.searchParams.set("state", state);
-        url.searchParams.set("prompt", "select_account");
+        url.search = UrlParams.toString({
+          client_id: configuration.clientId,
+          redirect_uri: configuration.callbackUrl,
+          response_type: "code",
+          scope: "openid email profile",
+          state,
+          prompt: "select_account",
+        });
         return url;
       },
       exchangeCode: Effect.fn("GoogleOAuth.exchangeCode")(function* (code) {
-        const tokenResponse = yield* Effect.tryPromise({
-          try: (signal) =>
-            fetch("https://oauth2.googleapis.com/token", {
-              method: "POST",
-              headers: { "content-type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({
-                client_id: configuration.clientId,
-                client_secret: configuration.clientSecret,
-                code,
-                grant_type: "authorization_code",
-                redirect_uri: configuration.callbackUrl,
-              }),
-              signal,
-            }),
-          catch: (cause) => oauthError("exchangeCode.request", cause),
-        });
-        if (!tokenResponse.ok) {
-          return yield* oauthError(
-            "exchangeCode.response",
-            `Google token exchange failed (${tokenResponse.status}).`,
-          );
-        }
-        const tokenPayload = yield* Effect.tryPromise({
-          try: () => tokenResponse.json(),
-          catch: (cause) => oauthError("exchangeCode.tokenJson", cause),
-        }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(GoogleTokenResponse)),
-          Effect.mapError((cause) => oauthError("exchangeCode.tokenDecode", cause)),
+        const tokenRequest = HttpClientRequest.post("https://oauth2.googleapis.com/token").pipe(
+          HttpClientRequest.bodyUrlParams({
+            client_id: configuration.clientId,
+            client_secret: configuration.clientSecret,
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: configuration.callbackUrl,
+          }),
         );
-        const profileResponse = yield* Effect.tryPromise({
-          try: (signal) =>
-            fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-              headers: { authorization: `Bearer ${tokenPayload.access_token}` },
-              signal,
-            }),
-          catch: (cause) => oauthError("exchangeCode.profileRequest", cause),
-        });
-        if (!profileResponse.ok) {
-          return yield* oauthError(
-            "exchangeCode.profileResponse",
-            `Google profile lookup failed (${profileResponse.status}).`,
-          );
-        }
-        const profile = yield* Effect.tryPromise({
-          try: () => profileResponse.json(),
-          catch: (cause) => oauthError("exchangeCode.profileJson", cause),
-        }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(GoogleUserInfo)),
-          Effect.mapError((cause) => oauthError("exchangeCode.profileDecode", cause)),
+        const tokenResponse = yield* provideFetch(
+          HttpClient.execute(tokenRequest).pipe(
+            Effect.mapError((cause) => oauthError("exchangeCode.request", cause)),
+          ),
+          fetch,
+        );
+        const tokenPayload = yield* decodeOkJson(
+          "exchangeCode.token",
+          GoogleTokenResponse,
+          tokenResponse,
+        );
+        const profileRequest = HttpClientRequest.get(
+          "https://openidconnect.googleapis.com/v1/userinfo",
+        ).pipe(HttpClientRequest.bearerToken(tokenPayload.access_token));
+        const profileResponse = yield* provideFetch(
+          HttpClient.execute(profileRequest).pipe(
+            Effect.mapError((cause) => oauthError("exchangeCode.profileRequest", cause)),
+          ),
+          fetch,
+        );
+        const profile = yield* decodeOkJson(
+          "exchangeCode.profile",
+          GoogleUserInfo,
+          profileResponse,
         );
         if (!profile.email_verified) {
           return yield* oauthError(
@@ -158,34 +174,18 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) => {
           image: profile.picture ?? null,
         } satisfies GoogleProfile;
       }),
-      /**
-       * Google's `tokeninfo` endpoint checks the signature and expiry for us;
-       * the audience and issuer are ours to check, otherwise an ID token minted
-       * for any other app would be accepted here.
-       */
       verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
         const now = yield* Clock.currentTimeMillis;
-        const response = yield* Effect.tryPromise({
-          try: (signal) =>
-            fetch(
-              `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
-              { signal },
-            ),
-          catch: (cause) => oauthError("verifyIdToken.request", cause),
-        });
-        if (!response.ok) {
-          return yield* oauthError(
-            "verifyIdToken.response",
-            `Google rejected the identity token (${response.status}).`,
-          );
-        }
-        const info = yield* Effect.tryPromise({
-          try: () => response.json(),
-          catch: (cause) => oauthError("verifyIdToken.json", cause),
-        }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(GoogleTokenInfo)),
-          Effect.mapError((cause) => oauthError("verifyIdToken.decode", cause)),
+        const request = HttpClientRequest.get("https://oauth2.googleapis.com/tokeninfo").pipe(
+          HttpClientRequest.setUrlParams({ id_token: idToken }),
         );
+        const response = yield* provideFetch(
+          HttpClient.execute(request).pipe(
+            Effect.mapError((cause) => oauthError("verifyIdToken.request", cause)),
+          ),
+          fetch,
+        );
+        const info = yield* decodeOkJson("verifyIdToken", GoogleTokenInfo, response);
         if (!GOOGLE_ISSUERS.includes(info.iss)) {
           return yield* oauthError(
             "verifyIdToken.issuer",

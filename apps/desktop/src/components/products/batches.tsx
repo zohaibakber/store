@@ -10,8 +10,8 @@ import { barY, defineChart, type ChartPoint } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { useForm } from "@tanstack/react-form";
-import { useMemo, useState } from "react";
-import * as z from "zod";
+import * as Schema from "effect/Schema";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { ExpiryPicker } from "@/components/shared/expiry-picker";
 import { FormField } from "@/components/shared/form-field";
@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/sheet";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
+import { formValidator } from "@/lib/form-schema";
 import { formatDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory-db";
 
@@ -69,37 +70,64 @@ const expiryTimestamp = (value: string): number | null =>
 const expiryInputValue = (timestamp: number | null): string =>
   timestamp == null ? "" : formatISODate(new Date(timestamp));
 
-const stockQuantity = z
-  .string()
-  .refine((value) => value === "" || (Number.isInteger(Number(value)) && Number(value) >= 0), {
-    message: "Enter a non-negative whole number.",
-  });
+const stockQuantity = Schema.String.check(
+  Schema.makeFilter((value) =>
+    value === "" || (Number.isInteger(Number(value)) && Number(value) >= 0)
+      ? undefined
+      : "Enter a non-negative whole number.",
+  ),
+);
 
-const batchDetailsFields = {
-  batchNumber: z.string().trim().max(64),
-  expiresAt: z.string(),
+const BatchDetails = {
+  batchNumber: Schema.Trim.check(Schema.isMaxLength(64)),
+  expiresAt: Schema.String,
 };
 
-const batchFormSchema = z
-  .object({
-    ...batchDetailsFields,
+const packBatchCreateSchema = formValidator(
+  Schema.Struct({
+    ...BatchDetails,
     packQuantity: stockQuantity,
     unitQuantity: stockQuantity,
-  })
-  .refine((value) => Number(value.packQuantity || 0) + Number(value.unitQuantity || 0) >= 1, {
-    message: "Add at least one pack or loose unit.",
-    path: ["packQuantity"],
-  });
+  }).check(
+    Schema.makeFilter((value) =>
+      Number(value.packQuantity || 0) + Number(value.unitQuantity || 0) >= 1
+        ? undefined
+        : { path: ["packQuantity"], issue: "Add at least one pack or loose unit." },
+    ),
+  ),
+);
+
+const unitStockCreateSchema = formValidator(
+  Schema.Struct({
+    expiresAt: Schema.String,
+    unitQuantity: stockQuantity,
+  }).check(
+    Schema.makeFilter((value) =>
+      Number(value.unitQuantity || 0) >= 1
+        ? undefined
+        : { path: ["unitQuantity"], issue: "Add at least one unit." },
+    ),
+  ),
+);
 
 // Editing may empty a batch. A miscount corrected to zero is a real state,
 // unlike creating one with nothing in it.
-const batchEditSchema = z.object({
-  ...batchDetailsFields,
-  packQuantity: stockQuantity,
-  unitQuantity: stockQuantity,
-});
+const packBatchEditSchema = formValidator(
+  Schema.Struct({
+    ...BatchDetails,
+    packQuantity: stockQuantity,
+    unitQuantity: stockQuantity,
+  }),
+);
 
-// Structural shape of a TanStack Form string field, so the two fields both
+const unitStockEditSchema = formValidator(
+  Schema.Struct({
+    expiresAt: Schema.String,
+    unitQuantity: stockQuantity,
+  }),
+);
+
+// Structural shape of a TanStack Form string field, so the fields both
 // batch forms share stay decoupled from each form's generics.
 interface BatchTextField {
   readonly name: string;
@@ -173,7 +201,48 @@ function QuantityField({ field, label }: { field: BatchTextField; label: string 
   );
 }
 
-function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksPacks: boolean }) {
+function BatchSheet({
+  canSubmit,
+  description,
+  formId,
+  onOpenChange,
+  open,
+  submitLabel,
+  title,
+  trigger,
+  children,
+}: {
+  canSubmit: boolean;
+  children: ReactNode;
+  description: string;
+  formId: string;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  submitLabel: string;
+  title: string;
+  trigger: ReactNode;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      {trigger}
+      <SheetPopup variant="inset">
+        <SheetHeader>
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>{description}</SheetDescription>
+        </SheetHeader>
+        <SheetPanel>{children}</SheetPanel>
+        <SheetFooter>
+          <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
+          <Button disabled={!canSubmit} form={formId} type="submit">
+            {submitLabel}
+          </Button>
+        </SheetFooter>
+      </SheetPopup>
+    </Sheet>
+  );
+}
+
+function AddPackBatchDialog({ productId }: { productId: string }) {
   const { createBatch } = useInventoryActions();
   const [open, setOpen] = useState(false);
   const form = useForm({
@@ -183,17 +252,17 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
       packQuantity: "",
       unitQuantity: "",
     },
-    validators: { onSubmit: batchFormSchema },
+    validators: { onSubmit: packBatchCreateSchema },
     onSubmit: async ({ value }) => {
       try {
         await createBatch({
           productId,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: expiryTimestamp(value.expiresAt),
-          packQuantity: tracksPacks ? Number(value.packQuantity || 0) : 0,
+          packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
-        toastManager.add({ title: tracksPacks ? "Batch added" : "Stock added", type: "success" });
+        toastManager.add({ title: "Batch added", type: "success" });
         setOpen(false);
         form.reset();
       } catch (error) {
@@ -203,21 +272,23 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
   });
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button size="sm" variant="outline" />}>
-        <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-        {tracksPacks ? "Add batch" : "Add stock"}
-      </SheetTrigger>
-      <SheetPopup variant="inset">
-        <SheetHeader>
-          <SheetTitle>{tracksPacks ? "Add batch" : "Add stock"}</SheetTitle>
-          <SheetDescription>
-            {tracksPacks
-              ? "Record sealed packs and loose units separately for this batch."
-              : "How many arrived, and when they expire."}
-          </SheetDescription>
-        </SheetHeader>
-        <SheetPanel>
+    <form.Subscribe selector={(state) => state.canSubmit}>
+      {(canSubmit) => (
+        <BatchSheet
+          canSubmit={canSubmit}
+          description="Record sealed packs and loose units separately for this batch."
+          formId="add-batch-form"
+          onOpenChange={setOpen}
+          open={open}
+          submitLabel="Add batch"
+          title="Add batch"
+          trigger={
+            <SheetTrigger render={<Button size="sm" variant="outline" />}>
+              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+              Add batch
+            </SheetTrigger>
+          }
+        >
           <form
             id="add-batch-form"
             onSubmit={(event) => {
@@ -227,76 +298,135 @@ function AddBatchDialog({ productId, tracksPacks }: { productId: string; tracksP
           >
             <Fieldset className="flex w-full flex-col">
               <Fieldset className="grid">
-                {tracksPacks && (
-                  <form.Field
-                    name="batchNumber"
-                    children={(field) => <BatchNumberField field={field} />}
-                  />
-                )}
+                <form.Field
+                  name="batchNumber"
+                  children={(field) => <BatchNumberField field={field} />}
+                />
                 <form.Field
                   name="expiresAt"
                   children={(field) => <BatchExpiryField field={field} />}
                 />
               </Fieldset>
               <Fieldset className="grid">
-                {tracksPacks && (
-                  <form.Field
-                    name="packQuantity"
-                    children={(field) => <QuantityField field={field} label="Sealed packs" />}
-                  />
-                )}
+                <form.Field
+                  name="packQuantity"
+                  children={(field) => <QuantityField field={field} label="Sealed packs" />}
+                />
                 <form.Field
                   name="unitQuantity"
-                  children={(field) => (
-                    <QuantityField field={field} label={tracksPacks ? "Loose units" : "Quantity"} />
-                  )}
+                  children={(field) => <QuantityField field={field} label="Loose units" />}
                 />
               </Fieldset>
             </Fieldset>
           </form>
-        </SheetPanel>
-        <SheetFooter>
-          <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
-          <form.Subscribe selector={(state) => state.canSubmit}>
-            {(canSubmit) => (
-              <Button disabled={!canSubmit} form="add-batch-form" type="submit">
-                {tracksPacks ? "Add batch" : "Add stock"}
-              </Button>
-            )}
-          </form.Subscribe>
-        </SheetFooter>
-      </SheetPopup>
-    </Sheet>
+        </BatchSheet>
+      )}
+    </form.Subscribe>
   );
 }
 
-const batchToFormValues = (batch: Batch) => ({
+function AddUnitStockDialog({ productId }: { productId: string }) {
+  const { createBatch } = useInventoryActions();
+  const [open, setOpen] = useState(false);
+  const form = useForm({
+    defaultValues: {
+      expiresAt: "",
+      unitQuantity: "",
+    },
+    validators: { onSubmit: unitStockCreateSchema },
+    onSubmit: async ({ value }) => {
+      try {
+        await createBatch({
+          productId,
+          batchNumber: null,
+          expiresAt: expiryTimestamp(value.expiresAt),
+          packQuantity: 0,
+          unitQuantity: Number(value.unitQuantity || 0),
+        });
+        toastManager.add({ title: "Stock added", type: "success" });
+        setOpen(false);
+        form.reset();
+      } catch (error) {
+        toastStoreError(error, "Could not add the batch.");
+      }
+    },
+  });
+
+  return (
+    <form.Subscribe selector={(state) => state.canSubmit}>
+      {(canSubmit) => (
+        <BatchSheet
+          canSubmit={canSubmit}
+          description="How many arrived, and when they expire."
+          formId="add-batch-form"
+          onOpenChange={setOpen}
+          open={open}
+          submitLabel="Add stock"
+          title="Add stock"
+          trigger={
+            <SheetTrigger render={<Button size="sm" variant="outline" />}>
+              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+              Add stock
+            </SheetTrigger>
+          }
+        >
+          <form
+            id="add-batch-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void form.handleSubmit();
+            }}
+          >
+            <Fieldset className="flex w-full flex-col">
+              <Fieldset className="grid">
+                <form.Field
+                  name="expiresAt"
+                  children={(field) => <BatchExpiryField field={field} />}
+                />
+              </Fieldset>
+              <Fieldset className="grid">
+                <form.Field
+                  name="unitQuantity"
+                  children={(field) => <QuantityField field={field} label="Quantity" />}
+                />
+              </Fieldset>
+            </Fieldset>
+          </form>
+        </BatchSheet>
+      )}
+    </form.Subscribe>
+  );
+}
+
+const packBatchToFormValues = (batch: Batch) => ({
   batchNumber: batch.batchNumber ?? "",
   expiresAt: expiryInputValue(batch.expiresAt),
   packQuantity: String(batch.packQuantity),
   unitQuantity: String(batch.unitQuantity),
 });
 
-function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: boolean }) {
+const unitStockToFormValues = (batch: Batch) => ({
+  expiresAt: expiryInputValue(batch.expiresAt),
+  unitQuantity: String(batch.unitQuantity),
+});
+
+function EditPackBatchDialog({ batch }: { batch: Batch }) {
   const { updateBatch } = useInventoryActions();
   const [open, setOpen] = useState(false);
   const formId = `edit-batch-form-${batch.id}`;
   const form = useForm({
-    defaultValues: batchToFormValues(batch),
-    validators: { onSubmit: batchEditSchema },
+    defaultValues: packBatchToFormValues(batch),
+    validators: { onSubmit: packBatchEditSchema },
     onSubmit: async ({ value }) => {
       try {
         await updateBatch({
           id: batch.id,
           batchNumber: value.batchNumber.trim() || null,
           expiresAt: expiryTimestamp(value.expiresAt),
-          packQuantity: tracksPacks ? Number(value.packQuantity || 0) : batch.packQuantity,
+          packQuantity: Number(value.packQuantity || 0),
           unitQuantity: Number(value.unitQuantity || 0),
         });
-        toastManager.add({
-          title: tracksPacks ? "Batch updated" : "Stock updated",
-          type: "success",
-        });
+        toastManager.add({ title: "Batch updated", type: "success" });
         setOpen(false);
       } catch (error) {
         toastStoreError(error, "Could not update the batch.");
@@ -305,36 +435,27 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
   });
 
   return (
-    <Sheet
-      open={open}
-      // Reset from the batch itself rather than the mount-time defaults, so a
-      // reopened sheet shows the saved values and not an abandoned edit.
-      onOpenChange={(next) => {
-        if (!next) form.reset(batchToFormValues(batch));
-        setOpen(next);
-      }}
-    >
-      <SheetTrigger
-        render={
-          <Button
-            aria-label={tracksPacks ? "Edit batch" : "Edit stock"}
-            size="icon-sm"
-            variant="ghost"
-          />
-        }
-      >
-        <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
-      </SheetTrigger>
-      <SheetPopup variant="inset">
-        <SheetHeader>
-          <SheetTitle>{tracksPacks ? "Edit batch" : "Edit stock"}</SheetTitle>
-          <SheetDescription>
-            {tracksPacks
-              ? "Correct the batch number, expiry date or counts. A changed count is recorded as a stock adjustment."
-              : "Correct the expiry date or the quantity. A changed count is recorded as a stock adjustment."}
-          </SheetDescription>
-        </SheetHeader>
-        <SheetPanel>
+    <form.Subscribe selector={(state) => state.canSubmit}>
+      {(canSubmit) => (
+        <BatchSheet
+          canSubmit={canSubmit}
+          description="Correct the batch number, expiry date or counts. A changed count is recorded as a stock adjustment."
+          formId={formId}
+          onOpenChange={(next) => {
+            if (!next) form.reset(packBatchToFormValues(batch));
+            setOpen(next);
+          }}
+          open={open}
+          submitLabel="Save changes"
+          title="Edit batch"
+          trigger={
+            <SheetTrigger
+              render={<Button aria-label="Edit batch" size="icon-sm" variant="ghost" />}
+            >
+              <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+            </SheetTrigger>
+          }
+        >
           <form
             id={formId}
             onSubmit={(event) => {
@@ -344,67 +465,161 @@ function EditBatchDialog({ batch, tracksPacks }: { batch: Batch; tracksPacks: bo
           >
             <Fieldset className="flex w-full flex-col">
               <Fieldset className="grid">
-                {tracksPacks && (
-                  <form.Field
-                    name="batchNumber"
-                    children={(field) => <BatchNumberField field={field} />}
-                  />
-                )}
+                <form.Field
+                  name="batchNumber"
+                  children={(field) => <BatchNumberField field={field} />}
+                />
                 <form.Field
                   name="expiresAt"
                   children={(field) => <BatchExpiryField field={field} />}
                 />
               </Fieldset>
               <Fieldset className="grid">
-                {tracksPacks && (
-                  <form.Field
-                    name="packQuantity"
-                    children={(field) => <QuantityField field={field} label="Sealed packs" />}
-                  />
-                )}
+                <form.Field
+                  name="packQuantity"
+                  children={(field) => <QuantityField field={field} label="Sealed packs" />}
+                />
                 <form.Field
                   name="unitQuantity"
-                  children={(field) => (
-                    <QuantityField field={field} label={tracksPacks ? "Loose units" : "Quantity"} />
-                  )}
+                  children={(field) => <QuantityField field={field} label="Loose units" />}
                 />
               </Fieldset>
             </Fieldset>
           </form>
-        </SheetPanel>
-        <SheetFooter>
-          <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
-          <form.Subscribe selector={(state) => state.canSubmit}>
-            {(canSubmit) => (
-              <Button disabled={!canSubmit} form={formId} type="submit">
-                Save changes
-              </Button>
-            )}
-          </form.Subscribe>
-        </SheetFooter>
-      </SheetPopup>
-    </Sheet>
+        </BatchSheet>
+      )}
+    </form.Subscribe>
   );
 }
 
-export function ProductBatchesCard({ product }: { product: Product }) {
+function EditUnitStockDialog({ batch }: { batch: Batch }) {
+  const { updateBatch } = useInventoryActions();
+  const [open, setOpen] = useState(false);
+  const formId = `edit-batch-form-${batch.id}`;
+  const form = useForm({
+    defaultValues: unitStockToFormValues(batch),
+    validators: { onSubmit: unitStockEditSchema },
+    onSubmit: async ({ value }) => {
+      try {
+        await updateBatch({
+          id: batch.id,
+          batchNumber: batch.batchNumber,
+          expiresAt: expiryTimestamp(value.expiresAt),
+          packQuantity: batch.packQuantity,
+          unitQuantity: Number(value.unitQuantity || 0),
+        });
+        toastManager.add({ title: "Stock updated", type: "success" });
+        setOpen(false);
+      } catch (error) {
+        toastStoreError(error, "Could not update the batch.");
+      }
+    },
+  });
+
+  return (
+    <form.Subscribe selector={(state) => state.canSubmit}>
+      {(canSubmit) => (
+        <BatchSheet
+          canSubmit={canSubmit}
+          description="Correct the expiry date or the quantity. A changed count is recorded as a stock adjustment."
+          formId={formId}
+          onOpenChange={(next) => {
+            if (!next) form.reset(unitStockToFormValues(batch));
+            setOpen(next);
+          }}
+          open={open}
+          submitLabel="Save changes"
+          title="Edit stock"
+          trigger={
+            <SheetTrigger
+              render={<Button aria-label="Edit stock" size="icon-sm" variant="ghost" />}
+            >
+              <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+            </SheetTrigger>
+          }
+        >
+          <form
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void form.handleSubmit();
+            }}
+          >
+            <Fieldset className="flex w-full flex-col">
+              <Fieldset className="grid">
+                <form.Field
+                  name="expiresAt"
+                  children={(field) => <BatchExpiryField field={field} />}
+                />
+              </Fieldset>
+              <Fieldset className="grid">
+                <form.Field
+                  name="unitQuantity"
+                  children={(field) => <QuantityField field={field} label="Quantity" />}
+                />
+              </Fieldset>
+            </Fieldset>
+          </form>
+        </BatchSheet>
+      )}
+    </form.Subscribe>
+  );
+}
+
+function PackBatchRow({ batch }: { batch: Batch }) {
+  return (
+    <Frame className="w-full">
+      <FrameHeader className="flex-row items-center">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{batch.batchNumber ?? "Unnumbered batch"}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
+            {" · "}
+            added {formatDate(batch.createdAt)}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono tabular-nums">
+          {batch.packQuantity + batch.unitQuantity === 0
+            ? "Empty"
+            : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
+        </span>
+        <EditPackBatchDialog batch={batch} />
+      </FrameHeader>
+    </Frame>
+  );
+}
+
+function UnitStockRow({ batch }: { batch: Batch }) {
+  return (
+    <Frame className="w-full">
+      <FrameHeader className="flex-row items-center">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">
+            {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            added {formatDate(batch.createdAt)}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono tabular-nums">
+          {batch.packQuantity + batch.unitQuantity === 0 ? "Empty" : `${batch.unitQuantity}`}
+        </span>
+        <EditUnitStockDialog batch={batch} />
+      </FrameHeader>
+    </Frame>
+  );
+}
+
+function PackBatchesCard({ product }: { product: Product }) {
   const stock = productStock(product);
   const packs = productPackStock(product);
   const looseUnits = productLooseUnitStock(product);
 
-  // Stock still lives in batches for a single-unit product. That is what
-  // expiry-first allocation draws from. Nothing about batches is shown.
-  const tracksPacks = product.category.tracksPacks;
-
   return (
     <FrameCard
-      action={<AddBatchDialog productId={product.id} tracksPacks={tracksPacks} />}
-      description={
-        tracksPacks
-          ? `${packs} packs · ${looseUnits} loose · ${stock} total units`
-          : `${stock} in stock`
-      }
-      title={tracksPacks ? "Batches" : "Stock"}
+      action={<AddPackBatchDialog productId={product.id} />}
+      description={`${packs} packs · ${looseUnits} loose · ${stock} total units`}
+      title="Batches"
     >
       {product.batches.length === 0 ? (
         <Empty>
@@ -412,53 +627,60 @@ export function ProductBatchesCard({ product }: { product: Product }) {
             <EmptyMedia variant="icon">
               <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
             </EmptyMedia>
-            <EmptyTitle>{tracksPacks ? "No batches yet" : "Nothing in stock yet"}</EmptyTitle>
+            <EmptyTitle>No batches yet</EmptyTitle>
             <EmptyDescription>
-              {tracksPacks
-                ? "Add a batch to put this product in stock. Sales draw from batches."
-                : "Add stock to start selling this product."}
+              Add a batch to put this product in stock. Sales draw from batches.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <div className="flex flex-col gap-2">
           {product.batches.map((batch) => (
-            <Frame className="w-full" key={batch.id}>
-              <FrameHeader className="flex-row items-center">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">
-                    {tracksPacks
-                      ? (batch.batchNumber ?? "Unnumbered batch")
-                      : batch.expiresAt
-                        ? `Expires ${formatDate(batch.expiresAt)}`
-                        : "No expiry date"}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {tracksPacks && (
-                      <>
-                        {batch.expiresAt
-                          ? `Expires ${formatDate(batch.expiresAt)}`
-                          : "No expiry date"}
-                        {" · "}
-                      </>
-                    )}
-                    added {formatDate(batch.createdAt)}
-                  </p>
-                </div>
-                <span className="shrink-0 font-mono tabular-nums">
-                  {batch.packQuantity + batch.unitQuantity === 0
-                    ? "Empty"
-                    : tracksPacks
-                      ? `${batch.packQuantity} packs · ${batch.unitQuantity} loose`
-                      : `${batch.unitQuantity}`}
-                </span>
-                <EditBatchDialog batch={batch} tracksPacks={tracksPacks} />
-              </FrameHeader>
-            </Frame>
+            <PackBatchRow batch={batch} key={batch.id} />
           ))}
         </div>
       )}
     </FrameCard>
+  );
+}
+
+function UnitStockCard({ product }: { product: Product }) {
+  const stock = productStock(product);
+
+  return (
+    <FrameCard
+      action={<AddUnitStockDialog productId={product.id} />}
+      description={`${stock} in stock`}
+      title="Stock"
+    >
+      {product.batches.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
+            </EmptyMedia>
+            <EmptyTitle>Nothing in stock yet</EmptyTitle>
+            <EmptyDescription>Add stock to start selling this product.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {product.batches.map((batch) => (
+            <UnitStockRow batch={batch} key={batch.id} />
+          ))}
+        </div>
+      )}
+    </FrameCard>
+  );
+}
+
+export function ProductBatchesCard({ product }: { product: Product }) {
+  // Stock still lives in batches for a single-unit product. That is what
+  // expiry-first allocation draws from. Nothing about batches is shown.
+  return product.category.tracksPacks ? (
+    <PackBatchesCard product={product} />
+  ) : (
+    <UnitStockCard product={product} />
   );
 }
 

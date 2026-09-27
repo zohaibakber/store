@@ -16,7 +16,6 @@ const mutableEntityFields = {
   rowVersion: PositiveInteger,
   createdAt: NonNegativeInteger,
   updatedAt: NonNegativeInteger,
-  deletedAt: Schema.NullOr(NonNegativeInteger),
 };
 
 export const CategoryRow = Schema.Struct({

@@ -2,7 +2,9 @@ import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
+import { SyncIdentifier } from "../schema-primitives";
 import {
   SyncBadRequest,
   SyncConflict,
@@ -10,7 +12,13 @@ import {
   SyncNotFound,
   SyncServiceUnavailable,
 } from "./http-errors";
-import { LiveTicket, LiveTicketRequest } from "./live";
+import {
+  LiveTicket,
+  LiveTicketRequest,
+  LiveUpgradeQuery,
+  SyncLiveSseEvent,
+  SyncLiveWakeHint,
+} from "./live";
 import {
   CommandReceipt,
   RegisterReplicaRequest,
@@ -52,7 +60,7 @@ export const syncGroup = HttpApiGroup.make("sync")
   .add(
     HttpApiEndpoint.get("getReceipt", "/api/sync/receipts/:operationId", {
       params: Schema.Struct({
-        operationId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+        operationId: SyncIdentifier,
       }),
       success: CommandReceipt,
       error: SyncHttpErrors,
@@ -88,6 +96,17 @@ export const syncGroup = HttpApiGroup.make("sync")
     HttpApiEndpoint.post("mintLiveTicket", "/api/sync/live-tickets", {
       payload: LiveTicketRequest,
       success: LiveTicket,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("liveUpgrade", "/api/sync/live", {
+      query: LiveUpgradeQuery,
+      success: [
+        SyncLiveWakeHint,
+        HttpApiSchema.NoContent,
+        HttpApiSchema.StreamSse({ events: SyncLiveSseEvent }),
+      ],
       error: SyncHttpErrors,
     }),
   );

@@ -1,9 +1,4 @@
-export {
-  accessTokenFromUrl,
-  bearerToken,
-  bearerTokenFromHeaders,
-  headersWithAccessToken,
-} from "./bearer";
+export { bearerTokenFromHeaders } from "./bearer";
 export {
   AuthClient,
   AuthClientError,
@@ -22,11 +17,35 @@ export {
   type SendOtpInput,
 } from "./email";
 export {
+  Authorization,
+  CurrentAccessToken,
+  optionalRedactedValue,
+  refreshCookieName,
+  refreshCookieOptions,
+  refreshCookieSecurity,
+} from "./http-authorization";
+export { AuthHttpApi } from "./http-api";
+export {
+  AuthBadRequest,
+  AuthConflict,
+  AuthForbidden,
+  AuthNotFound,
+  AuthServiceUnavailable,
+  AuthTooManyRequests,
+  AuthUnauthenticated,
+  AuthUnsupportedMediaType,
+  authHttpErrorFromStatus,
+  authHttpErrorStatus,
+  type AuthHttpError,
+} from "./http-errors";
+export {
   AccessTokenService,
+  AuthJwks,
   JwtError,
   accessTokenLayer,
   AUTH_JWT_KEY_ID,
   decodeJsonWebKey,
+  decodeJsonWebKeyText,
   issueAccessToken,
   publicJwks,
   verifyAccessToken,

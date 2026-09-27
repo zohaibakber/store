@@ -1,65 +1,37 @@
-import type Database from "better-sqlite3";
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Config from "effect/Config";
+import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
+import * as Command from "effect/unstable/cli/Command";
+import * as Flag from "effect/unstable/cli/Flag";
 
 import { liveCheckpointLayer } from "./src/checkpoint.ts";
 import { sqliteDirectoryLayer } from "./src/directory.ts";
 import { ConfigurationError } from "./src/errors.ts";
 import { journalLayerFromSqlite } from "./src/export-store.ts";
 import { liveIdsLayer } from "./src/ids.ts";
-import {
-  DEFAULT_CHUNK_SIZE,
-  MigrationRequest as MigrationRequestSchema,
-  OrganizationSelection,
-} from "./src/model.ts";
+import { DEFAULT_CHUNK_SIZE, MigrationRequest, OrganizationSelection } from "./src/model.ts";
 import { postgresSourceLayer } from "./src/postgres-source.ts";
 import { openSqlite } from "./src/sqlite.ts";
 import { sqliteTargetLayer } from "./src/target.ts";
 import { runMigration } from "./src/workflow.ts";
 
-const CliEnv = Schema.Struct({
-  journalPath: Schema.String.check(Schema.isMinLength(1)),
-  targetPath: Schema.String.check(Schema.isMinLength(1)),
-  directoryPath: Schema.String.check(Schema.isMinLength(1)),
-  connectionString: Schema.String.check(Schema.isMinLength(1)),
-  sourceIdentity: Schema.String.check(Schema.isMinLength(1)),
-  organizations: Schema.String.check(Schema.isMinLength(1)),
-  chunkSize: Schema.String,
-});
+const text = (flag: string, variable: string) =>
+  Flag.String(flag).pipe(
+    Flag.withFallbackConfig(Config.NonEmptyString(variable)),
+    Flag.withDescription(`Falls back to ${variable}.`),
+  );
 
 const parseOrganizations = Schema.decodeUnknownEffect(Schema.NonEmptyArray(OrganizationSelection));
+const decodeRequest = Schema.decodeUnknownEffect(MigrationRequest);
 
-const sqliteFile = (path: string): Effect.Effect<Database.Database, never, Scope.Scope> =>
-  Effect.acquireRelease(
-    Effect.sync(() => openSqlite(path)),
-    (database) =>
-      Effect.sync(() => {
-        database.close();
-      }),
-  );
-
-const parseRequest = Effect.fn("Migrate.Cli.parseRequest")(function* () {
-  const env = yield* Schema.decodeUnknownEffect(CliEnv)({
-    journalPath: process.env.MIGRATE_JOURNAL_PATH,
-    targetPath: process.env.MIGRATE_TARGET_PATH,
-    directoryPath: process.env.MIGRATE_DIRECTORY_PATH,
-    connectionString: process.env.DATABASE_URL,
-    sourceIdentity: process.env.MIGRATE_SOURCE_IDENTITY,
-    organizations: process.env.MIGRATE_ORGANIZATIONS,
-    chunkSize: process.env.MIGRATE_CHUNK_SIZE ?? String(DEFAULT_CHUNK_SIZE),
-  }).pipe(
-    Effect.mapError(
-      () =>
-        new ConfigurationError({
-          message:
-            "Set MIGRATE_JOURNAL_PATH, MIGRATE_TARGET_PATH, MIGRATE_DIRECTORY_PATH, DATABASE_URL, MIGRATE_SOURCE_IDENTITY, and MIGRATE_ORGANIZATIONS.",
-        }),
-    ),
-  );
-  const selections = yield* parseOrganizations(
-    env.organizations.split(",").map((part) => {
+const selectionsFrom = (organizations: string) =>
+  parseOrganizations(
+    organizations.split(",").map((part) => {
       const [organizationId, objectName] = part.split(":");
       return { organizationId, objectName };
     }),
@@ -71,52 +43,55 @@ const parseRequest = Effect.fn("Migrate.Cli.parseRequest")(function* () {
         }),
     ),
   );
-  const chunkSize = Number(env.chunkSize);
-  const request = yield* Schema.decodeUnknownEffect(MigrationRequestSchema)({
-    sourceIdentity: env.sourceIdentity,
-    organizations: selections,
-    chunkSize,
-  }).pipe(
-    Effect.mapError(
-      () =>
-        new ConfigurationError({
-          message: "Migration request fields failed schema checks.",
-        }),
-    ),
-  );
-  return { env, request };
-});
 
-const program = Effect.scoped(
-  Effect.gen(function* () {
-    const parsed = yield* parseRequest();
-    const journal = yield* sqliteFile(parsed.env.journalPath);
-    const target = yield* sqliteFile(parsed.env.targetPath);
-    const directory = yield* sqliteFile(parsed.env.directoryPath);
-    const layer = Layer.mergeAll(
-      journalLayerFromSqlite(journal),
-      sqliteTargetLayer(target),
-      sqliteDirectoryLayer(directory),
-      liveIdsLayer,
-      liveCheckpointLayer,
-      postgresSourceLayer({ connectionString: parsed.env.connectionString }),
-    );
-    return yield* runMigration(parsed.request).pipe(Effect.provide(layer));
-  }),
+const migrate = Command.make(
+  "migrate-cloudflare",
+  {
+    journalPath: text("journal", "MIGRATE_JOURNAL_PATH"),
+    targetPath: text("target", "MIGRATE_TARGET_PATH"),
+    directoryPath: text("directory", "MIGRATE_DIRECTORY_PATH"),
+    connectionString: Flag.Redacted("database-url").pipe(
+      Flag.withFallbackConfig(Config.Redacted("DATABASE_URL")),
+      Flag.withDescription("Falls back to DATABASE_URL."),
+    ),
+    sourceIdentity: text("source-identity", "MIGRATE_SOURCE_IDENTITY"),
+    organizations: text("organizations", "MIGRATE_ORGANIZATIONS"),
+    chunkSize: Flag.Int("chunk-size").pipe(
+      Flag.withFallbackConfig(
+        Config.Int("MIGRATE_CHUNK_SIZE").pipe(Config.withDefault(DEFAULT_CHUNK_SIZE)),
+      ),
+      Flag.withDescription(`Falls back to MIGRATE_CHUNK_SIZE, then ${DEFAULT_CHUNK_SIZE}.`),
+    ),
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const request = yield* decodeRequest({
+        sourceIdentity: input.sourceIdentity,
+        organizations: yield* selectionsFrom(input.organizations),
+        chunkSize: input.chunkSize,
+      }).pipe(
+        Effect.mapError(
+          () =>
+            new ConfigurationError({ message: "Migration request fields failed schema checks." }),
+        ),
+      );
+      const layer = Layer.mergeAll(
+        journalLayerFromSqlite(yield* openSqlite(input.journalPath)),
+        sqliteTargetLayer(yield* openSqlite(input.targetPath)),
+        sqliteDirectoryLayer(yield* openSqlite(input.directoryPath)),
+        liveIdsLayer,
+        liveCheckpointLayer,
+        postgresSourceLayer({ connectionString: Redacted.value(input.connectionString) }),
+      );
+      const result = yield* runMigration(request).pipe(Effect.provide(layer));
+      yield* Console.log(JSON.stringify(result));
+    }).pipe(
+      Effect.scoped,
+      Effect.tapError((error) => Console.error(error.message)),
+    ),
 );
 
-await Effect.runPromise(
-  program.pipe(
-    Effect.match({
-      onFailure: (error) => {
-        process.stderr.write(`${error.message}\n`);
-        process.exitCode = 1;
-        return error;
-      },
-      onSuccess: (result) => {
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-        return result;
-      },
-    }),
-  ),
+Command.run(migrate, { version: "0.0.0" }).pipe(
+  Effect.provide(NodeServices.layer),
+  NodeRuntime.runMain({ disableErrorReporting: true }),
 );

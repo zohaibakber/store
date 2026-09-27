@@ -8,6 +8,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import * as React from "react";
 
 import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
 import { ProductVisibilityCard } from "@/components/products/visibility";
@@ -118,7 +119,6 @@ function ProductDetailContent({
   readonly onDelete: () => Promise<void>;
   readonly product: Product;
 }) {
-  // Pack size and pack retail are meaningless for a category sold one at a time.
   const packDetails: Array<{ label: string; value: React.ReactNode }> = product.category.tracksPacks
     ? [
         {

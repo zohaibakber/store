@@ -1,27 +1,40 @@
-type ReplayState<Value> =
-  | { readonly _tag: "Empty" }
-  | { readonly _tag: "Published"; readonly value: Value };
+import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
+/**
+ * Replay bus backed by Effect Atom. Keeps publish/current/subscribe for
+ * non-React writers (session admit, tests) while React reads through
+ * `useAtomValue` on {@link ReplayChannel.atom} under {@link ReplayChannel.registry}.
+ */
 export type ReplayChannel<Value> = {
+  readonly registry: AtomRegistry.AtomRegistry;
+  readonly atom: Atom.Writable<Value | undefined>;
   readonly publish: (value: Value) => void;
   readonly current: () => Value | undefined;
   readonly subscribe: (listener: (value: Value) => void) => () => void;
+  readonly dispose: () => void;
 };
 
 export const makeReplayChannel = <Value>(): ReplayChannel<Value> => {
-  const listeners = new Set<(value: Value) => void>();
-  let state: ReplayState<Value> = { _tag: "Empty" };
-
+  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
+  const atom = Atom.make<Value | undefined>(undefined).pipe(Atom.keepAlive);
   return {
-    publish: (value: Value) => {
-      state = { _tag: "Published", value };
-      for (const listener of listeners) listener(value);
+    registry,
+    atom,
+    publish: (value) => {
+      registry.set(atom, value);
     },
-    current: () => (state._tag === "Published" ? state.value : undefined),
-    subscribe: (listener: (value: Value) => void) => {
-      listeners.add(listener);
-      if (state._tag === "Published") listener(state.value);
-      return () => listeners.delete(listener);
+    current: () => registry.get(atom),
+    subscribe: (listener) =>
+      registry.subscribe(
+        atom,
+        (value) => {
+          if (value !== undefined) listener(value);
+        },
+        { immediate: true },
+      ),
+    dispose: () => {
+      registry.dispose();
     },
   };
 };

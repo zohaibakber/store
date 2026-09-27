@@ -1,3 +1,4 @@
+import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import {
   createRootRouteWithContext,
   Outlet,
@@ -17,8 +18,6 @@ import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory-db";
-import type { InventoryHost } from "@/lib/inventory-host";
-import type { CatalogLifetime } from "@/lib/inventory/lifetime";
 import type { ReplayChannel } from "@/replay-channel";
 import type { WorkspaceSession } from "@/session/workspace-session";
 

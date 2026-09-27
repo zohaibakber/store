@@ -1,4 +1,5 @@
-import { headersWithAccessToken, type AuthSession } from "@store/auth";
+import type { AuthSession } from "@store/auth";
+import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,21 +21,9 @@ export class CurrentOrganization extends Context.Service<
   CurrentOrganizationContext
 >()("@store/server/CurrentOrganization") {}
 
-export const authHeadersForRequest = (requestHeaders: Headers) => {
-  const origin = requestHeaders.get("origin");
-  if (origin && origin !== "null") return requestHeaders;
-
-  const nativeOrigin = requestHeaders.get("expo-origin") ?? requestHeaders.get("electron-origin");
-  if (!nativeOrigin) return requestHeaders;
-
-  const authHeaders = new Headers(requestHeaders);
-  authHeaders.set("origin", nativeOrigin);
-  return authHeaders;
-};
-
 export class OrganizationAuth extends HttpApiMiddleware.Service<
   OrganizationAuth,
-  { requires: import("alchemy").RuntimeContext; provides: CurrentOrganization }
+  { requires: RuntimeContext; provides: CurrentOrganization }
 >()("@store/server/OrganizationAuth", { error: [Unauthenticated, Forbidden] }) {}
 
 const logAuthFailure = (message: string) =>
@@ -46,17 +35,12 @@ const logAuthFailure = (message: string) =>
     ),
   );
 
-export const authenticateCurrentOrganization = Effect.fn(
+const authenticateCurrentOrganization = Effect.fn(
   "OrganizationAuth.authenticateCurrentOrganization",
 )(function* (runtime: ServerRuntimeContract) {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const headers = authHeadersForRequest(new Headers(request.headers));
-  const authenticatedHeaders =
-    request.headers.upgrade?.toLowerCase() === "websocket"
-      ? headersWithAccessToken(headers, request.url)
-      : headers;
   const session = yield* runtime
-    .getSession(authenticatedHeaders)
+    .getSession(new Headers(request.headers))
     .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
   if (!session) return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
 

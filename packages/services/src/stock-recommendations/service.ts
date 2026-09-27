@@ -44,8 +44,6 @@ export const stockRecommendationLayer = Layer.effect(
             new StockRecommendationError({ message: "Check the stock planning values.", cause }),
         ),
       );
-      // Replica rows have already been decoded. Check the scope and numeric invariants this
-      // calculation relies on; do not reinterpret invalid stock as a purchasing instruction.
       const invalidProduct = snapshot.products.some(
         (product) =>
           product.organizationId !== snapshot.organizationId ||

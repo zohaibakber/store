@@ -1,9 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export const SyncPositiveInteger = Schema.Number.check(
-  Schema.isInt(),
-  Schema.isGreaterThanOrEqualTo(1),
-);
+import { PositiveInt } from "../schema-primitives";
 
 export const SyncEntity = Schema.Literals([
   "category",
@@ -22,7 +19,7 @@ export const SyncEntityChange = Schema.Struct({
   entity: SyncEntity,
   action: SyncAction,
   entityId: Schema.String,
-  rowVersion: SyncPositiveInteger,
+  rowVersion: PositiveInt,
   row: Schema.Unknown,
 });
 export interface SyncEntityChange extends Schema.Schema.Type<typeof SyncEntityChange> {}

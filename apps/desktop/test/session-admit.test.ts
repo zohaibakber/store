@@ -1,9 +1,9 @@
 import { decodeAuthenticatedWorkspace, unauthenticatedWorkspace } from "@store/contracts";
+import { createAppCatalogLifetime } from "@store/inventory-react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 
 import { hostAccess } from "../src/host-access";
-import { createAppCatalogLifetime } from "../src/lib/inventory/lifetime";
 import { makeReplayChannel } from "../src/replay-channel";
 import { getRouter } from "../src/router";
 import type { WorkspaceSession } from "../src/session/workspace-session";

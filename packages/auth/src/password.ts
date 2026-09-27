@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
@@ -14,18 +15,6 @@ const textEncoder = new TextEncoder();
 const ITERATIONS = 100_000;
 const HASH_BYTES = 32;
 const SALT_BYTES = 16;
-
-const base64UrlEncode = (bytes: Uint8Array) => {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
-
-const base64UrlDecode = (value: string) => {
-  const base64 = value.replace(/-/gu, "+").replace(/_/gu, "/");
-  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-};
 
 export const PasswordHash = Schema.String.check(
   Schema.isPattern(/^pbkdf2-sha256\$\d+\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/u),
@@ -79,11 +68,22 @@ const constantTimeEqual = (left: Uint8Array, right: Uint8Array) => {
   return difference === 0;
 };
 
+const decodeSaltOrHash = (value: string) =>
+  Effect.fromResult(Encoding.decodeBase64Url(value)).pipe(
+    Effect.mapError(
+      (cause) =>
+        new PasswordHashError({
+          message: `Password hash encoding is invalid: ${cause.message}`,
+          cause,
+        }),
+    ),
+  );
+
 export const hashPassword = Effect.fn("Password.hash")(function* (password: Password) {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const hash = yield* derive(password, salt, ITERATIONS);
   return PasswordHash.make(
-    `pbkdf2-sha256$${ITERATIONS}$${base64UrlEncode(salt)}$${base64UrlEncode(hash)}`,
+    `pbkdf2-sha256$${ITERATIONS}$${Encoding.encodeBase64Url(salt)}$${Encoding.encodeBase64Url(hash)}`,
   );
 });
 
@@ -102,8 +102,10 @@ export const verifyPassword = Effect.fn("Password.verify")(function* (
   ) {
     return false;
   }
-  const actual = yield* derive(password, base64UrlDecode(saltText), iterations);
-  return constantTimeEqual(actual, base64UrlDecode(hashText));
+  const salt = yield* decodeSaltOrHash(saltText);
+  const expected = yield* decodeSaltOrHash(hashText);
+  const actual = yield* derive(password, new Uint8Array(salt), iterations);
+  return constantTimeEqual(actual, expected);
 });
 
 export interface PasswordHasherApi {

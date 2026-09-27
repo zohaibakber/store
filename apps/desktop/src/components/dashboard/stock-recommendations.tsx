@@ -1,3 +1,4 @@
+import type { RecommendationState } from "@store/inventory-react";
 import type { StockPolicy, StockRecommendation } from "@store/services/stock-recommendations";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -9,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPrice } from "@/lib/format";
 import { stockBuyListCsv } from "@/lib/inventory/stock-buy-list";
-import type { RecommendationState } from "@/lib/inventory/stock-recommendations";
 
 type Filter = "attention" | "out" | "low" | "buy" | "slow" | "all";
 const filters: ReadonlyArray<{ value: Filter; label: string }> = [

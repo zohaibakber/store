@@ -11,66 +11,61 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
+import { PositiveInt } from "../schema-primitives";
 import { omitManaged } from "./managed-columns";
 import type { SyncEntity } from "./schema";
 
-const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
-const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
-const SignedInteger = Schema.Number.check(Schema.isInt());
-const NullableNonNegativeInteger = Schema.NullOr(NonNegativeInteger);
+const NullableNatural = Schema.NullOr(Schema.Natural);
 
-const CategoryRow = createSelectSchema(categories, {
+export const CategoryRow = createSelectSchema(categories, {
   id: CategoryId,
-  name: NonEmptyString,
-  // Change-log entries written before categories gained this column do not
-  // contain it. The database migration used the same default for those rows.
+  name: Schema.NonEmptyString,
   tracksPacks: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 
-const ProductRow = createSelectSchema(products, {
+export const ProductRow = createSelectSchema(products, {
   id: ProductId,
-  name: NonEmptyString,
+  name: Schema.NonEmptyString,
   categoryId: CategoryId,
-  unitsPerPack: PositiveInteger,
-  purchasePrice: NullableNonNegativeInteger,
-  retailPrice: NullableNonNegativeInteger,
-  unitPrice: NullableNonNegativeInteger,
+  unitsPerPack: PositiveInt,
+  purchasePrice: NullableNatural,
+  retailPrice: NullableNatural,
+  unitPrice: NullableNatural,
 });
 
-const BatchRow = createSelectSchema(batches, {
+export const BatchRow = createSelectSchema(batches, {
   id: BatchId,
   productId: ProductId,
-  expiresAt: NullableNonNegativeInteger,
-  packQuantity: NonNegativeInteger,
-  unitQuantity: NonNegativeInteger,
+  expiresAt: NullableNatural,
+  packQuantity: Schema.Natural,
+  unitQuantity: Schema.Natural,
 });
 
-const InvoiceRow = createSelectSchema(invoices, {
+export const InvoiceRow = createSelectSchema(invoices, {
   id: InvoiceId,
-  invoiceNumber: PositiveInteger,
-  total: NonNegativeInteger,
+  invoiceNumber: PositiveInt,
+  total: Schema.Natural,
 });
 
-const InvoiceItemRow = createSelectSchema(invoiceItems, {
+export const InvoiceItemRow = createSelectSchema(invoiceItems, {
   id: InvoiceItemId,
   invoiceId: InvoiceId,
   productId: ProductId,
   batchId: BatchId,
-  productName: NonEmptyString,
-  quantity: PositiveInteger,
+  productName: Schema.NonEmptyString,
+  quantity: PositiveInt,
   quantityType: Schema.Literals(["unit", "pack"]),
-  baseUnitQuantity: PositiveInteger,
-  salePrice: NonNegativeInteger,
+  baseUnitQuantity: PositiveInt,
+  salePrice: Schema.Natural,
 });
 
-const StockMovementRow = createSelectSchema(stockMovements, {
+export const StockMovementRow = createSelectSchema(stockMovements, {
   productId: ProductId,
   batchId: BatchId,
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
-  packDelta: SignedInteger,
-  unitDelta: SignedInteger,
-  createdAt: NonNegativeInteger,
+  packDelta: Schema.Int,
+  unitDelta: Schema.Int,
+  createdAt: Schema.Natural,
 });
 
 export const syncEntityRows = {
@@ -87,8 +82,8 @@ export type SyncEntityRow<E extends SyncEntity> = (typeof syncEntityRows)[E]["sc
 const pushRow = <F extends Schema.Struct.Fields>(schema: { readonly fields: F }) =>
   Schema.Struct({
     ...omitManaged(schema.fields),
-    id: NonEmptyString,
-    createdAt: Schema.optionalKey(NonNegativeInteger),
+    id: Schema.NonEmptyString,
+    createdAt: Schema.optionalKey(Schema.Natural),
   });
 
 export const syncEntityPushRows = {

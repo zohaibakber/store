@@ -1,18 +1,15 @@
-export const compareCodeUnits = (left: string, right: string) => {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-};
+import * as Order from "effect/Order";
+import * as Schema from "effect/Schema";
 
-export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
-export interface JsonObject {
-  readonly [key: string]: JsonValue;
-}
+export const compareCodeUnits = Order.String;
 
-const isJsonObject = (value: JsonValue): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+type JsonValue = typeof Schema.Json.Type;
 
-export const canonicalizeJson = (value: JsonValue): JsonValue => {
+const isJsonObject = Schema.is(Schema.JsonObject);
+const decodeJsonString = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json));
+const encodeJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+const canonicalizeJson = (value: JsonValue): JsonValue => {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (!isJsonObject(value)) return value;
   return Object.fromEntries(
@@ -23,8 +20,10 @@ export const canonicalizeJson = (value: JsonValue): JsonValue => {
 };
 
 export const canonicalJson = <Value>(value: Value) => {
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) return undefined;
-  const jsonValue: JsonValue = JSON.parse(serialized);
-  return JSON.stringify(canonicalizeJson(jsonValue));
+  try {
+    const roundTripped = decodeJsonString(encodeJsonString(value));
+    return encodeJsonString(canonicalizeJson(roundTripped));
+  } catch {
+    return undefined;
+  }
 };

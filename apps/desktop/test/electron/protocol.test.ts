@@ -29,13 +29,14 @@ describe("desktop content security policy", () => {
     expect(scriptSources).toContain("'unsafe-inline'");
   });
 
-  it("permits WebAssembly compilation without allowing general eval in production", () => {
+  it("keeps production script-src free of eval and wasm eval", () => {
     const scriptSources = productionPolicy()
       .split("; ")
       .find((directive) => directive.startsWith("script-src "))
       ?.split(" ");
 
-    expect(scriptSources).toContain("'wasm-unsafe-eval'");
+    expect(scriptSources).toEqual(["script-src", "'self'"]);
+    expect(scriptSources).not.toContain("'wasm-unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-inline'");
   });
@@ -51,8 +52,17 @@ describe("desktop content security policy", () => {
     expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).not.toContain("https://*.powersync.journeyapps.com");
     expect(connectSources).not.toContain("wss://*.powersync.journeyapps.com");
+    expect(connectSources).not.toContain("https://challenges.cloudflare.com");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
+  });
+
+  it("does not allow Clerk Turnstile or blob workers in production", () => {
+    const policy = productionPolicy();
+    expect(policy).toContain("frame-src 'self'");
+    expect(policy).not.toContain("challenges.cloudflare.com");
+    expect(policy).toContain("worker-src 'self'");
+    expect(policy).not.toContain("worker-src 'self' blob:");
   });
 });
 

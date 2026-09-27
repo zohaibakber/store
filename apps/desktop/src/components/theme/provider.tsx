@@ -1,3 +1,7 @@
+import { useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
 export type ThemePreference = "dark" | "light" | "system";
@@ -17,11 +21,24 @@ export function useTheme(): ThemeContextValue {
   return context;
 }
 
-const isPreference = (value: string | null): value is ThemePreference =>
-  value === "light" || value === "dark" || value === "system";
+const ThemePreferenceSchema = Schema.Literals(["dark", "light", "system"]);
+
+const readStoredPreference = (storageKey: string, fallback: ThemePreference): ThemePreference =>
+  Schema.decodeUnknownOption(ThemePreferenceSchema)(localStorage.getItem(storageKey)).pipe(
+    Option.getOrElse(() => fallback),
+  );
 
 const systemTheme = (): ResolvedTheme =>
   window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
+/** matchMedia subscription owned by Atom finalizers instead of a React effect. */
+const systemThemeAtom = Atom.make((get) => {
+  const query = window.matchMedia("(prefers-color-scheme: light)");
+  const onChange = () => get.refreshSelf();
+  query.addEventListener("change", onChange);
+  get.addFinalizer(() => query.removeEventListener("change", onChange));
+  return systemTheme();
+});
 
 export function ThemeProvider({
   children,
@@ -32,21 +49,10 @@ export function ThemeProvider({
   defaultTheme?: ThemePreference;
   storageKey?: string;
 }) {
-  const [preference, setPreference] = React.useState<ThemePreference>(() => {
-    const saved = localStorage.getItem(storageKey);
-    return isPreference(saved) ? saved : defaultTheme;
-  });
-  const [resolvedSystem, setResolvedSystem] = React.useState<ResolvedTheme>(systemTheme);
-
-  React.useEffect(() => {
-    if (preference !== "system") return;
-    const query = window.matchMedia("(prefers-color-scheme: light)");
-    const onChange = () => setResolvedSystem(systemTheme());
-    onChange();
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, [preference]);
-
+  const [preference, setPreference] = React.useState<ThemePreference>(() =>
+    readStoredPreference(storageKey, defaultTheme),
+  );
+  const resolvedSystem = useAtomValue(systemThemeAtom);
   const theme: ResolvedTheme = preference === "system" ? resolvedSystem : preference;
 
   React.useLayoutEffect(() => {
@@ -62,7 +68,7 @@ export function ThemeProvider({
 
   const setTheme = React.useCallback(
     (next: ThemePreference) => {
-      localStorage.setItem(storageKey, next);
+      localStorage.setItem(storageKey, Schema.encodeSync(ThemePreferenceSchema)(next));
       setPreference(next);
     },
     [storageKey],

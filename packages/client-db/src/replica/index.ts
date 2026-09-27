@@ -1,4 +1,5 @@
-export { compileSqliteSubset } from "./compile";
+export { analyzeInventorySubset } from "./subset-ir";
+export { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
 export {
   decodeBatchSqliteRows,
   decodeCategorySqliteRows,
@@ -7,58 +8,44 @@ export {
   decodeProductSqliteRows,
   decodeStockMovementSqliteRows,
 } from "./decode";
+export { ReplicaRowInvalid, UnsupportedSubsetQuery } from "./errors";
+export { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
+export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
+export type { ElectronReplicaBridge, ElectronReplicaOpenIdentity } from "./electron-ipc-handle";
+export { openIndexedDbReplicaHandle } from "./indexeddb-handle";
+export type { OpenIndexedDbReplicaInput } from "./indexeddb-handle";
+export { indexedDbReplicaDatabaseName } from "@store/sync/replica/migrate-pending";
+export { inventoryReplicaScope } from "./scope";
+export { createInvoiceCoherenceGate, sqliteCollectionOptions } from "./collection";
+export { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_LIKE_PATTERN_LENGTH } from "./sources";
+export type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
+export { syncHealthFromScheduler, syncStatusFromOutbox, syncStatusWithHealth } from "./status";
 export {
-  OrganizationObjectCatalogUnsupported,
-  ReplicaRowInvalid,
-  UnsupportedSubsetQuery,
-} from "./errors";
-export { openElectronBrowserWorkerReplicaSqlite } from "./browser-sqlite";
-export { submitOrganizationObjectCommand } from "./command";
-export {
-  connectOrganizationObjectLiveTransport,
-  openBrowserOrganizationObjectLiveSocket,
-  type OpenOrganizationObjectLiveSocket,
-  type OrganizationObjectLiveEngine,
-  type OrganizationObjectLiveSocket,
-  type OrganizationObjectLiveSocketHandlers,
-  type OrganizationObjectLiveTransport,
-  type ReplicaLiveFeed,
-} from "./live";
-export { inventoryOrganizationObjectReplicaName } from "./namespace";
-export type { NodeReplicaIdentity, NodeReplicaSqlite } from "./node-sqlite";
-export { projectionCollectionOptions, sqliteCollectionOptions } from "./collection";
-export { createReplicaCommitPublisher } from "./publisher";
-export {
-  DEFAULT_COLLECTION_MAXIMUM_ROWS,
-  HISTORY_SOURCES,
-  INVENTORY_COLLECTION_SOURCES,
-  MAX_IN_VALUES,
-  NAMED_PROJECTION_NAMES,
-  SOURCE_ENTITY,
-  SOURCE_TABLE,
-} from "./sources";
+  commandTargets,
+  EMPTY_SYNC_ACTIVITY,
+  rejectedCommandFromOutbox,
+  syncActivityFromOutbox,
+  syncActivityFromStatuses,
+  syncStatusFromActivity,
+} from "./activity";
 export type {
-  InventoryCollectionSource,
-  InventoryCollectionSyncMode,
-  NamedProjectionName,
-} from "./sources";
-export { createSyncStatusStore, syncStatusFromOutbox } from "./status";
-export { decodeOutboxStatusRow } from "./sqlite-row";
-export type { OutboxCommandStatus } from "./sqlite-row";
-export type { InventoryCommandQueries, InventorySyncStatus } from "./status";
+  CommandTargets,
+  InventorySyncActivity,
+  RejectedCommand,
+  RejectedCommandTarget,
+} from "./activity";
+export type { InventorySyncStatus, ReplicaSyncHealth } from "./status";
 export type {
-  CompileSubsetInput,
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
-  InventoryProjectionDescriptor,
+  ReplicaActivitySurface,
   ReplicaChangeFeed,
   ReplicaCommitNotice,
+  ReplicaHandle,
   ReplicaQueryStamp,
-  ReplicaSqlExecutor,
-  ReplicaSqliteHandle,
-  SqliteCollectionConfig,
-  SqliteCollectionDependencies,
+  ReplicaSubsetRead,
+  ReplicaSubsetReader,
+  ReplicaSyncHealthFeed,
   SqliteParameter,
   SqliteResultRow,
-  SqliteSubsetPlan,
 } from "./types";

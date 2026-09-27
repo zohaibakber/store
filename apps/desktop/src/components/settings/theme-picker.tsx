@@ -47,8 +47,10 @@ export function ThemePicker() {
     <Field name="theme" render={(props) => <Fieldset {...props} />}>
       <FieldsetLegend>Theme</FieldsetLegend>
       <RadioGroup
-        // SAFETY: Radio values come exclusively from the ThemePreference option list below.
-        onValueChange={(value) => value && setTheme(value as ThemePreference)}
+        onValueChange={(value) => {
+          const option = options.find((entry) => entry.value === value);
+          if (option) setTheme(option.value);
+        }}
         value={preference}
       >
         <div className="flex gap-4">

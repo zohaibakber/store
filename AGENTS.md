@@ -48,6 +48,18 @@ other weights or sizes. Follow the rules anyway.
 - **Icons.** Hugeicons, via `<HugeiconsIcon icon={...} />` from
   `@hugeicons/react` with icons from `@hugeicons/core-free-icons`.
 
+## Sync engine boundaries
+
+- Replicas hard-delete. A `delete` change removes the row; client schemas carry
+  no `deletedAt`.
+- The shared entrypoint of `packages/sync` must stay native-free.
+  `packages/sync/test/browser-boundary.test.ts` enforces it; SQLite belongs in
+  `@store/sync/sqlite`, IndexedDB in `@store/sync/browser`.
+- Command state never crosses IPC as SQL. The preload bridge carries domain
+  commands, bounded reads, and notices only.
+- The pull digest is requested on the cadence policy only, when the replica
+  believes it is caught up and the verification interval has elapsed.
+
 ## UI components
 
 `apps/desktop/src/components/ui` is a registry managed by `components.json`, not
@@ -87,9 +99,7 @@ and `vp build` (Turborepo fans them out per package).
 - **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
-  above. Inventory authority on nightly desktop is the organization Durable
-  Object (SQLite). D1 is auth. Desktop defaults to that replica over
-  `/api/sync/*`, including `/api/sync/live`. Catalog writes on that path are
-  unsupported. `dev` and `prod` still provision Neon. Nightly skips Neon.
+  above. D1 is auth. Inventory commands commit in PlanetScale Postgres through
+  `/api/sync/*`. `dev` and `prod` provision that database. Nightly skips it.
   Inventory can be driven from the local replica without the backend after the
   first sync.

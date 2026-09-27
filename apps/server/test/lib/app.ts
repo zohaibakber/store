@@ -16,6 +16,7 @@ import {
   unprovisionedSyncAuthority,
   unprovisionedSyncLiveUpgrade,
   type SyncAuthorityContract,
+  type SyncLiveUpgradeContract,
 } from "../../src/inventory/sync-authority";
 
 const sessionFor = (role: "owner" | "admin" | "member") =>
@@ -75,13 +76,10 @@ export interface AppOptions {
   readonly productScanAi?: ProductScanAiClient;
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
-  readonly writeInventoryMutation?: ServerRuntimeContract["writeInventoryMutation"];
-  readonly importInventory?: ServerRuntimeContract["importInventory"];
-  readonly issueInvoice?: ServerRuntimeContract["issueInvoice"];
   readonly syncAuthority?: SyncAuthorityContract;
+  readonly syncLiveUpgrade?: SyncLiveUpgradeContract;
 }
 
-/** Route test harness. Organization access follows the JWT session: no session means revoked. */
 export const appFor = (authenticated = true, options: AppOptions = {}) => ({
   request: async (path: string, init?: RequestInit, invoiceAi = defaultInvoiceAi) => {
     const session = sessionFor(options.role ?? "owner");
@@ -119,18 +117,14 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
         options.limitInvoiceExtraction ?? (() => Effect.succeed({ success: true })),
       productScanAi: Effect.succeed(options.productScanAi ?? defaultProductScanAi),
       limitProductScan: () => Effect.succeed({ success: options.productScanAllowed ?? true }),
-      writeInventoryMutation: options.writeInventoryMutation ?? (() => Effect.succeed({ txid: 1 })),
-      importInventory:
-        options.importInventory ?? (() => Effect.die("Inventory import is not configured.")),
-      issueInvoice:
-        options.issueInvoice ?? (() => Effect.die("Invoice commands are not configured.")),
     } satisfies ServerRuntimeContract;
     const RuntimeLive = Layer.succeed(ServerRuntime, runtime);
     const SyncLive = Layer.succeed(
       SyncAuthority,
       options.syncAuthority ?? unprovisionedSyncAuthority,
     );
-    const LiveUpgradeLive = Layer.succeed(SyncLiveUpgrade, unprovisionedSyncLiveUpgrade);
+    const liveUpgrade = options.syncLiveUpgrade ?? unprovisionedSyncLiveUpgrade;
+    const LiveUpgradeLive = Layer.succeed(SyncLiveUpgrade, liveUpgrade);
     const app = ServerRoutes.pipe(
       Layer.provide(RuntimeLive),
       Layer.provide(SyncLive),
@@ -140,7 +134,7 @@ export const appFor = (authenticated = true, options: AppOptions = {}) => ({
     );
     const handlerContext = Context.merge(
       testRuntimeContext,
-      Context.make(SyncLiveUpgrade, unprovisionedSyncLiveUpgrade),
+      Context.make(SyncLiveUpgrade, liveUpgrade),
     );
     const { dispose, handler } = HttpRouter.toWebHandler(app, { disableLogger: true });
     try {

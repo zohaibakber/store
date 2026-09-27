@@ -12,6 +12,7 @@ export const Route = createFileRoute("/invoices/$invoiceId")({
 function InvoiceDetailRoute() {
   const { invoiceId } = Route.useParams();
   const invoice = useInventoryInvoice(invoiceId);
+
   if (invoice.data) return <InvoiceDetailPage invoice={invoice.data} />;
   if (invoice.isError) {
     return <InvoiceDetailError error={new Error("The invoice could not be loaded.")} />;

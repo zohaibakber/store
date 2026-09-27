@@ -9,6 +9,7 @@ import {
   type TokenSet,
 } from "@store/auth";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Schema from "effect/Schema";
 
 import { authSession } from "@/lib/auth";
@@ -38,15 +39,9 @@ export const authenticate = async (command: LoginCommand): Promise<TokenSet> => 
   return tokens;
 };
 
-const base64Url = (bytes: Uint8Array) => {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
-
 const pkce = async () => {
-  const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const challenge = base64Url(
+  const verifier = Encoding.encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = Encoding.encodeBase64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
   );
   return { verifier, challenge };

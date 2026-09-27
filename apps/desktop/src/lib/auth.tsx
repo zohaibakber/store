@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { unauthenticatedWorkspace } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
@@ -48,18 +49,11 @@ const fallbackSession = (): WorkspaceSession => ({
   snapshot: unauthenticatedWorkspace({ isOnline: false }),
 });
 
-/**
- * Subscriber of the live workspace session. Does not own writes, does not
- * seed from a frozen bootstrap snapshot, and does not live as the admit path.
- */
+/** Requires the session registry on `RegistryContext` (mounted in `mountApp`). */
 export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
   const router = useRouter();
   const session = router.options.context.session;
-  const current = React.useSyncExternalStore(
-    session.subscribe,
-    () => session.current() ?? fallbackSession(),
-    () => session.current() ?? fallbackSession(),
-  );
+  const current = useAtomValue(session.atom) ?? fallbackSession();
 
   const refresh = React.useCallback(async () => {
     try {

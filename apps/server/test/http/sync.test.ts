@@ -1,37 +1,23 @@
 import {
-  InventoryImportId,
-  InventoryObjectName,
-  InventoryReleaseId,
   OrgCommitSequence,
-  OrganizationId,
   SyncCommandEnvelope,
+  SyncEpoch,
   syncProtocolError,
 } from "@store/contracts";
-import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { lastUnitBuyerACommand, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
-import { InventoryNotPublished } from "../../src/inventory/inventory-directory";
-import type {
-  OrganizationInventoryRpcClient,
-  RoutedCommandCallWire,
-} from "../../src/inventory/organization-host";
+import { databaseError } from "../../src/inventory/postgres";
 import {
-  makeRoutedSyncAuthority,
+  makeInventorySyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
+import type { SyncLiveUpgradeContract } from "../../src/inventory/sync-authority";
 import { appFor } from "../lib/app";
-
-const idleInventoryRpcClient = (): OrganizationInventoryRpcClient => ({
-  registerReplica: () => Effect.die("unused"),
-  submitCommand: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  pull: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
-  locateSnapshotPart: () => Effect.die("unused"),
-});
 
 const commandPost = (body: SyncCommandEnvelope = lastUnitBuyerAEnvelope) =>
   ({
@@ -52,6 +38,37 @@ describe("sync HTTP", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "SYNC_NOT_PROVISIONED" },
     });
+  });
+
+  it("answers database failures with a generic message and no SQL text", async () => {
+    const unused = () => Effect.die("unused");
+    const syncAuthority = makeInventorySyncAuthority({
+      commands: {
+        register: unused,
+        receipt: unused,
+        pull: unused,
+        commit: () =>
+          Effect.fail(
+            databaseError(
+              new EffectDrizzleQueryError({
+                query: 'select "secret_column" from "inventory_state" where "organization_id" = $1',
+                params: ["org-private"],
+                cause: Cause.fail(new Error("could not serialize access")),
+              }),
+            ),
+          ),
+      },
+      snapshots: { acquireSnapshot: unused, readSnapshotPart: unused },
+      live: { mintLiveTicket: unused, consumeLiveTicket: unused, readLiveHorizon: unused },
+    });
+    const response = await appFor(true, { syncAuthority }).request(
+      "/api/sync/commands",
+      commandPost(),
+    );
+    const text = await response.text();
+    expect(response.status).toBe(503);
+    expect(JSON.parse(text)).toMatchObject({ error: { code: "SYNC_UNAVAILABLE" } });
+    expect(text).not.toMatch(/select|secret_column|inventory_state|org-private|Failed query/iu);
   });
 
   it("maps organization mismatch to 403", async () => {
@@ -90,7 +107,7 @@ describe("sync HTTP", () => {
       commitSequence: OrgCommitSequence.make("1"),
       result: {
         _tag: "issueInvoice" as const,
-        invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
+        invoiceId: lastUnitBuyerACommand.invoiceId,
         invoiceNumber: 1,
       },
     };
@@ -112,141 +129,6 @@ describe("sync HTTP", () => {
       operationId: lastUnitBuyerAEnvelope.operationId,
       decision: "accepted",
     });
-  });
-
-  it("refuses an organization with no active release instead of 500", async () => {
-    const syncAuthority = makeRoutedSyncAuthority(
-      {
-        resolveActive: () =>
-          Effect.fail(
-            InventoryNotPublished.make({
-              message: "This organization has no published inventory.",
-            }),
-          ),
-      },
-      {
-        getByName: () => {
-          throw new Error("directory miss must not select an object");
-        },
-      },
-      {
-        getObject: () => Effect.die("unused"),
-        putObject: () => Effect.die("unused"),
-      },
-    );
-    const response = await appFor(true, { syncAuthority }).request(
-      "/api/sync/commands",
-      commandPost(),
-    );
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
-      error: { code: "EPOCH_MISMATCH" },
-    });
-  });
-
-  it("maps a refusal decoded from the RPC success channel to 403", async () => {
-    const syncAuthority = makeRoutedSyncAuthority(
-      {
-        resolveActive: () =>
-          Effect.succeed({
-            objectName: Schema.decodeUnknownSync(InventoryObjectName)("inventory-org-1"),
-            evidence: {
-              organizationId: Schema.decodeUnknownSync(OrganizationId)("org-1"),
-              importId: Schema.decodeUnknownSync(InventoryImportId)("import-test"),
-              releaseId: Schema.decodeUnknownSync(InventoryReleaseId)("release-test"),
-            },
-          }),
-      },
-      {
-        getByName: () => ({
-          ...idleInventoryRpcClient(),
-          submitCommand: () =>
-            Effect.succeed({
-              _tag: "protocolFailure",
-              code: "ORGANIZATION_MISMATCH",
-              message: "The command does not belong to the active organization.",
-            }),
-        }),
-      },
-      {
-        getObject: () => Effect.die("unused"),
-        putObject: () => Effect.die("unused"),
-      },
-    );
-    const response = await appFor(true, { syncAuthority }).request(
-      "/api/sync/commands",
-      commandPost(),
-    );
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({
-      error: { code: "ORGANIZATION_MISMATCH" },
-    });
-  });
-
-  it("ignores routing evidence supplied in a request header or body", async () => {
-    const evidence = {
-      organizationId: Schema.decodeUnknownSync(OrganizationId)("org-1"),
-      importId: Schema.decodeUnknownSync(InventoryImportId)("import-test"),
-      releaseId: Schema.decodeUnknownSync(InventoryReleaseId)("release-test"),
-    };
-    const received: Array<unknown> = [];
-    const syncAuthority = makeRoutedSyncAuthority(
-      {
-        resolveActive: () =>
-          Effect.succeed({
-            objectName: Schema.decodeUnknownSync(InventoryObjectName)("inventory-org-1"),
-            evidence,
-          }),
-      },
-      {
-        getByName: (name: string) => {
-          received.push(name);
-          return {
-            ...idleInventoryRpcClient(),
-            submitCommand: (call: RoutedCommandCallWire) => {
-              received.push(call.route);
-              return Effect.succeed({
-                _tag: "success",
-                value: {
-                  operationId: lastUnitBuyerAEnvelope.operationId,
-                  replicaId: lastUnitBuyerAEnvelope.replicaId,
-                  clientSequence: lastUnitBuyerAEnvelope.clientSequence,
-                  payloadHash: lastUnitBuyerAEnvelope.payloadHash,
-                  decision: "accepted",
-                  commitSequence: OrgCommitSequence.make("1"),
-                  result: {
-                    _tag: "issueInvoice",
-                    invoiceId: lastUnitBuyerAEnvelope.command.payload.invoiceId,
-                    invoiceNumber: 1,
-                  },
-                },
-              });
-            },
-          };
-        },
-      },
-      {
-        getObject: () => Effect.die("unused"),
-        putObject: () => Effect.die("unused"),
-      },
-    );
-    const response = await appFor(true, { syncAuthority }).request("/api/sync/commands", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-inventory-object": "inventory-attacker",
-        "x-inventory-import": "import-attacker",
-        "x-inventory-release": "release-attacker",
-      },
-      body: JSON.stringify({
-        ...lastUnitBuyerAEnvelope,
-        importId: "import-attacker",
-        releaseId: "release-attacker",
-        objectName: "inventory-attacker",
-      }),
-    });
-    expect(response.status).toBe(200);
-    expect(received).toEqual(["inventory-org-1", evidence]);
   });
 
   it("maps SNAPSHOT_REQUIRED to 409", async () => {
@@ -281,7 +163,64 @@ describe("sync HTTP", () => {
   });
 
   it("refuses an unauthenticated live upgrade", async () => {
-    const response = await appFor(false).request("/api/sync/live?nonce=ab");
+    const response = await appFor(false).request(
+      "/api/sync/live?nonce=abababababababababababababababababababababababababababababababab&replicaId=replica-a&subscription=operational",
+    );
     expect(response.status).toBe(401);
+  });
+
+  it("streams SSE wake hints after a valid ticket query", async () => {
+    const nonce = "ab".repeat(32);
+    const syncLiveUpgrade: SyncLiveUpgradeContract = {
+      handle: (_actor, query, preferSse) =>
+        Effect.succeed(
+          preferSse
+            ? Stream.make({
+                event: "wake" as const,
+                id: "3",
+                data: JSON.stringify({
+                  epoch: "1",
+                  subscription: query.subscription,
+                  horizon: "3",
+                }),
+              })
+            : {
+                epoch: SyncEpoch.make("1"),
+                subscription: query.subscription,
+                horizon: OrgCommitSequence.make("3"),
+              },
+        ),
+    };
+    const response = await appFor(true, { syncLiveUpgrade }).request(
+      `/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
+      { headers: { accept: "text/event-stream" } },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const body = await response.text();
+    expect(body).toContain("event: wake");
+    expect(body).toContain('"horizon":"3"');
+  });
+
+  it("returns a JSON wake hint for long-poll clients", async () => {
+    const nonce = "cd".repeat(32);
+    const syncLiveUpgrade: SyncLiveUpgradeContract = {
+      handle: (_actor, query, preferSse) =>
+        Effect.succeed(
+          preferSse
+            ? undefined
+            : {
+                epoch: SyncEpoch.make("1"),
+                subscription: query.subscription,
+                horizon: OrgCommitSequence.make("9"),
+              },
+        ),
+    };
+    const response = await appFor(true, { syncLiveUpgrade }).request(
+      `/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=1000`,
+      { headers: { accept: "application/json" } },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ horizon: "9", subscription: "operational" });
   });
 });

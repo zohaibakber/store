@@ -1,0 +1,13 @@
+.expo/
+dist/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+.metro-health-check*
+*.tsbuildinfo
+/android
+/ios

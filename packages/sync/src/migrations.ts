@@ -1,12 +1,25 @@
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import type { SqlClient } from "effect/unstable/sql/SqlClient";
+import type { SqlError } from "effect/unstable/sql/SqlError";
+
 const STATEMENT_SEPARATOR = "--> statement-breakpoint";
 
 const LEDGER_TABLE = "__store_sync_migrations";
 
 const MIGRATION_KEY_PATTERN = /^[0-9a-z_]+$/u;
 
-export type SqliteMigrationTarget = {
-  readonly execute: (sql: string, parameters: ReadonlyArray<string>) => void;
-  readonly appliedKeys: (sql: string) => ReadonlyArray<string>;
+export class SyncMigrationKeyInvalid extends Schema.TaggedError<SyncMigrationKeyInvalid>()(
+  "SyncMigrationKeyInvalid",
+  { key: Schema.String },
+) {}
+
+export type SqliteMigrationTarget<E> = {
+  readonly execute: (
+    statement: string,
+    parameters: ReadonlyArray<string>,
+  ) => Effect.Effect<void, E>;
+  readonly appliedKeys: (statement: string) => Effect.Effect<ReadonlyArray<string>, E>;
 };
 
 export const migrationStatements = (migration: string): ReadonlyArray<string> =>
@@ -15,62 +28,36 @@ export const migrationStatements = (migration: string): ReadonlyArray<string> =>
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0);
 
-export type AsyncSqliteMigrationTarget = {
-  readonly execute: (sql: string, parameters: ReadonlyArray<string>) => Promise<void>;
-  readonly appliedKeys: (sql: string) => Promise<ReadonlyArray<string>>;
-};
+const LedgerRows = Schema.Array(Schema.Struct({ key: Schema.String }));
 
-const applyMigration = (
-  key: string,
-  migrations: Record<string, string>,
-  execute: (sql: string, parameters: ReadonlyArray<string>) => void,
-): void => {
-  if (!MIGRATION_KEY_PATTERN.test(key)) {
-    throw new Error(`Sync migration key ${key} is not a safe identifier.`);
-  }
-  const migration = migrations[key];
-  if (migration === undefined) return;
-  for (const statement of migrationStatements(migration)) execute(statement, []);
-  execute(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
-};
+const decodeLedgerRows = Schema.decodeUnknownSync(LedgerRows);
 
-export const runMigrations = (
-  migrations: Record<string, string>,
-  target: SqliteMigrationTarget,
-): void => {
-  target.execute(`create table if not exists ${LEDGER_TABLE} (key text primary key not null)`, []);
-  const applied = new Set(target.appliedKeys(`select key from ${LEDGER_TABLE}`));
-  for (const key of Object.keys(migrations).sort()) {
-    if (applied.has(key)) continue;
-    applyMigration(key, migrations, target.execute);
-  }
-};
+export const sqlClientMigrationTarget = (sql: SqlClient): SqliteMigrationTarget<SqlError> => ({
+  execute: (statement, parameters) => Effect.asVoid(sql.unsafe(statement, parameters)),
+  appliedKeys: (statement) =>
+    sql.unsafe(statement).pipe(Effect.map((rows) => decodeLedgerRows(rows).map((row) => row.key))),
+});
 
-export const runMigrationsAsync = async (
+export const runMigrations = <E>(
   migrations: Record<string, string>,
-  target: AsyncSqliteMigrationTarget,
-): Promise<void> => {
-  await target.execute(
-    `create table if not exists ${LEDGER_TABLE} (key text primary key not null)`,
-    [],
-  );
-  const applied = new Set(await target.appliedKeys(`select key from ${LEDGER_TABLE}`));
-  for (const key of Object.keys(migrations).sort()) {
-    if (applied.has(key)) continue;
-    await applyMigrationAsync(key, migrations, target.execute);
-  }
-};
-
-const applyMigrationAsync = async (
-  key: string,
-  migrations: Record<string, string>,
-  execute: (sql: string, parameters: ReadonlyArray<string>) => Promise<void>,
-): Promise<void> => {
-  if (!MIGRATION_KEY_PATTERN.test(key)) {
-    throw new Error(`Sync migration key ${key} is not a safe identifier.`);
-  }
-  const migration = migrations[key];
-  if (migration === undefined) return;
-  for (const statement of migrationStatements(migration)) await execute(statement, []);
-  await execute(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
-};
+  target: SqliteMigrationTarget<E>,
+): Effect.Effect<void, E | SyncMigrationKeyInvalid> =>
+  Effect.gen(function* () {
+    yield* target.execute(
+      `create table if not exists ${LEDGER_TABLE} (key text primary key not null)`,
+      [],
+    );
+    const applied = new Set(yield* target.appliedKeys(`select key from ${LEDGER_TABLE}`));
+    for (const key of Object.keys(migrations).sort()) {
+      if (applied.has(key)) continue;
+      if (!MIGRATION_KEY_PATTERN.test(key)) {
+        return yield* Effect.fail(new SyncMigrationKeyInvalid({ key }));
+      }
+      const migration = migrations[key];
+      if (migration === undefined) continue;
+      for (const statement of migrationStatements(migration)) {
+        yield* target.execute(statement, []);
+      }
+      yield* target.execute(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
+    }
+  });

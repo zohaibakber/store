@@ -1,89 +1,108 @@
-import { getConnectionURI } from "@distilled.cloud/neon";
+import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
 import * as Neon from "alchemy/Neon";
-import * as AlchemyOutput from "alchemy/Output";
+import * as Planetscale from "alchemy/Planetscale";
+import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Effect from "effect/Effect";
 
-export { stageUsesInventoryPostgres } from "./stage";
+import { stageUsesNeonInventory } from "./stage";
 
-/** The authoritative inventory database. */
+export {
+  stageUsesInventoryPostgres,
+  stageUsesNeonInventory,
+  stageUsesPlanetscaleInventory,
+} from "./stage";
+
+const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
+  schema: "packages/db/src/postgres/schema.ts",
+  out: "packages/db/migrations/postgres",
+  dialect: "postgres",
+});
+
+/**
+ * Authoritative inventory database on PlanetScale.
+ *
+ * Alchemy applies the reviewed Drizzle migrations. The Worker does not.
+ * The database is retained: replacing or removing the resource never
+ * deletes the physical database.
+ */
 export const InventoryPostgres = Effect.gen(function* () {
-  const schema = yield* Drizzle.Schema("InventoryPostgresSchema", {
-    schema: "packages/db/src/postgres/schema.ts",
-    out: "packages/db/migrations/postgres",
-    dialect: "postgres",
-  });
-
-  return yield* Neon.Project("InventoryPostgres", {
-    enableLogicalReplication: true,
+  const schema = yield* InventorySchema;
+  return yield* Planetscale.PostgresDatabase("InventoryPostgres", {
+    clusterSize: "PS_10",
     migrations: schema,
+  }).pipe(RemovalPolicy.retain());
+});
+
+/**
+ * Role the Worker uses to connect.
+ *
+ * This is not the branch default role. Alchemy migrates with the database
+ * resource; Hyperdrive uses this role's direct origin.
+ */
+export const InventoryPostgresRole = Effect.gen(function* () {
+  const database = yield* InventoryPostgres;
+  return yield* Planetscale.PostgresRole("InventoryPostgresRole", {
+    database,
+    inheritedRoles: ["postgres"],
   });
 });
 
 /**
- * `Neon.Project` copies its create-time connection URI across updates, so
- * Hyperdrive must not use `postgres.origin`. Ask Neon for the current URI at
- * deploy time. The Worker runtime resolves the already-bound Hyperdrive and
- * must not call the Neon API.
- *
- * IDs are Outputs on the project resource. Plan resolves them from state.
- * Yielding them inside fromEffect bind()s RuntimeContext, which plan.diff
- * does not provide.
+ * Development inventory database on Neon. Alchemy applies the same Drizzle
+ * migrations as production.
  */
-const currentInventoryOrigin = (postgres: Neon.Project) =>
-  AlchemyOutput.all(
-    AlchemyOutput.asOutput(postgres.projectId),
-    AlchemyOutput.asOutput(postgres.defaultBranchId),
-    AlchemyOutput.asOutput(postgres.databaseName),
-    AlchemyOutput.asOutput(postgres.roleName),
-  ).pipe(
-    AlchemyOutput.mapEffect(([projectId, branchId, databaseName, roleName]) =>
-      Effect.gen(function* () {
-        const direct = yield* getConnectionURI({
-          project_id: projectId,
-          branch_id: branchId,
-          database_name: databaseName,
-          role_name: roleName,
-          pooled: false,
-        });
-        const pooled = yield* getConnectionURI({
-          project_id: projectId,
-          branch_id: branchId,
-          database_name: databaseName,
-          role_name: roleName,
-          pooled: true,
-        });
-        return {
-          origin: Neon.parsePostgresOrigin(direct.uri),
-          pooledOrigin: Neon.parsePostgresOrigin(pooled.uri),
-        };
-      }).pipe(Effect.orDie),
-    ),
-  );
+export const InventoryNeon = Effect.gen(function* () {
+  const schema = yield* InventorySchema;
+  return yield* Neon.Project("InventoryNeon", {
+    name: "tabaaq-inventory-dev",
+    migrations: schema,
+  });
+});
 
-/** Cloudflare's pooled Worker connection to the authoritative inventory DB. */
+const hyperdriveOptions = { caching: { disabled: true } } as const;
+
 export const InventoryHyperdrive = Effect.gen(function* () {
-  const postgres = yield* InventoryPostgres;
-  // Folded to the cached origin in the Worker bundle. The Output keeps the
-  // Neon lookup out of the stack program's requirements.
-  const credentials = !globalThis.__ALCHEMY_RUNTIME__
-    ? currentInventoryOrigin(postgres)
-    : { origin: postgres.origin, pooledOrigin: postgres.pooledOrigin };
+  const { stage } = yield* Alchemy.Stack;
+  if (stageUsesNeonInventory(stage)) {
+    const project = yield* InventoryNeon;
+    return yield* Cloudflare.Hyperdrive.Connection("InventoryPostgresHyperdrive", {
+      ...hyperdriveOptions,
+      origin: project.origin,
+      dev: {
+        scheme: project.pooledOrigin.scheme,
+        host: project.pooledOrigin.host,
+        port: project.pooledOrigin.port,
+        database: project.pooledOrigin.database,
+        user: project.pooledOrigin.user,
+        password: project.pooledOrigin.password,
+        sslmode: "require",
+      },
+    });
+  }
+  const role = yield* InventoryPostgresRole;
   return yield* Cloudflare.Hyperdrive.Connection("InventoryPostgresHyperdrive", {
-    // Hyperdrive is itself a pooler, so its production origin is Neon's direct endpoint.
-    origin: credentials.origin,
-    // Local workerd bypasses Hyperdrive and should use Neon's pooled endpoint.
+    ...hyperdriveOptions,
+    origin: role.origin,
     dev: {
-      scheme: credentials.pooledOrigin.scheme,
-      host: credentials.pooledOrigin.host,
-      port: credentials.pooledOrigin.port,
-      database: credentials.pooledOrigin.database,
-      user: credentials.pooledOrigin.user,
-      password: credentials.pooledOrigin.password,
+      scheme: role.pooledOrigin.scheme,
+      host: role.pooledOrigin.host,
+      port: role.pooledOrigin.port,
+      database: role.pooledOrigin.database,
+      user: role.pooledOrigin.user,
+      password: role.pooledOrigin.password,
       sslmode: "require",
     },
-    // Writes must never be served from Hyperdrive's query cache.
-    caching: { disabled: true },
   });
+});
+
+export const InventoryDatabaseId = Effect.gen(function* () {
+  const { stage } = yield* Alchemy.Stack;
+  if (stageUsesNeonInventory(stage)) {
+    const project = yield* InventoryNeon;
+    return project.projectId;
+  }
+  const database = yield* InventoryPostgres;
+  return database.id;
 });

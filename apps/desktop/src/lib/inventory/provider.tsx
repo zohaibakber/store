@@ -1,14 +1,14 @@
-import { DbProvider } from "@tanstack/react-db";
-import * as React from "react";
+import {
+  InventoryProvider as SharedInventoryProvider,
+  useInventoryState,
+  useInventorySyncStatus,
+  type CatalogLease,
+  type CatalogLifetime,
+  type InventoryHost,
+} from "@store/inventory-react";
+import type * as React from "react";
 
-import type { InventoryHost } from "@/lib/inventory-host";
-
-import type { CatalogLease, CatalogLifetime } from "./lifetime";
-import { StaleCatalogLease } from "./lifetime";
 import { InventorySyncStatusView } from "./sync-status";
-import type { Inventory, InventoryState } from "./types";
-
-const InventoryContext = React.createContext<InventoryState | null>(null);
 
 export function InventoryProvider({
   children,
@@ -21,96 +21,38 @@ export function InventoryProvider({
   readonly host: InventoryHost;
   readonly lease: CatalogLease;
 }) {
-  const [state, setState] = React.useState<InventoryState>({ _tag: "Opening" });
-  const [attempt, setAttempt] = React.useState(0);
-
-  React.useEffect(() => {
-    let active = true;
-    void catalog.open(lease, host).then(
-      (inventory) => {
-        if (active) {
-          setState({
-            _tag: "Ready",
-            inventory,
-            actions: inventory.actions,
-          });
-        }
-      },
-      (cause: unknown) => {
-        if (!active) return;
-        if (cause instanceof StaleCatalogLease) return;
-        const message = cause instanceof Error ? cause.message : "Catalog storage is unavailable.";
-        setState({ _tag: "Error", error: message });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [attempt, catalog, host, lease]);
-
-  if (state._tag === "Error") {
-    return (
-      <div className="flex flex-col gap-3 p-6">
-        <p className="text-sm text-destructive">{state.error}</p>
-        <button
-          className="text-sm underline"
-          onClick={() => {
-            setState({ _tag: "Opening" });
-            setAttempt((value) => value + 1);
-          }}
-          type="button"
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <InventoryContext.Provider value={state}>
-      {state._tag === "Ready" ? (
-        <DbProvider client={state.inventory.dbClient}>{children}</DbProvider>
-      ) : (
-        children
-      )}
-    </InventoryContext.Provider>
+    <SharedInventoryProvider catalog={catalog} host={host} scope={lease.scope}>
+      <InventoryOpenFailure>{children}</InventoryOpenFailure>
+    </SharedInventoryProvider>
   );
 }
 
-export const useInventoryActions = () => {
-  const state = React.useContext(InventoryContext);
-  if (!state || state._tag !== "Ready") throw new Error("Inventory is not ready.");
-  return state.actions;
-};
-
-export const useCatalogReplica = () => {
-  const state = React.useContext(InventoryContext);
-  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
-  return state.inventory;
-};
-
-export const useCatalogIsReady = () => {
-  const state = React.useContext(InventoryContext);
-  return state?._tag === "Ready";
-};
+function InventoryOpenFailure({ children }: { readonly children: React.ReactNode }) {
+  const state = useInventoryState();
+  if (state._tag !== "Error") return children;
+  return (
+    <div className="flex flex-col gap-3 p-6">
+      <p className="text-sm text-destructive">{state.error}</p>
+      <button className="text-sm underline" onClick={state.retry} type="button">
+        Try again
+      </button>
+    </div>
+  );
+}
 
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
-  const state = React.useContext(InventoryContext);
-  if (!state || state._tag === "Opening") return null;
-  if (state._tag === "Error") return null;
+  const state = useInventoryState();
+  if (state._tag !== "Ready") return null;
   return (
     <>
-      <InventoryReadyStatus inventory={state.inventory} />
+      <InventoryReadyStatus />
       {children}
     </>
   );
 }
 
-function InventoryReadyStatus({ inventory }: { readonly inventory: Inventory }) {
-  const status = React.useSyncExternalStore(
-    inventory.observeSync,
-    inventory.commands.status,
-    inventory.commands.status,
-  );
+function InventoryReadyStatus() {
+  const status = useInventorySyncStatus();
   return <InventorySyncStatusView status={status} />;
 }

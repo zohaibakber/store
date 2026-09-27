@@ -13,7 +13,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "
 
 import { AuthBroker } from "./auth";
 import { loadDeviceId } from "./device-id";
-import { registerInventoryHttpIpc } from "./inventory-http";
+import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { makeOAuthCallbackMailbox } from "./oauth-callback-mailbox";
@@ -24,6 +24,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { registerReplicaWorkerIpc } from "./replica-ipc";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
@@ -60,6 +61,7 @@ initDesktopSentry();
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
+let disposeReplicaWorker: (() => Promise<void>) | undefined;
 
 function appIconPath() {
   // BrowserWindow's `icon` option goes through nativeImage, which reads the
@@ -336,6 +338,7 @@ const shutdown = makeShutdownCoordinator({
     const results = await Promise.allSettled([
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
+      Promise.resolve(disposeReplicaWorker?.()),
     ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -392,11 +395,20 @@ void app.whenReady().then(async () => {
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
-    auth: authBroker,
     deviceId,
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
   });
+  disposeReplicaWorker = registerReplicaWorkerIpc({
+    ipcMain,
+    userDataPath: app.getPath("userData"),
+    workerPath: path.join(MAIN_DIST, "replica-worker.js"),
+    apiBaseUrl: API_BASE_URL,
+    syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, (url, init) =>
+      authBroker.apiFetch(url, init),
+    ),
+    allowedOrigins: allowedRendererOrigins,
+  }).dispose;
   await authBroker.initialize();
   publishSession(authBroker.snapshot);
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);

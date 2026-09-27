@@ -31,6 +31,17 @@ const decodeApply = <Row>(row: Row) =>
   Schema.decodeUnknownResult(syncEntityRows.product.schema)(row);
 const decodePush = <Row>(row: Row) => Schema.decodeUnknownResult(syncEntityPushRows.product)(row);
 
+test("an authoritative image carrying deletedAt decodes without keeping the field", () => {
+  const decoded = decodeApply(productRow);
+  expect(Result.isSuccess(decoded)).toBe(true);
+  expect(decoded.pipe(Result.getOrThrow)).not.toHaveProperty("deletedAt");
+});
+
+test("a required field is still rejected when unknown fields are tolerated", () => {
+  const { name: _name, ...missingName } = productRow;
+  expect(Result.isFailure(decodeApply(missingName))).toBe(true);
+});
+
 test("a well-formed product row decodes in both directions", () => {
   expect(Result.isSuccess(decodeApply(productRow))).toBe(true);
   expect(Result.isSuccess(decodePush(productRow))).toBe(true);

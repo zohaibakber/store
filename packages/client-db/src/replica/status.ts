@@ -1,24 +1,21 @@
-import type { OutboxCommandStatus } from "./sqlite-row";
+import type { CommandStatus } from "@store/contracts";
+import type { SyncSchedulerStatus } from "@store/sync/browser";
 
 export type InventorySyncStatus =
   | { readonly _tag: "savedLocally" }
   | { readonly _tag: "pendingConfirmation" }
   | { readonly _tag: "caughtUp" }
   | { readonly _tag: "rejected"; readonly message: string }
-  | { readonly _tag: "storageError"; readonly message: string };
+  | { readonly _tag: "storageError"; readonly message: string }
+  | { readonly _tag: "recoveryRequired"; readonly message: string };
 
-export type InventoryCommandQueries = {
-  readonly status: () => InventorySyncStatus;
-};
-
-export type SyncStatusStore = {
-  readonly get: () => InventorySyncStatus;
-  readonly set: (status: InventorySyncStatus) => void;
-  readonly observe: (listener: (status: InventorySyncStatus) => void) => () => void;
-};
+export type ReplicaSyncHealth =
+  | { readonly _tag: "running" }
+  | { readonly _tag: "storageError"; readonly message: string }
+  | { readonly _tag: "recoveryRequired"; readonly message: string };
 
 export const syncStatusFromOutbox = (
-  statuses: ReadonlyArray<OutboxCommandStatus>,
+  statuses: ReadonlyArray<CommandStatus>,
 ): InventorySyncStatus => {
   if (statuses.includes("rejected")) {
     return { _tag: "rejected", message: "The authority rejected a local command." };
@@ -30,21 +27,20 @@ export const syncStatusFromOutbox = (
   return { _tag: "caughtUp" };
 };
 
-export const createSyncStatusStore = (initial: InventorySyncStatus): SyncStatusStore => {
-  let current = initial;
-  const listeners = new Set<(status: InventorySyncStatus) => void>();
-  return {
-    get: () => current,
-    set: (status) => {
-      current = status;
-      for (const listener of listeners) listener(status);
-    },
-    observe: (listener) => {
-      listeners.add(listener);
-      listener(current);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
+export const syncHealthFromScheduler = (status: SyncSchedulerStatus): ReplicaSyncHealth => {
+  switch (status._tag) {
+    case "storageError":
+      return { _tag: "storageError", message: status.message };
+    case "recoveryRequired":
+      return { _tag: "recoveryRequired", message: status.message };
+    case "running":
+    case "pausedForAuth":
+    case "stopped":
+      return { _tag: "running" };
+  }
 };
+
+export const syncStatusWithHealth = (
+  outbox: InventorySyncStatus,
+  health: ReplicaSyncHealth,
+): InventorySyncStatus => (health._tag === "running" ? outbox : health);

@@ -35,7 +35,6 @@ const roles = [
   { value: "member", label: "Member" },
 ] as const;
 
-/** Admins can remove members. Owners can remove anyone. */
 const canRemove = (caller: OrganizationRole, target: OrganizationRole) =>
   caller === "owner" || (caller === "admin" && target === "member");
 

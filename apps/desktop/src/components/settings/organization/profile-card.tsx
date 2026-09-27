@@ -1,6 +1,6 @@
 import { OrganizationName, OrganizationSlug, type AuthOrganizationMembership } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
-import * as z from "zod";
+import * as Schema from "effect/Schema";
 
 import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -9,16 +9,23 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
+import { formValidator } from "@/lib/form-schema";
 import { useOrganization } from "@/lib/organization";
 
-const profileSchema = z.object({
-  name: z.string().trim().min(2, "Give the store a name.").max(60),
-  slug: z
-    .string()
-    .trim()
-    .regex(/^[a-z0-9]*(?:-[a-z0-9]+)*$/u, "Use lowercase letters, numbers and dashes.")
-    .max(40),
-});
+const profileSchema = formValidator(
+  Schema.Struct({
+    name: Schema.Trim.check(
+      Schema.isMinLength(2, { message: "Give the store a name." }),
+      Schema.isMaxLength(60),
+    ),
+    slug: Schema.Trim.check(
+      Schema.isPattern(/^[a-z0-9]*(?:-[a-z0-9]+)*$/u, {
+        message: "Use lowercase letters, numbers and dashes.",
+      }),
+      Schema.isMaxLength(40),
+    ),
+  }),
+);
 
 const trimmedSlug = (slug: string) => (slug === "" ? null : OrganizationSlug.make(slug));
 

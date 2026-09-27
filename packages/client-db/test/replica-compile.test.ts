@@ -2,10 +2,11 @@ import { IR } from "@tanstack/db";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { compileSqliteSubset } from "../src/replica/compile";
+import { lowerSqliteSubset } from "../src/replica/compile";
 import { UnsupportedSubsetQuery } from "../src/replica/errors";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
-import type { InventoryCollectionDescriptor } from "../src/replica/types";
+import { analyzeInventorySubset } from "../src/replica/subset-ir";
+import type { CompileSubsetInput, InventoryCollectionDescriptor } from "../src/replica/types";
 import type { CategoryRow } from "../src/rows";
 
 const descriptor: InventoryCollectionDescriptor<CategoryRow> = {
@@ -17,13 +18,18 @@ const descriptor: InventoryCollectionDescriptor<CategoryRow> = {
   decodeRows: () => Effect.succeed([]),
 };
 
+const compileSqliteSubset = (
+  target: InventoryCollectionDescriptor<CategoryRow>,
+  options: CompileSubsetInput,
+) => analyzeInventorySubset(target, options).pipe(Effect.flatMap(lowerSqliteSubset));
+
 const compare = {
   direction: "asc" as const,
   nulls: "last" as const,
   stringSort: "locale" as const,
 };
 
-describe("compileSqliteSubset", () => {
+describe("lowerSqliteSubset", () => {
   it("compiles an indexed equality into parameterized SQL", () => {
     const plan = Effect.runSync(
       compileSqliteSubset(descriptor, {
@@ -65,7 +71,7 @@ describe("compileSqliteSubset", () => {
     expect(() =>
       Effect.runSync(
         compileSqliteSubset(products, {
-          orderBy: [{ expression: new IR.PropRef(["name"]), compareOptions: compare }],
+          orderBy: [{ expression: new IR.PropRef(["retailPrice"]), compareOptions: compare }],
           limit: 20,
         }),
       ),
@@ -87,6 +93,30 @@ describe("compileSqliteSubset", () => {
         compileSqliteSubset(descriptor, {
           where: new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(values)]),
           limit: 20,
+        }),
+      ),
+    ).toThrow(UnsupportedSubsetQuery);
+  });
+
+  it("rejects a received spec whose column is outside the source allowlist", () => {
+    expect(() =>
+      Effect.runSync(
+        lowerSqliteSubset({
+          source: "categories",
+          where: { _tag: "compare", column: "productId", op: "eq", value: "p-1" },
+          orderBy: [],
+          limit: 10,
+          offset: 0,
+        }),
+      ),
+    ).toThrow(UnsupportedSubsetQuery);
+    expect(() =>
+      Effect.runSync(
+        lowerSqliteSubset({
+          source: "products",
+          orderBy: [{ column: "retailPrice", direction: "asc" }],
+          limit: 10,
+          offset: 0,
         }),
       ),
     ).toThrow(UnsupportedSubsetQuery);

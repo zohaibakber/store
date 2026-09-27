@@ -41,13 +41,11 @@ export interface AuthSecurityInput {
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
-/** A configured origin that was dropped instead of being trusted. */
 export interface RejectedTrustedOrigin {
   readonly value: string;
   readonly reason: string;
 }
 
-/** A deployment variable that was ignored instead of failing the deployment. */
 export interface RejectedAuthSetting extends RejectedTrustedOrigin {
   readonly setting: string;
 }
@@ -100,13 +98,8 @@ const secureWebOrigin = (value: string, label: string) => {
   return url.origin;
 };
 
-/**
- * A scheme, not `host:port`: an app origin always writes the slash
- * (`myapp://`, `com.tabaaq.desktop:/`), while `localhost:5173` must stay a host.
- */
 const schemePrefix = /^([a-z][a-z0-9+.-]*):\/\/?/i;
 const wildcarded = /[*?]/;
-/** Schemes that address a document or script rather than an app. */
 const unusableSchemes = new Set(["about", "blob", "data", "file", "javascript", "vbscript"]);
 
 type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly reason: string };
@@ -142,9 +135,6 @@ const classifyTrustedOrigin = (
     return { reason: "must use HTTPS outside local development" };
 
   if (wildcarded.test(host)) {
-    // `*` or `*.com` would trust origins this deployment does not own. Require
-    // two literal labels, what `*.example.com` has, unless it is a loopback
-    // pattern such as `localhost:*` on a local deployment.
     const labels = host.replace(/:.*$/, "").split(".");
     const literal = labels.filter((label) => !wildcarded.test(label));
     const loopback = options.allowInsecure && isLoopbackHost(host.replace(/[*?]/g, "0"));
@@ -152,9 +142,6 @@ const classifyTrustedOrigin = (
     return { origins: [isWeb ? `${protocol}://${host}` : `https://${host}`] };
   }
 
-  // A bare host is resolved as HTTPS, plus HTTP for a loopback host, and only
-  // while this deployment is itself local, so a production list never gains an
-  // insecure origin nobody wrote.
   try {
     const secure = secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin");
     if (!options.allowInsecure || !isLoopbackHost(host)) return { origins: [secure] };
@@ -168,7 +155,7 @@ const classifyTrustedOrigin = (
   }
 };
 
-export interface ResolvedTrustedOrigins {
+interface ResolvedTrustedOrigins {
   readonly accepted: ReadonlyArray<string>;
   readonly rejected: ReadonlyArray<RejectedTrustedOrigin>;
 }
@@ -177,7 +164,7 @@ export interface ResolvedTrustedOrigins {
  * Classifies configured origins into the ones CORS can match and the ones it
  * cannot, so a caller can log the rejects instead of failing.
  */
-export const resolveTrustedOrigins = (
+const resolveTrustedOrigins = (
   origins: ReadonlyArray<string>,
   options: { readonly allowInsecure: boolean },
 ): ResolvedTrustedOrigins => {
@@ -207,8 +194,6 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
   );
   const mobileProtocol = protocol(input.mobileProtocol, "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL);
 
-  // The base URL is the deployment's own identity rather than operator input.
-  // `apps/server/infra.ts` states it literally, so it stays fatal.
   const baseURL = secureWebOrigin(input.baseURL, "Auth base URL");
   const secureCookies = baseURL.startsWith("https://");
 
@@ -304,9 +289,9 @@ export const isNativeRedirect = (redirectUri: string) => {
 /**
  * An OAuth redirect is trusted when its origin is. A web redirect carries a
  * path (`https://app.example.com/callback`), so it is reduced to its origin
- * before matching. A native redirect has no host authority to compare —
+ * before matching. A native redirect has no host authority to compare.
  * `com.tabaaq.desktop://auth/callback` and the renderer's
- * `com.tabaaq.desktop://app` share only the scheme the OS handed our app — so
+ * `com.tabaaq.desktop://app` share only the scheme the OS handed our app, so
  * the whole target is matched against the scheme patterns, which
  * {@link matchesTrustedOrigin} compares by prefix.
  */

@@ -24,7 +24,6 @@ import {
   organization,
   organizationInvitation,
   organizationMembership,
-  rateLimit,
   session,
   user,
 } from "@store/db/auth.schema";
@@ -52,15 +51,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
-import type { RateLimitAttempt } from "./rate-limit";
-
 const UserRecord = Schema.Struct({
   id: UserId,
   email: EmailAddress,
   name: Schema.String,
   image: Schema.NullOr(Schema.String),
   passwordHash: Schema.NullOr(PasswordHash),
-  /** Whether anyone has ever proven they read mail at this address. */
   emailVerified: Schema.Boolean,
 });
 export interface UserRecord extends Schema.Schema.Type<typeof UserRecord> {}
@@ -73,10 +69,6 @@ const MembershipRecord = Schema.Struct({
 });
 export interface MembershipRecord extends Schema.Schema.Type<typeof MembershipRecord> {}
 
-/**
- * The stored invitation, including the fields that decide whether it can still
- * be redeemed. {@link OrganizationInvitation} is the subset a client sees.
- */
 const InvitationRecord = Schema.Struct({
   id: InvitationId,
   organizationId: OrganizationId,
@@ -151,21 +143,10 @@ export interface AuthRepositoryApi {
     readonly image: string | null;
     readonly providerAccountId: string;
   }) => Effect.Effect<UserRecord, RepositoryError>;
-  /**
-   * Links a Google identity that no user holds yet. Answers `false` when the
-   * identity already belongs to somebody, because overwriting the owner would
-   * hand that account to whoever presented the identity second.
-   */
   readonly attachGoogleAccount: (input: {
     readonly userId: UserIdType;
     readonly providerAccountId: string;
   }) => Effect.Effect<boolean, RepositoryError>;
-  /**
-   * Google proved control of an address that an unverified password account
-   * claimed. The account becomes the Google user's: the password is dropped,
-   * the address is marked verified, and every session opened with that
-   * password is revoked.
-   */
   readonly claimUnverifiedPasswordUser: (input: {
     readonly userId: UserIdType;
     readonly providerAccountId: string;
@@ -179,10 +160,6 @@ export interface AuthRepositoryApi {
     readonly userId: UserIdType;
     readonly organizationId: OrganizationIdType;
   }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
-  /**
-   * Renames the organization in place. Answers `null` when the handle is
-   * taken, which the unique index is what actually decides.
-   */
   readonly updateOrganization: (input: {
     readonly organizationId: OrganizationIdType;
     readonly name: string;
@@ -196,26 +173,15 @@ export interface AuthRepositoryApi {
     readonly organizationId: OrganizationIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<number, RepositoryError>;
-  /**
-   * Answers `false` when the row is missing, already has `role`, or the update
-   * would leave the organization without an owner. D1 has no transactions, so
-   * the last-owner predicate lives in this statement.
-   */
   readonly changeMemberRole: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<boolean, RepositoryError>;
-  /**
-   * Answers `false` when the row is missing or the delete would leave the
-   * organization without an owner. Session revoke runs in the same batch only
-   * after the membership row is gone.
-   */
   readonly removeMember: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
   }) => Effect.Effect<boolean, RepositoryError>;
-  /** Replaces any live invitation for the same address, so the newest token wins. */
   readonly createInvitation: (
     input: NewInvitation,
   ) => Effect.Effect<InvitationRecord, RepositoryError>;
@@ -231,11 +197,6 @@ export interface AuthRepositoryApi {
     readonly organizationId: OrganizationIdType;
     readonly now: number;
   }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
-  /**
-   * Marks the invitation redeemed and adds the membership together. Answers
-   * `false` when the invitation was already spent, which is how two concurrent
-   * redemptions of one token settle on a single winner.
-   */
   readonly acceptInvitation: (input: {
     readonly invitation: InvitationRecord;
     readonly userId: UserIdType;
@@ -245,10 +206,6 @@ export interface AuthRepositoryApi {
   readonly findSession: (
     sessionId: SessionIdType,
   ) => Effect.Effect<SessionRecord | null, RepositoryError>;
-  /**
-   * Points a live session at the organization an invitation was for. The
-   * access token still names the old one until the session is refreshed.
-   */
   readonly moveSession: (input: {
     readonly sessionId: SessionIdType;
     readonly organizationId: OrganizationIdType;
@@ -264,11 +221,6 @@ export interface AuthRepositoryApi {
   ) => Effect.Effect<void, RepositoryError>;
   readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
   readonly revokeUser: (userId: UserIdType, now: number) => Effect.Effect<void, RepositoryError>;
-  /**
-   * Increments `key` when the window still has room. Empty RETURNING is a
-   * denial, so two concurrent attempts cannot both slip under the cap.
-   */
-  readonly allowRateLimit: (input: RateLimitAttempt) => Effect.Effect<boolean, RepositoryError>;
 }
 
 export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
@@ -429,7 +381,7 @@ const startingOrganization = (name: string) => ({
   name: `${name || "My"}'s Store`,
 });
 
-export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
+const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
   const client = database.$client;
   const fail = (operation: string) =>
     Effect.mapError((cause: unknown) => repositoryError(operation, cause));
@@ -594,9 +546,6 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
     }),
     claimUnverifiedPasswordUser: Effect.fn("AuthRepository.claimUnverifiedPasswordUser")(
       function* (input) {
-        // The link is written first and every following statement requires it
-        // to name this user, so an identity another account already holds
-        // leaves the password and the sessions untouched.
         const ownsIdentity = exists(
           database
             .select({ id: oauthAccount.id })
@@ -755,9 +704,6 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
             ),
           )
           .returning({ id: organizationMembership.id }),
-        // A session naming an organization the user left would keep refreshing
-        // into a store they can no longer read. Skip the revoke when the
-        // last-owner predicate blocked the delete.
         database
           .update(session)
           .set({ revokedAt: at(now) })
@@ -973,27 +919,6 @@ export const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => 
         .set({ revokedAt: at(now) })
         .where(and(eq(session.userId, userId), isNull(session.revokedAt)))
         .pipe(fail("revokeUser"));
-    }),
-    allowRateLimit: Effect.fn("AuthRepository.allowRateLimit")(function* (input) {
-      const expiresAt = input.now + input.windowSeconds * 1_000;
-      const granted = yield* database
-        .insert(rateLimit)
-        .values({
-          key: input.key,
-          count: 1,
-          expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: rateLimit.key,
-          set: {
-            count: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN 1 WHEN ${rateLimit.count} < ${input.limit} THEN ${rateLimit.count} + 1 ELSE ${rateLimit.count} END`,
-            expiresAt: sql`CASE WHEN ${rateLimit.expiresAt} <= ${input.now} THEN excluded.expiresAt ELSE ${rateLimit.expiresAt} END`,
-          },
-          setWhere: sql`${rateLimit.expiresAt} <= ${input.now} OR ${rateLimit.count} < ${input.limit}`,
-        })
-        .returning({ count: rateLimit.count })
-        .pipe(fail("allowRateLimit"));
-      return granted.length === 1;
     }),
   };
 };

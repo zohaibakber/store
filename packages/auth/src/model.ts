@@ -61,7 +61,6 @@ export const OrganizationName = Schema.String.check(
 ).pipe(Schema.brand("OrganizationName"));
 export type OrganizationName = typeof OrganizationName.Type;
 
-/** A URL-safe handle. The column is uniquely indexed, so two stores cannot share one. */
 export const OrganizationSlug = Schema.String.check(
   Schema.isMinLength(2),
   Schema.isMaxLength(40),
@@ -92,7 +91,6 @@ export const AuthClientKind = Schema.Union([
 ]);
 export type AuthClientKind = typeof AuthClientKind.Type;
 
-export const browserClient = (): AuthClientKind => ({ _tag: "Browser" });
 export const nativeClient = (deviceName: string): AuthClientKind => ({
   _tag: "Native",
   deviceName,
@@ -320,14 +318,6 @@ export const OrganizationCommand = Schema.Union([
 ]);
 export type OrganizationCommand = typeof OrganizationCommand.Type;
 
-/**
- * The caller learns whatever the change produced: the organization as it now
- * reads, the invitation token they have to deliver themselves while email is
- * stubbed, or nothing beyond success.
- *
- * `Joined` also means the session moved: redeeming an invitation points it at
- * the organization that was joined, so the next token refresh lands there.
- */
 export const OrganizationCommandResult = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Joined"),

@@ -18,13 +18,15 @@ import {
   type OrganizationRole,
   type SendInvitationInput,
 } from "@store/auth";
+import { RuntimeContext } from "alchemy";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { EphemeralStore } from "../src/ephemeral";
 import { GoogleOAuth, GoogleOAuthError, type GoogleProfile } from "../src/google";
-import { nextRateLimit, type RateLimitWindow } from "../src/rate-limit";
+import type { AuthRateLimit } from "../src/limits";
 import {
   AuthRepository,
   type AuthRepositoryApi,
@@ -35,17 +37,13 @@ import {
 } from "../src/repository";
 import { AuthService, authServiceLayer } from "../src/service";
 
-const textEncoder = new TextEncoder();
-
-export const refreshTokenHash = async (secret: string) => {
-  const buffer = await crypto.subtle.digest(
-    "SHA-256",
-    textEncoder.encode(`refresh-pepper:${secret}`),
-  );
-  let binary = "";
-  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/gu, "");
-};
+const testRuntimeContext = Context.make(RuntimeContext, {
+  Type: "test",
+  id: "auth-service-test",
+  env: {},
+  get: () => Effect.succeed(undefined),
+  set: (id) => Effect.succeed(id),
+});
 
 export interface Store {
   readonly users: Array<UserRecord>;
@@ -60,10 +58,9 @@ export interface Store {
   readonly sessions: Array<SessionRecord>;
   readonly googleIdentities: Array<{ providerAccountId: string; userId: UserId }>;
   readonly sentInvitations: Array<SendInvitationInput>;
-  readonly rateLimits: Map<string, RateLimitWindow>;
 }
 
-export const emptyStore = (): Store => ({
+const emptyStore = (): Store => ({
   users: [],
   organizations: [],
   memberships: [],
@@ -71,10 +68,9 @@ export const emptyStore = (): Store => ({
   sessions: [],
   googleIdentities: [],
   sentInvitations: [],
-  rateLimits: new Map(),
 });
 
-export const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
+const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
 
 export const seedUser = (
   store: Store,
@@ -488,16 +484,19 @@ export const fakeRepository = (store: Store): AuthRepositoryApi => ({
         }
       }
     }),
-  allowRateLimit: (input) =>
-    Effect.sync(() => {
-      const next = nextRateLimit(store.rateLimits.get(input.key), input);
-      if (next === null) return false;
-      store.rateLimits.set(input.key, next);
-      return true;
-    }),
 });
 
-export const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
+const countingLimit = (limit: number): AuthRateLimit => {
+  const counts = new Map<string, number>();
+  return (key) =>
+    Effect.sync(() => {
+      const next = (counts.get(key) ?? 0) + 1;
+      counts.set(key, next);
+      return { success: next <= limit };
+    });
+};
+
+const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
   AccessToken.make(
     btoa(
       JSON.stringify({
@@ -518,7 +517,7 @@ export const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
 export interface Harness {
   readonly store: Store;
   readonly issued: Array<IssueAccessTokenInput>;
-  readonly layer: Layer.Layer<AuthService>;
+  readonly layer: Layer.Layer<AuthService | RuntimeContext>;
 }
 
 export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}): Harness => {
@@ -594,10 +593,17 @@ export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}
   return {
     store,
     issued,
-    layer: authServiceLayer({
-      developmentOtp: true,
-      trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
-      refreshTokenPepper: "refresh-pepper",
-    }).pipe(Layer.provide(dependencies)),
+    layer: Layer.merge(
+      authServiceLayer({
+        developmentOtp: true,
+        trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
+        refreshTokenPepper: "refresh-pepper",
+        limits: {
+          tenPerMinute: countingLimit(10),
+          fivePerMinute: countingLimit(5),
+        },
+      }).pipe(Layer.provide(dependencies)),
+      Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
+    ),
   };
 };
