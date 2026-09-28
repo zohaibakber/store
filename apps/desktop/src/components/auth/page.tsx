@@ -69,11 +69,13 @@ function OrSeparator() {
 function IdentifierSignIn({
   emailBusy,
   googleBusy,
+  onCancelGoogle,
   onContinue,
   onGoogle,
 }: {
   readonly emailBusy: boolean;
   readonly googleBusy: boolean;
+  readonly onCancelGoogle: () => void;
   readonly onContinue: (email: string) => Promise<void>;
   readonly onGoogle: () => Promise<void>;
 }) {
@@ -117,6 +119,14 @@ function IdentifierSignIn({
             <GoogleIcon aria-hidden="true" className="size-4" />
             Continue with Google
           </Button>
+          {googleBusy ? (
+            <p className="text-center text-xs text-muted-foreground">
+              Finish signing in with Google in your browser.{" "}
+              <Button onClick={onCancelGoogle} size="xs" type="button" variant="link">
+                Cancel
+              </Button>
+            </p>
+          ) : null}
         </Field>
       </form>
     </div>
@@ -360,6 +370,7 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
               setStep(route);
             })
           }
+          onCancelGoogle={() => setBusy("idle")}
           onGoogle={() => run("google", beginGoogle)}
         />
       ) : null}
