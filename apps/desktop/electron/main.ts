@@ -113,7 +113,7 @@ const windowBackground = () =>
   nativeTheme.shouldUseDarkColors ? WINDOW_DARK_BACKGROUND : WINDOW_LIGHT_BACKGROUND;
 
 const titleBarOverlay = () => ({
-  color: windowBackground(),
+  color: `${windowBackground()}00`,
   height: TITLE_BAR_HEIGHT,
   symbolColor: nativeTheme.shouldUseDarkColors
     ? TITLE_BAR_DARK_SYMBOL_COLOR
