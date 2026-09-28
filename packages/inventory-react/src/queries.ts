@@ -22,6 +22,7 @@ import {
   useLiveQuery,
   useLiveSuspenseQuery,
   type InitialQueryBuilder,
+  type LiveQueryOptions,
   type Ref,
 } from "@tanstack/react-db";
 import * as Arr from "effect/Array";
@@ -240,38 +241,90 @@ export const useCatalogStockMovements = (productId: string, limit = 50) => {
   return { ...live, data };
 };
 
+const invoicesConfig = (inventory: Inventory, limit: number) => ({
+  queryKey: [inventory.invoices.id, "invoices", limit],
+  query: invoicesQuery(inventory, limit),
+});
+
+const invoiceConfig = (inventory: Inventory, invoiceId: string) => ({
+  queryKey: [inventory.invoices.id, "invoice", invoiceId],
+  query: invoiceQuery(inventory, invoiceId),
+});
+
 export const useInventoryInvoices = (limit = 50) => {
-  const live = useLiveQuery({ query: invoicesQuery(useCatalogReplica(), limit) });
+  const live = useLiveQuery(invoicesConfig(useCatalogReplica(), limit));
   const data: ReadonlyArray<Invoice> = live.data;
   return { ...live, data };
 };
 
 export const useInventoryInvoice = (invoiceId: string) => {
-  const live = useLiveQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) });
+  const live = useLiveQuery(invoiceConfig(useCatalogReplica(), invoiceId));
   const data: Invoice | undefined = live.data[0];
   return { ...live, data };
 };
 
-export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
-  useLiveSuspenseQuery({ query: categoriesQuery(useCatalogReplica()) }).data;
+const usePreloadedLiveQuery = <Config extends LiveQueryOptions>(
+  inventory: Inventory,
+  config: Config,
+): Config => {
+  void inventory.dbClient.preloadLiveQuery(config).catch(() => undefined);
+  return config;
+};
 
-export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> =>
-  useLiveSuspenseQuery({ query: productsQuery(useCatalogReplica(), limit) }).data;
+const categoriesConfig = (inventory: Inventory) => ({
+  queryKey: [inventory.categories.id, "categories"],
+  query: categoriesQuery(inventory),
+});
 
-export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
-  useLiveSuspenseQuery({ query: productQuery(useCatalogReplica(), productId) }).data[0];
+export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, categoriesConfig(inventory))).data;
+};
+
+export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(
+    usePreloadedLiveQuery(inventory, {
+      queryKey: [inventory.products.id, "products", limit],
+      query: productsQuery(inventory, limit),
+    }),
+  ).data;
+};
+
+export const useSuspenseCatalogProduct = (productId: string): Product | undefined => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(
+    usePreloadedLiveQuery(inventory, {
+      queryKey: [inventory.products.id, "product", productId],
+      query: productQuery(inventory, productId),
+    }),
+  ).data[0];
+};
 
 export const useSuspenseCatalogStockMovements = (
   productId: string,
   limit = 50,
-): ReadonlyArray<StockMovement> =>
-  useLiveSuspenseQuery({ query: stockMovementsQuery(useCatalogReplica(), productId, limit) }).data;
+): ReadonlyArray<StockMovement> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(
+    usePreloadedLiveQuery(inventory, {
+      queryKey: [inventory.stockMovements.id, "stockMovements", productId, limit],
+      query: stockMovementsQuery(inventory, productId, limit),
+    }),
+  ).data;
+};
 
-export const useSuspenseInventoryInvoices = (limit = 50): ReadonlyArray<Invoice> =>
-  useLiveSuspenseQuery({ query: invoicesQuery(useCatalogReplica(), limit) }).data;
+export const useSuspenseInventoryInvoices = (limit = 50): ReadonlyArray<Invoice> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, invoicesConfig(inventory, limit)))
+    .data;
+};
 
-export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
-  useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data[0];
+export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, invoiceConfig(inventory, invoiceId)))
+    .data[0];
+};
 
 const batchesForIds = (
   builder: InitialQueryBuilder,
@@ -298,10 +351,15 @@ export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArr
   const inventory = useCatalogReplica();
   const rows = useAtomSuspense(inventory.atoms.productSearch(limit)(query)).value;
   const ids = rows.map((row) => row.id);
-  const categories = useLiveSuspenseQuery({ query: categoriesQuery(inventory) }).data;
-  const batches = useLiveSuspenseQuery({
-    query: (builder) => batchesForIds(builder, inventory, ids),
-  }).data;
+  const categories = useLiveSuspenseQuery(
+    usePreloadedLiveQuery(inventory, categoriesConfig(inventory)),
+  ).data;
+  const batches = useLiveSuspenseQuery(
+    usePreloadedLiveQuery(inventory, {
+      queryKey: [inventory.batches.id, "batchesForProducts", ...ids],
+      query: (builder: InitialQueryBuilder) => batchesForIds(builder, inventory, ids),
+    }),
+  ).data;
   return React.useMemo(() => {
     const categoryById = new Map(categories.map((category) => [category.id, category]));
     const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);

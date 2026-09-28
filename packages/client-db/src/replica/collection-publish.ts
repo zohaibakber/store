@@ -39,6 +39,7 @@ export const publishSubsetWindow = <Row extends InventoryCollectionRow>(
   nextRows: ReadonlyArray<Row>,
   rowRefs: Map<string, number>,
   signal?: AbortSignal,
+  truncate = false,
 ) => {
   const nextKeys = new Set<string>();
   const nextByKey = new Map<string, Row>();
@@ -49,6 +50,7 @@ export const publishSubsetWindow = <Row extends InventoryCollectionRow>(
   }
 
   params.begin();
+  if (truncate) params.truncate();
   for (const key of nextKeys) {
     const row = nextByKey.get(key);
     if (row === undefined) continue;

@@ -125,6 +125,36 @@ describe("collection reactivity", () => {
     expect(versions.filter((version) => version === 2)).toHaveLength(0);
   });
 
+  it("replaces rows when a new snapshot generation activates", async () => {
+    let stamp = { workspaceToken: "ws", generationId: "1", localCommitVersion: 1 };
+    let rows = [categorySqlRow("old", "Old")];
+    const listeners: Array<(notice: ReplicaCommitNotice) => void> = [];
+    const options = sqliteCollectionOptions(descriptor, {
+      executor: { readSubset: async () => ({ stamp, rows }) },
+      changeFeed: {
+        subscribe: (listener) => {
+          listeners.push(listener);
+          return () => undefined;
+        },
+      },
+    });
+    const collection = createCollection(options);
+    const replaced = new Promise<void>((resolve) => {
+      collection.subscribeChanges(() => {
+        if (collection.get("new") !== undefined && collection.get("old") === undefined) resolve();
+      });
+    });
+    await options.utils.loadSubset({ limit: 10 });
+    expect(collection.get("old")?.name).toBe("Old");
+    stamp = { workspaceToken: "ws", generationId: "2", localCommitVersion: 2 };
+    rows = [categorySqlRow("new", "New")];
+    listeners[0]!({ ...stamp, touchedEntities: ["category"], touchedKeys: [] });
+    await replaced;
+    expect(collection.toArray.map((row) => row.id)).toEqual(["new"]);
+    await options.utils.loadSubset({ limit: 10 });
+    expect(collection.toArray.map((row) => row.id)).toEqual(["new"]);
+  });
+
   it("gates invoice coherence until invoice, items, and stock settle", async () => {
     const gate = createInvoiceCoherenceGate();
     const unregisterInvoice = gate.registerSource("invoice");

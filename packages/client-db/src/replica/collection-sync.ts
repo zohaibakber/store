@@ -74,17 +74,14 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
   const enqueue = (work: () => Promise<void>): Promise<void> => Effect.runPromise(serialized(work));
 
   const fenced = (notice: ReplicaCommitNotice): boolean =>
-    !disposed &&
-    activeToken !== undefined &&
-    activeGeneration !== undefined &&
-    notice.workspaceToken === activeToken &&
-    notice.generationId === activeGeneration;
+    !disposed && activeToken !== undefined && notice.workspaceToken === activeToken;
 
   const applyPublished = async (
     acquisition: Acquisition<Row>,
     current: PlannedRead<Row>,
     touchedEntities: ReadonlyArray<SyncEntity>,
     signal?: AbortSignal,
+    truncate = false,
   ): Promise<void> => {
     const run = async () => {
       const published = publishSubsetWindow(
@@ -95,6 +92,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         current.rows,
         rowRefs,
         signal,
+        truncate,
       );
       acquisition.keys = published.keys;
       acquisition.rows = published.rows;
@@ -115,8 +113,8 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     if (disposed || activeToken === undefined) return;
     const current = await readCurrent(acquisition.options);
     if (current.stamp.workspaceToken !== activeToken) return;
-    if (current.stamp.generationId !== activeGeneration) {
-      params.truncate();
+    const truncate = current.stamp.generationId !== activeGeneration;
+    if (truncate) {
       rowRefs.clear();
       for (const held of acquisitions.values()) {
         held.keys = new Set();
@@ -124,7 +122,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       }
       activeGeneration = current.stamp.generationId;
     }
-    await applyPublished(acquisition, current, touchedEntities, signal);
+    await applyPublished(acquisition, current, touchedEntities, signal, truncate);
   };
 
   const refreshAcquisitions = async (): Promise<void> => {
