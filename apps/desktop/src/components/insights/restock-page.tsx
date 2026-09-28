@@ -5,6 +5,7 @@ import type { InsightsReport, ProductInsight, StockStatus } from "@store/service
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
+import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +19,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -334,13 +334,7 @@ export function RestockPage({
         title="Restock"
       />
       <PageContent>
-        <React.Suspense
-          fallback={
-            <div aria-busy="true" aria-label="Loading restock plan">
-              <Skeleton className="h-96 w-full" />
-            </div>
-          }
-        >
+        <React.Suspense fallback={<LoadingSpinner className="h-96" label="Loading restock plan" />}>
           <RestockBody onViewChange={onViewChange} view={view} />
         </React.Suspense>
       </PageContent>

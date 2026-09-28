@@ -5,6 +5,7 @@ import { productStock } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { Suspense, useDeferredValue, useState } from "react";
 
+import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   Autocomplete,
@@ -15,7 +16,6 @@ import {
   AutocompletePopup,
 } from "@/components/ui/autocomplete";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useSuspenseProductSearch } from "@/lib/inventory";
 
 const RESULT_LIMIT = 20;
@@ -26,7 +26,7 @@ function InvoiceProductPicker() {
     actions: { addProduct },
   } = useInvoiceCreate();
   return (
-    <Suspense fallback={<Skeleton className="h-9 w-full" />}>
+    <Suspense fallback={<LoadingSpinner className="h-9" />}>
       <ProductPickerSearch key={pickerKey} onPick={addProduct} />
     </Suspense>
   );

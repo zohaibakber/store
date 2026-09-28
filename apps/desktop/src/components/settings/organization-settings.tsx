@@ -1,6 +1,7 @@
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { AcceptInvitationCard } from "@/components/settings/organization/accept-invitation-card";
 import { OrganizationInvitationsCard } from "@/components/settings/organization/invitations-card";
 import { OrganizationMembersCard } from "@/components/settings/organization/members-card";
@@ -8,7 +9,6 @@ import { OrganizationProfileCard } from "@/components/settings/organization/prof
 import { FrameCard } from "@/components/shared/frame-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
 import { OrganizationProvider, useOrganization } from "@/lib/organization";
 
@@ -38,12 +38,7 @@ function OrganizationPanel({ userId }: { userId: string }) {
   }
 
   if (!state.roster) {
-    return (
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-44 w-full" />
-        <Skeleton className="h-56 w-full" />
-      </div>
-    );
+    return <LoadingSpinner className="h-44" label="Loading organization" />;
   }
 
   const { organization, members, invitations } = state.roster;

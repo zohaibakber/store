@@ -8,7 +8,7 @@ import {
 } from "@store/inventory-react";
 import type * as React from "react";
 
-import { PageSkeleton } from "@/components/app/page-skeleton";
+import { PageLoading } from "@/components/app/loading-spinner";
 import { LegacyMigrationRunner } from "@/lib/legacy-migration/runner";
 
 import { InventorySyncStatusView } from "./sync-status";
@@ -47,7 +47,7 @@ function InventoryOpenFailure({ children }: { readonly children: React.ReactNode
 
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
   const state = useInventoryState();
-  if (state._tag !== "Ready") return <PageSkeleton />;
+  if (state._tag !== "Ready") return <PageLoading />;
   return (
     <>
       <InventoryReadyStatus />

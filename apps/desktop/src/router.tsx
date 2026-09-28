@@ -1,7 +1,7 @@
 import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
-import { PageSkeleton } from "@/components/app/page-skeleton";
+import { PageLoading } from "@/components/app/loading-spinner";
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";
 import type { ReplayChannel } from "@/replay-channel";
@@ -30,7 +30,7 @@ export const getRouter = (input: {
     defaultGcTime: 60_000,
     defaultPreloadGcTime: 15_000,
     scrollRestoration: true,
-    defaultPendingComponent: PageSkeleton,
+    defaultPendingComponent: PageLoading,
     defaultErrorComponent: RouteError,
   });
 

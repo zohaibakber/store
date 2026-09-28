@@ -1,9 +1,9 @@
 import type { SalesRange } from "@store/services/insights";
 import * as React from "react";
 
+import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useInventoryInsights } from "@/lib/inventory";
 
 import { InsightsHeader, InsightsRefreshing } from "./header";
@@ -33,19 +33,6 @@ const VALUE_FROM_RANGE = { 7: "7", 30: "30", 90: "90" } satisfies Record<SalesRa
 const greeting = (hour: number) =>
   hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
-function OverviewSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading insights" className="flex flex-col gap-4">
-      <Skeleton className="h-32 w-full" />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Skeleton className="h-72 lg:col-span-2" />
-        <Skeleton className="h-72" />
-      </div>
-      <Skeleton className="h-64 w-full" />
-    </div>
-  );
-}
-
 function OverviewBody({ range }: { readonly range: SalesRange }) {
   const { report } = useInventoryInsights();
   const period = report.sales.periods[range];
@@ -65,7 +52,7 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ExpiringSoon report={report} />
-        <React.Suspense fallback={<Skeleton className="h-72 w-full" />}>
+        <React.Suspense fallback={<LoadingSpinner className="h-72" />}>
           <RecentInvoices />
         </React.Suspense>
       </div>
@@ -105,7 +92,7 @@ export function OverviewPage({
         title={greeting(new Date().getHours())}
       />
       <PageContent>
-        <React.Suspense fallback={<OverviewSkeleton />}>
+        <React.Suspense fallback={<LoadingSpinner className="min-h-96" label="Loading insights" />}>
           <OverviewBody range={range} />
         </React.Suspense>
       </PageContent>

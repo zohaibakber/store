@@ -3,8 +3,8 @@ import { serviceLevelFor } from "@store/services/insights";
 import * as React from "react";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { FrameCard } from "@/components/shared/frame-card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/format";
 import { useProductInsight, useStockPolicy } from "@/lib/inventory";
 
@@ -80,7 +80,7 @@ function StockPlanCard({ productId }: { readonly productId: string }) {
 export function ProductStockPlan({ productId }: { readonly productId: string }) {
   return (
     <AppErrorBoundary fallback={null}>
-      <React.Suspense fallback={<Skeleton className="h-48 w-full" />}>
+      <React.Suspense fallback={<LoadingSpinner className="h-48" />}>
         <StockPlanCard productId={productId} />
       </React.Suspense>
     </AppErrorBoundary>
