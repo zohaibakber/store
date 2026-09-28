@@ -29,11 +29,18 @@ const pullWithDigest = (digest: PartitionDigestReport): SyncPullResult => ({
   digest,
 });
 
-const diverging = (digest: PartitionDigestReport): PartitionDigestReport => ({
-  ...digest,
-  digest: "b".repeat(64),
-  entities: { ...digest.entities, product: "b".repeat(64) },
-});
+const diverging = (digest: PartitionDigestReport): PartitionDigestReport =>
+  digest.version === 2
+    ? {
+        ...digest,
+        digest: "b".repeat(64),
+        entities: { ...digest.entities, product: "b".repeat(64) },
+      }
+    : {
+        ...digest,
+        digest: "b".repeat(64),
+        entities: { ...digest.entities, product: "b".repeat(64) },
+      };
 
 describe("replica coverage", () => {
   it("marks a partition for repair when the authority digest disagrees with local rows", async () => {

@@ -7,4 +7,5 @@ export const replicaMigrations: Record<string, string> = {
   "20260924090000_replica_caught_up_at": "ALTER TABLE `replica_state` ADD COLUMN `caughtUpAt` integer;\n",
   "20260924090100_products_name_search_index": "CREATE INDEX `products_name_nocase_idx` ON `products` (`name` COLLATE NOCASE);\n",
   "20260924120000_replica_registered_at": "ALTER TABLE `replica_state` ADD COLUMN `registeredAt` integer;\n",
+  "20260928150000_history_coverage": "ALTER TABLE `snapshot_imports` ADD COLUMN `digestVersion` integer;\n--> statement-breakpoint\nUPDATE `replica_coverage` SET `verifiedAt` = NULL;\n",
 };

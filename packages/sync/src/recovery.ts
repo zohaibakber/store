@@ -1,4 +1,5 @@
 import {
+  PARTITION_DIGEST_VERSION,
   SyncProtocolError,
   type AcquireSnapshotRequest,
   type SnapshotManifest,
@@ -25,7 +26,10 @@ export const recoverRequiredSnapshot = (
   request: AcquireSnapshotRequest,
 ): Effect.Effect<void, SnapshotRecoveryError> =>
   Effect.gen(function* () {
-    const acquired = yield* transport.acquireSnapshot(request);
+    const acquired = yield* transport.acquireSnapshot({
+      ...request,
+      digestVersion: PARTITION_DIGEST_VERSION,
+    });
     if (acquired._tag === "building") {
       return yield* Effect.fail(
         SyncTransportUnavailable.make({

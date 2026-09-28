@@ -2,6 +2,7 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  CATALOG_PARTITION_DIGEST_VERSION,
   PARTITION_DIGEST_VERSION,
   SyncEpoch,
   SyncProtocolError,
@@ -848,7 +849,13 @@ describe("postgres inventory commands", () => {
             digestVersion: PARTITION_DIGEST_VERSION,
           }),
         );
-        return { register, caughtUp, behind, replayed, pulled, digested };
+        const digestedCatalog = yield* countStatements(
+          commands.pullEncoded(actor, {
+            ...pullFromStart,
+            digestVersion: CATALOG_PARTITION_DIGEST_VERSION,
+          }),
+        );
+        return { register, caughtUp, behind, replayed, pulled, digested, digestedCatalog };
       }),
     );
     for (const [name, count] of Object.entries(counted)) {
@@ -858,7 +865,8 @@ describe("postgres inventory commands", () => {
         transactions: 0,
       });
     }
-    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({ version: 2 });
+    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({ version: 3 });
+    expect(JSON.parse(counted.digestedCatalog.result.json).digest).toMatchObject({ version: 2 });
     expect(JSON.parse(counted.caughtUp.result.body).page.transactions).toHaveLength(1);
     expect(JSON.parse(counted.behind.result.body).page.transactions).toHaveLength(2);
     expect(JSON.parse(counted.replayed.result.body).page.transactions).toHaveLength(2);

@@ -2,6 +2,7 @@ import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as IndexedDbTable from "@effect/platform-browser/IndexedDbTable";
 import * as IndexedDbVersion from "@effect/platform-browser/IndexedDbVersion";
+import { PartitionDigestVersion } from "@store/contracts";
 import {
   CommandStatus,
   ReplicaBatchRow,
@@ -74,6 +75,7 @@ const SnapshotImportRow = Schema.Struct({
   stage: Schema.Literals(["importing", "caught_up", "activated", "failed"]),
   partsImported: NonNegativeInteger,
   partsTotal: NonNegativeInteger,
+  digestVersion: Schema.optionalKey(PartitionDigestVersion),
 });
 
 const StockOverlayRow = Schema.Struct({
@@ -314,6 +316,23 @@ class ReplicaV3 extends IndexedDbVersion.make(
   StockMovementTable,
 ) {}
 
+class ReplicaV4 extends IndexedDbVersion.make(
+  ReplicaStateTable,
+  OutboxTable,
+  CoverageTable,
+  SnapshotImportTable,
+  StockOverlayTable,
+  StagedSnapshotTable,
+  PendingRowMarkTable,
+  PendingRowJournalTable,
+  CategoryTable,
+  ProductTable,
+  BatchTable,
+  InvoiceTable,
+  InvoiceItemTable,
+  StockMovementTable,
+) {}
+
 export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
   ReplicaV1,
   Effect.fn("ReplicaIndexedDb.init")(function* (api) {
@@ -353,7 +372,7 @@ class ReplicaIndexedDbV2 extends ReplicaIndexedDbV1.add(
   }),
 ) {}
 
-export class ReplicaIndexedDb extends ReplicaIndexedDbV2.add(
+class ReplicaIndexedDbV3 extends ReplicaIndexedDbV2.add(
   ReplicaV3,
   Effect.fn("ReplicaIndexedDb.addProductNameOrder")(function* (from, api) {
     yield* api.createIndex("products", "byNameKey");
@@ -362,6 +381,16 @@ export class ReplicaIndexedDb extends ReplicaIndexedDbV2.add(
     yield* api
       .from("products")
       .upsertAll(rows.map(({ generation, ...row }) => storedProduct(generation, row)));
+  }),
+) {}
+
+export class ReplicaIndexedDb extends ReplicaIndexedDbV3.add(
+  ReplicaV4,
+  Effect.fn("ReplicaIndexedDb.reverifyHistoryCoverage")(function* (from, api) {
+    const rows = yield* from.from("replica_coverage").select();
+    yield* api
+      .from("replica_coverage")
+      .upsertAll(rows.map((row) => ({ ...row, verifiedAt: null })));
   }),
 ) {}
 

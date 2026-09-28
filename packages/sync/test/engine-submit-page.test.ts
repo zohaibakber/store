@@ -3,6 +3,7 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   type CommandReceipt,
   type SyncPullRequest,
   type SyncPullResult,
@@ -223,7 +224,7 @@ describe("sync engine applies the page that rides on a submit", () => {
             epoch: LAST_UNIT_EPOCH,
             subscription: "operational",
             afterCommitSequence: "1",
-            digestVersion: 2,
+            digestVersion: PARTITION_DIGEST_VERSION,
           },
         ]);
       }),

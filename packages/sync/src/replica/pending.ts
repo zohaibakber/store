@@ -3,6 +3,7 @@ import { syncEntityRows } from "@store/contracts/entity-rows";
 import type {
   ReplicaBatchRow,
   ReplicaCategoryRow,
+  ReplicaInvoiceRow,
   ReplicaProductRow,
 } from "@store/contracts/sync/replica-model";
 import {
@@ -26,6 +27,7 @@ import {
   byEntityDependency,
   decideJournalRestore,
   freeCategoryName,
+  freeInvoiceNumber,
   OUTSTANDING_COMMAND_STATUSES,
 } from "./decisions";
 import {
@@ -94,6 +96,17 @@ const projectionActorFor = Effect.fn("ReplicaPending.projectionActorFor")(functi
   } satisfies ProjectionActor;
 });
 
+const withFreeInvoiceNumber = Effect.fn("ReplicaPending.withFreeInvoiceNumber")(function* (
+  tx: ReplicaDb,
+  row: ReplicaInvoiceRow,
+) {
+  const others = (yield* tx
+    .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber })
+    .from(invoices)
+    .all()).filter((other) => other.id !== row.id);
+  return { ...row, invoiceNumber: freeInvoiceNumber(row.invoiceNumber, others) };
+});
+
 const withFreeCategoryName = Effect.fn("ReplicaPending.withFreeCategoryName")(function* (
   tx: ReplicaDb,
   row: ReplicaCategoryRow,
@@ -106,7 +119,7 @@ const withFreeCategoryName = Effect.fn("ReplicaPending.withFreeCategoryName")(fu
 export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProjection")(function* (
   tx: ReplicaDb,
   envelope: SyncCommandEnvelope,
-  renameCollidingCategories = false,
+  resolveCollisions = false,
 ) {
   const actor = yield* projectionActorFor(tx);
   const lookup = yield* replicaCatalogLookup(tx);
@@ -134,8 +147,10 @@ export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProj
     }
     if (projected.row === null) {
       yield* removeEntityRow(tx, projected.entity, projected.entityId);
-    } else if (projected.entity === "category" && renameCollidingCategories) {
+    } else if (projected.entity === "category" && resolveCollisions) {
       yield* writeEntityRow(tx, projected.entity, yield* withFreeCategoryName(tx, projected.row));
+    } else if (projected.entity === "invoice" && resolveCollisions) {
+      yield* writeEntityRow(tx, projected.entity, yield* withFreeInvoiceNumber(tx, projected.row));
     } else {
       yield* writeEntityRow(tx, projected.entity, projected.row);
     }

@@ -1,11 +1,14 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
+  CATALOG_PARTITION_DIGEST_VERSION,
   catalogWriteError,
+  isCatalogPartitionEntity,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
   partitionDigestOf,
   ReplicaClientSequence,
+  STOCK_MOVEMENT_ROW_VERSION,
   SyncProtocolError,
   type CatalogRowWrite,
   type CatalogWriteCommand,
@@ -31,6 +34,8 @@ import {
   inventoryChanges,
   inventoryState,
   inventoryTransactions,
+  invoiceItems,
+  invoices,
   products,
   replicas,
   stockMovements,
@@ -241,8 +246,36 @@ const activePartitionRows = (db: CatalogDb, organizationId: string) =>
     for (const row of batchRows) {
       rows.push({ entity: "batch", entityId: row.id, rowVersion: row.rowVersion });
     }
+    const invoiceRows = yield* db
+      .select({ id: invoices.id, rowVersion: invoices.rowVersion })
+      .from(invoices)
+      .where(eq(invoices.organizationId, organizationId));
+    for (const row of invoiceRows) {
+      rows.push({ entity: "invoice", entityId: row.id, rowVersion: row.rowVersion });
+    }
+    const itemRows = yield* db
+      .select({ id: invoiceItems.id, rowVersion: invoiceItems.rowVersion })
+      .from(invoiceItems)
+      .where(eq(invoiceItems.organizationId, organizationId));
+    for (const row of itemRows) {
+      rows.push({ entity: "invoiceItem", entityId: row.id, rowVersion: row.rowVersion });
+    }
+    const movementRows = yield* db
+      .select({ id: stockMovements.id })
+      .from(stockMovements)
+      .where(eq(stockMovements.organizationId, organizationId));
+    for (const row of movementRows) {
+      rows.push({
+        entity: "stockMovement",
+        entityId: row.id,
+        rowVersion: STOCK_MOVEMENT_ROW_VERSION,
+      });
+    }
     return rows;
   });
+
+const catalogRowsOf = (rows: ReadonlyArray<PartitionLeafSource>) =>
+  rows.filter((row) => isCatalogPartitionEntity(row.entity));
 
 describe("postgres catalog writes", () => {
   beforeAll(async () => {
@@ -557,8 +590,10 @@ describe("postgres catalog writes", () => {
     expect(outcome.deleted.result).toMatchObject({ _tag: "catalogWrite", rowsWritten: 3 });
     expect(outcome.product).toMatchObject({ deletedAt: OCCURRED_AT, rowVersion: 2 });
     expect(outcome.remainingCategories).toEqual([]);
-    expect(outcome.remainingRows).toEqual([]);
-    expect(outcome.digested.digest).toEqual(await Effect.runPromise(partitionDigestOf([])));
+    expect(catalogRowsOf(outcome.remainingRows)).toEqual([]);
+    expect(outcome.digested.digest).toEqual(
+      await Effect.runPromise(partitionDigestOf(outcome.remainingRows)),
+    );
     const changes = outcome.pulled.transactions[0]?.changes ?? [];
     expect(changes.map((change) => change.action)).toEqual(["delete", "delete", "delete"]);
     const productChange = changes.find((change) => change.entity === "product");
@@ -893,15 +928,33 @@ describe("postgres catalog writes", () => {
         const complete = yield* commands.pull(actor, pullFrom("0", true));
         const withoutDigest = yield* commands.pull(actor, pullFrom("0"));
         const legacy = yield* commands.pull(actor, { ...pullFrom("0"), includeDigest: true });
+        const catalogOnly = yield* commands.pull(actor, {
+          ...pullFrom("0"),
+          digestVersion: CATALOG_PARTITION_DIGEST_VERSION,
+        });
         const rows = yield* activePartitionRows(db, organizationId);
         const expected = yield* partitionDigestOf(rows);
-        return { partial, complete, withoutDigest, legacy, expected };
+        const expectedCatalog = yield* partitionDigestOf(rows, CATALOG_PARTITION_DIGEST_VERSION);
+        return {
+          partial,
+          complete,
+          withoutDigest,
+          legacy,
+          catalogOnly,
+          rows,
+          expected,
+          expectedCatalog,
+        };
       }),
     );
     expect(outcome.partial.digest).toBeUndefined();
     expect(outcome.withoutDigest.digest).toBeUndefined();
     expect(outcome.legacy.digest).toBeUndefined();
+    expect(outcome.rows.some((row) => row.entity === "stockMovement")).toBe(true);
     expect(outcome.complete.digest).toEqual(outcome.expected);
+    expect(outcome.complete.digest?.version).toBe(3);
+    expect(outcome.catalogOnly.digest).toEqual(outcome.expectedCatalog);
+    expect(outcome.catalogOnly.digest?.version).toBe(2);
   });
 
   it("retries a statement that Postgres aborts with a serialization failure", async () => {

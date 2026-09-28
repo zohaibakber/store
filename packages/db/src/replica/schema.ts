@@ -76,6 +76,7 @@ export const snapshotImports = sqliteTable("snapshot_imports", {
   stage: text({ enum: ["importing", "caught_up", "activated", "failed"] }).notNull(),
   partsImported: integer({ mode: "number" }).notNull().default(0),
   partsTotal: integer({ mode: "number" }).notNull(),
+  digestVersion: integer({ mode: "number" }),
 });
 
 export const stockOverlays = sqliteTable(

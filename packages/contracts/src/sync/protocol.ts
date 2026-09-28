@@ -55,18 +55,47 @@ const PayloadHash = Sha256Hex;
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
 
-export const PARTITION_DIGEST_VERSION = 2;
+export const CATALOG_PARTITION_DIGEST_VERSION = 2;
 
-export const PartitionDigestReport = Schema.Struct({
+export const PARTITION_DIGEST_VERSION = 3;
+
+export const PartitionDigestVersion = Schema.Literals([
+  CATALOG_PARTITION_DIGEST_VERSION,
+  PARTITION_DIGEST_VERSION,
+]);
+export type PartitionDigestVersion = typeof PartitionDigestVersion.Type;
+
+const CatalogEntityDigests = Schema.Struct({
+  category: PartitionDigest,
+  product: PartitionDigest,
+  batch: PartitionDigest,
+});
+
+export const CatalogPartitionDigestReport = Schema.Struct({
+  version: Schema.Literal(CATALOG_PARTITION_DIGEST_VERSION),
+  digest: PartitionDigest,
+  count: Schema.Natural,
+  entities: CatalogEntityDigests,
+});
+export type CatalogPartitionDigestReport = typeof CatalogPartitionDigestReport.Type;
+
+export const HistoryPartitionDigestReport = Schema.Struct({
   version: Schema.Literal(PARTITION_DIGEST_VERSION),
   digest: PartitionDigest,
   count: Schema.Natural,
   entities: Schema.Struct({
-    category: PartitionDigest,
-    product: PartitionDigest,
-    batch: PartitionDigest,
+    ...CatalogEntityDigests.fields,
+    invoice: PartitionDigest,
+    invoiceItem: PartitionDigest,
+    stockMovement: PartitionDigest,
   }),
 });
+export type HistoryPartitionDigestReport = typeof HistoryPartitionDigestReport.Type;
+
+export const PartitionDigestReport = Schema.Union([
+  CatalogPartitionDigestReport,
+  HistoryPartitionDigestReport,
+]);
 export type PartitionDigestReport = typeof PartitionDigestReport.Type;
 
 export const AuthorityIncarnation = SyncIdentifier.pipe(Schema.brand("AuthorityIncarnation"));
@@ -208,7 +237,7 @@ export const SyncPullRequest = Schema.Struct({
     PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SYNC_PULL_TRANSACTIONS)),
   ),
   includeDigest: Schema.optionalKey(Schema.Boolean),
-  digestVersion: Schema.optionalKey(Schema.Literal(PARTITION_DIGEST_VERSION)),
+  digestVersion: Schema.optionalKey(PartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;

@@ -1,18 +1,18 @@
 import {
   compareDecimalSequence,
+  digestVersionEntities,
   divergedPartitionEntities,
   incrementDecimalSequence,
-  subscriptionEntities,
   SyncCommandEnvelope,
   syncEntityDependencyOrder,
   syncProtocolError,
   type CommandReceipt,
   type PartitionDigest,
   type PartitionDigestReport,
+  type PartitionDigestVersion,
   type PartitionEntity,
   type SyncEntity,
   type SyncProtocolError,
-  type SyncSubscription,
 } from "@store/contracts";
 import type { CommandStatus } from "@store/contracts/sync/replica-model";
 import * as Order from "effect/Order";
@@ -330,16 +330,13 @@ export const decideCoverageAfterPull = (
   return { _tag: "record", digest: pulled.digest, verified: true };
 };
 
-export const isPartitionEntity = (
-  subscription: SyncSubscription,
-  entity: SyncEntity,
-): entity is PartitionEntity =>
-  subscriptionEntities(subscription).some((candidate) => candidate === entity);
-
-export const hasPendingPartitionRows = (
-  subscription: SyncSubscription,
+export const hasPendingDigestRows = (
+  version: PartitionDigestVersion,
   pendingMarks: ReadonlyArray<{ readonly entity: SyncEntity }>,
-): boolean => pendingMarks.some((mark) => isPartitionEntity(subscription, mark.entity));
+): boolean => {
+  const entities = digestVersionEntities(version);
+  return pendingMarks.some((mark) => entities.some((entity) => entity === mark.entity));
+};
 
 export type JournalHolder = {
   readonly operationId: string;
@@ -376,3 +373,11 @@ export const freeCategoryName = (name: string, taken: ReadonlySet<string>): stri
     if (!taken.has(candidate)) return candidate;
   }
 };
+
+export const freeInvoiceNumber = (
+  invoiceNumber: number,
+  others: ReadonlyArray<{ readonly invoiceNumber: number }>,
+): number =>
+  others.some((other) => other.invoiceNumber === invoiceNumber)
+    ? others.reduce((highest, other) => Math.max(highest, other.invoiceNumber), invoiceNumber) + 1
+    : invoiceNumber;

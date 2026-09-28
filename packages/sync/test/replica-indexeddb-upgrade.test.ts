@@ -73,6 +73,28 @@ const putRawProducts = (rows: ReadonlyArray<ReturnType<typeof legacyProduct>>) =
     request.onerror = () => resume(Effect.fail(new Error("The database could not be opened.")));
   });
 
+const putRawCoverage = (verifiedAt: number) =>
+  Effect.callback<void, Error>((resume) => {
+    const request = indexedDB.open(databaseName);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction("replica_coverage", "readwrite");
+      transaction.objectStore("replica_coverage").put({
+        subscription: "operational",
+        state: "downloaded",
+        throughCommitSequence: "7",
+        digest: "a".repeat(64),
+        verifiedAt,
+      });
+      transaction.oncomplete = () => {
+        database.close();
+        resume(Effect.void);
+      };
+      transaction.onerror = () => resume(Effect.fail(new Error("The row could not be written.")));
+    };
+    request.onerror = () => resume(Effect.fail(new Error("The database could not be opened.")));
+  });
+
 const openVersionOneDatabase = Effect.gen(function* () {
   const runtime = ManagedRuntime.make(
     ReplicaIndexedDbV1.layer(databaseName).pipe(
@@ -109,7 +131,7 @@ describe("IndexedDB replica schema versions", () => {
       yield* store.dispose();
 
       const after = yield* inspectDatabase;
-      expect(after.version).toBe(3);
+      expect(after.version).toBe(4);
       expect(after.stores).toContain("pending_row_marks");
       expect(after.stores).toContain("pending_row_journal");
       expect(after.stores).toContain("command_outbox");
@@ -150,6 +172,26 @@ describe("IndexedDB replica schema versions", () => {
       });
       expect(page.rows.map((row) => row["id"])).toEqual(["p-2", "p-3", "p-1"]);
       expect(page.rows.every((row) => !Object.hasOwn(row, "nameKey"))).toBe(true);
+      yield* store.dispose();
+    }),
+  );
+
+  it.effect("asks for a fresh digest after the history coverage upgrade", () =>
+    Effect.gen(function* () {
+      yield* openVersionOneDatabase;
+      yield* putRawCoverage(1_700_000_000_000);
+      const store = yield* makeIndexedDbReplicaStore({
+        databaseName,
+        databaseIdentity: databaseName,
+        identity: {
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          userId: "user-1",
+          replicaId: LAST_UNIT_REPLICA_A,
+        },
+        indexedDB,
+        IDBKeyRange,
+      });
+      expect(yield* store.readDigestVerification("operational")).toBeUndefined();
       yield* store.dispose();
     }),
   );

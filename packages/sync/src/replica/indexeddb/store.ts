@@ -1,8 +1,12 @@
 import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import {
+  CATALOG_PARTITION_DIGEST_VERSION,
   partitionDigestOf,
+  STOCK_MOVEMENT_ROW_VERSION,
   type CommandReceipt,
+  type PartitionDigestVersion,
+  type PartitionEntity,
   type RegisterReplicaResult,
   type SnapshotId,
   type SnapshotManifest,
@@ -58,7 +62,7 @@ import {
   decideCoverageAfterPull,
   decideEnqueue,
   decideReceipt,
-  hasPendingPartitionRows,
+  hasPendingDigestRows,
   isStaleClaim,
   nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
@@ -231,12 +235,12 @@ const firstRow = <A>(rows: ReadonlyArray<A>): A | undefined => rows[0];
 const outboxRow = (api: ReplicaQueryBuilder, operationId: string) =>
   api.from("command_outbox").select().equals(operationId).pipe(Effect.map(firstRow));
 
-const indexedDbLocalDigest = (api: ReplicaQueryBuilder, page: SyncPullResult) =>
+const indexedDbLocalDigest = (api: ReplicaQueryBuilder, version: PartitionDigestVersion) =>
   Effect.gen(function* () {
     const marks = yield* api.from("pending_row_marks").select();
     if (
-      hasPendingPartitionRows(
-        page.subscription,
+      hasPendingDigestRows(
+        version,
         marks.map((mark) => ({ entity: decodeEntity(mark.entity) })),
       )
     ) {
@@ -244,26 +248,35 @@ const indexedDbLocalDigest = (api: ReplicaQueryBuilder, page: SyncPullResult) =>
     }
     const state = yield* requireState(api);
     const [lower, upper] = generationBounds(state.activeGeneration);
-    const categoryRows = yield* api.from("categories").select().between(lower, upper);
-    const productRows = yield* api.from("products").select().between(lower, upper);
-    const batchRows = yield* api.from("batches").select().between(lower, upper);
-    return yield* partitionDigestOf([
-      ...categoryRows.map((row) => ({
-        entity: "category" as const,
+    const versioned =
+      (entity: PartitionEntity) => (row: { readonly id: string; readonly rowVersion: number }) => ({
+        entity,
         entityId: row.id,
         rowVersion: row.rowVersion,
-      })),
-      ...productRows.map((row) => ({
-        entity: "product" as const,
-        entityId: row.id,
-        rowVersion: row.rowVersion,
-      })),
-      ...batchRows.map((row) => ({
-        entity: "batch" as const,
-        entityId: row.id,
-        rowVersion: row.rowVersion,
-      })),
-    ]);
+      });
+    const catalog = [
+      ...(yield* api.from("categories").select().between(lower, upper)).map(versioned("category")),
+      ...(yield* api.from("products").select().between(lower, upper)).map(versioned("product")),
+      ...(yield* api.from("batches").select().between(lower, upper)).map(versioned("batch")),
+    ];
+    if (version === CATALOG_PARTITION_DIGEST_VERSION)
+      return yield* partitionDigestOf(catalog, version);
+    const movements = yield* api.from("stock_movements").select().between(lower, upper);
+    return yield* partitionDigestOf(
+      [
+        ...catalog,
+        ...(yield* api.from("invoices").select().between(lower, upper)).map(versioned("invoice")),
+        ...(yield* api.from("invoice_items").select().between(lower, upper)).map(
+          versioned("invoiceItem"),
+        ),
+        ...movements.map((row) => ({
+          entity: "stockMovement" as const,
+          entityId: row.id,
+          rowVersion: STOCK_MOVEMENT_ROW_VERSION,
+        })),
+      ],
+      version,
+    );
   });
 
 const undoLocalEffects = (
@@ -618,7 +631,9 @@ const makeScopedIndexedDbReplicaStore = (
           );
           const write = readwrite(api, ["replica_coverage"]);
           const localDigest =
-            page.digest === undefined ? undefined : yield* indexedDbLocalDigest(api, page);
+            page.digest === undefined
+              ? undefined
+              : yield* indexedDbLocalDigest(api, page.digest.version);
           const next = decideCoverageAfterPull(localDigest, page.digest);
           if (next._tag === "repair") {
             yield* logPartitionDivergence(page.subscription, next.diverged);

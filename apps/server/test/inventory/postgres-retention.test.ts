@@ -222,6 +222,7 @@ const publishSnapshot = (
     horizon,
     entityCountsJson: "{}",
     publishedAt,
+    digestVersion: 3,
   });
 
 const grantLease = (

@@ -401,6 +401,8 @@ export const snapshotJobs = pgTable(
     horizon: numericDecimalString("horizon"),
     entityCountsJson: text("entity_counts_json").notNull(),
     publishedAt: epochMilliseconds("published_at").notNull(),
+    digestVersion: integer("digest_version").notNull().default(2),
+    catalogParts: integer("catalog_parts"),
   },
   (table) => [
     primaryKey({

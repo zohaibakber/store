@@ -1,9 +1,9 @@
 import {
+  CATALOG_PARTITION_DIGEST_VERSION,
   CommandReceipt,
   MAX_SYNC_PULL_TRANSACTIONS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
   MIN_PULL_BYTE_BUDGET,
-  PARTITION_DIGEST_VERSION,
   RegisterReplicaResult,
   SyncProtocolCode,
   SyncPullResult,
@@ -175,7 +175,8 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
           ${request.afterCommitSequence}::text,
           ${request.limit ?? MAX_SYNC_PULL_TRANSACTIONS}::integer,
           ${pullByteBudget(request.maxBytes)}::integer,
-          ${request.digestVersion === PARTITION_DIGEST_VERSION}::boolean
+          ${request.digestVersion !== undefined}::boolean,
+          ${request.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION}::integer
         )`,
         "objects",
       ),

@@ -3,7 +3,9 @@ import * as Struct from "effect/Struct";
 
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
+  CATALOG_PARTITION_DIGEST_VERSION,
   OrgCommitSequence,
+  PartitionDigestVersion,
   SyncEpoch,
   SyncLogChange,
   SyncSchemaVersion,
@@ -12,6 +14,8 @@ import {
 import { SyncEntity } from "./schema";
 
 export const MAX_SNAPSHOT_PART_ROWS = 500;
+
+export const MAX_SNAPSHOT_PART_BYTES = 524_288;
 
 export const SnapshotId = SyncIdentifier.pipe(Schema.brand("SnapshotId"));
 export type SnapshotId = typeof SnapshotId.Type;
@@ -42,8 +46,13 @@ export const SnapshotManifest = Schema.Struct({
   horizon: OrgCommitSequence,
   parts: Schema.Array(SnapshotPartRef),
   entityCounts: Schema.Array(SnapshotEntityCount),
+  digestVersion: Schema.optionalKey(PartitionDigestVersion),
 });
 export type SnapshotManifest = typeof SnapshotManifest.Type;
+
+export const snapshotDigestVersion = (manifest: {
+  readonly digestVersion?: PartitionDigestVersion;
+}): PartitionDigestVersion => manifest.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION;
 
 export const SnapshotPartPayload = Schema.Struct({
   snapshotId: SnapshotId,
@@ -56,6 +65,7 @@ export const AcquireSnapshotRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   replicaId: Schema.optionalKey(SyncIdentifier),
+  digestVersion: Schema.optionalKey(PartitionDigestVersion),
 });
 export type AcquireSnapshotRequest = typeof AcquireSnapshotRequest.Type;
 

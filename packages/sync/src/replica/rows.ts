@@ -9,6 +9,7 @@ import {
   stockMovements,
 } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
+import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -49,6 +50,23 @@ export const writeEntityRow = Effect.fn("ReplicaRows.writeEntityRow")(function* 
     return;
   }
   yield* tx.insert(table).values(parsed);
+});
+
+const INSERTED_ROWS_PER_STATEMENT = 400;
+
+export const insertEntityRows = Effect.fn("ReplicaRows.insertEntityRows")(function* (
+  tx: ReplicaDb,
+  entity: SyncEntity,
+  rows: ReadonlyArray<SyncEntityChange["row"]>,
+) {
+  const table = entityTables[entity];
+  const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);
+  for (const chunk of Array.chunksOf(
+    rows.map((row) => decode(row)),
+    INSERTED_ROWS_PER_STATEMENT,
+  )) {
+    yield* tx.insert(table).values(chunk);
+  }
 });
 
 export const removeEntityRow = Effect.fn("ReplicaRows.removeEntityRow")(function* (

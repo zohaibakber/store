@@ -130,7 +130,7 @@ export const updateCoverageFromPull = Effect.fn("ReplicaCoverage.updateCoverageF
     const localDigest =
       pulled.digest === undefined
         ? undefined
-        : yield* sqlitePartitionDigest(tx, pulled.subscription);
+        : yield* sqlitePartitionDigest(tx, pulled.digest.version);
     const next = decideCoverageAfterPull(localDigest, pulled.digest);
     if (next._tag === "repair") {
       yield* logPartitionDivergence(pulled.subscription, next.diverged);

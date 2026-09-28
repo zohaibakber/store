@@ -103,6 +103,15 @@ Still open:
 - The 600 s access-token TTL is an owner decision; a longer TTL removes refreshes, a shorter one narrows revocation.
 - `EventSource` clients cannot send a bearer header, so SSE outside the proxies still needs a ticket or cookie scheme.
 
+### A12. Operational snapshots carry invoice history
+
+Decided 2026-09-28 by the owner. The operational subscription covers `category`, `product`, `batch`, `invoice`, `invoiceItem` and `stockMovement` with full history, so a freshly synced replica shows every invoice.
+
+- Digest v3 (`PARTITION_DIGEST_VERSION = 3`, domain `store.sync.partition-digest.v3`) hashes all six entities with the v2 leaf format. Stock movements are append-only and have no `row_version`, so both sides use the constant leaf version 1 (`STOCK_MOVEMENT_ROW_VERSION`), matching the change log. `sync.partition_digest(org, version)` serves both versions; the one-argument form and `sync.pull` without a version stay on v2, so clients on 0.3.100 to 0.3.102 (which send `digestVersion: 2`) get the catalog-only digest byte for byte.
+- Snapshots are always built with history (`snapshot_jobs.digest_version = 3`); catalog rows fill the leading parts and history starts on a fresh part (`catalog_parts`). Parts are bounded by 500 rows and a 512 KiB byte budget in the same statement. `AcquireSnapshotRequest.digestVersion` selects the view: without it the manifest lists only the catalog parts and the three catalog counts, exactly the shape old clients import (their import does not clear history tables and would hit the replica's invoice-number unique index on colliding shadow invoices). With `digestVersion: 3` the manifest lists every part and carries `digestVersion: 3`. Snapshots built before migration `20260928150000_history_snapshots` are never chosen for new acquisitions; the maintenance cron rebuilds them.
+- Clients record the snapshot's digest version on the import, clear and bulk-insert exactly the covered entities on activation, carry local history only across catalog-only snapshots (IndexedDB), and renumber a pending shadow invoice whose number a snapshot invoice already holds.
+- Backfill: replica migration `20260928150000_history_coverage` (and IndexedDB version 4) clears `verifiedAt`, so the first caught-up pull after the upgrade asks for a v3 digest. A replica without history diverges on the history entities, marks coverage for repair, and recovers through a v3 snapshot that keeps the outbox and re-applies pending shadows. The server migration must be deployed before clients that send `digestVersion: 3`, because older Workers reject the value.
+
 ## Remaining sequence
 
 1. Done. `catalogWrite` joins `issueInvoice` in `packages/contracts/src/sync/protocol.ts` and commits through `apps/server/src/inventory/catalog-write.ts`; pending projections live in `packages/sync/src/replica/{projection,pending}.ts` for both adapters; desktop catalog actions run over the typed bridge in `apps/desktop/electron/replica-ipc.ts`.

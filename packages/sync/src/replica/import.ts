@@ -1,9 +1,13 @@
 import {
+  CATALOG_PARTITION_DIGEST_VERSION,
   compareDecimalSequence,
-  subscriptionEntities,
+  digestVersionEntities,
+  PartitionDigestVersion,
+  snapshotDigestVersion,
   syncProtocolError,
   type SnapshotManifest,
   type SnapshotPartPayload,
+  type SyncEntity,
   type SyncSubscription,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
@@ -14,7 +18,7 @@ import {
   snapshotStagedRows,
   stockOverlays,
 } from "@store/db/replica.schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -24,7 +28,7 @@ import { decodeEntity, decodeRowJson, decodeSubscription, encodeRowJson } from "
 import { loadReplicaState, loadStockIndex, parseStoredEnvelope } from "./commands";
 import { byClientSequence, byEntityDependency, decideOverlays } from "./decisions";
 import { clearPendingProjection, reapplyPendingProjections } from "./pending";
-import { clearEntityRows, writeEntityRow } from "./rows";
+import { clearEntityRows, insertEntityRows, writeEntityRow } from "./rows";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
 type SnapshotActivation = {
@@ -48,67 +52,75 @@ const stageOf = (row: {
   return { _tag: "importing", partsImported: row.partsImported, partsTotal: row.partsTotal };
 };
 
-const stageSnapshotRow = Effect.fn("ReplicaImport.stageSnapshotRow")(function* (
+const STAGED_ROWS_PER_STATEMENT = 500;
+
+const stageSnapshotRows = Effect.fn("ReplicaImport.stageSnapshotRows")(function* (
   tx: ReplicaDb,
   snapshotId: string,
-  row: SnapshotPartPayload["rows"][number],
+  rows: SnapshotPartPayload["rows"],
 ) {
-  const schema = syncEntityRows[row.entity].schema;
-  Schema.decodeUnknownSync(schema)(row.row);
-  const existing = yield* tx
-    .select()
-    .from(snapshotStagedRows)
-    .where(
-      and(
-        eq(snapshotStagedRows.snapshotId, snapshotId),
-        eq(snapshotStagedRows.entity, row.entity),
-        eq(snapshotStagedRows.entityId, row.entityId),
-      ),
-    )
-    .get();
-  if (existing && existing.rowVersion > row.rowVersion) return;
-  const rowJson = encodeRowJson(row.row);
-  if (existing) {
-    yield* tx
-      .update(snapshotStagedRows)
-      .set({ rowVersion: row.rowVersion, rowJson })
-      .where(
-        and(
-          eq(snapshotStagedRows.snapshotId, snapshotId),
-          eq(snapshotStagedRows.entity, row.entity),
-          eq(snapshotStagedRows.entityId, row.entityId),
-        ),
-      );
-    return;
-  }
-  yield* tx.insert(snapshotStagedRows).values({
-    snapshotId,
-    entity: row.entity,
-    entityId: row.entityId,
-    rowVersion: row.rowVersion,
-    rowJson,
+  const staged = rows.map((row) => {
+    Schema.decodeUnknownSync(syncEntityRows[row.entity].schema)(row.row);
+    return {
+      snapshotId,
+      entity: row.entity,
+      entityId: row.entityId,
+      rowVersion: row.rowVersion,
+      rowJson: encodeRowJson(row.row),
+    };
   });
+  for (const chunk of Array.chunksOf(staged, STAGED_ROWS_PER_STATEMENT)) {
+    yield* tx
+      .insert(snapshotStagedRows)
+      .values(chunk)
+      .onConflictDoUpdate({
+        target: [
+          snapshotStagedRows.snapshotId,
+          snapshotStagedRows.entity,
+          snapshotStagedRows.entityId,
+        ],
+        set: {
+          rowVersion: sql`excluded.${sql.identifier(snapshotStagedRows.rowVersion.name)}`,
+          rowJson: sql`excluded.${sql.identifier(snapshotStagedRows.rowJson.name)}`,
+        },
+        setWhere: sql`excluded.${sql.identifier(snapshotStagedRows.rowVersion.name)} >= ${snapshotStagedRows.rowVersion}`,
+      });
+  }
 });
+
+const decodeDigestVersion = Schema.decodeUnknownOption(PartitionDigestVersion);
+
+const importDigestVersion = (stored: number | null): PartitionDigestVersion =>
+  Option.getOrElse(decodeDigestVersion(stored), () => CATALOG_PARTITION_DIGEST_VERSION);
 
 const promoteStagedSnapshot = Effect.fn("ReplicaImport.promoteStagedSnapshot")(function* (
   tx: ReplicaDb,
   snapshotId: string,
-  subscription: SyncSubscription,
+  digestVersion: PartitionDigestVersion,
 ) {
   const rows = yield* tx
     .select()
     .from(snapshotStagedRows)
     .where(eq(snapshotStagedRows.snapshotId, snapshotId))
     .all();
-  for (const entity of subscriptionEntities(subscription)) {
+  const replaced = new Set<SyncEntity>(digestVersionEntities(digestVersion));
+  for (const entity of replaced) {
     yield* clearEntityRows(tx, entity);
   }
-  const staged = Array.sort(
-    rows.map((row) => ({ entity: decodeEntity(row.entity), rowJson: row.rowJson })),
+  const staged = Array.groupBy(rows, (row) => decodeEntity(row.entity));
+  const entities = Array.sort(
+    Object.keys(staged).map((key) => ({ entity: decodeEntity(key) })),
     byEntityDependency,
   );
-  for (const row of staged) {
-    yield* writeEntityRow(tx, row.entity, decodeRowJson(row.rowJson));
+  for (const { entity } of entities) {
+    const decoded = (staged[entity] ?? []).map((row) => decodeRowJson(row.rowJson));
+    if (replaced.has(entity)) {
+      yield* insertEntityRows(tx, entity, decoded);
+      continue;
+    }
+    for (const row of decoded) {
+      yield* writeEntityRow(tx, entity, row);
+    }
   }
   yield* tx.delete(snapshotStagedRows).where(eq(snapshotStagedRows.snapshotId, snapshotId));
 });
@@ -132,6 +144,7 @@ export const beginSnapshotImport = Effect.fn("ReplicaImport.beginSnapshotImport"
     stage: "importing",
     partsImported: 0,
     partsTotal: manifest.parts.length,
+    digestVersion: snapshotDigestVersion(manifest),
   });
   return stageOf({
     stage: "importing",
@@ -175,9 +188,7 @@ export const importSnapshotPart = Effect.fn("ReplicaImport.importSnapshotPart")(
       syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order."),
     );
   }
-  for (const row of part.rows) {
-    yield* stageSnapshotRow(tx, manifest.snapshotId, row);
-  }
+  yield* stageSnapshotRows(tx, manifest.snapshotId, part.rows);
   const partsImported = importRow.partsImported + 1;
   const stage = partsImported === importRow.partsTotal ? "caught_up" : "importing";
   yield* tx
@@ -247,7 +258,7 @@ export const activateSnapshotGeneration = Effect.fn("ReplicaImport.activateSnaps
       );
     }
     const state = yield* loadReplicaState(tx);
-    yield* promoteStagedSnapshot(tx, snapshotId, subscription.value);
+    yield* promoteStagedSnapshot(tx, snapshotId, importDigestVersion(importRow.digestVersion));
     yield* integrateCoveredCommands(tx, importRow.horizon);
     yield* recomputePendingOverlays(tx);
     yield* reapplyPendingProjections(tx);

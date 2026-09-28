@@ -1,5 +1,7 @@
 import {
   AcquireSnapshotResult,
+  CATALOG_PARTITION_DIGEST_VERSION,
+  MAX_SNAPSHOT_PART_BYTES,
   MAX_SNAPSHOT_PART_ROWS,
   SNAPSHOT_LEASE_LIFETIME_MILLIS,
   SnapshotPartPayload,
@@ -29,6 +31,7 @@ import {
 
 export type SnapshotPolicy = {
   readonly partRows: number;
+  readonly partBytes: number;
   readonly leaseMillis: number;
   readonly lagTransactions: number;
   readonly minimumRebuildMillis: number;
@@ -36,6 +39,7 @@ export type SnapshotPolicy = {
 
 export const SNAPSHOT_POLICY: SnapshotPolicy = {
   partRows: MAX_SNAPSHOT_PART_ROWS,
+  partBytes: MAX_SNAPSHOT_PART_BYTES,
   leaseMillis: SNAPSHOT_LEASE_LIFETIME_MILLIS,
   lagTransactions: 2_000,
   minimumRebuildMillis: 15 * 60_000,
@@ -69,7 +73,9 @@ const acquireStatement = (
     ${policy.leaseMillis}::bigint,
     ${policy.lagTransactions}::bigint,
     ${policy.minimumRebuildMillis}::bigint,
-    ${now}::bigint
+    ${now}::bigint,
+    ${policy.partBytes}::integer,
+    ${request.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION}::integer
   )::text as "result"
 `;
 

@@ -1,6 +1,19 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
-import { partitionDigestOf, PartitionDigestReport } from "@store/contracts";
-import { batches, categories, products } from "@store/db/postgres/schema";
+import {
+  CATALOG_PARTITION_DIGEST_VERSION,
+  partitionDigestOf,
+  PartitionDigestReport,
+  STOCK_MOVEMENT_ROW_VERSION,
+  type PartitionLeafSource,
+} from "@store/contracts";
+import {
+  batches,
+  categories,
+  invoiceItems,
+  invoices,
+  products,
+  stockMovements,
+} from "@store/db/postgres/schema";
 import { eq, sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
@@ -113,6 +126,45 @@ const seed = (organizationId: string) =>
         })
         .returning();
       insertedBatches.push(batch);
+      yield* db.insert(invoices).values({
+        id: `invoice ${index} ${text}`,
+        invoiceNumber: index + 1,
+        customerName: index % 2 === 0 ? null : text,
+        total: index * 100,
+        createdAt: 1_700_000_000_000 + index,
+        updatedAt: 1_700_000_000_000 + index,
+        ...metadata(organizationId, index, index + 3),
+      });
+      yield* db.insert(invoiceItems).values({
+        id: `item ${index} ${text}`,
+        invoiceId: `invoice ${index} ${text}`,
+        productId: `product ${index} ${text}`,
+        batchId: `batch ${index} ${text}`,
+        productName: `Product ${text}`,
+        batchNumber: index % 2 === 0 ? null : text,
+        quantity: 1,
+        quantityType: "unit",
+        baseUnitQuantity: 1,
+        salePrice: 100,
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+        ...metadata(organizationId, index, MAX_SAFE - 2 * index),
+      });
+      yield* db.insert(stockMovements).values({
+        id: `movement ${index} ${text}`,
+        productId: `product ${index} ${text}`,
+        batchId: `batch ${index} ${text}`,
+        invoiceId: `invoice ${index} ${text}`,
+        type: "sale",
+        packDelta: 0,
+        unitDelta: -1,
+        note: text,
+        organizationId,
+        actorUserId: "user-1",
+        deviceId: `device-${text}`,
+        operationId: `operation-${index}`,
+        createdAt: 1_700_000_000_000,
+      });
     }
     return {
       db,
@@ -125,7 +177,7 @@ const seed = (organizationId: string) =>
 const byId = <Row extends { readonly id: string }>(rows: ReadonlyArray<Row>) =>
   new Map(rows.map((row) => [row.id, row]));
 
-describe("sync row builders and partition digest v2", () => {
+describe("sync row builders and partition digests", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
   }, 180_000);
@@ -181,18 +233,37 @@ describe("sync row builders and partition digest v2", () => {
     }
   });
 
-  it("computes the same partition digest in Postgres as the shared client contract", async () => {
-    const organizationId = "org-digest-v2";
+  it("computes the same partition digests in Postgres as the shared client contract", async () => {
+    const organizationId = "org-digest-v3";
     const outcome = await run(
       Effect.gen(function* () {
         const seeded = yield* seed(organizationId);
-        const [row] = decodeDigestRows(
-          yield* seeded.db.execute(
-            sql`select "sync"."partition_digest"(${organizationId})::text as "digest"`,
-            "objects",
-          ),
+        const digestOf = (statement: ReturnType<typeof sql>) =>
+          seeded.db
+            .execute(statement, "objects")
+            .pipe(Effect.map((rows) => decodeDigestRows(rows)[0]?.digest));
+        const history = yield* digestOf(
+          sql`select "sync"."partition_digest"(${organizationId}, 3)::text as "digest"`,
         );
-        const client = yield* partitionDigestOf([
+        const catalog = yield* digestOf(
+          sql`select "sync"."partition_digest"(${organizationId}, 2)::text as "digest"`,
+        );
+        const legacy = yield* digestOf(
+          sql`select "sync"."partition_digest"(${organizationId})::text as "digest"`,
+        );
+        const itemIds = yield* seeded.db
+          .select({ id: invoiceItems.id, rowVersion: invoiceItems.rowVersion })
+          .from(invoiceItems)
+          .where(eq(invoiceItems.organizationId, organizationId));
+        const invoiceIds = yield* seeded.db
+          .select({ id: invoices.id, rowVersion: invoices.rowVersion })
+          .from(invoices)
+          .where(eq(invoices.organizationId, organizationId));
+        const movementIds = yield* seeded.db
+          .select({ id: stockMovements.id })
+          .from(stockMovements)
+          .where(eq(stockMovements.organizationId, organizationId));
+        const sources: ReadonlyArray<PartitionLeafSource> = [
           ...seeded.categories.map((category) => ({
             entity: "category" as const,
             entityId: category.id,
@@ -212,19 +283,47 @@ describe("sync row builders and partition digest v2", () => {
               entityId: batch.id,
               rowVersion: batch.rowVersion,
             })),
-        ]);
-        const [empty] = decodeDigestRows(
-          yield* seeded.db.execute(
-            sql`select "sync"."partition_digest"(${"org-without-rows"})::text as "digest"`,
-            "objects",
-          ),
+          ...invoiceIds.map((row) => ({
+            entity: "invoice" as const,
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+          })),
+          ...itemIds.map((row) => ({
+            entity: "invoiceItem" as const,
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+          })),
+          ...movementIds.map((row) => ({
+            entity: "stockMovement" as const,
+            entityId: row.id,
+            rowVersion: STOCK_MOVEMENT_ROW_VERSION,
+          })),
+        ];
+        const empty = yield* digestOf(
+          sql`select "sync"."partition_digest"(${"org-without-rows"}, 3)::text as "digest"`,
         );
-        const emptyClient = yield* partitionDigestOf([]);
-        return { server: row?.digest, client, empty: empty?.digest, emptyClient };
+        const emptyCatalog = yield* digestOf(
+          sql`select "sync"."partition_digest"(${"org-without-rows"})::text as "digest"`,
+        );
+        return {
+          history,
+          catalog,
+          legacy,
+          clientHistory: yield* partitionDigestOf(sources),
+          clientCatalog: yield* partitionDigestOf(sources, CATALOG_PARTITION_DIGEST_VERSION),
+          empty,
+          emptyClient: yield* partitionDigestOf([]),
+          emptyCatalog,
+          emptyCatalogClient: yield* partitionDigestOf([], CATALOG_PARTITION_DIGEST_VERSION),
+        };
       }),
     );
-    expect(outcome.server).toEqual(outcome.client);
-    expect(outcome.client.count).toBe(ADVERSARIAL_TEXT.length * 3 - 2);
+    expect(outcome.history).toEqual(outcome.clientHistory);
+    expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 6 - 2);
+    expect(outcome.catalog).toEqual(outcome.clientCatalog);
+    expect(outcome.legacy).toEqual(outcome.clientCatalog);
+    expect(outcome.clientCatalog.count).toBe(ADVERSARIAL_TEXT.length * 3 - 2);
     expect(outcome.empty).toEqual(outcome.emptyClient);
+    expect(outcome.emptyCatalog).toEqual(outcome.emptyCatalogClient);
   });
 });

@@ -1,5 +1,7 @@
 import {
+  PARTITION_ENTITIES,
   partitionDigestOf,
+  type PartitionDigestVersion,
   type PartitionEntity,
   type SnapshotRow,
   type SyncLogChange,
@@ -14,9 +16,6 @@ export const commitToAuthority = (
   group: SyncTransactionGroup,
 ): void => {
   for (const change of group.changes) {
-    if (change.entity !== "category" && change.entity !== "product" && change.entity !== "batch") {
-      continue;
-    }
     const key = `${change.entity}:${change.entityId}`;
     if (change.action === "delete") {
       partition.delete(key);
@@ -32,7 +31,7 @@ export const commitToAuthority = (
 };
 
 const isPartitionEntity = (entity: string): entity is PartitionEntity =>
-  entity === "category" || entity === "product" || entity === "batch";
+  PARTITION_ENTITIES.some((candidate) => candidate === entity);
 
 const partitionLeaves = (rows: Iterable<SnapshotRow>) =>
   [...rows].flatMap((row) =>
@@ -41,8 +40,8 @@ const partitionLeaves = (rows: Iterable<SnapshotRow>) =>
       : [],
   );
 
-export const authorityDigest = (partition: AuthorityPartition) =>
-  partitionDigestOf(partitionLeaves(partition.values()));
+export const authorityDigest = (partition: AuthorityPartition, version?: PartitionDigestVersion) =>
+  partitionDigestOf(partitionLeaves(partition.values()), version);
 
 type PostgresMutableMetadata = {
   readonly organizationId: string;

@@ -10,6 +10,7 @@ import {
   byEntityDependency,
   decideJournalRestore,
   freeCategoryName,
+  freeInvoiceNumber,
   OUTSTANDING_COMMAND_STATUSES,
   type JournalHolder,
 } from "../decisions";
@@ -196,7 +197,7 @@ export const writeIndexedDbPendingProjection = (
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
   envelope: SyncCommandEnvelope,
-  renameCollidingCategories = false,
+  resolveCollisions = false,
 ): Effect.Effect<CommandProjection, unknown> =>
   Effect.gen(function* () {
     const projection = projectCommand(envelope, actor, lookup);
@@ -204,7 +205,16 @@ export const writeIndexedDbPendingProjection = (
       yield* journalEntry(api, envelope.operationId, projected, generation);
       if (projected.row === null) {
         yield* removeEntityRow(api, generation, projected.entity, projected.entityId);
-      } else if (projected.entity === "category" && renameCollidingCategories) {
+      } else if (projected.entity === "invoice" && resolveCollisions) {
+        const [lower, upper] = generationBounds(generation);
+        const others = (yield* api.from("invoices").select().between(lower, upper)).filter(
+          (other) => other.id !== projected.row.id,
+        );
+        yield* writeEntityRow(api, generation, projected.entity, {
+          ...projected.row,
+          invoiceNumber: freeInvoiceNumber(projected.row.invoiceNumber, others),
+        });
+      } else if (projected.entity === "category" && resolveCollisions) {
         const [lower, upper] = generationBounds(generation);
         const others = (yield* api.from("categories").select().between(lower, upper)).filter(
           (other) => other.id !== projected.row.id,
