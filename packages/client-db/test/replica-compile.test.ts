@@ -93,6 +93,25 @@ describe("lowerSqliteSubset", () => {
     ).toThrow(UnsupportedSubsetQuery);
   });
 
+  it("pages by the cursor when a window also carries an offset", () => {
+    const invoices: InventoryCollectionDescriptor<CategoryRow> = {
+      ...descriptor,
+      source: "invoices",
+    };
+    const plan = Effect.runSync(
+      compileSqliteSubset(invoices, {
+        cursor: {
+          whereFrom: new IR.Func("lt", [new IR.PropRef(["createdAt"]), new IR.Value(100)]),
+          whereCurrent: new IR.Func("eq", [new IR.PropRef(["createdAt"]), new IR.Value(100)]),
+        },
+        offset: 50,
+        limit: 25,
+      }),
+    );
+    expect(plan.sql).toBe(`SELECT * FROM "invoices" WHERE "createdAt" < ? LIMIT ?`);
+    expect(plan.parameters).toEqual([100, 25]);
+  });
+
   it("reads history without a limit when a key predicate bounds it", () => {
     const invoiceItems: InventoryCollectionDescriptor<CategoryRow> = {
       ...descriptor,

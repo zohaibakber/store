@@ -57,7 +57,6 @@ export function OrganizationProfileCard({
     return (
       <FrameCard
         action={<Badge variant="secondary">{organization.role}</Badge>}
-        description="Store data syncs to this organization."
         title="Organization"
       >
         <p className="truncate font-medium">{organization.name}</p>
@@ -69,11 +68,7 @@ export function OrganizationProfileCard({
   }
 
   return (
-    <FrameCard
-      action={<Badge variant="secondary">{organization.role}</Badge>}
-      description="Store data syncs to this organization."
-      title="Organization"
-    >
+    <FrameCard action={<Badge variant="secondary">{organization.role}</Badge>} title="Organization">
       <form
         onSubmit={(event) => {
           event.preventDefault();

@@ -10,7 +10,7 @@ export const Route = createFileRoute("/settings/appearance")({
 
 function AppearanceRoute() {
   return (
-    <FrameCard description="Updates on this device as soon as you change it." title="Appearance">
+    <FrameCard title="Appearance">
       <ThemePicker />
     </FrameCard>
   );

@@ -154,7 +154,7 @@ export function OrganizationMembersCard({
   organization: AuthOrganizationMembership;
 }) {
   return (
-    <FrameCard description="Everyone who can open this store." title="Members">
+    <FrameCard title="Members">
       <div className="flex flex-col gap-2">
         {members.map((member) => (
           <MemberRow

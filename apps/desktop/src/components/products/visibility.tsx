@@ -47,14 +47,7 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
   };
 
   return (
-    <FrameCard
-      description={
-        product.visible
-          ? "Shown in the catalog and at checkout."
-          : "Hidden from the catalog and checkout."
-      }
-      title="Visibility"
-    >
+    <FrameCard title="Visibility">
       <Select
         items={visibilityOptions}
         onValueChange={(value) => value && void setVisible(value === "visible")}

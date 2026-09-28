@@ -66,7 +66,7 @@ export function OrganizationSettings() {
 
   if (!snapshot) {
     return (
-      <FrameCard description="Store data syncs to an organization." title="Organization">
+      <FrameCard title="Organization">
         <p className="truncate font-medium">Local workspace</p>
         <p className="text-sm text-muted-foreground">
           Sign in on the Account tab to sync this device with a store.

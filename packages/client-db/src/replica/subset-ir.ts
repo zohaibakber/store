@@ -212,9 +212,6 @@ export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
       where = yield* compileExpression(options.where, filterColumns);
     }
     if (options.cursor) {
-      if (options.offset !== undefined) {
-        return yield* fail("cursor and offset windows cannot be combined");
-      }
       const cursorWhere = yield* compileExpression(options.cursor.whereFrom, filterColumns);
       where = where ? { _tag: "and", predicates: [where, cursorWhere] } : cursorWhere;
     }
@@ -229,14 +226,13 @@ export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
     if (boundedLimit > descriptor.maximumRows) {
       return yield* fail("limit exceeds the collection row bound");
     }
-    if (options.offset !== undefined && options.offset < 0) {
-      return yield* fail("offset must be zero or greater");
-    }
+    const offset = options.cursor ? 0 : (options.offset ?? 0);
+    if (offset < 0) return yield* fail("offset must be zero or greater");
     const spec: InventorySubsetSpec = {
       source: descriptor.source,
       orderBy,
       limit: boundedLimit,
-      offset: options.offset ?? 0,
+      offset,
     };
     return where ? { ...spec, where } : spec;
   });

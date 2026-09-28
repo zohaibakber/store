@@ -281,6 +281,8 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     collections.invoices.createIndex((row) => row.createdAt, { indexType: BTreeIndex });
     collections.stockMovements.createIndex((row) => row.createdAt, { indexType: BTreeIndex });
     collections.invoiceItems.createIndex((row) => row.invoiceId, { indexType: BTreeIndex });
+    collections.categories.createIndex((row) => row.id, { indexType: BTreeIndex });
+    collections.batches.createIndex((row) => row.productId, { indexType: BTreeIndex });
     const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
     const atoms = yield* Effect.acquireRelease(
       Effect.sync(() =>
