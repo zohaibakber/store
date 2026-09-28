@@ -1,6 +1,5 @@
 import type { ReplicaSyncHealth, SqliteResultRow } from "@store/client-db";
 import {
-  LIVE_LONG_POLL_TIMEOUT_MILLIS,
   makeProxySyncTransport,
   openNodeReplicaSyncSession,
   type NodeReplicaSyncSession,
@@ -16,6 +15,8 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import {
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
+  type AccessTokenRequest,
+  type AccessTokenResult,
   type ProxyFetchRequest,
   type ProxyFetchResult,
   type ReplicaCommitNotice,
@@ -33,17 +34,6 @@ const toIpcRows = (
     ),
   );
 
-const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
-
-export const liveShimResponse = (result: ProxyFetchResult): Response => {
-  const headers = new Headers({ "content-type": "application/json" });
-  if (result.retryAfter !== undefined) headers.set("retry-after", result.retryAfter);
-  return new Response(NULL_BODY_STATUSES.has(result.status) ? null : result.bodyText, {
-    status: result.status,
-    headers,
-  });
-};
-
 const workerFailure = (cause: unknown) =>
   new ReplicaWorkerFailure({
     message: cause instanceof Error ? cause.message : "Replica worker failed.",
@@ -56,6 +46,8 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
       const syncHealth = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
       const proxyRequests = yield* Queue.unbounded<typeof ProxyFetchRequest.Type>();
       const proxyReplies = new Map<string, Deferred.Deferred<ProxyFetchResult>>();
+      const tokenRequests = yield* Queue.unbounded<typeof AccessTokenRequest.Type>();
+      const tokenReplies = new Map<string, Deferred.Deferred<AccessTokenResult>>();
       let session: NodeReplicaSyncSession | undefined;
       let unsubscribes: ReadonlyArray<() => void> = [];
 
@@ -75,6 +67,16 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
           Effect.tap(() => Queue.offer(proxyRequests, { requestId, ...request })),
           Effect.flatMap(Deferred.await),
           Effect.ensuring(Effect.sync(() => proxyReplies.delete(requestId))),
+        );
+      };
+
+      const accessToken = (force: boolean): Effect.Effect<AccessTokenResult> => {
+        const requestId = crypto.randomUUID();
+        return Deferred.make<AccessTokenResult>().pipe(
+          Effect.tap((reply) => Effect.sync(() => tokenReplies.set(requestId, reply))),
+          Effect.tap(() => Queue.offer(tokenRequests, { requestId, force })),
+          Effect.flatMap(Deferred.await),
+          Effect.ensuring(Effect.sync(() => tokenReplies.delete(requestId))),
         );
       };
 
@@ -106,23 +108,7 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
               ),
               live: {
                 apiBaseUrl: boot.apiBaseUrl,
-                preferSse: false,
-                fetch: async (input, init) => {
-                  const request = new Request(input, init);
-                  const url = new URL(request.url);
-                  const method = request.method === "GET" ? "GET" : "POST";
-                  const bodyText = method === "POST" ? await request.text() : null;
-                  const result = await Effect.runPromise(
-                    proxyFetch({
-                      method,
-                      pathname: url.pathname + url.search,
-                      bodyText,
-                      timeoutMillis: LIVE_LONG_POLL_TIMEOUT_MILLIS,
-                    }),
-                    { signal: request.signal },
-                  );
-                  return liveShimResponse(result);
-                },
+                accessToken: ({ force }) => Effect.runPromise(accessToken(force)),
               },
             });
           }).pipe(
@@ -204,6 +190,12 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
           Effect.suspend(() => {
             const reply = proxyReplies.get(requestId);
             return reply === undefined ? Effect.void : Deferred.succeed(reply, result);
+          }).pipe(Effect.asVoid),
+        AccessTokenRequests: () => Stream.fromQueue(tokenRequests),
+        AccessTokenRespond: ({ requestId, token }) =>
+          Effect.suspend(() => {
+            const reply = tokenReplies.get(requestId);
+            return reply === undefined ? Effect.void : Deferred.succeed(reply, token);
           }).pipe(Effect.asVoid),
       });
     }),

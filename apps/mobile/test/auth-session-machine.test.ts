@@ -114,9 +114,10 @@ describe("session state machine", () => {
   it("projects the public session", async () => {
     const signOut = async () => undefined;
     const authenticatedFetch: typeof fetch = async () => new Response(null);
+    const liveAccessToken = async () => "access-token";
     const active = run([{ _tag: "Restored", account: account(), lastOrganization: remembered }]);
 
-    expect(toSession(active, { signOut, authenticatedFetch })).toEqual({
+    expect(toSession(active, { signOut, authenticatedFetch, liveAccessToken })).toEqual({
       status: "signedIn",
       userId: "user-1",
       email: "owner@example.com",
@@ -124,13 +125,15 @@ describe("session state machine", () => {
       organizationId: "org-1",
       organizationName: "Corner Pharmacy",
       authenticatedFetch,
+      liveAccessToken,
       signOut,
     });
-    expect(toSession({ _tag: "SignedOut", notice: null }, { signOut, authenticatedFetch })).toEqual(
-      {
-        status: "signedOut",
-      },
-    );
+    expect(
+      toSession(
+        { _tag: "SignedOut", notice: null },
+        { signOut, authenticatedFetch, liveAccessToken },
+      ),
+    ).toEqual({ status: "signedOut" });
   });
 });
 

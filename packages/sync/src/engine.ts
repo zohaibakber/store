@@ -1,7 +1,9 @@
 import {
   compareDecimalSequence,
+  incrementDecimalSequence,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   SyncEpoch,
   SyncProtocolError,
   type CommandReceipt,
@@ -53,6 +55,33 @@ export type SyncEngineError =
   | ReplicaCoverageRepairRequired
   | ReplicaStoreError;
 
+export type LiveFrameOutcome =
+  | { readonly _tag: "applied" }
+  | { readonly _tag: "current" }
+  | { readonly _tag: "pull"; readonly hint?: SyncLiveWakeHint };
+
+const LIVE_APPLIED: LiveFrameOutcome = { _tag: "applied" };
+const LIVE_CURRENT: LiveFrameOutcome = { _tag: "current" };
+
+const livePull = (epoch: SyncEpoch, horizon: OrgCommitSequence): LiveFrameOutcome => ({
+  _tag: "pull",
+  hint: { epoch, subscription: OPERATIONAL_SUBSCRIPTION, horizon },
+});
+
+const LIVE_RESUME: LiveFrameOutcome = { _tag: "pull" };
+
+type TransactionsFrame = Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>;
+
+const contiguousFrom = (frame: TransactionsFrame, appliedCommitSequence: string): boolean => {
+  if (frame.fromCommitSequence !== incrementDecimalSequence(appliedCommitSequence)) return false;
+  let expected: string = frame.fromCommitSequence;
+  for (const group of frame.transactions) {
+    if (group.commitSequence !== expected) return false;
+    expected = incrementDecimalSequence(expected);
+  }
+  return frame.transactions.at(-1)?.commitSequence === frame.toCommitSequence;
+};
+
 export interface SyncEngineContract {
   readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
@@ -66,13 +95,14 @@ export interface SyncEngineContract {
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncEngineError>;
   readonly hintApplied: (hint: SyncLiveWakeHint) => Effect.Effect<boolean, ReplicaStoreError>;
   readonly applyLiveFrame: (
-    frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-  ) => Effect.Effect<boolean, SyncProtocolError | ReplicaStoreError>;
+    frame: SyncLiveServerFrame,
+  ) => Effect.Effect<LiveFrameOutcome, ReplicaStoreError>;
   readonly verifyAuthority: (input: {
     readonly incarnation: string;
     readonly horizon: string;
   }) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
   readonly setPullMaxBytes: (maxBytes: number | undefined) => Effect.Effect<void>;
+  readonly pullMaxBytes: Effect.Effect<number | undefined>;
 }
 
 const makeClaimId = Effect.sync(() => crypto.randomUUID());
@@ -294,10 +324,10 @@ export const makeSyncEngineFromReplicaStore = (
       return yield* Effect.gen(function* () {
         const pulledAt = yield* Clock.currentTimeMillis;
         const includeDigest = yield* digestDue(request.subscription, pulledAt);
-        const pullRequest = withMaxBytes(
-          includeDigest ? { ...request, includeDigest: true } : request,
-          yield* Ref.get(pullMaxBytes),
-        );
+        const digestRequest: SyncPullRequest = includeDigest
+          ? { ...request, digestVersion: PARTITION_DIGEST_VERSION }
+          : request;
+        const pullRequest = withMaxBytes(digestRequest, yield* Ref.get(pullMaxBytes));
         const pulled = yield* transport.pull(pullRequest).pipe(
           Effect.catchIf(isSnapshotRequired, () =>
             Effect.gen(function* () {
@@ -363,17 +393,45 @@ export const makeSyncEngineFromReplicaStore = (
       );
     });
 
-    const applyLiveFrameEffect = Effect.fn("SyncEngine.applyLiveFrame")(function* (
-      frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-    ) {
-      const feed = yield* SubscriptionRef.get(progress).pipe(Effect.map((current) => current.feed));
-      if (feed._tag !== "following") return false;
-      yield* Effect.forEach(
-        frame.transactions,
-        (group) => withPermit(store.applyTransactionGroup(group)),
-        { discard: true },
+    const applyTransactionsFrame = (frame: TransactionsFrame) =>
+      withPermit(
+        Effect.gen(function* () {
+          const cursor = yield* cursorFromStore(store);
+          if (cursor.epoch !== frame.epoch) return livePull(frame.epoch, frame.toCommitSequence);
+          if (compareDecimalSequence(frame.toCommitSequence, cursor.appliedCommitSequence) <= 0) {
+            return LIVE_CURRENT;
+          }
+          if (!contiguousFrom(frame, cursor.appliedCommitSequence)) {
+            return livePull(frame.epoch, frame.toCommitSequence);
+          }
+          for (const group of frame.transactions) {
+            yield* store.applyTransactionGroup(group);
+          }
+          return LIVE_APPLIED;
+        }),
       );
-      return true;
+
+    const applyLiveFrameEffect = Effect.fn("SyncEngine.applyLiveFrame")(function* (
+      frame: SyncLiveServerFrame,
+    ) {
+      switch (frame._tag) {
+        case "resume":
+          return LIVE_RESUME;
+        case "hello":
+        case "wake": {
+          const hint = {
+            epoch: frame.epoch,
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            horizon: frame.horizon,
+          };
+          return (yield* hintApplied(hint)) ? LIVE_CURRENT : livePull(frame.epoch, frame.horizon);
+        }
+        case "transactions": {
+          const { feed } = yield* SubscriptionRef.get(progress);
+          if (feed._tag !== "following") return livePull(frame.epoch, frame.toCommitSequence);
+          return yield* applyTransactionsFrame(frame);
+        }
+      }
     });
 
     return {
@@ -388,6 +446,7 @@ export const makeSyncEngineFromReplicaStore = (
       applyLiveFrame: applyLiveFrameEffect,
       verifyAuthority,
       setPullMaxBytes: (maxBytes) => Ref.set(pullMaxBytes, maxBytes),
+      pullMaxBytes: Ref.get(pullMaxBytes),
     };
   });
 

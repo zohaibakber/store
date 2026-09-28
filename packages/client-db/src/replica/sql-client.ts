@@ -1,5 +1,6 @@
 import {
   SyncTransportService,
+  type OwnedLiveHost,
   type SyncSchedulerPolicy,
   type SyncWakeReason,
 } from "@store/sync/browser";
@@ -20,6 +21,8 @@ type OpenSqlClientReplicaInput<E> = {
   readonly sync: {
     readonly apiBaseUrl: string;
     readonly authenticatedFetch: typeof globalThis.fetch;
+    readonly accessToken: OwnedLiveHost["accessToken"];
+    readonly network?: OwnedLiveHost["network"];
   };
   readonly policy?: SyncSchedulerPolicy;
 };
@@ -48,8 +51,8 @@ export const openSqlClientReplicaHandle = async <E>(
     transport: layerFetchTransport(input.sync.apiBaseUrl, input.sync.authenticatedFetch),
     live: {
       apiBaseUrl: input.sync.apiBaseUrl,
-      fetch: input.sync.authenticatedFetch,
-      preferSse: false,
+      accessToken: input.sync.accessToken,
+      network: input.sync.network,
     },
     policy: input.policy,
   });

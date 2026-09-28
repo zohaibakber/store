@@ -1,9 +1,23 @@
 import type { SqlClientReplicaHandle } from "@store/client-db/sql-client";
+import type { LiveNetworkSignal } from "@store/sync/browser";
 import * as Network from "expo-network";
 import * as React from "react";
 import { AppState } from "react-native";
 
 import { isReachable, pullMaxBytesFor, reconnected, visibilityForAppState } from "./policy";
+
+let lastReachable = true;
+
+export const expoNetworkSignal: LiveNetworkSignal = {
+  isOnline: () => lastReachable,
+  subscribe: (listener) => {
+    const subscription = Network.addNetworkStateListener((state) => {
+      lastReachable = isReachable(state);
+      listener(lastReachable);
+    });
+    return () => subscription.remove();
+  },
+};
 
 const ignoreFailure = (work: Promise<void>) => {
   work.catch(() => undefined);

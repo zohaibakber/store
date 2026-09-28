@@ -31,7 +31,6 @@ it.effect("returns an interrupted upload claim to pending with an uncertain outc
           }),
         acquireSnapshot: () => Effect.die("unused"),
         readSnapshotPart: () => Effect.die("unused"),
-        mintLiveTicket: () => Effect.die("unused"),
       };
       const engine = yield* makeSyncEngine(store, mutex, transport);
       const upload = yield* Effect.forkChild(engine.uploadOnce());

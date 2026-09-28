@@ -1,5 +1,10 @@
 import type { ReplicaInsightsWindow, SyncCommandEnvelope } from "@store/contracts";
-import { layerOwnedHttpSync, SyncScheduler, SyncTransportService } from "@store/sync/browser";
+import {
+  layerOwnedHttpSync,
+  SyncScheduler,
+  SyncTransportService,
+  type OwnedLiveHost,
+} from "@store/sync/browser";
 import {
   layerIndexedDbReplicaStore,
   IndexedDbReplicaStore,
@@ -37,6 +42,7 @@ export type OpenIndexedDbReplicaInput = {
   readonly sync?: {
     readonly apiBaseUrl: string;
     readonly authenticatedFetch: typeof fetch;
+    readonly accessToken: OwnedLiveHost["accessToken"];
   };
 };
 
@@ -66,9 +72,7 @@ const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
         databaseIdentity: input.databaseName,
         live: {
           apiBaseUrl: input.sync.apiBaseUrl,
-          replicaId: input.identity.replicaId,
-          fetch: input.sync.authenticatedFetch,
-          preferSse: true,
+          accessToken: input.sync.accessToken,
         },
       }).pipe(
         Layer.provide(

@@ -9,7 +9,12 @@ import { useSession, type SignedInSession } from "@/auth";
 
 import { createMobileInventoryHost, unavailableInventoryHost } from "./host";
 import { decodeMobileExtra } from "./policy";
-import { applyAppState, applyPullMaxBytes, useReplicaScheduling } from "./scheduling";
+import {
+  applyAppState,
+  applyPullMaxBytes,
+  expoNetworkSignal,
+  useReplicaScheduling,
+} from "./scheduling";
 
 const apiBaseUrl = decodeMobileExtra(Constants.expoConfig?.extra).pipe(
   Option.map((extra) => extra.apiBaseUrl),
@@ -31,6 +36,8 @@ const useLatest = <A,>(value: A): React.RefObject<A> => {
 
 const unauthenticatedFetch: typeof fetch = (input, init) => globalThis.fetch(input, init);
 
+const noAccessToken = async (): Promise<string | null> => null;
+
 function InventoryRoot({
   children,
   session,
@@ -39,6 +46,7 @@ function InventoryRoot({
   readonly session: SignedInSession | null;
 }) {
   const latestFetch = useLatest(session?.authenticatedFetch ?? unauthenticatedFetch);
+  const latestAccessToken = useLatest(session?.liveAccessToken ?? noAccessToken);
   const active = React.useRef<SqlClientReplicaHandle | undefined>(undefined);
   const pullMaxBytes = useReplicaScheduling(active);
 
@@ -52,6 +60,8 @@ function InventoryRoot({
     return createMobileInventoryHost({
       apiBaseUrl: apiBaseUrl.value,
       authenticatedFetch: (input, init) => latestFetch.current(input, init),
+      liveAccessToken: (options) => latestAccessToken.current(options),
+      network: expoNetworkSignal,
       listener: {
         opened: (handle) => {
           active.current = handle;
@@ -63,7 +73,7 @@ function InventoryRoot({
         },
       },
     });
-  }, [latestFetch, pullMaxBytes]);
+  }, [latestFetch, latestAccessToken, pullMaxBytes]);
 
   const syncNow = React.useCallback((): Promise<void> => {
     const handle = active.current;

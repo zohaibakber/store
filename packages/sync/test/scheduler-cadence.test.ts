@@ -12,7 +12,9 @@ import { TestClock } from "effect/testing";
 
 import {
   defaultHttpPollPolicy,
+  LIVE_IDLE_PULL_MILLIS,
   makeSyncScheduler,
+  PULL_FLOOR_MILLIS,
   type SyncCatchUpOutcome,
   type SyncSchedulerPolicy,
 } from "../src/scheduler";
@@ -34,7 +36,10 @@ const hint = (horizon: string): SyncLiveWakeHint => ({
 
 type PullScript = (attempt: number) => Effect.Effect<SyncCatchUpOutcome, SyncFailureCause>;
 
-const startScheduler = (script: PullScript, options: { readonly appliedThrough?: bigint } = {}) =>
+const startScheduler = (
+  script: PullScript,
+  options: { readonly appliedThrough?: bigint; readonly policy?: SyncSchedulerPolicy } = {},
+) =>
   Effect.gen(function* () {
     const pulls = yield* Ref.make<ReadonlyArray<number>>([]);
     const scheduler = yield* makeSyncScheduler(
@@ -51,7 +56,7 @@ const startScheduler = (script: PullScript, options: { readonly appliedThrough?:
             options.appliedThrough !== undefined && BigInt(wake.horizon) <= options.appliedThrough,
           ),
       },
-      policy,
+      options.policy ?? policy,
     );
     yield* scheduler.setNetworkOwner(true);
     yield* TestClock.adjust("0 millis");
@@ -72,9 +77,55 @@ const expectWithinJitter = (gap: number | undefined, expected: number) => {
 const unchanged: PullScript = () => Effect.succeed("unchanged");
 
 describe("sync scheduler idle cadence", () => {
-  it("extends the default idle ladder to one and five minutes", () => {
-    expect(defaultHttpPollPolicy.backoffMillis).toEqual([5_000, 15_000, 30_000, 60_000, 300_000]);
+  it("starts the default ladder at the one-minute floor and idles for fifteen minutes when live", () => {
+    expect(defaultHttpPollPolicy.activePollMillis).toBe(PULL_FLOOR_MILLIS);
+    expect(defaultHttpPollPolicy.minPollMillis).toBe(60_000);
+    expect(defaultHttpPollPolicy.backoffMillis).toEqual([60_000, 120_000, 300_000]);
+    expect(defaultHttpPollPolicy.liveIdlePollMillis).toBe(LIVE_IDLE_PULL_MILLIS);
+    expect(LIVE_IDLE_PULL_MILLIS).toBe(15 * 60_000);
   });
+
+  it.effect("never polls faster than the floor without a socket, even while pulls advance", () =>
+    Effect.gen(function* () {
+      const { pulls, scheduler } = yield* startScheduler(() => Effect.succeed("advanced"), {
+        policy: defaultHttpPollPolicy,
+      });
+      for (let step = 0; step < 40; step += 1) yield* TestClock.adjust("15 seconds");
+      const gaps = gapsOf(yield* Ref.get(pulls));
+      expect(gaps.length).toBeGreaterThanOrEqual(7);
+      for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(PULL_FLOOR_MILLIS);
+      yield* scheduler.shutdown;
+    }),
+  );
+
+  it.effect("climbs the default ladder to five minutes while nothing changes", () =>
+    Effect.gen(function* () {
+      const { pulls, scheduler } = yield* startScheduler(unchanged, {
+        policy: defaultHttpPollPolicy,
+      });
+      for (let step = 0; step < 30; step += 1) yield* TestClock.adjust("1 minute");
+      const gaps = gapsOf(yield* Ref.get(pulls));
+      expectWithinJitter(gaps[0], 60_000);
+      expectWithinJitter(gaps[1], 120_000);
+      expectWithinJitter(gaps[2], 300_000);
+      expectWithinJitter(gaps[3], 300_000);
+      yield* scheduler.shutdown;
+    }),
+  );
+
+  it.effect("pulls once per fifteen minutes while the socket stays connected", () =>
+    Effect.gen(function* () {
+      const { pulls, scheduler } = yield* startScheduler(unchanged, {
+        policy: defaultHttpPollPolicy,
+      });
+      yield* scheduler.setLiveConnected(true);
+      for (let step = 0; step < 60; step += 1) yield* TestClock.adjust("1 minute");
+      const gaps = gapsOf(yield* Ref.get(pulls));
+      expect(gaps.length).toBeGreaterThanOrEqual(3);
+      for (const gap of gaps) expectWithinJitter(gap, LIVE_IDLE_PULL_MILLIS);
+      yield* scheduler.shutdown;
+    }),
+  );
 
   it.effect("climbs the idle ladder while pulls return no transactions", () =>
     Effect.gen(function* () {

@@ -13,11 +13,8 @@ import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import {
   SyncAuthority,
-  SyncLiveUpgrade,
   unprovisionedSyncAuthority,
-  unprovisionedSyncLiveUpgrade,
   type SyncAuthorityContract,
-  type SyncLiveUpgradeContract,
 } from "../../src/inventory/sync-authority";
 
 const sessionFor = (role: "owner" | "admin" | "member") =>
@@ -78,7 +75,6 @@ export interface AppOptions {
   readonly productScanAllowed?: boolean;
   readonly trustedOrigins?: ReadonlyArray<string>;
   readonly syncAuthority?: SyncAuthorityContract;
-  readonly syncLiveUpgrade?: SyncLiveUpgradeContract;
 }
 
 const runtimeFor = (
@@ -133,9 +129,6 @@ export const workerHandlerFor = async (
     Layer.provide(Layer.succeed(ServerRuntime, runtimeFor(authenticated, options, invoiceAi))),
     Layer.provide(
       Layer.succeed(SyncAuthority, options.syncAuthority ?? unprovisionedSyncAuthority),
-    ),
-    Layer.provide(
-      Layer.succeed(SyncLiveUpgrade, options.syncLiveUpgrade ?? unprovisionedSyncLiveUpgrade),
     ),
     Layer.provide(HttpServer.layerServices),
   );

@@ -60,13 +60,14 @@ describe("API Worker bundle", () => {
     expect(source).toContain("AuthVerificationConfig");
   });
 
-  it("binds inventory commands through Hyperdrive and does not bind a Durable Object", () => {
+  it("binds inventory commands through Hyperdrive and fans out through the stateless OrgHub", () => {
     const source = readFileSync(`${repoRoot}apps/server/infra.ts`, "utf8");
     expect(source).toContain("InventoryAuthorityLive");
     expect(source).toContain("InventoryCommands");
     expect(source).toContain("Hyperdrive.ConnectBinding");
     expect(source).not.toContain("OrganizationInventoryObject");
-    expect(source).not.toContain("DurableObject");
+    expect(source).toContain("OrgHubLive");
+    expect(source).not.toContain("DurableObjectStorage");
     expect(source).not.toContain("Neon");
   });
 

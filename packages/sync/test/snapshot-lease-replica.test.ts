@@ -42,7 +42,6 @@ const recordingTransport = () => {
         };
       }),
     readSnapshotPart: () => Effect.die("unused"),
-    mintLiveTicket: () => Effect.die("unused"),
   };
   return { requests, transport };
 };

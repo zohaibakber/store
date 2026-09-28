@@ -2,7 +2,6 @@ import {
   OrgCommitSequence,
   SnapshotId,
   SyncCommandEnvelope,
-  SyncEpoch,
   SyncPullResult,
   syncProtocolError,
 } from "@store/contracts";
@@ -10,10 +9,7 @@ import { lastUnitBuyerACommand, lastUnitBuyerAEnvelope } from "@store/contracts/
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
 import { databaseError } from "../../src/inventory/postgres";
@@ -21,7 +17,6 @@ import {
   makeInventorySyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
-import type { SyncLiveUpgradeContract } from "../../src/inventory/sync-authority";
 import { appFor, workerHandlerFor } from "../lib/app";
 
 const unusedAuthority: SyncAuthorityContract = {
@@ -30,7 +25,6 @@ const unusedAuthority: SyncAuthorityContract = {
   pull: () => Effect.die("unused"),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
 };
 
@@ -87,7 +81,6 @@ describe("sync HTTP", () => {
         readSnapshotPart: unused,
         readSnapshotPartEncoded: unused,
       },
-      live: { mintLiveTicket: unused, consumeLiveTicket: unused, readLiveHorizon: unused },
     });
     const response = await appFor(true, { syncAuthority }).request(
       "/api/sync/commands",
@@ -106,7 +99,6 @@ describe("sync HTTP", () => {
       pull: () => Effect.die("unused"),
       acquireSnapshot: () => Effect.die("unused"),
       readSnapshotPart: () => Effect.die("unused"),
-      mintLiveTicket: () => Effect.die("unused"),
       submitCommand: () =>
         Effect.fail(
           syncProtocolError(
@@ -145,8 +137,7 @@ describe("sync HTTP", () => {
       pull: () => Effect.die("unused"),
       acquireSnapshot: () => Effect.die("unused"),
       readSnapshotPart: () => Effect.die("unused"),
-      mintLiveTicket: () => Effect.die("unused"),
-      submitCommand: () => Effect.succeed({ json: JSON.stringify(receipt) }),
+      submitCommand: () => Effect.succeed({ body: JSON.stringify(receipt), fanout: null }),
     };
     const response = await appFor(true, { syncAuthority }).request(
       "/api/sync/commands",
@@ -172,7 +163,6 @@ describe("sync HTTP", () => {
         ),
       acquireSnapshot: () => Effect.die("unused"),
       readSnapshotPart: () => Effect.die("unused"),
-      mintLiveTicket: () => Effect.die("unused"),
       submitCommand: () => Effect.die("unused"),
     };
     const response = await appFor(true, { syncAuthority }).request("/api/sync/pull", {
@@ -188,68 +178,6 @@ describe("sync HTTP", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "SNAPSHOT_REQUIRED" },
     });
-  });
-
-  it("refuses an unauthenticated live upgrade", async () => {
-    const response = await appFor(false).request(
-      "/api/sync/live?nonce=abababababababababababababababababababababababababababababababab&replicaId=replica-a&subscription=operational",
-    );
-    expect(response.status).toBe(401);
-  });
-
-  it("streams SSE wake hints after a valid ticket query", async () => {
-    const nonce = "ab".repeat(32);
-    const syncLiveUpgrade: SyncLiveUpgradeContract = {
-      handle: (_actor, query, preferSse) =>
-        Effect.succeed(
-          preferSse
-            ? Stream.make({
-                event: "wake" as const,
-                id: "3",
-                data: JSON.stringify({
-                  epoch: "1",
-                  subscription: query.subscription,
-                  horizon: "3",
-                }),
-              })
-            : {
-                epoch: SyncEpoch.make("1"),
-                subscription: query.subscription,
-                horizon: OrgCommitSequence.make("3"),
-              },
-        ),
-    };
-    const response = await appFor(true, { syncLiveUpgrade }).request(
-      `/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-      { headers: { accept: "text/event-stream" } },
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/event-stream");
-    const body = await response.text();
-    expect(body).toContain("event: wake");
-    expect(body).toContain('"horizon":"3"');
-  });
-
-  it("returns a JSON wake hint for long-poll clients", async () => {
-    const nonce = "cd".repeat(32);
-    const syncLiveUpgrade: SyncLiveUpgradeContract = {
-      handle: (_actor, query, preferSse) =>
-        Effect.succeed(
-          preferSse
-            ? undefined
-            : {
-                epoch: SyncEpoch.make("1"),
-                subscription: query.subscription,
-                horizon: OrgCommitSequence.make("9"),
-              },
-        ),
-    };
-    const response = await appFor(true, { syncLiveUpgrade }).request(
-      `/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=1000`,
-      { headers: { accept: "application/json" } },
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ horizon: "9", subscription: "operational" });
   });
 
   it("sends a pull page as the stored JSON without re-encoding it", async () => {
@@ -330,61 +258,5 @@ describe("sync HTTP", () => {
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("retry-after")).toBe("2");
-  });
-
-  it("accepts a bearer-only live request without a ticket nonce", async () => {
-    const seen: Array<string | undefined> = [];
-    const syncLiveUpgrade: SyncLiveUpgradeContract = {
-      handle: (_actor, query) =>
-        Effect.sync(() => {
-          seen.push(query.nonce);
-          return {
-            epoch: SyncEpoch.make("1"),
-            subscription: query.subscription,
-            horizon: OrgCommitSequence.make("4"),
-          };
-        }),
-    };
-    const response = await appFor(true, { syncLiveUpgrade }).request(
-      "/api/sync/live?replicaId=replica-a&subscription=operational&afterHorizon=3",
-      { headers: { accept: "application/json" } },
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ horizon: "4" });
-    expect(seen).toEqual([undefined]);
-  });
-
-  it("serves many requests from one router build and keeps each SSE request scope open until its stream ends", async () => {
-    const syncLiveUpgrade: SyncLiveUpgradeContract = {
-      handle: () =>
-        Effect.gen(function* () {
-          const scope = yield* Effect.serviceOption(Scope.Scope);
-          let closed = false;
-          if (Option.isSome(scope)) {
-            yield* Scope.addFinalizer(
-              scope.value,
-              Effect.sync(() => {
-                closed = true;
-              }),
-            );
-          }
-          return Stream.fromEffect(
-            Effect.sync(() => ({
-              event: "wake" as const,
-              id: "1",
-              data: Option.isNone(scope) ? "no-scope" : closed ? "scope-closed" : "scope-open",
-            })),
-          );
-        }),
-    };
-    const serve = await workerHandlerFor(true, { syncLiveUpgrade });
-    const open = (replicaId: string) =>
-      serve(`/api/sync/live?replicaId=${replicaId}&subscription=operational`, {
-        headers: { accept: "text/event-stream" },
-      });
-    const first = await open("replica-a");
-    const second = await open("replica-b");
-    expect(await first.text()).toContain("data: scope-open");
-    expect(await second.text()).toContain("data: scope-open");
   });
 });

@@ -19,7 +19,7 @@ import { batches, categories, products, stockMovements } from "@store/db/postgre
 import { and, eq, inArray, or, type Column, type SQL } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import type { InventoryActor } from "./model";
+import type { InventoryActor } from "../../../src/inventory/model";
 import { protocol, type InventoryTransaction } from "./postgres";
 
 type CatalogWritten = {

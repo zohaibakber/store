@@ -9,10 +9,7 @@ import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ReplicaWorkerRpcs } from "../../electron/replica-rpc";
-import {
-  liveShimResponse,
-  makeReplicaWorkerHandlers,
-} from "../../electron/replica-worker-handlers";
+import { makeReplicaWorkerHandlers } from "../../electron/replica-worker-handlers";
 
 const directories: Array<string> = [];
 
@@ -131,15 +128,6 @@ describe("replica worker handlers", () => {
         message: "The sync authority was restored or re-keyed; unsent commands are preserved.",
       },
     ]);
-  });
-
-  it("builds a bodiless live response for an empty long-poll and keeps Retry-After", async () => {
-    const empty = liveShimResponse({ ok: true, status: 204, bodyText: "" });
-    expect(empty.status).toBe(204);
-    expect(empty.body).toBeNull();
-    const busy = liveShimResponse({ ok: false, status: 503, bodyText: "{}", retryAfter: "7" });
-    expect(busy.headers.get("retry-after")).toBe("7");
-    await expect(busy.text()).resolves.toBe("{}");
   });
 
   it("ignores a foreground change before a replica is open", async () => {

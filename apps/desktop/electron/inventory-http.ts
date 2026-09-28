@@ -9,7 +9,6 @@ type InventoryHttpRequest = {
   readonly url: string;
 };
 
-const LIVE_TICKET_NONCE = /^[0-9a-f]{64}$/u;
 const SNAPSHOT_ID = /^[A-Za-z0-9._-]{1,200}$/u;
 const SNAPSHOT_PART = /^[1-9][0-9]{0,8}$/u;
 
@@ -19,7 +18,7 @@ const inventoryApiPath = (apiBaseUrl: string) => {
   return (basePath.endsWith("/api") ? basePath : `${basePath}/api`).replace(/^\/\//u, "/");
 };
 
-const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull", "snapshots", "live-tickets"] as const;
+const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull", "snapshots"] as const;
 
 export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 
@@ -54,31 +53,6 @@ const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
   return SNAPSHOT_ID.test(snapshotId) && SNAPSHOT_PART.test(partNumber);
 };
 
-const isLiveWakeRequest = (apiPath: string, requested: URL, method: string): boolean => {
-  if (method !== "GET") return false;
-  if (requested.pathname !== `${apiPath}/sync/live`) return false;
-  const nonce = requested.searchParams.get("nonce");
-  const replicaId = requested.searchParams.get("replicaId");
-  const subscription = requested.searchParams.get("subscription");
-  const keys = [...requested.searchParams.keys()];
-  const allowed = new Set(["nonce", "replicaId", "subscription", "afterHorizon", "waitMs"]);
-  if (keys.some((key) => !allowed.has(key))) return false;
-  if (
-    (nonce !== null && !LIVE_TICKET_NONCE.test(nonce)) ||
-    replicaId === null ||
-    replicaId.length === 0 ||
-    replicaId.length > 200 ||
-    subscription !== "operational"
-  ) {
-    return false;
-  }
-  const afterHorizon = requested.searchParams.get("afterHorizon");
-  if (afterHorizon !== null && !/^[0-9]+$/u.test(afterHorizon)) return false;
-  const waitMs = requested.searchParams.get("waitMs");
-  if (waitMs !== null && !/^[1-9][0-9]{0,5}$/u.test(waitMs)) return false;
-  return true;
-};
-
 export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest) => {
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
@@ -87,8 +61,7 @@ export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttp
   const routeAllowed =
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
     (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
-    (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname)) ||
-    isLiveWakeRequest(apiPath, requested, request.method);
+    (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname));
   if (
     requested.username ||
     requested.password ||

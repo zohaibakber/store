@@ -1,15 +1,15 @@
 import {
   compareDecimalSequence,
+  divergedPartitionEntities,
   incrementDecimalSequence,
-  rowImageDigest,
   subscriptionEntities,
   SyncCommandEnvelope,
   syncEntityDependencyOrder,
   syncProtocolError,
   type CommandReceipt,
   type PartitionDigest,
+  type PartitionDigestReport,
   type PartitionEntity,
-  type SnapshotRow,
   type SyncEntity,
   type SyncProtocolError,
   type SyncSubscription,
@@ -313,39 +313,22 @@ export const checkAuthorityHead = (
       )
     : Result.void;
 
-type CoverageAfterPull<Digest extends string> =
+type CoverageAfterPull =
   | { readonly _tag: "unchanged" }
-  | { readonly _tag: "repair" }
-  | { readonly _tag: "record"; readonly digest: Digest; readonly verified: boolean };
+  | { readonly _tag: "repair"; readonly diverged: ReadonlyArray<PartitionEntity> }
+  | { readonly _tag: "record"; readonly digest: PartitionDigest; readonly verified: boolean };
 
-export const decideCoverageAfterPull = <Digest extends string>(
-  localDigest: string | undefined,
-  pulledDigest: Digest | undefined,
-): CoverageAfterPull<Digest> => {
-  if (pulledDigest === undefined || pulledDigest === "") return { _tag: "unchanged" };
-  if (localDigest === undefined) return { _tag: "record", digest: pulledDigest, verified: false };
-  if (localDigest !== pulledDigest) return { _tag: "repair" };
-  return { _tag: "record", digest: pulledDigest, verified: true };
+export const decideCoverageAfterPull = (
+  local: PartitionDigestReport | undefined,
+  pulled: PartitionDigestReport | undefined,
+): CoverageAfterPull => {
+  if (pulled === undefined) return { _tag: "unchanged" };
+  if (local === undefined) return { _tag: "record", digest: pulled.digest, verified: false };
+  if (local.digest !== pulled.digest) {
+    return { _tag: "repair", diverged: divergedPartitionEntities(local, pulled) };
+  }
+  return { _tag: "record", digest: pulled.digest, verified: true };
 };
-
-export type PartitionRowSource = {
-  readonly entity: PartitionEntity;
-  readonly row: { readonly id: string; readonly rowVersion: number };
-};
-
-const AUTHORITY_SOFT_DELETE_ENTITIES: ReadonlySet<PartitionEntity> = new Set<PartitionEntity>([
-  "product",
-  "batch",
-]);
-
-const authorityRowImage = (source: PartitionRowSource): SnapshotRow => ({
-  entity: source.entity,
-  entityId: source.row.id,
-  rowVersion: source.row.rowVersion,
-  row: AUTHORITY_SOFT_DELETE_ENTITIES.has(source.entity)
-    ? { ...source.row, deletedAt: null }
-    : source.row,
-});
 
 export const isPartitionEntity = (
   subscription: SyncSubscription,
@@ -353,18 +336,10 @@ export const isPartitionEntity = (
 ): entity is PartitionEntity =>
   subscriptionEntities(subscription).some((candidate) => candidate === entity);
 
-export const localPartitionDigest = (
+export const hasPendingPartitionRows = (
   subscription: SyncSubscription,
-  rows: ReadonlyArray<PartitionRowSource>,
   pendingMarks: ReadonlyArray<{ readonly entity: SyncEntity }>,
-): PartitionDigest | undefined =>
-  pendingMarks.some((mark) => isPartitionEntity(subscription, mark.entity))
-    ? undefined
-    : rowImageDigest(
-        rows
-          .filter((source) => isPartitionEntity(subscription, source.entity))
-          .map(authorityRowImage),
-      );
+): boolean => pendingMarks.some((mark) => isPartitionEntity(subscription, mark.entity));
 
 export type JournalHolder = {
   readonly operationId: string;

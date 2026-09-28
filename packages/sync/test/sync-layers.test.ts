@@ -107,7 +107,6 @@ const countingTransport = (
         };
       }),
     readSnapshotPart: () => Effect.die("unused"),
-    mintLiveTicket: () => Effect.die("unused"),
   };
   return { counts, transport };
 };

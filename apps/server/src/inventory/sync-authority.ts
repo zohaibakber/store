@@ -2,29 +2,26 @@ import {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
-  LiveTicket,
-  LiveTicketRequest,
-  LiveUpgradeQuery,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
-  SyncLiveSseEvent,
-  SyncLiveWakeHint,
   SyncProtocolError,
   SyncPullRequest,
   SyncSubmitCommandRequest,
-  syncProtocolError,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as Stream from "effect/Stream";
 
 import type { InventoryCommandsContract } from "./commands";
 import type { InventoryDatabaseError, InventoryError } from "./errors";
-import type { InventoryLiveContract } from "./live-tickets";
-import type { EncodedJsonBody, EncodedSnapshotPart, InventorySyncActor } from "./model";
+import type {
+  EncodedJsonBody,
+  EncodedSnapshotPart,
+  InventorySyncActor,
+  SubmittedCommand,
+} from "./model";
 import { inventoryPostgresUnavailable } from "./postgres";
 import type { InventorySnapshotsContract } from "./snapshots";
 
@@ -62,7 +59,7 @@ export interface SyncAuthorityContract {
   readonly submitCommand: (
     actor: InventorySyncActor,
     request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<EncodedJsonBody, SyncAuthorityError, RuntimeContext>;
+  ) => Effect.Effect<SubmittedCommand, SyncAuthorityError, RuntimeContext>;
   readonly getReceipt: (
     actor: InventorySyncActor,
     operationId: string,
@@ -80,10 +77,6 @@ export interface SyncAuthorityContract {
     snapshotId: SnapshotId,
     partNumber: number,
   ) => Effect.Effect<EncodedSnapshotPart, SyncAuthorityError, RuntimeContext>;
-  readonly mintLiveTicket: (
-    actor: InventorySyncActor,
-    request: LiveTicketRequest,
-  ) => Effect.Effect<LiveTicket, SyncAuthorityError, RuntimeContext>;
 }
 
 export class SyncAuthority extends Context.Service<SyncAuthority, SyncAuthorityContract>()(
@@ -99,7 +92,6 @@ export const unprovisionedSyncAuthority: SyncAuthorityContract = {
   pull: () => unavailable(),
   acquireSnapshot: () => unavailable(),
   readSnapshotPart: () => unavailable(),
-  mintLiveTicket: () => unavailable(),
 };
 
 export const toSyncAuthorityError = <A, R>(
@@ -116,7 +108,6 @@ export const toSyncAuthorityError = <A, R>(
 export const makeInventorySyncAuthority = (stores: {
   readonly commands: InventoryCommandsContract;
   readonly snapshots: InventorySnapshotsContract;
-  readonly live: InventoryLiveContract;
 }): SyncAuthorityContract => ({
   registerReplica: (actor, request) =>
     toSyncAuthorityError(stores.commands.register(actor, request)),
@@ -129,28 +120,4 @@ export const makeInventorySyncAuthority = (stores: {
     toSyncAuthorityError(stores.snapshots.acquireSnapshot(actor, request)),
   readSnapshotPart: (actor, snapshotId, partNumber) =>
     toSyncAuthorityError(stores.snapshots.readSnapshotPartEncoded(actor, snapshotId, partNumber)),
-  mintLiveTicket: (actor, request) =>
-    toSyncAuthorityError(stores.live.mintLiveTicket(actor, request)),
 });
-
-type SyncLiveUpgradeSuccess = SyncLiveWakeHint | void | Stream.Stream<SyncLiveSseEvent>;
-
-export interface SyncLiveUpgradeContract {
-  readonly handle: (
-    actor: InventorySyncActor,
-    query: LiveUpgradeQuery,
-    preferSse: boolean,
-  ) => Effect.Effect<SyncLiveUpgradeSuccess, SyncAuthorityError, RuntimeContext>;
-}
-
-export class SyncLiveUpgrade extends Context.Service<SyncLiveUpgrade, SyncLiveUpgradeContract>()(
-  "@store/server/SyncLiveUpgrade",
-) {}
-
-export const unprovisionedSyncLiveUpgrade: SyncLiveUpgradeContract = {
-  handle: () => Effect.fail(syncUnavailableError()),
-};
-
-export const unavailableSyncLiveUpgrade: SyncLiveUpgradeContract = {
-  handle: () => Effect.fail(syncProtocolError("TICKET_INVALID", "Live updates are not available.")),
-};

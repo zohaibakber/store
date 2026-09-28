@@ -73,6 +73,8 @@ const decodeOpened = Schema.decodeUnknownSync(
 const setupIpc = () => {
   const boots: Array<typeof ReplicaWorkerBoot.Type> = [];
   const proxyReplies: Array<{ readonly requestId: string; readonly result: ProxyFetchResult }> = [];
+  const tokenReplies: Array<{ readonly requestId: string; readonly token: string | null }> = [];
+  const tokenForces: Array<boolean> = [];
   const syncRequests: Array<string> = [];
   const syncTimeouts: Array<number | undefined> = [];
   const foregrounds: Array<boolean> = [];
@@ -140,6 +142,11 @@ const setupIpc = () => {
       Effect.sync(() => {
         proxyReplies.push(reply);
       }),
+    AccessTokenRequests: () => Stream.make({ requestId: "token-1", force: true }),
+    AccessTokenRespond: (reply) =>
+      Effect.sync(() => {
+        tokenReplies.push(reply);
+      }),
   });
   const spawnWorker: SpawnReplicaWorker = () =>
     RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
@@ -160,6 +167,10 @@ const setupIpc = () => {
       syncRequests.push(pathname);
       syncTimeouts.push(init?.timeoutMillis);
       return { ok: true, status: 200, bodyText: "{}" };
+    },
+    liveAccessToken: async (force) => {
+      tokenForces.push(force);
+      return "access-1";
     },
     allowedOrigins: () => allowed,
     spawnWorker,
@@ -189,6 +200,8 @@ const setupIpc = () => {
   return {
     boots,
     proxyReplies,
+    tokenReplies,
+    tokenForces,
     syncRequests,
     syncTimeouts,
     foregrounds,
@@ -208,6 +221,16 @@ describe("replica worker IPC contract", () => {
     expect(() =>
       assertTrustedIpcSender({ url: "https://evil.example" }, ["https://app.tabaaq.local"]),
     ).toThrow("Rejected IPC from an untrusted renderer.");
+  });
+
+  it("hands the replica worker a fresh access token for its live socket", async () => {
+    const { tokenReplies, tokenForces, registration, senderEvent, open } = setupIpc();
+    await open(senderEvent(9));
+    await vi.waitFor(() => {
+      expect(tokenReplies).toEqual([{ requestId: "token-1", token: "access-1" }]);
+    });
+    expect(tokenForces).toEqual([true]);
+    await registration.dispose();
   });
 
   it("opens a worker, forwards commits and proxy requests, and reads through typed RPCs", async () => {

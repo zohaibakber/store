@@ -399,6 +399,8 @@ void app.whenReady().then(async () => {
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, (url, init) =>
       authBroker.apiFetch(url, init),
     ),
+    liveAccessToken: async (force) =>
+      (await authBroker.ensureFreshAccess(force))?.accessToken ?? null,
     allowedOrigins: allowedRendererOrigins,
   });
   await authBroker.initialize();

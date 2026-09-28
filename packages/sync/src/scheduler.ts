@@ -39,6 +39,7 @@ export type SyncSchedulerPolicy = {
   readonly backoffMillis: ReadonlyArray<number>;
   readonly hiddenPollMillis: number;
   readonly liveIdlePollMillis: number;
+  readonly minPollMillis?: number;
   readonly maxRetryAfterMillis?: number;
   readonly digestVerificationIntervalMillis?: number;
   readonly pullMaxBytes?: number;
@@ -46,11 +47,16 @@ export type SyncSchedulerPolicy = {
 
 const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;
 
+export const PULL_FLOOR_MILLIS = 60_000;
+
+export const LIVE_IDLE_PULL_MILLIS = 15 * 60_000;
+
 export const defaultHttpPollPolicy: SyncSchedulerPolicy = {
-  activePollMillis: 2_000,
-  backoffMillis: [5_000, 15_000, 30_000, 60_000, 5 * 60_000],
-  hiddenPollMillis: 60_000,
-  liveIdlePollMillis: 5 * 60_000,
+  activePollMillis: PULL_FLOOR_MILLIS,
+  backoffMillis: [PULL_FLOOR_MILLIS, 2 * 60_000, 5 * 60_000],
+  hiddenPollMillis: 5 * 60_000,
+  liveIdlePollMillis: LIVE_IDLE_PULL_MILLIS,
+  minPollMillis: PULL_FLOOR_MILLIS,
   maxRetryAfterMillis: DEFAULT_MAX_RETRY_AFTER_MILLIS,
   digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
 };
@@ -93,8 +99,16 @@ type SchedulerVisibility = {
   readonly live: boolean;
 };
 
-const sleepJittered = (delay: Duration.Duration): Effect.Effect<void> =>
-  Effect.void.pipe(Effect.schedule(Schedule.jittered(Schedule.duration(delay))));
+const sleepJittered = (delay: Duration.Duration, floorMillis: number): Effect.Effect<void> =>
+  Effect.void.pipe(
+    Effect.schedule(
+      Schedule.jittered(Schedule.duration(delay)).pipe(
+        Schedule.modifyDelay(({ duration }) =>
+          Effect.succeed(Duration.max(duration, Duration.millis(floorMillis))),
+        ),
+      ),
+    ),
+  );
 
 const delayFor = (
   policy: SyncSchedulerPolicy,
@@ -235,6 +249,7 @@ const makeScheduler = <R>(
       }
       const delay = sleepJittered(
         delayFor(policy, yield* Ref.get(visibility), yield* Ref.get(emptyPolls)),
+        policy.minPollMillis ?? 0,
       );
       return yield* Queue.takeAll(wakes).pipe(Effect.raceFirst(delay.pipe(Effect.as([timerWake]))));
     });

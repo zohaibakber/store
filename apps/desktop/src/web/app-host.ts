@@ -86,6 +86,7 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
     host,
     authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) =>
       broker.apiFetch(input, init),
+    liveAccessToken: ({ force }: { readonly force: boolean }) => broker.liveAccessToken(force),
     initialize: async () => publish(await broker.initialize()),
   };
 };

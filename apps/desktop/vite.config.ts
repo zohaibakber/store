@@ -52,7 +52,9 @@ const webContentSecurityPolicy = (): Plugin => {
         );
         return new URL(configured).origin;
       });
-      connectOrigins = [...new Set(origins)];
+      const apiSocket = new URL(origins[0] ?? WEB_ORIGIN_FALLBACKS.VITE_API_URL);
+      apiSocket.protocol = apiSocket.protocol === "https:" ? "wss:" : "ws:";
+      connectOrigins = [...new Set([...origins, apiSocket.origin])];
     },
     transformIndexHtml: () => [
       {

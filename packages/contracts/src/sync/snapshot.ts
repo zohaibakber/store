@@ -69,3 +69,5 @@ export const AcquireSnapshotResult = Schema.TaggedUnion({
   },
 });
 export type AcquireSnapshotResult = typeof AcquireSnapshotResult.Type;
+
+export const SNAPSHOT_LEASE_LIFETIME_MILLIS = 15 * 60_000;

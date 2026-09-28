@@ -111,7 +111,6 @@ describe("engine snapshot recovery against published transport", () => {
           }
           return Effect.succeed(partPayload);
         },
-        mintLiveTicket: () => Effect.die("unused"),
       };
 
       const store = yield* makeIndexedDbReplicaStore({

@@ -5,6 +5,7 @@ import {
   SyncEngine,
   SyncScheduler,
   SyncTransportService,
+  type OwnedLiveHost,
   type ReplicaOutboxActivity,
   type SyncSchedulerPolicy,
   type SyncWakeReason,
@@ -180,11 +181,7 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
   readonly identity: SqliteReplicaIdentity;
   readonly databaseIdentity: string;
   readonly transport: Layer.Layer<SyncTransportService, TransportError>;
-  readonly live?: {
-    readonly apiBaseUrl: string;
-    readonly fetch: typeof globalThis.fetch;
-    readonly preferSse?: boolean;
-  };
+  readonly live?: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
 };
 
@@ -197,14 +194,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     Layer.mergeAll(
       layerOwnedHttpSync({
         databaseIdentity: input.databaseIdentity,
-        live: input.live
-          ? {
-              apiBaseUrl: input.live.apiBaseUrl,
-              replicaId: input.identity.replicaId,
-              fetch: input.live.fetch,
-              preferSse: input.live.preferSse ?? false,
-            }
-          : undefined,
+        live: input.live,
         policy: input.policy,
       }),
       layerCommitForwarding(workspaceToken, publisher),

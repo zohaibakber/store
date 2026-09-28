@@ -3,12 +3,13 @@ import {
   catalogWriteError,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
+  partitionDigestOf,
   ReplicaClientSequence,
-  rowImageDigest,
   SyncProtocolError,
   type CatalogRowWrite,
   type CatalogWriteCommand,
-  type SnapshotRow,
+  type PartitionLeafSource,
   type SyncCommandEnvelope,
   type SyncPullRequest,
 } from "@store/contracts";
@@ -44,14 +45,11 @@ import * as Schema from "effect/Schema";
 import * as SqlError from "effect/unstable/sql/SqlError";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  makeInventoryCommands,
-  PULL_PAYLOAD_BUDGET_BYTES,
-  pullGroupByteLength,
-} from "../../src/inventory/commands";
+import { makeInventoryCommands, PULL_PAYLOAD_BUDGET_BYTES } from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";
-import { runTransaction, withSerializationRetry } from "../../src/inventory/postgres";
+import { withSerializationRetry } from "../../src/inventory/postgres";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
+import { pullGroupByteLength } from "./oracle/commit";
 
 const isProtocol = Schema.is(SyncProtocolError);
 
@@ -77,13 +75,14 @@ const actorFor = (organizationId: string): InventoryActor => ({
   userId: "user-1",
 });
 
-const pullFrom = (afterCommitSequence: string, includeDigest = false) =>
-  ({
+const pullFrom = (afterCommitSequence: string, withDigest = false): SyncPullRequest => {
+  const request: SyncPullRequest = {
     epoch: LAST_UNIT_EPOCH,
     subscription: OPERATIONAL_SUBSCRIPTION,
     afterCommitSequence: OrgCommitSequence.make(afterCommitSequence),
-    includeDigest,
-  }) satisfies SyncPullRequest;
+  };
+  return withDigest ? { ...request, digestVersion: PARTITION_DIGEST_VERSION } : request;
+};
 
 const catalogCommand = (
   commandId: string,
@@ -217,14 +216,14 @@ const seedCatalog = () =>
 
 const activePartitionRows = (db: CatalogDb, organizationId: string) =>
   Effect.gen(function* () {
-    const rows: SnapshotRow[] = [];
+    const rows: Array<PartitionLeafSource> = [];
     const categoryRows = yield* db
       .select()
       .from(categories)
       .where(eq(categories.organizationId, organizationId))
       .orderBy(asc(categories.id));
     for (const row of categoryRows) {
-      rows.push({ entity: "category", entityId: row.id, rowVersion: row.rowVersion, row });
+      rows.push({ entity: "category", entityId: row.id, rowVersion: row.rowVersion });
     }
     const productRows = yield* db
       .select()
@@ -232,7 +231,7 @@ const activePartitionRows = (db: CatalogDb, organizationId: string) =>
       .where(and(eq(products.organizationId, organizationId), isNull(products.deletedAt)))
       .orderBy(asc(products.id));
     for (const row of productRows) {
-      rows.push({ entity: "product", entityId: row.id, rowVersion: row.rowVersion, row });
+      rows.push({ entity: "product", entityId: row.id, rowVersion: row.rowVersion });
     }
     const batchRows = yield* db
       .select()
@@ -240,7 +239,7 @@ const activePartitionRows = (db: CatalogDb, organizationId: string) =>
       .where(and(eq(batches.organizationId, organizationId), isNull(batches.deletedAt)))
       .orderBy(asc(batches.id));
     for (const row of batchRows) {
-      rows.push({ entity: "batch", entityId: row.id, rowVersion: row.rowVersion, row });
+      rows.push({ entity: "batch", entityId: row.id, rowVersion: row.rowVersion });
     }
     return rows;
   });
@@ -559,7 +558,7 @@ describe("postgres catalog writes", () => {
     expect(outcome.product).toMatchObject({ deletedAt: OCCURRED_AT, rowVersion: 2 });
     expect(outcome.remainingCategories).toEqual([]);
     expect(outcome.remainingRows).toEqual([]);
-    expect(outcome.digested.digest).toBe(rowImageDigest([]));
+    expect(outcome.digested.digest).toEqual(await Effect.runPromise(partitionDigestOf([])));
     const changes = outcome.pulled.transactions[0]?.changes ?? [];
     expect(changes.map((change) => change.action)).toEqual(["delete", "delete", "delete"]);
     const productChange = changes.find((change) => change.entity === "product");
@@ -893,29 +892,35 @@ describe("postgres catalog writes", () => {
         const partial = yield* commands.pull(actor, { ...pullFrom("0", true), limit: 1 });
         const complete = yield* commands.pull(actor, pullFrom("0", true));
         const withoutDigest = yield* commands.pull(actor, pullFrom("0"));
+        const legacy = yield* commands.pull(actor, { ...pullFrom("0"), includeDigest: true });
         const rows = yield* activePartitionRows(db, organizationId);
-        return { partial, complete, withoutDigest, rows };
+        const expected = yield* partitionDigestOf(rows);
+        return { partial, complete, withoutDigest, legacy, expected };
       }),
     );
     expect(outcome.partial.digest).toBeUndefined();
     expect(outcome.withoutDigest.digest).toBeUndefined();
-    expect(outcome.complete.digest).toBe(rowImageDigest(outcome.rows));
+    expect(outcome.legacy.digest).toBeUndefined();
+    expect(outcome.complete.digest).toEqual(outcome.expected);
   });
 
-  it("retries a transaction that Postgres aborts with a serialization failure", async () => {
+  it("retries a statement that Postgres aborts with a serialization failure", async () => {
     let attempts = 0;
     const committed = await run(
       Effect.gen(function* () {
         const db = yield* PgDrizzle.makeWithDefaults();
-        return yield* runTransaction(db)("read committed", "read write", (tx) =>
-          Effect.gen(function* () {
+        return yield* withSerializationRetry(
+          Effect.suspend(() => {
             attempts += 1;
-            if (attempts < 3) {
-              yield* tx.execute(
-                sql.raw("DO $$ BEGIN RAISE EXCEPTION 'conflict' USING ERRCODE = '40001'; END $$"),
-              );
-            }
-            return attempts;
+            return attempts < 3
+              ? db
+                  .execute(
+                    sql.raw(
+                      "DO $$ BEGIN RAISE EXCEPTION 'conflict' USING ERRCODE = '40001'; END $$",
+                    ),
+                  )
+                  .pipe(Effect.as(attempts))
+              : Effect.succeed(attempts);
           }),
         );
       }),

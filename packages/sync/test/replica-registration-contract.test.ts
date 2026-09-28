@@ -198,7 +198,6 @@ const makeAuthority = (
       ),
     acquireSnapshot: () => Effect.die("unused"),
     readSnapshotPart: () => Effect.die("unused"),
-    mintLiveTicket: () => Effect.die("unused"),
   };
   return { counts, accepted, transport };
 };

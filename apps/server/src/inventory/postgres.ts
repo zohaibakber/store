@@ -1,9 +1,7 @@
 import { SyncProtocolError, syncProtocolError, unpadDecimalSequence } from "@store/contracts";
 import { InventoryHyperdrive } from "@store/db/postgres/infra";
-import { inventoryState, replicas } from "@store/db/postgres/schema";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as DrizzlePostgres from "alchemy/Drizzle/Postgres";
-import { and, eq } from "drizzle-orm";
 import type { EffectPgDatabase } from "drizzle-orm/effect-postgres";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -17,10 +15,8 @@ import * as SqlError from "effect/unstable/sql/SqlError";
 import { InventoryDatabaseError } from "./errors";
 
 export type InventoryDrizzle = EffectPgDatabase;
-export type InventoryTransaction = Parameters<Parameters<InventoryDrizzle["transaction"]>[0]>[0];
-export type InventoryExecutor = InventoryDrizzle | InventoryTransaction;
 
-export const isProtocolError = Schema.is(SyncProtocolError);
+const isProtocolError = Schema.is(SyncProtocolError);
 
 export const protocol = (code: SyncProtocolError["code"], message: string) =>
   Effect.fail(syncProtocolError(code, message));
@@ -37,48 +33,14 @@ export const integerTextFromNumeric = (value: string) =>
 export const randomHex = (byteCount: number): string =>
   Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(byteCount)));
 
-const selectState = (tx: InventoryExecutor, organizationId: string) =>
-  tx.select().from(inventoryState).where(eq(inventoryState.organizationId, organizationId));
-
-type InventoryStateRow = typeof inventoryState.$inferSelect;
-
 export const requireReady = <
-  S extends { readonly status: string; readonly releaseId: InventoryStateRow["releaseId"] },
+  S extends { readonly status: string; readonly releaseId: string | null },
 >(
   state: S | undefined,
 ) =>
   state && state.status === "ready" && state.releaseId !== null
     ? Effect.succeed(state)
     : protocol("EPOCH_MISMATCH", "This organization inventory is not ready.");
-
-export const readReadyState = Effect.fn("InventoryPostgres.readReadyState")(function* (
-  tx: InventoryExecutor,
-  organizationId: string,
-) {
-  const [state] = yield* selectState(tx, organizationId).limit(1);
-  return yield* requireReady(state);
-});
-
-export const lockOrganization = Effect.fn("InventoryPostgres.lockOrganization")(function* (
-  tx: InventoryTransaction,
-  organizationId: string,
-) {
-  const [state] = yield* selectState(tx, organizationId).for("update").limit(1);
-  return yield* requireReady(state);
-});
-
-export const readReplica = Effect.fn("InventoryPostgres.readReplica")(function* (
-  tx: InventoryExecutor,
-  organizationId: string,
-  replicaId: string,
-) {
-  const [replica] = yield* tx
-    .select()
-    .from(replicas)
-    .where(and(eq(replicas.organizationId, organizationId), eq(replicas.replicaId, replicaId)))
-    .limit(1);
-  return replica;
-});
 
 const MAX_SERIALIZATION_RETRIES = 4;
 
@@ -112,17 +74,6 @@ const toInventoryError = <E>(cause: E) =>
 
 export const runStatement = <A, E>(effect: Effect.Effect<A, E>) =>
   effect.pipe(Effect.mapError(toInventoryError));
-
-export const runTransaction =
-  (db: InventoryDrizzle) =>
-  <A, E>(
-    isolationLevel: "read committed" | "repeatable read",
-    accessMode: "read write" | "read only",
-    body: (tx: InventoryTransaction) => Effect.Effect<A, E>,
-  ) =>
-    withSerializationRetry(db.transaction(body, { isolationLevel, accessMode })).pipe(
-      Effect.mapError(toInventoryError),
-    );
 
 export const openInventoryDrizzle = Effect.gen(function* () {
   const inventoryHyperdrive = yield* InventoryHyperdrive;

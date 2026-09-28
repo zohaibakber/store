@@ -1,4 +1,4 @@
-import { SyncTransportService, type SyncTransport } from "@store/sync/browser";
+import { SyncTransportService, type OwnedLiveHost, type SyncTransport } from "@store/sync/browser";
 import { SqliteReplica } from "@store/sync/sqlite";
 import * as Layer from "effect/Layer";
 
@@ -17,11 +17,7 @@ export const openNodeReplicaSyncSession = (input: {
   readonly identity: NodeReplicaSyncIdentity;
   readonly databaseIdentity: string;
   readonly transport: SyncTransport;
-  readonly live?: {
-    readonly apiBaseUrl: string;
-    readonly fetch: typeof globalThis.fetch;
-    readonly preferSse?: boolean;
-  };
+  readonly live?: OwnedLiveHost;
 }): Promise<NodeReplicaSyncSession> =>
   openSqliteReplicaSyncSession({
     replica: SqliteReplica.layer(input.path),

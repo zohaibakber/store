@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AuthorityIncarnation,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   SyncEpoch,
   type SyncPullRequest,
   type SyncPullResult,
@@ -130,7 +131,7 @@ const authorityTransport = (incarnation: string, authority: Authority): SyncTran
   getReceipt: () => Effect.succeed(undefined),
   pull: (request) =>
     Effect.gen(function* () {
-      const wanted = request.includeDigest === true;
+      const wanted = request.digestVersion === PARTITION_DIGEST_VERSION;
       yield* Ref.update(authority.requested, (calls) => [...calls, wanted]);
       const log = yield* Ref.get(authority.log);
       const head = log.at(-1)?.commitSequence ?? OrgCommitSequence.make("0");
@@ -144,11 +145,11 @@ const authorityTransport = (incarnation: string, authority: Authority): SyncTran
         horizon: head,
         retentionFloor: OrgCommitSequence.make("0"),
       };
-      return wanted ? { ...page, digest: authorityDigest(authority.partition) } : page;
+      if (!wanted) return page;
+      return { ...page, digest: yield* authorityDigest(authority.partition) };
     }),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 });
 
 const managed = (operationId: string, rowVersion: number) => ({
@@ -536,7 +537,7 @@ describe.each(harnesses)(
           nextCommitSequence: OrgCommitSequence.make("1"),
           horizon: OrgCommitSequence.make("1"),
           retentionFloor: OrgCommitSequence.make("0"),
-          digest: serverPartitionDigest(serverTables),
+          digest: yield* serverPartitionDigest(serverTables),
         });
         expect(applied.value).toEqual({
           appliedThrough: "1",

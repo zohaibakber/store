@@ -120,14 +120,9 @@ describe("proxied sync transport", () => {
       Effect.gen(function* () {
         const transport = makeProxySyncTransport(() => new Promise<SyncProxyResponse>(() => {}));
         const pending = yield* Effect.forkChild(
-          Effect.flip(
-            transport.mintLiveTicket({
-              replicaId: "replica-1",
-              subscription: OPERATIONAL_SUBSCRIPTION,
-            }),
-          ),
+          Effect.flip(transport.registerReplica({ replicaId: "replica-1" })),
         );
-        yield* TestClock.adjust(SYNC_REQUEST_TIMEOUT_MILLIS.mintLiveTicket);
+        yield* TestClock.adjust(SYNC_REQUEST_TIMEOUT_MILLIS.registerReplica);
         expect(yield* Fiber.join(pending)).toBeInstanceOf(SyncTransportOffline);
       }),
     ));

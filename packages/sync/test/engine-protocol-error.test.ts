@@ -19,7 +19,6 @@ const unusedTransport: SyncTransport = {
   submitCommand: () => Effect.die("unused"),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 };
 
 it.effect("reports a replica sequence gap as a protocol error", () =>

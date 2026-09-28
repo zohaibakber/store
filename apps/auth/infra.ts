@@ -23,6 +23,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
@@ -32,19 +33,14 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { ephemeralStoreLayer } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
 import { authRoutes, buildOncePerIsolate, workerRuntimeServices } from "./src/http";
+import { writeJwksAssets } from "./src/jwks-asset";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./src/limits";
+import { resolveProductionAuthHostname } from "./src/public-hostname";
 import { AuthRepository, authRepositoryLayer } from "./src/repository";
 import { authServiceLayer } from "./src/service";
 import { pruneExpiredSessions, SESSION_PRUNE_POLICY } from "./src/session-maintenance";
 
 const LOCAL_AUTH_ORIGIN = "http://localhost:8788";
-const resolveProductionAuthHostname = (input: {
-  readonly productionDomain: string;
-  readonly productionAuthDomain: string;
-}) => {
-  const root = publicHostnameFrom(input.productionDomain);
-  return publicHostnameFrom(input.productionAuthDomain) ?? (root ? `auth.${root}` : undefined);
-};
 
 export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 
@@ -72,6 +68,17 @@ export const AuthLive = Auth.make(
         ),
       );
     }
+    const assets = globalThis.__ALCHEMY_RUNTIME__
+      ? undefined
+      : yield* Effect.flatMap(Config.String("AUTH_JWT_PUBLIC_JWK"), (publicJwkText) =>
+          Effect.gen(function* () {
+            const path = yield* Path.Path;
+            return yield* writeJwksAssets(
+              path.join(import.meta.dirname, ".alchemy", "jwks-assets"),
+              yield* decodeJsonWebKeyText(publicJwkText),
+            );
+          }).pipe(Effect.orDie),
+        );
     const worker = {
       main: import.meta.url,
       compatibility: {
@@ -87,7 +94,8 @@ export const AuthLive = Auth.make(
         AUTH_TRUSTED_ORIGINS: trustedOrigins,
       },
     };
-    return authHostname ? { ...worker, domain: authHostname } : worker;
+    const served = assets ? { ...worker, assets } : worker;
+    return authHostname ? { ...served, domain: authHostname, workersDev: false } : served;
   }),
   Effect.gen(function* () {
     const databaseResource = yield* AuthDatabase;

@@ -1,3 +1,5 @@
+export type LiveAccessToken = (options: { readonly force: boolean }) => Promise<string | null>;
+
 export type SignedInSession = {
   readonly status: "signedIn";
   readonly userId: string;
@@ -6,6 +8,7 @@ export type SignedInSession = {
   readonly organizationId: string;
   readonly organizationName: string;
   readonly authenticatedFetch: typeof fetch;
+  readonly liveAccessToken: LiveAccessToken;
   readonly signOut: () => Promise<void>;
 };
 

@@ -137,6 +137,7 @@ export const registerReplicaWorkerIpc = (options: {
   readonly workerPath: string;
   readonly apiBaseUrl: string;
   readonly syncApiRequest: ReplicaSyncApiRequest;
+  readonly liveAccessToken: (force: boolean) => Promise<string | null>;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly spawnWorker?: SpawnReplicaWorker;
 }) => {
@@ -189,6 +190,15 @@ export const registerReplicaWorkerIpc = (options: {
       Effect.flatMap((result) => client.ProxyRespond({ requestId: request.requestId, result })),
     );
 
+  const fulfilAccessTokenRequest = (
+    client: ReplicaWorkerClient,
+    request: { readonly requestId: string; readonly force: boolean },
+  ) =>
+    Effect.tryPromise(() => options.liveAccessToken(request.force)).pipe(
+      Effect.orElseSucceed(() => null),
+      Effect.flatMap((token) => client.AccessTokenRespond({ requestId: request.requestId, token })),
+    );
+
   const openSession = (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
@@ -219,6 +229,13 @@ export const registerReplicaWorkerIpc = (options: {
       );
       yield* client.ProxyRequests().pipe(
         Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
+          concurrency: "unbounded",
+        }),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* client.AccessTokenRequests().pipe(
+        Stream.mapEffect((request) => fulfilAccessTokenRequest(client, request), {
           concurrency: "unbounded",
         }),
         Stream.runDrain,

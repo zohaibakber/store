@@ -31,6 +31,7 @@ const listenPort = () =>
 
 export type AuthorityPostgres = {
   readonly connectionString: string;
+  readonly createDatabase: (name: string) => Promise<string>;
   readonly close: () => Promise<void>;
 };
 
@@ -62,24 +63,28 @@ export const startAuthorityPostgres = async (
   });
   await database.initialise();
   await database.start();
-  await database.createDatabase("inventory");
-  const connectionString = `postgres://postgres:${password}@127.0.0.1:${port}/inventory`;
-  const client = database.getPgClient("inventory");
-  await client.connect();
-  try {
-    await applyMigrations(
-      {
-        query: async (statement) => {
-          await client.query(statement);
+  const createDatabase = async (name: string, migrationOptions: AuthorityPostgresOptions = {}) => {
+    await database.createDatabase(name);
+    const client = database.getPgClient(name);
+    await client.connect();
+    try {
+      await applyMigrations(
+        {
+          query: async (statement) => {
+            await client.query(statement);
+          },
         },
-      },
-      options,
-    );
-  } finally {
-    await client.end();
-  }
+        migrationOptions,
+      );
+    } finally {
+      await client.end();
+    }
+    return `postgres://postgres:${password}@127.0.0.1:${port}/${name}`;
+  };
+  const connectionString = await createDatabase("inventory", options);
   return {
     connectionString,
+    createDatabase: (name) => createDatabase(name),
     close: async () => {
       await database.stop();
       await rm(directory, { recursive: true, force: true });

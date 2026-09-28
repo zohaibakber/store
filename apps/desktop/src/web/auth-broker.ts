@@ -155,6 +155,10 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     return this.#http.apiFetch(input, init);
   }
 
+  async liveAccessToken(force: boolean) {
+    return (await this.#http.ensureFreshAccess(force))?.accessToken ?? null;
+  }
+
   authRequest(pathname: string, init?: JsonRequestInit) {
     return this.#http.authRequest(pathname, init);
   }

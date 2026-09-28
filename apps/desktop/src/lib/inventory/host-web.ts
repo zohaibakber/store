@@ -31,6 +31,7 @@ const requestPersistentStorage = () => {
 export const createWebInventoryHost = (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof fetch;
+  readonly liveAccessToken: (options: { readonly force: boolean }) => Promise<string | null>;
 }): InventoryHost => {
   const deviceId = deviceIdFromStorage();
   return {
@@ -47,6 +48,7 @@ export const createWebInventoryHost = (input: {
         sync: {
           apiBaseUrl: input.apiBaseUrl,
           authenticatedFetch: input.authenticatedFetch,
+          accessToken: input.liveAccessToken,
         },
       });
       requestPersistentStorage();

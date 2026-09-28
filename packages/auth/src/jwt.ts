@@ -20,6 +20,7 @@ import {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 export const AUTH_JWT_KEY_ID = "tabaaq-auth-v1";
+export const ACCESS_TOKEN_TTL_SECONDS = 3_600;
 
 const JsonWebKeySchema = Schema.Struct({
   kty: Schema.String,
@@ -149,7 +150,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     });
   }
   const now = Math.floor((input.now ?? Date.now()) / 1_000);
-  const expiresAt = now + (configuration.accessTokenTtlSeconds ?? 600);
+  const expiresAt = now + (configuration.accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS);
   const payload = {
     iss: configuration.issuer,
     aud: configuration.audience,

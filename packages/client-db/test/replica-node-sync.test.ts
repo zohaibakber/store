@@ -28,7 +28,6 @@ const failingTransport = (): SyncTransport => ({
   pull: () => Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed.")),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 });
 
 describe("openNodeReplicaSyncSession", () => {

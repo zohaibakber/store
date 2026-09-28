@@ -280,7 +280,7 @@ const CorsAndOrigin = HttpRouter.middleware(
       allowedHeaders: ["Authorization", "Content-Type", "traceparent", "b3"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       credentials: true,
-      maxAge: 600,
+      maxAge: 7200,
     });
     return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, unknown>) =>
       Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {

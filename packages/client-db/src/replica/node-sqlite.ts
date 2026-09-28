@@ -140,6 +140,5 @@ export {
 } from "./sql-client-session";
 export { openNodeReplicaSyncSession } from "./node-sync";
 export type { NodeReplicaSyncIdentity, NodeReplicaSyncSession } from "./node-sync";
-export { LIVE_LONG_POLL_TIMEOUT_MILLIS } from "@store/sync/browser";
 export { makeProxySyncTransport } from "./proxy-transport";
 export type { SyncProxyFetch, SyncProxyRequest, SyncProxyResponse } from "./proxy-transport";

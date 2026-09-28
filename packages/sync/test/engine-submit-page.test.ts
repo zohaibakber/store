@@ -67,7 +67,6 @@ const unused = {
   getReceipt: () => Effect.die("unused"),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 } satisfies Partial<SyncTransport>;
 
 const recordingTransport = (
@@ -224,7 +223,7 @@ describe("sync engine applies the page that rides on a submit", () => {
             epoch: LAST_UNIT_EPOCH,
             subscription: "operational",
             afterCommitSequence: "1",
-            includeDigest: true,
+            digestVersion: 2,
           },
         ]);
       }),

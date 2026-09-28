@@ -62,7 +62,6 @@ it.effect("allows only one concurrent upload claim", () =>
           }),
         acquireSnapshot: () => Effect.die("unused"),
         readSnapshotPart: () => Effect.die("unused"),
-        mintLiveTicket: () => Effect.die("unused"),
       };
       const engine = yield* makeSyncEngine(store, mutex, transport);
       const first = yield* Effect.forkChild(engine.uploadOnce());

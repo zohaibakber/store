@@ -44,7 +44,7 @@ const Cors = HttpRouter.middleware(
       ],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       exposedHeaders: ["Content-Length"],
-      maxAge: 600,
+      maxAge: 7200,
       credentials: true,
     });
     return (httpEffect) =>

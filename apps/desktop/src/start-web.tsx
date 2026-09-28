@@ -23,7 +23,11 @@ export const startWeb = async () => {
   installAppHost(web.host);
   let inventory: ReturnType<typeof createWebInventoryHost> | undefined;
   try {
-    inventory = createWebInventoryHost({ apiBaseUrl, authenticatedFetch: web.authenticatedFetch });
+    inventory = createWebInventoryHost({
+      apiBaseUrl,
+      authenticatedFetch: web.authenticatedFetch,
+      liveAccessToken: web.liveAccessToken,
+    });
   } catch (cause) {
     reportError(cause, { op: "web-inventory-host" });
     inventory = undefined;

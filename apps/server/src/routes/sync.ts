@@ -1,5 +1,6 @@
 import { SyncNotFound } from "@store/contracts/sync/http-errors";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
@@ -7,21 +8,14 @@ import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/or
 import { StoreApi } from "../http/api";
 import { retryAfter } from "../http/errors";
 import { mapSyncError } from "../http/sync-errors";
-import type { EncodedJsonBody, EncodedSnapshotPart, InventorySyncActor } from "../inventory/model";
-import {
-  SyncAuthority,
-  SyncLiveUpgrade,
-  type SyncAuthorityError,
-} from "../inventory/sync-authority";
-
-const prefersEventStream = (accept: string | undefined): boolean =>
-  accept !== undefined &&
-  accept.split(",").some((part) => part.trim().toLowerCase().startsWith("text/event-stream"));
+import type { EncodedSnapshotPart, InventorySyncActor } from "../inventory/model";
+import { SyncAuthority, type SyncAuthorityError } from "../inventory/sync-authority";
+import { LiveFanout } from "../live/fanout";
 
 const SNAPSHOT_PART_CACHE_CONTROL = "private, max-age=31536000, immutable";
 
-const encodedJsonResponse = (body: EncodedJsonBody, headers?: Record<string, string>) =>
-  HttpServerResponse.text(body.json, { contentType: "application/json", headers });
+const encodedJsonResponse = (json: string, headers?: Record<string, string>) =>
+  HttpServerResponse.text(json, { contentType: "application/json", headers });
 
 const entityTag = (sha256: string) => `"${sha256}"`;
 
@@ -37,7 +31,7 @@ const snapshotPartResponse = (part: EncodedSnapshotPart, ifNoneMatch: string | u
   const headers = { etag: tag, "cache-control": SNAPSHOT_PART_CACHE_CONTROL };
   return matchesEntityTag(ifNoneMatch, tag)
     ? HttpServerResponse.empty({ status: 304, headers })
-    : encodedJsonResponse(part, headers);
+    : encodedJsonResponse(part.json, headers);
 };
 
 const syncActor = (identity: CurrentOrganizationContext): InventorySyncActor => ({
@@ -61,16 +55,24 @@ export const SyncHandlers = HttpApiBuilder.group(
   "sync",
   Effect.fn("SyncHandlers.make")(function* (handlers) {
     const authority = yield* SyncAuthority;
-    const liveUpgrade = yield* SyncLiveUpgrade;
+    const fanout = yield* Effect.serviceOption(LiveFanout);
 
     return handlers
       .handle("registerReplica", ({ payload }) =>
         asActor("registerReplica", (actor) => authority.registerReplica(actor, payload)),
       )
       .handle("submitCommand", ({ payload }) =>
-        asActor("submitCommand", (actor) => authority.submitCommand(actor, payload)).pipe(
-          Effect.map((body) => encodedJsonResponse(body)),
-        ),
+        asActor("submitCommand", (actor) =>
+          authority
+            .submitCommand(actor, payload)
+            .pipe(
+              Effect.tap((submitted) =>
+                submitted.fanout === null || Option.isNone(fanout)
+                  ? Effect.void
+                  : fanout.value.publish(actor.organizationId, submitted.fanout, payload.replicaId),
+              ),
+            ),
+        ).pipe(Effect.map((submitted) => encodedJsonResponse(submitted.body))),
       )
       .handle("getReceipt", ({ params }) =>
         asActor("getReceipt", (actor) => authority.getReceipt(actor, params.operationId)).pipe(
@@ -87,7 +89,7 @@ export const SyncHandlers = HttpApiBuilder.group(
       )
       .handle("pull", ({ payload }) =>
         asActor("pull", (actor) => authority.pull(actor, payload)).pipe(
-          Effect.map((body) => encodedJsonResponse(body)),
+          Effect.map((body) => encodedJsonResponse(body.json)),
         ),
       )
       .handle("acquireSnapshot", ({ payload }) =>
@@ -101,14 +103,6 @@ export const SyncHandlers = HttpApiBuilder.group(
         asActor("readSnapshotPart", (actor) =>
           authority.readSnapshotPart(actor, params.snapshotId, params.partNumber),
         ).pipe(Effect.map((part) => snapshotPartResponse(part, request.headers["if-none-match"]))),
-      )
-      .handle("mintLiveTicket", ({ payload }) =>
-        asActor("mintLiveTicket", (actor) => authority.mintLiveTicket(actor, payload)),
-      )
-      .handle("liveUpgrade", ({ query, request }) =>
-        asActor("liveUpgrade", (actor) =>
-          liveUpgrade.handle(actor, query, prefersEventStream(request.headers.accept)),
-        ),
       );
   }),
 );

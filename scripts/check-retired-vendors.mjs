@@ -99,9 +99,18 @@ for (const forbidden of [
   }
 }
 
+const durableObjectRowStorage = [
+  /\bstorage\s*\.\s*sql\b/u,
+  /\bstorage\s*\.\s*(?:put|get|delete|list|deleteAll|transaction|transactionSync)\s*\(/u,
+  /\bDurableObjectStorage\b/u,
+  /\bsql\s*\.\s*exec\s*\(/u,
+  /\bscheduleEvent\b/u,
+];
+
 for (const [path, source] of serverSource) {
-  if (source.includes("DurableObject")) {
-    throw new Error(`${path} still names DurableObject.`);
+  const stored = durableObjectRowStorage.find((pattern) => pattern.test(source));
+  if (stored) {
+    throw new Error(`${path} stores rows in Durable Object storage (${stored}).`);
   }
 }
 

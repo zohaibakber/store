@@ -71,7 +71,6 @@ const unused = {
   getReceipt: () => Effect.die("unused"),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 } satisfies Partial<SyncTransport>;
 
 describe("sync engine drains in one cycle", () => {

@@ -33,15 +33,12 @@ import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
 import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
 import { InventoryLive } from "./src/inventory/live-tickets";
-import { makePostgresSyncLiveUpgrade } from "./src/inventory/live-upgrade";
 import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
-import {
-  makeInventorySyncAuthority,
-  SyncAuthority,
-  SyncLiveUpgrade,
-  unavailableSyncLiveUpgrade,
-} from "./src/inventory/sync-authority";
+import { makeInventorySyncAuthority, SyncAuthority } from "./src/inventory/sync-authority";
+import { LiveFanout, makeLiveFanout } from "./src/live/fanout";
+import { OrgHub, OrgHubLive } from "./src/live/org-hub";
+import { LiveRoutes } from "./src/live/route";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -54,7 +51,7 @@ import {
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
 
-export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
+export class Api extends Cloudflare.Worker<Api, {}, OrgHub>()("Api") {}
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -74,7 +71,7 @@ export const ApiLive = Api.make(
       observability: { enabled: true },
       dev: { port: 8787 },
     };
-    return apiHostname ? { ...worker, domain: apiHostname } : worker;
+    return apiHostname ? { ...worker, domain: apiHostname, workersDev: false } : worker;
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
@@ -96,9 +93,9 @@ export const ApiLive = Api.make(
       );
     }
     const syncAuthority = makeInventorySyncAuthority(inventory);
-    const syncLiveUpgrade = stageUsesInventoryPostgres(stage)
-      ? makePostgresSyncLiveUpgrade(inventory.live)
-      : unavailableSyncLiveUpgrade;
+    const hubs = yield* OrgHub;
+    const execution = yield* Cloudflare.WorkerExecutionContext;
+    const liveFanout = makeLiveFanout(hubs, (effect) => execution.waitUntil(effect));
     const ai = yield* Cloudflare.Workers.AI();
     const invoiceExtractionRateLimit = yield* Cloudflare.RateLimit(
       "INVOICE_EXTRACTION_RATE_LIMIT",
@@ -185,10 +182,17 @@ export const ApiLive = Api.make(
       productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
       limitProductScan: (key) => productScanRateLimit.limit({ key }),
     });
-    const routes = ServerRoutes.pipe(
+    const routes = Layer.mergeAll(
+      ServerRoutes,
+      LiveRoutes({
+        hubs,
+        getSession: (headers) => authenticateHeaders(headers, verifyAccessToken),
+        readLiveHorizon: inventory.live.readLiveHorizon,
+      }),
+    ).pipe(
       Layer.provide(RuntimeLive),
       Layer.provide(Layer.succeed(SyncAuthority, syncAuthority)),
-      Layer.provide(Layer.succeed(SyncLiveUpgrade, syncLiveUpgrade)),
+      Layer.provide(Layer.succeed(LiveFanout, liveFanout)),
       Layer.provide(HttpServer.layerServices),
     );
 
@@ -201,6 +205,7 @@ export const ApiLive = Api.make(
       fetch: recoverUnexpected(serveRequest),
     };
   }).pipe(
+    Effect.provide(OrgHubLive),
     Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),

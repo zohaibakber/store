@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Website } from "./apps/desktop/infra.ts";
 import { Api, ApiLive } from "./apps/server/infra.ts";
+import { Edge } from "./infra/edge.ts";
 import { InventoryDatabaseId } from "./packages/db/src/postgres/infra.ts";
 import {
   stageUsesInventoryPostgres,
@@ -41,6 +42,7 @@ export default Alchemy.Stack(
     const auth = yield* Auth;
     const api = yield* Api;
     const websiteUrl = stage === "prod" || stage === "nightly" ? (yield* Website).url : undefined;
+    const edge = yield* Edge;
     if (!stageUsesInventoryPostgres(stage)) {
       return {
         stage,
@@ -48,6 +50,7 @@ export default Alchemy.Stack(
         authUrl: auth.url,
         apiUrl: api.url,
         workerName: api.workerName,
+        edge,
       };
     }
     const inventoryDatabaseId = yield* InventoryDatabaseId;
@@ -57,6 +60,7 @@ export default Alchemy.Stack(
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
+      edge,
       inventoryDatabaseId,
     };
   }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),

@@ -39,6 +39,7 @@ export {
   type AuthHttpError,
 } from "./http-errors";
 export {
+  ACCESS_TOKEN_TTL_SECONDS,
   AccessTokenService,
   AuthJwks,
   JwtError,

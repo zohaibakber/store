@@ -1,41 +1,108 @@
-import { inventoryState } from "@store/db/postgres/schema";
-import { asc, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
-import { inventoryPostgresUnavailable, runTransaction, type InventoryDrizzle } from "./postgres";
-import { runRetentionStep, type RetentionProgress } from "./retention";
 import {
-  ensureSnapshotJob,
-  SNAPSHOT_REFRESH_POLICY,
-  stepSnapshotJobs,
-  type SnapshotRefreshPolicy,
-  type SnapshotStepProgress,
-} from "./snapshots";
+  databaseError,
+  inventoryPostgresUnavailable,
+  runStatement,
+  type InventoryDrizzle,
+} from "./postgres";
+import { SNAPSHOT_POLICY } from "./snapshots";
+
+export type MaintenancePolicy = {
+  readonly budgetMillis: number;
+  readonly organizationsPerRun: number;
+  readonly partRows: number;
+  readonly minimumRetainedTransactions: number;
+  readonly deleteBatchTransactions: number;
+  readonly deleteBatchesPerStep: number;
+  readonly expiredLeaseBatchRows: number;
+  readonly expiredTicketBatchRows: number;
+  readonly retainedPublishedSnapshots: number;
+  readonly prunedSnapshotsPerStep: number;
+  readonly snapshotRowDeleteBatchRows: number;
+  readonly lagTransactions: number;
+  readonly minimumRebuildMillis: number;
+};
 
 export const MAINTENANCE_POLICY = {
   cronExpression: "*/5 * * * *",
-  budgetMillis: 20_000,
+  budgetMillis: 5_000,
   organizationsPerRun: 100,
-  snapshotStepsPerOrganization: 64,
-} as const;
+  partRows: SNAPSHOT_POLICY.partRows,
+  minimumRetainedTransactions: 10_000,
+  deleteBatchTransactions: 500,
+  deleteBatchesPerStep: 4,
+  expiredLeaseBatchRows: 200,
+  expiredTicketBatchRows: 500,
+  retainedPublishedSnapshots: 2,
+  prunedSnapshotsPerStep: 5,
+  snapshotRowDeleteBatchRows: 500,
+  lagTransactions: SNAPSHOT_POLICY.lagTransactions,
+  minimumRebuildMillis: SNAPSHOT_POLICY.minimumRebuildMillis,
+} as const satisfies MaintenancePolicy & { readonly cronExpression: string };
 
-type MaintenanceProgress = {
-  readonly organizations: number;
-  readonly enqueuedSnapshots: number;
-  readonly retention: ReadonlyArray<RetentionProgress>;
-  readonly snapshots: ReadonlyArray<SnapshotStepProgress>;
-  readonly more: boolean;
-};
+const OrganizationMaintenance = Schema.Struct({
+  organizationId: Schema.String,
+  floorBefore: Schema.String,
+  floorAfter: Schema.String,
+  deletedTransactions: Schema.Number,
+  expiredLeases: Schema.Number,
+  expiredTickets: Schema.Number,
+  prunedSnapshots: Schema.Number,
+  builtSnapshot: Schema.Boolean,
+  more: Schema.Boolean,
+});
+
+const MaintenanceFailure = Schema.Struct({
+  organizationId: Schema.NullOr(Schema.String),
+  error: Schema.String,
+});
+
+export const MaintenanceSummary = Schema.Struct({
+  organizations: Schema.Number,
+  published: Schema.Number,
+  retention: Schema.Array(OrganizationMaintenance),
+  failures: Schema.Array(MaintenanceFailure),
+  more: Schema.Boolean,
+  elapsedMillis: Schema.Number,
+});
+export type MaintenanceSummary = typeof MaintenanceSummary.Type;
+
+const MaintainRow = Schema.Struct({ summary: Schema.fromJsonString(MaintenanceSummary) });
+
+const decodeMaintainRows = Schema.decodeUnknownEffect(Schema.Array(MaintainRow));
+
+const PolicyJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Number));
+
+const encodePolicy = Schema.encodeSync(PolicyJson);
+
+const policyJson = (policy: MaintenancePolicy): string =>
+  encodePolicy({
+    budgetMillis: policy.budgetMillis,
+    organizationsPerRun: policy.organizationsPerRun,
+    partRows: policy.partRows,
+    minimumRetainedTransactions: policy.minimumRetainedTransactions,
+    deleteBatchTransactions: policy.deleteBatchTransactions,
+    deleteBatchesPerStep: policy.deleteBatchesPerStep,
+    expiredLeaseBatchRows: policy.expiredLeaseBatchRows,
+    expiredTicketBatchRows: policy.expiredTicketBatchRows,
+    retainedPublishedSnapshots: policy.retainedPublishedSnapshots,
+    prunedSnapshotsPerStep: policy.prunedSnapshotsPerStep,
+    snapshotRowDeleteBatchRows: policy.snapshotRowDeleteBatchRows,
+    lagTransactions: policy.lagTransactions,
+    minimumRebuildMillis: policy.minimumRebuildMillis,
+  });
 
 interface InventoryMaintenanceContract {
   readonly runScheduled: (
-    budgetMillis?: number,
-  ) => Effect.Effect<MaintenanceProgress, InventoryError>;
+    policy?: Partial<MaintenancePolicy>,
+  ) => Effect.Effect<MaintenanceSummary, InventoryError>;
 }
 
 export class InventoryMaintenance extends Context.Service<
@@ -45,110 +112,28 @@ export class InventoryMaintenance extends Context.Service<
 
 export const makeInventoryMaintenance = (
   db: InventoryDrizzle,
-  refresh: SnapshotRefreshPolicy = SNAPSHOT_REFRESH_POLICY,
-  organizationsPerRun: number = MAINTENANCE_POLICY.organizationsPerRun,
-): InventoryMaintenanceContract => {
-  const transact = runTransaction(db);
-  const retentionStep = runRetentionStep(db);
-  const ensureJob = ensureSnapshotJob(db, refresh);
-  const snapshotStep = stepSnapshotJobs(db);
-  return InventoryMaintenance.of({
-    runScheduled: Effect.fn("InventoryMaintenance.runScheduled")(function* (budgetMillis) {
-      const budget = budgetMillis ?? MAINTENANCE_POLICY.budgetMillis;
-      const startedAt = yield* Clock.currentTimeMillis;
-      const organizations = yield* transact("repeatable read", "read only", (tx) =>
-        tx
-          .select({ organizationId: inventoryState.organizationId })
-          .from(inventoryState)
-          .where(eq(inventoryState.status, "ready"))
-          .orderBy(
-            sql`${inventoryState.maintainedAt} asc nulls first`,
-            asc(inventoryState.organizationId),
-          )
-          .limit(organizationsPerRun),
+  defaults: MaintenancePolicy = MAINTENANCE_POLICY,
+): InventoryMaintenanceContract =>
+  InventoryMaintenance.of({
+    runScheduled: Effect.fn("InventoryMaintenance.runScheduled")(function* (overrides) {
+      const now = yield* Clock.currentTimeMillis;
+      const policy = policyJson({ ...defaults, ...overrides });
+      const raw = yield* runStatement(
+        db.execute(
+          sql`select "sync"."maintain"(${policy}::jsonb, ${now}::bigint)::text as "summary"`,
+          "objects",
+        ),
       );
-
-      const retention: Array<RetentionProgress> = [];
-      const snapshots: Array<SnapshotStepProgress> = [];
-      let processed = 0;
-      let enqueuedSnapshots = 0;
-      let more = false;
-
-      for (const { organizationId } of organizations) {
-        const now = yield* Clock.currentTimeMillis;
-        if (now - startedAt >= budget) {
-          more = true;
-          break;
-        }
-        const attempt = <A>(failure: string, step: Effect.Effect<A, InventoryError>) =>
-          step.pipe(
-            Effect.tapError((error) => Effect.logError(failure, { organizationId, error })),
-            Effect.option,
-          );
-        const retained = yield* attempt(
-          "inventory retention step failed",
-          retentionStep(organizationId, now),
-        );
-        if (Option.isSome(retained)) {
-          retention.push(retained.value);
-          if (retained.value.more) more = true;
-          yield* Effect.log("inventory retention step", retained.value);
-        }
-        const ensured = yield* attempt(
-          "inventory snapshot enqueue failed",
-          ensureJob(organizationId),
-        );
-        if (Option.isSome(ensured) && ensured.value !== undefined) {
-          enqueuedSnapshots += 1;
-          more = true;
-          yield* Effect.log("inventory snapshot job enqueued", {
-            organizationId,
-            snapshotId: ensured.value,
-          });
-        }
-        for (let step = 0; step < MAINTENANCE_POLICY.snapshotStepsPerOrganization; step += 1) {
-          const stepped = yield* attempt(
-            "inventory snapshot step failed",
-            snapshotStep(organizationId),
-          );
-          if (Option.isNone(stepped)) break;
-          snapshots.push(stepped.value);
-          yield* Effect.log("inventory snapshot step", stepped.value);
-          if (!stepped.value.advanced || stepped.value.stage === "published") break;
-          const steppedAt = yield* Clock.currentTimeMillis;
-          if (
-            steppedAt - startedAt >= budget ||
-            step + 1 === MAINTENANCE_POLICY.snapshotStepsPerOrganization
-          ) {
-            more = true;
-            break;
-          }
-        }
-        const maintainedAt = yield* Clock.currentTimeMillis;
-        yield* attempt(
-          "inventory maintenance stamp failed",
-          transact("read committed", "read write", (tx) =>
-            tx
-              .update(inventoryState)
-              .set({ maintainedAt })
-              .where(eq(inventoryState.organizationId, organizationId)),
-          ),
-        );
-        processed += 1;
+      const [row] = yield* decodeMaintainRows(raw).pipe(Effect.mapError(databaseError));
+      if (row === undefined) {
+        return yield* Effect.fail(databaseError(new Error("Maintenance returned no summary.")));
       }
-
-      if (organizations.length === organizationsPerRun) more = true;
-
-      return {
-        organizations: processed,
-        enqueuedSnapshots,
-        retention,
-        snapshots,
-        more,
-      } satisfies MaintenanceProgress;
+      if (row.summary.failures.length > 0) {
+        yield* Effect.logWarning("inventory maintenance failures", row.summary.failures);
+      }
+      return row.summary;
     }),
   });
-};
 
 export const InventoryMaintenanceUnavailable = Layer.succeed(
   InventoryMaintenance,

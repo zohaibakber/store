@@ -1,13 +1,25 @@
 export { makeSyncEngineFromReplicaStore, SyncEngine } from "./engine";
 export type {
+  LiveFrameOutcome,
   SyncEngineContract,
   SyncEngineError,
   SyncEngineMutex,
   SyncEngineOptions,
   SyncEngineProgress,
 } from "./engine";
-export { wakeHintsFromSseBody } from "./live-wake";
-export type { LiveWakeHost } from "./live-wake";
+export {
+  accessTokenExpiresAt,
+  browserNetworkSignal,
+  LIVE_SOCKET_POLICY,
+  liveSocketUrl,
+  makeLiveSocket,
+} from "./live-socket";
+export type {
+  LiveNetworkSignal,
+  LiveSocket,
+  LiveSocketHandlers,
+  LiveSocketHost,
+} from "./live-socket";
 export { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
 export type { SnapshotRecoveryError } from "./recovery";
 export { CAUGHT_UP_RECORD_INTERVAL_MILLIS, MAX_REJECTED_ACTIVITY_ROWS } from "./replica/activity";
@@ -39,7 +51,13 @@ export type {
   ReplicaSyncCursor,
   SnapshotImportProgress,
 } from "./replica/store";
-export { defaultHttpPollPolicy, makeSyncScheduler, SyncScheduler } from "./scheduler";
+export {
+  defaultHttpPollPolicy,
+  LIVE_IDLE_PULL_MILLIS,
+  makeSyncScheduler,
+  PULL_FLOOR_MILLIS,
+  SyncScheduler,
+} from "./scheduler";
 export type {
   SyncCatchUpOutcome,
   SyncSchedulerContract,
@@ -50,12 +68,11 @@ export type {
   SyncWakeReason,
 } from "./scheduler";
 export { layerOwnedHttpSync, startOwnedHttpSync } from "./session";
-export type { OwnedHttpSync, OwnedHttpSyncOptions } from "./session";
+export type { OwnedHttpSync, OwnedHttpSyncOptions, OwnedLiveHost } from "./session";
 export {
   classifySyncFailure,
   dispositionFor,
   failureFromStatus,
-  LIVE_LONG_POLL_TIMEOUT_MILLIS,
   makeSyncTransport,
   mapSyncFailure,
   retryAfterMillis,

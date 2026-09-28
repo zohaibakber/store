@@ -5,23 +5,14 @@ import {
   type SyncPullResult,
   type SyncSubscription,
 } from "@store/contracts";
-import {
-  batches,
-  categories,
-  pendingRowMarks,
-  products,
-  replicaCoverage,
-} from "@store/db/replica.schema";
+import { replicaCoverage } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { decodeEntity, decodeSubscription } from "./codecs";
-import {
-  decideCoverageAfterPull,
-  localPartitionDigest,
-  type PartitionRowSource,
-} from "./decisions";
+import { decodeSubscription } from "./codecs";
+import { decideCoverageAfterPull } from "./decisions";
+import { logPartitionDivergence, sqlitePartitionDigest } from "./digest";
 import { ReplicaStorageError } from "./errors";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
@@ -134,32 +125,15 @@ export const recordDigestVerification = Effect.fn("ReplicaCoverage.recordDigestV
 export const markCoverageRepair = (tx: ReplicaDb, subscription: SyncSubscription) =>
   saveCoverage(tx, { _tag: "awaitingSnapshot", subscription });
 
-const localDigestFor = Effect.fn("ReplicaCoverage.localDigestFor")(function* (
-  tx: ReplicaDb,
-  subscription: SyncSubscription,
-) {
-  const marks = yield* tx.select().from(pendingRowMarks).all();
-  const categoryRows = yield* tx.select().from(categories).all();
-  const productRows = yield* tx.select().from(products).all();
-  const batchRows = yield* tx.select().from(batches).all();
-  const sources: ReadonlyArray<PartitionRowSource> = [
-    ...categoryRows.map((row) => ({ entity: "category" as const, row })),
-    ...productRows.map((row) => ({ entity: "product" as const, row })),
-    ...batchRows.map((row) => ({ entity: "batch" as const, row })),
-  ];
-  return localPartitionDigest(
-    subscription,
-    sources,
-    marks.map((mark) => ({ entity: decodeEntity(mark.entity) })),
-  );
-});
-
 export const updateCoverageFromPull = Effect.fn("ReplicaCoverage.updateCoverageFromPull")(
   function* (tx: ReplicaDb, pulled: SyncPullResult, appliedThrough: string) {
     const localDigest =
-      pulled.digest === undefined ? undefined : yield* localDigestFor(tx, pulled.subscription);
+      pulled.digest === undefined
+        ? undefined
+        : yield* sqlitePartitionDigest(tx, pulled.subscription);
     const next = decideCoverageAfterPull(localDigest, pulled.digest);
     if (next._tag === "repair") {
+      yield* logPartitionDivergence(pulled.subscription, next.diverged);
       yield* markCoverageRepair(tx, pulled.subscription);
     }
     if (next._tag === "record") {

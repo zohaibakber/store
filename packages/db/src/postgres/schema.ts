@@ -398,33 +398,16 @@ export const snapshotJobs = pgTable(
     organizationId: tenantId(),
     snapshotId: text("snapshot_id").notNull(),
     subscription: text("subscription").notNull(),
-    stage: text("stage")
-      .$type<"copying" | "repairing" | "frozen" | "exporting" | "published" | "failed">()
-      .notNull(),
-    fence: integer("fence").notNull(),
-    ownerToken: text("owner_token"),
-    startedAtCommitSequence: numericDecimalString("started_at_commit_sequence"),
-    horizon: numeric("horizon", { precision: 20, scale: 0, mode: "string" }),
-    copyEntity: text("copy_entity"),
-    copyCursor: text("copy_cursor"),
-    stepDueAt: epochMilliseconds("step_due_at").notNull(),
-    entityCountsJson: text("entity_counts_json"),
+    horizon: numericDecimalString("horizon"),
+    entityCountsJson: text("entity_counts_json").notNull(),
+    publishedAt: epochMilliseconds("published_at").notNull(),
   },
   (table) => [
     primaryKey({
       name: "snapshot_jobs_organization_id_snapshot_id_pk",
       columns: [table.organizationId, table.snapshotId],
     }),
-    index("snapshot_jobs_organization_id_stage_idx").on(table.organizationId, table.stage),
-    index("snapshot_jobs_organization_id_step_due_at_idx").on(
-      table.organizationId,
-      table.stepDueAt,
-    ),
-    check(
-      "snapshot_jobs_stage",
-      sql`${table.stage} in ('copying', 'repairing', 'frozen', 'exporting', 'published', 'failed')`,
-    ),
-    check("snapshot_jobs_fence_nonnegative", sql`${table.fence} >= 0`),
+    index("snapshot_jobs_organization_id_horizon_idx").on(table.organizationId, table.horizon),
   ],
 );
 
@@ -451,30 +434,6 @@ export const downloadLeases = pgTable(
       table.organizationId,
       table.pinnedHorizon,
     ),
-  ],
-);
-
-export const snapshotStagedRows = pgTable(
-  "snapshot_staged_rows",
-  {
-    organizationId: tenantId(),
-    snapshotId: text("snapshot_id").notNull(),
-    entity: text("entity").notNull(),
-    entityId: text("entity_id").notNull(),
-    rowVersion: integer("row_version").notNull(),
-    rowJson: text("row_json").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      name: "snapshot_staged_rows_pk",
-      columns: [table.organizationId, table.snapshotId, table.entity, table.entityId],
-    }),
-    foreignKey({
-      name: "snapshot_staged_rows_job_fk",
-      columns: [table.organizationId, table.snapshotId],
-      foreignColumns: [snapshotJobs.organizationId, snapshotJobs.snapshotId],
-    }),
-    check("snapshot_staged_rows_row_version_positive", sql`${table.rowVersion} > 0`),
   ],
 );
 

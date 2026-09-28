@@ -1,9 +1,7 @@
 import * as Schema from "effect/Schema";
 
-import { OrganizationId } from "../ids";
-import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
+import { SyncIdentifier } from "../schema-primitives";
 import {
-  CommandReceipt,
   OrgCommitSequence,
   SyncEpoch,
   SyncSchemaVersion,
@@ -11,26 +9,21 @@ import {
   SyncTransactionGroup,
 } from "./protocol";
 
-export const LIVE_TICKET_LIFETIME_MILLIS = 30_000;
+export const LIVE_SOCKET_PATH = "/api/sync/live";
 
-export const LIVE_LEASE_LIFETIME_MILLIS = 15 * 60_000;
+export const LIVE_SOCKET_PROTOCOL = "tabaaq.sync.v1";
 
-export const LiveTicketNonce = Sha256Hex;
-export type LiveTicketNonce = typeof LiveTicketNonce.Type;
+export const LIVE_BEARER_PROTOCOL_PREFIX = "bearer.";
 
-export const LiveTicketRequest = Schema.Struct({
-  replicaId: SyncIdentifier,
-  subscription: SyncSubscription,
-});
-export type LiveTicketRequest = typeof LiveTicketRequest.Type;
+export const LIVE_SOCKET_PING = "ping";
 
-export const LiveTicket = Schema.Struct({
-  nonce: LiveTicketNonce,
-  organizationId: OrganizationId,
-  subscription: SyncSubscription,
-  expiresAt: PositiveInt,
-});
-export type LiveTicket = typeof LiveTicket.Type;
+export const LIVE_SOCKET_PONG = "pong";
+
+export const LIVE_SOCKET_CLOSE = {
+  normal: 1000,
+  tokenExpired: 4001,
+  revoked: 4003,
+} as const;
 
 export const SyncLiveWakeHint = Schema.Struct({
   epoch: SyncEpoch,
@@ -39,34 +32,15 @@ export const SyncLiveWakeHint = Schema.Struct({
 });
 export type SyncLiveWakeHint = typeof SyncLiveWakeHint.Type;
 
-export const LIVE_SSE_POLL_MILLIS = 1_500;
-export const LIVE_SSE_KEEPALIVE_MILLIS = 25_000;
-export const LIVE_LONG_POLL_DEFAULT_MILLIS = 55_000;
-export const LIVE_LONG_POLL_MAX_MILLIS = 85_000;
+const LiveMaxBytes = Schema.NumberFromString.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+);
 
-export const LiveUpgradeQuery = Schema.Struct({
-  nonce: Schema.optionalKey(LiveTicketNonce),
+export const LiveSocketQuery = Schema.Struct({
   replicaId: SyncIdentifier,
-  subscription: SyncSubscription,
-  afterHorizon: Schema.optionalKey(OrgCommitSequence),
-  waitMs: Schema.optionalKey(
-    Schema.NumberFromString.pipe(
-      Schema.check(
-        Schema.isInt(),
-        Schema.isGreaterThanOrEqualTo(1),
-        Schema.isLessThanOrEqualTo(LIVE_LONG_POLL_MAX_MILLIS),
-      ),
-    ),
-  ),
+  maxBytes: Schema.optionalKey(LiveMaxBytes),
 });
-export type LiveUpgradeQuery = typeof LiveUpgradeQuery.Type;
-
-export const SyncLiveSseEvent = Schema.Struct({
-  id: Schema.optional(Schema.String),
-  event: Schema.Literals(["wake", "ping"]),
-  data: Schema.String,
-});
-export type SyncLiveSseEvent = typeof SyncLiveSseEvent.Type;
+export type LiveSocketQuery = typeof LiveSocketQuery.Type;
 
 const LiveResumeReason = Schema.Literals([
   "send_window_lost",
@@ -76,6 +50,10 @@ const LiveResumeReason = Schema.Literals([
 ]);
 
 export const SyncLiveServerFrame = Schema.TaggedUnion({
+  hello: {
+    epoch: SyncEpoch,
+    horizon: OrgCommitSequence,
+  },
   transactions: {
     epoch: SyncEpoch,
     subscription: SyncSubscription,
@@ -84,9 +62,9 @@ export const SyncLiveServerFrame = Schema.TaggedUnion({
     toCommitSequence: OrgCommitSequence,
     transactions: Schema.Array(SyncTransactionGroup),
   },
-  receipt: {
+  wake: {
     epoch: SyncEpoch,
-    receipt: CommandReceipt,
+    horizon: OrgCommitSequence,
   },
   resume: {
     epoch: SyncEpoch,
@@ -95,3 +73,25 @@ export const SyncLiveServerFrame = Schema.TaggedUnion({
   },
 });
 export type SyncLiveServerFrame = typeof SyncLiveServerFrame.Type;
+
+export const decodeSyncLiveServerFrame = Schema.decodeUnknownOption(
+  Schema.fromJsonString(SyncLiveServerFrame),
+);
+
+export const liveBearerProtocol = (accessToken: string): string =>
+  `${LIVE_BEARER_PROTOCOL_PREFIX}${accessToken}`;
+
+export const offeredLiveProtocols = (header: string | undefined): ReadonlyArray<string> =>
+  header === undefined
+    ? []
+    : header
+        .split(",")
+        .map((protocol) => protocol.trim())
+        .filter((protocol) => protocol.length > 0);
+
+export const bearerFromLiveProtocols = (protocols: ReadonlyArray<string>): string | undefined => {
+  if (!protocols.includes(LIVE_SOCKET_PROTOCOL)) return undefined;
+  const bearer = protocols.find((protocol) => protocol.startsWith(LIVE_BEARER_PROTOCOL_PREFIX));
+  const token = bearer?.slice(LIVE_BEARER_PROTOCOL_PREFIX.length);
+  return token === undefined || token.length === 0 ? undefined : token;
+};

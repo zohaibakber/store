@@ -30,6 +30,15 @@ export default Alchemy.Stack(
             [`com.cloudflare.api.account.${accountId}`]: "*",
           },
         },
+        {
+          effect: "allow",
+          permissionGroups: ["Zone Read", "Zone WAF Write"],
+          resources: {
+            [`com.cloudflare.api.account.${accountId}`]: {
+              "com.cloudflare.api.account.zone.*": "*",
+            },
+          },
+        },
       ],
     });
 

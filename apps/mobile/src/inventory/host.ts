@@ -3,6 +3,9 @@ import {
   type SqlClientReplicaHandle,
 } from "@store/client-db/sql-client";
 import type { InventoryHost, ReplicaOpenIdentity } from "@store/inventory-react";
+import type { LiveNetworkSignal } from "@store/sync/browser";
+
+import type { LiveAccessToken } from "@/auth/session";
 
 import { mintReplicaIdCandidate } from "./device-id";
 import { replicaDatabaseName } from "./policy";
@@ -34,6 +37,8 @@ export type MobileReplicaListener = {
 export const createMobileInventoryHost = (input: {
   readonly apiBaseUrl: string;
   readonly authenticatedFetch: typeof globalThis.fetch;
+  readonly liveAccessToken: LiveAccessToken;
+  readonly network: LiveNetworkSignal;
   readonly listener: MobileReplicaListener;
 }): InventoryHost => ({
   apiBaseUrl: input.apiBaseUrl,
@@ -49,7 +54,12 @@ export const createMobileInventoryHost = (input: {
       sqlClient: replicaSqlClient(databaseName),
       databaseName,
       identity: { ...identity, replicaId: mintReplicaIdCandidate() },
-      sync: { apiBaseUrl: input.apiBaseUrl, authenticatedFetch: input.authenticatedFetch },
+      sync: {
+        apiBaseUrl: input.apiBaseUrl,
+        authenticatedFetch: input.authenticatedFetch,
+        accessToken: input.liveAccessToken,
+        network: input.network,
+      },
     });
     let retired: Promise<void> | undefined;
     const replica: SqlClientReplicaHandle = {

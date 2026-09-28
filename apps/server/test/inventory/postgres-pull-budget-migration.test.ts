@@ -4,8 +4,8 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pullGroupByteLength } from "../../src/inventory/commands";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
+import { pullGroupByteLength } from "./oracle/commit";
 
 const ORGANIZATION_ID = "org-pull-budget-migration";
 
@@ -98,8 +98,7 @@ describe("postgres pull byte budget migration", () => {
       { commitSequence: "1", byteLength: pullGroupByteLength("op-with-changes", changes) },
       { commitSequence: "2", byteLength: pullGroupByteLength("op-rejected", []) },
     ]);
-    const [building, published] = outcome.jobs;
-    expect(building).toEqual({ snapshotId: "snap-building", counts: null });
-    expect(JSON.parse(published?.counts ?? "null")).toEqual({ category: 1, product: 2 });
+    expect(outcome.jobs.map((job) => job.snapshotId)).toEqual(["snap-old"]);
+    expect(JSON.parse(outcome.jobs[0]?.counts ?? "null")).toEqual({ category: 1, product: 2 });
   });
 });

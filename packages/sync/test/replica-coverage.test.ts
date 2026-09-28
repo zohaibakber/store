@@ -1,8 +1,8 @@
 import {
   AuthorityIncarnation,
   OrgCommitSequence,
-  PartitionDigest,
   SyncEpoch,
+  type PartitionDigestReport,
   type SyncPullResult,
 } from "@store/contracts";
 import { replicaCoverage } from "@store/db/replica.schema";
@@ -17,7 +17,7 @@ import { authorityDigest, commitToAuthority, makeAuthorityPartition } from "./li
 import { seedCatalogGroup } from "./lib/pending-fixture";
 import { withSeededReplica } from "./lib/replica-fixture";
 
-const pullWithDigest = (digest: string): SyncPullResult => ({
+const pullWithDigest = (digest: PartitionDigestReport): SyncPullResult => ({
   epoch: SyncEpoch.make("1"),
   incarnation: AuthorityIncarnation.make("incarnation-test"),
   subscription: "operational",
@@ -26,14 +26,20 @@ const pullWithDigest = (digest: string): SyncPullResult => ({
   nextCommitSequence: OrgCommitSequence.make("5"),
   horizon: OrgCommitSequence.make("10"),
   retentionFloor: OrgCommitSequence.make("0"),
-  digest: PartitionDigest.make(digest),
+  digest,
+});
+
+const diverging = (digest: PartitionDigestReport): PartitionDigestReport => ({
+  ...digest,
+  digest: "b".repeat(64),
+  entities: { ...digest.entities, product: "b".repeat(64) },
 });
 
 describe("replica coverage", () => {
   it("marks a partition for repair when the authority digest disagrees with local rows", async () => {
     const authority = makeAuthorityPartition();
     commitToAuthority(authority, seedCatalogGroup);
-    const expected = authorityDigest(authority);
+    const expected = await Effect.runPromise(authorityDigest(authority));
     const seen = await Effect.runPromise(
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
@@ -41,7 +47,11 @@ describe("replica coverage", () => {
             yield* applyTransactionGroup(tx, seedCatalogGroup);
             const first = yield* updateCoverageFromPull(tx, pullWithDigest(expected), "4");
             const afterFirst = yield* loadCoverage(tx, "operational");
-            const second = yield* updateCoverageFromPull(tx, pullWithDigest("b".repeat(64)), "4");
+            const second = yield* updateCoverageFromPull(
+              tx,
+              pullWithDigest(diverging(expected)),
+              "4",
+            );
             const row = yield* tx
               .select()
               .from(replicaCoverage)
@@ -58,7 +68,7 @@ describe("replica coverage", () => {
       _tag: "downloaded",
       subscription: "operational",
       throughCommitSequence: OrgCommitSequence.make("4"),
-      digest: expected,
+      digest: expected.digest,
     });
     expect(seen.second.repairRequired).toBe(true);
     expect(seen.state).toBe("awaiting_snapshot");
@@ -68,7 +78,7 @@ describe("replica coverage", () => {
   it("does not repair when a repeated digest matches the unchanged local rows", async () => {
     const authority = makeAuthorityPartition();
     commitToAuthority(authority, seedCatalogGroup);
-    const expected = authorityDigest(authority);
+    const expected = await Effect.runPromise(authorityDigest(authority));
     const seen = await Effect.runPromise(
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>

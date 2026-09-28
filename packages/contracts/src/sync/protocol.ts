@@ -55,6 +55,20 @@ const PayloadHash = Sha256Hex;
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
 
+export const PARTITION_DIGEST_VERSION = 2;
+
+export const PartitionDigestReport = Schema.Struct({
+  version: Schema.Literal(PARTITION_DIGEST_VERSION),
+  digest: PartitionDigest,
+  count: Schema.Natural,
+  entities: Schema.Struct({
+    category: PartitionDigest,
+    product: PartitionDigest,
+    batch: PartitionDigest,
+  }),
+});
+export type PartitionDigestReport = typeof PartitionDigestReport.Type;
+
 export const AuthorityIncarnation = SyncIdentifier.pipe(Schema.brand("AuthorityIncarnation"));
 export type AuthorityIncarnation = typeof AuthorityIncarnation.Type;
 
@@ -194,6 +208,7 @@ export const SyncPullRequest = Schema.Struct({
     PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SYNC_PULL_TRANSACTIONS)),
   ),
   includeDigest: Schema.optionalKey(Schema.Boolean),
+  digestVersion: Schema.optionalKey(Schema.Literal(PARTITION_DIGEST_VERSION)),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;
@@ -218,7 +233,7 @@ export const SyncPullResult = Schema.Struct({
   nextCommitSequence: OrgCommitSequence,
   horizon: OrgCommitSequence,
   retentionFloor: OrgCommitSequence,
-  digest: Schema.optionalKey(PartitionDigest),
+  digest: Schema.optionalKey(PartitionDigestReport),
 });
 export type SyncPullResult = typeof SyncPullResult.Type;
 

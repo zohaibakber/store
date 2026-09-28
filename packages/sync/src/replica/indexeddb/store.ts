@@ -1,6 +1,7 @@
 import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import {
+  partitionDigestOf,
   type CommandReceipt,
   type RegisterReplicaResult,
   type SnapshotId,
@@ -57,15 +58,15 @@ import {
   decideCoverageAfterPull,
   decideEnqueue,
   decideReceipt,
+  hasPendingPartitionRows,
   isStaleClaim,
-  localPartitionDigest,
   nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
   shouldApplyCommitSequence,
   SYNC_ENTITIES,
-  type PartitionRowSource,
 } from "../decisions";
+import { logPartitionDivergence } from "../digest";
 import {
   IndexedDbCorruptRecord,
   IndexedDbIdentityMismatch,
@@ -112,7 +113,6 @@ import {
 import {
   countOutboxWithStatus,
   outboxWithStatus,
-  productImage,
   ReplicaIndexedDb,
   type OutboxRow,
   type ReplicaQueryBuilder,
@@ -233,28 +233,37 @@ const outboxRow = (api: ReplicaQueryBuilder, operationId: string) =>
 
 const indexedDbLocalDigest = (api: ReplicaQueryBuilder, page: SyncPullResult) =>
   Effect.gen(function* () {
+    const marks = yield* api.from("pending_row_marks").select();
+    if (
+      hasPendingPartitionRows(
+        page.subscription,
+        marks.map((mark) => ({ entity: decodeEntity(mark.entity) })),
+      )
+    ) {
+      return undefined;
+    }
     const state = yield* requireState(api);
     const [lower, upper] = generationBounds(state.activeGeneration);
-    const marks = yield* api.from("pending_row_marks").select();
     const categoryRows = yield* api.from("categories").select().between(lower, upper);
     const productRows = yield* api.from("products").select().between(lower, upper);
     const batchRows = yield* api.from("batches").select().between(lower, upper);
-    const sources: ReadonlyArray<PartitionRowSource> = [
-      ...categoryRows.map(({ generation: _generation, ...row }) => ({
+    return yield* partitionDigestOf([
+      ...categoryRows.map((row) => ({
         entity: "category" as const,
-        row,
+        entityId: row.id,
+        rowVersion: row.rowVersion,
       })),
-      ...productRows.map((row) => ({ entity: "product" as const, row: productImage(row) })),
-      ...batchRows.map(({ generation: _generation, ...row }) => ({
+      ...productRows.map((row) => ({
+        entity: "product" as const,
+        entityId: row.id,
+        rowVersion: row.rowVersion,
+      })),
+      ...batchRows.map((row) => ({
         entity: "batch" as const,
-        row,
+        entityId: row.id,
+        rowVersion: row.rowVersion,
       })),
-    ];
-    return localPartitionDigest(
-      page.subscription,
-      sources,
-      marks.map((mark) => ({ entity: decodeEntity(mark.entity) })),
-    );
+    ]);
   });
 
 const undoLocalEffects = (
@@ -612,6 +621,7 @@ const makeScopedIndexedDbReplicaStore = (
             page.digest === undefined ? undefined : yield* indexedDbLocalDigest(api, page);
           const next = decideCoverageAfterPull(localDigest, page.digest);
           if (next._tag === "repair") {
+            yield* logPartitionDivergence(page.subscription, next.diverged);
             yield* write(
               api.from("replica_coverage").upsert(awaitingSnapshotCoverage(page.subscription)),
             );

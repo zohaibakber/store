@@ -98,6 +98,14 @@ export const ProxyFetchResult = Schema.Struct({
 });
 export type ProxyFetchResult = typeof ProxyFetchResult.Type;
 
+export const AccessTokenRequest = Schema.Struct({
+  requestId: NonEmptyString,
+  force: Schema.Boolean,
+});
+
+export const AccessTokenResult = Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192)));
+export type AccessTokenResult = typeof AccessTokenResult.Type;
+
 export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailure>()(
   "ReplicaWorkerFailure",
   { message: Schema.String },
@@ -150,5 +158,9 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("ProxyRequests", { success: ProxyFetchRequest, stream: true }),
   Rpc.make("ProxyRespond", {
     payload: { requestId: NonEmptyString, result: ProxyFetchResult },
+  }),
+  Rpc.make("AccessTokenRequests", { success: AccessTokenRequest, stream: true }),
+  Rpc.make("AccessTokenRespond", {
+    payload: { requestId: NonEmptyString, token: AccessTokenResult },
   }),
 );

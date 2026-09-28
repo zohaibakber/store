@@ -2,8 +2,6 @@ import {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
-  LiveTicket,
-  LiveTicketRequest,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotPartPayload,
@@ -50,8 +48,7 @@ type SyncProxyPostBody =
   | RegisterReplicaRequest
   | SyncSubmitCommandRequest
   | SyncPullRequest
-  | AcquireSnapshotRequest
-  | LiveTicketRequest;
+  | AcquireSnapshotRequest;
 
 const SyncHttpErrorBody = Schema.Struct({
   error: Schema.Struct({
@@ -173,7 +170,5 @@ export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTranspor
         `/api/sync/snapshots/${encodeURIComponent(snapshotId)}/parts/${partNumber}`,
         SnapshotPartPayload,
       ),
-    mintLiveTicket: (request) =>
-      postJson("mintLiveTicket", "/api/sync/live-tickets", LiveTicket, request),
   });
 };

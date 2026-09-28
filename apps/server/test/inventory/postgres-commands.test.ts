@@ -2,6 +2,7 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   SyncEpoch,
   SyncProtocolError,
   type SyncCommandEnvelope,
@@ -39,6 +40,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { InventoryDatabaseError } from "../../src/inventory/errors";
 import type { InventoryActor } from "../../src/inventory/model";
+import { countStatements } from "../lib/statement-count";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 
 const isProtocol = Schema.is(SyncProtocolError);
@@ -696,5 +698,88 @@ describe("postgres inventory commands", () => {
       }),
     );
     expect(outcome).toEqual({ floor: 1, custom: 2, ceiling: 3, omitted: 3 });
+  });
+
+  it("publishes a fan-out group for every commit that consumes a sequence and none for replays", async () => {
+    const organizationId = decodeOrganizationId("org-submit-fanout");
+    const actor = actorFor(organizationId);
+    const first = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+    const second = envelopeFor(organizationId, lastUnitBuyerBEnvelope);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCommands(organizationId);
+        const accepted = yield* commands.submitEncoded(actor, first);
+        const rejected = yield* commands.submitEncoded(actor, second);
+        const replayed = yield* commands.submitEncoded(actor, first);
+        const pulled = yield* commands.pullEncoded(actor, pullFromStart);
+        const headers = yield* db
+          .select({ byteLength: inventoryTransactions.byteLength })
+          .from(inventoryTransactions)
+          .where(eq(inventoryTransactions.organizationId, organizationId))
+          .orderBy(inventoryTransactions.commitSequence);
+        return { accepted, rejected, replayed, pulled, headers };
+      }),
+    );
+    const page = JSON.parse(outcome.pulled.json);
+    expect(outcome.accepted.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
+    expect(outcome.rejected.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
+    expect(outcome.replayed.fanout).toBeNull();
+    expect(outcome.replayed.body).toBe(outcome.accepted.body);
+    expect(JSON.parse(outcome.accepted.fanout?.group ?? "null")).toEqual(page.transactions[0]);
+    expect(JSON.parse(outcome.rejected.fanout?.group ?? "null")).toEqual(page.transactions[1]);
+    expect(page.transactions[1]).toMatchObject({ decision: "rejected", changes: [] });
+    expect(outcome.accepted.fanout?.byteLength).toBe(outcome.headers[0]?.byteLength);
+    expect(outcome.rejected.fanout?.byteLength).toBe(outcome.headers[1]?.byteLength);
+  });
+
+  it("answers submit, pull and replica registration with one statement each", async () => {
+    const organizationId = decodeOrganizationId("org-statement-count");
+    const actor = actorFor(organizationId);
+    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+    const counted = await run(
+      Effect.gen(function* () {
+        const { commands } = yield* openCommands(organizationId);
+        const register = yield* countStatements(
+          commands.register(actor, { replicaId: "replica-counted", deviceLabel: "Counter" }),
+        );
+        const caughtUp = yield* countStatements(
+          commands.submitEncoded(actor, {
+            ...envelope,
+            afterCommitSequence: OrgCommitSequence.make("0"),
+          }),
+        );
+        const behind = yield* countStatements(
+          commands.submitEncoded(actor, {
+            ...envelopeFor(organizationId, lastUnitBuyerBEnvelope),
+            afterCommitSequence: OrgCommitSequence.make("0"),
+          }),
+        );
+        const replayed = yield* countStatements(
+          commands.submitEncoded(actor, {
+            ...envelope,
+            afterCommitSequence: OrgCommitSequence.make("0"),
+          }),
+        );
+        const pulled = yield* countStatements(commands.pullEncoded(actor, pullFromStart));
+        const digested = yield* countStatements(
+          commands.pullEncoded(actor, {
+            ...pullFromStart,
+            digestVersion: PARTITION_DIGEST_VERSION,
+          }),
+        );
+        return { register, caughtUp, behind, replayed, pulled, digested };
+      }),
+    );
+    for (const [name, count] of Object.entries(counted)) {
+      expect({ name, roundTrips: count.roundTrips, transactions: count.transactions }).toEqual({
+        name,
+        roundTrips: 1,
+        transactions: 0,
+      });
+    }
+    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({ version: 2 });
+    expect(JSON.parse(counted.caughtUp.result.body).page.transactions).toHaveLength(1);
+    expect(JSON.parse(counted.behind.result.body).page.transactions).toHaveLength(2);
+    expect(JSON.parse(counted.replayed.result.body).page.transactions).toHaveLength(2);
   });
 });

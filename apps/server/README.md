@@ -5,8 +5,10 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 - `GET /api/health`
 - `GET /api/auth/session` and `GET /api/auth/get-session`
 - `POST /api/sync/commands`, `POST /api/sync/replicas`, `POST /api/sync/pull`
-- `POST /api/sync/snapshots`, `POST /api/sync/live-tickets`
-- `GET /api/sync/live` (WebSocket upgrade)
+- `POST /api/sync/snapshots`
+- `GET /api/sync/live` (WebSocket upgrade; the bearer token travels in
+  `Sec-WebSocket-Protocol` and the socket is held by the organization's
+  `OrgHub` Durable Object, which fans out each commit and stores nothing)
 - `POST /api/uploads`
 - `POST /api/product-scans`
 

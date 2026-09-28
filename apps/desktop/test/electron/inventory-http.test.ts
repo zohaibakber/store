@@ -57,7 +57,7 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe("https://api.tabaaq.app/api/sync/receipts/sale-a");
   });
 
-  it("allows snapshot, live-ticket, and nonce live routes", () => {
+  it("allows snapshot routes and refuses the retired live proxy routes", () => {
     expect(
       validatedInventoryUrl(apiBaseUrl, {
         method: "POST",
@@ -66,66 +66,19 @@ describe("desktop inventory HTTP allowlist", () => {
     ).toBe("https://api.tabaaq.app/api/sync/snapshots");
     expect(
       validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/sync/live-tickets",
-      }),
-    ).toBe("https://api.tabaaq.app/api/sync/live-tickets");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
         method: "GET",
         url: "https://api.tabaaq.app/api/sync/snapshots/snap-1/parts/1",
       }),
     ).toBe("https://api.tabaaq.app/api/sync/snapshots/snap-1/parts/1");
-    const nonce = "ab".repeat(32);
-    expect(() =>
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}`,
-      }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-      }),
-    ).toBe(
-      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`,
-    );
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=20000`,
-      }),
-    ).toBe(
-      `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational&afterHorizon=0&waitMs=20000`,
-    );
-  });
-
-  it("allows a bearer long-poll without a ticket nonce", () => {
-    const live =
-      "https://api.tabaaq.app/api/sync/live?replicaId=replica-a&subscription=operational&afterHorizon=4&waitMs=55000";
-    expect(validatedInventoryUrl(apiBaseUrl, { method: "GET", url: live })).toBe(live);
-  });
-
-  it("rejects live sync without a replica, with a malformed nonce, and unknown sync paths", () => {
-    expect(() =>
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: "https://api.tabaaq.app/api/sync/live",
-      }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
-    expect(() =>
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "GET",
-        url: "https://api.tabaaq.app/api/sync/live?nonce=zz&replicaId=replica-a&subscription=operational",
-      }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
-    expect(() =>
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/sync/live",
-      }),
-    ).toThrow("The inventory request is outside the configured inventory API.");
+    for (const [method, url] of [
+      ["POST", "https://api.tabaaq.app/api/sync/live-tickets"],
+      ["GET", "https://api.tabaaq.app/api/sync/live?replicaId=replica-a&subscription=operational"],
+      ["POST", "https://api.tabaaq.app/api/sync/live"],
+    ] as const) {
+      expect(() => validatedInventoryUrl(apiBaseUrl, { method, url })).toThrow(
+        "The inventory request is outside the configured inventory API.",
+      );
+    }
   });
 
   it("rejects a path that would leak credentials", () => {
@@ -234,17 +187,5 @@ describe("desktop inventory HTTP allowlist", () => {
     await expect(
       syncApiRequest("/api/sync/pull", { method: "POST", body: "{}", timeoutMillis: 1 }),
     ).rejects.toMatchObject({ name: "TimeoutError" });
-  });
-
-  it("allows the live ticket mint and its SSE upgrade", () => {
-    const nonce = "ab".repeat(32);
-    expect(
-      validatedInventoryUrl(apiBaseUrl, {
-        method: "POST",
-        url: "https://api.tabaaq.app/api/sync/live-tickets",
-      }),
-    ).toBe("https://api.tabaaq.app/api/sync/live-tickets");
-    const live = `https://api.tabaaq.app/api/sync/live?nonce=${nonce}&replicaId=replica-a&subscription=operational`;
-    expect(validatedInventoryUrl(apiBaseUrl, { method: "GET", url: live })).toBe(live);
   });
 });

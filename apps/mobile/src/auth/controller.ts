@@ -61,7 +61,7 @@ import {
   type FailureContext,
   type FailureFacts,
 } from "./problems";
-import type { Session } from "./session";
+import type { LiveAccessToken, Session } from "./session";
 
 export interface SignInFlow {
   readonly route: LoginRoute;
@@ -128,6 +128,7 @@ export interface AuthController {
   readonly joinOrganization: (invitation: string) => Promise<ActionResult>;
   readonly signOut: () => Promise<void>;
   readonly authenticatedFetch: typeof fetch;
+  readonly liveAccessToken: LiveAccessToken;
 }
 
 const done: ActionResult = { _tag: "Done" };
@@ -549,12 +550,14 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     joinOrganization,
     signOut,
     authenticatedFetch: makeAuthenticatedFetch(http),
+    liveAccessToken: async ({ force }) =>
+      (await http.ensureFreshAccess(force))?.accessToken ?? null,
   };
 };
 
 export const toSession = (
   state: AuthState,
-  controller: Pick<AuthController, "authenticatedFetch" | "signOut">,
+  controller: Pick<AuthController, "authenticatedFetch" | "liveAccessToken" | "signOut">,
 ): Session => {
   switch (state._tag) {
     case "Loading":
@@ -583,6 +586,7 @@ export const toSession = (
         organizationId: account.organization.id,
         organizationName: account.organization.name,
         authenticatedFetch: controller.authenticatedFetch,
+        liveAccessToken: controller.liveAccessToken,
         signOut: controller.signOut,
       };
     }

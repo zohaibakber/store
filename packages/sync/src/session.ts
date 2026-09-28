@@ -12,7 +12,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { withDetachedScope } from "./detached-scope";
 import { cursorFromStore, SyncEngine, type SyncEngineContract } from "./engine";
-import { runLiveWakeLoop, type LiveWakeHost } from "./live-wake";
+import { makeLiveSocket, type LiveSocketHost } from "./live-socket";
 import { recoverRequiredSnapshot, type SnapshotRecoveryError } from "./recovery";
 import { SyncRecoveryRequired } from "./replica/errors";
 import { ReplicaStore, type ReplicaStoreContract, type ReplicaStoreError } from "./replica/store";
@@ -23,12 +23,7 @@ import {
   type SyncSchedulerPolicy,
   type SyncWakeReason,
 } from "./scheduler";
-import {
-  LIVE_LONG_POLL_TIMEOUT_MILLIS,
-  SyncTransportOffline,
-  SyncTransportService,
-  type SyncTransport,
-} from "./transport";
+import { SyncTransportService, type SyncTransport } from "./transport";
 import { makeWebNetworkOwnership, type WebNetworkOwnership } from "./web-ownership";
 
 export type OwnedHttpSync = {
@@ -39,9 +34,11 @@ export type OwnedHttpSync = {
   readonly dispose: Effect.Effect<void>;
 };
 
+export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
+
 export type OwnedHttpSyncOptions = {
   readonly databaseIdentity: string;
-  readonly live?: LiveWakeHost;
+  readonly live?: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
 };
 
@@ -74,40 +71,6 @@ export const recoverFrom = (
   }
 };
 
-type LiveEligibility = {
-  readonly visible: boolean;
-  readonly owner: boolean;
-};
-
-const withResponseDeadline =
-  (fetch: typeof globalThis.fetch, millis: number): typeof globalThis.fetch =>
-  (input, init) =>
-    Effect.runPromise(
-      Effect.tryPromise({
-        try: (signal) => fetch(input, { ...init, signal }),
-        catch: (cause) =>
-          SyncTransportOffline.make({
-            message: cause instanceof Error ? cause.message : "The live wake request failed.",
-          }),
-      }).pipe(
-        Effect.timeoutOrElse({
-          duration: millis,
-          orElse: () =>
-            Effect.fail(
-              SyncTransportOffline.make({
-                message: `The live wake request did not answer within ${millis} ms.`,
-              }),
-            ),
-        }),
-      ),
-      init?.signal ? { signal: init.signal } : undefined,
-    );
-
-const liveHostWithDeadline = (host: LiveWakeHost): LiveWakeHost =>
-  host.preferSse
-    ? host
-    : { ...host, fetch: withResponseDeadline(host.fetch, LIVE_LONG_POLL_TIMEOUT_MILLIS) };
-
 const ownHttpSync = (
   options: OwnedHttpSyncOptions,
 ): Effect.Effect<
@@ -133,44 +96,50 @@ const ownHttpSync = (
       },
       options.policy ?? defaultHttpPollPolicy,
     );
-    const eligibility = yield* SubscriptionRef.make<LiveEligibility>({
-      visible: true,
-      owner: false,
-    });
+    const owner = yield* SubscriptionRef.make(false);
+    const cursor = yield* store.readSyncCursor();
+    const live =
+      options.live === undefined
+        ? undefined
+        : yield* makeLiveSocket(
+            { ...options.live, replicaId: cursor.replicaId },
+            {
+              onFrame: (frame) =>
+                engine.applyLiveFrame(frame).pipe(
+                  Effect.flatMap((outcome) =>
+                    outcome._tag === "pull" ? inner.wake("live", outcome.hint) : Effect.void,
+                  ),
+                  Effect.catch(() => inner.wake("live")),
+                ),
+              setConnected: inner.setLiveConnected,
+              maxBytes: engine.pullMaxBytes,
+            },
+          );
     const scheduler: SyncSchedulerContract = {
       ...inner,
-      setVisible: (visible) =>
+      wake: (reason, hint) =>
         inner
-          .setVisible(visible)
+          .wake(reason, hint)
           .pipe(
             Effect.andThen(
-              SubscriptionRef.update(eligibility, (current) => ({ ...current, visible })),
+              live !== undefined && (reason === "focus" || reason === "reconnect")
+                ? live.nudge
+                : Effect.void,
             ),
           ),
-      setNetworkOwner: (owner) =>
-        inner
-          .setNetworkOwner(owner)
-          .pipe(
-            Effect.andThen(
-              SubscriptionRef.update(eligibility, (current) => ({ ...current, owner })),
-            ),
-          ),
+      setNetworkOwner: (owned) =>
+        inner.setNetworkOwner(owned).pipe(Effect.andThen(SubscriptionRef.set(owner, owned))),
     };
     const acquired = yield* ownership.tryAcquire(() => scheduler.setNetworkOwner(true));
     yield* Effect.addFinalizer(() =>
       scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
     );
     yield* scheduler.wake("startup");
-    if (options.live !== undefined) {
-      const cursor = yield* store.readSyncCursor();
-      const host = liveHostWithDeadline({ ...options.live, replicaId: cursor.replicaId });
-      const liveLoop = runLiveWakeLoop(transport, host, inner).pipe(
-        Effect.ensuring(inner.setLiveConnected(false)),
-      );
-      yield* SubscriptionRef.changes(eligibility).pipe(
-        Stream.map((current) => current.visible && current.owner),
+    if (live !== undefined) {
+      const liveLoop = live.run.pipe(Effect.ensuring(inner.setLiveConnected(false)));
+      yield* SubscriptionRef.changes(owner).pipe(
         Stream.changes,
-        Stream.switchMap((eligible) => (eligible ? Stream.fromEffect(liveLoop) : Stream.empty)),
+        Stream.switchMap((owned) => (owned ? Stream.fromEffect(liveLoop) : Stream.empty)),
         Stream.runDrain,
         Effect.forkScoped,
       );
@@ -199,7 +168,7 @@ export const startOwnedHttpSync = (
   store: ReplicaStoreContract,
   transport: SyncTransport,
   databaseIdentity: string,
-  live?: LiveWakeHost,
+  live?: OwnedLiveHost,
   policy: SyncSchedulerPolicy = defaultHttpPollPolicy,
 ): Effect.Effect<OwnedHttpSync> =>
   Effect.gen(function* () {

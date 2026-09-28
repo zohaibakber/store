@@ -2,8 +2,6 @@ import type {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
-  LiveTicket,
-  LiveTicketRequest,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
@@ -13,7 +11,7 @@ import type {
   SyncSubmitCommandRequest,
   SyncSubmitCommandResult,
 } from "@store/contracts";
-import { LIVE_LONG_POLL_MAX_MILLIS, SyncProtocolCode, SyncProtocolError } from "@store/contracts";
+import { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import { SyncHttpApi } from "@store/contracts/sync/api";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -268,9 +266,6 @@ export type SyncTransport = {
     snapshotId: SnapshotId,
     partNumber: number,
   ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
-  readonly mintLiveTicket: (
-    request: LiveTicketRequest,
-  ) => Effect.Effect<LiveTicket, SyncTransportError | SyncProtocolError>;
 };
 
 export const SYNC_REQUEST_TIMEOUT_MILLIS = {
@@ -280,12 +275,7 @@ export const SYNC_REQUEST_TIMEOUT_MILLIS = {
   pull: 30_000,
   acquireSnapshot: 30_000,
   readSnapshotPart: 30_000,
-  mintLiveTicket: 15_000,
 } as const satisfies Record<keyof SyncTransport, number>;
-
-const LIVE_RESPONSE_GRACE_MILLIS = 10_000;
-
-export const LIVE_LONG_POLL_TIMEOUT_MILLIS = LIVE_LONG_POLL_MAX_MILLIS + LIVE_RESPONSE_GRACE_MILLIS;
 
 const withDeadline =
   (operation: keyof SyncTransport) =>
@@ -310,7 +300,6 @@ export const withRequestDeadlines = (transport: SyncTransport): SyncTransport =>
   acquireSnapshot: (request) => withDeadline("acquireSnapshot")(transport.acquireSnapshot(request)),
   readSnapshotPart: (snapshotId, partNumber) =>
     withDeadline("readSnapshotPart")(transport.readSnapshotPart(snapshotId, partNumber)),
-  mintLiveTicket: (request) => withDeadline("mintLiveTicket")(transport.mintLiveTicket(request)),
 });
 
 const retryLaterFailure = (response: HttpClientResponse.HttpClientResponse) =>
@@ -351,8 +340,6 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
       mapTransportFailure(client.sync.acquireSnapshot({ payload: request })),
     readSnapshotPart: (snapshotId, partNumber) =>
       mapTransportFailure(client.sync.readSnapshotPart({ params: { snapshotId, partNumber } })),
-    mintLiveTicket: (request) =>
-      mapTransportFailure(client.sync.mintLiveTicket({ payload: request })),
   });
 });
 

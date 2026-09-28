@@ -35,7 +35,6 @@ const unusedTransport = (acquireSnapshot: SyncTransport["acquireSnapshot"]): Syn
   pull: () => Effect.die("unused"),
   acquireSnapshot,
   readSnapshotPart: () => Effect.die("unused"),
-  mintLiveTicket: () => Effect.die("unused"),
 });
 
 const unusedStore = {

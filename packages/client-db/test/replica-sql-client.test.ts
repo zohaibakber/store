@@ -14,6 +14,8 @@ import { describe, expect, it, vi } from "vitest";
 import { openSqlClientReplicaHandle } from "../src/replica/sql-client";
 import type { ReplicaCommitNotice } from "../src/replica/types";
 
+const noAccessToken = async () => null;
+
 const identity = { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" };
 
 const API_BASE_URL = "https://sync.example.test";
@@ -68,7 +70,11 @@ describe("openSqlClientReplicaHandle", () => {
       sqlClient: sqlClientLayer,
       databaseName: "sql-client-handle",
       identity,
-      sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: network.fetch },
+      sync: {
+        apiBaseUrl: API_BASE_URL,
+        authenticatedFetch: network.fetch,
+        accessToken: noAccessToken,
+      },
     });
     const notices: Array<ReplicaCommitNotice> = [];
     const unsubscribe = handle.subscribe((notice) => notices.push(notice));
@@ -115,7 +121,11 @@ describe("openSqlClientReplicaHandle", () => {
         sqlClient: sqlClientAt(path),
         databaseName: "sql-client-identity",
         identity: { ...identity, replicaId },
-        sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: unavailableFetch().fetch },
+        sync: {
+          apiBaseUrl: API_BASE_URL,
+          authenticatedFetch: unavailableFetch().fetch,
+          accessToken: noAccessToken,
+        },
       });
     try {
       const first = await open("replica-1");
@@ -137,7 +147,11 @@ describe("openSqlClientReplicaHandle", () => {
       sqlClient: sqlClientLayer,
       databaseName: "sql-client-activity",
       identity,
-      sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: unavailableFetch().fetch },
+      sync: {
+        apiBaseUrl: API_BASE_URL,
+        authenticatedFetch: unavailableFetch().fetch,
+        accessToken: noAccessToken,
+      },
     });
     await handle.enqueueLocal(categoryEnvelope(), 1);
     const activity = await handle.readOutboxActivity?.();
@@ -156,7 +170,11 @@ describe("openSqlClientReplicaHandle", () => {
         sqlClient: sqlClientLayer,
         databaseName: "sql-client-dispose",
         identity,
-        sync: { apiBaseUrl: API_BASE_URL, authenticatedFetch: network.fetch },
+        sync: {
+          apiBaseUrl: API_BASE_URL,
+          authenticatedFetch: network.fetch,
+          accessToken: noAccessToken,
+        },
         policy: {
           activePollMillis: 5,
           backoffMillis: [5],
