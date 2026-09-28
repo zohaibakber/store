@@ -72,7 +72,6 @@ export function AttentionFeed({ report }: { readonly report: InsightsReport }) {
           <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
         </Button>
       }
-      description="Ranked by urgency and money at stake."
       title="Needs attention"
     >
       {alerts.length === 0 ? (
@@ -107,10 +106,7 @@ export function AttentionFeed({ report }: { readonly report: InsightsReport }) {
 export function StockHealth({ report }: { readonly report: InsightsReport }) {
   const tracked = HEALTH_ORDER.reduce((total, status) => total + report.counts[status], 0);
   return (
-    <FrameCard
-      description={`${formatCount(tracked)} products with stock or sales.`}
-      title="Stock health"
-    >
+    <FrameCard title="Stock health">
       <div className="flex flex-col gap-4">
         {HEALTH_ORDER.map((status) => (
           <Meter key={status} max={Math.max(tracked, 1)} value={report.counts[status]}>
@@ -144,10 +140,7 @@ export function StockHealth({ report }: { readonly report: InsightsReport }) {
 export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
   const definition = React.useMemo(() => createRevenueTrendChart(period.series), [period.series]);
   return (
-    <FrameCard
-      description={`Daily revenue, dashed line is the previous ${period.days} days.`}
-      title="Revenue"
-    >
+    <FrameCard title="Revenue">
       {period.series.every((day) => day.revenue === 0 && day.previousRevenue === 0) ? (
         <EmptyState
           description="Revenue shows up here once you record sales."
@@ -192,10 +185,7 @@ function TrendIcon({ trend }: { readonly trend: TopProduct["trend"] }) {
 
 export function TopSellers({ period }: { readonly period: SalesPeriod }) {
   return (
-    <FrameCard
-      description={`Share of product revenue, last ${period.days} days.`}
-      title="Top sellers"
-    >
+    <FrameCard title="Top sellers">
       {period.topProducts.length === 0 ? (
         <EmptyState
           description="Record a sale and leaders show up here."
@@ -311,10 +301,7 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
 export function ExpiringSoon({ report }: { readonly report: InsightsReport }) {
   const batches = report.expiring.slice(0, 6);
   return (
-    <FrameCard
-      description={`Batches expiring within ${report.policy.expiryWarningDays} days.`}
-      title="Expiring soon"
-    >
+    <FrameCard title="Expiring soon">
       {batches.length === 0 ? (
         <EmptyState
           description="No stocked batch expires inside the warning window."

@@ -31,7 +31,7 @@ import { useInventoryInsights } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 
 import { buyListCsv, downloadText } from "./buy-list";
-import { InsightsHeader, InsightsRefreshing } from "./header";
+import { InsightsHeader } from "./header";
 import { PlanningSheet } from "./planning-sheet";
 import {
   describeDemand,
@@ -236,15 +236,6 @@ function ExportButton() {
   );
 }
 
-function RestockSummary() {
-  const { report } = useInventoryInsights();
-  const orders = report.inventory.reorderCount;
-  if (orders === 0) return "Nothing needs ordering right now.";
-  const cost =
-    report.inventory.reorderCost > 0 ? ` · about ${formatPrice(report.inventory.reorderCost)}` : "";
-  return `${formatCount(orders)} ${orders === 1 ? "product" : "products"} to order${cost}.`;
-}
-
 function RestockBody({
   view,
   onViewChange,
@@ -325,13 +316,6 @@ export function RestockPage({
             <PlanningSheet />
           </>
         }
-        description={
-          <React.Suspense fallback="Reorder points and order sizes from your sales and stock.">
-            <RestockSummary />
-            <InsightsRefreshing />
-          </React.Suspense>
-        }
-        title="Restock"
       />
       <PageContent>
         <React.Suspense fallback={<LoadingSpinner className="h-96" label="Loading restock plan" />}>

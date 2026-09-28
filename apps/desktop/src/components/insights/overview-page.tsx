@@ -6,7 +6,7 @@ import { PageContent, PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useInventoryInsights } from "@/lib/inventory";
 
-import { InsightsHeader, InsightsRefreshing } from "./header";
+import { InsightsHeader } from "./header";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
@@ -29,9 +29,6 @@ type RangeValue = (typeof RANGE_OPTIONS)[number]["value"];
 
 const RANGE_FROM_VALUE = { "7": 7, "30": 30, "90": 90 } satisfies Record<RangeValue, SalesRange>;
 const VALUE_FROM_RANGE = { 7: "7", 30: "30", 90: "90" } satisfies Record<SalesRange, RangeValue>;
-
-const greeting = (hour: number) =>
-  hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
 function OverviewBody({ range }: { readonly range: SalesRange }) {
   const { report } = useInventoryInsights();
@@ -81,15 +78,6 @@ export function OverviewPage({
             <PlanningSheet />
           </>
         }
-        description={
-          <>
-            Sales, stock, and what to do next, from data on this device.
-            <React.Suspense fallback={null}>
-              <InsightsRefreshing />
-            </React.Suspense>
-          </>
-        }
-        title={greeting(new Date().getHours())}
       />
       <PageContent>
         <React.Suspense fallback={<LoadingSpinner className="min-h-96" label="Loading insights" />}>

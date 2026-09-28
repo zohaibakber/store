@@ -92,7 +92,7 @@ export const HISTORY_SOURCES: ReadonlySet<InventoryCollectionSource> = new Set([
   "stockMovements",
 ]);
 
-export const MAX_IN_VALUES = 32;
+export const MAX_IN_VALUES = 200;
 
 export const MAX_LIKE_PATTERN_LENGTH = 256;
 

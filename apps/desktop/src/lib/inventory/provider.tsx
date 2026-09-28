@@ -1,7 +1,6 @@
 import {
   InventoryProvider as SharedInventoryProvider,
   useInventoryState,
-  useInventorySyncStatus,
   type CatalogLease,
   type CatalogLifetime,
   type InventoryHost,
@@ -10,8 +9,6 @@ import type * as React from "react";
 
 import { PageLoading } from "@/components/app/loading-spinner";
 import { LegacyMigrationRunner } from "@/lib/legacy-migration/runner";
-
-import { InventorySyncStatusView } from "./sync-status";
 
 export function InventoryProvider({
   children,
@@ -48,15 +45,5 @@ function InventoryOpenFailure({ children }: { readonly children: React.ReactNode
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
   const state = useInventoryState();
   if (state._tag !== "Ready") return <PageLoading />;
-  return (
-    <>
-      <InventoryReadyStatus />
-      {children}
-    </>
-  );
-}
-
-function InventoryReadyStatus() {
-  const status = useInventorySyncStatus();
-  return <InventorySyncStatusView status={status} />;
+  return children;
 }

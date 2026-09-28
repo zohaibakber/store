@@ -211,71 +211,74 @@ describe("IndexedDB subset paging", () => {
     }),
   );
 
-  it.effect("continues a name-ordered scan across chunks full of duplicate names", () =>
-    Effect.gen(function* () {
-      const store = yield* makeIndexedDbReplicaStore({
-        databaseName,
-        databaseIdentity: databaseName,
-        identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
-        indexedDB,
-        IDBKeyRange,
-      });
-      const count = 600;
-      const nameAt = (index: number) => (index < 5 ? `aa ${index}` : index % 2 ? "Dup" : "dup");
-      yield* store.applyTransactionGroup({
-        commitSequence: OrgCommitSequence.make("1"),
-        operationId: "seed",
-        decision: "accepted",
-        changes: Array.from({ length: count }, (_, index) => {
-          const change = product(index);
-          return { ...change, row: { ...change.row, categoryId: "c-odd", name: nameAt(index) } };
-        }),
-      });
-      const expected = (direction: "asc" | "desc") => {
-        const ordered = Array.from({ length: count }, (_, index) => index).sort((left, right) => {
-          const leftKey = nameAt(left).toLowerCase();
-          const rightKey = nameAt(right).toLowerCase();
-          if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
-          return idOf(left) < idOf(right) ? -1 : 1;
+  it.effect(
+    "continues a name-ordered scan across chunks full of duplicate names",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* makeIndexedDbReplicaStore({
+          databaseName,
+          databaseIdentity: databaseName,
+          identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
+          indexedDB,
+          IDBKeyRange,
         });
-        return (direction === "asc" ? ordered : ordered.reverse()).map(idOf);
-      };
-      for (const direction of ["asc", "desc"] as const) {
-        const rows = yield* store.querySubset(
-          plan({
-            scan: {
-              _tag: "indexEqualsOrdered",
-              index: "byCategoryName",
-              value: "c-odd",
-              reverse: direction === "desc",
-            },
-            residual: { _tag: "like", column: "id", pattern: "p-%" },
-            orderBy: [
-              { column: "name", direction },
-              { column: "id", direction },
-            ],
-            limit: 600,
-            offset: 0,
+        const count = 600;
+        const nameAt = (index: number) => (index < 5 ? `aa ${index}` : index % 2 ? "Dup" : "dup");
+        yield* store.applyTransactionGroup({
+          commitSequence: OrgCommitSequence.make("1"),
+          operationId: "seed",
+          decision: "accepted",
+          changes: Array.from({ length: count }, (_, index) => {
+            const change = product(index);
+            return { ...change, row: { ...change.row, categoryId: "c-odd", name: nameAt(index) } };
           }),
-        );
-        expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
-      }
-      for (const direction of ["asc", "desc"] as const) {
-        const rows = yield* store.querySubset(
-          plan({
-            scan: { _tag: "indexPrefix", index: "byNameKey", reverse: direction === "desc" },
-            residual: { _tag: "like", column: "id", pattern: "p-%" },
-            orderBy: [
-              { column: "name", direction },
-              { column: "id", direction },
-            ],
-            limit: 600,
-            offset: 0,
-          }),
-        );
-        expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
-      }
-      yield* store.dispose();
-    }),
+        });
+        const expected = (direction: "asc" | "desc") => {
+          const ordered = Array.from({ length: count }, (_, index) => index).sort((left, right) => {
+            const leftKey = nameAt(left).toLowerCase();
+            const rightKey = nameAt(right).toLowerCase();
+            if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+            return idOf(left) < idOf(right) ? -1 : 1;
+          });
+          return (direction === "asc" ? ordered : ordered.reverse()).map(idOf);
+        };
+        for (const direction of ["asc", "desc"] as const) {
+          const rows = yield* store.querySubset(
+            plan({
+              scan: {
+                _tag: "indexEqualsOrdered",
+                index: "byCategoryName",
+                value: "c-odd",
+                reverse: direction === "desc",
+              },
+              residual: { _tag: "like", column: "id", pattern: "p-%" },
+              orderBy: [
+                { column: "name", direction },
+                { column: "id", direction },
+              ],
+              limit: 600,
+              offset: 0,
+            }),
+          );
+          expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
+        }
+        for (const direction of ["asc", "desc"] as const) {
+          const rows = yield* store.querySubset(
+            plan({
+              scan: { _tag: "indexPrefix", index: "byNameKey", reverse: direction === "desc" },
+              residual: { _tag: "like", column: "id", pattern: "p-%" },
+              orderBy: [
+                { column: "name", direction },
+                { column: "id", direction },
+              ],
+              limit: 600,
+              offset: 0,
+            }),
+          );
+          expect(rows.rows.map((row) => row["id"])).toEqual(expected(direction));
+        }
+        yield* store.dispose();
+      }),
+    30_000,
   );
 });

@@ -20,13 +20,7 @@ import {
   DataTablePagination,
   DataTableViewOptions,
 } from "@/components/shared/data-table";
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { formValidator } from "@/lib/form-schema";
 import {
@@ -148,7 +142,6 @@ function ProductsContent({
     >
       <PageLayout contentClassName="gap-4">
         <PageHeader>
-          <PageHeading>Products</PageHeading>
           <PageAction className="flex items-center gap-2">
             <DataTableFilter columnId="name" placeholder="Search products" />
             <ProductTableFilters categories={categories} facets={facets} />

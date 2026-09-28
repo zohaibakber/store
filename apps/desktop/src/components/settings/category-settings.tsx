@@ -271,7 +271,6 @@ function CategorySettingsContent({
           updateCategory={commands.updateCategory}
         />
       }
-      description="A category decides which fields its products need."
       title="Categories"
     >
       {categories.length === 0 ? (

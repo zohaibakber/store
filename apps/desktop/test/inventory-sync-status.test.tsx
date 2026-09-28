@@ -10,42 +10,48 @@ import { act, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { InventoryProvider, InventoryReady } from "../src/lib/inventory/provider";
-import { InventorySyncStatusView } from "../src/lib/inventory/sync-status";
+import { HeaderSyncStatus, InventorySyncStatusView } from "../src/lib/inventory/sync-status";
 import { renderWithRouter } from "./lib/render";
 
+const statusButton = (label: string) =>
+  screen.getByRole("button", { name: `Sync status: ${label}` });
+
+const findStatusButton = (label: string) =>
+  screen.findByRole("button", { name: `Sync status: ${label}` });
+
 describe("InventorySyncStatusView", () => {
-  it("renders the named sync states", () => {
+  it("names every sync state on the header button", () => {
     const { rerender } = renderWithRouter(
       <InventorySyncStatusView status={{ _tag: "savedLocally" }} />,
     );
-    expect(screen.getByRole("status").textContent).toBe("Saved locally");
+    expect(statusButton("Saved locally")).toBeTruthy();
 
     rerender(<InventorySyncStatusView status={{ _tag: "pendingConfirmation" }} />);
-    expect(screen.getByRole("status").textContent).toBe("Pending confirmation");
+    expect(statusButton("Pending confirmation")).toBeTruthy();
 
     rerender(<InventorySyncStatusView status={{ _tag: "caughtUp" }} />);
-    expect(screen.getByRole("status").textContent).toBe("Caught up");
+    expect(statusButton("Caught up")).toBeTruthy();
 
     rerender(
       <InventorySyncStatusView
         status={{ _tag: "rejected", message: "The authority rejected a local command." }}
       />,
     );
-    expect(screen.getByRole("status").textContent).toBe("The authority rejected a local command.");
+    expect(statusButton("The authority rejected a local command.")).toBeTruthy();
 
     rerender(
       <InventorySyncStatusView
         status={{ _tag: "storageError", message: "Local replica storage failed." }}
       />,
     );
-    expect(screen.getByRole("status").textContent).toBe("Local replica storage failed.");
+    expect(statusButton("Local replica storage failed.")).toBeTruthy();
 
     rerender(
       <InventorySyncStatusView
         status={{ _tag: "recoveryRequired", message: "Sync needs recovery." }}
       />,
     );
-    expect(screen.getByRole("status").textContent).toBe("Sync needs recovery.");
+    expect(statusButton("Sync needs recovery.")).toBeTruthy();
   });
 
   it("renders the shell from a local replica", async () => {
@@ -66,12 +72,13 @@ describe("InventorySyncStatusView", () => {
     const lease = catalog.claim({ organizationId: "org-1", userId: "user-1" });
     renderWithRouter(
       <InventoryProvider catalog={catalog} host={host} lease={lease}>
+        <HeaderSyncStatus />
         <InventoryReady>
           <p>Ready shell</p>
         </InventoryReady>
       </InventoryProvider>,
     );
-    expect(await screen.findByText("Caught up")).toBeTruthy();
+    expect(await findStatusButton("Caught up")).toBeTruthy();
     expect(screen.getByText("Ready shell")).toBeTruthy();
     catalog.release();
   });
@@ -106,27 +113,28 @@ describe("InventorySyncStatusView", () => {
     const lease = catalog.claim({ organizationId: "org-1", userId: "user-1" });
     renderWithRouter(
       <InventoryProvider catalog={catalog} host={host} lease={lease}>
+        <HeaderSyncStatus />
         <InventoryReady>
           <p>Ready shell</p>
         </InventoryReady>
       </InventoryProvider>,
     );
-    expect(await screen.findByText("Caught up")).toBeTruthy();
+    expect(await findStatusButton("Caught up")).toBeTruthy();
 
     act(() => {
       emit({ _tag: "storageError", message: "Local replica storage failed." });
     });
-    expect(await screen.findByText("Local replica storage failed.")).toBeTruthy();
+    expect(await findStatusButton("Local replica storage failed.")).toBeTruthy();
 
     act(() => {
       emit({ _tag: "recoveryRequired", message: "Sync needs recovery." });
     });
-    expect(await screen.findByText("Sync needs recovery.")).toBeTruthy();
+    expect(await findStatusButton("Sync needs recovery.")).toBeTruthy();
 
     act(() => {
       emit({ _tag: "running" });
     });
-    expect(await screen.findByText("Caught up")).toBeTruthy();
+    expect(await findStatusButton("Caught up")).toBeTruthy();
     catalog.release();
     await vi.waitFor(() => {
       expect(listeners.size).toBe(0);

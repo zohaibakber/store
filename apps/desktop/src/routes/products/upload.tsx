@@ -2,13 +2,7 @@ import { Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { UploadAttachmentList } from "@/components/uploads/attachment-list";
@@ -41,7 +35,6 @@ function UploadPage() {
   return (
     <PageLayout contentClassName="max-w-3xl">
       <PageHeader>
-        <PageHeading>Upload invoices</PageHeading>
         <PageAction>
           <Button disabled={processing || !files.length} onClick={() => void analyse()}>
             <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />

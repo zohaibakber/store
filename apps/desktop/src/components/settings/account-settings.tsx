@@ -14,7 +14,7 @@ export function AccountSettings() {
 
   if (!user) {
     return (
-      <FrameCard description="Sign in when you want to sync this device." title="Account">
+      <FrameCard title="Account">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-medium">Not signed in</p>
@@ -32,7 +32,7 @@ export function AccountSettings() {
   }
 
   return (
-    <FrameCard description="The account signed in on this device." title="Account">
+    <FrameCard title="Account">
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
           <Avatar className="size-10">

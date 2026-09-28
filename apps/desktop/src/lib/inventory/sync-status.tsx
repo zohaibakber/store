@@ -7,9 +7,16 @@ import {
   Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { inventorySyncStatusLabel, type InventorySyncStatus } from "@store/inventory-react";
+import {
+  inventorySyncStatusLabel,
+  useCatalogIsReady,
+  useInventorySyncStatus,
+  type InventorySyncStatus,
+} from "@store/inventory-react";
 
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 const statusIcon = (status: InventorySyncStatus) => {
   switch (status._tag) {
@@ -28,30 +35,55 @@ const statusIcon = (status: InventorySyncStatus) => {
   }
 };
 
-const statusVariant = (status: InventorySyncStatus) => {
+const statusTone = (status: InventorySyncStatus) => {
   switch (status._tag) {
     case "savedLocally":
-      return "secondary" as const;
+      return "text-muted-foreground";
     case "pendingConfirmation":
-      return "warning" as const;
+      return "text-warning-foreground";
     case "caughtUp":
-      return "success" as const;
+      return "text-success-foreground";
     case "rejected":
-      return "error" as const;
+      return "text-destructive-foreground";
     case "storageError":
-      return "error" as const;
+      return "text-destructive-foreground";
     case "recoveryRequired":
-      return "warning" as const;
+      return "text-warning-foreground";
   }
 };
 
 export function InventorySyncStatusView({ status }: { readonly status: InventorySyncStatus }) {
+  const label = inventorySyncStatusLabel(status);
   return (
-    <div className="flex items-center border-b border-border px-4 py-1" role="status">
-      <Badge size="sm" variant={statusVariant(status)}>
-        <HugeiconsIcon aria-hidden="true" className="size-3" icon={statusIcon(status)} />
-        <span>{inventorySyncStatusLabel(status)}</span>
-      </Badge>
-    </div>
+    <Popover>
+      <PopoverTrigger
+        render={<Button aria-label={`Sync status: ${label}`} size="icon-sm" variant="ghost" />}
+      >
+        <HugeiconsIcon
+          aria-hidden="true"
+          className={statusTone(status)}
+          icon={statusIcon(status)}
+        />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-auto max-w-72">
+        <div className="flex items-center gap-2 text-sm" role="status">
+          <HugeiconsIcon
+            aria-hidden="true"
+            className={cn("size-4 shrink-0", statusTone(status))}
+            icon={statusIcon(status)}
+          />
+          <span>{label}</span>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
+}
+
+export function HeaderSyncStatus() {
+  if (!useCatalogIsReady()) return null;
+  return <ReadySyncStatus />;
+}
+
+function ReadySyncStatus() {
+  return <InventorySyncStatusView status={useInventorySyncStatus()} />;
 }

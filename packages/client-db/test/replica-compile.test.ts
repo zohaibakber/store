@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { lowerSqliteSubset } from "../src/replica/compile";
 import { UnsupportedSubsetQuery } from "../src/replica/errors";
-import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
+import { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_IN_VALUES } from "../src/replica/sources";
 import { analyzeInventorySubset } from "../src/replica/subset-ir";
 import type { CompileSubsetInput, InventoryCollectionDescriptor } from "../src/replica/types";
 import type { CategoryRow } from "../src/rows";
@@ -84,10 +84,47 @@ describe("lowerSqliteSubset", () => {
       source: "invoices",
     };
     expect(() => Effect.runSync(compileSqliteSubset(invoices, {}))).toThrow(UnsupportedSubsetQuery);
+    expect(() =>
+      Effect.runSync(
+        compileSqliteSubset(invoices, {
+          where: new IR.Func("gt", [new IR.PropRef(["createdAt"]), new IR.Value(0)]),
+        }),
+      ),
+    ).toThrow(UnsupportedSubsetQuery);
+  });
+
+  it("reads history without a limit when a key predicate bounds it", () => {
+    const invoiceItems: InventoryCollectionDescriptor<CategoryRow> = {
+      ...descriptor,
+      source: "invoiceItems",
+    };
+    const joined = Effect.runSync(
+      compileSqliteSubset(invoiceItems, {
+        where: new IR.Func("in", [new IR.PropRef(["invoiceId"]), new IR.Value(["inv-1", "inv-2"])]),
+      }),
+    );
+    expect(joined.sql).toBe(`SELECT * FROM "invoice_items" WHERE "invoiceId" IN (?, ?) LIMIT ?`);
+    expect(joined.parameters).toEqual(["inv-1", "inv-2", DEFAULT_COLLECTION_MAXIMUM_ROWS]);
+    const single = Effect.runSync(
+      compileSqliteSubset(invoiceItems, {
+        where: new IR.Func("eq", [new IR.PropRef(["invoiceId"]), new IR.Value("inv-1")]),
+      }),
+    );
+    expect(single.parameters).toEqual(["inv-1", DEFAULT_COLLECTION_MAXIMUM_ROWS]);
+    const invoices: InventoryCollectionDescriptor<CategoryRow> = {
+      ...descriptor,
+      source: "invoices",
+    };
+    const ties = Effect.runSync(
+      compileSqliteSubset(invoices, {
+        where: new IR.Func("eq", [new IR.PropRef(["createdAt"]), new IR.Value(1_790_000_000_000)]),
+      }),
+    );
+    expect(ties.parameters).toEqual([1_790_000_000_000, DEFAULT_COLLECTION_MAXIMUM_ROWS]);
   });
 
   it("fails when in is larger than the indexed bound", () => {
-    const values = Array.from({ length: 33 }, (_, index) => `id-${index}`);
+    const values = Array.from({ length: MAX_IN_VALUES + 1 }, (_, index) => `id-${index}`);
     expect(() =>
       Effect.runSync(
         compileSqliteSubset(descriptor, {

@@ -27,7 +27,6 @@ export function RecentInvoices() {
           <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
         </Button>
       }
-      description="The latest sales recorded on this device."
       title="Recent invoices"
     >
       {invoices.length === 0 ? (

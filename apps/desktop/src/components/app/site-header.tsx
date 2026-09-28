@@ -2,6 +2,7 @@ import { NavUser } from "@/components/app/nav-user";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { HeaderSyncStatus } from "@/lib/inventory/sync-status";
 
 export function SiteHeader() {
   return (
@@ -12,6 +13,7 @@ export function SiteHeader() {
         <SiteBreadcrumbs />
       </div>
       <div className="ml-auto flex items-center gap-2 px-2">
+        <HeaderSyncStatus />
         <NavUser />
       </div>
     </header>

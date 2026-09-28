@@ -168,6 +168,38 @@ const compileOrder = (
   });
 };
 
+const KEY_COLUMNS: ReadonlySet<string> = new Set([
+  "id",
+  "invoiceId",
+  "productId",
+  "batchId",
+  "operationId",
+  "invoiceNumber",
+]);
+
+const keyBounded = (predicate: SubsetPredicate, orderColumns: ReadonlySet<string>): boolean => {
+  switch (predicate._tag) {
+    case "compare":
+      return (
+        predicate.op === "eq" &&
+        (KEY_COLUMNS.has(predicate.column) || orderColumns.has(predicate.column))
+      );
+    case "in":
+      return KEY_COLUMNS.has(predicate.column);
+    case "and":
+      return predicate.predicates.some((child) => keyBounded(child, orderColumns));
+    case "or":
+      return (
+        predicate.predicates.length > 0 &&
+        predicate.predicates.every((child) => keyBounded(child, orderColumns))
+      );
+    case "isNull":
+    case "like":
+    case "not":
+      return false;
+  }
+};
+
 export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   options: CompileSubsetInput,
@@ -189,7 +221,7 @@ export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
     const orderBy = yield* compileOrder(options.orderBy, orderColumns);
     const history = HISTORY_SOURCES.has(descriptor.source);
     const limit = options.limit;
-    if (history && (limit === undefined || limit < 1)) {
+    if (history && limit === undefined && !(where && keyBounded(where, orderColumns))) {
       return yield* fail("history sources require a bounded limit");
     }
     const boundedLimit = limit ?? descriptor.maximumRows;

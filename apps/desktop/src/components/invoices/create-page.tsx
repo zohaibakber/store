@@ -1,20 +1,13 @@
 import { InvoiceCheckout, InvoiceCompleteSaleAction } from "@/components/invoices/create-checkout";
 import { InvoiceCreateProvider } from "@/components/invoices/create-context";
 import { InvoiceItems } from "@/components/invoices/create-items";
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
 
 function InvoiceCreatePage() {
   return (
     <InvoiceCreateProvider>
       <PageLayout contentClassName="max-w-4xl">
         <PageHeader>
-          <PageHeading>New sale</PageHeading>
           <PageAction>
             <InvoiceCompleteSaleAction />
           </PageAction>

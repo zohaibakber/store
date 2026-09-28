@@ -5,13 +5,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 
 import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
 import { DataTable, DataTableFilter } from "@/components/shared/data-table";
-import {
-  PageAction,
-  PageContent,
-  PageHeader,
-  PageHeading,
-  PageLayout,
-} from "@/components/shared/page-layout";
+import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
 function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
@@ -25,7 +19,6 @@ function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
     >
       <PageLayout contentClassName="gap-4">
         <PageHeader>
-          <PageHeading>Invoices</PageHeading>
           <PageAction className="flex items-center gap-2">
             <DataTableFilter columnId="customer" placeholder="Search invoices" />
             <Button render={<Link to="/invoices/new" />}>
