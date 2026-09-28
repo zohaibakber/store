@@ -34,7 +34,7 @@ export const LEGACY_REPORT_FILE = "legacy-migration-report.json";
 
 const DEAD_DIRECTORIES = ["organizations", "locked"] as const;
 const DEAD_FILES = ["clerk-tokens.json"] as const;
-const OFFLINE_STORE = /^offline-store\.db(?:-wal|-shm|-journal)?$/u;
+const OFFLINE_STORE = /^offline-store\.db(?:-[a-z-]+)?$/u;
 const LEGACY_CONFIG_FILE = "config.json";
 const LEGACY_CONFIG_KEY = "better-auth";
 

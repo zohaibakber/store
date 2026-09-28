@@ -131,6 +131,9 @@ describe("purgeDeadLegacyEntries", () => {
       "offline-store.db",
       "offline-store.db-wal",
       "offline-store.db-shm",
+      "offline-store.db-changes",
+      "offline-store.db-info",
+      "offline-store.db-wal-revert",
       "clerk-tokens.json",
       "device-id",
       "Preferences",
@@ -150,8 +153,11 @@ describe("purgeDeadLegacyEntries", () => {
       "config.json",
       "locked",
       "offline-store.db",
+      "offline-store.db-changes",
+      "offline-store.db-info",
       "offline-store.db-shm",
       "offline-store.db-wal",
+      "offline-store.db-wal-revert",
       "organizations",
     ]);
     expect(readdirSync(root).sort()).toEqual([
