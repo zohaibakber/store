@@ -9,12 +9,13 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Column, ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
-import { createContext, use, useEffect, useRef, useState } from "react";
+import { Children, createContext, isValidElement, use, useEffect, useRef } from "react";
 import type React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Frame, FrameFooter } from "@/components/ui/frame";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Menu,
   MenuCheckboxItem,
@@ -31,6 +32,13 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -46,10 +54,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatCount, formatNumber } from "@/lib/format";
 import { isString } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
 
 type DataTableFilterValue = string | undefined;
+
+type DataTableColumnAlign = "start" | "end";
+
+interface DataTableColumnMeta {
+  readonly label?: string;
+  readonly align?: DataTableColumnAlign;
+}
+
+interface DataTableColumnDefinition {
+  readonly columnDef: { readonly meta?: DataTableColumnMeta };
+}
+
+const columnAlign = (column: DataTableColumnDefinition): DataTableColumnAlign =>
+  column.columnDef.meta?.align ?? "start";
 
 interface DataTableSortableColumn {
   readonly id: string;
@@ -69,6 +92,7 @@ interface DataTableColumn extends DataTableSortableColumn {
 
 interface DataTableCell {
   readonly id: string;
+  readonly column: DataTableColumnDefinition;
 }
 
 interface DataTableRow {
@@ -80,6 +104,7 @@ interface DataTableHeaderCell {
   readonly id: string;
   readonly colSpan: number;
   readonly isPlaceholder: boolean;
+  readonly column: DataTableColumnDefinition;
 }
 
 interface DataTableInstance {
@@ -99,7 +124,7 @@ interface DataTableInstance {
   previousPage(): void;
   nextPage(): void;
   lastPage(): void;
-  clearFilters(): void;
+  clearFilters(columnIds: ReadonlySet<string>): void;
 }
 
 interface DataTablePaginationAccess {
@@ -112,7 +137,11 @@ interface DataTablePaginationAccess {
   previousPage(): void;
   nextPage(): void;
   lastPage(): void;
-  setColumnFilters(filters: Array<never>): void;
+  setColumnFilters(
+    updater: (
+      filters: ReadonlyArray<{ id: string; value: unknown }>,
+    ) => Array<{ id: string; value: unknown }>,
+  ): void;
 }
 
 interface DataTableContextValue {
@@ -191,7 +220,10 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
     previousPage: () => configuredTable.previousPage(),
     nextPage: () => configuredTable.nextPage(),
     lastPage: () => configuredTable.lastPage(),
-    clearFilters: () => configuredTable.setColumnFilters([]),
+    clearFilters: (columnIds) =>
+      configuredTable.setColumnFilters((filters) =>
+        filters.filter((filter) => !columnIds.has(filter.id)),
+      ),
   };
 
   return (
@@ -220,6 +252,7 @@ function DataTableFooter({ className, ...props }: React.ComponentProps<"footer">
 
 interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInput> {
   columnId: string;
+  shortcut?: boolean;
 }
 
 interface DataTableFilterOptionProps {
@@ -264,7 +297,13 @@ interface DataTableFilterMenuProps extends Omit<React.ComponentProps<typeof Butt
 
 function DataTableFilterMenu({ children, className, ...props }: DataTableFilterMenuProps) {
   const { table } = useDataTable();
+  const optionColumnIds = new Set(
+    Children.toArray(children).flatMap((child) =>
+      isValidElement<DataTableFilterOptionProps>(child) ? [child.props.columnId] : [],
+    ),
+  );
   const filteredColumns = table.getAllColumns().filter((column) => {
+    if (!optionColumnIds.has(column.id)) return false;
     const value = column.getFilterValue?.();
     return value !== undefined && value !== "";
   });
@@ -276,7 +315,7 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
           <Button
             aria-label="Filter table"
             className={cn("relative", className)}
-            size="icon"
+            size="icon-sm"
             variant="outline"
             {...props}
           >
@@ -296,7 +335,10 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
           {children}
         </MenuGroup>
         <MenuSeparator />
-        <MenuItem disabled={filteredColumns.length === 0} onClick={() => table.clearFilters()}>
+        <MenuItem
+          disabled={filteredColumns.length === 0}
+          onClick={() => table.clearFilters(optionColumnIds)}
+        >
           <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
           Clear filters
         </MenuItem>
@@ -305,56 +347,62 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
   );
 }
 
-function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps) {
+const isEditableTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || target.closest("input, textarea, select, [role=combobox]") !== null);
+
+function DataTableFilter({ columnId, className, shortcut = true, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
   const value = column?.getFilterValue?.() ?? "";
-  const [expanded, setExpanded] = useState(value.length > 0);
   const inputRef = useRef<HTMLInputElement>(null);
   const accessibleLabel =
     props["aria-label"] ?? (isString(props.placeholder) ? props.placeholder : "Search table");
 
   useEffect(() => {
-    if (expanded) inputRef.current?.focus();
-  }, [expanded]);
-
-  const collapse = () => {
-    column?.setFilterValue?.("");
-    setExpanded(false);
-  };
+    if (!shortcut) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [shortcut]);
 
   return (
-    <div
-      className={cn(
-        "flex shrink-0 justify-end transition-all duration-200",
-        expanded ? "w-64" : "w-9 sm:w-8",
-        className,
-      )}
-      data-expanded={expanded}
-      data-slot="data-table-filter"
-    >
-      {expanded ? (
-        <InputGroup>
-          <InputGroupInput
-            {...props}
-            aria-label={accessibleLabel}
-            onChange={(event) => column?.setFilterValue?.(event.target.value)}
-            onKeyDown={(event) => {
-              props.onKeyDown?.(event);
-              if (!event.defaultPrevented && event.key === "Escape") collapse();
-            }}
-            ref={inputRef}
-            role="searchbox"
-            type="search"
-            value={value}
-          />
-          <InputGroupAddon align="inline-start">
-            <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
-          </InputGroupAddon>
+    <div className={cn("w-64 shrink-0", className)} data-slot="data-table-filter">
+      <InputGroup>
+        <InputGroupInput
+          size="sm"
+          {...props}
+          aria-keyshortcuts={shortcut ? "/" : undefined}
+          aria-label={accessibleLabel}
+          onChange={(event) => column?.setFilterValue?.(event.target.value)}
+          onKeyDown={(event) => {
+            props.onKeyDown?.(event);
+            if (event.defaultPrevented || event.key !== "Escape") return;
+            if (value) column?.setFilterValue?.("");
+            else event.currentTarget.blur();
+          }}
+          ref={inputRef}
+          role="searchbox"
+          type="search"
+          value={value}
+        />
+        <InputGroupAddon align="inline-start">
+          <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
+        </InputGroupAddon>
+        {value ? (
           <InputGroupAddon align="inline-end">
             <Button
-              aria-label="Close search"
-              onClick={collapse}
+              aria-label="Clear search"
+              onClick={() => {
+                column?.setFilterValue?.("");
+                inputRef.current?.focus();
+              }}
               size="icon-xs"
               type="button"
               variant="ghost"
@@ -362,19 +410,12 @@ function DataTableFilter({ columnId, className, ...props }: DataTableFilterProps
               <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
             </Button>
           </InputGroupAddon>
-        </InputGroup>
-      ) : (
-        <Button
-          aria-expanded={false}
-          aria-label={accessibleLabel}
-          onClick={() => setExpanded(true)}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <HugeiconsIcon aria-hidden="true" icon={Search01Icon} />
-        </Button>
-      )}
+        ) : shortcut ? (
+          <InputGroupAddon align="inline-end">
+            <Kbd>/</Kbd>
+          </InputGroupAddon>
+        ) : null}
+      </InputGroup>
     </div>
   );
 }
@@ -386,7 +427,13 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
     <Menu>
       <MenuTrigger
         render={
-          <Button className={cn("ml-auto", className)} size="icon" variant="outline" {...props}>
+          <Button
+            aria-label="Toggle columns"
+            className={className}
+            size="icon-sm"
+            variant="outline"
+            {...props}
+          >
             <HugeiconsIcon aria-hidden="true" icon={ColumnsThreeCogIcon} />
           </Button>
         }
@@ -469,104 +516,148 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
   const { table, onRowClick } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
-    <Frame className={cn("w-full", className)} {...props}>
-      <Table variant="card">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead colSpan={header.colSpan} key={header.id}>
-                  {header.isPlaceholder ? null : <table.FlexRender header={header} />}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
-            <TableRow>
-              <TableCell className="h-24 text-center" colSpan={table.getAllLeafColumns().length}>
-                <span className="text-muted-foreground">No results.</span>
-              </TableCell>
-            </TableRow>
-          ) : (
-            rows.map((row) => (
-              <TableRow
-                className={cn(onRowClick && "cursor-pointer")}
-                key={row.id}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    <table.FlexRender cell={cell} />
-                  </TableCell>
+    <div
+      className="flex w-full flex-col **:data-[slot=table-head]:bg-background **:data-[slot=table-head]:bg-linear-to-b **:data-[slot=table-head]:from-muted/72 **:data-[slot=table-head]:to-muted/72"
+      data-slot="data-table-content"
+    >
+      <Frame
+        className={cn(
+          "w-full *:data-[slot=table-container]:overflow-x-visible **:data-[slot=table-head]:sticky **:data-[slot=table-head]:top-10 **:data-[slot=table-head]:z-10",
+          className,
+        )}
+        {...props}
+      >
+        <Table variant="card">
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead className="h-8" colSpan={header.colSpan} key={header.id}>
+                    {header.isPlaceholder ? null : columnAlign(header.column) === "end" ? (
+                      <div className="flex justify-end text-end">
+                        <table.FlexRender header={header} />
+                      </div>
+                    ) : (
+                      <table.FlexRender header={header} />
+                    )}
+                  </TableHead>
                 ))}
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-      {children}
-    </Frame>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell className="h-24" colSpan={table.getAllLeafColumns().length}>
+                  <p className="text-center text-muted-foreground">No results.</p>
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((row) => (
+                <TableRow
+                  className={cn(onRowClick && "cursor-pointer")}
+                  key={row.id}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {columnAlign(cell.column) === "end" ? (
+                        <div className="text-end tabular-nums">
+                          <table.FlexRender cell={cell} />
+                        </div>
+                      ) : (
+                        <table.FlexRender cell={cell} />
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+        {children}
+      </Frame>
+    </div>
   );
 }
 
-const pageSizes = [10, 20, 30, 50];
+const DEFAULT_PAGE_SIZES: ReadonlyArray<number> = [25, 50, 100];
 
-function DataTablePagination({ className, ...props }: React.ComponentProps<"div">) {
+function DataTablePagination({
+  className,
+  pageSizes = DEFAULT_PAGE_SIZES,
+  ...props
+}: React.ComponentProps<"div"> & { pageSizes?: ReadonlyArray<number> }) {
   const { table } = useDataTable();
-  const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 10 };
+  const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 25 };
   const rowCount = table.getRowCount();
-  const firstResult = rowCount === 0 ? 0 : pageIndex * pageSize + 1;
+  const firstResult = pageIndex * pageSize + 1;
   const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
-  const resultRange = `${firstResult}–${lastResult}`;
+  const sizes = [...new Set<number>([...pageSizes, pageSize])].sort((a, b) => a - b);
 
   return (
-    <div className={cn("flex items-center justify-between", className)} {...props}>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span>Showing</span>
+    <div className={cn("flex items-center justify-between gap-2", className)} {...props}>
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {rowCount === 0
+          ? formatCount(0, "result")
+          : `${formatNumber(firstResult)}–${formatNumber(lastResult)} of ${formatNumber(rowCount)}`}
+      </p>
+      <div className="flex items-center gap-2">
         <Select
           onValueChange={(value) => table.setPageSize(Number(value))}
           value={String(pageSize)}
         >
-          <SelectTrigger aria-label="Displayed result range" className="w-auto min-w-0" size="sm">
-            <SelectValue>{() => resultRange}</SelectValue>
+          <SelectTrigger aria-label="Rows per page" className="w-auto min-w-0" size="sm">
+            <SelectValue>{() => `${pageSize} / page`}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {pageSizes.map((size) => (
+              {sizes.map((size) => (
                 <SelectItem key={size} value={String(size)}>
-                  {size} per page
+                  {size} / page
                 </SelectItem>
               ))}
             </SelectGroup>
           </SelectContent>
         </Select>
-        <span>of {rowCount} results</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button
-          aria-label="Previous page"
-          disabled={!table.getCanPreviousPage()}
-          onClick={() => table.previousPage()}
-          size="xs"
-          type="button"
-        >
-          Previous
-        </Button>
-        <Button
-          aria-label="Next page"
-          disabled={!table.getCanNextPage()}
-          onClick={() => table.nextPage()}
-          size="xs"
-          type="button"
-        >
-          Next
-        </Button>
+        <Pagination className="w-auto">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                className="sm:*:[svg]:hidden"
+                render={
+                  <Button
+                    disabled={!table.getCanPreviousPage()}
+                    onClick={() => table.previousPage()}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  />
+                }
+              />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationNext
+                className="sm:*:[svg]:hidden"
+                render={
+                  <Button
+                    disabled={!table.getCanNextPage()}
+                    onClick={() => table.nextPage()}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  />
+                }
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       </div>
     </div>
   );
 }
+
+export type { DataTableColumnAlign, DataTableColumnMeta };
 
 export {
   DataTable,

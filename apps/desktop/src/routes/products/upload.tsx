@@ -2,7 +2,8 @@ import { Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
+import { PageActions } from "@/components/shared/page-actions";
+import { PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { UploadAttachmentList } from "@/components/uploads/attachment-list";
@@ -33,17 +34,19 @@ function UploadPage() {
   } = useUpload();
 
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <PageAction>
-          <Button disabled={processing || !files.length} onClick={() => void analyse()}>
-            <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-            Analyse invoices
-          </Button>
-        </PageAction>
-      </PageHeader>
-
-      <PageContent className="mt-2 gap-6">
+    <>
+      <PageActions>
+        <Button
+          disabled={processing || !files.length}
+          onClick={() => void analyse()}
+          size="sm"
+          type="button"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
+          Analyse invoices
+        </Button>
+      </PageActions>
+      <PageLayout width="narrow">
         {!isOnline && (
           <Alert variant="error">
             <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
@@ -53,14 +56,12 @@ function UploadPage() {
             </AlertDescription>
           </Alert>
         )}
-
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           <UploadDropzone />
           <UploadAttachmentList />
         </div>
-
         <UploadProposedChanges />
-      </PageContent>
-    </PageLayout>
+      </PageLayout>
+    </>
   );
 }

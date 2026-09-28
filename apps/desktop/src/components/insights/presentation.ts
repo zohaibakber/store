@@ -5,6 +5,8 @@ import type {
   StockStatus,
 } from "@store/services/insights";
 
+import { EMPTY, formatCount } from "@/lib/format";
+
 export type Tone = "error" | "warning" | "info" | "success" | "secondary";
 
 export const STATUS_META = {
@@ -36,7 +38,6 @@ export const SEVERITY_TONE = {
   positive: "success",
 } satisfies Record<InsightSeverity, Tone>;
 
-const integer = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const percent = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 0 });
 const signedPercent = new Intl.NumberFormat(undefined, {
@@ -45,30 +46,25 @@ const signedPercent = new Intl.NumberFormat(undefined, {
   signDisplay: "exceptZero",
 });
 
-export const formatCount = (value: number) => integer.format(value);
 export const formatRate = (value: number) => decimal.format(value);
 export const formatShare = (value: number) => percent.format(value);
 export const formatChange = (value: number | null) =>
   value === null ? null : signedPercent.format(value);
 
 export const formatCover = (days: number | null) => {
-  if (days === null) return "—";
+  if (days === null) return EMPTY;
   if (days < 1) return "< 1 day";
   if (days > 365) return "1 yr+";
-  const whole = Math.floor(days);
-  return `${whole} ${whole === 1 ? "day" : "days"}`;
+  return formatCount(Math.floor(days), "day");
 };
 
+export const formatStockCover = (insight: {
+  readonly usableUnits: number;
+  readonly daysOfCover: number | null;
+}) => (insight.usableUnits <= 0 ? EMPTY : formatCover(insight.daysOfCover));
+
 export const formatOrder = (order: OrderSuggestion) =>
-  `${formatCount(order.quantity)} ${
-    order.unit === "packs"
-      ? order.quantity === 1
-        ? "pack"
-        : "packs"
-      : order.quantity === 1
-        ? "unit"
-        : "units"
-  }`;
+  formatCount(order.quantity, order.unit === "packs" ? "pack" : "unit");
 
 export const changeTone = (value: number | null): Tone =>
   value === null || Math.abs(value) < 0.005 ? "secondary" : value > 0 ? "success" : "error";

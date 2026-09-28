@@ -19,13 +19,16 @@ import {
   useTable,
 } from "@tanstack/react-table";
 
+import { formatInvoiceTime } from "@/components/invoices/invoice-time";
 import {
   DataTableColumnHeader,
   DataTableContent,
   DataTableFooter,
   DataTablePagination,
+  type DataTableColumnMeta,
 } from "@/components/shared/data-table";
-import { formatDateTime } from "@/lib/format";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatDateTime, formatNumber } from "@/lib/format";
 
 const features = tableFeatures({
   columnFilteringFeature,
@@ -40,7 +43,7 @@ const features = tableFeatures({
     alphanumeric: sortFn_alphanumeric,
     text: sortFn_text,
   },
-  columnMeta: metaHelper<{ label?: string }>(),
+  columnMeta: metaHelper<DataTableColumnMeta>(),
 });
 
 const columnHelper = createColumnHelper<typeof features, Invoice>();
@@ -50,7 +53,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Invoice" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-mono font-medium tabular-nums hover:underline"
+        className="font-medium tabular-nums hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ invoiceId: row.original.id }}
         to="/invoices/$invoiceId"
@@ -75,24 +78,25 @@ const columns = columnHelper.columns([
   columnHelper.accessor((invoice) => invoice.items.length, {
     id: "items",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Items" />,
-    cell: ({ getValue }) => <span className="font-mono tabular-nums">{getValue()}</span>,
-    meta: { label: "Items" },
+    cell: ({ getValue }) => formatNumber(getValue()),
+    meta: { label: "Items", align: "end" },
   }),
   columnHelper.accessor("total", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Total" />,
-    cell: ({ getValue }) => (
-      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
-    ),
-    meta: { label: "Total" },
+    cell: ({ getValue }) => <span className="font-medium">{formatPrice(getValue())}</span>,
+    meta: { label: "Total", align: "end" },
   }),
   columnHelper.accessor("createdAt", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
     cell: ({ getValue }) => (
-      <span className="font-mono text-muted-foreground tabular-nums">
-        {formatDateTime(getValue())}
-      </span>
+      <Tooltip>
+        <TooltipTrigger render={<span className="text-muted-foreground tabular-nums" />}>
+          {formatInvoiceTime(getValue())}
+        </TooltipTrigger>
+        <TooltipPopup>{formatDateTime(getValue())}</TooltipPopup>
+      </Tooltip>
     ),
-    meta: { label: "Created" },
+    meta: { label: "Created", align: "end" },
   }),
 ]);
 
@@ -103,7 +107,7 @@ export function useInvoicesTable(invoices: readonly Invoice[]) {
     data: invoices,
     getRowId: (invoice) => invoice.id,
     initialState: {
-      pagination: { pageIndex: 0, pageSize: 10 },
+      pagination: { pageIndex: 0, pageSize: 50 },
       sorting: [{ id: "createdAt", desc: true }],
     },
   });

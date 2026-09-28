@@ -129,7 +129,7 @@ function PlanningForm({
       }}
     >
       <SheetPanel>
-        <div className="grid gap-5">
+        <div className="grid gap-4">
           <Field>
             <FieldLabel>Service level</FieldLabel>
             <SegmentedRadio
@@ -148,20 +148,22 @@ function PlanningForm({
           {WHOLE_FIELDS.map((entry) => (
             <Field key={entry.key}>
               <FieldLabel>{entry.label}</FieldLabel>
-              <ControlGroup>
-                <ControlGroupNumberInput
-                  aria-label={entry.label}
-                  inputProps={{ "aria-label": entry.label }}
-                  max={entry.max}
-                  min={entry.min}
-                  onValueChange={(value) => field(entry.key, value)}
-                  step={1}
-                  value={draft[entry.key]}
-                />
-                <ControlGroupAddon>
-                  <ControlGroupText>{entry.unit}</ControlGroupText>
-                </ControlGroupAddon>
-              </ControlGroup>
+              <div className="w-40">
+                <ControlGroup>
+                  <ControlGroupNumberInput
+                    aria-label={entry.label}
+                    inputProps={{ "aria-label": entry.label }}
+                    max={entry.max}
+                    min={entry.min}
+                    onValueChange={(value) => field(entry.key, value)}
+                    step={1}
+                    value={draft[entry.key]}
+                  />
+                  <ControlGroupAddon>
+                    <ControlGroupText>{entry.unit}</ControlGroupText>
+                  </ControlGroupAddon>
+                </ControlGroup>
+              </div>
               <FieldDescription>{entry.description}</FieldDescription>
             </Field>
           ))}
@@ -183,7 +185,7 @@ export function PlanningSheet() {
   const [open, setOpen] = React.useState(false);
   return (
     <Sheet onOpenChange={setOpen} open={open}>
-      <SheetTrigger render={<Button variant="outline" />}>
+      <SheetTrigger render={<Button size="sm" variant="outline" />}>
         <HugeiconsIcon aria-hidden="true" icon={Settings02Icon} />
         Planning
       </SheetTrigger>

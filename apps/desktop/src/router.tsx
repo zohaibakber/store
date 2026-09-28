@@ -30,6 +30,7 @@ export const getRouter = (input: {
     defaultGcTime: 60_000,
     defaultPreloadGcTime: 15_000,
     scrollRestoration: true,
+    scrollToTopSelectors: ["[data-scroll-restoration-id='app-content']"],
     defaultPendingComponent: PageLoading,
     defaultErrorComponent: RouteError,
   });

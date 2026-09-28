@@ -7,40 +7,33 @@ import {
   ControlGroupNumberInput,
   ControlGroupText,
 } from "@/components/shared/control-group";
+import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Separator } from "@/components/ui/separator";
+import { EMPTY, formatCount } from "@/lib/format";
 
-function InvoiceCompleteSaleAction() {
-  const {
-    actions: { completeSale },
-    meta: { canSubmit, isSubmitting, total },
-  } = useInvoiceCreate();
-
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <Button
-      disabled={!canSubmit || isSubmitting}
-      loading={isSubmitting}
-      onClick={() => void completeSale()}
-      type="button"
-    >
-      Complete sale{canSubmit && ` · ${formatPrice(total)}`}
-    </Button>
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="tabular-nums">{value}</dd>
+    </div>
   );
 }
 
 function InvoiceCheckout() {
   const {
     state: { bulkDiscount, customerName, lines },
-    actions: { setBulkDiscount, setCustomerName },
-    meta: { discountTotal, subtotal, total, validBulkDiscount },
+    actions: { completeSale, setBulkDiscount, setCustomerName },
+    meta: { canSubmit, discountTotal, isSubmitting, subtotal, total, unitCount, validBulkDiscount },
   } = useInvoiceCreate();
-  const itemCount = lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-6 rounded-2xl border p-6">
-      <Fieldset>
+    <FrameCard title="Summary">
+      <div className="flex flex-col gap-4">
         <Field>
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
           <Input
@@ -69,27 +62,47 @@ function InvoiceCheckout() {
             <FieldError match>Enter a discount between 0% and 100%.</FieldError>
           )}
         </Field>
-      </Fieldset>
-      <div className="mt-auto ml-auto flex flex-col items-end">
-        <div className="grid min-w-40 grid-cols-2 gap-x-6 gap-y-1 text-right">
-          <span className="text-muted-foreground">Items</span>
-          <span className="font-mono tabular-nums">
-            {lines.length === 0
-              ? "—"
-              : `${lines.length} ${lines.length === 1 ? "line" : "lines"} · ${itemCount}`}
-          </span>
-          <span className="text-muted-foreground">Subtotal</span>
-          <span className="font-mono tabular-nums">{formatPrice(subtotal)}</span>
-          <span className="text-muted-foreground">Discount</span>
-          <span className="font-mono tabular-nums">
-            {bulkDiscount != null && bulkDiscount > 0 ? `−${formatPrice(discountTotal)}` : "–"}
-          </span>
-          <span className="text-lg font-medium">Total</span>
-          <span className="font-mono text-lg font-medium tabular-nums">{formatPrice(total)}</span>
-        </div>
+
+        <Separator />
+
+        <dl className="flex flex-col gap-1.5 text-sm">
+          <SummaryRow
+            label="Items"
+            value={
+              lines.length === 0
+                ? EMPTY
+                : `${formatCount(lines.length, "line")} · ${formatCount(unitCount, "unit")}`
+            }
+          />
+          <SummaryRow label="Subtotal" value={formatPrice(subtotal)} />
+          <SummaryRow
+            label="Discount"
+            value={discountTotal > 0 ? `−${formatPrice(discountTotal)}` : EMPTY}
+          />
+          <div className="mt-2 flex items-baseline justify-between gap-4">
+            <dt className="text-base font-medium">Total</dt>
+            <dd className="text-2xl font-medium tabular-nums">{formatPrice(total)}</dd>
+          </div>
+        </dl>
+
+        <Button
+          aria-keyshortcuts="Control+Enter"
+          className="w-full"
+          disabled={!canSubmit || isSubmitting}
+          loading={isSubmitting}
+          onClick={() => void completeSale()}
+          size="lg"
+          type="button"
+        >
+          Complete sale
+          <KbdGroup>
+            <Kbd>Ctrl</Kbd>
+            <Kbd>Enter</Kbd>
+          </KbdGroup>
+        </Button>
       </div>
-    </div>
+    </FrameCard>
   );
 }
 
-export { InvoiceCheckout, InvoiceCompleteSaleAction };
+export { InvoiceCheckout };

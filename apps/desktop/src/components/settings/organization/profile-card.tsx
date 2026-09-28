@@ -59,7 +59,7 @@ export function OrganizationProfileCard({
         action={<Badge variant="secondary">{organization.role}</Badge>}
         title="Organization"
       >
-        <p className="truncate font-medium">{organization.name}</p>
+        <p className="truncate text-sm font-medium">{organization.name}</p>
         <p className="text-sm text-muted-foreground">
           {organization.slug ?? "Only an owner or admin can change these details."}
         </p>
@@ -115,7 +115,7 @@ export function OrganizationProfileCard({
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
             {([canSubmit, isSubmitting]) => (
               <div className="flex justify-end">
-                <Button disabled={!canSubmit} loading={isSubmitting} type="submit">
+                <Button disabled={!canSubmit} loading={isSubmitting} size="sm" type="submit">
                   Save changes
                 </Button>
               </div>

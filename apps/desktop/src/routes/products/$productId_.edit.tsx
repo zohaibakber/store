@@ -1,5 +1,5 @@
 import { ProductId } from "@store/contracts/ids";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { useProductUpdateForm } from "@/components/products/form";
@@ -35,13 +35,13 @@ function EditProductForm({
   readonly suggestions: React.ComponentProps<typeof ProductFormPage>["suggestions"];
 }) {
   const navigate = useNavigate();
-  const form = useProductUpdateForm(product, categories, () => {
+  const backToProduct = () =>
     void navigate({ to: "/products/$productId", params: { productId: product.id } });
-  });
+  const form = useProductUpdateForm(product, categories, backToProduct);
 
   return (
     <ProductFormPage
-      cancelTo={<Link params={{ productId: product.id }} to="/products/$productId" />}
+      onCancel={backToProduct}
       categories={categories}
       form={form}
       formId="edit-product-form"

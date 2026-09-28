@@ -91,3 +91,5 @@ export function Button({
     render,
   });
 }
+
+export { buttonStyles as buttonVariants };

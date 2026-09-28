@@ -2,14 +2,15 @@ import type { SalesRange } from "@store/services/insights";
 import * as React from "react";
 
 import { LoadingSpinner } from "@/components/app/loading-spinner";
-import { PageContent, PageLayout } from "@/components/shared/page-layout";
+import { PageActions } from "@/components/shared/page-actions";
+import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useInventoryInsights } from "@/lib/inventory";
 
-import { InsightsHeader } from "./header";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
+import { InsightsRefreshing } from "./refreshing";
 import {
   AttentionFeed,
   ExpiringSoon,
@@ -37,9 +38,7 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
     <>
       <KpiGrid period={period} report={report} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <AttentionFeed report={report} />
-        </div>
+        <AttentionFeed className="lg:col-span-2" report={report} />
         <StockHealth report={report} />
       </div>
       <RevenueTrend period={period} />
@@ -49,7 +48,7 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ExpiringSoon report={report} />
-        <React.Suspense fallback={<LoadingSpinner className="h-72" />}>
+        <React.Suspense fallback={<LoadingSpinner className="h-64" />}>
           <RecentInvoices />
         </React.Suspense>
       </div>
@@ -65,25 +64,22 @@ export function OverviewPage({
   readonly onRangeChange: (range: SalesRange) => void;
 }) {
   return (
-    <PageLayout contentClassName="max-w-6xl gap-4">
-      <InsightsHeader
-        actions={
-          <>
-            <SegmentedRadio
-              label="Reporting period"
-              onValueChange={(value) => onRangeChange(RANGE_FROM_VALUE[value])}
-              options={RANGE_OPTIONS}
-              value={VALUE_FROM_RANGE[range]}
-            />
-            <PlanningSheet />
-          </>
-        }
-      />
-      <PageContent>
-        <React.Suspense fallback={<LoadingSpinner className="min-h-96" label="Loading insights" />}>
-          <OverviewBody range={range} />
+    <PageLayout>
+      <PageActions>
+        <React.Suspense fallback={null}>
+          <InsightsRefreshing />
         </React.Suspense>
-      </PageContent>
+        <SegmentedRadio
+          label="Reporting period"
+          onValueChange={(value) => onRangeChange(RANGE_FROM_VALUE[value])}
+          options={RANGE_OPTIONS}
+          value={VALUE_FROM_RANGE[range]}
+        />
+        <PlanningSheet />
+      </PageActions>
+      <React.Suspense fallback={<LoadingSpinner className="min-h-96" label="Loading insights" />}>
+        <OverviewBody range={range} />
+      </React.Suspense>
     </PageLayout>
   );
 }

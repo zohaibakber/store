@@ -1,19 +1,32 @@
 import {
+  Add01Icon,
   Alert02Icon,
-  ArrowRightFreeIcons,
+  Delete02Icon,
+  MoreHorizontalIcon,
   PencilEdit02Icon,
-  Tag01Icon,
-  Trash2,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
+import { productStock } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import * as React from "react";
 
 import { ProductStockPlan } from "@/components/insights/product-stock-plan";
-import { ProductBatchesCard, ProductStockMovementsCard } from "@/components/products/batches";
-import { ProductVisibilityCard } from "@/components/products/visibility";
+import {
+  AddStockSheet,
+  ProductBatchesCard,
+  ProductStockMovementsCard,
+} from "@/components/products/batches";
+import {
+  hasOpenPopup,
+  isEditableTarget,
+  isPlainKey,
+  useWindowKeydown,
+} from "@/components/products/shortcuts";
+import { formatStock } from "@/components/products/stock";
+import { ProductVisibilitySelect } from "@/components/products/visibility";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -31,19 +44,29 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { rememberRecentProduct } from "@/hooks/use-recent-products";
 import { toastStoreError } from "@/lib/errors";
-import { formatDate } from "@/lib/format";
+import { formValidator } from "@/lib/form-schema";
+import { EMPTY, formatDate, formatNumber } from "@/lib/format";
 import {
   useInventoryActions,
   useSuspenseCatalogProduct,
   useSuspenseCatalogStockMovements,
 } from "@/lib/inventory";
+import { lenientSearchParam } from "@/lib/search-param";
+
+const productSearch = formValidator(
+  Schema.Struct({ addStock: lenientSearchParam(Schema.Boolean) }),
+);
 
 export const Route = createFileRoute("/products/$productId")({
+  validateSearch: productSearch,
   component: ProductDetailPage,
   errorComponent: ProductDetailError,
   staticData: { breadcrumb: "Product" },
@@ -52,31 +75,19 @@ export const Route = createFileRoute("/products/$productId")({
 function ProductDetailError({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : "The product could not be loaded.";
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <BackToProducts />
-      </PageHeader>
-      <PageContent>
-        <Alert variant="error">
-          <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-          <AlertTitle>Could not load product</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-      </PageContent>
+    <PageLayout width="narrow">
+      <Alert variant="error">
+        <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
+        <AlertTitle>Could not load product</AlertTitle>
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
     </PageLayout>
-  );
-}
-
-function BackToProducts() {
-  return (
-    <Button render={<Link to="/products" />} className={"-ml-1"} variant={"ghost"} size={"sm"}>
-      <HugeiconsIcon aria-hidden="true" icon={Tag01Icon} />
-    </Button>
   );
 }
 
 function ProductDetailPage() {
   const { productId } = Route.useParams();
+  const { addStock } = Route.useSearch();
   const catalogProduct = useSuspenseCatalogProduct(productId);
   const movements = useSuspenseCatalogStockMovements(productId);
   const { deleteProduct } = useInventoryActions();
@@ -95,122 +106,197 @@ function ProductDetailPage() {
   };
 
   return (
-    <ProductDetailContent movements={movements} onDelete={removeProduct} product={catalogProduct} />
+    <ProductDetailContent
+      addStockOpen={addStock === true}
+      movements={movements}
+      onAddStockOpenChange={(open) =>
+        void navigate({
+          to: "/products/$productId",
+          params: { productId },
+          search: open ? { addStock: true } : {},
+          replace: true,
+        })
+      }
+      onDelete={removeProduct}
+      onEdit={() =>
+        void navigate({ to: "/products/$productId/edit", params: { productId: catalogProduct.id } })
+      }
+      product={catalogProduct}
+    />
+  );
+}
+
+const muted = <span className="text-muted-foreground">{EMPTY}</span>;
+
+const text = (value: string | null) => (value ? value : muted);
+
+const price = (value: number | null) => (value === null ? muted : formatPrice(value));
+
+function DetailsCard({ product }: { readonly product: Product }) {
+  const tracksPacks = product.category.tracksPacks;
+  const details: ReadonlyArray<{ readonly label: string; readonly value: React.ReactNode }> = [
+    { label: "Category", value: product.category.name },
+    {
+      label: "On hand",
+      value: formatStock(productStock(product), product.unitsPerPack, tracksPacks),
+    },
+    ...(tracksPacks
+      ? [
+          { label: "Units per pack", value: formatNumber(product.unitsPerPack) },
+          { label: "Unit price", value: price(product.unitPrice) },
+          { label: "Retail price", value: price(product.retailPrice) },
+        ]
+      : [{ label: "Retail price", value: price(product.unitPrice) }]),
+    { label: "Purchase price", value: price(product.purchasePrice) },
+    { label: "Composition", value: text(product.composition) },
+    { label: "Strength", value: text(product.strength) },
+    { label: "Aisle", value: text(product.aisle) },
+    { label: "Created", value: formatDate(product.createdAt) },
+    { label: "Updated", value: formatDate(product.updatedAt) },
+  ];
+
+  return (
+    <FrameCard action={<ProductVisibilitySelect product={product} />} title="Details">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 xl:grid-cols-6">
+        {details.map((detail) => (
+          <div className="flex min-w-0 flex-col gap-0.5" key={detail.label}>
+            <dt className="truncate text-xs text-muted-foreground">{detail.label}</dt>
+            <dd className="truncate tabular-nums">{detail.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </FrameCard>
+  );
+}
+
+function ShortcutButton({
+  children,
+  label,
+  shortcut,
+  ...props
+}: React.ComponentProps<typeof Button> & { readonly label: string; readonly shortcut: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<Button aria-keyshortcuts={shortcut} size="sm" {...props} />}>
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup>
+        <span className="inline-flex items-center gap-2">
+          {label}
+          <Kbd>{shortcut}</Kbd>
+        </span>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
 function ProductDetailContent({
+  addStockOpen,
   movements,
+  onAddStockOpenChange,
   onDelete,
+  onEdit,
   product,
 }: {
+  readonly addStockOpen: boolean;
   readonly movements: ReadonlyArray<StockMovement>;
+  readonly onAddStockOpenChange: (open: boolean) => void;
   readonly onDelete: () => Promise<void>;
+  readonly onEdit: () => void;
   readonly product: Product;
 }) {
-  const packDetails: Array<{ label: string; value: React.ReactNode }> = product.category.tracksPacks
-    ? [
-        {
-          label: "Units per pack",
-          value: <span className="font-mono tabular-nums">{product.unitsPerPack}</span>,
-        },
-        {
-          label: "Retail price",
-          value: <span className="font-mono tabular-nums">{formatPrice(product.retailPrice)}</span>,
-        },
-      ]
-    : [];
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const hasStock = product.batches.some(
+    (batch) => batch.packQuantity > 0 || batch.unitQuantity > 0,
+  );
+  const summary = [product.category.name, product.strength, product.composition]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
 
-  const details: Array<{ label: string; value: React.ReactNode }> = [
-    { label: "Aisle", value: product.aisle ?? "—" },
-    { label: "Composition", value: product.composition ?? "—" },
-    { label: "Strength", value: product.strength ?? "—" },
-    {
-      label: "Purchase price",
-      value: <span className="font-mono tabular-nums">{formatPrice(product.purchasePrice)}</span>,
-    },
-    ...packDetails,
-    {
-      label: product.category.tracksPacks ? "Unit price" : "Retail price",
-      value: <span className="font-mono tabular-nums">{formatPrice(product.unitPrice)}</span>,
-    },
-    {
-      label: "Created",
-      value: <span className="font-mono tabular-nums">{formatDate(product.createdAt)}</span>,
-    },
-    {
-      label: "Updated",
-      value: <span className="font-mono tabular-nums">{formatDate(product.updatedAt)}</span>,
-    },
-  ];
+  const { id, name, strength } = product;
+  const categoryName = product.category.name;
+  React.useEffect(() => {
+    rememberRecentProduct({ id, name, strength, category: { name: categoryName } });
+  }, [id, name, strength, categoryName]);
+
+  useWindowKeydown((event) => {
+    if (event.defaultPrevented || event.repeat) return;
+    if (isEditableTarget(event.target) || hasOpenPopup()) return;
+    if (isPlainKey(event, "e")) {
+      event.preventDefault();
+      onEdit();
+    } else if (isPlainKey(event, "a")) {
+      event.preventDefault();
+      onAddStockOpenChange(true);
+    }
+  });
 
   return (
     <PageLayout>
       <PageHeader>
-        <div className="flex items-center">
-          <BackToProducts />
-          <HugeiconsIcon aria-hidden="true" icon={ArrowRightFreeIcons} className="size-4" />
-          <PageHeading className="ml-2 capitalize">{product.name}</PageHeading>
+        <div className="flex min-w-0 flex-col gap-1">
+          <PageHeading>{product.name}</PageHeading>
+          <p className="truncate text-sm text-muted-foreground">{summary}</p>
         </div>
         <PageAction>
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={<Button aria-label="Delete product" variant="ghost" size="icon" />}
+          <ShortcutButton
+            label="Edit product"
+            render={<Link params={{ productId: product.id }} to="/products/$productId/edit" />}
+            shortcut="E"
+            variant="outline"
+          >
+            <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+            Edit
+          </ShortcutButton>
+          <ShortcutButton label="Add stock" onClick={() => onAddStockOpenChange(true)} shortcut="A">
+            <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+            Add stock
+          </ShortcutButton>
+          <Menu>
+            <MenuTrigger
+              render={<Button aria-label="More actions" size="icon-sm" variant="ghost" />}
             >
-              <HugeiconsIcon icon={Trash2} />
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete product?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {product.batches.some((batch) => batch.packQuantity > 0 || batch.unitQuantity > 0)
-                    ? `Sell or adjust remaining stock for ${product.name} before deleting it.`
-                    : `Delete ${product.name} from the catalog?`}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
-                <AlertDialogClose onClick={onDelete} render={<Button variant="destructive" />}>
-                  Delete
-                </AlertDialogClose>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={() => setDeleteOpen(true)} variant="destructive">
+                <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
+                Delete product
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
         </PageAction>
       </PageHeader>
 
-      <PageContent className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_1fr]">
-        <div className="flex flex-col gap-4">
-          <FrameCard
-            action={
-              <Button
-                render={<Link params={{ productId: product.id }} to="/products/$productId/edit" />}
-                size="sm"
-                variant="outline"
-              >
-                <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
-                Edit
-              </Button>
-            }
-            title="Details"
-          >
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
-              {details.map((detail) => (
-                <div className="flex items-baseline justify-between gap-4" key={detail.label}>
-                  <dt className="text-muted-foreground">{detail.label}</dt>
-                  <dd className="text-right">{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </FrameCard>
+      <AlertDialog onOpenChange={setDeleteOpen} open={deleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {hasStock
+                ? `Sell or adjust remaining stock for ${product.name} before deleting it.`
+                : `Delete ${product.name} from the catalog?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
+            <AlertDialogClose onClick={onDelete} render={<Button variant="destructive" />}>
+              Delete
+            </AlertDialogClose>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-          <ProductStockPlan productId={product.id} />
-          <ProductBatchesCard product={product} />
-        </div>
+      <AddStockSheet onOpenChange={onAddStockOpenChange} open={addStockOpen} product={product} />
 
-        <div className="flex flex-col gap-4">
-          <ProductVisibilityCard product={product} />
-          <ProductStockMovementsCard product={product} movements={movements} />
+      <PageContent>
+        <DetailsCard product={product} />
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-4">
+            <ProductBatchesCard product={product} />
+            <ProductStockPlan productId={product.id} />
+          </div>
+          <ProductStockMovementsCard movements={movements} product={product} />
         </div>
       </PageContent>
     </PageLayout>

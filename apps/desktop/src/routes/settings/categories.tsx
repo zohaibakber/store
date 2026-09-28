@@ -1,13 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { CategorySettings } from "@/components/settings/category-settings";
-import { useSuspenseCatalogCategories } from "@/lib/inventory";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/settings/categories")({
-  component: LiveCategorySettings,
-  staticData: { breadcrumb: "Categories" },
+  beforeLoad: () => {
+    throw redirect({ to: "/products/categories", replace: true });
+  },
 });
-
-function LiveCategorySettings() {
-  return <CategorySettings categories={useSuspenseCatalogCategories()} />;
-}

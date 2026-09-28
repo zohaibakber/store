@@ -8,6 +8,7 @@ import { AppErrorBoundary } from "@/components/app/error-boundary";
 import type { RestockView } from "@/components/insights/restock-page";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { EMPTY, formatNumber } from "@/lib/format";
 import { useInventoryInsights } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 
@@ -16,11 +17,11 @@ function PrivateStockValue({ value }: { value: string }) {
   const actionLabel = visible ? "Hide stock value" : "Show stock value";
 
   return (
-    <div className="relative bg-background px-3 py-2">
+    <div className="relative bg-background px-3 py-1.5">
       <p className="truncate text-xs text-muted-foreground">Stock value at cost</p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}
-        className="text-lg font-medium tabular-nums"
+        className="text-base font-medium tabular-nums"
       >
         {visible ? value : "••••••"}
       </p>
@@ -60,38 +61,53 @@ function StockTile({
 }) {
   return (
     <Link
-      className="bg-background px-3 py-2 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+      className="bg-background px-3 py-1.5 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
       search={{ view }}
       to="/restock"
     >
       <p className="truncate text-xs text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "text-lg font-medium tabular-nums",
+          "text-base font-medium tabular-nums",
           value !== null && value > 0 && tone === "error" && "text-destructive-foreground",
           value !== null && value > 0 && tone === "warning" && "text-warning-foreground",
         )}
       >
-        {value === null ? "—" : value}
+        {value === null ? EMPTY : formatNumber(value)}
       </p>
     </Link>
   );
 }
+
+type TileSpec = {
+  readonly label: string;
+  readonly view: RestockView;
+  readonly status: "out" | "critical" | "low" | "overstock" | "dead";
+  readonly tone: "error" | "warning" | "none";
+};
+
+const TILES: ReadonlyArray<TileSpec> = [
+  { label: "Out of stock", view: "out", status: "out", tone: "error" },
+  { label: "Running out", view: "critical", status: "critical", tone: "error" },
+  { label: "Reorder", view: "low", status: "low", tone: "warning" },
+  { label: "Overstocked", view: "overstock", status: "overstock", tone: "none" },
+  { label: "Not selling", view: "dead", status: "dead", tone: "none" },
+];
 
 function StockTiles() {
   const { report } = useInventoryInsights();
   const { counts } = report;
   return (
     <>
-      <StockTile label="Out of stock" tone="error" value={counts.out} view="out" />
-      <StockTile
-        label="Running low"
-        tone="warning"
-        value={counts.critical + counts.low}
-        view="action"
-      />
-      <StockTile label="Not selling" tone="none" value={counts.dead} view="dead" />
-      <StockTile label="Overstocked" tone="none" value={counts.overstock} view="overstock" />
+      {TILES.map((tile) => (
+        <StockTile
+          key={tile.view}
+          label={tile.label}
+          tone={tile.tone}
+          value={counts[tile.status]}
+          view={tile.view}
+        />
+      ))}
       <PrivateStockValue value={formatPrice(report.inventory.valueAtCost)} />
     </>
   );
@@ -99,11 +115,10 @@ function StockTiles() {
 
 const PENDING_TILES = (
   <>
-    <StockTile label="Out of stock" tone="none" value={null} view="out" />
-    <StockTile label="Running low" tone="none" value={null} view="action" />
-    <StockTile label="Not selling" tone="none" value={null} view="dead" />
-    <StockTile label="Overstocked" tone="none" value={null} view="overstock" />
-    <PrivateStockValue value="—" />
+    {TILES.map((tile) => (
+      <StockTile key={tile.view} label={tile.label} tone="none" value={null} view={tile.view} />
+    ))}
+    <PrivateStockValue value={EMPTY} />
   </>
 );
 
@@ -111,7 +126,7 @@ export function ProductAnalytics() {
   return (
     <div
       aria-live="polite"
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-6"
     >
       <AppErrorBoundary fallback={PENDING_TILES}>
         <Suspense fallback={PENDING_TILES}>

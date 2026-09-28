@@ -13,7 +13,14 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
 import { useSuspenseInventoryInvoices } from "@/lib/inventory";
 
@@ -22,11 +29,12 @@ export function RecentInvoices() {
   return (
     <FrameCard
       action={
-        <Button render={<Link to="/invoices" />} size="sm" variant="ghost">
+        <Button render={<Link to="/invoices" />} size="xs" variant="ghost">
           View all
           <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
         </Button>
       }
+      flush
       title="Recent invoices"
     >
       {invoices.length === 0 ? (
@@ -40,35 +48,49 @@ export function RecentInvoices() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table>
+        <Table aria-label="Recent invoices">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Invoice</TableHead>
+              <TableHead className="h-8">Customer</TableHead>
+              <TableHead className="h-8">
+                <div className="text-right">When</div>
+              </TableHead>
+              <TableHead className="h-8">
+                <div className="text-right">Total</div>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
             {invoices.map((invoice) => (
               <TableRow key={invoice.id}>
                 <TableCell>
-                  <span className="font-medium">
-                    <Link
-                      className="tabular-nums hover:underline"
-                      params={{ invoiceId: invoice.id }}
-                      to="/invoices/$invoiceId"
-                    >
-                      #{formatInvoiceNumber(invoice.invoiceNumber)}
-                    </Link>
-                  </span>
+                  <Link
+                    className="font-medium tabular-nums outline-none before:absolute before:inset-0 focus-visible:underline"
+                    params={{ invoiceId: invoice.id }}
+                    to="/invoices/$invoiceId"
+                  >
+                    #{formatInvoiceNumber(invoice.invoiceNumber)}
+                  </Link>
                 </TableCell>
                 <TableCell className="w-full">
-                  <span className="block max-w-32 truncate text-muted-foreground sm:max-w-56">
+                  <div
+                    className={
+                      invoice.customerName
+                        ? "w-0 min-w-full truncate"
+                        : "w-0 min-w-full truncate text-muted-foreground"
+                    }
+                  >
                     {invoice.customerName ?? "Walk-in customer"}
-                  </span>
+                  </div>
                 </TableCell>
-                <TableCell className="max-sm:hidden">
-                  <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+                <TableCell>
+                  <div className="text-right text-muted-foreground tabular-nums">
                     {formatRelativeTime(invoice.createdAt)}
-                  </span>
+                  </div>
                 </TableCell>
-                <TableCell className="text-right">
-                  <span className="whitespace-nowrap tabular-nums">
-                    {formatPrice(invoice.total)}
-                  </span>
+                <TableCell>
+                  <div className="text-right tabular-nums">{formatPrice(invoice.total)}</div>
                 </TableCell>
               </TableRow>
             ))}

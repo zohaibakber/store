@@ -2,55 +2,79 @@ import type { Category, ProductSuggestions } from "@store/contracts";
 import type * as React from "react";
 
 import { ProductForm, type useProductCreateForm } from "@/components/products/form";
-import { FrameCard } from "@/components/shared/frame-card";
-import { PageContent, PageLayout } from "@/components/shared/page-layout";
+import { PageActions } from "@/components/shared/page-actions";
+import {
+  PageDescription,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+} from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+
+import { hasOpenPopup, useWindowKeydown } from "./shortcuts";
 
 export function ProductFormPage({
-  cancelTo,
   categories,
+  description,
   form,
   formId,
+  onCancel,
   submitLabel,
   suggestions,
   title,
 }: {
-  cancelTo: React.ReactElement;
   categories: ReadonlyArray<Category>;
+  description?: React.ReactNode;
   form: ReturnType<typeof useProductCreateForm>;
   formId: string;
+  onCancel: () => void;
   submitLabel: string;
   suggestions: ProductSuggestions;
   title: React.ReactNode;
 }) {
+  useWindowKeydown((event) => {
+    if (event.defaultPrevented || event.isComposing) return;
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
+      event.preventDefault();
+      void form.handleSubmit();
+      return;
+    }
+    if (event.key === "Escape" && !hasOpenPopup()) {
+      event.preventDefault();
+      onCancel();
+    }
+  }, true);
+
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageContent>
-        <FrameCard
-          action={
-            <div className="flex items-center gap-2">
-              <Button render={cancelTo} size="sm" variant="outline">
-                Cancel
-              </Button>
-              <form.Subscribe selector={(state) => state.canSubmit}>
-                {(canSubmit) => (
-                  <Button disabled={!canSubmit} form={formId} size="sm" type="submit">
-                    {submitLabel}
-                  </Button>
-                )}
-              </form.Subscribe>
-            </div>
-          }
-          title={<h1 className="font-medium">{title}</h1>}
-        >
-          <ProductForm
-            categories={categories}
-            form={form}
-            formId={formId}
-            suggestions={suggestions}
-          />
-        </FrameCard>
-      </PageContent>
-    </PageLayout>
+    <>
+      <PageActions>
+        <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+          Cancel
+          <Kbd>Esc</Kbd>
+        </Button>
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+          {(isSubmitting) => (
+            <Button disabled={isSubmitting} form={formId} size="sm" type="submit">
+              {submitLabel}
+              <Kbd>Ctrl ↵</Kbd>
+            </Button>
+          )}
+        </form.Subscribe>
+      </PageActions>
+      <PageLayout width="narrow">
+        <PageHeader>
+          <PageHeading>{title}</PageHeading>
+          {description ? <PageDescription>{description}</PageDescription> : null}
+        </PageHeader>
+        <ProductForm
+          categories={categories}
+          form={form}
+          formId={formId}
+          suggestions={suggestions}
+        />
+      </PageLayout>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
+import * as React from "react";
 import { useMemo, useState } from "react";
 
 import {
@@ -56,9 +57,10 @@ export function CategoryField({
     ? categories.filter((category) => category.name.toLowerCase().includes(lowered))
     : categories;
   const exists = categories.some((category) => category.name.toLowerCase() === lowered);
-  const createOption: CategoryOption = { id: `create:${term}`, name: term, create: true };
-  const options: ReadonlyArray<CategoryOption> = [...matches, createOption];
   const canCreate = term.length > 0 && !exists;
+  const options: ReadonlyArray<CategoryOption> = canCreate
+    ? [...matches, { id: `create:${term}`, name: term, create: true }]
+    : matches;
 
   const select = async (option: CategoryOption | null) => {
     if (!option) return;
@@ -76,7 +78,7 @@ export function CategoryField({
           : [...current, { id: category.id, name: category.name }],
       );
       onChange(category.id);
-      toastManager.add({ title: `Category "${category.name}" added`, type: "success" });
+      toastManager.add({ title: `${category.name} added`, type: "success" });
     } catch (error) {
       toastStoreError(error);
     }
@@ -118,21 +120,19 @@ export function CategoryField({
         <ComboboxList>
           {(option: CategoryOption) =>
             option.create ? (
-              <>
-                <ComboboxSeparator />
-                <ComboboxItem disabled={!canCreate} key="create" value={option}>
+              <React.Fragment key="create">
+                {matches.length > 0 ? <ComboboxSeparator /> : null}
+                <ComboboxItem value={option}>
                   <span className="flex min-w-0 items-center gap-2">
                     <HugeiconsIcon
                       aria-hidden="true"
                       className="size-4 shrink-0"
                       icon={PlusSignCircleIcon}
                     />
-                    <span className="truncate">
-                      {canCreate ? `Add "${option.name}"` : "Type a name to add a category"}
-                    </span>
+                    <span className="truncate">Create “{option.name}”</span>
                   </span>
                 </ComboboxItem>
-              </>
+              </React.Fragment>
             ) : (
               <ComboboxItem key={option.id} value={option}>
                 <span className="truncate">{option.name}</span>

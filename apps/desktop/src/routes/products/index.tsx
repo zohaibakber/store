@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as React from "react";
 
 import { ProductAnalytics } from "@/components/products/analytics";
+import { LiveProductInsights } from "@/components/products/insight-cells";
 import {
   DEFAULT_PRODUCT_LIST_VIEW,
   PRODUCT_PAGE_SIZES,
@@ -20,7 +21,8 @@ import {
   DataTablePagination,
   DataTableViewOptions,
 } from "@/components/shared/data-table";
-import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
+import { PageActions } from "@/components/shared/page-actions";
+import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { formValidator } from "@/lib/form-schema";
 import {
@@ -140,32 +142,30 @@ function ProductsContent({
       onRowClick={(row) => navigate({ to: "/products/$productId", params: { productId: row.id } })}
       table={table}
     >
-      <PageLayout contentClassName="gap-4">
-        <PageHeader>
-          <PageAction className="flex items-center gap-2">
-            <DataTableFilter columnId="name" placeholder="Search products" />
-            <ProductTableFilters categories={categories} facets={facets} />
-            <DataTableViewOptions className="ml-0" />
-            <Button render={<Link to="/products/upload" />} variant="outline">
-              <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-              Import
-            </Button>
-            <Button render={<Link to="/products/new" />}>
-              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-              Add product
-            </Button>
-          </PageAction>
-        </PageHeader>
-        <PageContent>
-          <ProductAnalytics />
-          <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
+      <PageActions>
+        <DataTableFilter columnId="name" placeholder="Search products" />
+        <ProductTableFilters categories={categories} facets={facets} />
+        <DataTableViewOptions />
+        <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
+          <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
+          Import
+        </Button>
+        <Button render={<Link to="/products/new" />} size="sm">
+          <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+          Add product
+        </Button>
+      </PageActions>
+      <PageLayout>
+        <ProductAnalytics />
+        <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
+          <LiveProductInsights>
             <DataTableContent>
               <DataTableFooter>
                 <DataTablePagination />
               </DataTableFooter>
             </DataTableContent>
-          </div>
-        </PageContent>
+          </LiveProductInsights>
+        </div>
       </PageLayout>
     </DataTable>
   );

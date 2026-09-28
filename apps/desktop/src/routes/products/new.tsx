@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
@@ -23,10 +23,11 @@ function NewProductForm({
   readonly suggestions: React.ComponentProps<typeof ProductFormPage>["suggestions"];
 }) {
   const form = useProductCreateForm(categories);
+  const navigate = useNavigate();
 
   return (
     <ProductFormPage
-      cancelTo={<Link to="/products" />}
+      onCancel={() => void navigate({ to: "/products" })}
       categories={categories}
       form={form}
       formId="new-product-form"

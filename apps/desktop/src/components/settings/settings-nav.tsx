@@ -1,37 +1,32 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 
-import {
-  segmentedControlItemVariants,
-  segmentedControlRootClassName,
-} from "@/lib/segmented-control";
-
-const itemClassName = segmentedControlItemVariants({
-  state: "current",
-});
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 
 const sections = [
   { to: "/settings/account", label: "Account" },
   { to: "/settings/organization", label: "Organization" },
-  { to: "/settings/categories", label: "Categories" },
   { to: "/settings/appearance", label: "Appearance" },
   { to: "/settings/about", label: "About" },
 ] as const;
 
 export function SettingsNav() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const active = sections.find((section) => pathname.startsWith(section.to))?.to ?? null;
+
   return (
-    <nav aria-label="Settings sections" className="overflow-x-auto">
-      <div className={segmentedControlRootClassName}>
+    <Tabs value={active}>
+      <TabsList aria-label="Settings sections">
         {sections.map((section) => (
-          <Link
-            activeProps={{ "aria-current": "page" }}
-            className={itemClassName}
+          <TabsTab
             key={section.to}
-            to={section.to}
+            nativeButton={false}
+            render={<Link to={section.to} />}
+            value={section.to}
           >
             {section.label}
-          </Link>
+          </TabsTab>
         ))}
-      </div>
-    </nav>
+      </TabsList>
+    </Tabs>
   );
 }

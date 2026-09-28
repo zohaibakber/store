@@ -14,11 +14,13 @@ export function FrameCard({
   action,
   children,
   description,
+  flush = false,
   title,
   ...props
 }: Omit<React.ComponentProps<typeof CardFrame>, "title"> & {
   action?: React.ReactNode;
   description?: React.ReactNode;
+  flush?: boolean;
   title?: React.ReactNode;
 }): React.ReactElement {
   const hasHeader = title != null || description != null || action != null;
@@ -26,15 +28,25 @@ export function FrameCard({
   return (
     <CardFrame {...props}>
       {hasHeader && (
-        <CardFrameHeader>
-          {title != null && <CardFrameTitle>{title}</CardFrameTitle>}
-          {description != null && <CardFrameDescription>{description}</CardFrameDescription>}
-          {action != null && <CardFrameAction>{action}</CardFrameAction>}
+        <CardFrameHeader className="flex h-11 min-w-0 flex-row items-center">
+          {title != null && <CardFrameTitle className="shrink-0">{title}</CardFrameTitle>}
+          {description != null && (
+            <CardFrameDescription className="min-w-0">
+              <span className="block truncate tabular-nums">{description}</span>
+            </CardFrameDescription>
+          )}
+          {action != null && (
+            <CardFrameAction className="ms-auto shrink-0 items-center">{action}</CardFrameAction>
+          )}
         </CardFrameHeader>
       )}
-      <Card className="flex-1">
-        <CardPanel>{children}</CardPanel>
-      </Card>
+      {flush ? (
+        <Card className="flex-1 overflow-hidden">{children}</Card>
+      ) : (
+        <Card className="flex-1">
+          <CardPanel>{children}</CardPanel>
+        </Card>
+      )}
     </CardFrame>
   );
 }

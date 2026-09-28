@@ -11,6 +11,7 @@ import { AppLoading } from "@/components/app/loading";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
+import { PageActionsProvider } from "@/components/shared/page-actions";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -78,15 +79,20 @@ function AppShell() {
       <CommandMenuProvider>
         <SidebarProvider className="h-svh min-h-0 overflow-hidden" defaultOpen={false}>
           <AppSidebar />
-          <SidebarInset className="min-h-0 scrollbar-none overflow-y-auto">
-            <SiteHeader />
-            {inventory && lease ? (
-              <InventoryReady>
-                <Outlet />
-              </InventoryReady>
-            ) : (
-              <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
-            )}
+          <SidebarInset
+            className="min-h-0 scrollbar-none overflow-y-auto"
+            data-scroll-restoration-id="app-content"
+          >
+            <PageActionsProvider>
+              <SiteHeader />
+              {inventory && lease ? (
+                <InventoryReady>
+                  <Outlet />
+                </InventoryReady>
+              ) : (
+                <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
+              )}
+            </PageActionsProvider>
           </SidebarInset>
         </SidebarProvider>
       </CommandMenuProvider>

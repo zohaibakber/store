@@ -7,11 +7,19 @@ import {
   type InventoryHost,
 } from "@store/inventory-react";
 import { act, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import { SidebarMenu, SidebarProvider } from "../src/components/ui/sidebar";
 import { InventoryProvider, InventoryReady } from "../src/lib/inventory/provider";
-import { HeaderSyncStatus, InventorySyncStatusView } from "../src/lib/inventory/sync-status";
+import { InventorySyncStatusView, SidebarSyncStatus } from "../src/lib/inventory/sync-status";
 import { renderWithRouter } from "./lib/render";
+
+const inSidebar = (ui: ReactNode) => (
+  <SidebarProvider>
+    <SidebarMenu>{ui}</SidebarMenu>
+  </SidebarProvider>
+);
 
 const statusButton = (label: string) =>
   screen.getByRole("button", { name: `Sync status: ${label}` });
@@ -20,38 +28,47 @@ const findStatusButton = (label: string) =>
   screen.findByRole("button", { name: `Sync status: ${label}` });
 
 describe("InventorySyncStatusView", () => {
-  it("names every sync state on the header button", () => {
+  it("names every sync state on the sidebar row", () => {
     const { rerender } = renderWithRouter(
-      <InventorySyncStatusView status={{ _tag: "savedLocally" }} />,
+      inSidebar(<InventorySyncStatusView status={{ _tag: "savedLocally" }} />),
     );
     expect(statusButton("Saved locally")).toBeTruthy();
 
-    rerender(<InventorySyncStatusView status={{ _tag: "pendingConfirmation" }} />);
+    rerender(inSidebar(<InventorySyncStatusView status={{ _tag: "pendingConfirmation" }} />));
     expect(statusButton("Pending confirmation")).toBeTruthy();
 
-    rerender(<InventorySyncStatusView status={{ _tag: "caughtUp" }} />);
+    rerender(inSidebar(<InventorySyncStatusView status={{ _tag: "caughtUp" }} />));
     expect(statusButton("Caught up")).toBeTruthy();
 
     rerender(
-      <InventorySyncStatusView
-        status={{ _tag: "rejected", message: "The authority rejected a local command." }}
-      />,
+      inSidebar(
+        <InventorySyncStatusView
+          status={{ _tag: "rejected", message: "The authority rejected a local command." }}
+        />,
+      ),
     );
     expect(statusButton("The authority rejected a local command.")).toBeTruthy();
 
     rerender(
-      <InventorySyncStatusView
-        status={{ _tag: "storageError", message: "Local replica storage failed." }}
-      />,
+      inSidebar(
+        <InventorySyncStatusView
+          status={{ _tag: "storageError", message: "Local replica storage failed." }}
+        />,
+      ),
     );
     expect(statusButton("Local replica storage failed.")).toBeTruthy();
 
     rerender(
-      <InventorySyncStatusView
-        status={{ _tag: "recoveryRequired", message: "Sync needs recovery." }}
-      />,
+      inSidebar(
+        <InventorySyncStatusView
+          status={{ _tag: "recoveryRequired", message: "Sync needs recovery." }}
+        />,
+      ),
     );
     expect(statusButton("Sync needs recovery.")).toBeTruthy();
+
+    rerender(inSidebar(<InventorySyncStatusView online={false} status={{ _tag: "caughtUp" }} />));
+    expect(statusButton("Caught up").textContent).toContain("Offline");
   });
 
   it("renders the shell from a local replica", async () => {
@@ -72,7 +89,7 @@ describe("InventorySyncStatusView", () => {
     const lease = catalog.claim({ organizationId: "org-1", userId: "user-1" });
     renderWithRouter(
       <InventoryProvider catalog={catalog} host={host} lease={lease}>
-        <HeaderSyncStatus />
+        {inSidebar(<SidebarSyncStatus />)}
         <InventoryReady>
           <p>Ready shell</p>
         </InventoryReady>
@@ -113,7 +130,7 @@ describe("InventorySyncStatusView", () => {
     const lease = catalog.claim({ organizationId: "org-1", userId: "user-1" });
     renderWithRouter(
       <InventoryProvider catalog={catalog} host={host} lease={lease}>
-        <HeaderSyncStatus />
+        {inSidebar(<SidebarSyncStatus />)}
         <InventoryReady>
           <p>Ready shell</p>
         </InventoryReady>

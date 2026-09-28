@@ -1,10 +1,12 @@
 import type { BatchId, Product } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { createContext, use, useRef, useState, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import { rememberRecentProduct } from "@/hooks/use-recent-products";
 import { storeErrorMessage } from "@/lib/errors";
+import { formatNumber } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory";
 
 const AUTO_BATCH = "auto";
@@ -15,26 +17,24 @@ interface SaleLine {
   batchId: BatchId | typeof AUTO_BATCH;
   quantity: number | null;
   quantityUnit: "unit" | "pack";
-  pricingMode: "price" | "discount";
   salePrice: number | null;
-  discount: number | null;
 }
 
 interface InvoiceCreateState {
   customerName: string;
   lines: SaleLine[];
   bulkDiscount: number | null;
-  pickerKey: number;
 }
 
 interface InvoiceCreateActions {
-  addProduct: (product: Product) => void;
+  addProduct: (product: Product, quantity?: number) => void;
   updateLine: (key: number, changes: Partial<SaleLine>) => void;
   setLineQuantityUnit: (key: number, quantityUnit: SaleLine["quantityUnit"]) => void;
   removeLine: (key: number) => void;
   setCustomerName: (value: string) => void;
   setBulkDiscount: (value: number | null) => void;
   completeSale: () => Promise<void>;
+  focusSearch: () => void;
 }
 
 interface InvoiceCreateMeta {
@@ -42,9 +42,11 @@ interface InvoiceCreateMeta {
   subtotal: number;
   discountTotal: number;
   total: number;
+  unitCount: number;
   validBulkDiscount: boolean;
   canSubmit: boolean;
   isSubmitting: boolean;
+  searchRef: RefObject<HTMLInputElement | null>;
 }
 
 interface InvoiceCreateContextValue {
@@ -75,36 +77,19 @@ const availableStock = (line: SaleLine) => {
 
 const lineError = (line: SaleLine) => {
   const quantity = line.quantity;
-  if (quantity == null || !Number.isInteger(quantity) || quantity < 1)
-    return "Quantity must be 1 or more.";
+  if (quantity == null || !Number.isInteger(quantity) || quantity < 1) return "Enter a quantity";
   const available = availableStock(line);
   if (quantity > available) {
-    const label = line.quantityUnit === "pack" ? "packs" : "units";
-    return available === 0 ? "Out of stock." : `Only ${available} ${label} in stock.`;
+    return available === 0 ? "Out of stock" : `Only ${formatNumber(available)} in stock`;
   }
-  if (line.pricingMode === "price") {
-    if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0)
-      return "Enter a sale price.";
-  } else {
-    if (suggestedPrice(line.product, line.quantityUnit) == null)
-      return `Set a ${line.quantityUnit} price before discounting.`;
-    if (line.discount == null || line.discount < 0 || line.discount > 100)
-      return "Discount must be between 0% and 100%.";
-  }
+  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0)
+    return "Enter a price";
   return null;
 };
 
 const lineSalePrice = (line: SaleLine) => {
-  if (line.pricingMode === "price") {
-    if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0)
-      return null;
-    return Math.round(line.salePrice * 100);
-  }
-
-  const basePrice = suggestedPrice(line.product, line.quantityUnit);
-  if (basePrice == null || line.discount == null || line.discount < 0 || line.discount > 100)
-    return null;
-  return Math.round(basePrice * (1 - line.discount / 100));
+  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0) return null;
+  return Math.round(line.salePrice * 100);
 };
 
 const discountedSalePrice = (line: SaleLine, bulkDiscount: number) => {
@@ -124,38 +109,41 @@ const lineTotal = (line: SaleLine, bulkDiscount = 0) => {
   return line.quantity * price;
 };
 
+const lineUnits = (line: SaleLine) =>
+  (line.quantity ?? 0) * (line.quantityUnit === "pack" ? line.product.unitsPerPack : 1);
+
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
   const [customerName, setCustomerName] = useState("");
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
-  const [pickerKey, setPickerKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const nextKeyRef = useRef(1);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const addProduct = (product: Product) => {
-    setPickerKey((key) => key + 1);
+  const addProduct = (product: Product, quantity = 1) => {
+    const key = nextKeyRef.current++;
+    rememberRecentProduct(product);
     setLines((current) => {
       const existing = current.find(
         (line) => line.product.id === product.id && line.batchId === AUTO_BATCH,
       );
       if (existing) {
         return current.map((line) =>
-          line === existing ? { ...line, quantity: (line.quantity ?? 0) + 1 } : line,
+          line === existing ? { ...line, quantity: (line.quantity ?? 0) + quantity } : line,
         );
       }
       return [
         ...current,
         {
-          key: Date.now() + current.length,
+          key,
           product,
           batchId: AUTO_BATCH,
-          quantity: 1,
+          quantity,
           quantityUnit: "unit",
-          pricingMode: "price",
           salePrice: paisaToRupees(suggestedPrice(product, "unit")),
-          discount: 0,
         },
       ];
     });
@@ -174,10 +162,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           ? {
               ...line,
               quantityUnit,
-              salePrice:
-                line.pricingMode === "price"
-                  ? paisaToRupees(suggestedPrice(line.product, quantityUnit))
-                  : line.salePrice,
+              salePrice: paisaToRupees(suggestedPrice(line.product, quantityUnit)),
             }
           : line,
       ),
@@ -188,8 +173,14 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     setLines((current) => current.filter((line) => line.key !== key));
   };
 
+  const focusSearch = () => {
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  };
+
   const errors = lines.map(lineError);
   const subtotal = lines.reduce((sum, line) => sum + (lineTotal(line) ?? 0), 0);
+  const unitCount = lines.reduce((sum, line) => sum + lineUnits(line), 0);
   const validBulkDiscount = bulkDiscount != null && bulkDiscount >= 0 && bulkDiscount <= 100;
   const total = validBulkDiscount
     ? lines.reduce((sum, line) => sum + (lineTotal(line, bulkDiscount) ?? 0), 0)
@@ -247,7 +238,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   return (
     <InvoiceCreateContext
       value={{
-        state: { customerName, lines, bulkDiscount, pickerKey },
+        state: { customerName, lines, bulkDiscount },
         actions: {
           addProduct,
           updateLine,
@@ -256,15 +247,18 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           setCustomerName,
           setBulkDiscount,
           completeSale,
+          focusSearch,
         },
         meta: {
           errors,
           subtotal,
           discountTotal,
           total,
+          unitCount,
           validBulkDiscount,
           canSubmit,
           isSubmitting,
+          searchRef,
         },
       }}
     >

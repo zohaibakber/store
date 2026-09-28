@@ -1,34 +1,53 @@
-import { PlusSignCircleIcon, SearchIcon } from "@hugeicons/core-free-icons";
+import { ArrowRight01Icon, PlusSignCircleIcon, SearchIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { useCommandMenu } from "@/components/app/command-menu";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Kbd } from "@/components/ui/kbd";
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuBadge,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 import { appHost } from "@/host";
 
-type AppRoute = "/" | "/restock" | "/products" | "/invoices";
+type AppRoute = "/" | "/restock" | "/products" | "/products/categories" | "/invoices";
+
+export type NavSubItem = {
+  title: string;
+  url: AppRoute;
+  icon: React.ReactNode;
+};
 
 export type NavMainItem = {
   title: string;
   url: AppRoute;
   icon: React.ReactNode;
   badge?: React.ReactNode;
+  items?: ReadonlyArray<NavSubItem>;
 };
+
+const isWithin = (pathname: string, url: string) =>
+  url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(`${url}/`);
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const { open: openCommandMenu } = useCommandMenu();
   const newSaleShortcut = appHost().newSaleShortcut;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isActive = (item: NavMainItem) =>
+    isWithin(pathname, item.url) && !(item.items ?? []).some((sub) => isWithin(pathname, sub.url));
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -67,26 +86,75 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               <Kbd>Ctrl+K</Kbd>
             </SidebarMenuBadge>
           </SidebarMenuItem>
-          {items.map((item) => (
-            <SidebarMenuItem key={item.title}>
+          {items.map((item) => {
+            const button = (
               <SidebarMenuButton
+                isActive={isActive(item)}
                 tooltip={item.title}
-                render={
-                  <Link
-                    activeProps={{ "data-active": true }}
-                    to={item.url}
-                    onClick={closeMobileSidebar}
-                  />
-                }
+                render={<Link to={item.url} onClick={closeMobileSidebar} />}
               >
                 {item.icon}
                 <span>{item.title}</span>
               </SidebarMenuButton>
-              {item.badge}
-            </SidebarMenuItem>
-          ))}
+            );
+            if (!item.items || item.items.length === 0) {
+              return (
+                <SidebarMenuItem key={item.title}>
+                  {button}
+                  {item.badge}
+                </SidebarMenuItem>
+              );
+            }
+            return (
+              <NavCollapsible
+                key={item.title}
+                forceOpen={item.items.some((sub) => isWithin(pathname, sub.url))}
+              >
+                {button}
+                <CollapsibleTrigger
+                  render={<SidebarMenuAction aria-label={`Toggle ${item.title} submenu`} />}
+                >
+                  <HugeiconsIcon
+                    aria-hidden="true"
+                    className="transition-transform in-data-panel-open:rotate-90"
+                    icon={ArrowRight01Icon}
+                  />
+                </CollapsibleTrigger>
+                <CollapsiblePanel>
+                  <SidebarMenuSub>
+                    {item.items.map((sub) => (
+                      <SidebarMenuSubItem key={sub.url}>
+                        <SidebarMenuSubButton
+                          isActive={isWithin(pathname, sub.url)}
+                          render={<Link to={sub.url} onClick={closeMobileSidebar} />}
+                        >
+                          {sub.icon}
+                          <span>{sub.title}</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
+                  </SidebarMenuSub>
+                </CollapsiblePanel>
+              </NavCollapsible>
+            );
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
+  );
+}
+
+function NavCollapsible({
+  children,
+  forceOpen,
+}: {
+  readonly children: React.ReactNode;
+  readonly forceOpen: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <Collapsible onOpenChange={setOpen} open={open || forceOpen} render={<SidebarMenuItem />}>
+      {children}
+    </Collapsible>
   );
 }

@@ -1,5 +1,6 @@
 import {
-  DeliveryTruck01Icon,
+  PackageIcon,
+  Folder01Icon,
   HomeIcon,
   Invoice01Icon,
   SettingsIcon,
@@ -13,6 +14,7 @@ import type * as React from "react";
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
+import { NavUser } from "@/components/app/nav-user";
 import { WorkspaceLogo } from "@/components/app/workspace-logo";
 import {
   Sidebar,
@@ -26,6 +28,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
+import { SidebarSyncStatus } from "@/lib/inventory/sync-status";
 
 function RestockCountReady() {
   const { out, critical, low } = useInventoryInsights().report.counts;
@@ -58,13 +61,20 @@ const navMain = [
   {
     title: "Restock",
     url: "/restock",
-    icon: <HugeiconsIcon icon={DeliveryTruck01Icon} />,
+    icon: <HugeiconsIcon icon={PackageIcon} />,
     badge: <RestockCount />,
   },
   {
     title: "Products",
     url: "/products",
     icon: <HugeiconsIcon icon={TagIcon} />,
+    items: [
+      {
+        title: "Categories",
+        url: "/products/categories",
+        icon: <HugeiconsIcon icon={Folder01Icon} />,
+      },
+    ],
   },
   {
     title: "Invoices",
@@ -96,7 +106,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <span>Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarSyncStatus />
         </SidebarMenu>
+        <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

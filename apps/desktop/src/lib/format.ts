@@ -40,3 +40,16 @@ const utcDay = new Intl.DateTimeFormat(undefined, {
 });
 
 export const formatUtcDay = (day: string) => utcDay.format(new Date(`${day}T00:00:00Z`));
+
+export const EMPTY = "—";
+
+const pluralRules = new Intl.PluralRules("en");
+const countFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+export const formatNumber = (value: number) => countFormat.format(value);
+
+export const pluralize = (count: number, singular: string, plural = `${singular}s`) =>
+  pluralRules.select(count) === "one" ? singular : plural;
+
+export const formatCount = (count: number, singular: string, plural?: string) =>
+  `${formatNumber(count)} ${pluralize(count, singular, plural)}`;

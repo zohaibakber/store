@@ -1,4 +1,4 @@
-import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, ArrowRight02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCanGoBack, useRouter, useRouterState } from "@tanstack/react-router";
 
@@ -22,7 +22,7 @@ export function NavHistory({ className }: { className?: string }) {
         type="button"
         variant="ghost"
       >
-        <HugeiconsIcon icon={ArrowLeft01Icon} />
+        <HugeiconsIcon icon={ArrowLeft02Icon} />
       </Button>
       <Button
         aria-label="Go forward"
@@ -32,7 +32,7 @@ export function NavHistory({ className }: { className?: string }) {
         type="button"
         variant="ghost"
       >
-        <HugeiconsIcon icon={ArrowRight01Icon} />
+        <HugeiconsIcon icon={ArrowRight02Icon} />
       </Button>
     </div>
   );

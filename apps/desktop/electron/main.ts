@@ -104,9 +104,21 @@ if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
 }
 
 const TITLE_BAR_HEIGHT = 40;
-const TITLE_BAR_COLOR = "#01000000";
+const WINDOW_LIGHT_BACKGROUND = "#ffffff";
+const WINDOW_DARK_BACKGROUND = "#161616";
 const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
+
+const windowBackground = () =>
+  nativeTheme.shouldUseDarkColors ? WINDOW_DARK_BACKGROUND : WINDOW_LIGHT_BACKGROUND;
+
+const titleBarOverlay = () => ({
+  color: windowBackground(),
+  height: TITLE_BAR_HEIGHT,
+  symbolColor: nativeTheme.shouldUseDarkColors
+    ? TITLE_BAR_DARK_SYMBOL_COLOR
+    : TITLE_BAR_LIGHT_SYMBOL_COLOR,
+});
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
@@ -261,7 +273,7 @@ function createWindow() {
     icon: appIconPath(),
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161616" : "#ffffff",
+    backgroundColor: windowBackground(),
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -269,13 +281,7 @@ function createWindow() {
         }
       : {
           titleBarStyle: "hidden" as const,
-          titleBarOverlay: {
-            color: TITLE_BAR_COLOR,
-            height: TITLE_BAR_HEIGHT,
-            symbolColor: nativeTheme.shouldUseDarkColors
-              ? TITLE_BAR_DARK_SYMBOL_COLOR
-              : TITLE_BAR_LIGHT_SYMBOL_COLOR,
-          },
+          titleBarOverlay: titleBarOverlay(),
         }),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -313,16 +319,8 @@ function createWindow() {
 nativeTheme.on("updated", () => {
   if (!win || win.isDestroyed()) return;
 
-  win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#f5f5f4");
-  if (process.platform !== "darwin") {
-    win.setTitleBarOverlay({
-      color: TITLE_BAR_COLOR,
-      height: TITLE_BAR_HEIGHT,
-      symbolColor: nativeTheme.shouldUseDarkColors
-        ? TITLE_BAR_DARK_SYMBOL_COLOR
-        : TITLE_BAR_LIGHT_SYMBOL_COLOR,
-    });
-  }
+  win.setBackgroundColor(windowBackground());
+  if (process.platform !== "darwin") win.setTitleBarOverlay(titleBarOverlay());
 });
 
 ipcMain.on("theme:set-source", (event, input) => {

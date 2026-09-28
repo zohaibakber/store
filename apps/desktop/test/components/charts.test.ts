@@ -2,7 +2,6 @@ import { createChartScene } from "@tanstack/charts";
 import { describe, expect, it } from "vitest";
 
 import { createRevenueTrendChart, createWeekdayChart } from "@/components/insights/charts";
-import { createStockMovementsChart } from "@/components/products/batches";
 
 const sceneSize = { width: 640, height: 224 };
 
@@ -34,17 +33,5 @@ describe("createWeekdayChart", () => {
     }));
     const scene = createChartScene(createWeekdayChart(rows), sceneSize);
     expect(scene.points.filter((point) => point.markId === "weekday")).toHaveLength(7);
-  });
-});
-
-describe("createStockMovementsChart", () => {
-  it("keeps signed bars for stock in and stock out", () => {
-    const rows = [
-      { date: "2026-08-01", net: 10 },
-      { date: "2026-08-02", net: -4 },
-    ];
-    const scene = createChartScene(createStockMovementsChart(rows), sceneSize);
-    expect(scene.points).toHaveLength(2);
-    expect(scene.points.map((point) => point.datum.net)).toEqual([10, -4]);
   });
 });

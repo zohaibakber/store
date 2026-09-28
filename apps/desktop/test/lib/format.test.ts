@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseExpiryDate } from "@/lib/format";
+import { formatCount, parseExpiryDate, pluralize } from "@/lib/format";
 
 const dayMonthYear = (timestamp: number | null) => {
   if (timestamp == null) return null;
@@ -42,5 +42,25 @@ describe("parseExpiryDate", () => {
 
   it("tolerates surrounding whitespace", () => {
     expect(dayMonthYear(parseExpiryDate("  31-12-2027  "))).toEqual([31, 12, 2027]);
+  });
+});
+
+describe("pluralize", () => {
+  it("uses the singular only for one", () => {
+    expect(pluralize(1, "unit")).toBe("unit");
+    expect(pluralize(0, "unit")).toBe("units");
+    expect(pluralize(2, "unit")).toBe("units");
+  });
+
+  it("accepts an irregular plural", () => {
+    expect(pluralize(3, "batch", "batches")).toBe("batches");
+  });
+});
+
+describe("formatCount", () => {
+  it("groups digits and pluralizes the noun", () => {
+    expect(formatCount(1, "unit")).toBe("1 unit");
+    expect(formatCount(1765, "unit")).toBe(`${(1765).toLocaleString()} units`);
+    expect(formatCount(2, "entry", "entries")).toBe("2 entries");
   });
 });

@@ -2,8 +2,9 @@ import { formatPrice } from "@store/services/format";
 import type { InsightsReport, SalesPeriod } from "@store/services/insights";
 
 import { Badge } from "@/components/ui/badge";
+import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 
-import { changeTone, formatChange, formatCount, formatShare } from "./presentation";
+import { changeTone, formatChange, formatShare } from "./presentation";
 
 const SPARK_WIDTH = 120;
 const SPARK_HEIGHT = 28;
@@ -27,7 +28,7 @@ function Sparkline({
   return (
     <svg
       aria-label={label}
-      className="h-7 w-full text-primary"
+      className="h-6 w-full text-chart-1"
       preserveAspectRatio="none"
       role="img"
       viewBox={`0 -1 ${SPARK_WIDTH} ${SPARK_HEIGHT + 2}`}
@@ -49,7 +50,7 @@ function Delta({ value }: { readonly value: number | null }) {
   if (label === null) return null;
   const tone = changeTone(value);
   return (
-    <Badge size="sm" variant={tone === "secondary" ? "secondary" : tone}>
+    <Badge variant={tone === "secondary" ? "secondary" : tone}>
       <span className="tabular-nums">{label}</span>
     </Badge>
   );
@@ -69,7 +70,7 @@ function Kpi({
   readonly children?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 bg-card p-4">
+    <div className="flex min-w-0 flex-col gap-1 bg-card px-4 py-3">
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm text-muted-foreground">{label}</span>
         {change === undefined ? null : <Delta value={change} />}
@@ -112,10 +113,12 @@ export function KpiGrid({
               : "Revenue minus purchase cost"
         }
         label="Gross profit"
-        value={period.grossProfit === null ? "—" : formatPrice(period.grossProfit)}
+        value={period.grossProfit === null ? EMPTY : formatPrice(period.grossProfit)}
       >
         {period.margin === null ? null : (
-          <span className="text-xs tabular-nums">{formatShare(period.margin)} margin</span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {formatShare(period.margin)} margin
+          </span>
         )}
       </Kpi>
       <Kpi
@@ -126,10 +129,10 @@ export function KpiGrid({
             : `${formatPrice(period.averageBasket)} average sale`
         }
         label="Sales"
-        value={formatCount(period.invoices)}
+        value={formatNumber(period.invoices)}
       >
         <span className="text-xs text-muted-foreground tabular-nums">
-          {formatCount(report.sales.today.invoices)} today ·{" "}
+          {formatCount(report.sales.today.invoices, "sale")} today ·{" "}
           {formatPrice(report.sales.today.revenue)}
         </span>
       </Kpi>

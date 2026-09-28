@@ -26,7 +26,7 @@ function UploadDropzone() {
       />
       <button
         className={cn(
-          "flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-muted/40 p-6 text-center transition-colors",
+          "flex min-h-28 flex-col items-center justify-center gap-1 rounded-xl border border-dashed bg-muted/40 p-4 text-center transition-colors",
           "hover:border-ring hover:bg-muted/72 disabled:pointer-events-none disabled:opacity-64",
           isDragging && "border-ring bg-muted/72",
         )}

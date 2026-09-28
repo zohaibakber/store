@@ -45,7 +45,7 @@ function OrganizationPanel({ userId }: { userId: string }) {
   const editable = manages(organization.role);
 
   return (
-    <div className="flex flex-col gap-6 transition-opacity duration-200 starting:opacity-0">
+    <div className="flex flex-col gap-4 transition-opacity duration-200 starting:opacity-0">
       <OrganizationProfileCard editable={editable} organization={organization} />
       {editable ? (
         <OrganizationInvitationsCard invitations={invitations} organization={organization} />
@@ -67,7 +67,7 @@ export function OrganizationSettings() {
   if (!snapshot) {
     return (
       <FrameCard title="Organization">
-        <p className="truncate font-medium">Local workspace</p>
+        <p className="truncate text-sm font-medium">Local workspace</p>
         <p className="text-sm text-muted-foreground">
           Sign in on the Account tab to sync this device with a store.
         </p>

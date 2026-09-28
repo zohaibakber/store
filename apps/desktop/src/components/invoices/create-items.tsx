@@ -1,49 +1,77 @@
-import { ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { InvoiceCreateLine } from "@/components/invoices/create-line";
 import { InvoiceProductPicker } from "@/components/invoices/product-picker";
+import { FrameCard } from "@/components/shared/frame-card";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-
-function EmptyInvoiceItems() {
-  return (
-    <Empty>
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />
-        </EmptyMedia>
-        <EmptyTitle>Nothing added yet</EmptyTitle>
-        <EmptyDescription>Search above to add items to this sale.</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatCount } from "@/lib/format";
 
 function InvoiceItems() {
   const {
     state: { lines },
-    meta: { errors },
+    meta: { errors, unitCount },
   } = useInvoiceCreate();
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <InvoiceProductPicker />
-      {lines.length === 0 ? (
-        <EmptyInvoiceItems />
-      ) : (
-        <div className="flex flex-col gap-2">
-          {lines.map((line, index) => (
-            <InvoiceCreateLine error={errors[index]} key={line.key} line={line} />
-          ))}
-        </div>
-      )}
+      <FrameCard
+        description={
+          lines.length > 0
+            ? `${formatCount(lines.length, "line")} · ${formatCount(unitCount, "unit")}`
+            : undefined
+        }
+        flush
+        title="Items"
+      >
+        <Table className="table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8 w-8">
+                <span className="block text-end">#</span>
+              </TableHead>
+              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8 w-32">Batch</TableHead>
+              <TableHead className="h-8 w-36">Qty</TableHead>
+              <TableHead className="h-8 w-36">
+                <span className="block text-end">Price</span>
+              </TableHead>
+              <TableHead className="h-8 w-28">
+                <span className="block text-end">Total</span>
+              </TableHead>
+              <TableHead className="h-8 w-10">
+                <span className="sr-only">Remove</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lines.length === 0 ? (
+              <TableRow>
+                <TableCell className="h-16" colSpan={7}>
+                  <p className="text-center whitespace-normal text-muted-foreground">
+                    No items yet. Search above and press Enter to add.
+                  </p>
+                </TableCell>
+              </TableRow>
+            ) : (
+              lines.map((line, index) => (
+                <InvoiceCreateLine
+                  error={errors[index] ?? null}
+                  index={index}
+                  key={line.key}
+                  line={line}
+                />
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </FrameCard>
     </div>
   );
 }

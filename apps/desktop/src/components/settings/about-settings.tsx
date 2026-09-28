@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import { canCheckForAppUpdate, useCheckForAppUpdate } from "@/hooks/use-app-updater";
+import { cn } from "@/lib/utils";
 
 export function AboutSettings() {
   const [supportsUpdates] = useState(canCheckForAppUpdate);
@@ -12,26 +13,31 @@ export function AboutSettings() {
 
   return (
     <FrameCard title="About Tabaaq">
-      <div className="flex flex-col gap-4">
-        <dl className="flex items-center justify-between gap-4">
+      <dl className="flex flex-col divide-y text-sm">
+        <div
+          className={cn(
+            "flex min-h-8 items-center justify-between gap-4",
+            supportsUpdates && "pb-3",
+          )}
+        >
           <dt className="text-muted-foreground">Version</dt>
-          <dd className="font-mono tabular-nums">v{__APP_VERSION__}</dd>
-        </dl>
+          <dd className="tabular-nums">v{__APP_VERSION__}</dd>
+        </div>
         {supportsUpdates ? (
-          <div className="flex items-center justify-between gap-4 border-t pt-4">
+          <div className="flex items-center justify-between gap-4 pt-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Updates</p>
-              <p className="text-sm text-muted-foreground">
+              <dt>Updates</dt>
+              <dd className="text-xs text-muted-foreground">
                 Asks GitHub if a newer desktop build is out.
-              </p>
+              </dd>
             </div>
-            <Button className="shrink-0" onClick={checkForAppUpdate} variant="outline">
+            <Button className="shrink-0" onClick={checkForAppUpdate} size="sm" variant="outline">
               <HugeiconsIcon aria-hidden="true" icon={ReloadIcon} />
               Check for updates
             </Button>
           </div>
         ) : null}
-      </div>
+      </dl>
     </FrameCard>
   );
 }

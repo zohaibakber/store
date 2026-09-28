@@ -22,21 +22,24 @@ import {
   DataTableColumnHeader,
   DataTableFilterMenu,
   DataTableFilterOption,
+  type DataTableColumnMeta,
 } from "@/components/shared/data-table";
-import { formatDate } from "@/lib/format";
+import { EMPTY, formatDate, formatNumber } from "@/lib/format";
 import type { ProductFacets, ProductSortColumn } from "@/lib/inventory";
+
+import { ProductStatusCell, ProductStockCell } from "./insight-cells";
 
 const features = tableFeatures({
   columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
   rowSortingFeature,
-  columnMeta: metaHelper<{ label?: string }>(),
+  columnMeta: metaHelper<DataTableColumnMeta>(),
 });
 
 export type ProductListRow = ProductRow & { readonly categoryName: string };
 
-export const PRODUCT_PAGE_SIZES = [10, 20, 30, 50] as const;
+export const PRODUCT_PAGE_SIZES = [25, 50, 100] as const;
 export type ProductPageSize = (typeof PRODUCT_PAGE_SIZES)[number];
 
 export type ProductListView = {
@@ -55,19 +58,30 @@ export const DEFAULT_PRODUCT_LIST_VIEW: ProductListView = {
   sort: "name",
   desc: false,
   page: 0,
-  size: 10,
+  size: 50,
 };
 
 type CategoryOption = { readonly id: string; readonly name: string };
 
 const columnHelper = createColumnHelper<typeof features, ProductListRow>();
 
+const priceCell = ({ getValue }: { getValue: () => number | null }) => {
+  const value = getValue();
+  return value === null ? (
+    <span className="text-muted-foreground">{EMPTY}</span>
+  ) : (
+    formatPrice(value)
+  );
+};
+
+const textCell = (value: string) => value || <span className="text-muted-foreground">{EMPTY}</span>;
+
 const columns = columnHelper.columns([
   columnHelper.accessor("name", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-medium capitalize hover:underline"
+        className="font-medium hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ productId: row.original.id }}
         to="/products/$productId"
@@ -84,58 +98,62 @@ const columns = columnHelper.columns([
     enableSorting: false,
     meta: { label: "Category" },
   }),
+  columnHelper.display({
+    id: "stock",
+    header: "Stock",
+    cell: ({ row }) => <ProductStockCell productId={row.original.id} />,
+    meta: { label: "Stock", align: "end" },
+  }),
+  columnHelper.display({
+    id: "status",
+    header: "Status",
+    cell: ({ row }) => <ProductStatusCell productId={row.original.id} />,
+    meta: { label: "Status" },
+  }),
+  columnHelper.accessor("unitPrice", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Unit price" />,
+    cell: priceCell,
+    meta: { label: "Unit price", align: "end" },
+  }),
+  columnHelper.accessor("retailPrice", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Retail price" />,
+    cell: priceCell,
+    meta: { label: "Retail price", align: "end" },
+  }),
+  columnHelper.accessor("purchasePrice", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Purchase price" />,
+    cell: priceCell,
+    meta: { label: "Purchase price", align: "end" },
+  }),
   columnHelper.accessor((product) => product.aisle ?? "", {
     id: "aisle",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Aisle" />,
-    cell: ({ getValue }) => getValue() || "—",
+    cell: ({ getValue }) => textCell(getValue()),
     meta: { label: "Aisle" },
   }),
   columnHelper.accessor((product) => product.composition ?? "", {
     id: "composition",
     header: "Composition",
-    cell: ({ getValue }) => <span>{getValue() || "—"}</span>,
+    cell: ({ getValue }) => textCell(getValue()),
     enableSorting: false,
     meta: { label: "Composition" },
   }),
   columnHelper.accessor((product) => product.strength ?? "", {
     id: "strength",
     header: "Strength",
-    cell: ({ getValue }) => getValue() || "—",
+    cell: ({ getValue }) => textCell(getValue()),
     enableSorting: false,
     meta: { label: "Strength" },
   }),
   columnHelper.accessor("unitsPerPack", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Units / pack" />,
-    cell: ({ getValue }) => <span className="font-mono tabular-nums">{getValue()}</span>,
-    meta: { label: "Units / pack" },
-  }),
-  columnHelper.accessor("purchasePrice", {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Purchase price" />,
-    cell: ({ getValue }) => (
-      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
-    ),
-    meta: { label: "Purchase price" },
-  }),
-  columnHelper.accessor("retailPrice", {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Retail price" />,
-    cell: ({ getValue }) => (
-      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
-    ),
-    meta: { label: "Retail price" },
-  }),
-  columnHelper.accessor("unitPrice", {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Unit price" />,
-    cell: ({ getValue }) => (
-      <span className="font-mono tabular-nums">{formatPrice(getValue())}</span>
-    ),
-    meta: { label: "Unit price" },
+    cell: ({ getValue }) => formatNumber(getValue()),
+    meta: { label: "Units / pack", align: "end" },
   }),
   columnHelper.accessor("updatedAt", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
-    cell: ({ getValue }) => (
-      <span className="font-mono text-muted-foreground tabular-nums">{formatDate(getValue())}</span>
-    ),
-    meta: { label: "Updated" },
+    cell: ({ getValue }) => <span className="text-muted-foreground">{formatDate(getValue())}</span>,
+    meta: { label: "Updated", align: "end" },
   }),
 ]);
 const SORTABLE: ReadonlySet<string> = new Set<ProductSortColumn>([
@@ -236,7 +254,7 @@ export function useProductsTable(input: {
     onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
       onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters), categories)),
     initialState: {
-      columnVisibility: { unitsPerPack: false, updatedAt: false },
+      columnVisibility: { purchasePrice: false, unitsPerPack: false, updatedAt: false },
     },
   });
 }

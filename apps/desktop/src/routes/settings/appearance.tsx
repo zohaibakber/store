@@ -11,7 +11,15 @@ export const Route = createFileRoute("/settings/appearance")({
 function AppearanceRoute() {
   return (
     <FrameCard title="Appearance">
-      <ThemePicker />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Theme</p>
+          <p className="text-xs text-muted-foreground">
+            System follows this device’s light or dark setting.
+          </p>
+        </div>
+        <ThemePicker />
+      </div>
     </FrameCard>
   );
 }

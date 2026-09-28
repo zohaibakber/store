@@ -1,6 +1,5 @@
 import type { Product } from "@store/contracts";
 
-import { FrameCard } from "@/components/shared/frame-card";
 import {
   Select,
   SelectContent,
@@ -14,11 +13,11 @@ import { toastStoreError } from "@/lib/errors";
 import { useInventoryActions } from "@/lib/inventory";
 
 const visibilityOptions = [
-  { value: "visible", label: "Visible" },
-  { value: "hidden", label: "Hidden" },
+  { value: "visible", label: "Visible to customers" },
+  { value: "hidden", label: "Hidden from customers" },
 ] as const;
 
-export function ProductVisibilityCard({ product }: { product: Product }) {
+export function ProductVisibilitySelect({ product }: { product: Product }) {
   const { updateProduct } = useInventoryActions();
 
   const setVisible = async (next: boolean) => {
@@ -47,25 +46,23 @@ export function ProductVisibilityCard({ product }: { product: Product }) {
   };
 
   return (
-    <FrameCard title="Visibility">
-      <Select
-        items={visibilityOptions}
-        onValueChange={(value) => value && void setVisible(value === "visible")}
-        value={product.visible ? "visible" : "hidden"}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {visibilityOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </FrameCard>
+    <Select
+      items={visibilityOptions}
+      onValueChange={(value) => value && void setVisible(value === "visible")}
+      value={product.visible ? "visible" : "hidden"}
+    >
+      <SelectTrigger aria-label="Visibility" className="w-auto min-w-0" size="sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {visibilityOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }

@@ -20,6 +20,7 @@ import { Route as InvoicesInvoiceIdRouteImport } from './routes/invoices/$invoic
 import { Route as InvoicesNewRouteImport } from './routes/invoices/new'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as ProductsProductIdRouteImport } from './routes/products/$productId'
+import { Route as ProductsCategoriesRouteImport } from './routes/products/categories'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsUploadRouteImport } from './routes/products/upload'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
@@ -85,6 +86,11 @@ const ProductsProductIdRoute = ProductsProductIdRouteImport.update({
   path: '/$productId',
   getParentRoute: () => ProductsRoute,
 } as any)
+const ProductsCategoriesRoute = ProductsCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => ProductsRoute,
+} as any)
 const ProductsNewRoute = ProductsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/invoices/$invoiceId': typeof InvoicesInvoiceIdRoute
   '/invoices/new': typeof InvoicesNewRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
+    | '/products/categories'
     | '/products/new'
     | '/products/upload'
     | '/settings/about'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
+    | '/products/categories'
     | '/products/new'
     | '/products/upload'
     | '/settings/about'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
+    | '/products/categories'
     | '/products/new'
     | '/products/upload'
     | '/settings/about'
@@ -349,6 +361,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsProductIdRouteImport
       parentRoute: typeof ProductsRoute
     }
+    '/products/categories': {
+      id: '/products/categories'
+      path: '/categories'
+      fullPath: '/products/categories'
+      preLoaderRoute: typeof ProductsCategoriesRouteImport
+      parentRoute: typeof ProductsRoute
+    }
     '/products/new': {
       id: '/products/new'
       path: '/new'
@@ -433,6 +452,7 @@ const InvoicesRouteWithChildren = InvoicesRoute._addFileChildren(
 
 interface ProductsRouteChildren {
   ProductsProductIdRoute: typeof ProductsProductIdRoute
+  ProductsCategoriesRoute: typeof ProductsCategoriesRoute
   ProductsNewRoute: typeof ProductsNewRoute
   ProductsUploadRoute: typeof ProductsUploadRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
@@ -441,6 +461,7 @@ interface ProductsRouteChildren {
 
 const ProductsRouteChildren: ProductsRouteChildren = {
   ProductsProductIdRoute: ProductsProductIdRoute,
+  ProductsCategoriesRoute: ProductsCategoriesRoute,
   ProductsNewRoute: ProductsNewRoute,
   ProductsUploadRoute: ProductsUploadRoute,
   ProductsIndexRoute: ProductsIndexRoute,

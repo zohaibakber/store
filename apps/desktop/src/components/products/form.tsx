@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
@@ -231,6 +232,7 @@ function PriceInput({
         format={{ maximumFractionDigits: fractionDigits }}
         id={control.id}
         inputProps={{
+          className: "text-start",
           "aria-invalid": control["aria-invalid"],
           name: control.name,
           onBlur: field.handleBlur,
@@ -247,6 +249,8 @@ function PriceInput({
   );
 }
 
+type ProductFormApi = ReturnType<typeof useProductCreateForm>;
+
 function ProductForm({
   categories,
   form,
@@ -254,219 +258,223 @@ function ProductForm({
   suggestions,
 }: {
   categories: ReadonlyArray<Category>;
-  form: ReturnType<typeof useProductCreateForm>;
+  form: ProductFormApi;
   formId: string;
   suggestions: ProductSuggestions;
 }) {
   return (
     <form
       id={formId}
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         void form.handleSubmit();
       }}
     >
-      <Fieldset className="flex w-full flex-col">
-        <form.Field
-          name="name"
-          children={(field) => (
-            <FormField field={field} label="Product name">
-              {(control, invalid) => (
-                <SuggestField
-                  autoFocus
-                  emptyMessage="No matching product."
-                  id={control.id}
-                  invalid={invalid}
-                  name={control.name}
-                  onBlur={field.handleBlur}
-                  onChange={(name) => field.handleChange(name)}
-                  placeholder="e.g. Panadol 500mg"
-                  suggestions={suggestions.names}
-                  value={field.state.value}
-                />
-              )}
-            </FormField>
-          )}
-        />
-
-        <Fieldset className="grid sm:grid-cols-2">
-          <form.Field
-            name="categoryId"
-            children={(field) => (
-              <FormField field={field} label="Category">
-                {(control, invalid) => (
-                  <CategoryField
-                    id={control.id}
-                    invalid={invalid}
-                    name={control.name}
-                    onChange={(categoryId) => field.handleChange(categoryId)}
-                    seed={categories}
-                    value={field.state.value}
-                  />
-                )}
-              </FormField>
-            )}
-          />
-          <form.Field
-            name="aisle"
-            children={(field) => (
-              <FormField field={field} label="Aisle">
-                {(control, invalid) => (
-                  <SuggestField
-                    emptyMessage="No matching aisle."
-                    id={control.id}
-                    invalid={invalid}
-                    name={control.name}
-                    onBlur={field.handleBlur}
-                    onChange={(aisle) => field.handleChange(aisle)}
-                    placeholder="e.g. A3"
-                    suggestions={suggestions.aisles}
-                    value={field.state.value}
-                  />
-                )}
-              </FormField>
-            )}
-          />
-        </Fieldset>
-
-        <Fieldset className="grid sm:grid-cols-2">
-          <form.Field
-            name="composition"
-            children={(field) => (
-              <FormField field={field} label="Composition">
-                {(control, invalid) => (
-                  <SuggestField
-                    emptyMessage="No matching composition."
-                    id={control.id}
-                    invalid={invalid}
-                    name={control.name}
-                    onBlur={field.handleBlur}
-                    onChange={(composition) => field.handleChange(composition)}
-                    placeholder="e.g. Paracetamol"
-                    suggestions={suggestions.compositions}
-                    value={field.state.value}
-                  />
-                )}
-              </FormField>
-            )}
-          />
-          <form.Field
-            name="strength"
-            children={(field) => (
-              <FormField field={field} label="Strength">
-                {(control) => (
-                  <ControlGroup>
-                    <ControlGroupNumberInput
-                      format={{ maximumFractionDigits: 2 }}
+      <Fieldset className="w-full">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-6">
+          <div className="sm:col-span-6">
+            <form.Field
+              name="name"
+              children={(field) => (
+                <FormField field={field} label="Name">
+                  {(control, invalid) => (
+                    <SuggestField
+                      autoFocus
+                      emptyMessage="No matching product."
                       id={control.id}
-                      inputProps={{
-                        "aria-invalid": control["aria-invalid"],
-                        "aria-label": "Strength value",
-                        name: control.name,
-                        onBlur: field.handleBlur,
-                        placeholder: "e.g. 500",
-                      }}
-                      min={0}
-                      onValueChange={(value) =>
-                        field.handleChange(value === null ? "" : String(value))
-                      }
-                      value={numberFieldValue(field.state.value)}
+                      invalid={invalid}
+                      name={control.name}
+                      onBlur={field.handleBlur}
+                      onChange={(name) => field.handleChange(name)}
+                      placeholder="e.g. Panadol"
+                      suggestions={suggestions.names}
+                      value={field.state.value}
                     />
-                    <ControlGroupAddon>
-                      <form.Field
-                        name="strengthUnit"
-                        children={(unitField) => (
-                          <Select
-                            items={strengthUnitItems}
-                            name={unitField.name}
-                            onValueChange={(value) => value && unitField.handleChange(value)}
-                            value={unitField.state.value}
-                          >
-                            <SelectTrigger aria-label="Strength unit" size="sm">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                {strengthUnitItems.map((item) => (
-                                  <SelectItem key={item.value} value={item.value}>
-                                    {item.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                    </ControlGroupAddon>
-                  </ControlGroup>
-                )}
-              </FormField>
-            )}
-          />
-        </Fieldset>
-
-        <form.Subscribe selector={(state) => state.values.categoryId}>
-          {(categoryId) =>
-            categoryTracksPacks(categories, categoryId) ? (
-              <PackPricingFields form={form} />
-            ) : (
-              <UnitPricingFields form={form} />
-            )
-          }
-        </form.Subscribe>
+                  )}
+                </FormField>
+              )}
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <form.Field
+              name="categoryId"
+              children={(field) => (
+                <FormField field={field} label="Category">
+                  {(control, invalid) => (
+                    <CategoryField
+                      id={control.id}
+                      invalid={invalid}
+                      name={control.name}
+                      onChange={(categoryId) => field.handleChange(categoryId)}
+                      seed={categories}
+                      value={field.state.value}
+                    />
+                  )}
+                </FormField>
+              )}
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <form.Field
+              name="composition"
+              children={(field) => (
+                <FormField field={field} label="Composition">
+                  {(control, invalid) => (
+                    <SuggestField
+                      emptyMessage="No matching composition."
+                      id={control.id}
+                      invalid={invalid}
+                      name={control.name}
+                      onBlur={field.handleBlur}
+                      onChange={(composition) => field.handleChange(composition)}
+                      placeholder="e.g. Paracetamol"
+                      suggestions={suggestions.compositions}
+                      value={field.state.value}
+                    />
+                  )}
+                </FormField>
+              )}
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <StrengthField form={form} />
+          </div>
+          <form.Subscribe selector={(state) => state.values.categoryId}>
+            {(categoryId) =>
+              categoryTracksPacks(categories, categoryId) ? (
+                <>
+                  <div className="sm:col-span-3">
+                    <UnitsPerPackField form={form} />
+                  </div>
+                  <Separator className="sm:col-span-6" />
+                  <div className="sm:col-span-2">
+                    <PurchasePriceField description="Cost of one pack" form={form} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <PackRetailField form={form} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <UnitPriceField
+                      description="Retail ÷ units per pack"
+                      form={form}
+                      label="Unit price"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Separator className="sm:col-span-6" />
+                  <div className="sm:col-span-3">
+                    <PurchasePriceField form={form} />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <UnitPriceField form={form} label="Retail price" />
+                  </div>
+                </>
+              )
+            }
+          </form.Subscribe>
+          <div className="sm:col-span-3">
+            <form.Field
+              name="aisle"
+              children={(field) => (
+                <FormField field={field} label="Aisle">
+                  {(control, invalid) => (
+                    <SuggestField
+                      emptyMessage="No matching aisle."
+                      id={control.id}
+                      invalid={invalid}
+                      name={control.name}
+                      onBlur={field.handleBlur}
+                      onChange={(aisle) => field.handleChange(aisle)}
+                      placeholder="e.g. A3"
+                      suggestions={suggestions.aisles}
+                      value={field.state.value}
+                    />
+                  )}
+                </FormField>
+              )}
+            />
+          </div>
+        </div>
       </Fieldset>
     </form>
   );
 }
 
-function PurchasePriceField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+function StrengthField({ form }: { form: ProductFormApi }) {
   return (
-    <Fieldset className="flex flex-col">
-      <p className="text-sm font-medium">Purchase price</p>
-      <form.Field
-        name="purchasePrice"
-        children={(field) => (
-          <FormField
-            description="Cost of one pack. Leave blank if you do not track cost."
-            field={field}
-            label="Purchase price"
-          >
-            {(control) => (
-              <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
-            )}
-          </FormField>
-        )}
-      />
-    </Fieldset>
+    <form.Field
+      name="strength"
+      children={(field) => (
+        <FormField field={field} label="Strength">
+          {(control) => (
+            <ControlGroup>
+              <ControlGroupNumberInput
+                format={{ maximumFractionDigits: 2 }}
+                id={control.id}
+                inputProps={{
+                  className: "text-start",
+                  "aria-invalid": control["aria-invalid"],
+                  name: control.name,
+                  onBlur: field.handleBlur,
+                  placeholder: "e.g. 500",
+                }}
+                min={0}
+                onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
+                value={numberFieldValue(field.state.value)}
+              />
+              <ControlGroupAddon>
+                <form.Field
+                  name="strengthUnit"
+                  children={(unitField) => (
+                    <Select
+                      items={strengthUnitItems}
+                      name={unitField.name}
+                      onValueChange={(value) => value && unitField.handleChange(value)}
+                      value={unitField.state.value}
+                    >
+                      <SelectTrigger aria-label="Strength unit" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {strengthUnitItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </ControlGroupAddon>
+            </ControlGroup>
+          )}
+        </FormField>
+      )}
+    />
   );
 }
 
-function PackPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+function PurchasePriceField({ description, form }: { description?: string; form: ProductFormApi }) {
   return (
-    <Fieldset className="flex flex-col">
-      <UnitsPerPackField form={form} />
-      <PurchasePriceField form={form} />
-      <Fieldset className="flex flex-col">
-        <p className="text-sm font-medium">Retail price</p>
-        <PackRetailFields form={form} />
-      </Fieldset>
-    </Fieldset>
+    <form.Field
+      name="purchasePrice"
+      children={(field) => (
+        <FormField description={description} field={field} label="Purchase price">
+          {(control) => (
+            <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
+          )}
+        </FormField>
+      )}
+    />
   );
 }
 
-function UnitPricingFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
-  return (
-    <Fieldset className="flex flex-col">
-      <PurchasePriceField form={form} />
-      <Fieldset className="flex flex-col">
-        <p className="text-sm font-medium">Retail price</p>
-        <UnitRetailField form={form} />
-      </Fieldset>
-    </Fieldset>
-  );
-}
-
-function UnitsPerPackField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+function UnitsPerPackField({ form }: { form: ProductFormApi }) {
   return (
     <form.Field
       listeners={{
@@ -480,11 +488,7 @@ function UnitsPerPackField({ form }: { form: ReturnType<typeof useProductCreateF
       }}
       name="unitsPerPack"
       children={(field) => (
-        <FormField
-          description="Use 1 when the item is sold as-is."
-          field={field}
-          label="Units per pack"
-        >
+        <FormField field={field} label="Units per pack">
           {(control) => (
             <NumberField
               format={{ maximumFractionDigits: 0 }}
@@ -496,8 +500,8 @@ function UnitsPerPackField({ form }: { form: ReturnType<typeof useProductCreateF
             >
               <NumberFieldGroup>
                 <NumberFieldInput
+                  className="text-start"
                   aria-invalid={control["aria-invalid"]}
-                  className="text-left"
                   name={control.name}
                   onBlur={field.handleBlur}
                   placeholder="1"
@@ -511,52 +515,44 @@ function UnitsPerPackField({ form }: { form: ReturnType<typeof useProductCreateF
   );
 }
 
-function PackRetailFields({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+function PackRetailField({ form }: { form: ProductFormApi }) {
   return (
-    <Fieldset className="grid sm:grid-cols-2">
-      <form.Field
-        listeners={{
-          onChange: ({ value, fieldApi }) => {
-            const unitsPerPack = fieldApi.form.getFieldValue("unitsPerPack");
-            const unitPrice = computeUnitPrice(unitsPerPack, value);
-            if (unitPrice !== null) {
-              fieldApi.form.setFieldValue("unitPrice", unitPrice);
-            }
-          },
-        }}
-        name="retailPrice"
-        children={(field) => (
-          <FormField field={field} label="Retail price">
-            {(control) => (
-              <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
-            )}
-          </FormField>
-        )}
-      />
-      <form.Field
-        name="unitPrice"
-        children={(field) => (
-          <FormField
-            description="Auto-filled from retail price ÷ units per pack, rounded. Edit to override."
-            field={field}
-            label="Unit price"
-          >
-            {(control) => (
-              <PriceInput control={control} field={field} fractionDigits={0} step={1} />
-            )}
-          </FormField>
-        )}
-      />
-    </Fieldset>
+    <form.Field
+      listeners={{
+        onChange: ({ value, fieldApi }) => {
+          const unitsPerPack = fieldApi.form.getFieldValue("unitsPerPack");
+          const unitPrice = computeUnitPrice(unitsPerPack, value);
+          if (unitPrice !== null) {
+            fieldApi.form.setFieldValue("unitPrice", unitPrice);
+          }
+        },
+      }}
+      name="retailPrice"
+      children={(field) => (
+        <FormField description="Price of one pack" field={field} label="Retail price">
+          {(control) => (
+            <PriceInput control={control} field={field} fractionDigits={2} step={0.01} />
+          )}
+        </FormField>
+      )}
+    />
   );
 }
 
-function UnitRetailField({ form }: { form: ReturnType<typeof useProductCreateForm> }) {
+function UnitPriceField({
+  description,
+  form,
+  label,
+}: {
+  description?: string;
+  form: ProductFormApi;
+  label: string;
+}) {
   return (
     <form.Field
       name="unitPrice"
       children={(field) => (
-        <FormField field={field} label="Retail price">
+        <FormField description={description} field={field} label={label}>
           {(control) => <PriceInput control={control} field={field} fractionDigits={0} step={1} />}
         </FormField>
       )}

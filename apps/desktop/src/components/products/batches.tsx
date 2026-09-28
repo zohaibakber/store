@@ -1,15 +1,9 @@
-import { Add01Icon, PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
+import { PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Batch, Product, StockMovement } from "@store/contracts";
-import {
-  productLooseUnitStock,
-  productPackStock,
-  productStock,
-} from "@store/contracts/store-helpers";
-import { barY, defineChart, type ChartPoint } from "@tanstack/charts";
-import { scaleBand } from "@tanstack/charts/scales/band";
-import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { productStock } from "@store/contracts/store-helpers";
 import { useForm } from "@tanstack/react-form";
+import { Link } from "@tanstack/react-router";
 import { format, isValid, parse } from "date-fns";
 import * as Schema from "effect/Schema";
 import { useMemo, useState, type ReactNode } from "react";
@@ -19,13 +13,6 @@ import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import {
-  Chart,
-  ChartContainer,
-  CHART_HEIGHT,
-  chartTheme,
-  chartTooltip,
-} from "@/components/ui/chart";
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -33,8 +20,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Fieldset } from "@/components/ui/fieldset";
-import { Frame, FrameHeader } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Sheet,
   SheetClose,
@@ -46,11 +33,22 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
-import { formatDate, formatUtcDay, parseExpiryDate } from "@/lib/format";
+import { EMPTY, formatCount, formatDate, formatNumber, parseExpiryDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory";
+import { cn } from "@/lib/utils";
+
+import { formatBatchQuantity, formatDelta, formatStock } from "./stock";
 
 const ISO_DATE = "yyyy-MM-dd";
 
@@ -153,7 +151,7 @@ function BatchNumberField({ field }: { field: BatchTextField }) {
 function BatchExpiryField({ field }: { field: BatchTextField }) {
   return (
     <FormField
-      description="Month and year. The calendar is there for an exact day."
+      description="Month and year, or pick an exact day."
       field={field}
       label="Expiry date"
     >
@@ -173,12 +171,21 @@ function BatchExpiryField({ field }: { field: BatchTextField }) {
   );
 }
 
-function QuantityField({ field, label }: { field: BatchTextField; label: string }) {
+function QuantityField({
+  autoFocus,
+  field,
+  label,
+}: {
+  autoFocus?: boolean;
+  field: BatchTextField;
+  label: string;
+}) {
   return (
     <FormField field={field} label={label}>
       {(control) => (
         <Input
           {...control}
+          autoFocus={autoFocus}
           min="0"
           onBlur={field.handleBlur}
           onChange={(event) => field.handleChange(event.target.value)}
@@ -210,7 +217,7 @@ function BatchSheet({
   open: boolean;
   submitLabel: string;
   title: string;
-  trigger: ReactNode;
+  trigger?: ReactNode;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -232,9 +239,17 @@ function BatchSheet({
   );
 }
 
-function AddPackBatchDialog({ productId }: { productId: string }) {
+function AddPackBatchDialog({
+  onOpenChange,
+  open,
+  productId,
+}: {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  productId: string;
+}) {
   const { createBatch } = useInventoryActions();
-  const [open, setOpen] = useState(false);
+  const setOpen = onOpenChange;
   const form = useForm({
     defaultValues: {
       batchNumber: "",
@@ -268,16 +283,13 @@ function AddPackBatchDialog({ productId }: { productId: string }) {
           canSubmit={canSubmit}
           description="Record sealed packs and loose units separately for this batch."
           formId="add-batch-form"
-          onOpenChange={setOpen}
+          onOpenChange={(next) => {
+            if (!next) form.reset();
+            setOpen(next);
+          }}
           open={open}
-          submitLabel="Add batch"
-          title="Add batch"
-          trigger={
-            <SheetTrigger render={<Button size="sm" variant="outline" />}>
-              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-              Add batch
-            </SheetTrigger>
-          }
+          submitLabel="Add stock"
+          title="Add stock"
         >
           <form
             id="add-batch-form"
@@ -286,27 +298,29 @@ function AddPackBatchDialog({ productId }: { productId: string }) {
               void form.handleSubmit();
             }}
           >
-            <Fieldset className="flex w-full flex-col">
-              <Fieldset className="grid">
-                <form.Field
-                  name="batchNumber"
-                  children={(field) => <BatchNumberField field={field} />}
-                />
-                <form.Field
-                  name="expiresAt"
-                  children={(field) => <BatchExpiryField field={field} />}
-                />
-              </Fieldset>
-              <Fieldset className="grid">
-                <form.Field
-                  name="packQuantity"
-                  children={(field) => <QuantityField field={field} label="Sealed packs" />}
-                />
-                <form.Field
-                  name="unitQuantity"
-                  children={(field) => <QuantityField field={field} label="Loose units" />}
-                />
-              </Fieldset>
+            <Fieldset className="w-full">
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <form.Field
+                    name="batchNumber"
+                    children={(field) => <BatchNumberField field={field} />}
+                  />
+                  <form.Field
+                    name="expiresAt"
+                    children={(field) => <BatchExpiryField field={field} />}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <form.Field
+                    name="packQuantity"
+                    children={(field) => <QuantityField field={field} label="Sealed packs" />}
+                  />
+                  <form.Field
+                    name="unitQuantity"
+                    children={(field) => <QuantityField field={field} label="Loose units" />}
+                  />
+                </div>
+              </div>
             </Fieldset>
           </form>
         </BatchSheet>
@@ -315,9 +329,17 @@ function AddPackBatchDialog({ productId }: { productId: string }) {
   );
 }
 
-function AddUnitStockDialog({ productId }: { productId: string }) {
+function AddUnitStockDialog({
+  onOpenChange,
+  open,
+  productId,
+}: {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  productId: string;
+}) {
   const { createBatch } = useInventoryActions();
-  const [open, setOpen] = useState(false);
+  const setOpen = onOpenChange;
   const form = useForm({
     defaultValues: {
       expiresAt: "",
@@ -349,16 +371,13 @@ function AddUnitStockDialog({ productId }: { productId: string }) {
           canSubmit={canSubmit}
           description="How many arrived, and when they expire."
           formId="add-batch-form"
-          onOpenChange={setOpen}
+          onOpenChange={(next) => {
+            if (!next) form.reset();
+            setOpen(next);
+          }}
           open={open}
           submitLabel="Add stock"
           title="Add stock"
-          trigger={
-            <SheetTrigger render={<Button size="sm" variant="outline" />}>
-              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-              Add stock
-            </SheetTrigger>
-          }
         >
           <form
             id="add-batch-form"
@@ -367,19 +386,17 @@ function AddUnitStockDialog({ productId }: { productId: string }) {
               void form.handleSubmit();
             }}
           >
-            <Fieldset className="flex w-full flex-col">
-              <Fieldset className="grid">
+            <Fieldset className="w-full">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <form.Field
+                  name="unitQuantity"
+                  children={(field) => <QuantityField autoFocus field={field} label="Quantity" />}
+                />
                 <form.Field
                   name="expiresAt"
                   children={(field) => <BatchExpiryField field={field} />}
                 />
-              </Fieldset>
-              <Fieldset className="grid">
-                <form.Field
-                  name="unitQuantity"
-                  children={(field) => <QuantityField field={field} label="Quantity" />}
-                />
-              </Fieldset>
+              </div>
             </Fieldset>
           </form>
         </BatchSheet>
@@ -453,27 +470,29 @@ function EditPackBatchDialog({ batch }: { batch: Batch }) {
               void form.handleSubmit();
             }}
           >
-            <Fieldset className="flex w-full flex-col">
-              <Fieldset className="grid">
-                <form.Field
-                  name="batchNumber"
-                  children={(field) => <BatchNumberField field={field} />}
-                />
-                <form.Field
-                  name="expiresAt"
-                  children={(field) => <BatchExpiryField field={field} />}
-                />
-              </Fieldset>
-              <Fieldset className="grid">
-                <form.Field
-                  name="packQuantity"
-                  children={(field) => <QuantityField field={field} label="Sealed packs" />}
-                />
-                <form.Field
-                  name="unitQuantity"
-                  children={(field) => <QuantityField field={field} label="Loose units" />}
-                />
-              </Fieldset>
+            <Fieldset className="w-full">
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <form.Field
+                    name="batchNumber"
+                    children={(field) => <BatchNumberField field={field} />}
+                  />
+                  <form.Field
+                    name="expiresAt"
+                    children={(field) => <BatchExpiryField field={field} />}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <form.Field
+                    name="packQuantity"
+                    children={(field) => <QuantityField field={field} label="Sealed packs" />}
+                  />
+                  <form.Field
+                    name="unitQuantity"
+                    children={(field) => <QuantityField field={field} label="Loose units" />}
+                  />
+                </div>
+              </div>
             </Fieldset>
           </form>
         </BatchSheet>
@@ -535,19 +554,17 @@ function EditUnitStockDialog({ batch }: { batch: Batch }) {
               void form.handleSubmit();
             }}
           >
-            <Fieldset className="flex w-full flex-col">
-              <Fieldset className="grid">
+            <Fieldset className="w-full">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <form.Field
+                  name="unitQuantity"
+                  children={(field) => <QuantityField autoFocus field={field} label="Quantity" />}
+                />
                 <form.Field
                   name="expiresAt"
                   children={(field) => <BatchExpiryField field={field} />}
                 />
-              </Fieldset>
-              <Fieldset className="grid">
-                <form.Field
-                  name="unitQuantity"
-                  children={(field) => <QuantityField field={field} label="Quantity" />}
-                />
-              </Fieldset>
+              </div>
             </Fieldset>
           </form>
         </BatchSheet>
@@ -556,92 +573,96 @@ function EditUnitStockDialog({ batch }: { batch: Batch }) {
   );
 }
 
-function PackBatchRow({ batch }: { batch: Batch }) {
-  return (
-    <Frame className="w-full">
-      <FrameHeader className="flex-row items-center">
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{batch.batchNumber ?? "Unnumbered batch"}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
-            {" · "}
-            added {formatDate(batch.createdAt)}
-          </p>
-        </div>
-        <span className="shrink-0 font-mono tabular-nums">
-          {batch.packQuantity + batch.unitQuantity === 0
-            ? "Empty"
-            : `${batch.packQuantity} packs · ${batch.unitQuantity} loose`}
-        </span>
-        <EditPackBatchDialog batch={batch} />
-      </FrameHeader>
-    </Frame>
+export function AddStockSheet({
+  onOpenChange,
+  open,
+  product,
+}: {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  product: Product;
+}) {
+  return product.category.tracksPacks ? (
+    <AddPackBatchDialog onOpenChange={onOpenChange} open={open} productId={product.id} />
+  ) : (
+    <AddUnitStockDialog onOpenChange={onOpenChange} open={open} productId={product.id} />
   );
 }
 
-function UnitStockRow({ batch }: { batch: Batch }) {
+const muted = <span className="text-muted-foreground">{EMPTY}</span>;
+
+function ExpiryCell({ expiresAt, now }: { expiresAt: number | null; now: number }) {
+  if (expiresAt === null) return muted;
+  const expired = expiresAt < now;
   return (
-    <Frame className="w-full">
-      <FrameHeader className="flex-row items-center">
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">
-            {batch.expiresAt ? `Expires ${formatDate(batch.expiresAt)}` : "No expiry date"}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            added {formatDate(batch.createdAt)}
-          </p>
-        </div>
-        <span className="shrink-0 font-mono tabular-nums">
-          {batch.packQuantity + batch.unitQuantity === 0 ? "Empty" : `${batch.unitQuantity}`}
-        </span>
-        <EditUnitStockDialog batch={batch} />
-      </FrameHeader>
-    </Frame>
+    <span className={expired ? "text-destructive-foreground" : undefined}>
+      {formatDate(expiresAt)}
+      {expired ? " · Expired" : ""}
+    </span>
   );
 }
 
-function PackBatchesCard({ product }: { product: Product }) {
-  const stock = productStock(product);
-  const packs = productPackStock(product);
-  const looseUnits = productLooseUnitStock(product);
+function BatchRow({
+  batch,
+  now,
+  tracksPacks,
+}: {
+  batch: Batch;
+  now: number;
+  tracksPacks: boolean;
+}) {
+  const empty = batch.packQuantity + batch.unitQuantity === 0;
+  return (
+    <TableRow>
+      {tracksPacks ? (
+        <TableCell>
+          <span className="font-medium">{batch.batchNumber ?? muted}</span>
+        </TableCell>
+      ) : null}
+      <TableCell>
+        <ExpiryCell expiresAt={batch.expiresAt} now={now} />
+      </TableCell>
+      <TableCell>
+        <div className={cn("text-end tabular-nums", empty && "text-muted-foreground")}>
+          {formatBatchQuantity(batch.packQuantity, batch.unitQuantity, tracksPacks)}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="text-end text-muted-foreground tabular-nums">
+          {formatDate(batch.createdAt)}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end">
+          {tracksPacks ? (
+            <EditPackBatchDialog batch={batch} />
+          ) : (
+            <EditUnitStockDialog batch={batch} />
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function EndHead({ children }: { children: ReactNode }) {
+  return (
+    <TableHead>
+      <div className="text-end">{children}</div>
+    </TableHead>
+  );
+}
+
+export function ProductBatchesCard({ product }: { product: Product }) {
+  const tracksPacks = product.category.tracksPacks;
+  const [now] = useState(() => Date.now());
+  const stock = formatStock(productStock(product), product.unitsPerPack, tracksPacks);
 
   return (
     <FrameCard
-      action={<AddPackBatchDialog productId={product.id} />}
-      description={`${packs} packs · ${looseUnits} loose · ${stock} total units`}
-      title="Batches"
-    >
-      {product.batches.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
-            </EmptyMedia>
-            <EmptyTitle>No batches yet</EmptyTitle>
-            <EmptyDescription>
-              Add a batch to put this product in stock. Sales draw from batches.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {product.batches.map((batch) => (
-            <PackBatchRow batch={batch} key={batch.id} />
-          ))}
-        </div>
-      )}
-    </FrameCard>
-  );
-}
-
-function UnitStockCard({ product }: { product: Product }) {
-  const stock = productStock(product);
-
-  return (
-    <FrameCard
-      action={<AddUnitStockDialog productId={product.id} />}
-      description={`${stock} in stock`}
-      title="Stock"
+      description={`${stock} on hand · ${formatCount(product.batches.length, "batch", "batches")}`}
+      flush={product.batches.length > 0}
+      title="Stock batches"
     >
       {product.batches.length === 0 ? (
         <Empty>
@@ -650,123 +671,65 @@ function UnitStockCard({ product }: { product: Product }) {
               <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
             </EmptyMedia>
             <EmptyTitle>Nothing in stock yet</EmptyTitle>
-            <EmptyDescription>Add stock to start selling this product.</EmptyDescription>
+            <EmptyDescription>
+              Press <Kbd>A</Kbd> to add stock. Sales draw from the earliest expiry first.
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="flex flex-col gap-2">
-          {product.batches.map((batch) => (
-            <UnitStockRow batch={batch} key={batch.id} />
-          ))}
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {tracksPacks ? <TableHead>Batch</TableHead> : null}
+              <TableHead>Expiry</TableHead>
+              <EndHead>Quantity</EndHead>
+              <EndHead>Added</EndHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {product.batches.map((batch) => (
+              <BatchRow batch={batch} key={batch.id} now={now} tracksPacks={tracksPacks} />
+            ))}
+          </TableBody>
+        </Table>
       )}
     </FrameCard>
   );
 }
 
-export function ProductBatchesCard({ product }: { product: Product }) {
-  return product.category.tracksPacks ? (
-    <PackBatchesCard product={product} />
-  ) : (
-    <UnitStockCard product={product} />
-  );
-}
+const MOVEMENT_LABEL = {
+  stock_in: "Received",
+  sale: "Sold",
+  open_pack: "Opened pack",
+  adjustment: "Adjusted",
+} satisfies Record<StockMovement["type"], string>;
 
-const stockInColor = "var(--chart-2)";
-const stockOutColor = "var(--chart-4)";
+const MOVEMENT_PREVIEW = 10;
 
-type DayTotal = { date: string; net: number };
-
-const dayKey = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
-
-const movementsTooltip = (points: readonly ChartPoint<DayTotal>[]) => {
-  const point = points[0];
-  if (!point) return { rows: [] };
-  return {
-    title: formatUtcDay(String(point.xValue ?? "")),
-    rows: [
-      {
-        color: point.color,
-        label: point.datum.net >= 0 ? "Stock in" : "Stock out",
-        value: String(point.yValue ?? 0),
-      },
-    ],
-  };
-};
-
-export function createStockMovementsChart(rows: readonly DayTotal[]) {
-  return defineChart(
-    {
-      marks: [
-        barY(rows, {
-          id: "movement-bars",
-          x: "date",
-          y: "net",
-          key: "date",
-          fill: (row) => (row.net >= 0 ? stockInColor : stockOutColor),
-          radius: 4,
-        }),
-      ],
-      scales: {
-        x: {
-          scale: () => scaleBand<string>().paddingInner(0.2).paddingOuter(0.1),
-          axis: {
-            line: false,
-            ticks: {
-              size: 0,
-              padding: 8,
-              format: (value: string) => formatUtcDay(value),
-            },
-            tickLabels: {
-              thin: { minGap: 24, priority: "ends" },
-            },
-          },
-        },
-        y: {
-          scale: scaleLinear,
-          nice: true,
-          grid: true,
-          axis: false,
-        },
-      },
-      theme: chartTheme,
-    },
-    {
-      svgAnimation: false,
-      focus: "group-x",
-      tooltip: chartTooltip(movementsTooltip),
-    },
-  );
-}
-
-function StockMovementsChart({ data }: { data: readonly DayTotal[] }) {
-  const definition = useMemo(() => createStockMovementsChart(data), [data]);
-
-  return (
-    <ChartContainer className="aspect-auto h-56 w-full">
-      <Chart
-        ariaLabel="Stock movements by day"
-        className="w-full"
-        definition={definition}
-        height={CHART_HEIGHT}
-      />
-    </ChartContainer>
-  );
-}
-
-function stockMovementsByDay(
-  movements: readonly StockMovement[],
-  unitsPerPack: number,
-): DayTotal[] {
-  const totals = new Map<string, number>();
-  for (const movement of movements) {
-    const date = dayKey(movement.createdAt);
-    const netUnits = movement.packDelta * unitsPerPack + movement.unitDelta;
-    totals.set(date, (totals.get(date) ?? 0) + netUnits);
+function MovementReference({
+  batchNumbers,
+  movement,
+}: {
+  batchNumbers: ReadonlyMap<string, string | null>;
+  movement: StockMovement;
+}) {
+  if (movement.invoiceId !== null) {
+    return (
+      <Link
+        className="hover:underline"
+        params={{ invoiceId: movement.invoiceId }}
+        to="/invoices/$invoiceId"
+      >
+        Invoice
+      </Link>
+    );
   }
-  return Array.from(totals.entries())
-    .map(([date, net]) => ({ date, net }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  if (movement.note) return <span className="truncate">{movement.note}</span>;
+  const batchNumber = batchNumbers.get(movement.batchId);
+  return batchNumber ? <span>Batch {batchNumber}</span> : muted;
 }
 
 export function ProductStockMovementsCard({
@@ -776,37 +739,72 @@ export function ProductStockMovementsCard({
   product: Product;
   movements: readonly StockMovement[];
 }) {
-  const data = useMemo(
-    () => stockMovementsByDay(movements, product.unitsPerPack),
-    [movements, product.unitsPerPack],
+  const [expanded, setExpanded] = useState(false);
+  const batchNumbers = useMemo(
+    () => new Map(product.batches.map((batch) => [batch.id, batch.batchNumber])),
+    [product.batches],
   );
+  const shown = expanded ? movements : movements.slice(0, MOVEMENT_PREVIEW);
 
   return (
-    <FrameCard title="Stock movements">
-      {data.length === 0 ? (
+    <FrameCard
+      action={
+        movements.length > MOVEMENT_PREVIEW ? (
+          <Button onClick={() => setExpanded(!expanded)} size="xs" variant="ghost">
+            {expanded ? "Show less" : `Show all ${formatNumber(movements.length)}`}
+          </Button>
+        ) : undefined
+      }
+      flush={movements.length > 0}
+      title="Recent movements"
+    >
+      {movements.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
-            </EmptyMedia>
             <EmptyTitle>No movements yet</EmptyTitle>
             <EmptyDescription>Receipts and sales show up here.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
-        <>
-          <StockMovementsChart data={data} />
-          <div className="mt-3 flex items-center justify-center gap-4 text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-xs bg-chart-2" />
-              Stock in
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-xs bg-chart-4" />
-              Stock out
-            </span>
-          </div>
-        </>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Type</TableHead>
+              <EndHead>Quantity</EndHead>
+              <TableHead>Reference</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {shown.map((movement) => {
+              const net = movement.packDelta * product.unitsPerPack + movement.unitDelta;
+              return (
+                <TableRow key={movement.id}>
+                  <TableCell>
+                    <span className="text-muted-foreground tabular-nums">
+                      {formatDate(movement.createdAt)}
+                    </span>
+                  </TableCell>
+                  <TableCell>{MOVEMENT_LABEL[movement.type]}</TableCell>
+                  <TableCell>
+                    <div
+                      className={cn(
+                        "text-end tabular-nums",
+                        net > 0 && "text-success-foreground",
+                        net === 0 && "text-muted-foreground",
+                      )}
+                    >
+                      {formatDelta(movement.packDelta, movement.unitDelta)}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <MovementReference batchNumbers={batchNumbers} movement={movement} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
     </FrameCard>
   );

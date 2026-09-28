@@ -5,7 +5,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 
 import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
 import { DataTable, DataTableFilter } from "@/components/shared/data-table";
-import { PageAction, PageContent, PageHeader, PageLayout } from "@/components/shared/page-layout";
+import { PageActions } from "@/components/shared/page-actions";
+import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
 function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
@@ -17,19 +18,15 @@ function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
       onRowClick={(row) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })}
       table={table}
     >
-      <PageLayout contentClassName="gap-4">
-        <PageHeader>
-          <PageAction className="flex items-center gap-2">
-            <DataTableFilter columnId="customer" placeholder="Search invoices" />
-            <Button render={<Link to="/invoices/new" />}>
-              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-              New sale
-            </Button>
-          </PageAction>
-        </PageHeader>
-        <PageContent>
-          <InvoicesTable />
-        </PageContent>
+      <PageActions>
+        <DataTableFilter columnId="customer" placeholder="Search invoices" />
+        <Button render={<Link to="/invoices/new" />} size="sm">
+          <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+          New sale
+        </Button>
+      </PageActions>
+      <PageLayout>
+        <InvoicesTable />
       </PageLayout>
     </DataTable>
   );

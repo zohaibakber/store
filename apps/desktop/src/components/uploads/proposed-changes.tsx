@@ -4,6 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
+import { formatCount, formatNumber } from "@/lib/format";
 
 import { useUpload } from "./context";
 
@@ -22,15 +23,17 @@ function UploadProposedChanges() {
         <div className="min-w-0">
           <p className="font-medium">
             Proposed changes{" "}
-            <span className="font-mono text-muted-foreground tabular-nums">({changes.length})</span>
+            <span className="text-muted-foreground tabular-nums">
+              {formatNumber(changes.length)}
+            </span>
           </p>
           <p className="text-sm text-muted-foreground">
             Nothing changes in your store until you apply this review.
           </p>
         </div>
-        <Button disabled={processing} onClick={() => void applyChanges()}>
+        <Button disabled={processing} onClick={() => void applyChanges()} size="sm" type="button">
           <HugeiconsIcon aria-hidden="true" icon={CheckmarkCircle02Icon} />
-          Apply {changes.length} changes
+          Apply {formatCount(changes.length, "change")}
         </Button>
       </div>
 
@@ -48,7 +51,8 @@ function UploadProposedChanges() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{change.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {change.packQuantity} packs · {change.unitQuantity} units
+                    {formatCount(change.packQuantity, "pack")} ·{" "}
+                    {formatCount(change.unitQuantity, "unit")}
                     {change.batchNumber ? ` · Batch ${change.batchNumber}` : ""}
                   </p>
                 </div>

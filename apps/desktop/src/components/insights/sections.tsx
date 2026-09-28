@@ -4,17 +4,23 @@ import {
   ArrowUp01Icon,
   ChartLineData02Icon,
   CheckmarkCircle02Icon,
+  PackageAdd01Icon,
   PackageIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatPrice } from "@store/services/format";
-import type { InsightsReport, SalesPeriod, TopProduct } from "@store/services/insights";
+import type {
+  InsightsReport,
+  SalesPeriod,
+  StockStatus,
+  TopProduct,
+} from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
-import { Chart, ChartContainer, CHART_HEIGHT } from "@/components/ui/chart";
+import { Chart, ChartContainer } from "@/components/ui/chart";
 import {
   Empty,
   EmptyDescription,
@@ -22,23 +28,45 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Meter, MeterIndicator, MeterLabel, MeterTrack, MeterValue } from "@/components/ui/meter";
-import { formatDate } from "@/lib/format";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { EMPTY, formatCount, formatDate, formatNumber } from "@/lib/format";
 
 import { createRevenueTrendChart, createWeekdayChart } from "./charts";
-import { InsightList, InsightRow, InsightRowLink } from "./list";
+import { InsightMeter } from "./meter";
 import {
-  formatCount,
   formatHour,
+  formatOrder,
   formatShare,
+  formatStockCover,
   HEALTH_ORDER,
-  SEVERITY_TONE,
   STATUS_META,
   WEEKDAY_SHORT,
 } from "./presentation";
-import { ToneDot } from "./status-badge";
+import type { RestockView } from "./restock-page";
+import { StatusBadge, StatusDot } from "./status-badge";
 
 const ATTENTION_LIMIT = 6;
+const REVENUE_CHART_HEIGHT = 160;
+const WEEKDAY_CHART_HEIGHT = 128;
+
+const ACTION_STATUSES: ReadonlySet<StockStatus> = new Set(["out", "critical", "low"]);
+
+const HEALTH_VIEW = {
+  out: "out",
+  critical: "critical",
+  low: "low",
+  healthy: "all",
+  overstock: "overstock",
+  dead: "dead",
+  inactive: "all",
+} satisfies Record<StockStatus, RestockView>;
 
 function EmptyState({
   icon,
@@ -62,43 +90,150 @@ function EmptyState({
   );
 }
 
-export function AttentionFeed({ report }: { readonly report: InsightsReport }) {
-  const alerts = report.alerts.slice(0, ATTENTION_LIMIT);
+function ViewAll({ children, to }: { readonly children: string; readonly to: "/restock" }) {
+  return (
+    <Button render={<Link to={to} />} size="xs" variant="ghost">
+      {children}
+      <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
+    </Button>
+  );
+}
+
+function End({ children }: { readonly children: React.ReactNode }) {
+  return <div className="text-right tabular-nums">{children}</div>;
+}
+
+function Muted({ children }: { readonly children: React.ReactNode }) {
+  return <span className="text-muted-foreground">{children}</span>;
+}
+
+function NameCell({ children }: { readonly children: React.ReactNode }) {
+  return (
+    <TableCell className="w-full">
+      <div className="flex w-0 min-w-full items-center gap-1.5">{children}</div>
+    </TableCell>
+  );
+}
+
+function ProductLink({
+  productId,
+  children,
+}: {
+  readonly productId: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <Link
+      className="min-w-0 truncate font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
+      params={{ productId }}
+      to="/products/$productId"
+    >
+      {children}
+    </Link>
+  );
+}
+
+export function AttentionFeed({
+  className,
+  report,
+}: {
+  readonly className?: string;
+  readonly report: InsightsReport;
+}) {
+  const products = report.products.filter((insight) => ACTION_STATUSES.has(insight.status));
+  const shown = products.slice(0, ATTENTION_LIMIT);
+  const notes = report.alerts.filter((alert) => alert.productId === null);
   return (
     <FrameCard
-      action={
-        <Button render={<Link to="/restock" />} size="sm" variant="ghost">
-          Restock plan
-          <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
-        </Button>
-      }
+      action={<ViewAll to="/restock">Restock plan</ViewAll>}
+      className={className}
+      description={products.length > 0 ? formatCount(products.length, "product") : undefined}
+      flush
       title="Needs attention"
     >
-      {alerts.length === 0 ? (
+      {shown.length === 0 ? (
         <EmptyState
-          description="Stock covers expected demand and nothing is about to expire."
+          description="Stock covers expected demand for every product."
           icon={CheckmarkCircle02Icon}
           title="All clear"
         />
       ) : (
-        <InsightList aria-label="Alerts">
-          {alerts.map((alert) => (
-            <InsightRow key={alert.id}>
-              <ToneDot tone={SEVERITY_TONE[alert.severity]} />
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                {alert.productId === null ? (
-                  <span className="truncate font-medium">{alert.title}</span>
-                ) : (
-                  <InsightRowLink params={{ productId: alert.productId }} to="/products/$productId">
-                    {alert.title}
-                  </InsightRowLink>
-                )}
-                <span className="truncate text-xs text-muted-foreground">{alert.detail}</span>
-              </div>
-            </InsightRow>
-          ))}
-        </InsightList>
+        <Table aria-label="Products that need restocking">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8">Status</TableHead>
+              <TableHead className="h-8">
+                <End>Cover</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>Suggested order</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>Lost sales / day</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {shown.map((insight) => (
+              <TableRow key={insight.productId}>
+                <NameCell>
+                  <ProductLink productId={insight.productId}>{insight.name}</ProductLink>
+                </NameCell>
+                <TableCell>
+                  <StatusBadge status={insight.status} />
+                </TableCell>
+                <TableCell>
+                  <End>
+                    <Muted>{formatStockCover(insight)}</Muted>
+                  </End>
+                </TableCell>
+                <TableCell>
+                  <End>
+                    {insight.order === null ? <Muted>{EMPTY}</Muted> : formatOrder(insight.order)}
+                  </End>
+                </TableCell>
+                <TableCell>
+                  <End>
+                    {insight.lostRevenuePerDay > 0 ? (
+                      formatPrice(Math.round(insight.lostRevenuePerDay))
+                    ) : (
+                      <Muted>{EMPTY}</Muted>
+                    )}
+                  </End>
+                </TableCell>
+                <TableCell>
+                  <div className="relative z-10 -my-1 flex justify-end">
+                    <Button
+                      aria-label={`Add stock to ${insight.name}`}
+                      render={
+                        <Link
+                          params={{ productId: insight.productId }}
+                          search={{ addStock: true }}
+                          to="/products/$productId"
+                        />
+                      }
+                      size="icon-xs"
+                      title="Add stock"
+                      variant="ghost"
+                    >
+                      <HugeiconsIcon aria-hidden="true" icon={PackageAdd01Icon} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
+      {notes.map((note) => (
+        <p className="border-t px-4 py-2.5 text-xs text-muted-foreground" key={note.id}>
+          <span className="text-foreground">{note.title}.</span> {note.detail}
+        </p>
+      ))}
     </FrameCard>
   );
 }
@@ -106,27 +241,42 @@ export function AttentionFeed({ report }: { readonly report: InsightsReport }) {
 export function StockHealth({ report }: { readonly report: InsightsReport }) {
   const tracked = HEALTH_ORDER.reduce((total, status) => total + report.counts[status], 0);
   return (
-    <FrameCard title="Stock health">
-      <div className="flex flex-col gap-4">
-        {HEALTH_ORDER.map((status) => (
-          <Meter key={status} max={Math.max(tracked, 1)} value={report.counts[status]}>
-            <div className="flex items-center justify-between gap-2">
-              <MeterLabel>
-                <span className="flex items-center gap-2">
-                  <ToneDot tone={STATUS_META[status].tone} />
-                  {STATUS_META[status].label}
+    <FrameCard description={formatCount(tracked, "product")} flush title="Stock health">
+      <div className="flex flex-col gap-1 p-2">
+        <ul aria-label="Products by stock status" className="flex flex-col">
+          {HEALTH_ORDER.map((status) => {
+            const meta = STATUS_META[status];
+            const count = report.counts[status];
+            return (
+              <li
+                className="relative flex h-8 items-center gap-3 rounded-md px-2 hover:bg-accent/40"
+                key={status}
+              >
+                <Link
+                  className="flex w-28 shrink-0 items-center gap-2 truncate text-sm outline-none before:absolute before:inset-0 before:rounded-md focus-visible:before:ring-2 focus-visible:before:ring-ring"
+                  search={{ view: HEALTH_VIEW[status] }}
+                  to="/restock"
+                >
+                  <StatusDot status={status} />
+                  {meta.label}
+                </Link>
+                <InsightMeter
+                  className="flex-1"
+                  label={`${meta.label}: ${formatCount(count, "product")}`}
+                  max={tracked}
+                  tone={meta.tone}
+                  value={count}
+                />
+                <span className="w-12 shrink-0 text-right text-sm tabular-nums">
+                  {formatNumber(count)}
                 </span>
-              </MeterLabel>
-              <MeterValue>{(_formatted, value) => formatCount(value)}</MeterValue>
-            </div>
-            <MeterTrack>
-              <MeterIndicator />
-            </MeterTrack>
-          </Meter>
-        ))}
+              </li>
+            );
+          })}
+        </ul>
         {report.inventory.reorderCount > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {formatCount(report.inventory.reorderCount)} to order
+          <p className="px-2 pb-1 text-xs text-muted-foreground tabular-nums">
+            {formatCount(report.inventory.reorderCount, "product")} to order
             {report.inventory.reorderCost > 0
               ? ` · about ${formatPrice(report.inventory.reorderCost)}`
               : ""}
@@ -137,10 +287,34 @@ export function StockHealth({ report }: { readonly report: InsightsReport }) {
   );
 }
 
+function ChartLegend({ items }: { readonly items: ReadonlyArray<readonly [string, string]> }) {
+  return (
+    <span className="flex items-center gap-3 text-xs text-muted-foreground">
+      {items.map(([label, swatch]) => (
+        <span className="flex items-center gap-1.5" key={label}>
+          <span aria-hidden="true" className={swatch} />
+          {label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
   const definition = React.useMemo(() => createRevenueTrendChart(period.series), [period.series]);
   return (
-    <FrameCard title="Revenue">
+    <FrameCard
+      action={
+        <ChartLegend
+          items={[
+            [`Last ${period.days} days`, "h-0.5 w-3 rounded-full bg-chart-1"],
+            ["Previous period", "h-0 w-3 border-t border-dashed border-muted-foreground"],
+          ]}
+        />
+      }
+      flush
+      title="Revenue"
+    >
       {period.series.every((day) => day.revenue === 0 && day.previousRevenue === 0) ? (
         <EmptyState
           description="Revenue shows up here once you record sales."
@@ -148,14 +322,16 @@ export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
           title={`No sales in the last ${period.days} days`}
         />
       ) : (
-        <ChartContainer className="aspect-auto h-56 w-full">
-          <Chart
-            ariaLabel={`Daily revenue over the last ${period.days} days compared with the period before`}
-            className="w-full"
-            definition={definition}
-            height={CHART_HEIGHT}
-          />
-        </ChartContainer>
+        <div className="px-4 py-3">
+          <ChartContainer className="aspect-auto h-40 w-full">
+            <Chart
+              ariaLabel={`Daily revenue over the last ${period.days} days compared with the period before`}
+              className="w-full"
+              definition={definition}
+              height={REVENUE_CHART_HEIGHT}
+            />
+          </ChartContainer>
+        </div>
       )}
     </FrameCard>
   );
@@ -166,7 +342,7 @@ function TrendIcon({ trend }: { readonly trend: TopProduct["trend"] }) {
     return (
       <HugeiconsIcon
         aria-label="Selling faster"
-        className="size-4 text-success-foreground"
+        className="size-3.5 shrink-0 text-success-foreground"
         icon={ArrowUp01Icon}
       />
     );
@@ -175,7 +351,7 @@ function TrendIcon({ trend }: { readonly trend: TopProduct["trend"] }) {
     return (
       <HugeiconsIcon
         aria-label="Selling slower"
-        className="size-4 text-destructive-foreground"
+        className="size-3.5 shrink-0 text-destructive-foreground"
         icon={ArrowDown01Icon}
       />
     );
@@ -184,46 +360,64 @@ function TrendIcon({ trend }: { readonly trend: TopProduct["trend"] }) {
 }
 
 export function TopSellers({ period }: { readonly period: SalesPeriod }) {
+  const products = period.topProducts.slice(0, 7);
+  const topShare = products[0]?.share ?? 1;
   return (
-    <FrameCard title="Top sellers">
-      {period.topProducts.length === 0 ? (
+    <FrameCard description={`Last ${period.days} days`} flush title="Top sellers">
+      {products.length === 0 ? (
         <EmptyState
           description="Record a sale and leaders show up here."
           icon={PackageIcon}
           title="No sales yet"
         />
       ) : (
-        <InsightList aria-label="Top sellers">
-          {period.topProducts.slice(0, 7).map((product) => (
-            <InsightRow className="flex-col items-stretch gap-1.5" key={product.productId}>
-              <div className="flex items-center gap-2">
-                <InsightRowLink
-                  className="flex-1"
-                  params={{ productId: product.productId }}
-                  to="/products/$productId"
-                >
-                  {product.name}
-                </InsightRowLink>
-                <TrendIcon trend={product.trend} />
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {formatCount(product.units)} units
-                </span>
-                <span className="w-28 text-right text-sm tabular-nums">
-                  {formatPrice(product.revenue)}
-                </span>
-              </div>
-              <Meter
-                aria-label={`${product.name}: ${formatShare(product.share)} of product revenue`}
-                max={1}
-                value={product.share}
-              >
-                <MeterTrack>
-                  <MeterIndicator />
-                </MeterTrack>
-              </Meter>
-            </InsightRow>
-          ))}
-        </InsightList>
+        <Table aria-label="Top sellers">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8">
+                <End>Units</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>Revenue</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>Share</End>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {products.map((product) => (
+              <TableRow key={product.productId}>
+                <NameCell>
+                  <ProductLink productId={product.productId}>{product.name}</ProductLink>
+                  <TrendIcon trend={product.trend} />
+                </NameCell>
+                <TableCell>
+                  <End>
+                    <Muted>{formatNumber(product.units)}</Muted>
+                  </End>
+                </TableCell>
+                <TableCell>
+                  <End>{formatPrice(product.revenue)}</End>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center justify-end gap-2">
+                    <InsightMeter
+                      className="w-16"
+                      label={`${product.name}: ${formatShare(product.share)} of product revenue`}
+                      max={topShare}
+                      value={product.share}
+                    />
+                    <span className="w-9 text-right text-muted-foreground tabular-nums">
+                      {formatShare(product.share)}
+                    </span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </FrameCard>
   );
@@ -249,11 +443,12 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
     <FrameCard
       description={
         peakWeekday.weekday < 0
-          ? "Average revenue by weekday over the last 8 weeks."
-          : `${WEEKDAY_SHORT[peakWeekday.weekday]} is your busiest day${
-              peakHour === null ? "" : `, and sales peak around ${formatHour(peakHour)}`
-            }.`
+          ? "Last 8 weeks"
+          : `Busiest on ${WEEKDAY_SHORT[peakWeekday.weekday]}${
+              peakHour === null ? "" : `, peaks around ${formatHour(peakHour)}`
+            }`
       }
+      flush
       title="Sales rhythm"
     >
       {peakWeekday.weekday < 0 ? (
@@ -263,33 +458,34 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
           title="Not enough sales yet"
         />
       ) : (
-        <div className="flex flex-col gap-4">
-          <ChartContainer className="aspect-auto h-56 w-full">
+        <div className="flex flex-col gap-2 px-4 py-3">
+          <ChartContainer className="aspect-auto h-32 w-full">
             <Chart
               ariaLabel="Average revenue by weekday over the last eight weeks"
               className="w-full"
               definition={definition}
-              height={CHART_HEIGHT}
+              height={WEEKDAY_CHART_HEIGHT}
             />
           </ChartContainer>
           {busiestHours.length === 0 ? null : (
-            <div className="flex flex-col gap-3">
-              <span className="text-xs text-muted-foreground">Busiest hours</span>
-              {busiestHours.map((entry) => (
-                <Meter
-                  key={entry.hour}
-                  max={Math.max(busiestHours[0]?.invoices ?? 1, 1)}
-                  value={entry.invoices}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <MeterLabel>{formatHour(entry.hour)}</MeterLabel>
-                    <MeterValue>{(_formatted, value) => `${formatCount(value)} sales`}</MeterValue>
-                  </div>
-                  <MeterTrack>
-                    <MeterIndicator />
-                  </MeterTrack>
-                </Meter>
-              ))}
+            <div className="flex flex-col">
+              <span className="pb-1 text-xs text-muted-foreground">Busiest hours</span>
+              <ul aria-label="Busiest hours" className="flex flex-col">
+                {busiestHours.map((entry) => (
+                  <li className="flex h-7 items-center gap-3 text-sm" key={entry.hour}>
+                    <span className="w-14 shrink-0 tabular-nums">{formatHour(entry.hour)}</span>
+                    <InsightMeter
+                      className="flex-1"
+                      label={`${formatHour(entry.hour)}: ${formatCount(entry.invoices, "sale")}`}
+                      max={busiestHours[0]?.invoices ?? 1}
+                      value={entry.invoices}
+                    />
+                    <span className="w-20 shrink-0 text-right text-muted-foreground tabular-nums">
+                      {formatCount(entry.invoices, "sale")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -301,7 +497,11 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
 export function ExpiringSoon({ report }: { readonly report: InsightsReport }) {
   const batches = report.expiring.slice(0, 6);
   return (
-    <FrameCard title="Expiring soon">
+    <FrameCard
+      description={`Within ${formatCount(report.policy.expiryWarningDays, "day")}`}
+      flush
+      title="Expiring soon"
+    >
       {batches.length === 0 ? (
         <EmptyState
           description="No stocked batch expires inside the warning window."
@@ -309,27 +509,54 @@ export function ExpiringSoon({ report }: { readonly report: InsightsReport }) {
           title="Nothing expiring"
         />
       ) : (
-        <InsightList aria-label="Expiring batches">
-          {batches.map((batch) => (
-            <InsightRow key={`${batch.productId}-${batch.batchNumber ?? batch.expiresAt}`}>
-              <ToneDot tone={batch.atRiskUnits > 0 ? "warning" : "secondary"} />
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <InsightRowLink params={{ productId: batch.productId }} to="/products/$productId">
-                  {batch.name}
-                </InsightRowLink>
-                <span className="truncate text-xs text-muted-foreground">
-                  {batch.batchNumber ?? "Unnumbered batch"} · {formatCount(batch.units)} units
-                  {batch.atRiskUnits > 0
-                    ? ` · ${formatCount(batch.atRiskUnits)} unlikely to sell`
-                    : ""}
-                </span>
-              </div>
-              <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-                {formatDate(batch.expiresAt)}
-              </span>
-            </InsightRow>
-          ))}
-        </InsightList>
+        <Table aria-label="Expiring batches">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8">Batch</TableHead>
+              <TableHead className="h-8">
+                <End>Units</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>At risk</End>
+              </TableHead>
+              <TableHead className="h-8">
+                <End>Expires</End>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {batches.map((batch) => (
+              <TableRow key={`${batch.productId}-${batch.batchNumber ?? batch.expiresAt}`}>
+                <NameCell>
+                  <ProductLink productId={batch.productId}>{batch.name}</ProductLink>
+                </NameCell>
+                <TableCell>
+                  <span className="text-muted-foreground">{batch.batchNumber ?? EMPTY}</span>
+                </TableCell>
+                <TableCell>
+                  <End>{formatNumber(batch.units)}</End>
+                </TableCell>
+                <TableCell>
+                  <End>
+                    {batch.atRiskUnits > 0 ? (
+                      <span className="text-warning-foreground">
+                        {formatNumber(batch.atRiskUnits)}
+                      </span>
+                    ) : (
+                      <Muted>{EMPTY}</Muted>
+                    )}
+                  </End>
+                </TableCell>
+                <TableCell>
+                  <End>
+                    <Muted>{formatDate(batch.expiresAt)}</Muted>
+                  </End>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </FrameCard>
   );

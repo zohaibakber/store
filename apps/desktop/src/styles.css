@@ -166,7 +166,7 @@
   --border: --alpha(var(--color-black) / 8%);
   --input: --alpha(var(--color-black) / 10%);
   --ring: var(--color-neutral-400);
-  --chart-1: var(--color-orange-600);
+  --chart-1: var(--color-blue-600);
   --chart-2: var(--color-teal-600);
   --chart-3: var(--color-cyan-900);
   --chart-4: var(--color-amber-400);
@@ -259,8 +259,9 @@
 
 @layer components {
   .titlebar-end-padding {
-    padding-inline-end: calc(
-      100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.5rem
+    padding-inline-end: max(
+      0.5rem,
+      calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.25rem)
     );
   }
 

@@ -45,29 +45,28 @@ export function ThemePicker() {
 
   return (
     <Field name="theme" render={(props) => <Fieldset {...props} />}>
-      <FieldsetLegend>Theme</FieldsetLegend>
+      <FieldsetLegend className="sr-only">Theme</FieldsetLegend>
       <RadioGroup
+        className="flex-row"
         onValueChange={(value) => {
           const option = options.find((entry) => entry.value === value);
           if (option) setTheme(option.value);
         }}
         value={preference}
       >
-        <div className="flex gap-4">
-          {options.map((option) => (
-            <FieldItem key={option.value}>
-              <FieldLabel className="cursor-pointer flex-col">
-                <Radio value={option.value} />
-                <span className="relative block h-17.5 w-22 overflow-hidden rounded-lg shadow-xs transition-shadow not-peer-data-checked:opacity-80 peer-data-checked:ring-2 peer-data-checked:ring-primary/48 peer-data-checked:ring-offset-1 peer-data-checked:ring-offset-background">
-                  {previews[option.value]}
-                </span>
-                <span className="not-peer-data-checked:text-muted-foreground/70">
-                  {option.label}
-                </span>
-              </FieldLabel>
-            </FieldItem>
-          ))}
-        </div>
+        {options.map((option) => (
+          <FieldItem key={option.value}>
+            <FieldLabel className="cursor-pointer flex-col">
+              <Radio className="peer sr-only absolute" value={option.value} />
+              <span className="relative block h-14 w-18 overflow-hidden rounded-lg shadow-xs transition-shadow not-peer-data-checked:opacity-80 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-data-checked:ring-2 peer-data-checked:ring-primary/48 peer-data-checked:ring-offset-1 peer-data-checked:ring-offset-background">
+                {previews[option.value]}
+              </span>
+              <span className="text-xs not-peer-data-checked:text-muted-foreground">
+                {option.label}
+              </span>
+            </FieldLabel>
+          </FieldItem>
+        ))}
       </RadioGroup>
     </Field>
   );

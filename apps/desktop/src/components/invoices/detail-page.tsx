@@ -1,11 +1,14 @@
-import { Alert02Icon, ArrowRightFreeIcons, Invoice01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Alert02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Invoice } from "@store/contracts";
+import type { Invoice, InvoiceItem } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
+import { format } from "date-fns";
 
+import { FrameCard } from "@/components/shared/frame-card";
 import {
+  PageAction,
   PageContent,
   PageDescription,
   PageHeader,
@@ -14,13 +17,22 @@ import {
 } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Frame, FrameHeader } from "@/components/ui/frame";
-import { formatDateTime } from "@/lib/format";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { EMPTY, formatCount } from "@/lib/format";
 
-function BackToInvoices() {
+function NewSaleAction() {
   return (
-    <Button className="-ml-1" render={<Link to="/invoices" />} size="sm" variant="ghost">
-      <HugeiconsIcon aria-hidden="true" icon={Invoice01Icon} />
+    <Button render={<Link to="/invoices/new" />} size="sm">
+      <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+      New sale
     </Button>
   );
 }
@@ -28,78 +40,130 @@ function BackToInvoices() {
 function InvoiceDetailError({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : "The invoice could not be loaded.";
   return (
-    <PageLayout contentClassName="max-w-3xl">
-      <PageHeader>
-        <BackToInvoices />
-      </PageHeader>
+    <PageLayout width="narrow">
       <PageContent>
         <Alert variant="error">
           <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
           <AlertTitle>Could not load invoice</AlertTitle>
           <AlertDescription>{message}</AlertDescription>
         </Alert>
+        <div>
+          <Button render={<Link to="/invoices" />} size="sm" variant="outline">
+            Back to invoices
+          </Button>
+        </div>
       </PageContent>
     </PageLayout>
   );
 }
 
+const itemTotal = (item: InvoiceItem) => item.quantity * item.salePrice;
+
+function AmountCell({ children, strong = false }: { children: string; strong?: boolean }) {
+  return (
+    <TableCell>
+      <span
+        className={
+          strong ? "block text-end font-medium tabular-nums" : "block text-end tabular-nums"
+        }
+      >
+        {children}
+      </span>
+    </TableCell>
+  );
+}
+
 function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
-  const unitsSold = invoice.items.reduce((sum, item) => sum + item.quantity, 0);
+  const units = invoice.items.reduce((sum, item) => sum + item.baseUnitQuantity, 0);
+  const subtotal = invoice.items.reduce((sum, item) => sum + itemTotal(item), 0);
+  const discount = subtotal - invoice.total;
 
   return (
-    <PageLayout contentClassName="max-w-3xl">
+    <PageLayout>
       <PageHeader>
-        <div className="flex items-center">
-          <BackToInvoices />
-          <HugeiconsIcon aria-hidden="true" className="size-4" icon={ArrowRightFreeIcons} />
-          <PageHeading className="ml-2">
-            Invoice{" "}
-            <span className="font-mono tabular-nums">
-              #{formatInvoiceNumber(invoice.invoiceNumber)}
-            </span>
-          </PageHeading>
-        </div>
+        <PageHeading>
+          Invoice{" "}
+          <span className="tabular-nums">#{formatInvoiceNumber(invoice.invoiceNumber)}</span>
+        </PageHeading>
         <PageDescription>
-          {invoice.customerName ?? "Walk-in customer"} ·{" "}
-          <span className="font-mono tabular-nums">{formatDateTime(invoice.createdAt)}</span>
+          {invoice.customerName ?? "Walk-in customer"} · {format(invoice.createdAt, "d MMM yyyy")} ·{" "}
+          {format(invoice.createdAt, "h:mm a")}
         </PageDescription>
+        <PageAction>
+          <NewSaleAction />
+        </PageAction>
       </PageHeader>
 
-      <PageContent className="gap-4">
-        <div className="flex flex-col gap-2">
-          {invoice.items.map((item) => (
-            <Frame className="w-full" key={item.id}>
-              <FrameHeader className="flex-row items-center">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium capitalize">{item.productName}</p>
-                  <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
-                    {item.batchNumber ? `Batch ${item.batchNumber}` : "Unnumbered batch"}
-                    {" · "}
-                    {item.quantity} {item.quantityType === "pack" ? "packs" : "units"} ×{" "}
-                    {formatPrice(item.salePrice)}
-                  </p>
-                </div>
-                <span className="font-mono font-medium tabular-nums">
-                  {formatPrice(item.quantity * item.salePrice)}
+      <FrameCard
+        description={`${formatCount(invoice.items.length, "line")} · ${formatCount(units, "unit")}`}
+        flush
+        title="Items"
+      >
+        <Table className="table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8 w-40">Batch</TableHead>
+              <TableHead className="h-8 w-28">
+                <span className="block text-end">Qty</span>
+              </TableHead>
+              <TableHead className="h-8 w-32">
+                <span className="block text-end">Unit price</span>
+              </TableHead>
+              <TableHead className="h-8 w-32">
+                <span className="block text-end">Total</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {invoice.items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="max-w-0">
+                  <span className="block truncate font-medium capitalize">{item.productName}</span>
+                </TableCell>
+                <TableCell>
+                  <span className="text-muted-foreground tabular-nums">
+                    {item.batchNumber ?? EMPTY}
+                  </span>
+                </TableCell>
+                <AmountCell>
+                  {formatCount(item.quantity, item.quantityType === "pack" ? "pack" : "unit")}
+                </AmountCell>
+                <AmountCell>{formatPrice(item.salePrice)}</AmountCell>
+                <AmountCell strong>{formatPrice(itemTotal(item))}</AmountCell>
+              </TableRow>
+            ))}
+          </TableBody>
+          <TableFooter>
+            {discount > 0 && (
+              <>
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <span className="block text-end text-muted-foreground">Subtotal</span>
+                  </TableCell>
+                  <AmountCell>{formatPrice(subtotal)}</AmountCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <span className="block text-end text-muted-foreground">Discount</span>
+                  </TableCell>
+                  <AmountCell>{`−${formatPrice(discount)}`}</AmountCell>
+                </TableRow>
+              </>
+            )}
+            <TableRow>
+              <TableCell colSpan={4}>
+                <span className="block text-end text-base font-medium">Total</span>
+              </TableCell>
+              <TableCell>
+                <span className="block text-end text-base font-medium tabular-nums">
+                  {formatPrice(invoice.total)}
                 </span>
-              </FrameHeader>
-            </Frame>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-1 rounded-2xl border p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span>Items</span>
-            <span className="font-mono tabular-nums">
-              {invoice.items.length} {invoice.items.length === 1 ? "line" : "lines"} · {unitsSold}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-lg font-medium">
-            <span>Total</span>
-            <span className="font-mono tabular-nums">{formatPrice(invoice.total)}</span>
-          </div>
-        </div>
-      </PageContent>
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </FrameCard>
     </PageLayout>
   );
 }

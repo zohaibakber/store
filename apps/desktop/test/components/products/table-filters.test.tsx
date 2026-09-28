@@ -121,9 +121,9 @@ test("product filters become a replica query view and clear together", async () 
 
 test("changing the page size returns to the first page", () => {
   const view = { ...DEFAULT_PRODUCT_LIST_VIEW, page: 4 };
-  expect(viewWithPagination(view, { pageIndex: 5, pageSize: 10 })).toMatchObject({ page: 5 });
-  expect(viewWithPagination(view, { pageIndex: 4, pageSize: 30 })).toMatchObject({
+  expect(viewWithPagination(view, { pageIndex: 5, pageSize: 50 })).toMatchObject({ page: 5 });
+  expect(viewWithPagination(view, { pageIndex: 4, pageSize: 100 })).toMatchObject({
     page: 0,
-    size: 30,
+    size: 100,
   });
 });

@@ -8,6 +8,7 @@ import { curveMonotoneX } from "d3-shape";
 import { format } from "date-fns";
 
 import { chartTheme, chartTooltip } from "@/components/ui/chart";
+import { formatCount } from "@/lib/format";
 
 import { WEEKDAY_SHORT } from "./presentation";
 
@@ -28,7 +29,7 @@ const revenueTooltip = (points: readonly ChartPoint<SalesDay>[]) => {
       {
         color: "var(--chart-1)",
         label: "Revenue",
-        value: `${formatPrice(day.revenue)} · ${day.invoices} ${day.invoices === 1 ? "sale" : "sales"}`,
+        value: `${formatPrice(day.revenue)} · ${formatCount(day.invoices, "sale")}`,
       },
       {
         color: "var(--muted-foreground)",
@@ -108,8 +109,8 @@ export function createWeekdayChart(rows: ReadonlyArray<WeekdayRow>) {
           x: (row) => WEEKDAY_SHORT[row.weekday] ?? "",
           y: "revenue",
           key: (row) => String(row.weekday),
-          fill: (row) => (row.peak ? "var(--chart-1)" : "var(--chart-2)"),
-          fillOpacity: 0.9,
+          fill: (row) =>
+            row.peak ? "var(--chart-1)" : "color-mix(in srgb, var(--chart-1) 40%, transparent)",
           maxThickness: 28,
           radius: 4,
         }),
