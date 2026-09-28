@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -195,16 +196,29 @@ const setupIpc = () => {
     readonly channel: string;
     readonly event: ReplicaCommitEvent | ReplicaSyncHealthEvent;
   }> = [];
-  const senderEvent = (id: number): ReplicaInvokeEvent => ({
-    senderFrame: { url: allowed[0]! },
-    sender: {
-      id,
-      isDestroyed: () => false,
-      send: (channel, event) => {
-        sent.push({ channel, event });
+  const emitters = new Map<number, EventEmitter>();
+  const emitterFor = (id: number) => {
+    const existing = emitters.get(id);
+    if (existing) return existing;
+    const created = new EventEmitter();
+    emitters.set(id, created);
+    return created;
+  };
+  const senderEvent = (id: number): ReplicaInvokeEvent => {
+    const emitter = emitterFor(id);
+    return {
+      senderFrame: { url: allowed[0]! },
+      sender: {
+        id,
+        isDestroyed: () => false,
+        send: (channel, event) => {
+          sent.push({ channel, event });
+        },
+        on: (teardown, listener) => emitter.on(teardown, listener),
+        removeListener: (teardown, listener) => emitter.removeListener(teardown, listener),
       },
-    },
-  });
+    };
+  };
   const invoke = <Input>(channel: string, event: ReplicaInvokeEvent, input: Input) => {
     const listener = listeners.get(channel);
     if (!listener) throw new Error(`No handler for ${channel}`);
@@ -224,6 +238,7 @@ const setupIpc = () => {
     foregrounds,
     registration,
     senderEvent,
+    emitterFor,
     invoke,
     open,
     sent,
@@ -449,6 +464,54 @@ describe("replica worker IPC contract", () => {
     expect(foregrounds).toEqual([false, false]);
     await registration.setForeground(true);
     expect(foregrounds).toEqual([false, false, true, true]);
+    await registration.dispose();
+  });
+
+  it.each(["did-navigate", "render-process-gone", "destroyed"] as const)(
+    "closes the worker session when the renderer fires %s",
+    async (teardown) => {
+      const { registration, senderEvent, emitterFor, invoke, open } = setupIpc();
+      const event = senderEvent(7);
+      const first = await open(event);
+      const second = await open(event);
+      const emitter = emitterFor(7);
+      expect(emitter.listenerCount(teardown)).toBe(2);
+      emitter.emit(teardown);
+      await expect(invoke(REPLICA_STAMP_CHANNEL, event, first.workspaceToken)).rejects.toThrow(
+        "Unknown replica workspace.",
+      );
+      await expect(invoke(REPLICA_STAMP_CHANNEL, event, second.workspaceToken)).rejects.toThrow(
+        "Unknown replica workspace.",
+      );
+      await vi.waitFor(() => {
+        expect(emitter.listenerCount(teardown)).toBe(0);
+      });
+      await registration.dispose();
+    },
+  );
+
+  it("releases renderer listeners when a session closes explicitly", async () => {
+    const { registration, senderEvent, emitterFor, invoke, open } = setupIpc();
+    const event = senderEvent(7);
+    const { workspaceToken } = await open(event);
+    expect(emitterFor(7).listenerCount("did-navigate")).toBe(1);
+    await invoke(REPLICA_CLOSE_CHANNEL, event, workspaceToken);
+    expect(emitterFor(7).listenerCount("did-navigate")).toBe(0);
+    await registration.dispose();
+  });
+
+  it("discards a session whose renderer navigated away while it was opening", async () => {
+    const { registration, senderEvent, emitterFor, invoke } = setupIpc();
+    const event = senderEvent(7);
+    const opening = invoke(REPLICA_OPEN_CHANNEL, event, openInput);
+    await vi.waitFor(() => {
+      expect(emitterFor(7).listenerCount("did-navigate")).toBe(1);
+    });
+    emitterFor(7).emit("did-navigate");
+    await expect(opening).rejects.toThrow(
+      "The replica renderer went away while the workspace was opening.",
+    );
+    expect(emitterFor(7).listenerCount("did-navigate")).toBe(0);
     await registration.dispose();
   });
 });

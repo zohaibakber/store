@@ -60,10 +60,18 @@ export type ReplicaSyncApiRequest = (
   },
 ) => Promise<ProxyFetchResult>;
 
+type ReplicaSenderListener = {
+  (event: "did-navigate", listener: () => void): void;
+  (event: "render-process-gone", listener: () => void): void;
+  (event: "destroyed", listener: () => void): void;
+};
+
 type ReplicaSender = {
   readonly id: number;
   readonly isDestroyed: () => boolean;
   readonly send: (channel: string, event: ReplicaCommitEvent | ReplicaSyncHealthEvent) => void;
+  readonly on: ReplicaSenderListener;
+  readonly removeListener: ReplicaSenderListener;
 };
 
 export type ReplicaInvokeEvent = {
@@ -208,13 +216,30 @@ export const registerReplicaWorkerIpc = (options: {
       Effect.flatMap((token) => client.AccessTokenRespond({ requestId: request.requestId, token })),
     );
 
+  const releaseWithSender = (sender: ReplicaSender, release: () => void) =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        sender.on("did-navigate", release);
+        sender.on("render-process-gone", release);
+        sender.on("destroyed", release);
+      }),
+      () =>
+        Effect.sync(() => {
+          sender.removeListener("did-navigate", release);
+          sender.removeListener("render-process-gone", release);
+          sender.removeListener("destroyed", release);
+        }),
+    );
+
   const openSession = (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
     workspaceToken: string,
     scope: Scope.Closeable,
+    release: () => void,
   ) =>
     Effect.gen(function* () {
+      yield* releaseWithSender(sender, release);
       const client = yield* spawnWorker(options.workerPath);
       yield* client.Commits().pipe(
         Stream.runForEach((notice) =>
@@ -273,9 +298,19 @@ export const registerReplicaWorkerIpc = (options: {
       const identity = decodeOpenInput(input);
       const workspaceToken = crypto.randomUUID();
       const scope = Effect.runSync(Scope.make());
+      let released = false;
+      const release = () => {
+        released = true;
+        const session = sessions.get(workspaceToken);
+        if (session) void disposeSession(workspaceToken, session);
+      };
       const opened = await Effect.runPromise(
-        openSession(event.sender, identity, workspaceToken, scope),
+        openSession(event.sender, identity, workspaceToken, scope, release),
       );
+      if (released || event.sender.isDestroyed()) {
+        await Effect.runPromise(Scope.close(scope, Exit.void));
+        throw new Error("The replica renderer went away while the workspace was opening.");
+      }
       sessions.set(workspaceToken, { senderId: event.sender.id, client: opened.client, scope });
       return { workspaceToken, engine: opened.engine };
     },
