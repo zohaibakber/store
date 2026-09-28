@@ -9,6 +9,7 @@ import {
 import type * as React from "react";
 
 import { PageSkeleton } from "@/components/app/page-skeleton";
+import { LegacyMigrationRunner } from "@/lib/legacy-migration/runner";
 
 import { InventorySyncStatusView } from "./sync-status";
 
@@ -25,6 +26,7 @@ export function InventoryProvider({
 }) {
   return (
     <SharedInventoryProvider catalog={catalog} host={host} lease={lease} scope={lease.scope}>
+      <LegacyMigrationRunner apiBaseUrl={host.apiBaseUrl} />
       <InventoryOpenFailure>{children}</InventoryOpenFailure>
     </SharedInventoryProvider>
   );

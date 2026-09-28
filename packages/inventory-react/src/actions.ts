@@ -56,6 +56,37 @@ const withProjectedProduct = (
   };
 };
 
+export const enqueueReplicaCommand = async (
+  replica: ReplicaHandle,
+  actor: InventoryActor,
+  commandId: string,
+  command: SyncCommandEnvelope["command"],
+  occurredAt: number,
+): Promise<SyncCommandEnvelope> => {
+  const allocation = await replica.readCommandAllocation();
+  const envelope: SyncCommandEnvelope = {
+    organizationId: decodeOrganizationId(actor.organizationId),
+    epoch: decodeEpoch(allocation.epoch),
+    replicaId: actor.deviceId,
+    clientSequence: decodeClientSequence(allocation.nextClientSequence),
+    operationId: commandId,
+    payloadHash: canonicalPayloadHash(command),
+    command,
+  };
+  const enqueued = await replica.enqueueLocal(envelope, occurredAt);
+  if (enqueued.changed) {
+    const stamp = await replica.stamp();
+    replica.publish({
+      workspaceToken: stamp.workspaceToken,
+      generationId: stamp.generationId,
+      localCommitVersion: stamp.localCommitVersion,
+      touchedEntities: touchedEntitiesForCommand(envelope),
+      touchedKeys: touchedKeysForCommand(envelope),
+    });
+  }
+  return envelope;
+};
+
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error && cause.message ? cause.message : fallback;
 
@@ -72,38 +103,14 @@ export const makeInventoryActions = (
     products: inventory.products,
   };
 
-  const organizationId = decodeOrganizationId(actor.organizationId);
   const setCommandExecution = (state: CommandExecutionState) =>
     atoms.registry.set(atoms.commandExecution, state);
 
-  const enqueue = async (
+  const enqueue = (
     commandId: string,
     command: SyncCommandEnvelope["command"],
     occurredAt: number,
-  ) => {
-    const allocation = await replica.readCommandAllocation();
-    const envelope: SyncCommandEnvelope = {
-      organizationId,
-      epoch: decodeEpoch(allocation.epoch),
-      replicaId: actor.deviceId,
-      clientSequence: decodeClientSequence(allocation.nextClientSequence),
-      operationId: commandId,
-      payloadHash: canonicalPayloadHash(command),
-      command,
-    };
-    const enqueued = await replica.enqueueLocal(envelope, occurredAt);
-    if (enqueued.changed) {
-      const stamp = await replica.stamp();
-      replica.publish({
-        workspaceToken: stamp.workspaceToken,
-        generationId: stamp.generationId,
-        localCommitVersion: stamp.localCommitVersion,
-        touchedEntities: touchedEntitiesForCommand(envelope),
-        touchedKeys: touchedKeysForCommand(envelope),
-      });
-    }
-    return envelope;
-  };
+  ) => enqueueReplicaCommand(replica, actor, commandId, command, occurredAt);
 
   const runCommand = async <Result>(
     fallbackMessage: string,

@@ -9,6 +9,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { CommandOutcome, ReplicaSyncProgress } from "./command-outcome";
 import { createReplicaCommitPublisher } from "./publisher";
 import { decodeSqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
@@ -71,6 +72,13 @@ export type ElectronReplicaBridge = {
     callback: (health: ReplicaSyncHealth) => void,
   ) => () => void;
   readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
+  readonly readCommandOutcomes: (input: {
+    readonly workspaceToken: string;
+    readonly operationIds: ReadonlyArray<string>;
+  }) => Promise<ReadonlyArray<typeof CommandOutcome.Encoded>>;
+  readonly readSyncProgress: (
+    workspaceToken: string,
+  ) => Promise<typeof ReplicaSyncProgress.Encoded>;
   readonly readCommandAllocation: (workspaceToken: string) => Promise<{
     readonly epoch: string;
     readonly nextClientSequence: string;
@@ -94,6 +102,8 @@ const decodeInsightsFacts = Schema.decodeUnknownSync(ReplicaInsightsFacts);
 const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
 const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
 const encodeEnvelope = Schema.encodeSync(SyncCommandEnvelope);
+const decodeCommandOutcomes = Schema.decodeUnknownSync(Schema.Array(CommandOutcome));
+const decodeSyncProgress = Schema.decodeUnknownSync(ReplicaSyncProgress);
 const decodeCommandAllocation = Schema.decodeUnknownSync(
   Schema.Struct({ epoch: DecimalSequence, nextClientSequence: DecimalSequence }),
 );
@@ -154,6 +164,9 @@ export const openElectronIpcReplicaHandle = async (
     },
     readOutboxStatuses: async () =>
       decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
+    readCommandOutcomes: async (operationIds) =>
+      decodeCommandOutcomes(await bridge.readCommandOutcomes({ workspaceToken, operationIds })),
+    readSyncProgress: async () => decodeSyncProgress(await bridge.readSyncProgress(workspaceToken)),
     readCommandAllocation: async () =>
       decodeCommandAllocation(await bridge.readCommandAllocation(workspaceToken)),
     enqueueLocal: (envelope, createdAt) =>

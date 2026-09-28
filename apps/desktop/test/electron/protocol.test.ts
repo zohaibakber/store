@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
+import {
+  isLegacyPowerSyncWorkerPath,
+  makeDesktopContentSecurityPolicy,
+} from "../../electron/content-security-policy";
 import { isOAuthCallbackUrl } from "../../electron/oauth-callback";
 import { developmentRendererTarget } from "../../electron/protocol";
 import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
@@ -40,6 +43,25 @@ describe("desktop content security policy", () => {
     expect(scriptSources).not.toContain("'wasm-unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-eval'");
     expect(scriptSources).not.toContain("'unsafe-inline'");
+  });
+
+  it("allows wasm compilation only for the legacy PowerSync database worker", () => {
+    const workerScriptSources = makeDesktopContentSecurityPolicy({
+      scheme: "com.tabaaq.desktop",
+      apiOrigin: "https://api.tabaaq.app",
+      authOrigin: "https://auth.tabaaq.app",
+      development: false,
+      wasm: true,
+    })
+      .split("; ")
+      .find((directive) => directive.startsWith("script-src "))
+      ?.split(" ");
+
+    expect(workerScriptSources).toEqual(["script-src", "'self'", "'wasm-unsafe-eval'"]);
+    expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-CKuXHS5K.js")).toBe(true);
+    expect(isLegacyPowerSyncWorkerPath("/assets/index-CKuXHS5K.js")).toBe(false);
+    expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-x.js/../index.js")).toBe(false);
+    expect(isLegacyPowerSyncWorkerPath("/WASQLiteDB.worker-CKuXHS5K.js")).toBe(false);
   });
 
   it("permits production Sentry ingest connections", () => {

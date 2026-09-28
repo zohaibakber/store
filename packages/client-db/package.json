@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./command-outcome": "./src/replica/command-outcome.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
+    "./scope": "./src/replica/scope.ts",
     "./sql-client": "./src/replica/sql-client.ts",
     "./subset-spec": "./src/replica/subset-spec.ts"
   },

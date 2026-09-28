@@ -16,6 +16,7 @@ import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender
 import {
   REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
+  REPLICA_COMMAND_OUTCOMES_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
@@ -25,12 +26,14 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
+  REPLICA_SYNC_PROGRESS_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
 import {
+  ReplicaCommandOutcomesInput,
   ReplicaEnqueueInput,
   ReplicaOpenInput,
   ReplicaReadInsightsInput,
@@ -86,6 +89,8 @@ const CHANNEL_METHODS = {
   [REPLICA_READ_INSIGHTS_CHANNEL]: "readInsights",
   [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: "summarizeSubset",
   [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
+  [REPLICA_COMMAND_OUTCOMES_CHANNEL]: "readCommandOutcomes",
+  [REPLICA_SYNC_PROGRESS_CHANNEL]: "readSyncProgress",
   [REPLICA_ALLOCATION_CHANNEL]: "readCommandAllocation",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueLocal",
   [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
@@ -130,6 +135,7 @@ const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
 const decodeReadInsightsInput = Schema.decodeUnknownSync(ReplicaReadInsightsInput);
 const decodeSummarizeSubsetInput = Schema.decodeUnknownSync(ReplicaSummarizeSubsetInput);
 const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
+const decodeCommandOutcomesInput = Schema.decodeUnknownSync(ReplicaCommandOutcomesInput);
 
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {
@@ -301,6 +307,14 @@ export const registerReplicaWorkerIpc = (options: {
     },
     [REPLICA_OUTBOX_CHANNEL]: (event, input) =>
       withSession(event, input, "outbox read", (client) => client.ReadOutboxStatuses()),
+    [REPLICA_COMMAND_OUTCOMES_CHANNEL]: async (event, input) => {
+      const read = decodeCommandOutcomesInput(input);
+      return withSession(event, read.workspaceToken, "command outcome read", (client) =>
+        client.ReadCommandOutcomes({ operationIds: read.operationIds }),
+      );
+    },
+    [REPLICA_SYNC_PROGRESS_CHANNEL]: (event, input) =>
+      withSession(event, input, "sync progress read", (client) => client.ReadSyncProgress()),
     [REPLICA_ALLOCATION_CHANNEL]: (event, input) =>
       withSession(event, input, "command allocation", (client) => client.ReadCommandAllocation()),
     [REPLICA_ENQUEUE_CHANNEL]: async (event, input) => {

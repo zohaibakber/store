@@ -17,6 +17,7 @@ import type {
   StockMovementRow,
 } from "../rows";
 import type { InvoiceCoherenceGate } from "./coherence";
+import type { CommandOutcome, ReplicaSyncProgress } from "./command-outcome";
 import type { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
 import type { OutboxCommandStatus, SqliteResultRow } from "./sqlite-row";
@@ -121,6 +122,10 @@ export type ReplicaActivitySurface = {
   readonly replicaId?: string;
   readonly readOutboxActivity?: () => Promise<ReplicaOutboxActivity>;
   readonly readPendingRowIds?: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
+  readonly readCommandOutcomes?: (
+    operationIds: ReadonlyArray<string>,
+  ) => Promise<ReadonlyArray<CommandOutcome>>;
+  readonly readSyncProgress?: () => Promise<ReplicaSyncProgress>;
 };
 
 export type ReplicaHandle = ReplicaHandleIdentity &

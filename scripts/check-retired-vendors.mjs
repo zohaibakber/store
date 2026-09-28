@@ -86,7 +86,19 @@ const runtimeSource = [
   ...sourceFiles("packages/client-db/src/"),
   ...sourceFiles("packages/auth/src/"),
   new URL("apps/server/infra.ts", root).pathname,
-].map((path) => readFileSync(path, "utf8"));
+].map((path) => [path, readFileSync(path, "utf8")]);
+
+const legacyMigrationReader = new URL(
+  "apps/desktop/src/lib/legacy-migration/powersync-reader.ts",
+  root,
+).pathname;
+const legacyMigrationReaderImports = ["@powersync/web"];
+const legacyMigrationManifest = "apps/desktop/package.json";
+const legacyMigrationPins = { "@powersync/web": "1.39.1", "@powersync/common": "1.57.3" };
+const legacyMigrationReaderLoad = 'import("./powersync-reader")';
+
+const allowedLegacyReaderImport = (path, forbidden) =>
+  path === legacyMigrationReader && legacyMigrationReaderImports.includes(forbidden);
 
 for (const forbidden of [
   ...forbiddenPackages,
@@ -94,8 +106,21 @@ for (const forbidden of [
   forbiddenPackagePrefix,
   "/api/powersync",
 ]) {
-  if (runtimeSource.some((source) => source.includes(forbidden))) {
-    throw new Error(`Runtime source still imports ${forbidden}.`);
+  const offender = runtimeSource.find(
+    ([path, source]) => source.includes(forbidden) && !allowedLegacyReaderImport(path, forbidden),
+  );
+  if (offender) {
+    throw new Error(`Runtime source still imports ${forbidden} (${offender[0]}).`);
+  }
+}
+
+if (!existsSync(legacyMigrationReader)) {
+  throw new Error("The legacy PowerSync reader allowance names a missing file.");
+}
+for (const [path, source] of runtimeSource) {
+  if (path === legacyMigrationReader) continue;
+  if (source.replaceAll(legacyMigrationReaderLoad, "").includes("powersync-reader")) {
+    throw new Error(`${path} must load the legacy PowerSync reader with a dynamic import.`);
   }
 }
 
@@ -114,14 +139,20 @@ for (const [path, source] of serverSource) {
   }
 }
 
+const pinnedLegacyMigrationPackage = (manifestPath, manifest, name) =>
+  manifestPath === legacyMigrationManifest &&
+  Object.hasOwn(legacyMigrationPins, name) &&
+  manifest.devDependencies?.[name] === legacyMigrationPins[name];
+
 for (const manifestPath of packageManifests) {
   const manifest = JSON.parse(read(manifestPath));
   const names = dependencyFields.flatMap((field) => Object.keys(manifest[field] ?? {}));
   const leftover = names.find(
     (name) =>
-      name.startsWith(forbiddenPackagePrefix) ||
-      forbiddenPackages.includes(name) ||
-      forbiddenSqlitePackages.includes(name),
+      !pinnedLegacyMigrationPackage(manifestPath, manifest, name) &&
+      (name.startsWith(forbiddenPackagePrefix) ||
+        forbiddenPackages.includes(name) ||
+        forbiddenSqlitePackages.includes(name)),
   );
   if (leftover) {
     throw new Error(`${manifestPath} still depends on ${leftover}.`);
@@ -152,7 +183,7 @@ for (const leftover of ["apps/android", "powersync", ".github/workflows/android.
 
 forbidText(read("apps/server/src/http/api.ts"), '"/api/inventory/legacy-migrations"', "server API");
 forbidText(read("apps/server/infra.ts"), "LegacyMigrationQueue", "API infra");
-if (runtimeSource.some((source) => source.includes("migrateLegacyCatalog"))) {
+if (runtimeSource.some(([, source]) => source.includes("migrateLegacyCatalog"))) {
   throw new Error("Runtime source still contains migrateLegacyCatalog.");
 }
 forbidText(read("apps/server/src/http/app.ts"), '"/api/powersync/credentials"', "server routes");

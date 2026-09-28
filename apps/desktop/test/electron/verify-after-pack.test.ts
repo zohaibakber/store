@@ -17,6 +17,9 @@ const forbiddenRendererReplicaSqlMarkers = Schema.decodeUnknownSync(ForbiddenRen
   afterPack.forbiddenRendererReplicaSqlMarkers,
 );
 
+const isLegacyPowerSyncAsset = (entry: string) =>
+  Schema.decodeUnknownSync(Schema.Boolean)(afterPack.isLegacyPowerSyncAsset(entry));
+
 const repoRoot = path.resolve(import.meta.dirname, "../../../..");
 const replicaSql = readFileSync(
   path.join(repoRoot, "packages/db/src/replica/migrations.gen.ts"),
@@ -62,6 +65,29 @@ describe("desktop renderer schema boundary", () => {
     expect(forbiddenRendererReplicaSqlMarkers.length).toBeGreaterThan(0);
     for (const marker of forbiddenRendererReplicaSqlMarkers) {
       expect(subsetLowering).toContain(marker);
+    }
+  });
+
+  it("admits only the lazily loaded legacy PowerSync reader assets", () => {
+    for (const entry of [
+      "/dist/assets/powersync-reader-Chxwgi-c.js",
+      "/dist/assets/WASQLiteDB.worker-CKuXHS5K.js",
+      "/dist/assets/wa-sqlite-async-BZ9gIHv7.wasm",
+      "/dist/assets/mc-wa-sqlite-async-B4YNAFD1.js",
+      "/dist/assets/wa-sqlite-DR-3Ak0t.wasm",
+      "/dist/assets/OPFSWriteAheadVFS-BXnaQnOy.js",
+    ]) {
+      expect(isLegacyPowerSyncAsset(entry)).toBe(true);
+    }
+    for (const entry of [
+      "/dist/assets/index-CKuXHS5K.js",
+      "/dist/assets/replica-sqlite.worker-abc.js",
+      "/dist/assets/sql-sqlite-wasm-abc.js",
+      "/dist/assets/opfs-worker-abc.js",
+      "/dist-electron/wa-sqlite-abc.js",
+      "/node_modules/@journeyapps/wa-sqlite/dist/wa-sqlite.wasm",
+    ]) {
+      expect(isLegacyPowerSyncAsset(entry)).toBe(false);
     }
   });
 });

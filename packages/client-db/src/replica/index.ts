@@ -15,6 +15,13 @@ export {
   decodeStockMovementSqliteRows,
 } from "./decode";
 export { ReplicaRowInvalid, UnsupportedSubsetQuery } from "./errors";
+export {
+  CommandOutcome,
+  CommandOutcomeIds,
+  CommandRejection,
+  MAX_COMMAND_OUTCOME_IDS,
+  ReplicaSyncProgress,
+} from "./command-outcome";
 export { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
 export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
 export type { ElectronReplicaBridge, ElectronReplicaOpenIdentity } from "./electron-ipc-handle";
@@ -23,7 +30,7 @@ export type { OpenIndexedDbReplicaInput } from "./indexeddb-handle";
 export { indexedDbReplicaDatabaseName } from "@store/sync/replica/migrate-pending";
 export { inventoryReplicaScope } from "./scope";
 export { createInvoiceCoherenceGate, sqliteCollectionOptions } from "./collection";
-export { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_LIKE_PATTERN_LENGTH } from "./sources";
+export { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_IN_VALUES, MAX_LIKE_PATTERN_LENGTH } from "./sources";
 export type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
 export { syncHealthFromScheduler, syncStatusFromOutbox, syncStatusWithHealth } from "./status";
 export {

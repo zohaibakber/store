@@ -22,6 +22,12 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 
+import {
+  readCaughtUpAtSqlite,
+  readCommandOutcomesSqlite,
+  type CommandOutcome,
+  type ReplicaSyncProgress,
+} from "./command-outcome";
 import { layerCommitForwarding } from "./commit-forwarding";
 import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
 import { readSqliteInsightsFacts } from "./insights-sqlite";
@@ -154,6 +160,10 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader &
     readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
     readonly stamp: () => Promise<ReplicaQueryStamp>;
     readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
+    readonly readCommandOutcomes: (
+      operationIds: ReadonlyArray<string>,
+    ) => Promise<ReadonlyArray<CommandOutcome>>;
+    readonly readSyncProgress: () => Promise<ReplicaSyncProgress>;
     readonly readCommandAllocation: () => Promise<{
       readonly epoch: string;
       readonly nextClientSequence: string;
@@ -189,6 +199,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
 ): Promise<SqliteReplicaSyncSession> => {
   const workspaceToken = input.databaseIdentity;
+  const sessionOpenedAt = Date.now();
   const publisher = createReplicaCommitPublisher();
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
@@ -240,6 +251,12 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     summarizeSubset: (spec) =>
       withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
+    readCommandOutcomes: (operationIds) =>
+      withHandle((handle) => readCommandOutcomesSqlite(handle.sql, operationIds)),
+    readSyncProgress: async () => ({
+      sessionOpenedAt,
+      caughtUpAt: await withHandle((handle) => readCaughtUpAtSqlite(handle.sql)),
+    }),
     readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
     enqueueLocal: async (envelope, createdAt) => {
       const queued = await runtime.runPromise(store.enqueueCommand(envelope, createdAt));

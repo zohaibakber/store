@@ -19,6 +19,7 @@ export {
   type CatalogLifetime,
   type CatalogReplica,
 } from "./lifetime";
+export { enqueueReplicaCommand } from "./actions";
 export { inventoryScopeId, openInventoryWorkspace } from "./open";
 export {
   InventoryProvider,
@@ -79,4 +80,4 @@ export {
   type InventoryInsights,
 } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
-export type { Inventory, InventoryActions, InventoryState } from "./types";
+export type { Inventory, InventoryActions, InventoryActor, InventoryState } from "./types";

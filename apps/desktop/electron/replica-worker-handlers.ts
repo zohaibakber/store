@@ -169,6 +169,9 @@ export const makeReplicaWorkerHandlers = (openSession = openNodeReplicaSyncSessi
             })),
           ),
         ReadOutboxStatuses: () => withSession((current) => current.readOutboxStatuses()),
+        ReadCommandOutcomes: ({ operationIds }) =>
+          withSession((current) => current.readCommandOutcomes(operationIds)),
+        ReadSyncProgress: () => withSession((current) => current.readSyncProgress()),
         ReadCommandAllocation: () => withSession((current) => current.readCommandAllocation()),
         EnqueueLocal: ({ envelope, createdAt }) =>
           withSession((current) => current.enqueueLocal(envelope, createdAt)),

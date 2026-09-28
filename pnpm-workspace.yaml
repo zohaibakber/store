@@ -51,6 +51,7 @@ onlyBuiltDependencies:
 allowBuilds:
   "@embedded-postgres/linux-x64": true
   "@firebase/util": false
+  "@journeyapps/wa-sqlite": false
   "@sentry/cli": true
   better-sqlite3: false
   electron-winstaller: false

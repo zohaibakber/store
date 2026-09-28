@@ -84,9 +84,14 @@ describe("replica worker handlers", () => {
           })
           .pipe(Effect.flip);
         const allocation = yield* client.ReadCommandAllocation();
-        return { engine, request, read, rejected, allocation };
+        const outcomes = yield* client.ReadCommandOutcomes({ operationIds: ["missing-op"] });
+        const progress = yield* client.ReadSyncProgress();
+        return { engine, request, read, rejected, allocation, outcomes, progress };
       }),
     );
+    expect(result.outcomes).toEqual([]);
+    expect(result.progress.caughtUpAt).toBeNull();
+    expect(result.progress.sessionOpenedAt).toBeGreaterThan(0);
     expect(result.engine).toBe("sqlite");
     expect(result.request?.pathname.startsWith("/api/sync/")).toBe(true);
     expect(result.read.rows).toEqual([]);

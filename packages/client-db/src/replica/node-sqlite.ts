@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import { readCommandOutcomesSqlite } from "./command-outcome";
 import { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
 import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
@@ -113,6 +114,8 @@ export const openNodeReplicaSqlite = async (
     readPendingRowIds: (entity) =>
       withHandle((handle) => readPendingRowIdsSqlite(handle.sql, entity)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
+    readCommandOutcomes: (operationIds) =>
+      withHandle((handle) => readCommandOutcomesSqlite(handle.sql, operationIds)),
     readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
     enqueueLocal,
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),

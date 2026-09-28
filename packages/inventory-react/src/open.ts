@@ -289,16 +289,17 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     );
     yield* followSyncStatus(replica, atoms);
     const tables = { dbClient, ...collections };
+    const actor = actorFor(host, scope, replica);
     const actions = makeInventoryActions(
       tables,
-      actorFor(host, scope, replica),
+      actor,
       replica,
       () => {
         replica.wakeSyncUpload?.();
       },
       atoms,
     );
-    return { ...tables, atoms, actions };
+    return { ...tables, atoms, actions, replica, actor };
   });
 
 export const openInventoryWorkspace = (
