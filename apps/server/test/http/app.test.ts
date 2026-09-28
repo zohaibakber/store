@@ -17,6 +17,12 @@ describe("HTTP auth and CORS", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it("answers unknown routes with 404 instead of an internal error", async () => {
+    const app = appFor(true);
+    expect((await app.request("/api/sync/snapshot", { method: "POST" })).status).toBe(404);
+    expect((await app.request("/healthz")).status).toBe(404);
+  });
+
   it("returns an unauthenticated workspace snapshot for session lookups", async () => {
     const response = await appFor(false).request("/api/auth/session");
     expect(response.status).toBe(200);

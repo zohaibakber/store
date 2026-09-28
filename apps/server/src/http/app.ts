@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -64,13 +65,19 @@ export const recoverUnexpected = <E, R>(
   effect.pipe(
     Effect.catchCause((cause) => {
       if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
-      return Effect.logError("worker.request_failed").pipe(
-        Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-        Effect.as(
-          HttpServerResponse.jsonUnsafe(
-            publicError("INTERNAL_SERVER_ERROR", "Something went wrong."),
-            { status: 500 },
-          ),
+      return HttpServerError.causeResponse(cause).pipe(
+        Effect.flatMap(([response]) =>
+          response.status < 500
+            ? Effect.succeed(response)
+            : Effect.logError("worker.request_failed").pipe(
+                Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+                Effect.as(
+                  HttpServerResponse.jsonUnsafe(
+                    publicError("INTERNAL_SERVER_ERROR", "Something went wrong."),
+                    { status: 500 },
+                  ),
+                ),
+              ),
         ),
       );
     }),
