@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 
@@ -109,9 +110,11 @@ export type ReplicaIpcListener = (
   input: ReplicaIpcInput,
 ) => Promise<ReplicaIpcResult>;
 
+const UNBOUNDED_WORKER_RPC_CONCURRENCY = Number.MAX_SAFE_INTEGER;
+
 const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
   Layer.build(
-    RpcClient.layerProtocolWorker({ size: 1 }).pipe(
+    RpcClient.layerProtocolWorker({ size: 1, concurrency: UNBOUNDED_WORKER_RPC_CONCURRENCY }).pipe(
       Layer.provide(NodeWorker.layer(() => new Worker(workerPath))),
     ),
   ).pipe(
@@ -241,11 +244,12 @@ export const registerReplicaWorkerIpc = (options: {
         Stream.runDrain,
         Effect.forkScoped,
       );
+      const replicaDirectory = path.join(options.userDataPath, "replicas");
+      yield* Effect.promise(() => mkdir(replicaDirectory, { recursive: true }));
       const engine = yield* client.Open({
         ...identity,
         databasePath: path.join(
-          options.userDataPath,
-          "replicas",
+          replicaDirectory,
           `${identity.organizationId}-${identity.userId}.sqlite`,
         ),
         apiBaseUrl: options.apiBaseUrl,

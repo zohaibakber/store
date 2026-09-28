@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -151,6 +155,7 @@ const setupIpc = () => {
   const spawnWorker: SpawnReplicaWorker = () =>
     RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
   const listeners = new Map<string, ReplicaIpcListener>();
+  const userDataPath = mkdtempSync(path.join(tmpdir(), "store-replica-test-"));
   const registration = registerReplicaWorkerIpc({
     ipcMain: {
       handle: (channel, listener) => {
@@ -160,7 +165,7 @@ const setupIpc = () => {
         listeners.delete(channel);
       },
     },
-    userDataPath: "/tmp/store-replica-test",
+    userDataPath,
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
     syncApiRequest: async (pathname, init) => {
@@ -198,6 +203,7 @@ const setupIpc = () => {
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, openInput));
   return {
+    userDataPath,
     boots,
     proxyReplies,
     tokenReplies,
@@ -235,6 +241,7 @@ describe("replica worker IPC contract", () => {
 
   it("opens a worker, forwards commits and proxy requests, and reads through typed RPCs", async () => {
     const {
+      userDataPath,
       boots,
       proxyReplies,
       syncRequests,
@@ -253,10 +260,11 @@ describe("replica worker IPC contract", () => {
     expect(boots).toEqual([
       {
         ...openInput,
-        databasePath: "/tmp/store-replica-test/replicas/org-1-user-1.sqlite",
+        databasePath: path.join(userDataPath, "replicas", "org-1-user-1.sqlite"),
         apiBaseUrl: "https://api.tabaaq.local",
       },
     ]);
+    expect(existsSync(path.join(userDataPath, "replicas"))).toBe(true);
 
     await vi.waitFor(() => {
       expect(sent).toHaveLength(2);
